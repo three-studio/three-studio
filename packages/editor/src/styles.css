@@ -1,0 +1,265 @@
+@import 'tailwindcss';
+@import 'dockview-react/dist/styles/dockview.css';
+
+/* Tailwind's automatic source detection starts from whoever imports this file, so
+   it would miss the editor's own markup entirely. Only this package is named here:
+   a `@source` reaching into a sibling directory resolves to nothing once the package
+   is published, and an app that adds classes of its own scans them on its side --
+   see apps/desktop/src/renderer/src/styles.css. */
+@source '.';
+
+/*
+ * Design tokens for the editor chrome. Tuned against the Unity / Blender dark
+ * palettes: near-black gutters, flat grey panels, one saturated accent.
+ * Every `--color-*` here becomes a utility (bg-surface-1, text-ink-muted, ...).
+ */
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --color-ink: #d6d6d6;
+  --color-ink-muted: #8b8b8b;
+  --color-ink-dim: #6a6a6a;
+
+  --color-surface-0: #1b1b1b;
+  --color-surface-1: #242424;
+  --color-surface-2: #2d2d2d;
+  --color-surface-3: #383838;
+  --color-surface-4: #454545;
+
+  --color-line: #141414;
+  --color-line-soft: #3a3a3a;
+
+  --color-accent: #4a8cff;
+  --color-accent-dim: #2c5d87;
+
+  --color-axis-x: #e05a5a;
+  --color-axis-y: #8bc34a;
+  --color-axis-z: #4a8cff;
+
+  --color-play: #4ade80;
+
+  /* Prefab instances and their contents. Blue in Unity, and worth keeping
+     recognisable rather than inventing a colour nobody has seen before. */
+  --color-prefab: #6fb3ff;
+  /* Same green as Play: one "this went well" in the palette, not two. */
+  --color-ok: #4ade80;
+  --color-warn: #f0b429;
+  --color-error: #ef5350;
+
+  --text-2xs: 0.6875rem;
+
+  /*
+   * What covers what, in one place. Each becomes a utility: `z-dialog`,
+   * `z-toast`, and so on.
+   *
+   * They were arbitrary numbers written where each surface happened to be
+   * declared — 60 for the toasts and the asset picker, 70 for dialogs, 200 for
+   * the text prompt — and nothing said whether that order was intended or
+   * accidental. It also lost to dockview, which puts `z-index: 99` on every
+   * splitter and 1000 on a drop zone: the layout stayed draggable underneath an
+   * open dialog. That part is fixed by `isolation` on `.studio-dock` rather than
+   * by a bigger number here, so these stay small and readable.
+   *
+   * The order is the whole content: a menu opens from inside a dialog, a toast
+   * has to clear both, and the prompt is what a dialog itself asks a question
+   * with — so it covers everything.
+   */
+  --z-index-panel-overlay: 10;
+  --z-index-dialog: 20;
+  --z-index-menu: 30;
+  --z-index-toast: 40;
+  --z-index-prompt: 50;
+}
+
+@layer base {
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    /*
+     * `clip`, not `hidden`. An element with `overflow: hidden` is still a
+     * scroll container — it just has no scrollbars — so anything calling
+     * `scrollIntoView` or `focus()` can scroll it and there is no way to
+     * scroll back. That is how the menu bar disappeared: it was pushed 819px
+     * above the viewport and clipped there. `clip` creates no scrollport at
+     * all, so the shell cannot be moved.
+     */
+    overflow: clip;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--color-surface-0);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    -webkit-font-smoothing: antialiased;
+    /* Editor chrome is not a document: text selection is noise everywhere
+       except in explicit inputs and the console. */
+    user-select: none;
+    cursor: default;
+  }
+
+  input,
+  textarea,
+  [data-selectable] {
+    user-select: text;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface-3);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-surface-4);
+    background-clip: content-box;
+  }
+}
+
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * dockview ships a VS Code-flavoured dark theme. Rather than fork it, re-point
+ * its variables at the studio palette so the dock and the surrounding chrome
+ * stay in sync from one place.
+ */
+.studio-dock {
+  /*
+   * A stacking context of its own, so dockview's z-indices stay inside it.
+   *
+   * It puts `z-index: 99` on every splitter and 1000 on a drop zone, in the root
+   * stacking context — above an open dialog's backdrop whatever number that
+   * picks. The symptom was being able to drag the layout around behind a modal.
+   *
+   * Isolating is the fix rather than outbidding: the app's own layers are then
+   * compared against the dock as a single box, and the next version of dockview
+   * is free to choose any number it likes inside it.
+   */
+  isolation: isolate;
+
+  --dv-group-view-background-color: var(--color-surface-1);
+  --dv-tabs-and-actions-container-background-color: var(--color-surface-2);
+  --dv-tabs-and-actions-container-height: 28px;
+  --dv-tabs-and-actions-container-font-size: 11px;
+
+  --dv-activegroup-visiblepanel-tab-background-color: var(--color-surface-1);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-surface-1);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+
+  --dv-activegroup-visiblepanel-tab-color: var(--color-ink);
+  --dv-activegroup-hiddenpanel-tab-color: var(--color-ink-muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--color-ink-muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--color-ink-dim);
+
+  --dv-tab-divider-color: var(--color-line);
+  --dv-separator-border: var(--color-line);
+  --dv-paneview-active-outline-color: var(--color-accent);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  --dv-icon-hover-background-color: var(--color-surface-3);
+  --dv-tabs-container-scrollbar-color: var(--color-surface-4);
+}
+
+/* Give the active tab the folder-tab accent line Unity and Blender both use. */
+.studio-dock .dv-tab.dv-active-tab {
+  box-shadow: inset 0 2px 0 var(--color-accent);
+}
+
+/* Default sashes are invisible until hover; a permanent hairline reads better
+   against flat panels of nearly the same value. */
+.studio-dock .dv-sash {
+  background-color: var(--color-line);
+}
+
+/* Editor panels are fixtures, not documents. Closing one by mis-clicking would
+   leave no way back except resetting the whole layout, so the close affordance
+   is removed; panels are still rearrangeable by drag. */
+.studio-dock .dv-default-tab-action {
+  display: none;
+}
+
+/*
+ * Tweakpane ships a blue-grey theme of its own. Re-point its variables at the
+ * studio palette so the inspector reads as part of the editor rather than as an
+ * embedded widget.
+ *
+ * On `:root`, which is what Tweakpane's own theme builder emits. Scoping them
+ * to the pane would look tidier but would not reach the floating pieces the
+ * inspector renders into `document.body` to escape dockview's transformed
+ * panels — the asset preview and the asset picker.
+ */
+:root {
+  --tp-base-background-color: transparent;
+  --tp-base-shadow-color: transparent;
+
+  --tp-button-background-color: var(--color-surface-3);
+  --tp-button-background-color-active: var(--color-accent-dim);
+  --tp-button-background-color-focus: var(--color-surface-4);
+  --tp-button-background-color-hover: var(--color-surface-4);
+  --tp-button-foreground-color: var(--color-ink);
+
+  /* The rows sit directly on the panel, as a native inspector would. */
+  --tp-container-background-color: transparent;
+  --tp-container-background-color-active: var(--color-surface-4);
+  --tp-container-background-color-focus: var(--color-surface-3);
+  --tp-container-background-color-hover: var(--color-surface-3);
+  --tp-container-foreground-color: var(--color-ink);
+
+  --tp-groove-foreground-color: var(--color-surface-3);
+  --tp-label-foreground-color: var(--color-ink-muted);
+
+  --tp-input-background-color: var(--color-surface-3);
+  --tp-input-background-color-active: var(--color-surface-4);
+  --tp-input-background-color-focus: var(--color-surface-4);
+  --tp-input-background-color-hover: var(--color-surface-4);
+  --tp-input-foreground-color: var(--color-ink);
+
+  --tp-monitor-background-color: var(--color-surface-0);
+  --tp-monitor-foreground-color: var(--color-ink-muted);
+
+  --tp-blade-value-width: 62%;
+  --tp-base-border-radius: 2px;
+}
+
+/*
+ * Real properties rather than variables, so these do need the pane itself.
+ * `.tp-rotv` is the root view, present whether or not Tweakpane built its own
+ * window — unlike `.tp-dfwv`, which the inspector never has because it supplies
+ * a container, and which is why none of this applied for so long.
+ */
+.tp-rotv {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 11px;
+}
+
+/* Folders are headings here, not collapsible widgets fighting for attention. */
+.tp-rotv .tp-fldv_b {
+  background-color: var(--color-surface-2);
+}
+.tp-rotv .tp-fldv_t {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+

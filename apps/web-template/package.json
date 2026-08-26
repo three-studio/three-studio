@@ -1,0 +1,19 @@
+{
+  "name": "@three-studio/web-template",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "The player an exported web build ships. Runs a scene document with no editor.",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@three-studio/core": "0.1.0",
+    "@three-studio/runtime": "0.1.0",
+    "three": "0.185.1"
+  },
+  "devDependencies": {
+    "vite": "7.3.6"
+  }
+}

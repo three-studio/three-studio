@@ -1,0 +1,53 @@
+{
+  "name": "@three-studio/runtime",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/three-studio/three-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/three-studio/three-studio.git",
+    "directory": "packages/runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/three-studio/three-studio/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Game runtime: three.js rendering, Rapier physics, script host. Must never import @three-studio/editor.",
+  "keywords": ["three-studio", "threejs", "webgpu", "rapier", "physics", "game-engine"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "//sideEffects": "Deliberately absent. Both the component registry (core/src/components/index.ts) and the behaviour registry (runtime/src/Engine.ts) are populated by bare `import './x'` statements, and declaring the package side-effect-free tells every bundler it may drop exactly those — a scene then loads with components no one registered.",
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "//build-tsconfig": "esbuild discovers the *root* tsconfig.json on its own, and it honours `paths` — which map @three-studio/* onto sibling source. Without pointing it at the build config, whose `paths` are empty, esbuild inlines core and runtime into every bundle instead of leaving them as the dependencies they are.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --tsconfig=tsconfig.build.json --format=esm --platform=browser --target=es2023 --packages=external --outfile=dist/index.js",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "@three-studio/core": "0.1.0"
+  },
+  "//peerDependencies": "three is a peer and not a dependency: the whole package is built around `three/webgpu`, and a second copy of three in a consumer's tree makes every `instanceof` across the boundary fail. See the README for the bundler alias it also needs.",
+  "peerDependencies": {
+    "three": "^0.185.0"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "esbuild": "0.28.1",
+    "three": "0.185.1"
+  }
+}

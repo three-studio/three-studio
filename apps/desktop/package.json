@@ -1,0 +1,41 @@
+{
+  "name": "@three-studio/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "productName": "Three Studio",
+  "//desktopName": "Not an npm field. Electron reads it as the Linux app_id and sets WM_CLASS from it; electron-builder matches the .desktop filename and StartupWMClass to it when linux.syncDesktopName is on. Without it the two disagree and a running window is not associated with its launcher entry, so it shows a generic icon.",
+  "desktopName": "three-studio.desktop",
+  "type": "commonjs",
+  "description": "Electron shell. Stays CommonJS: sandboxed preload scripts cannot be ESM.",
+  "//homepage": "electron-builder reads metadata from this file, not from the workspace root, and the AppImage target refuses to build without a homepage. `author` fills the deb maintainer and silences a warning on every packaging run.",
+  "homepage": "https://github.com/three-studio/three-studio",
+  "author": "Three Studio contributors <three-studio@users.noreply.github.com>",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder --config electron-builder.yml",
+    "dist:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "dist:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
+    "dist:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml",
+    "//icons": "Regenerates the committed icon PNGs from build/icon.svg, so they stay reproducible rather than being nine opaque binaries. macOS needs different artwork from the other two — see the header of scripts/make-icons.sh. Author-side tool: needs librsvg (brew install librsvg), never runs in CI, which reads the committed PNGs.",
+    "icons": "bash scripts/make-icons.sh"
+  },
+  "dependencies": {
+    "@three-studio/core": "*",
+    "@three-studio/editor": "*",
+    "@three-studio/runtime": "*",
+    "esbuild": "0.28.1"
+  },
+  "//dependencies": "esbuild is a runtime dependency, not a build tool here: the app compiles user scripts while it runs. Being a dependency keeps electron-vite from bundling it, which matters because its JS API locates a native binary by a path relative to its own package.",
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "vite": "7.3.6"
+  }
+}

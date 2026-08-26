@@ -1,0 +1,72 @@
+appId: io.github.three-studio.studio
+productName: Three Studio
+directories:
+  output: release
+  buildResources: build
+# Never publish from the packaging step. Each platform is built on its own
+# runner, so three concurrent uploads would race for the same release; the
+# release workflow collects the artifacts and creates one release from them.
+publish: null
+files:
+  - out/**/*
+  - package.json
+# The prebuilt web player, which `File > Export for Web` copies. Without it a
+# packaged build can open projects but cannot export one, and `findTemplate`
+# looks here first.
+extraResources:
+  - from: ../web-template/dist
+    to: web-template
+# Icons are generated from build/icon.svg by `npm run icons`; see the header of
+# scripts/make-icons.sh for why macOS gets its own square-cornered artwork.
+# `win` names nothing because electron-builder finds `build/icons/` by itself —
+# it is the second candidate it tries, under `directories.buildResources`.
+# `linux` has to name it anyway: LinuxTargetHelper falls back to `mac.icon` when
+# `linux.icon` is unset, so setting one without the other would package the
+# macOS artwork into the deb.
+
+# `${arch}` is not decoration. electron-builder only appends the architecture
+# when several are built in the same run, and the two dmgs come from two
+# different runners — without it they would both be `Three Studio-<version>.dmg`
+# and the release job would keep whichever landed last.
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+  # Square corners on purpose: macOS 26 rounds it itself. Rounded artwork here
+  # renders as one rounded tile inside another.
+  icon: icon-mac.png
+  artifactName: three-studio-${version}-mac-${arch}.${ext}
+win:
+  target: nsis
+  artifactName: three-studio-${version}-win-${arch}.${ext}
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  # Both exist because the npm name is scoped. Left to itself
+  # electron-builder derives the executable from `@three-studio/desktop`, and
+  # sanitize-filename drops the `/` but keeps the `@` — giving
+  # `@three-studiodesktop`, which then names the binary, the Exec line and every
+  # icon under /usr/share/icons/hicolor (`Icon:` is the executable name). `@` is
+  # the scale separator in the freedesktop icon spec, so that alone loses the
+  # icon. syncDesktopName lines the .desktop filename up with
+  # `desktopName` in package.json, which is what Electron uses as its app_id:
+  # without the match GNOME shows the right icon in the launcher and a generic
+  # one on the running window. Its default flips to true in v27.
+  executableName: three-studio
+  syncDesktopName: true
+  icon: icons
+  # Without this the .desktop Comment is the package.json description, which is a
+  # note to whoever edits the Electron shell — not something to show a user
+  # hovering the launcher entry.
+  description: 3D game editor built on Three.js and Electron
+  # Required by the deb target, which reads it from `author` otherwise — and no
+  # package.json in the workspace declares one.
+  maintainer: Three Studio contributors <three-studio@users.noreply.github.com>
+  artifactName: three-studio-${version}-linux-${arch}.${ext}
+deb:
+  # Not settable under `linux`: the schema only accepts packageName on the deb
+  # target. Without it the name comes from appInfo.linuxPackageName, which
+  # substitutes the product name whenever the npm name is scoped — `Three Studio`,
+  # which a Debian package cannot be called.
+  packageName: three-studio

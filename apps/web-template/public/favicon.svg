@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!--
+    The emoji as text rather than a drawn path: the glyph comes from the
+    system font, so it stays sharp at any size and weighs nothing.
+  -->
+  <text x="50" y="52" font-size="86" text-anchor="middle" dominant-baseline="central">🕹️</text>
+</svg>

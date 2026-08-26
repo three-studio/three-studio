@@ -1,0 +1,44 @@
+{
+  "name": "@three-studio/core",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/three-studio/three-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/three-studio/three-studio.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/three-studio/three-studio/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Pure data layer: scene schema, project schema, serialization. No three, no react, no node.",
+  "keywords": ["three-studio", "scene-graph", "schema", "serialization", "gamedev"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "//sideEffects": "Deliberately absent. Both the component registry (core/src/components/index.ts) and the behaviour registry (runtime/src/Engine.ts) are populated by bare `import './x'` statements, and declaring the package side-effect-free tells every bundler it may drop exactly those — a scene then loads with components no one registered.",
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "//build": "Two passes, because the repo's TypeScript is the native compiler: it emits declarations but has no JS API, so the usual dts bundlers are out. tsc writes the type tree, esbuild bundles the JS. Bundling is not an optimisation — the sources use extensionless relative imports (moduleResolution: bundler), which no consumer's Node could resolve if they survived into the output.",
+  "//build-tsconfig": "esbuild discovers the *root* tsconfig.json on its own, and it honours `paths` — which map @three-studio/* onto sibling source. Without pointing it at the build config, whose `paths` are empty, esbuild inlines core and runtime into every bundle instead of leaving them as the dependencies they are.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --tsconfig=tsconfig.build.json --format=esm --platform=browser --target=es2023 --packages=external --outfile=dist/index.js",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

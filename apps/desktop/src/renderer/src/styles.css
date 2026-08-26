@@ -1,0 +1,10 @@
+/*
+ * The renderer's stylesheet. It is the editor's, plus a `@source` for this app.
+ *
+ * Tailwind scans the sources a stylesheet names, and @three-studio/editor names
+ * only itself — it has to, since it is published and a path reaching out of the
+ * package would resolve to nothing on a consumer's disk. Any class written in
+ * apps/desktop/src/renderer is therefore ours to declare, here.
+ */
+@import '@three-studio/editor/styles.css';
+@source '.';

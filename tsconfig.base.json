@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+
+    // TypeScript 7 removed `baseUrl`; `paths` are resolved relative to this file.
+    "paths": {
+      "@three-studio/core": ["./packages/core/src/index.ts"],
+      "@three-studio/core/*": ["./packages/core/src/*"],
+      "@three-studio/runtime": ["./packages/runtime/src/index.ts"],
+      "@three-studio/runtime/*": ["./packages/runtime/src/*"],
+      "@three-studio/editor": ["./packages/editor/src/index.ts"],
+      "@three-studio/editor/*": ["./packages/editor/src/*"]
+    }
+  }
+}

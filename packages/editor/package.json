@@ -1,0 +1,71 @@
+{
+  "name": "@three-studio/editor",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/three-studio/three-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/three-studio/three-studio.git",
+    "directory": "packages/editor"
+  },
+  "bugs": {
+    "url": "https://github.com/three-studio/three-studio/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "description": "Editor UI: React shell, dock layout, viewport tooling, inspector.",
+  "keywords": ["three-studio", "editor", "react", "threejs", "dockview", "gamedev"],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "//sideEffects": "The stylesheet is the side effect: `import '@three-studio/editor/styles.css'` must survive tree shaking.",
+  "sideEffects": ["*.css"],
+  "files": ["dist"],
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
+  },
+  "//build": "The stylesheet is compiled here rather than shipped as Tailwind source: a consumer would otherwise need Tailwind, our `@source` globs and our `@theme` block to get anything out of it.",
+  "//build-tsconfig": "esbuild discovers the *root* tsconfig.json on its own, and it honours `paths` — which map @three-studio/* onto sibling source. Without pointing it at the build config, whose `paths` are empty, esbuild inlines core and runtime into every bundle instead of leaving them as the dependencies they are.",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --tsconfig=tsconfig.build.json --format=esm --platform=browser --target=es2023 --jsx=automatic --packages=external --outfile=dist/index.js && tailwindcss -i src/styles.css -o dist/styles.css --minify",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@three-studio/core": "0.1.0",
+    "@three-studio/runtime": "0.1.0",
+    "@tweakpane/core": "2.0.5",
+    "dockview-react": "7.0.4",
+    "immer": "11.1.15",
+    "lucide-react": "1.28.0",
+    "tweakpane": "4.0.5",
+    "zustand": "5.0.14"
+  },
+  "//peerDependencies": "react, react-dom and three are peers rather than dependencies. A second React makes hooks throw; a second three makes `instanceof` fail across the boundary. Both are duplicated the moment a consumer already has their own.",
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.185.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@types/three": "0.185.3",
+    "esbuild": "0.28.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tailwindcss": "4.3.3",
+    "three": "0.185.1"
+  }
+}

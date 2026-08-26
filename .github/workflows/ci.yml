@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Called by release.yml. A local `uses: ./.github/workflows/ci.yml` runs this
+  # file at the *caller's* commit, so a release runs the suite against the tree
+  # it is about to package rather than against main — and the typecheck/test
+  # steps stay written down once.
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck & tests
+    # The suite runs under `environment: 'node'` with nothing platform specific,
+    # so one runner is enough. The packaging matrix lives in release.yml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` runs patch-package through postinstall; three's FBXLoader patch
+      # has to be applied before anything typechecks against it.
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test

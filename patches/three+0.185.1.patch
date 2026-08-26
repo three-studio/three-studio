@@ -1,0 +1,13 @@
+diff --git a/node_modules/three/examples/jsm/loaders/FBXLoader.js b/node_modules/three/examples/jsm/loaders/FBXLoader.js
+index 7a78f38..ea83a2f 100644
+--- a/node_modules/three/examples/jsm/loaders/FBXLoader.js
++++ b/node_modules/three/examples/jsm/loaders/FBXLoader.js
+@@ -1901,7 +1901,7 @@ class GeometryParser {
+ 
+ 		}
+ 
+-		if ( geoNode.LayerElementNormal ) {
++		if ( geoNode.LayerElementNormal && geoNode.LayerElementNormal[ 0 ].Normals ) {
+ 
+ 			geoInfo.normal = this.parseNormals( geoNode.LayerElementNormal[ 0 ] );
+ 

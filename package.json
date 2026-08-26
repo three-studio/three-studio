@@ -1,0 +1,57 @@
+{
+  "name": "three-studio",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "3D game editor built on Three.js and Electron",
+  "homepage": "https://github.com/three-studio/three-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/three-studio/three-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/three-studio/three-studio/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run build:web && npm run dev --workspace @three-studio/desktop",
+    "build": "npm run build:web && npm run build --workspace @three-studio/desktop",
+    "build:web": "npm run build --workspace @three-studio/web-template",
+    "//build:packages": "Publish order, not preference: the build configs clear the root `paths`, so runtime and editor resolve `@three-studio/core` the way a consumer does — through node_modules, to a dist that has to exist already.",
+    "build:packages": "npm run build --workspace @three-studio/core && npm run build --workspace @three-studio/runtime && npm run build --workspace @three-studio/editor",
+    "dist": "npm run build:web && npm run dist --workspace @three-studio/desktop",
+    "//dist": "There is deliberately no dist:all. esbuild is a runtime dependency — the packaged app compiles user scripts with it — and npm installs only the host platform's binary, so packaging --win from a Mac yields an installer that launches and then cannot compile a single script. Nothing in the build fails. Cross-platform packaging goes through .github/workflows/release.yml, one native runner per target.",
+    "dist:mac": "npm run build:web && npm run dist:mac --workspace @three-studio/desktop",
+    "dist:win": "npm run build:web && npm run dist:win --workspace @three-studio/desktop",
+    "dist:linux": "npm run build:web && npm run dist:linux --workspace @three-studio/desktop",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "//postinstall": "three's FBXLoader reads LayerElementNormal[0].Normals without checking it is there, while guarding Colors and UV in the very same function. An FBX that declares a normal layer and leaves it empty — which is what an Unreal UCX_ collision hull is — throws 'Cannot read properties of undefined (reading a)', and the throw loses the whole file rather than the one empty layer: the mesh next to it never arrives either. Still unfixed on three's dev branch at 0.185.1, so patches/three+0.185.1.patch adds the guard and this reapplies it after every install.",
+    "postinstall": "patch-package"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "patch-package": "^8.0.1",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  },
+  "//optionalDependencies": "npm does not record lightningcss's own optionalDependencies in the lockfile (npm/cli#4828), so its native binary is dropped on the next install and Tailwind fails with 'Cannot find module ../lightningcss.<platform>.node'. Declaring them here puts them in the lockfile; each carries os/cpu guards, so only the matching one is ever installed.",
+  "optionalDependencies": {
+    "lightningcss-darwin-arm64": "1.32.0",
+    "lightningcss-darwin-x64": "1.32.0",
+    "lightningcss-linux-arm64-gnu": "1.32.0",
+    "lightningcss-linux-arm64-musl": "1.32.0",
+    "lightningcss-linux-x64-gnu": "1.32.0",
+    "lightningcss-linux-x64-musl": "1.32.0",
+    "lightningcss-win32-arm64-msvc": "1.32.0",
+    "lightningcss-win32-x64-msvc": "1.32.0"
+  }
+}

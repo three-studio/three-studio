@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["vite/client"],
+
+    // The root config maps `@three-studio/*` onto sibling *source*, which would
+    // drag those files into this program and put them outside `rootDir`.
+    // Cleared, the specifier resolves the way a consumer resolves it: through
+    // node_modules to the sibling's built `dist/index.d.ts`. Hence the build
+    // order in the root `build:packages`.
+    "paths": {}
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

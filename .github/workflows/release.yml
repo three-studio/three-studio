@@ -1,0 +1,284 @@
+name: Release
+
+# One button, one field: type the tag name and everything follows from it —
+# the version, four native builds, the tag itself and the GitHub release.
+#
+# Run it from a branch. That is not a detail: `workflow_dispatch` executes the
+# workflow file *as it exists on the ref you pick*, so a run dispatched from a
+# tag can only ever use the file that tag was cut with. Dispatching from a
+# branch means a fix to this file takes effect on the very next run.
+#
+# The tag is created at the end rather than the start. Nothing is marked until
+# all four installers exist, so a run that fails leaves the name free to try
+# again instead of burning it on a commit with no release.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name, e.g. v1.4.0. Any name git accepts.'
+        required: true
+        type: string
+
+# One at a time. Two runs racing for the same tag name would have one of them
+# discover it at the push, twenty minutes in.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Tags, so a name already in use is refused here rather than after
+          # four platform builds.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check the tag name and resolve the version
+        id: version
+        # The input arrives through the environment. Splicing ${{ inputs.tag }}
+        # into the script body would put user text into the shell source.
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          tag="$INPUT_TAG"
+
+          if [ -z "$tag" ]; then
+            echo "::error::The tag name is empty."
+            exit 1
+          fi
+
+          # The only rule on the name is git's own. Words, dashes and slashes are
+          # all fine — v1.4.0, v1.4.0-rc.1 and v2026-summer all pass. What this
+          # rejects is what git cannot store: spaces, '..', '~', '^', a trailing
+          # '.lock'. Deliberately not --normalize, which would accept '/v1.0' by
+          # quietly rewriting it into something other than what gets tagged.
+          if ! git check-ref-format "refs/tags/$tag"; then
+            echo "::error::'$tag' is not a name git can use for a tag."
+            exit 1
+          fi
+
+          # Passes check-ref-format, but every later `git` call would read it as
+          # an option rather than a tag name.
+          case "$tag" in
+            -*) echo "::error::'$tag' starts with a dash."; exit 1 ;;
+          esac
+
+          # Both checks: the clone may not have every tag, and the remote is what
+          # actually refuses a duplicate push.
+          if git rev-parse --verify --quiet "refs/tags/$tag" >/dev/null \
+            || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "::error::Tag '$tag' already exists. Pick another name."
+            exit 1
+          fi
+
+          # Strict semver, on purpose: the loose form accepts '1.4.0-01', which
+          # electron-builder's own parser then rejects — a numeric prerelease
+          # identifier may not carry a leading zero.
+          semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$'
+          version="${tag#v}"
+
+          # Tag names are free-form, app versions are not: electron-builder wants
+          # semver and the nsis target refuses anything else. A tag that is not
+          # one becomes a prerelease of whatever the repository declares, so the
+          # build still runs and the artifacts still carry the tag.
+          #   v1.4.0        -> 1.4.0
+          #   v1.4.0-rc.1   -> 1.4.0-rc.1
+          #   v2026-summer  -> 0.1.0-2026-summer
+          if ! printf '%s' "$version" | grep -Eq "$semver"; then
+            base=$(node -p "require('./apps/desktop/package.json').version")
+            suffix=$(printf '%s' "$version" | tr -c '0-9A-Za-z.-' '-' | sed -E 's/-{2,}/-/g; s/\.{2,}/./g; s/^[.-]+//; s/[.-]+$//')
+            version="$base-$suffix"
+
+            # Anything left that semver still refuses — an empty suffix, a base
+            # that was itself a prerelease — gets a name that cannot fail.
+            if ! printf '%s' "$version" | grep -Eq "$semver"; then
+              version="$base-build.$GITHUB_RUN_NUMBER"
+            fi
+            echo "::notice::'$tag' is not a version number; packaging as $version."
+          fi
+
+          case "$version" in
+            *-*) prerelease=true ;;
+            *)   prerelease=false ;;
+          esac
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Releasing \`$tag\` as version \`$version\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Commit | \`$(git rev-parse --short "$GITHUB_SHA")\` |"
+            echo "| Subject | $(git log -1 --format=%s "$GITHUB_SHA") |"
+            echo "| From | \`$GITHUB_REF_NAME\` |"
+            echo "| Prerelease | $prerelease |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The typecheck and the suite, at the commit being released. A local `uses:`
+  # runs the called workflow at this run's SHA, so the steps live in ci.yml only.
+  check:
+    name: Check
+    needs: verify
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: ${{ matrix.name }}
+    needs: [verify, check]
+    runs-on: ${{ matrix.os }}
+    # The windows runner defaults to PowerShell, where `"$VERSION"` is a
+    # PowerShell variable that was never set — not the environment variable the
+    # step declares. One shell for the whole matrix, so a step written against
+    # one platform behaves the same on the other three.
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      # One platform failing should not hide whether the others build.
+      fail-fast: false
+      matrix:
+        include:
+          # A native runner per target is not a convenience. esbuild is a
+          # runtime dependency here — the packaged app compiles user scripts
+          # with it — and npm installs only the binary for the machine doing the
+          # install. Cross-compiling would ship the wrong one, and the build
+          # would stay green while Play and Export for Web broke on the user's
+          # machine.
+          - name: macOS arm64
+            slug: mac-arm64
+            os: macos-latest
+            script: dist:mac
+            arch: --arm64
+            artifacts: apps/desktop/release/*.dmg
+          - name: macOS x64
+            slug: mac-x64
+            # The Intel runner. macOS 13 was retired at the end of 2025; if this
+            # label ever fails with "no runner matching labels", drop this entry
+            # and Three Studio ships Apple Silicon only.
+            os: macos-15-intel
+            script: dist:mac
+            arch: --x64
+            artifacts: apps/desktop/release/*.dmg
+          - name: Windows x64
+            slug: win-x64
+            os: windows-latest
+            script: dist:win
+            arch: --x64
+            artifacts: apps/desktop/release/*.exe
+          - name: Linux x64
+            slug: linux-x64
+            os: ubuntu-latest
+            script: dist:linux
+            arch: --x64
+            artifacts: |
+              apps/desktop/release/*.AppImage
+              apps/desktop/release/*.deb
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The tag is the authority on the version. electron-builder reads this one
+      # package.json and nothing else, so stamping it here is what makes the tag,
+      # the About box, the installer filenames and the release agree. After
+      # `npm ci`, which would put the committed value back; before packaging.
+      # The file is never committed — the repository stays at its own version.
+      - name: Stamp the version from the tag
+        run: npm pkg set version="$VERSION" --workspace @three-studio/desktop
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+
+      # electron-builder copies this into the app's resources as `web-template`,
+      # and fails outright if the directory is missing.
+      - name: Build the web player
+        run: npm run build:web
+
+      # The workspace script, not the root one: `npm run dist:mac -- --arm64`
+      # from the root would append the flag to the `npm run ... --workspace`
+      # call rather than to electron-builder.
+      - name: Package
+        run: npm run ${{ matrix.script }} --workspace @three-studio/desktop -- ${{ matrix.arch }}
+        env:
+          # There is no Developer ID on the runner. Without this electron-builder
+          # goes looking for an identity in the keychain and fails partway
+          # through the dmg instead of producing an unsigned one.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.slug }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Tag & publish
+    # Every platform, not three of them: a release missing an installer is worse
+    # than no release, and `needs` on the whole matrix is what enforces that.
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Annotated rather than lightweight: `git describe` ignores lightweight
+      # tags by default, and the Releases UI reads the tag object.
+      #
+      # `verify` already refused a name that was taken; this is the backstop for
+      # the window between the two, and a push is what settles it either way.
+      - name: Tag the commit
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$INPUT_TAG" -m "$INPUT_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$INPUT_TAG"
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
+          PRERELEASE: ${{ needs.verify.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          ls -lh dist
+
+          # The tag was pushed a step ago, so gh attaches to it rather than
+          # creating a lightweight one of its own.
+          args=(--title "Three Studio $INPUT_TAG" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "$INPUT_TAG" dist/* "${args[@]}"
