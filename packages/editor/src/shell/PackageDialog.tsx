@@ -1,4 +1,10 @@
-import type { BuildProfile, BuildProfiles, BuildTargetId } from '@three-studio/core';
+import {
+  basePathProblem,
+  normalizeBasePath,
+  type BuildProfile,
+  type BuildProfiles,
+  type BuildTargetId,
+} from '@three-studio/core';
 import { Copy, FolderOpen, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { runExport } from '../commands/exportCommands';
@@ -115,6 +121,11 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
   // Scene ids. Empty means "the start scene only", as the profile documents.
   const scenes = profile?.scenes.length ? profile.scenes : [project.startScene];
 
+  // Read from the raw field rather than the normalized one, so the message
+  // appears while the offending character is being typed rather than on blur.
+  const baseProblem = basePathProblem(profile?.basePath ?? '');
+  const base = normalizeBasePath(profile?.basePath ?? '');
+
   return (
     <Modal
       title="Package"
@@ -157,8 +168,10 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             // No ellipsis and disabled without a folder: the button no longer
             // asks for anything, and a label promising a question it will not
             // ask is worse than a disabled one.
-            disabled={busy || !profile?.outputDir}
-            title={profile?.outputDir ? undefined : 'Choose an output folder first'}
+            disabled={busy || !profile?.outputDir || baseProblem !== null}
+            title={
+              baseProblem ?? (profile?.outputDir ? undefined : 'Choose an output folder first')
+            }
             className="rounded-sm bg-accent-dim px-3 py-1 text-2xs text-ink hover:bg-accent/40 disabled:opacity-50"
           >
             Build
@@ -198,6 +211,31 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
               onChange={(event) => patch({ title: event.target.value })}
               className={INPUT}
             />
+          </Field>
+
+          <Field
+            label="Base URL"
+            hint="Where this build will be served from. Empty keeps every URL relative to the page, which works at any address ending in a slash. Otherwise “/” for a site root, “/games/demo/” for a subdirectory, or a full origin such as “http://localhost:8080/” — which then has to send CORS headers."
+          >
+            <input
+              value={profile.basePath ?? ''}
+              placeholder="relative to the page"
+              // The raw value, not the normalized one: normalizing on every
+              // keystroke appends a slash to “/g” and puts the caret behind it,
+              // so “/games/” could not be typed. Blur is late enough.
+              onChange={(event) => patch({ basePath: event.target.value })}
+              onBlur={(event) => patch({ basePath: normalizeBasePath(event.target.value) })}
+              className={INPUT}
+            />
+            {baseProblem ? (
+              <p className="mt-1 text-2xs text-error">{baseProblem}</p>
+            ) : (
+              // The resolved example, so a missing trailing slash is visible
+              // here rather than as a folder of 404s after the export.
+              <p className="mt-1 truncate text-2xs text-ink-dim" title={`${base}assets/…`}>
+                {base === '' ? 'Resolved against the page address.' : `→ ${base}assets/…`}
+              </p>
+            )}
           </Field>
 
           <hr className="my-4 border-line" />

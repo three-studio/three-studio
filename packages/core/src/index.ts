@@ -27,10 +27,13 @@ export {
   DEFAULT_BUILD_PROFILE_ID,
   PROJECT_FILE_NAME,
   SCENES_DIR,
+  basePathProblem,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
   findScene,
+  normalizeBasePath,
+  normalizeBuildProfiles,
   resolveScene,
   sceneName,
 } from './project/schema';
