@@ -107,11 +107,25 @@ async function makeProject(): Promise<{ projectPath: string; templateRoot: strin
   const templateRoot = join(root, 'roots');
   const template = join(templateRoot, 'web-template');
   await mkdir(join(template, '_studio'), { recursive: true });
-  await writeFile(join(template, 'index.html'), '<!doctype html>', 'utf8');
+  // Shaped like what Vite emits, not a bare doctype: the base URL is written
+  // into `<head>`, and a fixture with no head would pass a test the real
+  // template fails.
+  await writeFile(join(template, 'index.html'), TEMPLATE_HTML, 'utf8');
   await writeFile(join(template, '_studio', 'player.js'), '// player', 'utf8');
 
   return { projectPath, templateRoot };
 }
+
+const TEMPLATE_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="./favicon.svg" />
+    <script type="module" crossorigin src="./_studio/player.js"></script>
+  </head>
+  <body><canvas id="view"></canvas></body>
+</html>
+`;
 
 function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
   return {
@@ -121,7 +135,7 @@ function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
     outputDir: null,
     includeAllAssets: false,
     title: 'Export Test',
-    forceWebGL: false,
+    basePath: '',
     ...overrides,
   };
 }
@@ -290,6 +304,146 @@ describe('web export', () => {
     await expect(
       exportBuild(projectPath, profile(), join(projectPath, '..', 'out-none'), []),
     ).rejects.toThrow(/has not been built/);
+  });
+});
+
+/*
+ * One `<base>` carries every URL in the build — the player bundle, the favicon,
+ * the JSON documents, the assets and the script bundle are all resolved against
+ * the document. So what this describes is the whole of the base URL feature,
+ * and the page is the only place it can be got wrong.
+ */
+describe('base URL', () => {
+  const indexOf = async (outputDir: string): Promise<string> =>
+    readFile(join(outputDir, 'index.html'), 'utf8');
+
+  it('leaves the page untouched when no base is set', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-none');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    // Byte for byte the template: an empty base is what every build produced
+    // before this field existed, and it has to stay that.
+    expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+  });
+
+  it('treats "." and "./" as no base at all', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    for (const [index, basePath] of ['.', './', '  '].entries()) {
+      const outputDir = join(projectPath, '..', `out-dot-${index}`);
+      await exportBuild(projectPath, profile({ basePath }), outputDir, [templateRoot]);
+      // All three resolve against the document, which is what the untagged page
+      // already does. A tag saying so would be a difference with no effect.
+      expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+    }
+  });
+
+  it('writes the base ahead of every URL the page carries', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-root');
+
+    await exportBuild(projectPath, profile({ basePath: '/' }), outputDir, [templateRoot]);
+
+    const html = await indexOf(outputDir);
+    expect(html).toContain('<base href="/" />');
+    // Ahead of them, because a base only governs what follows it.
+    expect(html.indexOf('<base')).toBeLessThan(html.indexOf('<link rel="icon"'));
+    expect(html.indexOf('<base')).toBeLessThan(html.indexOf('<script type="module"'));
+  });
+
+  it('adds the trailing slash a base cannot do without', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-sub');
+
+    await exportBuild(projectPath, profile({ basePath: '/games/demo' }), outputDir, [templateRoot]);
+
+    // Without it, `assets/x.png` resolves to `/games/assets/x.png` — one level
+    // too high, and every file in the build a 404.
+    expect(await indexOf(outputDir)).toContain('<base href="/games/demo/" />');
+  });
+
+  it('writes a base carrying $ literally', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-dollar');
+
+    await exportBuild(projectPath, profile({ basePath: 'https://host/v$1/' }), outputDir, [
+      templateRoot,
+    ]);
+
+    // `String.replace` reads `$1` out of a replacement *string* and writes the
+    // captured group in its place. This is the test that keeps the replacer a
+    // function.
+    expect(await indexOf(outputDir)).toContain('<base href="https://host/v$1/" />');
+  });
+
+  it('warns about an absolute base, protocol-relative included', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+
+    for (const [index, basePath] of ['http://localhost:8080', '//cdn.example.com'].entries()) {
+      const outputDir = join(projectPath, '..', `out-abs-${index}`);
+      const result = await exportBuild(projectPath, profile({ basePath }), outputDir, [
+        templateRoot,
+      ]);
+      expect(await indexOf(outputDir)).toContain(`<base href="${basePath}/" />`);
+      // Conditional, not a verdict: the exporter does not know which origin the
+      // page will be served from, so it cannot say this one is a different one.
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]).toMatch(/Access-Control-Allow-Origin/);
+    }
+  });
+
+  it('does not warn about a base that stays on one origin', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-rel');
+
+    const base = profile({ basePath: '/games/demo/' });
+    const result = await exportBuild(projectPath, base, outputDir, [
+      templateRoot,
+    ]);
+
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('refuses a base carrying a query or a fragment, before writing anything', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-query');
+
+    // Normalizing would run straight through it and produce `?v=1/`.
+    await expect(
+      exportBuild(projectPath, profile({ basePath: '/app?v=1' }), outputDir, [templateRoot]),
+    ).rejects.toThrow(/query or a fragment/);
+    // Refused before the folder was touched, so the author is not left with a
+    // half-written build to clean up.
+    await expect(readdir(outputDir)).rejects.toThrow();
+  });
+
+  it('drops the base of a previous export when the field is cleared', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-again');
+
+    await exportBuild(projectPath, profile({ basePath: '/demo/' }), outputDir, [templateRoot]);
+    expect(await indexOf(outputDir)).toContain('<base');
+
+    // The copy overwrites `index.html` with the pristine template, so nothing
+    // is left of the last base. Nothing else guarantees that.
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+  });
+
+  it('refuses a player page with no head to put the base in', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    await writeFile(
+      join(templateRoot, 'web-template', 'index.html'),
+      '<!doctype html><body></body>',
+      'utf8',
+    );
+
+    await expect(
+      exportBuild(projectPath, profile({ basePath: '/' }), join(projectPath, '..', 'out-nohead'), [
+        templateRoot,
+      ]),
+    ).rejects.toThrow(/no <head>/);
   });
 });
 

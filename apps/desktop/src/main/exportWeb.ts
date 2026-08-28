@@ -7,7 +7,9 @@ import {
   findScene,
   BUILD_FORMAT_VERSION,
   type AssetSettings,
+  basePathProblem,
   deserializeScene,
+  normalizeBasePath,
   serializeScene,
   type BuildProfile,
   type ComponentDoc,
@@ -69,6 +71,13 @@ export async function exportBuild(
     }
   }
 
+  // Before anything is written: a base that cannot be expressed is a typo in
+  // the profile, and finding out after the assets have been copied costs the
+  // author a whole export to learn one line.
+  const problem = basePathProblem(profile.basePath ?? '');
+  if (problem) throw new AssetError(problem);
+  const base = normalizeBasePath(profile.basePath ?? '');
+
   const template = await findTemplate(searchRoots);
   const warnings: string[] = [];
 
@@ -108,7 +117,23 @@ export async function exportBuild(
 
   report(0.25, 'Copying the player');
   await mkdir(outputDir, { recursive: true });
+  // The copy is what makes the base removable: `index.html` is overwritten with
+  // the pristine template on every export, so re-exporting a folder with an
+  // empty base leaves no tag behind from the last one.
   await cp(template, outputDir, { recursive: true });
+  if (base !== '') {
+    await applyBase(join(outputDir, 'index.html'), base);
+    // Any absolute base, `//host/` included. The exporter does not know which
+    // origin the page will be served from, so it cannot tell whether this is a
+    // different one — hence a conditional sentence rather than a verdict.
+    if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(base)) {
+      warnings.push(
+        `This build is based at ${base}. If the page is served from a different origin, that ` +
+          `server has to send Access-Control-Allow-Origin for build.json, the scenes, assets/ ` +
+          `and scripts.mjs — without it the page loads and stays black.`,
+      );
+    }
+  }
 
   // --- assets ---------------------------------------------------------------
   // Unreal's "cook everything in the project" against cooking only what is
@@ -296,6 +321,40 @@ function pick<T>(source: Readonly<Record<string, T>>, ids: ReadonlySet<string>):
     if (value) picked[id] = value;
   }
   return picked;
+}
+
+/**
+ * Points the copied page at the URL the build will be served from.
+ *
+ * One `<base>` rather than a rewrite of every URL: the page, the player bundle,
+ * the JSON documents beside it, every asset and the script bundle are all
+ * resolved against the document, so a single tag moves them together and cannot
+ * fall out of step with a path added later. It goes first in `<head>`, because
+ * it only governs the URLs that come after it.
+ */
+async function applyBase(indexPath: string, base: string): Promise<void> {
+  const html = await readFile(indexPath, 'utf8');
+  if (!/<head[^>]*>/i.test(html)) {
+    throw new AssetError('The web player page has no <head>, so it cannot be given a base URL.');
+  }
+  // A replacer function, not a replacement string: `String.replace` reads `$&`,
+  // "$`", `$1` and friends out of a string, so a base carrying `$1` would be
+  // written back with a captured group in place of itself.
+  const tag = `<base href="${escapeAttribute(base)}" />`;
+  const tagged = html.replace(
+    /<head([^>]*)>/i,
+    (_match, attributes: string) => `<head${attributes}>\n    ${tag}`,
+  );
+  await writeFile(indexPath, tagged, 'utf8');
+}
+
+/**
+ * Second net behind `basePathProblem`, which already refuses the characters
+ * that would need it. Kept because the value lands in markup either way, and a
+ * validator and an emitter that trust each other are how injections happen.
+ */
+function escapeAttribute(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
 }
 
 /**

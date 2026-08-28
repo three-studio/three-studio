@@ -185,6 +185,20 @@ export interface BuildProfile {
   includeAllAssets: boolean;
   /** Window title and document title of the produced page. */
   title: string;
+  /**
+   * Where the build will be served from, or `''` for "relative to the page".
+   *
+   * Written into a `<base href>` on the exported page, so it governs everything
+   * at once: the player bundle, the favicon, the JSON documents beside them,
+   * every asset and the compiled script bundle are all resolved against the
+   * document, and one tag moves all of them together.
+   *
+   * Empty is the default and leaves the page exactly as the template ships it,
+   * which is right anywhere the address ends in a slash. A value is what fixes
+   * the case it does not: served at `/games/demo` with no redirect to
+   * `/games/demo/`, every relative URL resolves one level too high.
+   */
+  basePath: string;
 }
 
 export interface BuildProfiles {
@@ -206,9 +220,73 @@ export function createBuildProfiles(projectName: string): BuildProfiles {
         outputDir: null,
         includeAllAssets: false,
         title: projectName,
+        basePath: '',
       },
     },
   };
+}
+
+/**
+ * Fills profiles read off disk with the fields that did not exist when they
+ * were written.
+ *
+ * The same shape as the settings sections above: through the type's own
+ * factory, so adding a build option stays a change to `createBuildProfiles`
+ * rather than a migration. A profile from before `basePath` gets `''`, which is
+ * exactly the behaviour it was exported against.
+ */
+export function normalizeBuildProfiles(
+  build: BuildProfiles | undefined,
+  projectName: string,
+): BuildProfiles {
+  const fresh = createBuildProfiles(projectName);
+  if (!build) return fresh;
+  const defaults = fresh.profiles[DEFAULT_BUILD_PROFILE_ID]!;
+  return {
+    active: build.active,
+    profiles: Object.fromEntries(
+      Object.entries(build.profiles).map(([id, profile]) => [id, { ...defaults, ...profile }]),
+    ),
+  };
+}
+
+/**
+ * What `<base href>` will carry, or `''` when the page should get no tag.
+ *
+ * The trailing slash is not cosmetic: `/games/demo` resolves `assets/x.png` to
+ * `/games/assets/x.png`, one level too high. It is added rather than demanded
+ * of the author — Vite's own `base` enforces the same rule for the same reason.
+ *
+ * `.`, `./` and `''` all say "relative to the document", which is what the page
+ * already does with no tag at all. They collapse to `''` so the output stays
+ * byte for byte what it was before this field existed, and so the dialog can
+ * show the author that the three are one thing.
+ */
+export function normalizeBasePath(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed === '' || trimmed === '.' || trimmed === './') return '';
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+}
+
+/**
+ * Why this base cannot be written, or `null` when it can.
+ *
+ * `?` and `#` are refused because normalizing would run straight through them:
+ * `http://host/app?v=1` would become `http://host/app?v=1/`, a request for a
+ * path that does not exist. Quotes, angle brackets and whitespace are refused
+ * because the value ends up inside an HTML attribute — escaped, they would
+ * produce a quietly broken URL instead of a message the author can read.
+ */
+export function basePathProblem(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  if (trimmed.includes('?') || trimmed.includes('#')) {
+    return 'A base URL cannot carry a query or a fragment; it is a folder, not a request.';
+  }
+  if (/["'<>`\s]/.test(trimmed)) {
+    return 'A base URL cannot contain spaces, quotes or angle brackets.';
+  }
+  return null;
 }
 
 /** What the launcher lists. Kept small so the recents file stays cheap to read. */
