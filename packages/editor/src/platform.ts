@@ -18,3 +18,20 @@ export const shiftKey = isMac ? '⇧' : 'Shift+';
 export function hasModifier(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
   return isMac ? event.metaKey : event.ctrlKey;
 }
+
+/**
+ * The event landed in a text field, so the user is writing rather than acting.
+ *
+ * Both the shortcut layer and the fly camera have to ask this, and they have to
+ * agree: a divergence means a key that switches a tool while it also types a
+ * letter. It lives here rather than in either of them because `useShortcuts`
+ * reaches for the viewport and the viewport would then reach back.
+ */
+export function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement
+  );
+}

@@ -1,4 +1,6 @@
+import { PressedKeys } from '@three-studio/runtime';
 import { Euler, MathUtils, PerspectiveCamera, Spherical, Vector3 } from 'three/webgpu';
+import { hasModifier, isTypingTarget } from '../platform';
 
 /** `KeyboardEvent.code` values, so the bindings survive AZERTY and QWERTZ. */
 const FORWARD_KEYS = ['KeyW', 'ArrowUp'];
@@ -7,12 +9,44 @@ const LEFT_KEYS = ['KeyA', 'ArrowLeft'];
 const RIGHT_KEYS = ['KeyD', 'ArrowRight'];
 const DOWN_KEYS = ['KeyQ'];
 const UP_KEYS = ['KeyE'];
+const BOOST_KEYS = ['ShiftLeft', 'ShiftRight'];
 
 const MIN_SPEED = 0.25;
 const MAX_SPEED = 400;
 const HALF_PI = Math.PI / 2;
 
 type Mode = 'idle' | 'look' | 'pan' | 'orbit';
+
+/** What `flyAxes` reads, so the decision can be taken without a keyboard. */
+export interface KeyQuery {
+  anyDown(codes: readonly string[]): boolean;
+}
+
+/** One step per axis, in camera space: forward/right/up, each −1, 0 or 1. */
+export interface FlyAxes {
+  forward: number;
+  right: number;
+  up: number;
+}
+
+/**
+ * Which way the held keys ask the camera to go.
+ *
+ * Opposite keys cancel rather than one winning, so a key that is somehow still
+ * held cannot silently reverse its partner — it stops the axis instead, which
+ * is the failure the user can see and report.
+ */
+export function flyAxes(keys: KeyQuery): FlyAxes {
+  return {
+    forward: axis(keys, FORWARD_KEYS, BACK_KEYS),
+    right: axis(keys, RIGHT_KEYS, LEFT_KEYS),
+    up: axis(keys, UP_KEYS, DOWN_KEYS),
+  };
+}
+
+function axis(keys: KeyQuery, positive: readonly string[], negative: readonly string[]): number {
+  return (keys.anyDown(positive) ? 1 : 0) - (keys.anyDown(negative) ? 1 : 0);
+}
 
 /**
  * Editor camera navigation, modelled on Unity's scene view.
@@ -30,10 +64,12 @@ type Mode = 'idle' | 'look' | 'pan' | 'orbit';
  * | Middle button drag     | Pan                                         |
  * | Alt + left button drag | Orbit around the pivot                      |
  * | F                      | Frame the pivot                             |
+ *
+ * The viewport is a singleton that outlives every panel, so nothing here may
+ * depend on being rebuilt to recover: `mode` has a single writer, and it drops
+ * the held keys and the pointer on the way out of every gesture.
  */
 export class FlyControls {
-  enabled = true;
-
   /** Metres per second. Persisted across sessions by the caller if desired. */
   moveSpeed = 10;
   boostMultiplier = 4;
@@ -49,8 +85,9 @@ export class FlyControls {
 
   private readonly camera: PerspectiveCamera;
   private readonly dom: HTMLElement;
-  private readonly pressed = new Set<string>();
+  private readonly keys = new PressedKeys();
 
+  private active = true;
   private mode: Mode = 'idle';
   private pointerId: number | null = null;
   private pointerInside = false;
@@ -83,6 +120,7 @@ export class FlyControls {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('blur', this.onBlur);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
@@ -98,8 +136,28 @@ export class FlyControls {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
-    this.endInteraction();
+    this.setMode('idle');
+    this.releasePointer();
+    this.keys.clear();
+  }
+
+  get enabled(): boolean {
+    return this.active;
+  }
+
+  /**
+   * Turning the camera off ends the gesture rather than freezing it.
+   *
+   * Play and the gizmo both switch it off mid-press. Leaving `mode` and the
+   * held keys as they were meant the camera resumed a gesture the user had
+   * long finished, the first time anything switched it back on.
+   */
+  setEnabled(value: boolean): void {
+    if (this.active === value) return;
+    this.active = value;
+    if (!value) this.setMode('idle');
   }
 
   /** True while the right button is held, which is when WASD is live. */
@@ -109,24 +167,24 @@ export class FlyControls {
 
   /** Advance the fly movement. Call once per frame with the frame delta. */
   update(delta: number): void {
-    if (!this.enabled || this.mode !== 'look') return;
+    if (!this.active || this.mode !== 'look') return;
 
-    const boost = this.pressed.has('ShiftLeft') || this.pressed.has('ShiftRight');
+    const boost = this.keys.anyDown(BOOST_KEYS);
     const distance = this.moveSpeed * (boost ? this.boostMultiplier : 1) * delta;
     if (distance === 0) return;
+
+    const axes = flyAxes(this.keys);
+    if (axes.forward === 0 && axes.right === 0 && axes.up === 0) return;
 
     this.camera.getWorldDirection(this.forward);
     this.right.crossVectors(this.forward, this.up).normalize();
 
-    const move = this.offset.set(0, 0, 0);
-    if (anyPressed(this.pressed, FORWARD_KEYS)) move.addScaledVector(this.forward, 1);
-    if (anyPressed(this.pressed, BACK_KEYS)) move.addScaledVector(this.forward, -1);
-    if (anyPressed(this.pressed, RIGHT_KEYS)) move.addScaledVector(this.right, 1);
-    if (anyPressed(this.pressed, LEFT_KEYS)) move.addScaledVector(this.right, -1);
-    if (anyPressed(this.pressed, UP_KEYS)) move.addScaledVector(this.up, 1);
-    if (anyPressed(this.pressed, DOWN_KEYS)) move.addScaledVector(this.up, -1);
+    const move = this.offset
+      .set(0, 0, 0)
+      .addScaledVector(this.forward, axes.forward)
+      .addScaledVector(this.right, axes.right)
+      .addScaledVector(this.up, axes.up);
 
-    if (move.lengthSq() === 0) return;
     move.normalize().multiplyScalar(distance);
     this.camera.position.add(move);
     this.pivot.add(move);
@@ -141,6 +199,31 @@ export class FlyControls {
     this.pivot.copy(target);
     this.camera.getWorldDirection(this.forward);
     this.camera.position.copy(target).addScaledVector(this.forward, -distance);
+  }
+
+  /**
+   * The only writer of `mode`, and the only reason the camera can be trusted
+   * after a gesture the browser ended without telling us.
+   *
+   * A held key belongs to the gesture it was pressed in, so every transition
+   * drops them all. `keyup` is not a guarantee — macOS withholds it for the
+   * whole time Cmd is down, and a lost pointer lock takes the rest of the
+   * gesture with it — and this is what keeps a missed one from outliving the
+   * gesture and flying the camera on its own.
+   */
+  private setMode(next: Mode): void {
+    if (this.mode === next) return;
+    this.mode = next;
+    this.keys.clear();
+    if (next === 'idle') this.releasePointer();
+  }
+
+  private releasePointer(): void {
+    if (this.pointerId !== null && this.dom.hasPointerCapture(this.pointerId)) {
+      this.dom.releasePointerCapture(this.pointerId);
+    }
+    if (document.pointerLockElement === this.dom) document.exitPointerLock();
+    this.pointerId = null;
   }
 
   private applyLook(): void {
@@ -160,26 +243,32 @@ export class FlyControls {
     this.pointerInside = true;
   };
 
+  /**
+   * Hover decides where the wheel goes, and nothing else.
+   *
+   * It used to clear the held keys too, which was the accidental reset the
+   * whole bug hid behind: closing the Scene tab removes the canvas, the
+   * browser fires `pointerleave` on it, and that was the one path that
+   * unstuck the camera.
+   */
   private readonly onPointerLeave = () => {
     this.pointerInside = false;
-    this.pressed.clear();
   };
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (!this.enabled || this.mode !== 'idle') return;
+    if (!this.active || this.mode !== 'idle') return;
 
-    if (event.button === 2) this.mode = 'look';
-    else if (event.button === 1) this.mode = 'pan';
-    else if (event.button === 0 && event.altKey) this.mode = 'orbit';
-    else return;
+    const next = modeForButton(event);
+    if (next === null) return;
 
     event.preventDefault();
+    this.setMode(next);
     this.pointerId = event.pointerId;
     this.dom.setPointerCapture(event.pointerId);
     // Focus so the viewport, not whatever was clicked last, receives key events.
     this.dom.focus({ preventScroll: true });
 
-    if (this.mode === 'look') {
+    if (next === 'look') {
       // Flying needs unbounded mouse travel, so the cursor is locked rather than
       // merely captured. The request rejects if the pointer was unlocked moments
       // ago (browser rate limit); look then falls back to captured movement.
@@ -232,11 +321,11 @@ export class FlyControls {
 
   private readonly onPointerUp = (event: PointerEvent) => {
     if (event.pointerId !== this.pointerId) return;
-    this.endInteraction();
+    this.setMode('idle');
   };
 
   private readonly onWheel = (event: WheelEvent) => {
-    if (!this.enabled || !this.pointerInside) return;
+    if (!this.active || !this.pointerInside) return;
     event.preventDefault();
 
     if (this.mode === 'look') {
@@ -253,12 +342,14 @@ export class FlyControls {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    if (!this.enabled || !this.pointerInside) return;
-    if (isTypingTarget(event.target)) return;
+    if (!this.active || isTypingTarget(event.target)) return;
 
-    this.pressed.add(event.code);
-
-    if (event.code === 'KeyF' && this.mode === 'idle') {
+    if (
+      event.code === 'KeyF' &&
+      this.mode === 'idle' &&
+      this.pointerInside &&
+      !hasModifier(event)
+    ) {
       // Until a selection exists (M4) the pivot is the only focus target, so F
       // recentres the view on it.
       event.preventDefault();
@@ -266,46 +357,46 @@ export class FlyControls {
       return;
     }
 
+    // The keys are only ever read while flying, so that is exactly how long a
+    // press is worth remembering. Recording them on hover instead meant a
+    // press could be recorded in one gesture and spent in the next, and that
+    // hover — not the gesture — decided whether a new press was seen at all.
+    if (this.mode !== 'look') return;
+
+    this.keys.down(event);
     // Movement keys must not scroll or trigger browser shortcuts while flying.
-    if (this.mode === 'look') event.preventDefault();
+    event.preventDefault();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
-    this.pressed.delete(event.code);
+    this.keys.up(event);
   };
 
   /** Losing the window with keys held would otherwise leave the camera drifting. */
   private readonly onBlur = () => {
-    this.pressed.clear();
-    this.endInteraction();
+    this.setMode('idle');
+    this.keys.clear();
+  };
+
+  /** A hidden tab stops delivering key events, so it cannot end a gesture. */
+  private readonly onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') this.setMode('idle');
   };
 
   /** Escape releases the lock without a pointerup, so stop navigating too. */
   private readonly onPointerLockChange = () => {
     if (this.mode === 'look' && document.pointerLockElement !== this.dom) {
-      this.endInteraction();
+      this.setMode('idle');
     }
   };
-
-  private endInteraction(): void {
-    if (this.pointerId !== null && this.dom.hasPointerCapture(this.pointerId)) {
-      this.dom.releasePointerCapture(this.pointerId);
-    }
-    if (document.pointerLockElement === this.dom) document.exitPointerLock();
-    this.pointerId = null;
-    this.mode = 'idle';
-  }
 }
 
-function anyPressed(pressed: ReadonlySet<string>, codes: readonly string[]): boolean {
-  return codes.some((code) => pressed.has(code));
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement
-  );
+function modeForButton(event: {
+  button: number;
+  altKey: boolean;
+}): Exclude<Mode, 'idle'> | null {
+  if (event.button === 2) return 'look';
+  if (event.button === 1) return 'pan';
+  if (event.button === 0 && event.altKey) return 'orbit';
+  return null;
 }
