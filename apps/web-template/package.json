@@ -1,6 +1,6 @@
 {
   "name": "@three-studio/web-template",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,8 +9,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@three-studio/core": "0.1.0",
-    "@three-studio/runtime": "0.1.0",
+    "@three-studio/core": "0.2.0",
+    "@three-studio/runtime": "0.2.0",
     "three": "0.185.1"
   },
   "devDependencies": {

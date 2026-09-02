@@ -117,6 +117,14 @@ export class EditorViewport {
    * loop would hand the handles back mid-drag.
    */
   private navigating = false;
+  /**
+   * Removes every listener this class puts on the canvas and the window.
+   *
+   * A signal rather than four stored handlers: the four below were installed as
+   * anonymous closures and never removed, which is invisible while the canvas
+   * is a singleton and a leak the moment it is not.
+   */
+  private readonly listeners = new AbortController();
   private readonly resizeObserver: ResizeObserver;
   private container: HTMLElement | null = null;
   /** Last size handed to `setSize`, so an unchanged one can be skipped. */
@@ -360,7 +368,7 @@ export class EditorViewport {
       // The editor camera and gizmo share this canvas. Left running they would
       // fight the game for the pointer — and the right button would hand the
       // pointer lock to the editor's fly camera mid-play.
-      this.controls.enabled = false;
+      this.controls.setEnabled(false);
       this.gizmo.setEnabled(false);
       useViewportStore.getState().setPlayWarnings([...engine.warnings]);
       // The engine needs the viewport aspect; the frame loop hands it over on
@@ -380,7 +388,7 @@ export class EditorViewport {
     this.host?.dispose();
     this.host = null;
     this.engine = null;
-    this.controls.enabled = true;
+    this.controls.setEnabled(true);
     useViewportStore.getState().setPlayWarnings([]);
 
     if (this.playSnapshot) {
@@ -408,6 +416,7 @@ export class EditorViewport {
 
   dispose(): void {
     this.disposed = true;
+    this.listeners.abort();
     this.unsubscribePlayState?.();
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on
@@ -611,7 +620,11 @@ export class EditorViewport {
     this.syncDocument();
     // `raw`, not the simulated delta: flying the editor camera is not part of
     // the simulation, and a timescale of zero must not nail it to the spot.
-    this.controls.update(raw);
+    //
+    // Only while the canvas is in a panel: the loop keeps running once it is
+    // detached, and integrating a gesture nobody can see is how a stuck key
+    // used to travel while the Scene tab was closed.
+    if (this.container) this.controls.update(raw);
     this.syncSelection();
     // The ear rides the editor camera while nothing is running, which is what
     // makes an audition of a positional source worth anything: fly toward the
@@ -689,25 +702,45 @@ export class EditorViewport {
    * for the lock transition.
    */
   private installPointerArbitration(): void {
-    this.canvas.addEventListener('pointerdown', (event) => {
-      if (this.engine) return;
+    const { signal } = this.listeners;
 
-      // Right, middle and Alt+left move the camera. The gizmo has no business
-      // with any of them, and letting it capture the pointer is what threw.
-      this.navigating = event.button === 2 || event.button === 1 || (event.button === 0 && event.altKey);
-      if (this.navigating) this.gizmo.setEnabled(false);
+    this.canvas.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (this.engine) return;
 
-      // The other direction: a press that starts on a gizmo handle must not
-      // also move the camera.
-      this.controls.enabled = !this.gizmo.isEngaged;
-      this.pointerDownAt = { x: event.clientX, y: event.clientY, button: event.button };
-    });
+        // Right, middle and Alt+left move the camera. The gizmo has no business
+        // with any of them, and letting it capture the pointer is what threw.
+        this.navigating =
+          event.button === 2 || event.button === 1 || (event.button === 0 && event.altKey);
+        if (this.navigating) this.gizmo.setEnabled(false);
 
+        // The other direction: a press that starts on a gizmo handle must not
+        // also move the camera.
+        this.controls.setEnabled(!this.gizmo.isEngaged);
+        this.pointerDownAt = { x: event.clientX, y: event.clientY, button: event.button };
+      },
+      { signal },
+    );
+
+    /**
+     * The press latches `navigating` and may switch the camera off; only this
+     * unlatches both, so it has to run for every way a press can end.
+     *
+     * It used to listen on the canvas, which is not where a release
+     * necessarily lands: dockview parks each panel in its own render overlay
+     * and reparents it, and a reparent drops the pointer capture that was
+     * bringing the release back. A release the canvas never saw left the
+     * camera disabled and the gizmo hidden with no path back — the state the
+     * user could only clear by closing the Scene tab.
+     */
     const endGesture = () => {
       this.navigating = false;
+      if (!this.engine) this.controls.setEnabled(true);
     };
-    this.canvas.addEventListener('pointerup', endGesture);
-    this.canvas.addEventListener('pointercancel', endGesture);
+    window.addEventListener('pointerup', endGesture, { signal });
+    window.addEventListener('pointercancel', endGesture, { signal });
+    this.canvas.addEventListener('lostpointercapture', endGesture, { signal });
   }
 
   /**
@@ -715,39 +748,41 @@ export class EditorViewport {
    * anything else is a camera drag, and the gizmo takes priority over both.
    */
   private installSelectionHandlers(): void {
-    this.canvas.addEventListener('pointerup', (event) => {
-      const down = this.pointerDownAt;
-      this.pointerDownAt = null;
-      // Clicking in the game view captures the mouse; it must not also select.
-      if (this.engine) return;
+    this.canvas.addEventListener(
+      'pointerup',
+      (event) => {
+        const down = this.pointerDownAt;
+        this.pointerDownAt = null;
+        // Clicking in the game view captures the mouse; it must not also select.
+        if (this.engine) return;
 
-      this.controls.enabled = true;
+        if (!down || down.button !== 0 || event.button !== 0) return;
+        if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
+        if (this.gizmo.isEngaged || event.altKey) return;
 
-      if (!down || down.button !== 0 || event.button !== 0) return;
-      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
-      if (this.gizmo.isEngaged || event.altKey) return;
-
-      const entityId = this.picker.pick(
-        event.clientX,
-        event.clientY,
-        this.canvas.getBoundingClientRect(),
-        this.camera,
-      );
-
-      const store = useEditorStore.getState();
-      if (entityId === undefined) {
-        store.clearSelection();
-      } else if (event.shiftKey || event.metaKey || event.ctrlKey) {
-        const selection = store.selection;
-        store.setSelection(
-          selection.includes(entityId)
-            ? selection.filter((id) => id !== entityId)
-            : [...selection, entityId],
+        const entityId = this.picker.pick(
+          event.clientX,
+          event.clientY,
+          this.canvas.getBoundingClientRect(),
+          this.camera,
         );
-      } else {
-        store.setSelection([entityId]);
-      }
-    });
+
+        const store = useEditorStore.getState();
+        if (entityId === undefined) {
+          store.clearSelection();
+        } else if (event.shiftKey || event.metaKey || event.ctrlKey) {
+          const selection = store.selection;
+          store.setSelection(
+            selection.includes(entityId)
+              ? selection.filter((id) => id !== entityId)
+              : [...selection, entityId],
+          );
+        } else {
+          store.setSelection([entityId]);
+        }
+      },
+      { signal: this.listeners.signal },
+    );
   }
 
   private reportStats(time: number): void {

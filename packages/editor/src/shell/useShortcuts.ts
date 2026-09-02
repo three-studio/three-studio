@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { commandById, type CommandId } from '../commands/registry';
-import { hasModifier } from '../platform';
+import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { topOverlay } from '../state/overlayStore';
 import { peekViewport } from '../viewport/viewportHost';
@@ -46,15 +46,6 @@ export function commandShortcut(key: string, shiftKey: boolean): CommandAction {
     default:
       return null;
   }
-}
-
-function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return (
-    target.isContentEditable ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement
-  );
 }
 
 /** What the decision below needs, so it can be taken without a `KeyboardEvent`. */

@@ -12,7 +12,7 @@
  * and `isStopped` — and a star re-export would silently drop one side of each.
  */
 
-export const RUNTIME_VERSION = '0.1.0';
+export const RUNTIME_VERSION = '0.2.0';
 
 /* The engine loop and the scene it drives. */
 export { Engine, isPerspective } from './Engine';
@@ -77,4 +77,5 @@ export type { ScriptClass } from './scripting/ScriptHost';
 
 /* Input and the built-in character controller. */
 export { Input } from './input/Input';
+export { PressedKeys, type KeyEventLike } from './input/PressedKeys';
 export { PlayerController } from './controllers/PlayerController';

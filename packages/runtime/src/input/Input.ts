@@ -1,3 +1,5 @@
+import { PressedKeys } from './PressedKeys';
+
 /**
  * The browser's own rate limit on pointer lock, which is not an error.
  *
@@ -18,7 +20,7 @@ function isPointerLockCooldown(cause: unknown): boolean {
  * export, where none of the editor exists.
  */
 export class Input {
-  private readonly pressed = new Set<string>();
+  private readonly pressed = new PressedKeys();
   private mouseX = 0;
   private mouseY = 0;
   private wheel = 0;
@@ -51,7 +53,7 @@ export class Input {
   }
 
   isAnyDown(...codes: readonly string[]): boolean {
-    return codes.some((code) => this.pressed.has(code));
+    return this.pressed.anyDown(codes);
   }
 
   get pointerLocked(): boolean {
@@ -80,14 +82,14 @@ export class Input {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    this.pressed.add(event.code);
+    this.pressed.down(event);
     // Space and the arrows scroll the page otherwise, which is visible as the
     // whole canvas jumping while the player jumps.
     if (event.code === 'Space' || event.code.startsWith('Arrow')) event.preventDefault();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
-    this.pressed.delete(event.code);
+    this.pressed.up(event);
   };
 
   /** Losing focus mid-key would leave the player running forever. */
