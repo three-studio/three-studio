@@ -109,6 +109,59 @@ afterEach(() => {
 });
 
 describe('the editor audition', () => {
+  /*
+   * The mixer builds its root before anything else, so the root — the node
+   * `setMasterVolume` acts on, and the one that keeps the audition out of the
+   * game's mix (ADR-4) — is the first gain the context ever made.
+   */
+  const ROOT_GAIN = 0;
+
+  it('carries a level set before the engine existed', async () => {
+    const { context, preview } = harness();
+    // Which is the ordinary case, not an edge: the slider lives in a toolbar
+    // that is there from the moment the window opens, and the engine is only
+    // built on the first audition. Without the replay, turning auditions down
+    // and then playing one plays it at full volume.
+    preview.volume = 0.4;
+    expect(context.gains).toHaveLength(0);
+
+    preview.playClip(CLIP);
+    await flush();
+
+    expect(context.gains[ROOT_GAIN]?.gain.target).toBeCloseTo(0.4);
+  });
+
+  it('applies a level set mid-audition without restarting the voice', async () => {
+    const { context, frames, preview } = harness();
+    preview.playClip(CLIP);
+    await flush();
+    frames.run(2);
+
+    const sources = context.sources.length;
+    preview.volume = 0.25;
+
+    expect(context.gains[ROOT_GAIN]?.gain.target).toBeCloseTo(0.25);
+    expect(preview.playing).toBe(true);
+    expect(context.sources).toHaveLength(sources);
+  });
+
+  /*
+   * `setMasterVolume` clamps with `Math.max(0, v)`, and `Math.max(0, NaN)` is
+   * `NaN`. A root gain at `NaN` silences everything while every comparison
+   * against it answers `false` — the property that made `spatialBlend: NaN` so
+   * expensive to find in phase 7. Refused at the boundary, as there.
+   */
+  it('refuses a level that is not a number', async () => {
+    const { context, preview } = harness();
+    preview.playClip(CLIP);
+    await flush();
+
+    preview.volume = Number.NaN;
+
+    expect(preview.volume).toBe(1);
+    expect(context.gains[ROOT_GAIN]?.gain.target).toBe(1);
+  });
+
   it('goes on advancing after a pause and a resume', async () => {
     const { frames, preview } = harness();
     preview.playClip(CLIP);

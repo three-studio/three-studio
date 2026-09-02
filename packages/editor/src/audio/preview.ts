@@ -55,6 +55,8 @@ export class AudioPreview {
   private source: { entityId: string; componentId: string; object: Object3D | null } | null = null;
   /** Where the ear last was, for an engine that does not exist yet. */
   private pose: [Vec3Tuple, Vec3Tuple, Vec3Tuple] | null = null;
+  /** How loud auditions are, for an engine that does not exist yet either. */
+  private level = 1;
 
   constructor(options: AudioPreviewOptions = {}) {
     this.context = options.context ?? editorAudioContext;
@@ -69,6 +71,29 @@ export class AudioPreview {
 
   get paused(): boolean {
     return this.voice?.state === 'paused';
+  }
+
+  /**
+   * How loud the editor auditions, and only the editor.
+   *
+   * Its own level and not the game's, which is the whole of ADR-4: two engines
+   * on one context, a gain node each, so turning auditions down while working
+   * cannot follow the project into play mode or into a build.
+   *
+   * Non-finite refused at the boundary rather than passed on. `setMasterVolume`
+   * clamps with `Math.max(0, v)`, and `Math.max(0, NaN)` is `NaN` — which then
+   * silences everything with nothing to show for it, because every comparison
+   * against it answers `false`. The same argument `setComponentNestedField`
+   * makes about the document, applied to a value that never reaches the file.
+   */
+  get volume(): number {
+    return this.level;
+  }
+
+  set volume(value: number) {
+    if (!Number.isFinite(value)) return;
+    this.level = Math.min(1, Math.max(0, value));
+    this.engine?.setMasterVolume(this.level);
   }
 
   /** The asset currently being auditioned, so a UI can light the right row. */
@@ -191,6 +216,11 @@ export class AudioPreview {
     // metres away therefore started at full volume and dropped, which sounds
     // exactly like a bug in the falloff.
     if (this.pose) this.engine.setListener(...this.pose);
+    // And the level for the same reason: the slider is in a toolbar that exists
+    // from the moment the window opens, and the engine is only built on the
+    // first audition. Without this, turning auditions down and then playing one
+    // plays it at full volume.
+    this.engine.setMasterVolume(this.level);
     return this.engine;
   }
 
