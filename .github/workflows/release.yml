@@ -95,7 +95,7 @@ jobs:
           # build still runs and the artifacts still carry the tag.
           #   v1.4.0        -> 1.4.0
           #   v1.4.0-rc.1   -> 1.4.0-rc.1
-          #   v2026-summer  -> 0.1.0-2026-summer
+          #   v2026-summer  -> 0.2.0-2026-summer
           if ! printf '%s' "$version" | grep -Eq "$semver"; then
             base=$(node -p "require('./apps/desktop/package.json').version")
             suffix=$(printf '%s' "$version" | tr -c '0-9A-Za-z.-' '-' | sed -E 's/-{2,}/-/g; s/\.{2,}/./g; s/^[.-]+//; s/[.-]+$//')

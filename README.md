@@ -182,8 +182,8 @@ so a fix to the release process could never apply to the release that needed it.
 The tag is the authority on the version: the release run stamps it into `apps/desktop/package.json` on
 the runner, the one file electron-builder reads. `v1.4.0` therefore gives an app that reports `1.4.0`
 and installers named `three-studio-1.4.0-…`, with no version to bump by hand. Nothing is committed —
-the version in the repository stays `0.1.0` and only serves as the base for a tag that is not a version
-number, which packages as a prerelease of it (`v2026-summer` → `0.1.0-2026-summer`).
+the version in the repository stays `0.2.0` and only serves as the base for a tag that is not a version
+number, which packages as a prerelease of it (`v2026-summer` → `0.2.0-2026-summer`).
 
 ### Headless smoke run
 

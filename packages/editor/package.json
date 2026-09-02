@@ -1,6 +1,6 @@
 {
   "name": "@three-studio/editor",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/three-studio/three-studio#readme",
@@ -42,8 +42,8 @@
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
-    "@three-studio/core": "0.1.0",
-    "@three-studio/runtime": "0.1.0",
+    "@three-studio/core": "0.2.0",
+    "@three-studio/runtime": "0.2.0",
     "@tweakpane/core": "2.0.5",
     "dockview-react": "7.0.4",
     "immer": "11.1.15",
