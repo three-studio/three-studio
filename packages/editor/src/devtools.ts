@@ -1,3 +1,4 @@
+import { studioTime } from '@three-studio/runtime';
 import { audioPreview } from './audio/preview';
 import { useAssetStore } from './state/assetStore';
 import { openImportDialog, useImportStore } from './import/importStore';
@@ -36,4 +37,9 @@ export function installDevtools(): void {
   // ask "is the editor making a noise, and about which asset". Without it a
   // headless check can press Play and learn nothing.
   (globalThis as unknown as Record<string, unknown>)['__studioAudioPreview'] = audioPreview;
+
+  // Not a store either, and the same reason: every node material in the document
+  // reads this clock, so "is the viewport animating, and at what rate" is a
+  // question only it can answer — a screenshot of water cannot.
+  (globalThis as unknown as Record<string, unknown>)['__studioTime'] = studioTime;
 }

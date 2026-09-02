@@ -26,16 +26,16 @@ const RADIANCE_SIZE = 256;
 /**
  * Everything that is one number on each side.
  *
- * Four settings are not. `elevation` and `azimuth` are two halves of one
- * `sunPosition`; `cloudSpeed` is written by whoever knows whether this sky is
- * watched or captured — a snapshot has no motion, and the editor viewport holds
- * it at zero; and `sunDisc` is a boolean here and a float there, forced off on
- * the captured mesh whatever the document says.
+ * Three settings are not. `elevation` and `azimuth` are two halves of one
+ * `sunPosition`; and `sunDisc` is a boolean here and a float there, forced off
+ * on the captured mesh whatever the document says.
+ *
+ * `cloudSpeed` used to be a fourth, written by whoever knew whether this sky was
+ * watched or captured. It is an ordinary uniform again: the clock the shader
+ * multiplies it by is the simulation's now, so a paused scene holds its clouds
+ * still without anyone here deciding that. See `time/StudioTime`.
  */
-type SkyUniformKey = Exclude<
-  keyof SkySettings,
-  'elevation' | 'azimuth' | 'cloudSpeed' | 'sunDisc'
->;
+type SkyUniformKey = Exclude<keyof SkySettings, 'elevation' | 'azimuth' | 'sunDisc'>;
 
 /**
  * Pairs a setting with the uniform it drives, keeping the key literal.
@@ -65,6 +65,7 @@ const UNIFORMS = [
   bindUniform('cloudDensity', (sky) => sky.cloudDensity),
   bindUniform('cloudScale', (sky) => sky.cloudScale),
   bindUniform('cloudElevation', (sky) => sky.cloudElevation),
+  bindUniform('cloudSpeed', (sky) => sky.cloudSpeed),
 ];
 
 /**
@@ -120,9 +121,6 @@ export class ProceduralSky {
    * rather than a cubemap capture.
    */
   private captured: SkySettings | null = null;
-  /** What the visible mesh was last given, so `animated` can re-read the speed. */
-  private shown: SkySettings | null = null;
-  private drifting = false;
 
   /**
    * Puts the sky on this scene and writes its uniforms.
@@ -136,37 +134,12 @@ export class ProceduralSky {
     const mesh = (this.display ??= this.createDisplay());
     this.apply(mesh, settings);
     this.intensity.value = intensity;
-    this.shown = settings;
-    this.applyCloudSpeed();
     if (mesh.parent !== scene) scene.add(mesh);
   }
 
   /** Takes it back off, for a scene that has stopped asking for one. */
   detach(): void {
     this.display?.removeFromParent();
-  }
-
-  /**
-   * Whether the clouds drift.
-   *
-   * Nothing to see yet: `SkyMesh`'s own `time` uniform is never updated, so its
-   * clouds hold still at any speed. Not a fault of this application, and not of
-   * `time` in general — a plain TSL material animates beside it. See
-   * `SceneBinder.skyAnimated`, and `docs/three-skymesh-clouds/` for the
-   * measurements.
-   *
-   * When that is fixed, one wrinkle comes with it. Setting this back to true
-   * after a spell at zero moves the clouds forward by the whole time they stood
-   * still: `time` is the renderer's clock and the shader multiplies it, rather
-   * than accumulating an offset we own. At the default speed a ten-minute
-   * editor session is 0.06 in UV at the first Play — one visible step, on a
-   * transition that is already one. Owning the offset would mean forking the
-   * shader.
-   */
-  set animated(value: boolean) {
-    if (this.drifting === value) return;
-    this.drifting = value;
-    this.applyCloudSpeed();
   }
 
   /**
@@ -182,8 +155,9 @@ export class ProceduralSky {
 
     const mesh = (this.captureMesh ??= this.createCapture());
     this.apply(mesh, settings);
-    // Re-asserted after `apply`, which does not write either: the capture is a
-    // still image of a sky with no sun disc in it.
+    // Written over what `apply` just set, in this order on purpose: the capture
+    // is a still image of a sky with no sun disc in it, whatever the document
+    // asked the visible one for.
     mesh.showSunDisc.value = 0;
     mesh.cloudSpeed.value = 0;
 
@@ -243,7 +217,21 @@ export class ProceduralSky {
     mesh.scale.setScalar(10);
 
     mesh.onBeforeRender = (_renderer, _scene, camera) => {
-      mesh.position.copy(camera.position);
+      // The camera's *world* position, not `camera.position`.
+      //
+      // In play mode the camera is parented under its entity's container —
+      // `CameraSystem` hands it to the reconciler, which adds it there — and the
+      // controller moves the container, so `camera.position` is an eye height
+      // near nothing rather than the place being looked from. A sky placed from
+      // that stayed at the origin, outside its own ten-unit box, and the game
+      // drew a black sky while the water went on reflecting one. The editor
+      // camera is parented to nothing, which is why only play mode showed it.
+      //
+      // `Engine.writeListenerFromCamera` has the same question and gives the
+      // same answer; `getWorldPosition` does its `updateWorldMatrix` for us.
+      // Writing into `position` is still the world position because the sky is
+      // added straight to the `Scene` — see `syncSky`.
+      camera.getWorldPosition(mesh.position);
       // The scene's matrices were built at the top of `render()`, so this needs
       // saying again. It lands on this frame rather than the next because the
       // hook runs at the head of `renderObject`, and the node that reads
@@ -268,11 +256,6 @@ export class ProceduralSky {
     const mesh = new SkyMesh();
     this.stage.add(mesh);
     return mesh;
-  }
-
-  private applyCloudSpeed(): void {
-    if (!this.display || !this.shown) return;
-    this.display.cloudSpeed.value = this.drifting ? this.shown.cloudSpeed : 0;
   }
 
   private apply(mesh: SkyMesh, settings: SkySettings): void {
@@ -313,6 +296,5 @@ export class ProceduralSky {
     this.target = null;
     this.generator = null;
     this.captured = null;
-    this.shown = null;
   }
 }

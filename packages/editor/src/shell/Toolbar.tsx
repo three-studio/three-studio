@@ -13,10 +13,12 @@ import {
   Scale3d,
   SkipForward,
   Square,
+  Timer,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { startPlay, stopPlay } from '../commands/playCommands';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
+import { useViewportStore } from '../state/viewportStore';
 import { MenuTrigger } from '../ui/Menu';
 import { ToolButton, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
 import { buildLayoutMenu } from './layoutMenu';
@@ -62,6 +64,9 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
   const togglePause = useEditorStore((s) => s.togglePause);
   const requestStep = useEditorStore((s) => s.requestStep);
 
+  const animated = useViewportStore((s) => s.animated);
+  const toggleAnimated = useViewportStore((s) => s.toggleAnimated);
+
   const isStopped = playState === 'stopped';
 
   return (
@@ -96,6 +101,16 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
           label="Gizmos"
           active={showGizmos}
           onClick={toggleGizmos}
+        />
+        {/*
+          Unreal's Realtime, Unity's Always Refresh. Off by default so a moving
+          surface is never mistaken for a running game — see `viewport/timescale`.
+        */}
+        <ToolButton
+          icon={Timer}
+          label="Animate in viewport"
+          active={animated}
+          onClick={toggleAnimated}
         />
       </div>
 

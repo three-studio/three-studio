@@ -1,11 +1,14 @@
 import {
+  SUN_FROM_SKY,
   componentsOf,
   findComponent,
+  skySunDirection,
   type ComponentDoc,
   type EntityDoc,
   type EnvironmentDef,
   type MaterialDef,
   type SceneDoc,
+  type Vec3,
 } from '@three-studio/core';
 import {
   Color,
@@ -19,6 +22,7 @@ import {
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
+  Vector3,
   type Renderer,
   type Texture,
 } from 'three/webgpu';
@@ -26,12 +30,13 @@ import { NULL_ASSET_RESOLVER, type AssetResolver } from './assets/AssetResolver'
 import { ModelCache } from './assets/ModelCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
-import type { SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type { Sun, SystemContext, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY, resolveEntityId } from './systems/identity';
 import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/material';
 import { MeshBatcher } from './MeshBatcher';
 import { ResourceArena, SharedMaterial, type Disposable } from './systems/ResourceArena';
 import { ProceduralSky } from './systems/sky';
+import { studioTime, type StudioTime } from './time/StudioTime';
 
 export { isVisibleInHierarchy } from './MeshBatcher';
 
@@ -49,6 +54,11 @@ function sameComponents(a: readonly ComponentDoc[], b: readonly ComponentDoc[]):
 }
 
 export { ENTITY_ID_KEY } from './systems/identity';
+
+/** Scratch for `sunOf`'s basis extraction. Module-scope so it allocates once. */
+const _x = new Vector3();
+const _y = new Vector3();
+const _z = new Vector3();
 
 /** One of the two things an equirectangular image can be: the sky, or the light. */
 type EnvironmentSlot = 'background' | 'environment';
@@ -136,7 +146,14 @@ export class SceneBinder {
     return this.batcher.resolveBatchHit(object, batchId);
   }
 
-  constructor(resolver: AssetResolver = NULL_ASSET_RESOLVER) {
+  /**
+   * @param time Injected rather than reached for, so a test can drive the clock
+   *   it hands in. The default is the document's own — see `time/StudioTime`.
+   */
+  constructor(
+    resolver: AssetResolver = NULL_ASSET_RESOLVER,
+    private readonly time: StudioTime = studioTime,
+  ) {
     this.root.name = 'SceneRoot';
     this.models = new ModelCache(resolver);
   }
@@ -153,7 +170,9 @@ export class SceneBinder {
       arena: this.arena,
       materials: this.materials,
       models: this.models,
+      time: this.time,
       shadowMapSize: this.shadowMapSize,
+      sunOf: (source: string) => this.sunOf(source),
       invalidate: () => {
         this.batcher.invalidate();
       },
@@ -261,6 +280,9 @@ export class SceneBinder {
   }
 
   sync(scene: SceneDoc, dirty?: ReadonlySet<string>): void {
+    // Held for `sunOf`, which answers about the scene rather than about one
+    // entity and so cannot be given its subject as an argument.
+    this.scene = scene;
     const full = dirty === undefined || dirty.has('*');
     const ids = full
       ? new Set([...Object.keys(scene.entities), ...this.reconciler.all().keys()])
@@ -347,34 +369,8 @@ export class SceneBinder {
   private exponentialFog: FogExp2 | null = null;
   /** Built only for a scene that asks for an analytic sky; see `systems/sky`. */
   private sky: ProceduralSky | null = null;
-  private skyDrifts = false;
-
-  /**
-   * Whether the sky's clouds drift.
-   *
-   * Off by default, which is the editor viewport: a scene sits still while it
-   * is being built, and two screenshots of it are the same picture. `Engine`
-   * turns it on, because a running game is the case where they should move, and
-   * the editor turns it back off for the frames play mode spends paused.
-   *
-   * A setter rather than a flag the sync reads, so the host can write it every
-   * frame — it is `playState` that decides, and `playState` is read per frame.
-   *
-   * **Its effect is not observable today**, and that is not a reason to delete
-   * it. It writes the right value to the right uniform; what is broken is
-   * `SkyMesh` itself, whose `time` uniform is never updated — measured at
-   * effectively zero, and unmoving, while a plain TSL material in the same
-   * renderer animates perfectly. See `docs/three-skymesh-clouds/`.
-   */
-  get skyAnimated(): boolean {
-    return this.skyDrifts;
-  }
-
-  set skyAnimated(value: boolean) {
-    if (this.skyDrifts === value) return;
-    this.skyDrifts = value;
-    if (this.sky) this.sky.animated = value;
-  }
+  /** The last document synced, for the scene-wide questions a system may ask. */
+  private scene: SceneDoc | null = null;
 
   /**
    * The device the analytic sky is captured on.
@@ -468,7 +464,6 @@ export class SceneBinder {
     }
 
     const sky = (this.sky ??= new ProceduralSky());
-    sky.animated = this.skyDrifts;
     sky.attach(scene, environment.sky, environment.backgroundIntensity);
     return true;
   }
@@ -695,6 +690,35 @@ export class SceneBinder {
    */
   containerFor(entityId: string): Object3D | undefined {
     return this.reconciler.peekContainer(entityId);
+  }
+
+  /**
+   * Where a self-shading component takes its light from. See `SystemContext`.
+   *
+   * The sky's sun is a pure function of the document. A light's is not: it is
+   * aimed along its entity's world -Z (see `aimAlongLocalForward` in
+   * `LightSystem`), so the answer is the container's matrix, which three has
+   * already composed. Resolved per sync rather than per frame — a sync is what
+   * a gizmo drag produces, so the water still follows a light being moved.
+   */
+  private sunOf(source: string): Sun | null {
+    const scene = this.scene;
+    if (!scene) return null;
+
+    if (source === SUN_FROM_SKY) {
+      return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
+    }
+
+    const light = findComponent(scene, source, 'light');
+    const container = this.reconciler.peekContainer(source);
+    if (!light || !container) return null;
+
+    // +Z, because the light shines along -Z and `sunDirection` points back at
+    // it. `matrixWorld` carries the scale too, so the basis is normalised.
+    container.matrixWorld.extractBasis(_x, _y, _z);
+    _z.normalize();
+    const direction: Vec3 = [_z.x, _z.y, _z.z];
+    return { direction, color: light.color };
   }
 
   /** Walks up from a raycast hit to the entity that owns it. */

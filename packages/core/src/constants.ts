@@ -23,6 +23,19 @@ export const SCRIPT_API_VERSION = 2;
  * fills what is missing and rejects anything written by a newer build, rather
  * than silently loading a shape this code no longer understands.
  *
+ * 9 — the `water` component. An older build has no system for it, so it opens
+ * the scene, keeps the component byte for byte — `adoptComponentTables` files an
+ * unknown type under its own table and never touches the body — and draws
+ * nothing where the water is. A scene built around an ocean is then not a scene
+ * that half-works, it is one that is silently missing its subject, which is the
+ * same call 8 and 5 made.
+ *
+ * `water.speed`, `water.direction` and `water.choppiness` were added to that
+ * same 9 rather than under a 10 of their own, because 9 was never released: it
+ * exists in this working tree and nowhere else. `fillComponent` merges a water
+ * component from its factory, so a scene already saved as 9 picks the three up
+ * on opening — the same reasoning `sky.cloudSpeed` was folded into 6 with.
+ *
  * 7 — a `model` says which node of its file it draws (`nodePath`, `nodeName`)
  * and which shared material it draws with (`materialId`). The first is what
  * `unpackModel` writes: one imported file becomes one entity per node, and a
@@ -79,7 +92,7 @@ export const SCRIPT_API_VERSION = 2;
  * opening a new one: without it that build ignores the fields it has never
  * heard of and erases them on the first save.
  */
-export const SCENE_FORMAT_VERSION = 8;
+export const SCENE_FORMAT_VERSION = 9;
 
 /**
  * Separates an instance from the entity it produced, in an expanded id.
@@ -93,6 +106,9 @@ export const PREFAB_ID_SEPARATOR = '/';
 
 /**
  * `assets/prefabs/*.prefab.json`.
+ *
+ * 6 — the water component of scene format 9. A prefab holds the same
+ * `ComponentTables`, so it can hold a water surface an older build cannot draw.
  *
  * 5 — the model node and material of scene format 7. A prefab holds the same
  * `ComponentTables`, so it can hold a model split across a dozen entities —
@@ -108,7 +124,7 @@ export const PREFAB_ID_SEPARATOR = '/';
  * 2 — components carry an `id`, and prefab overrides name them by it rather
  * than by their position in the array. See ADR-9 and B10.
  */
-export const PREFAB_FORMAT_VERSION = 5;
+export const PREFAB_FORMAT_VERSION = 6;
 
 /**
  * Project file format version, tracked separately from scenes.

@@ -25,6 +25,7 @@ import {
   Shapes,
   Trash2,
   Volume2,
+  Waves,
   Weight,
   type LucideIcon,
 } from 'lucide-react';
@@ -80,6 +81,7 @@ const COMPONENT_ICONS: Record<ComponentIcon, LucideIcon> = {
   move: Move,
   shapes: Shapes,
   volume: Volume2,
+  waves: Waves,
   weight: Weight,
 };
 
@@ -100,6 +102,10 @@ const ICON_PRIORITY: readonly ComponentType[] = [
   // row of identical boxes is a hierarchy nobody can scan.
   'audioSource',
   'audioListener',
+  // Last of the named types and still ahead of the fall-through: a water
+  // surface would otherwise draw the same box as a mesh, and the one thing a
+  // hierarchy row has to say is what the entity is.
+  'water',
 ];
 
 function entityIcon(scene: SceneDoc, entityId: string): LucideIcon {

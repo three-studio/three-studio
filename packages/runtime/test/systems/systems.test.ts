@@ -1,4 +1,4 @@
-import { createComponent, createLightEntity, createMaterial, createMeshComponent, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { SUN_CUSTOM, createComponent, createLightEntity, createMaterial, createMeshComponent, createWater, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -21,6 +21,8 @@ import { LightSystem } from '../../src/systems/LightSystem';
 import { MeshSystem } from '../../src/systems/MeshSystem';
 import { ModelSystem } from '../../src/systems/ModelSystem';
 import { ResourceArena } from '../../src/systems/ResourceArena';
+import { WaterSystem } from '../../src/systems/WaterSystem';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * One class per component type that draws something, testable on its own —
@@ -36,19 +38,28 @@ import { ResourceArena } from '../../src/systems/ResourceArena';
 function context(materials: Record<string, ReturnType<typeof createMaterial>> = {}): {
   ctx: SystemContext;
   arena: ResourceArena;
+  time: StudioTime;
   invalidated: () => number;
 } {
   const arena = new ResourceArena();
+  // Its own clock, never the document's: `install()` is not called here, so
+  // three's `time` node is left alone and these tests cannot affect each other
+  // through it.
+  const time = new StudioTime();
   let invalidated = 0;
   const ctx: SystemContext = {
     arena,
     materials,
     models: new ModelCache({ url: () => null }),
+    time,
     shadowMapSize: 1024,
+    // No scene here, so nothing to resolve: a water component falls back to the
+    // direction and colour it holds itself, which is what the tests assert on.
+    sunOf: () => null,
     invalidate: () => void (invalidated += 1),
     attach: () => true,
   };
-  return { ctx, arena, invalidated: () => invalidated };
+  return { ctx, arena, time, invalidated: () => invalidated };
 }
 
 describe('the mesh system', () => {
@@ -549,5 +560,140 @@ describe('the model system', () => {
     // materials of the file, which every other clone is still drawing. The
     // pooled material is the one thing it ever took.
     expect(arena.sizes.materials).toBe(0);
+  });
+});
+
+describe('the water system', () => {
+  it('builds a water mesh the entity can be picked by', () => {
+    const { ctx } = context();
+    const system = new WaterSystem();
+
+    const handle = system.mount('lake', createWater(), ctx);
+
+    expect(handle.objects).toHaveLength(1);
+    expect(handle.water.isWaterSurface).toBe(true);
+    expect(handle.water.userData[ENTITY_ID_KEY]).toBe('lake');
+    // The reflector aims at the mesh itself, so nothing is parented under it.
+    // three's addon adds a bare `Object3D` here.
+    expect(handle.water.children).toHaveLength(0);
+  });
+
+  it('falls back to the built-in normal map, and shares one copy of it', () => {
+    const { ctx } = context();
+    const system = new WaterSystem();
+
+    const first = system.mount('a', createWater(), ctx);
+    const second = system.mount('b', createWater(), ctx);
+
+    // `null` on the handle is what says "not mine to retire".
+    expect(first.texture).toBeNull();
+    expect(first.water.waterNormals.value).toBe(second.water.waterNormals.value);
+  });
+
+  it('writes every uniform in place, keeping the mesh and its shader', () => {
+    const { ctx } = context();
+    const system = new WaterSystem();
+    const component = createWater();
+
+    const mounted = system.mount('lake', component, ctx);
+    const patched = system.patch(
+      mounted,
+      component,
+      { ...component, alpha: 0.5, size: 4, distortionScale: 7, waterColor: '#204060' },
+      ctx,
+    );
+
+    expect(patched).not.toBe('remount');
+    const handle = patched as typeof mounted;
+    // The same object throughout: whatever holds a reference to it — the
+    // outline, the gizmo — is still pointing at the right thing.
+    expect(handle.water).toBe(mounted.water);
+    expect(handle.water.alpha.value).toBeCloseTo(0.5);
+    expect(handle.water.size.value).toBeCloseTo(4);
+    expect(handle.water.distortionScale.value).toBeCloseTo(7);
+    expect(handle.water.waterColor.value.getHexString()).toBe('204060');
+  });
+
+  it('never remounts — not even for the reflection resolution', () => {
+    const { ctx } = context();
+    const system = new WaterSystem();
+    const component = createWater();
+
+    const mounted = system.mount('lake', component, ctx);
+    const patched = system.patch(mounted, component, { ...component, resolutionScale: 1 }, ctx);
+
+    // three's addon bakes this into the shader, so the surface had to be thrown
+    // away and rebuilt. The fork keeps the reflector reachable.
+    expect(patched).not.toBe('remount');
+    expect((patched as typeof mounted).water).toBe(mounted.water);
+    expect(mounted.water.resolutionScale).toBe(1);
+  });
+
+  it('writes speed, direction and choppiness in place', () => {
+    const { ctx } = context();
+    const system = new WaterSystem();
+    const component = createWater();
+
+    const mounted = system.mount('lake', component, ctx);
+    const patched = system.patch(
+      mounted,
+      component,
+      { ...component, speed: 2.5, direction: Math.PI / 2, choppiness: 3 },
+      ctx,
+    );
+
+    const handle = patched as typeof mounted;
+    expect(handle.water).toBe(mounted.water);
+    expect(handle.water.speed).toBeCloseTo(2.5);
+    expect(handle.water.direction).toBeCloseTo(Math.PI / 2);
+    expect(handle.water.choppiness.value).toBeCloseTo(3);
+  });
+
+  it('takes the sun the scene resolves, and its own when it cannot', () => {
+    const arena = new ResourceArena();
+    const sun = { direction: [0, 1, 0] as [number, number, number], color: '#ff0000' };
+    const ctx: SystemContext = {
+      arena,
+      materials: {},
+      models: new ModelCache({ url: () => null }),
+      time: new StudioTime(),
+      shadowMapSize: 1024,
+      sunOf: (source) => (source === 'sky' ? sun : null),
+      invalidate: () => undefined,
+      attach: () => true,
+    };
+    const system = new WaterSystem();
+
+    const linked = system.mount('lake', createWater(), ctx);
+    expect(linked.water.sunColor.value.getHexString()).toBe('ff0000');
+    expect(linked.water.sunDirection.value.y).toBeCloseTo(1);
+
+    const own = system.mount(
+      'pond',
+      { ...createWater(), sunSource: SUN_CUSTOM, sunColor: '#00ff00' },
+      ctx,
+    );
+    expect(own.water.sunColor.value.getHexString()).toBe('00ff00');
+  });
+
+  it('gives back the geometry, the material and the reflection targets', () => {
+    const { ctx, arena } = context();
+    const system = new WaterSystem();
+
+    const handle = system.mount('lake', createWater(), ctx);
+    expect(arena.sizes.geometries).toBe(1);
+
+    let disposed = 0;
+    handle.water.material.addEventListener('dispose', () => (disposed += 1));
+
+    system.unmount(handle, ctx);
+    // Retired, not freed: a buffer the in-flight frame may still be reading.
+    expect(disposed).toBe(0);
+    arena.flush();
+    expect(disposed).toBe(1);
+    expect(arena.sizes.geometries).toBe(0);
+    // The geometry came from the pool and outlives the surface, so the surface
+    // must not have taken it with it.
+    expect(handle.geometry.attributes['position']).toBeDefined();
   });
 });

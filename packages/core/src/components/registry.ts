@@ -33,6 +33,7 @@ export type ComponentIcon =
   | 'move'
   | 'shapes'
   | 'volume'
+  | 'waves'
   | 'weight';
 
 export interface ComponentDefinition<T extends ComponentType = ComponentType> {

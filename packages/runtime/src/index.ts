@@ -28,6 +28,9 @@ export type { EntityView } from './Reconciler';
 export { createRenderer, rendererCount } from './RendererFactory';
 export type { CreateRendererOptions, RendererBackend, RendererHandle } from './RendererFactory';
 
+/* Time. One clock for the simulation and every node material; see `time/StudioTime`. */
+export { StudioTime, studioTime } from './time/StudioTime';
+
 /* Assets: resolving ids to URLs, loading models, applying import settings. */
 export { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 export type { AssetResolver } from './assets/AssetResolver';

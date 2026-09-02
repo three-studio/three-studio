@@ -21,6 +21,7 @@ import type {
 export const COMPONENT_TYPES = [
   'mesh',
   'model',
+  'water',
   'light',
   'camera',
   'rigidbody',

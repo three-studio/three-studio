@@ -78,6 +78,9 @@ export type GeometryKind = GeometryDef['kind'];
  */
 export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
 
+/** Which faces are drawn. Named because two component types now take it. */
+export type MaterialSide = 'front' | 'back' | 'double';
+
 export interface MaterialDef {
   color: Hex;
   roughness: number;
@@ -87,7 +90,7 @@ export interface MaterialDef {
   opacity: number;
   transparent: boolean;
   wireframe: boolean;
-  side: 'front' | 'back' | 'double';
+  side: MaterialSide;
 
   /*
    * Texture slots. All asset ids, resolved through the asset registry.
@@ -260,6 +263,78 @@ export interface LightComponent extends ComponentBase {
   aspect: number;
   castShadow: boolean;
   shadow: ShadowSettings;
+}
+
+/**
+ * Where a water surface takes its sun from.
+ *
+ * `'sky'` is the scene's own analytic sun — the one `SkySettings` already
+ * describes — and is the default, because a scene that has a sky has exactly one
+ * place the light should come from. `'custom'` is the two fields below. Anything
+ * else is a light entity's id, and a light that goes away falls back to the sky
+ * rather than leaving the water lit from nowhere.
+ *
+ * One field and one control rather than a mode plus a reference, because they
+ * are one question — *which* sun — and splitting it would let the document hold
+ * a mode and an id that disagree.
+ */
+export type WaterSunSource = string;
+
+/**
+ * A flat reflective water surface.
+ *
+ * Deliberately not a `mesh` with a material: the reflection is a second render
+ * of the scene from a mirrored camera, which no `MaterialDef` can describe, and
+ * the geometry is a plane because a reflector mirrors about one flat plane.
+ *
+ * It is the `WaterMesh` addon's parameter list, minus what only its WebGL twin
+ * has. `textureWidth`/`textureHeight` are `resolutionScale` here;
+ * `clipBias` and `eye` are internals; `time` belongs to the one clock and not to
+ * a component.
+ */
+export interface WaterComponent extends ComponentBase {
+  type: 'water';
+  /** Plane only — see the note above. */
+  geometry: Extract<GeometryDef, { kind: 'plane' }>;
+  /** The normal map the ripples are read from. A built-in one is used until set. */
+  normalMapId: string | null;
+  waterColor: Hex;
+  sunSource: WaterSunSource;
+  /** Used when `sunSource` is `'custom'`. Points from the surface at the sun. */
+  sunDirection: Vec3;
+  /** Used when `sunSource` is `'custom'`. */
+  sunColor: Hex;
+  /** Opacity of the whole surface. */
+  alpha: number;
+  /** Spatial frequency of the ripples. Larger is finer. */
+  size: number;
+  /**
+   * How fast the water runs. `0` holds it still.
+   *
+   * Per surface, on top of the scene's timescale: a millpond and a torrent can
+   * sit in one scene, and Pause still stops both.
+   */
+  speed: number;
+  /** Which way it runs, in radians. `0` is the addon's own look. */
+  direction: number;
+  /**
+   * How sharp the waves read. Low is a swell, high is a chop.
+   *
+   * It scales the horizontal components of the wave normal; `1.5` is the value
+   * three's `WaterMesh` hard-codes.
+   */
+  choppiness: number;
+  /** How far the reflection is pushed around by those ripples. */
+  distortionScale: number;
+  /**
+   * Reflection resolution, as a fraction of the viewport.
+   *
+   * The one knob that cannot be written in place: `WaterMesh` hands it to its
+   * reflector while building the shader, so changing it rebuilds the surface.
+   */
+  resolutionScale: number;
+  side: MaterialSide;
+  fog: boolean;
 }
 
 export type CameraProjection = 'perspective' | 'orthographic';
@@ -466,7 +541,8 @@ export type ComponentDoc =
   | AudioListenerComponent
   | ScriptComponent
   | PrefabInstanceComponent
-  | PlayerControllerComponent;
+  | PlayerControllerComponent
+  | WaterComponent;
 
 export type ComponentType = ComponentDoc['type'];
 
@@ -566,9 +642,10 @@ export interface SkySettings {
   /**
    * How fast the cloud layer drifts.
    *
-   * Only while a game is running: the editor viewport holds it at zero, so a
-   * scene sits still while it is being built and two screenshots of it are the
-   * same picture. See `SceneBinder.skyAnimated`.
+   * A plain rate now, with no opinion about when it applies: the shader
+   * multiplies it by the simulation's clock, so a stopped viewport and a paused
+   * game hold the clouds still without this setting knowing either exists. See
+   * `StudioTime` in the runtime.
    */
   cloudSpeed: number;
 }
