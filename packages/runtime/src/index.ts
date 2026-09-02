@@ -55,6 +55,7 @@ export type {
   GainNodeLike,
   PannerNodeLike,
 } from './audio/AudioContextLike';
+export type { ClipLoader } from './audio/AudioClipCache';
 export { failedVoice } from './audio/playback';
 export type {
   PlayRequest,

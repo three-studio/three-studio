@@ -37,7 +37,9 @@ import { createFolder, deleteAsset, deleteFolder, renameFolder } from '../comman
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useScriptStore } from '../state/scriptStore';
 import { ASSET_PATH_MIME, setAssetDragPayload } from '../assets/assetDrag';
+import { clipPeaks } from '../audio/peaks';
 import { audioPreview } from '../audio/preview';
+import { drawPeaks } from '../audio/waveform';
 import { PanelToolbar } from './PanelShell';
 import { browseAndImport, openImportDialog } from '../import/importStore';
 
@@ -88,6 +90,10 @@ export function ProjectPanel() {
   } = store;
 
   const [dropping, setDropping] = useState(false);
+  // Seeded from the audition itself, which is the source of truth: the value
+  // then survives this panel being closed and reopened without a store of its
+  // own, and without inventing a project preference nobody asked for.
+  const [previewVolume, setPreviewVolume] = useState(() => audioPreview.volume);
 
   useEffect(() => {
     void store.refresh();
@@ -200,6 +206,31 @@ export function ProjectPanel() {
           {sortAscending ? <ArrowDownAZ size={12} /> : <ArrowUpAZ size={12} />}
           {SORT_LABELS[sortKey]}
         </button>
+
+        {/*
+          The editor's own audition level, not the project's (ADR-4). It lives
+          here because this is where auditioning is done, and one preview engine
+          means it governs the Inspector's ▶ Play just as much as this panel's
+          tiles.
+        */}
+        <div className="flex shrink-0 items-center gap-1" title="Audition volume">
+          <Volume2 size={12} className="text-ink-muted" />
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={previewVolume}
+            onChange={(event) => {
+              audioPreview.volume = Number(event.target.value);
+              // Read back rather than kept as typed: the audition clamps and
+              // refuses what is not finite, and a slider that disagrees with the
+              // thing it drives is worse than no slider.
+              setPreviewVolume(audioPreview.volume);
+            }}
+            className="h-5 w-12 accent-accent"
+          />
+        </div>
 
         <div className="flex shrink-0 items-center">
           {(['grid', 'list'] as const).map((mode) => (
@@ -397,6 +428,71 @@ function FolderTile({
   );
 }
 
+/**
+ * A clip's shape on its tile, measured only once the tile is actually on screen.
+ *
+ * On screen, and not merely mounted: the grid is not virtualised, so opening a
+ * folder of two hundred sounds mounts two hundred tiles in one go, and decoding
+ * is the expensive half of this — the very cost `AudioClipCache` keeps a byte
+ * budget for. An `IntersectionObserver` reduces that to the handful somebody is
+ * looking at, and `ClipPeaks` keeps the answer so scrolling back is free.
+ *
+ * The canvas is laid out from the start even while blank, because an element
+ * with no box never intersects anything and would wait for a decode that its own
+ * hiding had prevented. The icon sits over it until there are peaks, and stays
+ * for good when there are none: a file this browser cannot decode is not a
+ * broken tile.
+ */
+function ClipWaveform({ assetId, Icon }: { assetId: string; Icon: LucideIcon }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const peaks = useRef<Float32Array | null>(null);
+  const [drawn, setDrawn] = useState(false);
+
+  useEffect(() => {
+    const element = canvas.current;
+    if (element === null) return;
+
+    const paint = () => {
+      if (peaks.current === null) return;
+      // Height from the box rather than the attribute: the bitmap then matches
+      // the CSS size exactly, instead of being scaled into it.
+      drawPeaks(element, peaks.current, { height: Math.max(1, element.clientHeight) });
+    };
+
+    let cancelled = false;
+    const onScreen = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      onScreen.disconnect();
+      void clipPeaks.peaks(assetId).then((measured) => {
+        if (cancelled || measured === null) return;
+        peaks.current = measured;
+        setDrawn(true);
+        paint();
+      });
+    });
+    onScreen.observe(element);
+
+    // A canvas is sized in CSS over a pixel buffer, so a grid that reflows leaves
+    // the waveform drawn at the old width — stretched or cut. The import dialog
+    // watches its panel for the same reason.
+    const resized = new ResizeObserver(paint);
+    resized.observe(element);
+
+    return () => {
+      cancelled = true;
+      onScreen.disconnect();
+      resized.disconnect();
+    };
+  }, [assetId]);
+
+  return (
+    <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
+      <canvas ref={canvas} className="h-full w-full" />
+      {!drawn && <Icon size={22} strokeWidth={1.25} className="absolute text-ink-muted" />}
+    </div>
+  );
+}
+
 function AssetTile({
   asset,
   revealed,
@@ -448,6 +544,8 @@ function AssetTile({
           className="min-h-0 flex-1 object-contain"
           style={{ imageRendering: 'auto' }}
         />
+      ) : asset.kind === 'audio' ? (
+        <ClipWaveform assetId={asset.id} Icon={Icon} />
       ) : (
         <Icon size={22} strokeWidth={1.25} className="text-ink-muted" />
       )}
