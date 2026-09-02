@@ -12,6 +12,7 @@ import {
   createRenderingSettings,
   createStarterScene,
   findScene,
+  normalizeBuildProfiles,
   sceneName,
   serializeScene,
   type OpenProject,
@@ -187,7 +188,10 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   const settings = (project.settings ?? {}) as Partial<ProjectFile['settings']>;
   settings.rendering = { ...createRenderingSettings(), ...settings.rendering };
   settings.physics = { ...createPhysicsSettings(), ...settings.physics };
-  settings.build ??= createBuildProfiles(project.name ?? 'Project');
+  // Not `??=`: a profile written before a build option existed is missing that
+  // one field, not the whole section, and only the profiles themselves know
+  // which. `normalizeBuildProfiles` fills each from the factory.
+  settings.build = normalizeBuildProfiles(settings.build, project.name ?? 'Project');
   settings.loadingScene ??= null;
   (parsed as ProjectFile).settings = settings as ProjectFile['settings'];
 

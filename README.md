@@ -100,6 +100,11 @@ and entity references.
 ### Export
 - **Package for web** — copies the prebuilt player and adds the scenes, the assets and the compiled
   scripts. The output is a static folder you can drop on any host.
+- **Base URL** — left empty, every URL stays relative to the page, which works at any address that
+  ends in a slash. Set it (`/`, `/games/demo/`, `http://localhost:8080/`) and the exporter writes a
+  `<base>` on the page, which moves the player bundle, the JSON, the assets and the scripts
+  together. It is also the fix for a host that serves `/games/demo` without redirecting to
+  `/games/demo/`, where relative URLs resolve one level too high.
 - Build profiles, progress reporting, warnings surfaced in a toast.
 
 ---

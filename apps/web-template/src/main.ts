@@ -10,6 +10,7 @@ import {
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { entrySceneName, type EntrySceneManifest } from './entryScene';
+import { encodePath } from './urls';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
@@ -89,10 +90,11 @@ function buildResolver(
   settings: Record<string, AssetSettings> = {},
 ): AssetResolver {
   return {
-    // Relative, so the build runs from a subdirectory as happily as from a root.
+    // Relative, so the build runs from a subdirectory as happily as from a
+    // root — and from wherever the `<base>` an export can carry points.
     url: (assetId) => {
       const path = paths[assetId];
-      return path === undefined ? null : `assets/${path}`;
+      return path === undefined ? null : `assets/${encodePath(path)}`;
     },
     // `null` means "the extension knows", which is true of everything the
     // exporter did not have to write down.
@@ -159,7 +161,9 @@ async function boot(): Promise<void> {
       read: async (name: string) => {
         const file = build.sceneMap?.[name];
         if (file === undefined) throw new Error(`This build has no scene named "${name}".`);
-        return deserializeScene(await (await fetch(file)).text());
+        // Encoded like an asset path: a scene called `My Level` ships as
+        // `scenes/My Level.scene.json`, which is a name and not yet a URL.
+        return deserializeScene(await (await fetch(encodePath(file))).text());
       },
     },
     resolver: buildResolver(assetPaths, build.textureEncodings, build.assetSettings),
