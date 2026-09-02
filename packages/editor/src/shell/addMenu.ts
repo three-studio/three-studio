@@ -6,6 +6,7 @@ import {
   createEntity,
   createLightEntity,
   createMeshEntity,
+  createWaterEntity,
   type EntityTemplate,
   type GeometryKind,
   type LightKind,
@@ -119,6 +120,14 @@ export function buildAddMenu(): MenuEntry[] {
         // camera, which is right until the camera is not where the player is.
         { label: 'Audio Listener', onSelect: add(() => createAudioListenerEntity()) },
       ],
+    },
+    {
+      // A submenu for one entry, on purpose: this is where the things that are
+      // the *scene* rather than an object in it will go — fog and volumes are
+      // the obvious next two — and moving Water in later would move it out from
+      // under whatever muscle memory it had built by then.
+      label: 'Environment',
+      submenu: [{ label: 'Water', onSelect: add(() => createWaterEntity()) }],
     },
   ];
 }

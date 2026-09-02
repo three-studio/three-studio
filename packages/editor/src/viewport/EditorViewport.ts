@@ -12,6 +12,7 @@ import {
   SceneHost,
   createRenderer,
   rendererCount,
+  studioTime,
   type RendererBackend,
 } from '@three-studio/runtime';
 import {
@@ -33,6 +34,7 @@ import { editorAudioContext } from '../audio/context';
 import { audioPreview } from '../audio/preview';
 import { useOverlayStore } from '../state/overlayStore';
 import { currentSceneName } from '../commands/sceneFiles';
+import { timescaleFor } from './timescale';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
@@ -225,6 +227,10 @@ export class EditorViewport {
 
     useViewportStore.getState().setBackend(backend);
     this.watchPlayState();
+    // Owning the loop is what earns the right to own the clock: this is where
+    // three's `time` node stops reading `performance.now()` and starts reading
+    // the simulation. Once per viewport, and the viewport is once per document.
+    studioTime.install();
     void this.renderer.setAnimationLoop((time) => this.tick(time));
   }
 
@@ -567,21 +573,29 @@ export class EditorViewport {
     // guaranteed to happen at all.
     this.binder.beginFrame();
 
-    const delta = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
+    const raw = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
     this.lastFrameTime = time;
+
+    const { playState, consumeStep } = useEditorStore.getState();
+    // Before anything reads a delta, and before anything draws: every node
+    // material in the document is about to sample this. Written here rather
+    // than on the transport commands because this is where the state is
+    // already read, and it is per frame that it has to be right.
+    studioTime.timescale = timescaleFor(playState, useViewportStore.getState().animated);
+    studioTime.advance(raw);
+    const delta = studioTime.delta;
 
     const engine = this.engine;
     if (engine) {
-      const { playState, consumeStep } = useEditorStore.getState();
       // Paused still renders, so the frame stays live and Step can advance it.
       if (playState === 'playing') engine.update(delta);
-      else if (consumeStep()) engine.update(FIXED_STEP);
+      else if (consumeStep()) {
+        // The clock too, or the surfaces hold still through a step that moves
+        // everything else. `step` is the one thing a zero timescale cannot veto.
+        studioTime.step(FIXED_STEP);
+        engine.update(FIXED_STEP);
+      }
 
-      // Written here rather than on the pause command, because this is where
-      // the state is already read: a paused game holds its sky still, and Step
-      // does not advance it either — the clouds run on the renderer's clock,
-      // not on the simulation's, so nothing else would stop them.
-      engine.binder.skyAnimated = playState === 'playing';
       // Paused means paused, including the part you can hear. The root gain
       // rather than the context, which the preview is sharing.
       engine.audio?.setSuspended(playState !== 'playing');
@@ -595,7 +609,9 @@ export class EditorViewport {
     }
 
     this.syncDocument();
-    this.controls.update(delta);
+    // `raw`, not the simulated delta: flying the editor camera is not part of
+    // the simulation, and a timescale of zero must not nail it to the spot.
+    this.controls.update(raw);
     this.syncSelection();
     // The ear rides the editor camera while nothing is running, which is what
     // makes an audition of a positional source worth anything: fly toward the

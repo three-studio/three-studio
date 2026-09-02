@@ -1,6 +1,7 @@
-import type { ComponentDoc, ComponentType, MaterialDef } from '@three-studio/core';
+import type { ComponentDoc, ComponentType, Hex, MaterialDef, Vec3 } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { ModelCache } from '../assets/ModelCache';
+import type { StudioTime } from '../time/StudioTime';
 import type { ResourceArena } from './ResourceArena';
 
 /*
@@ -20,6 +21,13 @@ import type { ResourceArena } from './ResourceArena';
  * reusing a geometry. Now each system has to answer the question out loud.
  */
 
+/** A direction to be lit from, and the colour of what is lighting. */
+export interface Sun {
+  /** Unit vector pointing from the surface at the light. */
+  readonly direction: Vec3;
+  readonly color: Hex;
+}
+
 /** What a system hands back. The only part of it the reconciler reads. */
 export interface SystemHandle {
   /** What this component contributes to its entity's container. */
@@ -33,6 +41,12 @@ export interface SystemContext {
   readonly materials: Readonly<Record<string, MaterialDef>>;
   readonly models: ModelCache;
   /**
+   * The one clock. A system that animates reads `time.elapsed` here rather than
+   * three's global node, so what it draws obeys Pause and the timescale like
+   * everything else — see `time/StudioTime`.
+   */
+  readonly time: StudioTime;
+  /**
    * Per-light shadow map resolution, from the project settings. Square and a
    * power of two; 4096 costs four times the memory of 2048.
    */
@@ -45,6 +59,20 @@ export interface SystemContext {
    * walked every binding and every mesh build once per frame of a drag to
    * arrive at the same answer.
    */
+  /**
+   * Where a component that shades itself takes its light from.
+   *
+   * `'sky'` is the scene's analytic sun; anything else is a light entity's id.
+   * `null` means "not something this scene can answer" — no such entity, or a
+   * source that is not a reference at all — and the caller falls back to
+   * whatever it holds itself.
+   *
+   * Pushed in through the context rather than looked up, for the reason
+   * `materials` is: it needs the document *and* the world matrices, and the
+   * binder is the only thing holding both. A system is handed a component and
+   * could not work it out.
+   */
+  sunOf(source: string): Sun | null;
   invalidate(): void;
   /**
    * Adds an object that only exists now, after the mount that asked for it.

@@ -12,6 +12,7 @@ import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { entrySceneName, type EntrySceneManifest } from './entryScene';
 import { encodePath } from './urls';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
+import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import { Behaviour } from '@three-studio/runtime/scripting/ScriptApi';
 import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
@@ -199,6 +200,11 @@ async function boot(): Promise<void> {
 
   document.title = build.title || scene.name;
 
+  // The player owns the loop, so it owns the clock: this is what makes three's
+  // `time` node — and therefore every node material in the build — read the
+  // same seconds the scripts and the physics do. See `time/StudioTime`.
+  studioTime.install();
+
   let last = performance.now();
   renderer.setAnimationLoop(() => {
     const now = performance.now();
@@ -207,7 +213,8 @@ async function boot(): Promise<void> {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
 
-    host.update(delta);
+    studioTime.advance(delta);
+    host.update(studioTime.delta);
     const engine = host.engine;
     if (engine) void renderer.render(engine.scene, engine.activeCamera);
   });

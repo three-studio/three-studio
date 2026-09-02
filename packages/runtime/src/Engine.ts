@@ -33,6 +33,7 @@ import './controllers/PlayerController';
 import './scripting/ScriptHost';
 import { Input } from './input/Input';
 import { PhysicsWorld } from './physics/PhysicsWorld';
+import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
 
 export interface EngineOptions {
@@ -142,10 +143,6 @@ export class Engine {
     // the binder cannot do as a transform over data, and it needs the device
     // the host already has.
     this.binder.renderer = options.renderer ?? null;
-    // A running game is the case where the sky's clouds should move. The editor
-    // leaves its own binder alone and turns this back off for the frames play
-    // mode spends paused; the exported player never touches it.
-    this.binder.skyAnimated = true;
     this.binder.syncEnvironment(this.scene, options.scene);
 
     this.audio =
@@ -163,6 +160,7 @@ export class Engine {
       binder: this.binder,
       physics,
       input: this.input,
+      time: studioTime,
       scenes: options.scenes ?? null,
       audio: this.audio,
       warn: (message) => {

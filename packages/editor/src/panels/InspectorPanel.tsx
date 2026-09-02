@@ -16,6 +16,7 @@ import { Menu } from '../ui/Menu';
 /** Components a user can attach by hand; `model` comes from dropping an asset. */
 const ADDABLE: readonly ComponentType[] = [
   'mesh',
+  'water',
   'light',
   'camera',
   'rigidbody',

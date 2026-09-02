@@ -4,6 +4,7 @@ import type { AudioEngine } from '../audio/AudioEngine';
 import type { SceneBinder } from '../SceneBinder';
 import type { Input } from '../input/Input';
 import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import type { StudioTime } from '../time/StudioTime';
 
 /**
  * A scene being fetched.
@@ -46,6 +47,15 @@ export interface BehaviourContext {
   readonly binder: SceneBinder;
   readonly physics: PhysicsWorld | null;
   readonly input: Input;
+  /**
+   * The one clock, shared with the shaders.
+   *
+   * `time.elapsed` is the same number every node material is reading, so a
+   * script and the surface it animates cannot drift apart. Writing
+   * `time.timescale` is how a script asks for slow motion; it slows the drawing
+   * with the simulation, which is the whole point of there being one clock.
+   */
+  readonly time: StudioTime;
   /**
    * `null` when the engine is running on its own — the editor's Play used to,
    * and a test does. A script that changes scenes has to say what it wants to

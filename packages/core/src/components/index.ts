@@ -22,6 +22,7 @@ import './audioListener';
 import './script';
 import './prefabInstance';
 import './playerController';
+import './water';
 
 /*
  * Checked here, once, rather than trusted.

@@ -52,7 +52,10 @@ export function App() {
           that and removes the scrollport entirely. Clipping here as well would
           also trap floating panels inside the dock region, when they are meant
           to be draggable anywhere in the window. */}
-      <div className="relative min-h-0 flex-1">
+      {/* `isolate` here rather than on the dock itself: dockview's render
+          overlay is a sibling of its root, so isolating the root would seal the
+          splitters below the panels parked in it — see `styles.css`. */}
+      <div className="relative isolate min-h-0 flex-1">
         <ErrorBoundary area="Panel layout">
           <DockLayout resetToken={layoutResetToken} />
         </ErrorBoundary>

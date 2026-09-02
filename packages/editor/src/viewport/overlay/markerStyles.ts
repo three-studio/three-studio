@@ -19,7 +19,7 @@ export interface MarkerStyle {
  * clickable, so a marker on top of it would be an icon nobody needs and a click
  * target fighting the mesh behind it.
  */
-const RENDERABLE: readonly ComponentType[] = ['mesh', 'model'];
+const RENDERABLE: readonly ComponentType[] = ['mesh', 'model', 'water'];
 
 /**
  * Which component decides the colour when an entity carries several.

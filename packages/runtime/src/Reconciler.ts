@@ -6,6 +6,7 @@ import { ENTITY_ID_KEY } from './systems/identity';
 import { LightSystem } from './systems/LightSystem';
 import { MeshSystem, type MeshHandle } from './systems/MeshSystem';
 import { ModelSystem, type ModelHandle } from './systems/ModelSystem';
+import { WaterSystem } from './systems/WaterSystem';
 
 /*
  * Mounts, patches and unmounts, one entity at a time.
@@ -64,7 +65,7 @@ export class Reconciler {
   private readonly modelSystem = new ModelSystem();
 
   /**
-   * The four types that draw something. The other seven have no object of their
+   * The five types that draw something. The other seven have no object of their
    * own — physics, audio, scripts and controllers are built by their own layers
    * from the same document, and a prefab instance was turned into real entities
    * by `expandPrefabs` before the runtime ever saw the scene.
@@ -78,6 +79,7 @@ export class Reconciler {
     ['model', erase(this.modelSystem)],
     ['light', erase(new LightSystem())],
     ['camera', erase(new CameraSystem())],
+    ['water', erase(new WaterSystem())],
   ]);
 
   view(entityId: string): EntityView | undefined {

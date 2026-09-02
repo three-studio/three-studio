@@ -37,7 +37,7 @@ thing as a static web build** that runs in any browser.
 > stability guarantee.
 >
 > What it *is*: a serious, tested exploration of how much of a real game editor can live on top of
-> Three.js and the web platform. 692 unit tests, strict package boundaries, and a headless smoke
+> Three.js and the web platform. 705 unit tests, strict package boundaries, and a headless smoke
 > harness that boots the whole stack.
 
 ## 🧩 Features
@@ -62,8 +62,8 @@ thing as a static web build** that runs in any browser.
 - **Prefabs**: make, instance, override per-instance, unpack.
 
 ### Components
-`mesh` · `model` · `camera` · `light` · `collider` · `rigidbody` · `script` · `audioSource` ·
-`audioListener` · `playerController` · `prefabInstance` · material assets
+`mesh` · `model` · `water` · `camera` · `light` · `collider` · `rigidbody` · `script` ·
+`audioSource` · `audioListener` · `playerController` · `prefabInstance` · material assets
 
 The Inspector is generated from a component's declared schema (Tweakpane), including asset pickers
 and entity references.
@@ -86,6 +86,8 @@ and entity references.
 
 ### Runtime
 - **Three.js (WebGPU-capable) renderer**, ECS-ish system layer, resource arena, mesh batching.
+- **One clock** for the simulation and every shader: three's TSL `time` node is re-pointed at it, so
+  Pause and the timescale stop the water and the sky along with the physics.
 - **Rapier physics**: rigid bodies, colliders, character-style player controller.
 - **Play mode in-editor** with a document snapshot restored on stop — playing never dirties a scene.
 - **Scripting**: user TypeScript compiled in-app by esbuild, with lifecycle hooks

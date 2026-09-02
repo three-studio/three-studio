@@ -144,20 +144,27 @@
  * its variables at the studio palette so the dock and the surrounding chrome
  * stay in sync from one place.
  */
+/*
+ * The isolation that used to be here now sits on the dock's wrapper in `App`,
+ * and it had to move.
+ *
+ * Isolating is still the right answer to dockview's z-indices — `99` on every
+ * splitter, `999` on a drop zone, chosen for the root stacking context and
+ * therefore above an open dialog's backdrop whatever number that picks. What
+ * was wrong was the level.
+ *
+ * With `renderer: 'always'` dockview parks every panel's DOM in
+ * `.dv-render-overlay`, and that element is a **sibling of the dock root**, not
+ * a descendant. Isolating the root therefore sealed the splitters' `z-index: 99`
+ * inside a box that is itself `z-index: auto`, while the overlay sat outside it
+ * at `z-index: 1` — so the panels covered the splitters and the two vertical
+ * ones became impossible to grab. The horizontal one survived only because the
+ * parked panels leave a gap where it happens to sit.
+ *
+ * One level up, the splitters and the overlay are compared in the same context,
+ * 99 beats 1, and the dock is still a single box to everything outside it.
+ */
 .studio-dock {
-  /*
-   * A stacking context of its own, so dockview's z-indices stay inside it.
-   *
-   * It puts `z-index: 99` on every splitter and 1000 on a drop zone, in the root
-   * stacking context — above an open dialog's backdrop whatever number that
-   * picks. The symptom was being able to drag the layout around behind a modal.
-   *
-   * Isolating is the fix rather than outbidding: the app's own layers are then
-   * compared against the dock as a single box, and the next version of dockview
-   * is free to choose any number it likes inside it.
-   */
-  isolation: isolate;
-
   --dv-group-view-background-color: var(--color-surface-1);
   --dv-tabs-and-actions-container-background-color: var(--color-surface-2);
   --dv-tabs-and-actions-container-height: 28px;
@@ -190,6 +197,33 @@
    against flat panels of nearly the same value. */
 .studio-dock .dv-sash {
   background-color: var(--color-line);
+}
+
+/*
+ * A splitter you can actually hit.
+ *
+ * dockview draws one 4px wide and widens it to 24 only under
+ * `@media (pointer: coarse)` — so a mouse gets four pixels and a finger gets
+ * twenty-four, which is backwards for a desktop editor. The same trick, applied
+ * unconditionally: the grab area grows, the hairline does not move.
+ */
+.studio-dock .dv-split-view-container > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+  content: '';
+  position: absolute;
+}
+
+.studio-dock .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
+}
+
+.studio-dock .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
+  left: 0;
+  right: 0;
+  top: -4px;
+  bottom: -4px;
 }
 
 /* Editor panels are fixtures, not documents. Closing one by mis-clicking would

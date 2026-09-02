@@ -143,6 +143,7 @@ export type {
   LightComponent,
   LightKind,
   MaterialDef,
+  MaterialSide,
   MeshComponent,
   PrefabInstanceComponent,
   PrefabOverride,
@@ -156,7 +157,12 @@ export type {
   SkySettings,
   Transform,
   Vec3,
+  WaterComponent,
+  WaterSunSource,
 } from './scene/schema';
+
+/* Water's sun: which one, and where the sky's is. */
+export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/water';
 
 export { AUDIO_BUSES } from './scene/schema';
 
@@ -182,6 +188,8 @@ export {
   createSkySettings,
   createStarterScene,
   createTransform,
+  createWater,
+  createWaterEntity,
   isPlaceable,
   restingOffsetY,
 } from './scene/defaults';

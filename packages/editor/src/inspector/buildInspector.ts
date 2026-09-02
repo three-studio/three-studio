@@ -1,4 +1,5 @@
 import {
+  SUN_CUSTOM,
   componentsOf,
   findComponentById,
   type ComponentDoc,
@@ -434,6 +435,11 @@ export function inspectorSignature(entityId: string | undefined): string {
         return `model:${component.materialId ?? 'file'}:${component.nodePath === '' ? 'whole' : 'node'}`;
       case 'playerController':
         return `player:${component.mode}`;
+      // Choosing a sun decides whether the two manual fields are there at all,
+      // so it is as structural as a light's kind. Without it, switching to
+      // Custom refreshed the values and never added the rows.
+      case 'water':
+        return `water:${component.sunSource === SUN_CUSTOM ? 'custom' : 'linked'}`;
       // Whether a source is positional decides whether it has falloff and a
       // cone at all, so the slider crossing zero is as structural as a light's
       // kind. Without this the rows were chosen once and never again: dragging
