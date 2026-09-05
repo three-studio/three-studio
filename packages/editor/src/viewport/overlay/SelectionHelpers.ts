@@ -4,7 +4,7 @@ import { Group, type Object3D } from 'three/webgpu';
 import type { ComponentHelper, HelperHandle } from './ComponentHelper';
 import { AudioShape } from './helpers/AudioShape';
 import { CameraFrustum } from './helpers/CameraFrustum';
-import { LightShape } from './helpers/LightShape';
+import { helper as lightHelper } from '../../components/light/overlay';
 
 /** One mounted annotation, and what it was built against. */
 interface Mounted {
@@ -46,7 +46,7 @@ export class SelectionHelpers {
    */
   private readonly helpers = new Map<ComponentType, ComponentHelper>([
     ['camera', new CameraFrustum()],
-    ['light', new LightShape()],
+    ['light', lightHelper],
     ['audioSource', new AudioShape()],
   ]);
   private readonly mounted = new Map<Key, Mounted>();

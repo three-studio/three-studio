@@ -1,4 +1,5 @@
 import type { LightComponent } from '@three-studio/core';
+import type { EntityMarker } from '../registry';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import {
   DirectionalLight,
@@ -15,7 +16,7 @@ import {
   Vector3,
   type Object3D,
 } from 'three/webgpu';
-import { annotation, type ComponentHelper, type HelperHandle } from '../ComponentHelper';
+import { annotation, type ComponentHelper, type HelperHandle } from '../../viewport/overlay/ComponentHelper';
 
 /**
  * Side of the directional light's plane, in world units.
@@ -154,3 +155,14 @@ class PointRange extends Mesh<SphereGeometry, MeshBasicMaterial> {
 function rangeSphere(light: PointLight): HelperHandle {
   return annotation(new PointRange(light));
 }
+
+/** A light draws no geometry of its own; what it lights is what is seen. */
+export const drawsGeometry = false;
+
+/**
+ * Warm, and second only to the camera: an entity that is a light and nothing
+ * else is invisible without this, and there is no object behind it to click.
+ */
+export const marker: EntityMarker = { color: 0xffd25e, pixels: 11, priority: 2 };
+
+export const helper = new LightShape();

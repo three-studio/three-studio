@@ -4,13 +4,13 @@ import {
   createAudioSourceEntity,
   createCameraEntity,
   createEntity,
-  createLightEntity,
   createMeshEntity,
   createWaterEntity,
   type EntityTemplate,
   type GeometryKind,
-  type LightKind,
 } from '@three-studio/core';
+import { menu as lightMenu } from '../components/light/menu';
+import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
 import { modKey } from '../platform';
 import { groupCommand } from '../commands/registry';
@@ -44,24 +44,9 @@ const MESH_KINDS: readonly (GeometryKind | null)[] = [
   'icosahedron',
 ];
 
-/**
- * Shorter than the entity names: the submenu title already says "Light".
- *
- * Ordered by how often one is reached for, not alphabetically — and the two
- * scene-wide kinds sit last because they are the ones that ignore where they
- * are put.
- */
-const LIGHT_LABELS: Record<LightKind, string> = {
-  directional: 'Directional',
-  point: 'Point',
-  spot: 'Spot',
-  rectArea: 'Area',
-  projector: 'Projector',
-  ambient: 'Ambient',
-  hemisphere: 'Hemisphere',
-};
-
-const LIGHT_KINDS = Object.keys(LIGHT_LABELS) as readonly LightKind[];
+/** One thing a slice offers, as a menu entry that places it. */
+const offer = (entry: AddMenuEntry): MenuEntry =>
+  entry === null ? null : { label: entry.label, onSelect: () => addEntityInView(entry.create()) };
 
 /*
  * Where the new object lands is `addEntityInView`'s business, not the menu's.
@@ -98,13 +83,7 @@ export function buildAddMenu(): MenuEntry[] {
           : { label: GEOMETRY_LABELS[kind], onSelect: add(() => createMeshEntity(kind)) },
       ),
     },
-    {
-      label: 'Light',
-      submenu: LIGHT_KINDS.map((kind) => ({
-        label: LIGHT_LABELS[kind],
-        onSelect: add(() => createLightEntity(kind)),
-      })),
-    },
+    { label: lightMenu.label, submenu: lightMenu.entries.map(offer) },
     {
       label: 'Camera',
       submenu: [

@@ -1,4 +1,6 @@
-import { hasComponent, type ComponentType, type SceneDoc } from '@three-studio/core';
+import { COMPONENT_TYPES, hasComponent, type ComponentType, type SceneDoc } from '@three-studio/core';
+import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
+import type { EntityMarker } from '../../components/registry';
 
 /*
  * Which entities get a marker in the viewport, and what it looks like.
@@ -8,11 +10,8 @@ import { hasComponent, type ComponentType, type SceneDoc } from '@three-studio/c
  * is what lets a test ask it without a scene graph.
  */
 
-export interface MarkerStyle {
-  readonly color: number;
-  /** Radius the marker aims for on screen, in pixels. */
-  readonly pixels: number;
-}
+/** What `EntityMarkers` draws. The ranking beside it is this file's business. */
+export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
 
 /**
  * Types that draw something of their own. An entity carrying one is already
@@ -27,7 +26,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   mesh: true,
   model: true,
   water: true,
-  light: false,
+  light: lightDrawsGeometry,
   camera: false,
   rigidbody: false,
   collider: false,
@@ -44,23 +43,25 @@ const RENDERS: readonly ComponentType[] = (Object.keys(RENDERABLE) as ComponentT
 );
 
 /**
- * The marker each type contributes, `null` for none, **in priority order**.
+ * The marker each type contributes, `null` for none.
  *
- * Two things at once, and the key order is the second of them: the first styled
- * type an entity carries is the one that colours it. A separate order from
- * `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason that file already
- * gives: the order is a decision about *this* display, not about the types. A
- * camera outranks a light here because a camera rig is what an author is
- * looking for when both sit on one entity.
+ * The ranking used to be the key order of this table. It is a number on the
+ * marker now, because a type declares its marker in its own folder and a folder
+ * has no place in anyone's key order — and the ranking still has to be
+ * expressible: the first styled type an entity carries is the one that colours
+ * it. A separate decision from `HierarchyPanel`'s `ICON_PRIORITY`, and for the
+ * reason that file already gives: the order is about *this* display, not about
+ * the types. A camera outranks a light here because a camera rig is what an
+ * author is looking for when both sit on one entity.
  *
  * `null` is a decision — "this type is never worth a marker" — where an absent
  * key was only ever an omission nobody could tell from a choice.
  */
-const STYLES: Record<ComponentType, MarkerStyle | null> = {
-  camera: { color: 0x5eb0ff, pixels: 11 },
-  light: { color: 0xffd25e, pixels: 11 },
-  audioSource: { color: 0x6ee7a8, pixels: 9 },
-  audioListener: { color: 0x6ee7a8, pixels: 9 },
+const STYLES: Record<ComponentType, EntityMarker | null> = {
+  camera: { color: 0x5eb0ff, pixels: 11, priority: 1 },
+  light: lightMarker,
+  audioSource: { color: 0x6ee7a8, pixels: 9, priority: 3 },
+  audioListener: { color: 0x6ee7a8, pixels: 9, priority: 4 },
   mesh: null,
   model: null,
   water: null,
@@ -72,14 +73,14 @@ const STYLES: Record<ComponentType, MarkerStyle | null> = {
 };
 
 /**
- * The styled types, in the order `STYLES` lists them.
+ * The styled types, best first.
  *
  * Derived rather than repeated: the list this replaced was a second copy of the
  * same four names, and a fifth style would have had to be added to both.
  */
-const PRIORITY: readonly ComponentType[] = (Object.keys(STYLES) as ComponentType[]).filter(
+const PRIORITY: readonly ComponentType[] = COMPONENT_TYPES.filter(
   (type) => STYLES[type] !== null,
-);
+).sort((a, b) => STYLES[a]!.priority - STYLES[b]!.priority);
 
 /**
  * The types worth marking. Also what a full pass iterates, so it can go through
