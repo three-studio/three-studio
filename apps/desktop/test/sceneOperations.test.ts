@@ -15,7 +15,7 @@ import {
   type ProjectFile,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { discoverScenes, readProject } from '../src/main/project';
+import { discoverScenes, openProject, readProject } from '../src/main/project';
 import {
   createScene,
   deleteScene,
@@ -25,14 +25,15 @@ import {
 } from '../src/main/scenes';
 
 /*
- * The five operations on the scenes of a project, now that `scenes/` is the
- * list and `project.json` no longer keeps a copy of it.
+ * The five operations on the scenes of a project, each one a file operation
+ * plus a write of `startScene` when `startScene` is what moved.
  *
- * Three of the four invariants these used to hold were about keeping that copy
- * honest and went with it. What is pinned here is what a directory cannot say
- * for itself — names stay unique, the last scene stays — and the one thing the
- * change made true of a rename: the file moves, because the file name is the
- * name, and no reference moves with it.
+ * All four of the invariants these used to hold by hand are gone or explained:
+ * three were about keeping `project.json`'s copy of `scenes/` honest, and what
+ * is pinned in their place is that nothing rewrites those references any more
+ * and nothing needs it to. What survives is the pair that was never about a
+ * list — names stay unique, the last scene stays — and the thing the move to
+ * disk made true of a rename: the file moves, and no reference moves with it.
  */
 
 /** A project on disk with the named scenes; the first is the start scene. */
@@ -186,6 +187,26 @@ describe('scene names are unique in a project', () => {
     expect(scene.path).toBe(`${SCENES_DIR}/Boss.scene.json`);
   });
 
+  /*
+   * `sceneName` strips `.scene.json` *and* `.json`, so a name that already
+   * looks like a file name has to be reduced to a fixed point before it becomes
+   * one. Without that, `Boss.json` would be written to `Boss.json.scene.json`
+   * and read back as `Boss` — and since the path is now the only source of the
+   * name, that is not a label disagreeing with a file, it is the scene being
+   * called something other than what was asked for. `Boss.scene.json` is worse
+   * still: it would read back as `Boss.scene`.
+   */
+  it('reduces a name that is already a file name to what it reads back as', async () => {
+    const root = await projectWith(['main']);
+
+    const { scene } = await createScene(root, 'Boss.json');
+    expect(scene.name).toBe('Boss');
+    expect(scene.path).toBe(`${SCENES_DIR}/Boss.scene.json`);
+    // The whole point of the fixed point: the name survives the round trip
+    // through the file it was written to.
+    expect((await discoverScenes(root)).map((entry) => entry.name)).toContain('Boss');
+  });
+
   it('refuses a name that is nothing but punctuation', async () => {
     const root = await projectWith(['main']);
     await expect(createScene(root, '   ')).rejects.toThrow(/name/i);
@@ -221,16 +242,26 @@ describe('the start scene is always one of the scenes', () => {
   });
 });
 
-describe('build profiles follow their scenes', () => {
-  it('drops the scene a deletion removed', async () => {
+describe('what a deletion no longer rewrites', () => {
+  /*
+   * A deletion used to walk the build profiles and the loading scene and take
+   * the id out of both. It stopped, because both had to tolerate an id with no
+   * file anyway — a scene deleted in the Finder never comes through here — and
+   * once they tolerate it, doing the work in the one path that runs sometimes
+   * buys nothing and rots quietly. The tolerance is what is pinned instead.
+   */
+  it('leaves a build profile naming the deleted scene alone', async () => {
     const root = await projectWith(['main', 'Boss']);
-    const main = await idOf(root, 'main');
+    const before = profileScenes(await readProject(root));
     await deleteScene(root, await idOf(root, 'Boss'));
 
-    expect(profileScenes(await readProject(root))).toEqual([main]);
+    // Untouched — and the export says so, rather than the deletion pre-empting
+    // it. See `exportWeb.test.ts`: a profile naming a scene that is gone is a
+    // warning on the build, not a refusal and not a silent edit.
+    expect(profileScenes(await readProject(root))).toEqual(before);
   });
 
-  it('clears a loading scene the deletion removed', async () => {
+  it('leaves a loading scene naming the deleted scene alone, and still opens', async () => {
     const root = await projectWith(['main', 'Boss']);
     const boss = await idOf(root, 'Boss');
 
@@ -240,9 +271,27 @@ describe('build profiles follow their scenes', () => {
       JSON.stringify({ ...project, settings: { ...project.settings, loadingScene: boss } }, null, 2),
       'utf8',
     );
-
     await deleteScene(root, boss);
-    expect((await readProject(root)).settings.loadingScene).toBeNull();
+
+    // `SceneHost.showLoadingScene` catches a loading scene it cannot read and
+    // goes straight to the target — "better than stopping because the
+    // interstitial is missing". So this line costs nothing, and the project
+    // opens with it in place.
+    expect((await readProject(root)).settings.loadingScene).toBe(boss);
+    expect((await openProject(root)).sceneId).toBe(await idOf(root, 'main'));
+  });
+
+  /*
+   * The other half of the same idea: a delete that moves nothing in the project
+   * file does not write it. A project appearing in someone's diff with identical
+   * bytes is noise, and it is the kind that teaches people to stop reading them.
+   */
+  it('does not write the project file when the start scene did not move', async () => {
+    const root = await projectWith(['main', 'Boss']);
+    const before = await readFile(join(root, PROJECT_FILE_NAME), 'utf8');
+
+    await deleteScene(root, await idOf(root, 'Boss'));
+    expect(await readFile(join(root, PROJECT_FILE_NAME), 'utf8')).toBe(before);
   });
 });
 

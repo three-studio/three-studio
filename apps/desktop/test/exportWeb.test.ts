@@ -351,6 +351,53 @@ describe('web export', () => {
  * the document. So what this describes is the whole of the base URL feature,
  * and the page is the only place it can be got wrong.
  */
+describe('a profile that names a scene the project no longer has', () => {
+  /*
+   * A profile is written once; the scenes it names live in the Finder, where
+   * one can be deleted or moved out months later. Refusing the whole export for
+   * that would mean the author cannot ship the levels that are still there —
+   * so it is a warning, in the same place the missing-asset warnings go.
+   *
+   * This is what lets a deletion stop rewriting build profiles: the export was
+   * always going to have to survive an id with no file, because a deletion in
+   * the Finder never went through the editor. See `sceneOperations.test.ts`.
+   */
+  it('warns and ships the scenes that are left', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out');
+    const scene = deserializeScene(
+      await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
+    );
+
+    const result = await exportBuild(
+      projectPath,
+      profile({ scenes: [scene.id, 'a-scene-that-was-deleted'] }),
+      outputDir,
+      [templateRoot],
+    );
+
+    expect(result.sceneCount).toBe(1);
+    expect(result.warnings.join(' ')).toMatch(/a-scene-that-was-deleted/);
+    // And the build is a build: the player loads this before anything else.
+    expect(await readdir(outputDir)).toContain('scene.json');
+  });
+
+  /*
+   * None of them resolving is different in kind. A folder with no `scene.json`
+   * is a black page rather than a message, so that one does refuse.
+   */
+  it('refuses when none of them is left', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out');
+
+    await expect(
+      exportBuild(projectPath, profile({ scenes: ['gone', 'also-gone'] }), outputDir, [
+        templateRoot,
+      ]),
+    ).rejects.toThrow(/no scene/i);
+  });
+});
+
 describe('base URL', () => {
   const indexOf = async (outputDir: string): Promise<string> =>
     readFile(join(outputDir, 'index.html'), 'utf8');

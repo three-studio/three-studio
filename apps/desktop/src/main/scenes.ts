@@ -24,22 +24,38 @@ import { ProjectError, discoverScenes, readProject, writeProject } from './proje
  * **Everything here addresses a scene by id** — `SceneDoc.id`, written into the
  * document when the scene is created. See ADR-15.
  *
- * The list itself is not here any more. `scenes/` is the list and
- * `discoverScenes` reads it, so three of the four invariants this module used
- * to hold went with the copy they were protecting. What is left is what a
- * directory cannot say for itself:
+ * The list itself is not here any more: `scenes/` is the list, and
+ * `discoverScenes` reads it. Every operation below is therefore a file
+ * operation, plus a write of `startScene` when `startScene` is the thing that
+ * moved. That is the whole of it.
+ *
+ * Four invariants used to live here, each held by hand. Three were about
+ * keeping `project.json`'s copy of the directory honest and went with the copy:
+ *
+ * - **`startScene` is one of `scenes`** — `openProject` falls back to the first
+ *   scene now, so an id with no file costs nothing.
+ * - **`BuildProfile.scenes` follows a deletion** — an id with no file is an
+ *   export warning now, and the profile is not this module's business.
+ * - **`loadingScene` follows a deletion** — `SceneHost.showLoadingScene`
+ *   catches and goes straight to the target: "better than stopping because the
+ *   interstitial is missing".
+ *
+ * All three had to tolerate an absent id anyway, because a scene deleted in the
+ * Finder never comes through here. Once each tolerates it, doing the work
+ * twice buys nothing, and the half that runs only sometimes is the half that
+ * rots. Two rules survive, and neither is about a list:
  *
  * 1. **Names are unique.** Not for the machine's sake — nothing resolves
  *    through a name — but a script may name a scene, and two called `Boss` make
  *    that ambiguous. The disk permits it, since two folders under `scenes/` can
  *    hold a `Boss.scene.json` each; this refuses to be what creates it, and
  *    `resolveScene` takes the first by path order when it meets one anyway.
- * 2. **The last scene stays.** A project with none cannot be opened at all.
- *
- * `startScene`, `loadingScene` and the build profiles are still tidied when a
- * scene is deleted from here, but none of the three is an invariant now: each
- * tolerates an id that is not on disk, because a scene can be deleted in the
- * Finder without this module ever running.
+ * 2. **The last scene stays.** Not an invariant of a list — a property of
+ *    `openProject`, which has to hand a window a scene to show. It is the one
+ *    refusal that stops the editor producing a project it cannot reopen, and it
+ *    is why deleting the last scene is refused while the Finder may still do
+ *    it: the Finder's version says so on the next open, in a sentence; a
+ *    confirmed menu action that bricks a project does not get to.
  *
  * What this module does not do is edit scene documents. A window may have one
  * open with unsaved work, and a process writing into a file another window
@@ -134,44 +150,29 @@ function requireScene(scenes: readonly SceneEntry[], sceneId: string): SceneEntr
 }
 
 /**
- * Drops every reference to a scene at once — the start scene, each build
- * profile, and the loading scene.
+ * Moves `startScene` off a scene that has just been deleted.
  *
- * Tidiness now rather than an invariant: all three tolerate an id with no file,
- * because a scene deleted in the Finder never comes through here. It is still
- * done, because a profile that ships a scene nobody can find is a build someone
- * will one day have to explain.
+ * All that is left of the four references a deletion used to rewrite, and it is
+ * here for a different reason than the other three were: not to keep a list
+ * honest — `openProject` falls back on its own — but so that `project.json`
+ * goes on saying something true. A start scene that names a file nobody can
+ * find is a line someone reads in a diff and has to go and check.
  *
  * @param remaining What is on disk after the file went, which is what says
  *   whether the id is really gone.
  */
-function withoutScene(
+function repointStartScene(
   project: ProjectFile,
   sceneId: string,
   remaining: readonly SceneEntry[],
 ): ProjectFile {
+  if (project.startScene !== sceneId) return project;
   // Still there: a second file claimed the same id — see `SceneEntry.shadowedBy`
-  // — so removing one of the two did not remove the scene the references name.
+  // — so removing one of the two did not remove the scene `startScene` names.
   if (findScene(remaining, sceneId)) return project;
 
-  const profiles = Object.fromEntries(
-    Object.entries(project.settings.build.profiles).map(([id, profile]) => [
-      id,
-      { ...profile, scenes: profile.scenes.filter((each) => each !== sceneId) },
-    ]),
-  );
-
-  return {
-    ...project,
-    // Never left pointing at what was just removed; `remaining` cannot be empty
-    // here because deleting the last scene is refused.
-    startScene: project.startScene === sceneId ? (remaining[0]?.id ?? '') : project.startScene,
-    settings: {
-      ...project.settings,
-      loadingScene: project.settings.loadingScene === sceneId ? null : project.settings.loadingScene,
-      build: { ...project.settings.build, profiles },
-    },
-  };
+  // `remaining` cannot be empty: deleting the last scene is refused.
+  return { ...project, startScene: remaining[0]?.id ?? '' };
 }
 
 /**
@@ -283,8 +284,11 @@ export async function deleteScene(
   const scene = requireScene(scenes, sceneId);
 
   if (scenes.length <= 1) {
-    // `openProject` throws for a project with no scenes, so this would leave
-    // one that cannot be opened again.
+    // The one refusal that survived the registry, and the only one here that is
+    // not about a file: `openProject` has to hand a window a scene to show, and
+    // throws for a project with no scenes. Letting this through would mean a
+    // confirmed menu action that leaves a project unopenable — worse than the
+    // Finder doing the same thing, which at least says so on the next open.
     throw new ProjectError('A project needs a scene; this is the last scene.');
   }
 
@@ -295,8 +299,11 @@ export async function deleteScene(
   // nothing in it has to name a file that exists.
   await rm(resolveInside(projectPath, scene.path), { force: true });
   const remaining = await discoverScenes(projectPath);
-  const updated = withoutScene(project, sceneId, remaining);
-  await writeProject(projectPath, updated);
+  const updated = repointStartScene(project, sceneId, remaining);
+  // Only when something actually moved. A delete that does not touch the start
+  // scene is a file operation and nothing else, and rewriting `project.json`
+  // to identical bytes would put a project in someone's diff for no reason.
+  if (updated !== project) await writeProject(projectPath, updated);
   return { project: updated, scenes: remaining };
 }
 
