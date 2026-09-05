@@ -119,6 +119,25 @@ export interface RenderingSettings {
   shadowMapSize: number;
   /** `toneMappingExposure`. */
   exposure: number;
+  /**
+   * Draw what a scene holds still as one `BatchedMesh` per material.
+   *
+   * A project setting rather than a flag each view sets for itself, and that is
+   * the point of it being here: the editor viewport and the running game have to
+   * answer this the same way, so they read one field and cannot hold two
+   * answers. They used to hold two defaults instead — the viewport assigning
+   * `true` to the binder, `Engine` defaulting to `true` under a comment reading
+   * "on for a running game, off in the editor". They agreed by accident, and the
+   * comment described a divergence that would have been real the moment anyone
+   * believed it.
+   *
+   * Worth agreeing about, because a batch is not only a draw call saved. It
+   * gives up whole-object frustum culling, it gives up sorting, and it gives up
+   * per-instance culling as well as soon as anything in the scene casts a shadow
+   * — see `MeshBatcher`. All three are visible. A viewport that batches while
+   * the game does not is a viewport showing something the game will not do.
+   */
+  batching: boolean;
 }
 
 export interface PhysicsSettings {
@@ -145,6 +164,7 @@ export function createRenderingSettings(): RenderingSettings {
     shadows: true,
     shadowMapSize: 2048,
     exposure: 1,
+    batching: true,
   };
 }
 

@@ -81,6 +81,10 @@ describe('settings a project predates', () => {
     expect(project.settings.rendering.exposure).toBe(1.4);
     expect(project.settings.physics.gravity).toEqual([0, -3.7, 0]);
     expect(project.settings.physics.maxSubsteps).toBe(8);
+    // And fills what that block predates. The `rendering` above is a complete
+    // one as of the version that wrote it, which is exactly the shape a setting
+    // added later has to survive: kept where it spoke, filled where it did not.
+    expect(project.settings.rendering.batching).toBe(true);
   });
 
   it('does not rewrite the file just by reading it', async () => {
