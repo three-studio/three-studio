@@ -1,6 +1,8 @@
-import { createGeometry, createMaterial, createMeshComponent } from '../scene/defaults';
-import { materialAssets } from './materialAssets';
-import { defineComponent } from './registry';
+import { createGeometry } from '../../scene/geometry';
+import { createMaterial } from '../../scene/material';
+import { materialAssets } from '../materialAssets';
+import { defineComponent } from '../registry';
+import { createMeshComponent } from './defaults';
 
 /**
  * A renderable primitive and the material it draws with.

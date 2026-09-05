@@ -7,20 +7,13 @@
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
-import type {
-  ComponentBase,
-  GeometryDef,
-  Hex,
-  MaterialSide,
-  Transform,
-  Vec2,
-  Vec3,
-} from './primitives';
+import type { Hex, Transform, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { AudioSourceComponent } from '../components/audioSource/schema';
 import type { CameraComponent } from '../components/camera/schema';
 import type { ColliderComponent } from '../components/collider/schema';
 import type { LightComponent } from '../components/light/schema';
+import type { MeshComponent } from '../components/mesh/schema';
 import type { ModelComponent } from '../components/model/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 export type { PlayerControllerComponent } from '../components/playerController/schema';
@@ -38,22 +31,16 @@ import type { WaterComponent } from '../components/water/schema';
  * what a component slice has to import without importing the union of them all
  * — see `primitives.ts` — and the types of the slices themselves.
  */
-export type {
-  ComponentBase,
-  GeometryDef,
-  GeometryKind,
-  Hex,
-  MaterialSide,
-  Transform,
-  Vec2,
-  Vec3,
-} from './primitives';
+export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+export type { GeometryDef, GeometryKind } from './geometry';
+export type { MaterialDef, MaterialSide, TextureWrap } from './material';
 export type { AudioListenerComponent } from '../components/audioListener/schema';
 export type { AudioBus, AudioSourceComponent } from '../components/audioSource/schema';
 export { AUDIO_BUSES } from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
 export type { ColliderComponent } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
+export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
 export type {
   PrefabInstanceComponent,
@@ -61,104 +48,6 @@ export type {
 } from '../components/prefabInstance/schema';
 
 // --- material ---------------------------------------------------------------
-
-/**
- * How a texture repeats past the 0..1 UV range. Named after three's constants;
- * `mirror` is what stops a tiled ground from showing a hard seam.
- */
-export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
-
-export interface MaterialDef {
-  color: Hex;
-  roughness: number;
-  metalness: number;
-  emissive: Hex;
-  emissiveIntensity: number;
-  opacity: number;
-  transparent: boolean;
-  wireframe: boolean;
-  side: MaterialSide;
-
-  /*
-   * Texture slots. All asset ids, resolved through the asset registry.
-   *
-   * Colour and emissive are authored in sRGB; the rest carry data (directions,
-   * roughness, coverage) and must stay linear, or the values the shader reads
-   * are not the values the artist painted.
-   */
-  /** Base colour. sRGB. */
-  colorMap: string | null;
-  /** Tangent-space normals. Linear. */
-  normalMap: string | null;
-  normalScale: number;
-  /**
-   * Height in the red channel, converted to a normal perturbation. Linear.
-   *
-   * An alternative to `normalMap`, not a companion: three takes the normal map
-   * when both are set and never mixes them. Cheaper to author — a grey-scale
-   * height map rather than a baked tangent-space normal — and it is also what
-   * a displacement map usually looks like, so the same file often serves both.
-   */
-  bumpMap: string | null;
-  bumpScale: number;
-  /** Read from the green channel, as in glTF. Linear. */
-  roughnessMap: string | null;
-  /** Read from the blue channel, as in glTF. Linear. */
-  metalnessMap: string | null;
-  /** sRGB. */
-  emissiveMap: string | null;
-  /** Ambient occlusion, read from red. Linear. */
-  aoMap: string | null;
-  aoIntensity: number;
-  /** Opacity from the red channel; needs `transparent`. Linear. */
-  alphaMap: string | null;
-  /**
-   * Real geometry displacement: each vertex moves along its normal by the red
-   * channel. Linear.
-   *
-   * Per *vertex*, not per pixel, so it only shows on a subdivided mesh — which
-   * is why the box and plane primitives expose segment counts. A normal map
-   * fakes the lighting of detail without moving anything and costs nothing;
-   * displacement changes the silhouette and the shadow.
-   */
-  displacementMap: string | null;
-  displacementScale: number;
-  /** Shifts the whole surface, so a mid-grey map can push in as well as out. */
-  displacementBias: number;
-
-  /*
-   * UV transform, applied to every slot of this material. It lives on the
-   * three `Texture`, not the material, which is why the binder clones the
-   * cached texture per material rather than sharing one instance.
-   */
-  tiling: Vec2;
-  offset: Vec2;
-  wrap: TextureWrap;
-}
-
-// --- components -------------------------------------------------------------
-
-export interface MeshComponent extends ComponentBase {
-  type: 'mesh';
-  geometry: GeometryDef;
-  /**
-   * The embedded material, used while `materialId` is null.
-   *
-   * Godot's model rather than Unity's: a material starts embedded, and only
-   * becomes a shared asset when the author asks for one. Unity and Unreal are
-   * asset-first — a new object gets a read-only default and any change forces
-   * you to create an asset — which buys consistency at the price of a file per
-   * tinted cube.
-   */
-  material: MaterialDef;
-  /**
-   * Asset id of a shared material. When set it wins over `material`, and the
-   * embedded value is left untouched so detaching can fall back to it.
-   */
-  materialId: string | null;
-  castShadow: boolean;
-  receiveShadow: boolean;
-}
 
 export type ComponentDoc =
   | MeshComponent

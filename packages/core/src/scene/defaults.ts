@@ -1,9 +1,22 @@
 import { createCameraEntity } from '../components/camera/defaults';
 import { createLightEntity } from '../components/light/defaults';
+import { createMeshComponent } from '../components/mesh/defaults';
 import { SCENE_FORMAT_VERSION } from '../constants';
 import { createId } from '../ids';
 import { emptyComponentTables, setComponentsOf } from './components';
 import { createEntity, type EntityTemplate } from './entity';
+import { createBoxGeometry } from './geometry';
+
+/*
+ * What is left once every component type owns its own factories: the shared
+ * environment, and the three ways to make a whole scene. The twelve slices are
+ * imported rather than declared here, and each of those imports names a module
+ * with no side effect of its own — importing `components/<type>/index.ts` would
+ * register the type, and registration order is the Add Component menu's order.
+ *
+ * `isPlaceable` is the one thing here that still names a component type. T-025
+ * turns it into a property a definition declares.
+ */
 import type {
   CameraComponent,
   ComponentDoc,
@@ -18,162 +31,6 @@ import type {
   SceneDoc,
   SkySettings,
 } from './schema';
-
-export function createMaterial(color = '#b7b7b7'): MaterialDef {
-  return {
-    color,
-    roughness: 0.75,
-    metalness: 0,
-    emissive: '#000000',
-    emissiveIntensity: 1,
-    opacity: 1,
-    transparent: false,
-    wireframe: false,
-    side: 'front',
-    colorMap: null,
-    normalMap: null,
-    normalScale: 1,
-    bumpMap: null,
-    bumpScale: 1,
-    roughnessMap: null,
-    metalnessMap: null,
-    emissiveMap: null,
-    aoMap: null,
-    aoIntensity: 1,
-    alphaMap: null,
-    displacementMap: null,
-    displacementScale: 0.1,
-    displacementBias: 0,
-    tiling: [1, 1],
-    offset: [0, 0],
-    wrap: 'repeat',
-  };
-}
-
-/** Narrowed helper: `createGeometry` returns the union, which cannot be spread. */
-export function createBoxGeometry(): Extract<GeometryDef, { kind: 'box' }> {
-  return createGeometry('box') as Extract<GeometryDef, { kind: 'box' }>;
-}
-
-export function createGeometry(kind: GeometryKind): GeometryDef {
-  switch (kind) {
-    case 'box':
-      return {
-        kind,
-        width: 1,
-        height: 1,
-        depth: 1,
-        widthSegments: 1,
-        heightSegments: 1,
-        depthSegments: 1,
-      };
-    case 'sphere':
-      return { kind, radius: 0.5, widthSegments: 32, heightSegments: 16 };
-    case 'plane':
-      return { kind, width: 10, height: 10, widthSegments: 1, heightSegments: 1 };
-    case 'capsule':
-      return { kind, radius: 0.5, height: 1, capSegments: 8, radialSegments: 16 };
-    case 'cylinder':
-      return { kind, radiusTop: 0.5, radiusBottom: 0.5, height: 1, radialSegments: 24 };
-    case 'circle':
-      return { kind, radius: 0.5, segments: 32 };
-    case 'ring':
-      return { kind, innerRadius: 0.25, outerRadius: 0.5, thetaSegments: 32 };
-    case 'torus':
-      return { kind, radius: 0.4, tube: 0.15, radialSegments: 16, tubularSegments: 48 };
-    case 'torusKnot':
-      return { kind, radius: 0.4, tube: 0.12, tubularSegments: 96, radialSegments: 16, p: 2, q: 3 };
-    case 'tetrahedron':
-    case 'octahedron':
-    case 'dodecahedron':
-    case 'icosahedron':
-      return { kind, radius: 0.5, detail: 0 };
-  }
-}
-
-export function createMeshComponent(kind: GeometryKind): MeshComponent {
-  return {
-    id: createId(),
-    type: 'mesh',
-    geometry: createGeometry(kind),
-    material: createMaterial(),
-    materialId: null,
-    castShadow: true,
-    receiveShadow: true,
-  };
-}
-
-export const GEOMETRY_LABELS: Record<GeometryKind, string> = {
-  box: 'Cube',
-  sphere: 'Sphere',
-  plane: 'Plane',
-  capsule: 'Capsule',
-  cylinder: 'Cylinder',
-  circle: 'Circle',
-  ring: 'Ring',
-  torus: 'Torus',
-  torusKnot: 'Torus Knot',
-  tetrahedron: 'Tetrahedron',
-  octahedron: 'Octahedron',
-  dodecahedron: 'Dodecahedron',
-  icosahedron: 'Icosahedron',
-};
-
-/** three builds these in the XY plane, so they face the camera rather than up. */
-const FLAT_KINDS: ReadonlySet<GeometryKind> = new Set(['plane', 'circle', 'ring']);
-
-/**
- * How far above its support point a fresh primitive's origin has to sit for the
- * shape to rest on that point rather than sink through it.
- *
- * Read in the entity's own frame, so the flat kinds answer zero: the rotation
- * `createMeshEntity` gives them has already laid them down, and a sheet on the
- * ground *is* the ground.
- *
- * Was a hard-coded `0.5`, which is the right answer for a unit cube and a
- * half-metre sphere and wrong for everything else — a torus floated by the
- * difference between its tube and that constant.
- */
-export function restingOffsetY(geometry: GeometryDef): number {
-  switch (geometry.kind) {
-    case 'box':
-    case 'cylinder':
-      return geometry.height / 2;
-    case 'sphere':
-    case 'tetrahedron':
-    case 'octahedron':
-    case 'dodecahedron':
-    case 'icosahedron':
-      return geometry.radius;
-    case 'capsule':
-      // three's capsule height is the cylinder alone; the caps are extra.
-      return geometry.height / 2 + geometry.radius;
-    case 'plane':
-    case 'circle':
-    case 'ring':
-      return 0;
-    case 'torus':
-      return geometry.tube;
-    case 'torusKnot':
-      // Exact, not a guess: three's `calculatePositionOnCurve` puts the curve at
-      // `radius * (2 + cos θ) * 0.5` from the origin, so at most `radius * 1.5`.
-      return geometry.radius * 1.5 + geometry.tube;
-  }
-}
-
-export function createMeshEntity(kind: GeometryKind): EntityTemplate {
-  const mesh = createMeshComponent(kind);
-  const template = createEntity(GEOMETRY_LABELS[kind], [mesh]);
-  if (FLAT_KINDS.has(kind)) {
-    // Authors expect a flat primitive to be ground, not a wall.
-    template.entity.transform.rotation = [-Math.PI / 2, 0, 0];
-  }
-  // Rest primitives on their support instead of half-sunk into it. Read as an
-  // offset from wherever the object is being placed, not as a position — see
-  // `placementTransform` in the editor.
-  template.entity.transform.position = [0, restingOffsetY(mesh.geometry), 0];
-  return template;
-}
 
 /** Light kinds three applies to the whole scene, wherever the object stands. */
 const UNPLACED_LIGHTS: ReadonlySet<LightKind> = new Set(['ambient', 'hemisphere']);

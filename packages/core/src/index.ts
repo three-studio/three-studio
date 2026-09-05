@@ -169,27 +169,24 @@ export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/
 export { AUDIO_BUSES } from './scene/schema';
 
 export {
-  GEOMETRY_LABELS,
-  createBoxGeometry,
   createEmptyScene,
   createEnvironment,
-  createGeometry,
-  createMaterial,
-  createMeshComponent,
-  createMeshEntity,
   createNewScene,
   createSkySettings,
   createStarterScene,
   isPlaceable,
-  restingOffsetY,
 } from './scene/defaults';
 export { createEntity, createTransform } from './scene/entity';
+/* The two shared vocabularies a component is built out of. */
+export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
+export { createMaterial } from './scene/material';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCameraEntity } from './components/camera/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
 export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';

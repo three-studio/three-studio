@@ -1,4 +1,6 @@
-import type { ComponentBase, GeometryDef, Hex, MaterialSide, Vec3 } from '../../scene/primitives';
+import type { GeometryDef } from '../../scene/geometry';
+import type { MaterialSide } from '../../scene/material';
+import type { ComponentBase, Hex, Vec3 } from '../../scene/primitives';
 
 /**
  * Where a water surface takes its sun from.
