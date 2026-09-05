@@ -1,13 +1,8 @@
-import {
-  GEOMETRY_LABELS,
-  createEntity,
-  createMeshEntity,
-  type EntityTemplate,
-  type GeometryKind,
-} from '@three-studio/core';
+import { createEntity, type EntityTemplate } from '@three-studio/core';
 import { menu as audioListenerMenu } from '../components/audioListener/menu';
 import { menu as audioSourceMenu } from '../components/audioSource/menu';
 import { menu as cameraMenu } from '../components/camera/menu';
+import { menu as meshMenu } from '../components/mesh/menu';
 import { menu as waterMenu } from '../components/water/menu';
 import { menu as lightMenu } from '../components/light/menu';
 import type { AddMenuEntry } from '../components/registry';
@@ -24,25 +19,6 @@ import type { MenuEntry } from '../ui/Menu';
  * list long enough to run off the bottom of a short window, and the three.js
  * editor, Unity and Blender all group them this way.
  */
-
-/** Ordered the way an author reaches for them, not the way the union declares them. */
-const MESH_KINDS: readonly (GeometryKind | null)[] = [
-  'box',
-  'sphere',
-  'plane',
-  'capsule',
-  'cylinder',
-  null,
-  'circle',
-  'ring',
-  'torus',
-  'torusKnot',
-  null,
-  'tetrahedron',
-  'octahedron',
-  'dodecahedron',
-  'icosahedron',
-];
 
 /** One thing a slice offers, as a menu entry that places it. */
 const offer = (entry: AddMenuEntry): MenuEntry =>
@@ -75,14 +51,7 @@ export function buildAddMenu(): MenuEntry[] {
       onSelect: () => groupCommand.run(),
     },
     null,
-    {
-      label: 'Mesh',
-      submenu: MESH_KINDS.map((kind) =>
-        kind === null
-          ? null
-          : { label: GEOMETRY_LABELS[kind], onSelect: add(() => createMeshEntity(kind)) },
-      ),
-    },
+    { label: meshMenu.label, submenu: meshMenu.entries.map(offer) },
     { label: lightMenu.label, submenu: lightMenu.entries.map(offer) },
     { label: cameraMenu.label, submenu: cameraMenu.entries.map(offer) },
     {

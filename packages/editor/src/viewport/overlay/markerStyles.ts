@@ -31,6 +31,10 @@ import {
   drawsGeometry as waterDrawsGeometry,
   marker as waterMarker,
 } from '../../components/water/overlay';
+import {
+  drawsGeometry as meshDrawsGeometry,
+  marker as meshMarker,
+} from '../../components/mesh/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
   drawsGeometry as scriptDrawsGeometry,
@@ -63,7 +67,7 @@ export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
  * meant. The compiler now asks.
  */
 const RENDERABLE: Record<ComponentType, boolean> = {
-  mesh: true,
+  mesh: meshDrawsGeometry,
   model: modelDrawsGeometry,
   water: waterDrawsGeometry,
   light: lightDrawsGeometry,
@@ -102,7 +106,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   light: lightMarker,
   audioSource: audioSourceMarker,
   audioListener: audioListenerMarker,
-  mesh: null,
+  mesh: meshMarker,
   model: modelMarker,
   water: waterMarker,
   rigidbody: rigidbodyMarker,
