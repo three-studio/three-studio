@@ -182,7 +182,6 @@ export {
   createMeshEntity,
   createModelEntity,
   createNewScene,
-  createPrefabInstance,
   createSkySettings,
   createStarterScene,
   createWater,
@@ -195,6 +194,7 @@ export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createPrefabInstance } from './components/prefabInstance/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

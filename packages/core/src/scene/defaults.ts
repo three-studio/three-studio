@@ -18,7 +18,6 @@ import type {
   MaterialDef,
   MeshComponent,
   PlayerControllerComponent,
-  PrefabInstanceComponent,
   RigidBodyComponent,
   SceneDoc,
   SkySettings,
@@ -227,7 +226,7 @@ export function createPlayerController(): PlayerControllerComponent {
  * an object literal repeated in a module is a second definition of the shape, and
  * it stops matching the interface silently.
  */
-export function blankComponent<T extends 'model' | 'script' | 'prefabInstance'>(
+export function blankComponent<T extends 'model' | 'script'>(
   type: T,
 ): ComponentOfType<T> {
   const created: ComponentDoc =
@@ -242,20 +241,8 @@ export function blankComponent<T extends 'model' | 'script' | 'prefabInstance'>(
           castShadow: true,
           receiveShadow: true,
         }
-      : type === 'script'
-        ? { id: createId(), type: 'script', assetId: '', props: {} }
-        : { id: createId(), type: 'prefabInstance', assetId: '', overrides: {} };
+      : { id: createId(), type: 'script', assetId: '', props: {} };
   return created as ComponentOfType<T>;
-}
-
-/**
- * An instance component pointing at a prefab asset.
- *
- * Its own factory because the literal was written out at nine call sites, and
- * every one of them had to be found again the day components gained an id.
- */
-export function createPrefabInstance(assetId: string): PrefabInstanceComponent {
-  return { ...blankComponent('prefabInstance'), assetId };
 }
 
 export function createMeshComponent(kind: GeometryKind): MeshComponent {

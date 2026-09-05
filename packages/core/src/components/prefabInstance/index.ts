@@ -1,5 +1,5 @@
-import { blankComponent as blank } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createPrefabInstance } from './defaults';
 
 /**
  * A placement of a prefab asset.
@@ -10,8 +10,8 @@ import { defineComponent } from './registry';
  */
 export const prefabInstanceComponent = defineComponent({
   type: 'prefabInstance',
-  create: () => blank('prefabInstance'),
-  fill: (stored) => ({ ...blank('prefabInstance'), ...stored }),
+  create: () => createPrefabInstance(),
+  fill: (stored) => ({ ...createPrefabInstance(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'boxes',
   runtime: true,

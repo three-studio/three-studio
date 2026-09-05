@@ -8,7 +8,8 @@ import {
   findComponent,
   type ComponentHost,
 } from './components';
-import { createEmptyScene, createPrefabInstance } from './defaults';
+import { createPrefabInstance } from '../components/prefabInstance/defaults';
+import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
 import { collectDescendants } from './query';
 import { migrateScene } from './serialization';
