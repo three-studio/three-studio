@@ -10,22 +10,18 @@ import {
 import {
   Engine,
   FIXED_STEP,
-  SceneBinder,
   SceneHost,
   createRenderer,
   rendererCount,
   studioTime,
   type RendererBackend,
+  type SceneBinder,
 } from '@three-studio/runtime';
 import {
-  Color,
-  DirectionalLight,
-  Group,
-  GridHelper,
-  HemisphereLight,
   PerspectiveCamera,
-  Scene,
   Vector3,
+  type Group,
+  type Scene,
   type WebGPURenderer,
 } from 'three/webgpu';
 import {
@@ -51,8 +47,9 @@ import { horizontalPlaneHit } from './dropPlane';
 import { Picker } from './Picker';
 import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 import { retireFrameBufferTarget } from './frameBufferTarget';
-import { SelectionOutline } from './SelectionOutline';
-import { ViewportOverlay } from './overlay/ViewportOverlay';
+import { createEditorProjection } from './editorProjection';
+import type { SelectionOutline } from './SelectionOutline';
+import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
 const STATS_INTERVAL_MS = 500;
 /** Guards against runaway movement after the window was backgrounded. */
@@ -70,14 +67,16 @@ const SCRATCH_DIRECTION = new Vector3();
  * tabs are never visible at the same time.
  */
 export class EditorViewport {
-  readonly scene = new Scene();
+  /**
+   * The Scene view's projection, built by `createEditorProjection`: the scene
+   * graph, the binder that fills it and the overlays laid over it. Everything
+   * on the four lines below is that call's, held here for the frame loop.
+   */
+  readonly scene: Scene;
   readonly camera: PerspectiveCamera;
   readonly canvas: HTMLCanvasElement;
   readonly controls: FlyControls;
   readonly backend: RendererBackend;
-
-  /** Editor-only geometry, excluded from picking and from the exported scene. */
-  readonly helpers = new Group();
 
   /**
    * Projects the scene document onto three.js objects. The resolver reads the
@@ -99,8 +98,8 @@ export class EditorViewport {
   private lastSeen = 0;
   readonly gizmo: GizmoController;
 
-  private readonly outline = new SelectionOutline();
-  private readonly fallbackLighting = new Group();
+  private readonly outline: SelectionOutline;
+  private readonly fallbackLighting: Group;
   private readonly renderer: WebGPURenderer;
   /** Non-null while the game is running; owns its own scene graph and physics. */
   private engine: Engine | null = null;
@@ -190,8 +189,14 @@ export class EditorViewport {
      * initialiser runs before the constructor has been told anything — which is
      * exactly why these settings used to be assigned onto a finished binder,
      * one statement each, in an order nothing enforced.
+     *
+     * The document goes in at construction, so this viewport's first frame is
+     * not also its first sync. `lastSeen` stays at zero regardless: the frame
+     * loop's own pass is what records `lastSources`, and skipping it would
+     * leave a prefab instance's produced ids unknown to the very next edit.
      */
-    this.binder = new SceneBinder({
+    const projection = createEditorProjection({
+      scene: expandedScene().scene,
       resolver: editorAssetResolver,
       rendering,
       // The one thing the binder cannot do without a device; see `SceneBinder`.
@@ -200,16 +205,15 @@ export class EditorViewport {
       // mesh synchronously, so it cannot await one.
       materials: useAssetStore.getState().materials,
     });
-    this.overlay = new ViewportOverlay(this.binder);
+    this.scene = projection.scene;
+    this.binder = projection.binder;
+    this.overlay = projection.overlay;
+    this.outline = projection.outline;
+    this.fallbackLighting = projection.fallbackLighting;
 
     this.camera = new PerspectiveCamera(60, 1, 0.1, 5000);
     this.camera.position.set(8, 6, 12);
     this.camera.lookAt(0, 0, 0);
-
-    this.scene.background = new Color('#2b2f33');
-    this.scene.add(this.helpers, this.fallbackLighting, this.binder.root);
-    this.buildHelpers();
-    this.buildFallbackLighting();
 
     // Before both, and it has to stay before both: listeners on the target
     // element run in registration order, so this is the only way the
@@ -233,18 +237,11 @@ export class EditorViewport {
       this.overlay.markers,
     );
     this.gizmo = new GizmoController(this.camera, canvas);
-    // The pivot goes in too: `TransformControls` tracks the world matrix of what
-    // it is attached to, and an object outside the graph never gets one.
-    this.helpers.add(
-      this.outline.root,
-      this.gizmo.helper,
-      this.gizmo.pivotObject,
-      // Both under `helpers`, whose transform is identity — three's light and
-      // camera helpers take the world matrix of what they annotate as their own,
-      // and a parent with a transform would offset every one of them.
-      this.overlay.markers,
-      this.overlay.annotations,
-    );
+    // Into the group the projection reserved for it, because `TransformControls`
+    // needs a canvas and the projection is built without one. The pivot goes in
+    // too: `TransformControls` tracks the world matrix of what it is attached
+    // to, and an object outside the graph never gets one.
+    projection.transformGizmo.add(this.gizmo.helper, this.gizmo.pivotObject);
 
     this.installSelectionHandlers();
     this.resizeObserver = new ResizeObserver(() => (this.sizeDirty = true));
@@ -823,23 +820,6 @@ export class EditorViewport {
     this.lastReportTime = time;
   }
 
-  private buildHelpers(): void {
-    // Two tiers, like Unity: metre cells near the origin, ten-metre cells beyond.
-    // Values are well above the background so the ground plane reads at a glance.
-    const fine = new GridHelper(200, 200, 0x7d858e, 0x4d545b);
-    const coarse = new GridHelper(2000, 200, 0x8a939d, 0x5a6269);
-    coarse.position.y = -0.001; // Avoid z-fighting with the fine grid.
-
-    for (const grid of [fine, coarse]) {
-      const material = grid.material;
-      material.transparent = true;
-      material.opacity = 0.85;
-      material.depthWrite = false;
-      grid.renderOrder = -1;
-      this.helpers.add(grid);
-    }
-  }
-
   /**
    * Pulls the scene document into three.js once per frame.
    *
@@ -949,13 +929,6 @@ export class EditorViewport {
     // once per sync.
     const hasAuthoredLight = Object.keys(scene.components.light).length > 0;
     this.fallbackLighting.visible = !hasAuthoredLight;
-  }
-
-  private buildFallbackLighting(): void {
-    const sky = new HemisphereLight(0xbfd4e8, 0x3a3428, 1.1);
-    const sun = new DirectionalLight(0xffffff, 2.2);
-    sun.position.set(12, 18, 8);
-    this.fallbackLighting.add(sky, sun);
   }
 }
 
