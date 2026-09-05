@@ -8,6 +8,7 @@ export const scriptComponent = defineComponent({
   fill: (stored) => ({ ...createScript(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'file-code',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

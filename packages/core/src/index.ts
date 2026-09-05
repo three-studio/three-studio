@@ -174,7 +174,6 @@ export {
   createNewScene,
   createSkySettings,
   createStarterScene,
-  isPlaceable,
 } from './scene/defaults';
 export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
@@ -219,6 +218,7 @@ export {
   createComponentForEntity,
   defineComponent,
   fillComponent,
+  isPlaceable,
   typesWithoutRuntime,
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';

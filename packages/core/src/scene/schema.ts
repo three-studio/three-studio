@@ -4,10 +4,20 @@
  * round — which is what makes undo, save/load, play-mode snapshots and the web
  * export fall out for free.
  *
+ * What is declared here is the document: the union of every component type,
+ * the entity, the tables the two are stored in, and the environment around
+ * them. What a *particular* component is lives in `components/<type>/schema.ts`
+ * and arrives below — a slice cannot import this file, because this file
+ * imports every slice, so the shared vocabulary they are written in sits lower
+ * again, in `primitives.ts`, `geometry.ts` and `material.ts`.
+ *
+ * All of it is re-exported, so that everything which reads a scene goes on
+ * importing from one place and none of the twelve moves cost a single call
+ * site. This is the door; the files behind it are an arrangement, not an API.
+ *
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
-import type { Hex, Transform, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { AudioSourceComponent } from '../components/audioSource/schema';
 import type { CameraComponent } from '../components/camera/schema';
@@ -15,25 +25,21 @@ import type { ColliderComponent } from '../components/collider/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { MeshComponent } from '../components/mesh/schema';
 import type { ModelComponent } from '../components/model/schema';
-import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
-export type { PlayerControllerComponent } from '../components/playerController/schema';
-export type { RigidBodyComponent } from '../components/rigidbody/schema';
-export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
-export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 import type { PlayerControllerComponent } from '../components/playerController/schema';
+import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
+import type { Hex, Transform, Vec3 } from './primitives';
 
-/*
- * The vocabulary is re-exported rather than declared, so that everything which
- * reads the document goes on importing it from here. What lives elsewhere is
- * what a component slice has to import without importing the union of them all
- * — see `primitives.ts` — and the types of the slices themselves.
- */
-export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+// --- the shared vocabulary --------------------------------------------------
+
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
+export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+
+// --- one slice per component type -------------------------------------------
+
 export type { AudioListenerComponent } from '../components/audioListener/schema';
 export type { AudioBus, AudioSourceComponent } from '../components/audioSource/schema';
 export { AUDIO_BUSES } from '../components/audioSource/schema';
@@ -42,12 +48,16 @@ export type { ColliderComponent } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
+export type { PlayerControllerComponent } from '../components/playerController/schema';
 export type {
   PrefabInstanceComponent,
   PrefabOverride,
 } from '../components/prefabInstance/schema';
+export type { RigidBodyComponent } from '../components/rigidbody/schema';
+export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
+export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 
-// --- material ---------------------------------------------------------------
+// --- the document -----------------------------------------------------------
 
 export type ComponentDoc =
   | MeshComponent

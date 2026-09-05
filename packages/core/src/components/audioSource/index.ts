@@ -20,6 +20,7 @@ export const audioSourceComponent = defineComponent({
   fill: (stored) => ({ ...createAudioSource(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'volume',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

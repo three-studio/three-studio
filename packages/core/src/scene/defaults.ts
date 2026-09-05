@@ -8,50 +8,28 @@ import { createEntity, type EntityTemplate } from './entity';
 import { createBoxGeometry } from './geometry';
 
 /*
- * What is left once every component type owns its own factories: the shared
- * environment, and the three ways to make a whole scene. The twelve slices are
- * imported rather than declared here, and each of those imports names a module
- * with no side effect of its own — importing `components/<type>/index.ts` would
- * register the type, and registration order is the Add Component menu's order.
+ * What is left once every component type owns its own factories: the sky and
+ * the environment, which belong to a scene rather than to anything in it, and
+ * the three ways to make a whole scene.
  *
- * `isPlaceable` is the one thing here that still names a component type. T-025
- * turns it into a property a definition declares.
+ * No rule here is about a particular type any more. `createStarterScene` still
+ * names three of them, and has to: a starter scene *is* a ground, a sun, a sky
+ * and a camera, and a version of it that named no type would be an empty one.
+ * What went was the last thing that named a type in order to *decide*
+ * something — `isPlaceable`, which asked whether a light was ambient. The
+ * types answer that themselves now; see `ComponentDefinition.placeable`.
+ *
+ * The slice imports point at each `<type>/defaults.ts` and never at its
+ * `index.ts`: importing an index registers the type, and registration order is
+ * the order the Add Component menu is built in.
  */
 import type {
   CameraComponent,
-  ComponentDoc,
-  ComponentOfType,
-  ComponentType,
   EnvironmentDef,
-  GeometryDef,
-  GeometryKind,
-  LightKind,
-  MaterialDef,
   MeshComponent,
   SceneDoc,
   SkySettings,
 } from './schema';
-
-/** Light kinds three applies to the whole scene, wherever the object stands. */
-const UNPLACED_LIGHTS: ReadonlySet<LightKind> = new Set(['ambient', 'hemisphere']);
-
-/**
- * Whether a template's transform describes a place in the world.
- *
- * Only ambient and hemisphere lights say no, and they say it because their
- * position has no effect at all: moving one where the author is looking would
- * put a number in the inspector that means nothing, which reads as a bug the
- * first time someone drags it and nothing happens.
- */
-export function isPlaceable(template: EntityTemplate): boolean {
-  const { components } = template;
-  // An empty carries no components and is still a place: it exists to hold
-  // whatever gets dragged under it, so it belongs where the author is looking.
-  if (components.length === 0) return true;
-  return !components.every(
-    (component) => component.type === 'light' && UNPLACED_LIGHTS.has(component.kind),
-  );
-}
 
 /** three's own `SkyMesh` defaults, which are a clear early morning. */
 export function createSkySettings(): SkySettings {

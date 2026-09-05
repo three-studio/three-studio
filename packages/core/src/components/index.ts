@@ -8,8 +8,9 @@
  */
 import { COMPONENT_TYPES } from '../scene/components';
 import { createCollider } from './collider/defaults';
+import type { EntityTemplate } from '../scene/entity';
 import type { ComponentDoc, ComponentOfType, ComponentType, MeshComponent } from '../scene/schema';
-import { componentDefinition } from './registry';
+import { componentDefinition, componentIsPlaceable } from './registry';
 
 import './mesh';
 import './model';
@@ -41,11 +42,29 @@ if (unregistered.length > 0) {
   throw new Error(`Component types declared but never registered: ${unregistered.join(', ')}.`);
 }
 
+/**
+ * Whether a template's transform describes a place in the world.
+ *
+ * Here rather than in `scene/defaults.ts`, where it used to name `'light'` and
+ * carry that type's table of kinds: the answer is now the types' own, and this
+ * is the module that asks the registry a question on behalf of a whole thing.
+ *
+ * An empty carries no components and is still a place: it exists to hold
+ * whatever gets dragged under it, so it belongs where the author is looking.
+ * Beyond that one component that means to be somewhere is enough — a light on a
+ * lamp post is on the lamp post even if the lamp is ambient.
+ */
+export function isPlaceable(template: EntityTemplate): boolean {
+  if (template.components.length === 0) return true;
+  return template.components.some(componentIsPlaceable);
+}
+
 export {
   addableTypes,
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  componentIsPlaceable,
   defineComponent,
   fillComponent,
   typesWithoutRuntime,

@@ -24,6 +24,7 @@ export const meshComponent = defineComponent({
   },
   assets: (component) => [component.materialId, ...materialAssets(component.material)],
   icon: 'shapes',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

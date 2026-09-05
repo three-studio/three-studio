@@ -1,5 +1,6 @@
 import { defineComponent } from '../registry';
 import { createLight } from './defaults';
+import type { LightKind } from './schema';
 
 /*
  * Everything that makes a light a light: the type it is stored as, the
@@ -21,6 +22,15 @@ import { createLight } from './defaults';
  * to `./schema` and `./defaults`, which have no side effect, and the only thing
  * that imports this file is the one place that means to register everything.
  */
+
+/**
+ * Kinds three applies to the whole scene, wherever the object stands.
+ *
+ * Here rather than in `defaults.ts` because the definition below is the only
+ * thing that reads it: it is not how a light is made, it is one of the answers
+ * a light gives about itself.
+ */
+const UNPLACED_LIGHTS: ReadonlySet<LightKind> = new Set(['ambient', 'hemisphere']);
 
 /**
  * A light of any of the seven kinds.
@@ -47,6 +57,9 @@ export const lightComponent = defineComponent({
   },
   assets: (component) => [component.mapId],
   icon: 'lightbulb',
+  // The only `false` in the twelve, and the reason the question is asked of
+  // the component rather than of the type: it is answered by the `kind`.
+  placeable: (component) => !UNPLACED_LIGHTS.has(component.kind),
   runtime: true,
   addable: true,
 });

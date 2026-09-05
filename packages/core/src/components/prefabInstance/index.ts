@@ -14,6 +14,7 @@ export const prefabInstanceComponent = defineComponent({
   fill: (stored) => ({ ...createPrefabInstance(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'boxes',
+  placeable: () => true,
   runtime: true,
   addable: false,
 });

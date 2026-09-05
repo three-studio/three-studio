@@ -21,6 +21,7 @@ export const waterComponent = defineComponent({
   // deleting it does not claim nothing uses it.
   assets: (component) => [component.normalMapId],
   icon: 'waves',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

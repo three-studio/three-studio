@@ -16,6 +16,7 @@ export const modelComponent = defineComponent({
   // which is how an asset still in use gets reported as unused.
   assets: (component) => [component.assetId, component.materialId],
   icon: 'box',
+  placeable: () => true,
   runtime: true,
   addable: false,
 });

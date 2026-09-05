@@ -8,6 +8,7 @@ export const playerControllerComponent = defineComponent({
   fill: (stored) => ({ ...createPlayerController(), ...stored }),
   assets: () => [],
   icon: 'move',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

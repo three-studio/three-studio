@@ -8,6 +8,7 @@ export const cameraComponent = defineComponent({
   fill: (stored) => ({ ...createCamera(), ...stored }),
   assets: () => [],
   icon: 'camera',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

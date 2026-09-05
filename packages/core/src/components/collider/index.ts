@@ -8,6 +8,7 @@ export const colliderComponent = defineComponent({
   fill: (stored) => ({ ...createCollider(), ...stored }),
   assets: () => [],
   icon: 'box',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

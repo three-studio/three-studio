@@ -8,6 +8,7 @@ export const rigidbodyComponent = defineComponent({
   fill: (stored) => ({ ...createRigidBody(), ...stored }),
   assets: () => [],
   icon: 'weight',
+  placeable: () => true,
   runtime: true,
   addable: true,
 });

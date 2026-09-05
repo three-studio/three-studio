@@ -64,6 +64,23 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    */
   readonly runtime: boolean;
   /**
+   * Whether this component's position in the world means anything.
+   *
+   * A function of the component and not a flag on the type, because the one
+   * type that answers `no` answers it by its `kind`: three applies an ambient
+   * and a hemisphere light to the whole scene wherever the object stands.
+   * Placing one where the author is looking puts a number in the inspector
+   * that does nothing, which reads as a bug the first time somebody drags it
+   * and the scene does not change.
+   *
+   * Asked of every type rather than assumed, for the reason `runtime` and
+   * `addable` are asked: a new type answers in its own module, where the
+   * compiler insists, rather than in a table somewhere else that nothing
+   * checks. Eleven of the twelve answer `() => true`, the same way seven of
+   * them answer `assets: () => []`.
+   */
+  placeable: (component: ComponentOfType<T>) => boolean;
+  /**
    * Whether a user can attach one by hand, from "Add Component".
    *
    * `false` is for the types that arrive with something else and would mean
@@ -138,6 +155,19 @@ export function componentAssets(component: ComponentDoc): readonly (string | nul
   // A type from a plugin, or from a later version of the editor. It names assets
   // this build cannot see, and guessing would be worse than saying none.
   return definition ? definition.assets(component as never) : [];
+}
+
+/**
+ * Whether a component's position in the world means anything.
+ *
+ * An unknown type — a plugin's, or a newer editor's — is placed. It is the
+ * answer eleven of the twelve types here give, and a position that turns out
+ * to mean nothing is cosmetic where dropping a new object at the world origin,
+ * out of sight of the author who just added it, is not.
+ */
+export function componentIsPlaceable(component: ComponentDoc): boolean {
+  const definition = componentDefinition(component.type);
+  return definition ? definition.placeable(component as never) : true;
 }
 
 /**
