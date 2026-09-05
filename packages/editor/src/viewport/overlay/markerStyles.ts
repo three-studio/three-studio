@@ -11,6 +11,10 @@ import {
   drawsGeometry as rigidbodyDrawsGeometry,
   marker as rigidbodyMarker,
 } from '../../components/rigidbody/overlay';
+import {
+  drawsGeometry as colliderDrawsGeometry,
+  marker as colliderMarker,
+} from '../../components/collider/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
   drawsGeometry as scriptDrawsGeometry,
@@ -49,7 +53,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   light: lightDrawsGeometry,
   camera: false,
   rigidbody: rigidbodyDrawsGeometry,
-  collider: false,
+  collider: colliderDrawsGeometry,
   audioSource: false,
   audioListener: audioListenerDrawsGeometry,
   script: scriptDrawsGeometry,
@@ -86,7 +90,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   model: null,
   water: null,
   rigidbody: rigidbodyMarker,
-  collider: null,
+  collider: colliderMarker,
   script: scriptMarker,
   prefabInstance: prefabInstanceMarker,
   playerController: playerControllerMarker,
