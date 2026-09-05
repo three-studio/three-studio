@@ -810,6 +810,24 @@ export class EditorViewport {
    * zero-sized box and is not drawn at all. That is the same answer a hidden
    * dock panel gave before by being the panel the canvas was not in, arrived at
    * by measuring rather than by which panel happened to hold the canvas.
+   *
+   * **This is where a post-processing pipeline enters on this side**, and it
+   * enters *per view*: a `RenderPipeline` is made from `pass(scene, camera)`, so
+   * the three views want three of them rather than one belonging to the
+   * renderer. Nothing above has to move for that — the renderer and the loop are
+   * already this class's, which is the whole of the seam; see the class comment
+   * on `Engine`.
+   *
+   * What is not free is the size, and it is worth knowing before starting.
+   * `PassNode` sizes its render target from `renderer.getDrawingBufferSize()`
+   * (`PassNode.js:801`), and a render *into* a target takes that target's own
+   * viewport instead of the one `setViewport` just wrote (`Renderer.js:1619`).
+   * So a pass here would draw the scene at the size of the whole surface — the
+   * largest visible panel — and the composite quad would then be squeezed into
+   * this view's corner. A host showing one full-canvas view never meets it,
+   * which is why the launcher's pipeline and an exported build's would both be
+   * straightforward. Whoever writes this one decides what size the pass runs at;
+   * the seam does not decide it for them.
    */
   private draw(scene: Scene, camera: Camera, view: Presentation): void {
     if (!view.visible) return;

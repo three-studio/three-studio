@@ -107,6 +107,34 @@ export interface EngineOptions {
  * `engine.scene` through `engine.activeCamera`. That is what lets the editor
  * play a scene inside its own viewport while an exported build runs the exact
  * same code from a bare `requestAnimationFrame`.
+ *
+ * **Where post-processing would enter, and why nothing in here moves for it.**
+ * There is no composer anywhere in this runtime, and no seam waiting to receive
+ * one — the seam is the paragraph above. three's `RenderPipeline` is built out
+ * of `pass(scene, camera)`, which is exactly the pair this class already hands
+ * out, so a host trades its one `renderer.render(engine.scene,
+ * engine.activeCamera)` for `pipeline.render()` and the engine never learns
+ * that anything changed. There are two such lines in the whole product:
+ * `EditorViewport.draw` and the player's loop in `apps/web-template/src/main.ts`.
+ * Neither the renderer nor the frame was ever the engine's, so neither has to
+ * be taken back to compose one.
+ *
+ * That is checked rather than assumed. `LauncherScene` already runs a
+ * `RenderPipeline` — `pass()` plus `bloom()` — on a renderer straight out of
+ * `createRenderer`, so nothing that factory configures stands in the way, and
+ * the imports are ones this repo already bundles.
+ *
+ * The one thing to know before writing it: `RenderPipeline.render()` assigns
+ * `NoToneMapping` to the renderer before drawing its quad, which reads exactly
+ * like the project's tone mapping and exposure being dropped on the floor. They
+ * are not. `_update()` rebuilds the output node as `renderOutput(node,
+ * renderer.toneMapping, renderer.outputColorSpace)` whenever either moves, and
+ * the exposure inside it is a `rendererReference` — so ACES and
+ * `rendering.exposure` still arrive. What would drop them is composing with
+ * `outputColorTransform = false` and no `renderOutput()` of one's own, and it
+ * would drop them in an exported build while the Scene view carried on looking
+ * right: the same shape of divergence that `EngineOptions.rendering` was made
+ * required to end.
  */
 export class Engine {
   readonly scene = new Scene();
