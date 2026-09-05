@@ -21,6 +21,19 @@ const casts =
     component.castShadow &&
     (kinds.length === 0 || kinds.includes(component.kind));
 
+/*
+ * No `kind` field, deliberately.
+ *
+ * A light's kind is chosen when it is added — `Add > Light >` offers all seven
+ * — and changing it afterwards is a different light, not an edited one: three
+ * builds a different class per kind, which is why `LightSystem.patch` answers
+ * `'remount'` and throws away the shadow map. Godot draws the same line, with
+ * a node class per kind. The engine keeps the capability, for a hand-edited
+ * file or a prefab; only the UI stops offering the gesture.
+ *
+ * A projector is a spot that throws a picture, so it appears beside `spot` in
+ * every predicate above rather than getting a group of its own.
+ */
 export const inspector: ComponentSchema = {
   label: 'Light',
   fields: [

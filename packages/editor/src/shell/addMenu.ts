@@ -2,13 +2,13 @@ import {
   GEOMETRY_LABELS,
   createEntity,
   createMeshEntity,
-  createWaterEntity,
   type EntityTemplate,
   type GeometryKind,
 } from '@three-studio/core';
 import { menu as audioListenerMenu } from '../components/audioListener/menu';
 import { menu as audioSourceMenu } from '../components/audioSource/menu';
 import { menu as cameraMenu } from '../components/camera/menu';
+import { menu as waterMenu } from '../components/water/menu';
 import { menu as lightMenu } from '../components/light/menu';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
@@ -89,13 +89,6 @@ export function buildAddMenu(): MenuEntry[] {
       label: audioSourceMenu.label,
       submenu: [...audioSourceMenu.entries, ...audioListenerMenu.entries].map(offer),
     },
-    {
-      // A submenu for one entry, on purpose: this is where the things that are
-      // the *scene* rather than an object in it will go — fog and volumes are
-      // the obvious next two — and moving Water in later would move it out from
-      // under whatever muscle memory it had built by then.
-      label: 'Environment',
-      submenu: [{ label: 'Water', onSelect: add(() => createWaterEntity()) }],
-    },
+    { label: waterMenu.label, submenu: waterMenu.entries.map(offer) },
   ];
 }
