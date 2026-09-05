@@ -11,6 +11,7 @@ import {
   type SkySettings,
 } from '@three-studio/core';
 import type { BindingParams } from 'tweakpane';
+import { shapeOf } from './signature';
 import { setComponentNestedField } from '../commands/sceneCommands';
 import {
   applyInstanceOverrides,
@@ -119,6 +120,15 @@ export interface GeometrySlotSpec {
 /** A rule, to show where one group of fields ends and the next begins. */
 export interface SeparatorSpec {
   kind: 'separator';
+  /**
+   * Never conditional, and said out loud rather than left absent.
+   *
+   * A rule belongs to the layout, not to a row that can come and go: hiding one
+   * would leave two groups running together with nothing between them. Declared
+   * so that this shares a property with the rest of `PaneEntry`, which is what
+   * lets `shapeOf` read a whole list of them without a cast.
+   */
+  visibleWhen?: never;
 }
 
 export type PaneEntry = FieldSpec | ActionSpec | GeometrySlotSpec | SeparatorSpec;
@@ -1037,7 +1047,20 @@ export const COMPONENT_SCHEMAS: Record<ComponentType, ComponentSchema> = {
  * is a `string | undefined` with nothing saying it names a real field, and a
  * typo in the table would have written a property no migration fills.
  */
-type SceneFieldBase = Omit<FieldSpec<SceneDoc>, 'path'>;
+/**
+ * What a scene-pane predicate may read.
+ *
+ * Not the whole `SceneDoc`, and the narrowing is load-bearing. `sceneSignature`
+ * takes an `EnvironmentDef` so that immer's identity keeps it cheap — a panel
+ * keyed on it is not recomputed by every unrelated edit in the scene, and
+ * `InspectorPanel` subscribes to `s.scene.environment` for the same reason.
+ * That only works while a predicate needs nothing else to answer, so the type
+ * says so rather than a comment asking nicely: a predicate that reaches for
+ * `scene.name` stops compiling instead of quietly making the signature a lie.
+ */
+export type SceneSubject = Pick<SceneDoc, 'environment'>;
+
+type SceneFieldBase = Omit<FieldSpec<SceneSubject>, 'path'>;
 
 /**
  * One editable value of the scene, and which block of it holds that value.
@@ -1076,12 +1099,12 @@ export interface SceneSection {
    * A folder whose every field is hidden still draws its own header, and a
    * "Sky" heading over nothing reads as a panel that failed to load.
    */
-  visibleWhen?: (scene: SceneDoc) => boolean;
+  visibleWhen?: (scene: SceneSubject) => boolean;
   fields: readonly SceneField[];
 }
 
-const isFogOn = (scene: SceneDoc) => scene.environment.fogEnabled;
-const showsTexture = (scene: SceneDoc) => scene.environment.backgroundMode === 'texture';
+const isFogOn = (scene: SceneSubject) => scene.environment.fogEnabled;
+const showsTexture = (scene: SceneSubject) => scene.environment.backgroundMode === 'texture';
 
 /**
  * The background is an image, whatever it is an image of.
@@ -1091,7 +1114,7 @@ const showsTexture = (scene: SceneDoc) => scene.environment.backgroundMode === '
  * `scene.background` is null — through a uniform on its own material. See
  * `ProceduralSky`.
  */
-const showsImageBackground = (scene: SceneDoc) => scene.environment.backgroundMode !== 'color';
+const showsImageBackground = (scene: SceneSubject) => scene.environment.backgroundMode !== 'color';
 
 /**
  * Something the shared rotation actually turns.
@@ -1100,7 +1123,7 @@ const showsImageBackground = (scene: SceneDoc) => scene.environment.backgroundMo
  * with it. Offering a second angle that spins the whole capture underneath the
  * first is two controls fighting over one thing.
  */
-const turnsAnImage = (scene: SceneDoc) =>
+const turnsAnImage = (scene: SceneSubject) =>
   scene.environment.backgroundMode === 'texture' ||
   scene.environment.environmentMode === 'texture';
 
@@ -1275,25 +1298,63 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
 ];
 
 /**
+ * Every predicate the scene pane consults, flattened once, in the order
+ * `buildScene` walks them.
+ *
+ * A section carries a predicate of its own — a folder whose fields are all
+ * hidden still draws its header — so it takes a bit alongside its fields rather
+ * than being a container the signature cannot see. That is the bit the
+ * hand-written version never had.
+ */
+const SCENE_ENTRIES: readonly { visibleWhen?: (scene: SceneSubject) => boolean }[] =
+  SCENE_SCHEMA.flatMap((section) => [section, ...section.fields]);
+
+/**
  * Shape of the scene pane. Rebuilt when this changes; refreshed when it does
  * not — the same contract as `inspectorSignature` for an entity.
  *
- * Takes the environment rather than the whole document on purpose: immer keeps
- * the identity of anything a mutation did not touch, so a panel keyed on this
- * is not recomputed by every unrelated edit in the scene.
+ * It used to list by hand the four environment fields a predicate reads, which
+ * is a copy of the declaration below it, kept in step by hope. It had already
+ * fallen out of step: `section.visibleWhen` was not in it at all, though
+ * `buildScene` has always honoured it, so choosing Sky left the Sky folder off
+ * screen until something unrelated rebuilt the pane.
+ *
+ * Takes the environment rather than the whole document on purpose — see
+ * `SceneSubject`, which is what keeps that honest.
  */
 export function sceneSignature(environment: EnvironmentDef): string {
-  // Every field a `visibleWhen` reads, and only those. Miss one and the rows it
-  // governs are decided once and never revisited: choosing Sky would leave the
-  // Texture slot on screen and the Sky folder off it until something unrelated
-  // rebuilt the pane.
-  return [
-    'scene',
-    environment.backgroundMode,
-    environment.environmentMode,
-    environment.fogEnabled,
-    environment.fogMode,
-  ].join(':');
+  return shapeOf(SCENE_ENTRIES, { environment });
+}
+
+/**
+ * The rows a component's pane would offer, and the identity of that list.
+ *
+ * Two entries are not fixed by the component's type. A mesh's geometry slot
+ * expands into the fields of whichever primitive it is, and a script's declared
+ * properties are whatever its source says today — so for those two the *list*
+ * changes, not merely which of a fixed list is visible, and no arrangement of
+ * bits could say so. That is what `key` is for; everything else about the shape
+ * is `visibleWhen`, and `shapeOf` reads it.
+ */
+export function paneEntriesFor(component: ComponentDoc): {
+  key: string;
+  entries: readonly Exclude<PaneEntry, GeometrySlotSpec>[];
+} {
+  // The geometry slot expands in place, so a component that never declares one
+  // — every component except `mesh` — is unaffected.
+  const entries: Exclude<PaneEntry, GeometrySlotSpec>[] = COMPONENT_SCHEMAS[
+    component.type
+  ].fields.flatMap((entry) => (isGeometrySlot(entry) ? [...geometryFields(component)] : [entry]));
+  entries.push(...scriptFields(component));
+
+  const key =
+    component.type === 'mesh'
+      ? `mesh:${component.geometry.kind}`
+      : component.type === 'script'
+        ? `script:${component.assetId}`
+        : component.type;
+
+  return { key, entries };
 }
 
 /** Geometry fields depend on the primitive, so they are looked up separately. */

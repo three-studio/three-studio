@@ -1,5 +1,4 @@
 import {
-  SUN_CUSTOM,
   componentsOf,
   findComponentById,
   type ComponentDoc,
@@ -29,20 +28,16 @@ import {
 } from './target';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
-import { useScriptStore } from '../state/scriptStore';
 import {
   COMPONENT_SCHEMAS,
   SCENE_SCHEMA,
-  geometryFields,
   isAction,
-  isGeometrySlot,
   isSeparator,
+  paneEntriesFor,
   sceneFieldPath,
-  scriptFields,
   type FieldSpec,
-  type GeometrySlotSpec,
-  type PaneEntry,
 } from './schema';
+import { shapeOf } from './signature';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -263,14 +258,9 @@ export class InspectorBinding {
     // Conditional fields read the material the mesh actually renders with, so
     // a linked material shows the shared values' fields, not the embedded ones'.
     const effective = effectiveComponent(component);
-    // The geometry slot expands in place, so a component that never declares
-    // one — every component except `mesh` — is unaffected.
-    const specs: Exclude<PaneEntry, GeometrySlotSpec>[] = schema.fields.flatMap((entry) =>
-      isGeometrySlot(entry) ? [...geometryFields(component)] : [entry],
-    );
-    specs.push(...scriptFields(component));
-
-    for (const spec of specs) {
+    // The same list `inspectorSignature` measures, from the same call: the shape
+    // it decides to rebuild on has to be the shape this then builds.
+    for (const spec of paneEntriesFor(component).entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
         continue;
@@ -397,64 +387,25 @@ function linkedMaterial(
 /**
  * Shape of an entity as far as the pane is concerned. When this changes the
  * pane must be rebuilt; when only values change, `refresh()` is enough.
+ *
+ * Derived, where it used to be a nine-armed switch that restated by hand every
+ * `visibleWhen` in `schema.ts` and ended in `default: return component.type`.
+ * A type whose structural field was not named in that switch never rebuilt its
+ * panel at all: values refreshed, conditional rows never appeared. The two
+ * copies had drifted twice by the time this replaced them — most visibly on a
+ * `rectArea` light, whose `castShadow` is itself conditional, and which the
+ * hand-written signature interpolated regardless.
+ *
+ * `effectiveComponent` is the subject for the same reason the builder uses it:
+ * a mesh linked to a shared material shows the shared values' rows, so the
+ * predicates have to be asked about the material actually on screen.
  */
 export function inspectorSignature(entityId: string | undefined): string {
   const scene = expandedScene().scene;
   if (entityId === undefined || scene.entities[entityId] === undefined) return '';
   const parts = componentsOf(scene, entityId).map((component) => {
-    // Conditional fields key off these, so they belong in the signature.
-    switch (component.type) {
-      // The kind decides which of a light's own properties exist, and the
-      // shadow settings exist only while it casts one — so the checkbox is as
-      // structural as the kind is. Without it in here, ticking "Cast shadows"
-      // refreshed the pane's values and never added its rows.
-      case 'light':
-        return `light:${component.kind}:${component.castShadow}`;
-      case 'camera':
-        return `camera:${component.projection}`;
-      case 'collider':
-        return `collider:${component.shape}`;
-      case 'mesh': {
-        // Which map slots are filled decides whether their strength sliders
-        // exist, so a slot going from empty to set has to rebuild the pane.
-        // Linking to an asset swaps the buttons and the values read, so the
-        // reference is in here too — read through `effectiveComponent`, or a
-        // shared material's slots would never show their sliders.
-        const mesh = effectiveComponent(component);
-        const material = mesh.type === 'mesh' ? mesh.material : component.material;
-        return `mesh:${component.geometry.kind}:${component.materialId ?? 'embedded'}:${
-          material.normalMap === null ? '' : 'n'
-        }${material.aoMap === null ? '' : 'a'}${material.displacementMap === null ? '' : 'd'}${
-          material.bumpMap === null ? '' : 'b'
-        }`;
-      }
-      // Linking a material swaps which rows the pane offers and where their
-      // values are read from, and `nodePath` decides whether Unpack is there at
-      // all — so both are as structural as a light's kind is.
-      case 'model':
-        return `model:${component.materialId ?? 'file'}:${component.nodePath === '' ? 'whole' : 'node'}`;
-      case 'playerController':
-        return `player:${component.mode}`;
-      // Choosing a sun decides whether the two manual fields are there at all,
-      // so it is as structural as a light's kind. Without it, switching to
-      // Custom refreshed the values and never added the rows.
-      case 'water':
-        return `water:${component.sunSource === SUN_CUSTOM ? 'custom' : 'linked'}`;
-      // Whether a source is positional decides whether it has falloff and a
-      // cone at all, so the slider crossing zero is as structural as a light's
-      // kind. Without this the rows were chosen once and never again: dragging
-      // 2D ↔ 3D up from zero left the pane exactly as it was.
-      case 'audioSource':
-        return `audio:${component.spatialBlend > 0 ? '3d' : '2d'}`;
-      // The chosen script decides which fields exist, so changing it has to
-      // rebuild the pane. The build revision is in there too: editing a script
-      // and recompiling changes which properties exist, and without it the
-      // panel kept showing the previous set.
-      case 'script':
-        return `script:${component.assetId}:${useScriptStore.getState().revision}`;
-      default:
-        return component.type;
-    }
+    const { key, entries } = paneEntriesFor(component);
+    return `${key}/${shapeOf(entries, effectiveComponent(component))}`;
   });
   return `${entityId}|${parts.join(',')}`;
 }

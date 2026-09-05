@@ -63,7 +63,7 @@ export function InspectorPanel() {
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
   // The script build revision is part of that shape, so recompiling brings new
-  // script properties into the panel.
+  // script properties into the panel — see the signature below.
   const scriptRevision = useScriptStore((s) => s.revision);
   // Editing a shared material changes which fields exist without touching the
   // document, so the material table is part of the shape too.
@@ -76,9 +76,19 @@ export function InspectorPanel() {
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
   const signature = useMemo(() => {
-    // The script revision is already inside `inspectorSignature`.
+    /*
+     * The scene pane has no scripts in it, so the script revision is only on the
+     * entity paths. It used to be read inside `inspectorSignature`, from within
+     * a switch arm — a store lookup buried in a function whose whole job was to
+     * be a pure reading of the schema. It belongs here with the other
+     * revisions, and it has to be here rather than nowhere: recompiling a script
+     * can change which properties it declares without changing their number, and
+     * a shape of the same width would say nothing had moved.
+     */
     if (selection.length === 0) return `${sceneSignature(environment)}#${assetRevision}`;
-    if (entityId !== undefined) return `${inspectorSignature(entityId)}#${assetRevision}`;
+    if (entityId !== undefined) {
+      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}`;
+    }
 
     /*
      * For several, the shape is the shapes of all of them.
@@ -88,7 +98,7 @@ export function InspectorPanel() {
      * selecting a different set of the same shapes is a different pane.
      */
     const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
-    return `${shapes}#${assetRevision}`;
+    return `${shapes}#${assetRevision}#${scriptRevision}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
