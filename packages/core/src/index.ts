@@ -180,8 +180,6 @@ export {
   createNewScene,
   createSkySettings,
   createStarterScene,
-  createWater,
-  createWaterEntity,
   isPlaceable,
   restingOffsetY,
 } from './scene/defaults';
@@ -194,6 +192,7 @@ export { createCameraEntity } from './components/camera/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
 export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
+export { createWater, createWaterEntity } from './components/water/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

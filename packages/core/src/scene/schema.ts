@@ -7,7 +7,15 @@
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
-import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+import type {
+  ComponentBase,
+  GeometryDef,
+  Hex,
+  MaterialSide,
+  Transform,
+  Vec2,
+  Vec3,
+} from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { AudioSourceComponent } from '../components/audioSource/schema';
 import type { CameraComponent } from '../components/camera/schema';
@@ -18,9 +26,11 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 export type { PlayerControllerComponent } from '../components/playerController/schema';
 export type { RigidBodyComponent } from '../components/rigidbody/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
+export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 import type { PlayerControllerComponent } from '../components/playerController/schema';
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
+import type { WaterComponent } from '../components/water/schema';
 
 /*
  * The vocabulary is re-exported rather than declared, so that everything which
@@ -28,7 +38,16 @@ import type { ScriptComponent } from '../components/script/schema';
  * what a component slice has to import without importing the union of them all
  * — see `primitives.ts` — and the types of the slices themselves.
  */
-export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+export type {
+  ComponentBase,
+  GeometryDef,
+  GeometryKind,
+  Hex,
+  MaterialSide,
+  Transform,
+  Vec2,
+  Vec3,
+} from './primitives';
 export type { AudioListenerComponent } from '../components/audioListener/schema';
 export type { AudioBus, AudioSourceComponent } from '../components/audioSource/schema';
 export { AUDIO_BUSES } from '../components/audioSource/schema';
@@ -41,57 +60,6 @@ export type {
   PrefabOverride,
 } from '../components/prefabInstance/schema';
 
-// --- geometry ---------------------------------------------------------------
-
-/**
- * One entry per three.js geometry class, rather than a generic "polyhedron"
- * with a shape field: the kind is what the binder switches on, what names the
- * entity and what the collider guess reads, so keeping it 1:1 with three means
- * none of those three tables needs a second lookup.
- */
-export type GeometryDef =
-  | {
-      kind: 'box';
-      width: number;
-      height: number;
-      depth: number;
-      /** Subdivisions. Only matter under a displacement map, which moves vertices. */
-      widthSegments: number;
-      heightSegments: number;
-      depthSegments: number;
-    }
-  | { kind: 'sphere'; radius: number; widthSegments: number; heightSegments: number }
-  | { kind: 'plane'; width: number; height: number; widthSegments: number; heightSegments: number }
-  | { kind: 'capsule'; radius: number; height: number; capSegments: number; radialSegments: number }
-  | {
-      kind: 'cylinder';
-      radiusTop: number;
-      radiusBottom: number;
-      height: number;
-      radialSegments: number;
-    }
-  | { kind: 'circle'; radius: number; segments: number }
-  | { kind: 'ring'; innerRadius: number; outerRadius: number; thetaSegments: number }
-  | { kind: 'torus'; radius: number; tube: number; radialSegments: number; tubularSegments: number }
-  | {
-      kind: 'torusKnot';
-      radius: number;
-      tube: number;
-      tubularSegments: number;
-      radialSegments: number;
-      /** Winding counts. Coprime integers; anything else fails to close the knot. */
-      p: number;
-      q: number;
-    }
-  // The four solids take the same two arguments in three, so they share a shape
-  // here too. `detail` subdivides towards a sphere.
-  | { kind: 'tetrahedron'; radius: number; detail: number }
-  | { kind: 'octahedron'; radius: number; detail: number }
-  | { kind: 'dodecahedron'; radius: number; detail: number }
-  | { kind: 'icosahedron'; radius: number; detail: number };
-
-export type GeometryKind = GeometryDef['kind'];
-
 // --- material ---------------------------------------------------------------
 
 /**
@@ -99,9 +67,6 @@ export type GeometryKind = GeometryDef['kind'];
  * `mirror` is what stops a tiled ground from showing a hard seam.
  */
 export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
-
-/** Which faces are drawn. Named because two component types now take it. */
-export type MaterialSide = 'front' | 'back' | 'double';
 
 export interface MaterialDef {
   color: Hex;
@@ -193,78 +158,6 @@ export interface MeshComponent extends ComponentBase {
   materialId: string | null;
   castShadow: boolean;
   receiveShadow: boolean;
-}
-
-/**
- * Where a water surface takes its sun from.
- *
- * `'sky'` is the scene's own analytic sun — the one `SkySettings` already
- * describes — and is the default, because a scene that has a sky has exactly one
- * place the light should come from. `'custom'` is the two fields below. Anything
- * else is a light entity's id, and a light that goes away falls back to the sky
- * rather than leaving the water lit from nowhere.
- *
- * One field and one control rather than a mode plus a reference, because they
- * are one question — *which* sun — and splitting it would let the document hold
- * a mode and an id that disagree.
- */
-export type WaterSunSource = string;
-
-/**
- * A flat reflective water surface.
- *
- * Deliberately not a `mesh` with a material: the reflection is a second render
- * of the scene from a mirrored camera, which no `MaterialDef` can describe, and
- * the geometry is a plane because a reflector mirrors about one flat plane.
- *
- * It is the `WaterMesh` addon's parameter list, minus what only its WebGL twin
- * has. `textureWidth`/`textureHeight` are `resolutionScale` here;
- * `clipBias` and `eye` are internals; `time` belongs to the one clock and not to
- * a component.
- */
-export interface WaterComponent extends ComponentBase {
-  type: 'water';
-  /** Plane only — see the note above. */
-  geometry: Extract<GeometryDef, { kind: 'plane' }>;
-  /** The normal map the ripples are read from. A built-in one is used until set. */
-  normalMapId: string | null;
-  waterColor: Hex;
-  sunSource: WaterSunSource;
-  /** Used when `sunSource` is `'custom'`. Points from the surface at the sun. */
-  sunDirection: Vec3;
-  /** Used when `sunSource` is `'custom'`. */
-  sunColor: Hex;
-  /** Opacity of the whole surface. */
-  alpha: number;
-  /** Spatial frequency of the ripples. Larger is finer. */
-  size: number;
-  /**
-   * How fast the water runs. `0` holds it still.
-   *
-   * Per surface, on top of the scene's timescale: a millpond and a torrent can
-   * sit in one scene, and Pause still stops both.
-   */
-  speed: number;
-  /** Which way it runs, in radians. `0` is the addon's own look. */
-  direction: number;
-  /**
-   * How sharp the waves read. Low is a swell, high is a chop.
-   *
-   * It scales the horizontal components of the wave normal; `1.5` is the value
-   * three's `WaterMesh` hard-codes.
-   */
-  choppiness: number;
-  /** How far the reflection is pushed around by those ripples. */
-  distortionScale: number;
-  /**
-   * Reflection resolution, as a fraction of the viewport.
-   *
-   * The one knob that cannot be written in place: `WaterMesh` hands it to its
-   * reflector while building the shader, so changing it rebuilds the surface.
-   */
-  resolutionScale: number;
-  side: MaterialSide;
-  fog: boolean;
 }
 
 export type ComponentDoc =

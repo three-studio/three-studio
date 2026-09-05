@@ -8,8 +8,9 @@
  * test would name, and one that would be twelve files wide by the end.
  *
  * `schema.ts` re-exports all of it, so nothing that reads the scene document
- * has to know this file exists. The rest of the vocabulary — geometry,
- * materials — follows the slice that first needs it.
+ * has to know this file exists. It grows one slice at a time: geometry and
+ * `MaterialSide` arrived with `water`, the first type in a folder of its own
+ * to be described in them.
  *
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
@@ -41,3 +42,57 @@ export interface Transform {
 export interface ComponentBase {
   id: string;
 }
+
+// --- geometry ---------------------------------------------------------------
+
+/**
+ * One entry per three.js geometry class, rather than a generic "polyhedron"
+ * with a shape field: the kind is what the binder switches on, what names the
+ * entity and what the collider guess reads, so keeping it 1:1 with three means
+ * none of those three tables needs a second lookup.
+ */
+export type GeometryDef =
+  | {
+      kind: 'box';
+      width: number;
+      height: number;
+      depth: number;
+      /** Subdivisions. Only matter under a displacement map, which moves vertices. */
+      widthSegments: number;
+      heightSegments: number;
+      depthSegments: number;
+    }
+  | { kind: 'sphere'; radius: number; widthSegments: number; heightSegments: number }
+  | { kind: 'plane'; width: number; height: number; widthSegments: number; heightSegments: number }
+  | { kind: 'capsule'; radius: number; height: number; capSegments: number; radialSegments: number }
+  | {
+      kind: 'cylinder';
+      radiusTop: number;
+      radiusBottom: number;
+      height: number;
+      radialSegments: number;
+    }
+  | { kind: 'circle'; radius: number; segments: number }
+  | { kind: 'ring'; innerRadius: number; outerRadius: number; thetaSegments: number }
+  | { kind: 'torus'; radius: number; tube: number; radialSegments: number; tubularSegments: number }
+  | {
+      kind: 'torusKnot';
+      radius: number;
+      tube: number;
+      tubularSegments: number;
+      radialSegments: number;
+      /** Winding counts. Coprime integers; anything else fails to close the knot. */
+      p: number;
+      q: number;
+    }
+  // The four solids take the same two arguments in three, so they share a shape
+  // here too. `detail` subdivides towards a sphere.
+  | { kind: 'tetrahedron'; radius: number; detail: number }
+  | { kind: 'octahedron'; radius: number; detail: number }
+  | { kind: 'dodecahedron'; radius: number; detail: number }
+  | { kind: 'icosahedron'; radius: number; detail: number };
+
+export type GeometryKind = GeometryDef['kind'];
+
+/** Which faces are drawn. Named because two component types now take it. */
+export type MaterialSide = 'front' | 'back' | 'double';

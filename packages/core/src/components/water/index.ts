@@ -1,5 +1,5 @@
-import { createWater } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createWater } from './defaults';
 
 /**
  * A flat reflective water surface.
