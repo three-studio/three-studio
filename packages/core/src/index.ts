@@ -215,6 +215,7 @@ export {
 export type { ComponentHost } from './scene/components';
 
 export {
+  addableTypes,
   componentAssets,
   componentDefinition,
   componentDefinitions,

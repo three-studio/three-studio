@@ -9,4 +9,5 @@ export const cameraComponent = defineComponent({
   assets: () => [],
   icon: 'camera',
   runtime: true,
+  addable: true,
 });

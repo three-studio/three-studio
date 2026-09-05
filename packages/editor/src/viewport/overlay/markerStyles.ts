@@ -15,28 +15,71 @@ export interface MarkerStyle {
 }
 
 /**
- * Types that draw something. An entity carrying one of these is already
+ * Types that draw something of their own. An entity carrying one is already
  * clickable, so a marker on top of it would be an icon nobody needs and a click
  * target fighting the mesh behind it.
+ *
+ * Total rather than the three that are true: a type left out of a list draws
+ * geometry *and* gets a marker on top of it, and nothing says whether that was
+ * meant. The compiler now asks.
  */
-const RENDERABLE: readonly ComponentType[] = ['mesh', 'model', 'water'];
+const RENDERABLE: Record<ComponentType, boolean> = {
+  mesh: true,
+  model: true,
+  water: true,
+  light: false,
+  camera: false,
+  rigidbody: false,
+  collider: false,
+  audioSource: false,
+  audioListener: false,
+  script: false,
+  prefabInstance: false,
+  playerController: false,
+};
+
+/** The types that do, so the check below stays three lookups and not twelve. */
+const RENDERS: readonly ComponentType[] = (Object.keys(RENDERABLE) as ComponentType[]).filter(
+  (type) => RENDERABLE[type],
+);
 
 /**
- * Which component decides the colour when an entity carries several.
+ * The marker each type contributes, `null` for none, **in priority order**.
  *
- * A separate list from `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason
- * that file already gives: the order is a decision about *this* display, not
- * about the types. A camera outranks a light here because a camera rig is what
- * an author is looking for when both sit on one entity.
+ * Two things at once, and the key order is the second of them: the first styled
+ * type an entity carries is the one that colours it. A separate order from
+ * `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason that file already
+ * gives: the order is a decision about *this* display, not about the types. A
+ * camera outranks a light here because a camera rig is what an author is
+ * looking for when both sit on one entity.
+ *
+ * `null` is a decision — "this type is never worth a marker" — where an absent
+ * key was only ever an omission nobody could tell from a choice.
  */
-const PRIORITY: readonly ComponentType[] = ['camera', 'light', 'audioSource', 'audioListener'];
-
-const STYLES: Partial<Record<ComponentType, MarkerStyle>> = {
+const STYLES: Record<ComponentType, MarkerStyle | null> = {
   camera: { color: 0x5eb0ff, pixels: 11 },
   light: { color: 0xffd25e, pixels: 11 },
   audioSource: { color: 0x6ee7a8, pixels: 9 },
   audioListener: { color: 0x6ee7a8, pixels: 9 },
+  mesh: null,
+  model: null,
+  water: null,
+  rigidbody: null,
+  collider: null,
+  script: null,
+  prefabInstance: null,
+  playerController: null,
 };
+
+/**
+ * The styled types, in the order `STYLES` lists them.
+ *
+ * Derived rather than repeated: the list this replaced was a second copy of the
+ * same four names, and a fifth style would have had to be added to both.
+ */
+const PRIORITY: readonly ComponentType[] = (Object.keys(STYLES) as ComponentType[]).filter(
+  (type) => STYLES[type] !== null,
+);
 
 /**
  * The types worth marking. Also what a full pass iterates, so it can go through
@@ -46,7 +89,7 @@ export const MARKED_TYPES: readonly ComponentType[] = PRIORITY;
 
 /** Whether the entity contributes no geometry of its own. */
 export function drawsNothing(scene: SceneDoc, entityId: string): boolean {
-  return !RENDERABLE.some((type) => hasComponent(scene, entityId, type));
+  return !RENDERS.some((type) => hasComponent(scene, entityId, type));
 }
 
 /**
@@ -69,7 +112,7 @@ export function markerStyleFor(scene: SceneDoc, entityId: string): MarkerStyle |
 
   for (const type of PRIORITY) {
     const style = STYLES[type];
-    if (style && hasComponent(scene, entityId, type)) return style;
+    if (style !== null && hasComponent(scene, entityId, type)) return style;
   }
   return undefined;
 }

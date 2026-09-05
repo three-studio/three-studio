@@ -21,4 +21,5 @@ export const audioSourceComponent = defineComponent({
   assets: (component) => [component.assetId],
   icon: 'volume',
   runtime: true,
+  addable: true,
 });

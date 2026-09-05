@@ -9,4 +9,5 @@ export const colliderComponent = defineComponent({
   assets: () => [],
   icon: 'box',
   runtime: true,
+  addable: true,
 });

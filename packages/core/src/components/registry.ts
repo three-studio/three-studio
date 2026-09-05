@@ -63,6 +63,19 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * than a discovery.
    */
   readonly runtime: boolean;
+  /**
+   * Whether a user can attach one by hand, from "Add Component".
+   *
+   * `false` is for the types that arrive with something else and would mean
+   * nothing alone: `model` comes from dropping a file, `prefabInstance` from
+   * placing a prefab, and neither is anything without the asset id the drop
+   * supplies. An empty one added from a menu would point at nothing.
+   *
+   * Here rather than in the editor because the menu was a hand-kept list of ten
+   * types, and a list is a thing to forget: a new type left out of it is simply
+   * unaddable, with no error anywhere and nothing on screen to say why.
+   */
+  readonly addable: boolean;
 }
 
 const definitions = new Map<ComponentType, ComponentDefinition>();
@@ -103,6 +116,19 @@ export function componentDefinitions(): readonly ComponentDefinition[] {
 export function typesWithoutRuntime(): readonly ComponentType[] {
   return componentDefinitions()
     .filter((definition) => !definition.runtime)
+    .map((definition) => definition.type);
+}
+
+/**
+ * Types a user can attach by hand, in registration order.
+ *
+ * Derived for the same reason `typesWithoutRuntime` is: a new type answers the
+ * question in its own module, where the compiler insists on an answer, rather
+ * than in a list somewhere else that nothing checks.
+ */
+export function addableTypes(): readonly ComponentType[] {
+  return componentDefinitions()
+    .filter((definition) => definition.addable)
     .map((definition) => definition.type);
 }
 

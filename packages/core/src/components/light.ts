@@ -27,4 +27,5 @@ export const lightComponent = defineComponent({
   assets: (component) => [component.mapId],
   icon: 'lightbulb',
   runtime: true,
+  addable: true,
 });

@@ -42,6 +42,7 @@ if (unregistered.length > 0) {
 }
 
 export {
+  addableTypes,
   componentAssets,
   componentDefinition,
   componentDefinitions,

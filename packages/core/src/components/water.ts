@@ -22,4 +22,5 @@ export const waterComponent = defineComponent({
   assets: (component) => [component.normalMapId],
   icon: 'waves',
   runtime: true,
+  addable: true,
 });

@@ -1,4 +1,4 @@
-import { componentsOf, splitInstancedId, type ComponentType } from '@three-studio/core';
+import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
@@ -12,20 +12,6 @@ import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { useScriptStore } from '../state/scriptStore';
 import { Menu } from '../ui/Menu';
-
-/** Components a user can attach by hand; `model` comes from dropping an asset. */
-const ADDABLE: readonly ComponentType[] = [
-  'mesh',
-  'water',
-  'light',
-  'camera',
-  'rigidbody',
-  'collider',
-  'audioSource',
-  'audioListener',
-  'playerController',
-  'script',
-];
 
 export function InspectorPanel() {
   const selection = useEditorStore((s) => s.selection);
@@ -190,7 +176,7 @@ export function InspectorPanel() {
               <Menu
                 placement="above"
                 onClose={() => setAddOpen(false)}
-                items={ADDABLE.map((type) => ({
+                items={addableTypes().map((type) => ({
                   label: COMPONENT_SCHEMAS[type].label,
                   // A second mesh or camera on one entity has no meaning here —
                   // and neither does a mesh on something already drawing a

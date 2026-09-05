@@ -15,4 +15,5 @@ export const prefabInstanceComponent = defineComponent({
   assets: (component) => [component.assetId],
   icon: 'boxes',
   runtime: true,
+  addable: false,
 });

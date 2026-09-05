@@ -1,4 +1,5 @@
 import {
+  COMPONENT_TYPES,
   capabilitiesOf,
   componentDefinition,
   findComponent,
@@ -86,30 +87,48 @@ const COMPONENT_ICONS: Record<ComponentIcon, LucideIcon> = {
 };
 
 /**
- * Which component decides a row's icon when an entity has several.
+ * Which component decides a row's icon when an entity has several, lowest first.
  *
  * Ordering is a decision about this tree, not about the types, so it stays here:
- * a prefab instance is what the row *is*, whatever else got added to it. Types
- * absent from the list fall through to the generic box, which is what a mesh, a
- * model or a bare entity has always drawn.
+ * a prefab instance is what the row *is*, whatever else got added to it.
+ *
+ * Total rather than a list of the six that matter, because the six that matter
+ * are not the interesting half: a type left out of a list is unranked *and*
+ * unnoticed, and it draws a generic box with nothing anywhere to say that was a
+ * decision. Every type now answers, and `FALLS_THROUGH` is the answer "this one
+ * does not decide" — which is what a mesh, a model or a bare entity has always
+ * drawn.
  */
-const ICON_PRIORITY: readonly ComponentType[] = [
-  'prefabInstance',
-  'light',
-  'camera',
+const FALLS_THROUGH = Number.POSITIVE_INFINITY;
+
+const ICON_PRIORITY: Record<ComponentType, number> = {
+  prefabInstance: 1,
+  light: 2,
+  camera: 3,
   // After the three above and before the fall-through: an entity that is a
   // sound and nothing else is very common — a dropped clip makes one — and a
   // row of identical boxes is a hierarchy nobody can scan.
-  'audioSource',
-  'audioListener',
+  audioSource: 4,
+  audioListener: 5,
   // Last of the named types and still ahead of the fall-through: a water
   // surface would otherwise draw the same box as a mesh, and the one thing a
   // hierarchy row has to say is what the entity is.
-  'water',
-];
+  water: 6,
+  mesh: FALLS_THROUGH,
+  model: FALLS_THROUGH,
+  collider: FALLS_THROUGH,
+  rigidbody: FALLS_THROUGH,
+  script: FALLS_THROUGH,
+  playerController: FALLS_THROUGH,
+};
+
+/** The ranked types, best first. Derived, so the two cannot disagree. */
+const RANKED_TYPES = COMPONENT_TYPES.filter((type) => ICON_PRIORITY[type] !== FALLS_THROUGH).sort(
+  (a, b) => ICON_PRIORITY[a] - ICON_PRIORITY[b],
+);
 
 function entityIcon(scene: SceneDoc, entityId: string): LucideIcon {
-  for (const type of ICON_PRIORITY) {
+  for (const type of RANKED_TYPES) {
     if (!hasComponent(scene, entityId, type)) continue;
     const icon = componentDefinition(type)?.icon;
     if (icon) return COMPONENT_ICONS[icon];

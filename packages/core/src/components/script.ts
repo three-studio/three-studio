@@ -9,4 +9,5 @@ export const scriptComponent = defineComponent({
   assets: (component) => [component.assetId],
   icon: 'file-code',
   runtime: true,
+  addable: true,
 });

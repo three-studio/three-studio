@@ -16,4 +16,5 @@ export const audioListenerComponent = defineComponent({
   assets: () => [],
   icon: 'volume',
   runtime: true,
+  addable: true,
 });

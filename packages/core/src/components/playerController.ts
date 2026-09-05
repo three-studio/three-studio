@@ -9,4 +9,5 @@ export const playerControllerComponent = defineComponent({
   assets: () => [],
   icon: 'move',
   runtime: true,
+  addable: true,
 });

@@ -9,4 +9,5 @@ export const rigidbodyComponent = defineComponent({
   assets: () => [],
   icon: 'weight',
   runtime: true,
+  addable: true,
 });

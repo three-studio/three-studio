@@ -17,4 +17,5 @@ export const modelComponent = defineComponent({
   assets: (component) => [component.assetId, component.materialId],
   icon: 'box',
   runtime: true,
+  addable: false,
 });
