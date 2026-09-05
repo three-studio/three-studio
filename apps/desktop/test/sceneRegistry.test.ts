@@ -2,10 +2,14 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  DEFAULT_BUILD_PROFILE_ID,
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  createBuildProfiles,
   createNewScene,
+  createPhysicsSettings,
+  createRenderingSettings,
   deserializeScene,
   serializeScene,
   type ProjectFile,
@@ -44,6 +48,14 @@ async function projectWith(names: readonly string[]): Promise<string> {
     scenes.push({ id: document.id, name, path });
   }
 
+  // Through the factories, not a second copy of the defaults: this block was
+  // one, and it went stale the day `basePath` was added to `BuildProfile`
+  // without anything noticing — these files were outside `typecheck`'s reach.
+  // The profile does need its scenes filled in, because what the registry does
+  // to that list on a rename or a delete is half of what is pinned below.
+  const build = createBuildProfiles('Registry');
+  build.profiles[DEFAULT_BUILD_PROFILE_ID]!.scenes = scenes.map((entry) => entry.id);
+
   const project: ProjectFile = {
     version: PROJECT_FORMAT_VERSION,
     name: 'Registry',
@@ -52,28 +64,9 @@ async function projectWith(names: readonly string[]): Promise<string> {
     startScene: scenes[0]!.id,
     settings: {
       loadingScene: null,
-      rendering: {
-        forceWebGL: false,
-        antialias: true,
-        maxPixelRatio: 2,
-        shadows: true,
-        shadowMapSize: 2048,
-        exposure: 1,
-      },
-      physics: { gravity: [0, -9.81, 0], fixedTimestep: 1 / 60, maxSubsteps: 5 },
-      build: {
-        active: 'web',
-        profiles: {
-          web: {
-            name: 'Web',
-            target: 'web',
-            scenes: scenes.map((entry) => entry.id),
-            outputDir: null,
-            includeAllAssets: false,
-            title: 'Registry',
-          },
-        },
-      },
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      build,
     },
   };
   await writeFile(join(root, PROJECT_FILE_NAME), JSON.stringify(project, null, 2), 'utf8');

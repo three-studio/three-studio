@@ -11,6 +11,8 @@ import {
   createMaterial,
   createMeshEntity,
   createAudioSourceEntity,
+  createPhysicsSettings,
+  createRenderingSettings,
   createStarterScene,
   deserializeScene,
   insertEntity,
@@ -99,7 +101,12 @@ async function makeProject(): Promise<{ projectPath: string; templateRoot: strin
     engineVersion: '0.1.0',
     scenes: [{ id: scene.id, name: 'main', path: `${SCENES_DIR}/main.scene.json` }],
     startScene: scene.id,
-    settings: { build: createBuildProfiles('Export Test') },
+    settings: {
+      loadingScene: null,
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      build: createBuildProfiles('Export Test'),
+    },
   };
   await writeFile(join(projectPath, PROJECT_FILE_NAME), JSON.stringify(project), 'utf8');
 

@@ -171,7 +171,7 @@ describe('deleting an asset', () => {
     await writeAsset(root, 'models/props', 'crate.glb');
     const [asset] = (await scanAssets(root)).assets;
 
-    await removeAsset(root, asset.path);
+    await removeAsset(root, asset!.path);
 
     // `pruneEmptyFolders` used to call `rm` without `recursive`, which throws
     // `EISDIR` on a directory — straight into its own catch, so it silently

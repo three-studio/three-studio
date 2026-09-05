@@ -9,6 +9,7 @@
     "packages/*/test/**/*.ts",
     "apps/*/src/**/*.ts",
     "apps/*/src/**/*.tsx",
+    "apps/*/test/**/*.ts",
     "apps/*/*.config.ts",
     "*.config.ts"
   ],
