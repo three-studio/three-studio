@@ -5,6 +5,10 @@ import {
 } from '../../components/audioListener/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
+  drawsGeometry as scriptDrawsGeometry,
+  marker as scriptMarker,
+} from '../../components/script/overlay';
+import {
   drawsGeometry as prefabInstanceDrawsGeometry,
   marker as prefabInstanceMarker,
 } from '../../components/prefabInstance/overlay';
@@ -40,7 +44,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   collider: false,
   audioSource: false,
   audioListener: audioListenerDrawsGeometry,
-  script: false,
+  script: scriptDrawsGeometry,
   prefabInstance: prefabInstanceDrawsGeometry,
   playerController: false,
 };
@@ -75,7 +79,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   water: null,
   rigidbody: null,
   collider: null,
-  script: null,
+  script: scriptMarker,
   prefabInstance: prefabInstanceMarker,
   playerController: null,
 };
