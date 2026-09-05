@@ -9,7 +9,7 @@ import {
   SCENES_DIR,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { createProject, readProject, writeProject } from '../src/main/project';
+import { createProject, readProject, updateProject } from '../src/main/project';
 
 /*
  * What a brand new project has in it, which is a promise made once and kept
@@ -68,12 +68,14 @@ describe('engineVersion', () => {
     // disk is whatever wrote it last, and this build writing it is what makes
     // that true again. Project Settings shows this field, so a stale one is a
     // wrong answer to the first question a bug report asks.
-    project.engineVersion = '0.0.1';
-    await writeProject(root, project);
+    const written = await updateProject(root, (current) => ({
+      ...current,
+      engineVersion: '0.0.1',
+    }));
 
     expect((await readProject(root)).engineVersion).toBe(ENGINE_VERSION);
-    // Stamped on the caller's object too: it is the one handed back to the
+    // Stamped on the object handed back too: it is the one that goes to the
     // window, and the two must not disagree.
-    expect(project.engineVersion).toBe(ENGINE_VERSION);
+    expect(written.engineVersion).toBe(ENGINE_VERSION);
   });
 });

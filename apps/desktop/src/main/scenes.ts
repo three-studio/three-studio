@@ -15,7 +15,7 @@ import {
   type SceneEntry,
 } from '@three-studio/core';
 import { resolveInside } from './paths';
-import { ProjectError, discoverScenes, readProject, writeProject } from './project';
+import { ProjectError, discoverScenes, readProject, updateProject } from './project';
 
 /*
  * The five things that can be done to the scenes of a project: create one,
@@ -279,45 +279,53 @@ export async function deleteScene(
   projectPath: string,
   sceneId: string,
 ): Promise<ProjectContents> {
-  const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
-  const scene = requireScene(scenes, sceneId);
+  let remaining: SceneEntry[] = [];
 
-  if (scenes.length <= 1) {
-    // The one refusal that survived the registry, and the only one here that is
-    // not about a file: `openProject` has to hand a window a scene to show, and
-    // throws for a project with no scenes. Letting this through would mean a
-    // confirmed menu action that leaves a project unopenable — worse than the
-    // Finder doing the same thing, which at least says so on the next open.
-    throw new ProjectError('A project needs a scene; this is the last scene.');
-  }
+  // The whole operation is inside the queue, the refusal below included. That
+  // is the difference between this and `setStartScene`, which checks outside:
+  // there, the worst a check gone stale costs is a `startScene` naming a file
+  // another window has taken away, and `openProject` falls back from that. Here
+  // it is a project with no scenes at all, which `openProject` cannot open —
+  // and two windows each deleting one of the last two would each have seen two.
+  const project = await updateProject(projectPath, async (current) => {
+    const scenes = await discoverScenes(projectPath);
+    const scene = requireScene(scenes, sceneId);
+    if (scenes.length <= 1) {
+      // The one refusal that survived the registry, and the only one here that
+      // is not about a file: `openProject` has to hand a window a scene to
+      // show, and throws for a project with no scenes. Letting this through
+      // would mean a confirmed menu action that leaves a project unopenable —
+      // worse than the Finder doing the same thing, which at least says so on
+      // the next open.
+      throw new ProjectError('A project needs a scene; this is the last scene.');
+    }
 
-  // The file first, then the project file — the reverse of the old order, and
-  // for the reason that reversed it: what the project should say about its
-  // start scene depends on what is left on disk, so the disk goes first and is
-  // then read back. A crash between the two leaves a project that opens, since
-  // nothing in it has to name a file that exists.
-  await rm(resolveInside(projectPath, scene.path), { force: true });
-  const remaining = await discoverScenes(projectPath);
-  const updated = repointStartScene(project, sceneId, remaining);
-  // Only when something actually moved. A delete that does not touch the start
-  // scene is a file operation and nothing else, and rewriting `project.json`
-  // to identical bytes would put a project in someone's diff for no reason.
-  if (updated !== project) await writeProject(projectPath, updated);
-  return { project: updated, scenes: remaining };
+    // The file first, then the project file — the reverse of the old order,
+    // and for the reason that reversed it: what the project should say about
+    // its start scene depends on what is left on disk, so the disk goes first
+    // and is then read back. A crash between the two leaves a project that
+    // opens, since nothing in it has to name a file that exists.
+    await rm(resolveInside(projectPath, scene.path), { force: true });
+    remaining = await discoverScenes(projectPath);
+    // Returning `current` unchanged is what stops a delete that did not touch
+    // the start scene from writing at all; `updateProject` honours it.
+    return repointStartScene(current, sceneId, remaining);
+  });
+  return { project, scenes: remaining };
 }
 
 export async function setStartScene(
   projectPath: string,
   sceneId: string,
 ): Promise<ProjectContents> {
-  const project = await readProject(projectPath);
   const scenes = await discoverScenes(projectPath);
   requireScene(scenes, sceneId);
 
-  const updated: ProjectFile = { ...project, startScene: sceneId };
-  await writeProject(projectPath, updated);
-  return { project: updated, scenes };
+  const project = await updateProject(projectPath, (current) => ({
+    ...current,
+    startScene: sceneId,
+  }));
+  return { project, scenes };
 }
 
 /** Through a temporary file and a rename, like every other write to a project. */

@@ -264,23 +264,74 @@ export async function readSceneFile(projectPath: string, scenePath: string): Pro
 /**
  * Writes the project file back, through a temporary file like a scene.
  *
+ * Private, and reachable only from inside `updateProject`: a second door to
+ * this file is a second way past the queue, and the queue is the only thing
+ * stopping two windows from losing each other's work. It is also what makes
+ * the fixed `.tmp` name safe here, where `FileIndex` needs a unique one.
+ *
  * Stamps `engineVersion` on the way, because this is the one place the file is
  * written and the field claims to name the build that last wrote it. Only
  * `createProject` ever set it, so what it actually named was the build that
  * created the project — which says nothing about the bytes you are reading
  * when one turns up broken, and that is the whole of what it is for.
  *
- * The caller's object is stamped too, rather than a copy being written: every
- * caller hands the same object straight back to the renderer, and a window
- * showing one version while the file on disk says another is a worse answer
- * than no version at all.
+ * The caller's object is stamped too, rather than a copy being written: the
+ * object goes straight back to the renderer, and a window showing one version
+ * while the file on disk says another is a worse answer than no version.
  */
-export async function writeProject(projectPath: string, project: ProjectFile): Promise<void> {
+async function writeProject(projectPath: string, project: ProjectFile): Promise<void> {
   project.engineVersion = ENGINE_VERSION;
   const target = join(projectPath, PROJECT_FILE_NAME);
   const temporary = `${target}.tmp`;
   await writeFile(temporary, JSON.stringify(project, null, 2), 'utf8');
   await rename(temporary, target);
+}
+
+/**
+ * The tail of the queue below. Never rejects — see `updateProject`.
+ */
+let writes: Promise<unknown> = Promise.resolve();
+
+/**
+ * Reads `project.json`, changes it, and writes it back, with nothing else
+ * getting in between.
+ *
+ * A project has N editor windows on it — one per scene — and any of them can
+ * set the start scene, delete a scene or save settings. Each of those is a
+ * read, a decision and a write with `await`s between them, so two running at
+ * once interleave at every one of those points and the second write is built
+ * on what the first one read. One window setting the start scene while another
+ * saves rendering settings loses whichever landed first, in silence, and the
+ * window that lost goes on showing its own change until it is reloaded.
+ *
+ * A queue and not a lock file, because the main process is this file's only
+ * writer: `createProject` writes it into a directory that did not exist a
+ * moment ago, and every write after that comes through here. One queue for the
+ * process rather than one per project — only one project is open at a time
+ * (`activeProjectPath`, `ipc.ts`), and two of them made to wait for each other
+ * would cost nothing worth the bookkeeping.
+ *
+ * @param change What to write. Returning the object it was handed means
+ *   nothing moved and nothing is written: a delete that does not touch the
+ *   start scene must not put a project in someone's diff.
+ */
+export function updateProject(
+  projectPath: string,
+  change: (project: ProjectFile) => ProjectFile | Promise<ProjectFile>,
+): Promise<ProjectFile> {
+  const run = async (): Promise<ProjectFile> => {
+    const project = await readProjectFile(projectPath);
+    const updated = await change(project);
+    if (updated !== project) await writeProject(projectPath, updated);
+    return updated;
+  };
+
+  const result = writes.then(run);
+  // What the next caller waits on must not be allowed to reject, or one change
+  // that threw — a name already taken, a last scene refused — would take down
+  // every change queued behind it.
+  writes = result.catch(() => undefined);
+  return result;
 }
 
 /** The project file, carried forward and with anything a newer format added filled in. */

@@ -47,7 +47,7 @@ import {
   readProject,
   readSceneFile,
   saveScene,
-  writeProject,
+  updateProject,
 } from './project';
 import { createScene, deleteScene, duplicateScene, renameScene, setStartScene } from './scenes';
 import { buildScripts, createScript } from './scripts';
@@ -500,14 +500,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     'project:updateSettings',
     async (event, patch: Partial<ProjectSettings>): Promise<ProjectFile> => {
       const projectPath = requireProject();
-      // Re-read rather than trust the renderer's copy: the file may have moved
-      // on since the dialog opened.
-      const project = await readProject(projectPath);
-      const updated: ProjectFile = {
+      // Re-read inside the write rather than trusting the renderer's copy: the
+      // file may have moved on since the dialog opened, and another window may
+      // be setting the start scene at this very moment. `updateProject` is what
+      // makes the read and the write one step.
+      const updated = await updateProject(projectPath, (project) => ({
         ...project,
         settings: { ...project.settings, ...patch },
-      };
-      await writeProject(projectPath, updated);
+      }));
       // Settings cannot change which scenes exist, but the broadcast carries
       // the whole of what a window holds, so the list has to come along or the
       // other windows would adopt an empty one.
