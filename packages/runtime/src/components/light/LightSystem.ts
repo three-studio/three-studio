@@ -41,8 +41,6 @@ export interface LightHandle extends SystemHandle {
  * one. Sixty a second, none of them freed.
  */
 export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
-  readonly type = 'light' as const;
-
   mount(entityId: string, component: LightComponent, ctx: SystemContext): LightHandle {
     const light = buildLight(component);
     applyShadow(light, component, ctx.shadowMapSize);

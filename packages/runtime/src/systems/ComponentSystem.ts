@@ -6,7 +6,7 @@ import type {
   MaterialDef,
   Vec3,
 } from '@three-studio/core';
-import type { Object3D } from 'three/webgpu';
+import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
 import type { ModelCache } from '../assets/ModelCache';
 import type { StudioTime } from '../time/StudioTime';
 import type { ResourceArena } from './ResourceArena';
@@ -39,6 +39,26 @@ export interface Sun {
 export interface SystemHandle {
   /** What this component contributes to its entity's container. */
   readonly objects: readonly Object3D[];
+}
+
+/**
+ * A build that can be drawn in one call alongside others like it.
+ *
+ * The four fields `MeshBatcher` reads, and nothing else of the mesh it came
+ * from. Named here rather than taken as a `MeshHandle` because the batcher's
+ * claim is about *batchable builds*, not about meshes: it grouped by
+ * `batchKey`, compared materials and uploaded a geometry, and never once
+ * needed to know which system had produced them.
+ */
+export interface BatchableHandle extends SystemHandle {
+  readonly mesh: Mesh;
+  readonly geometry: BufferGeometry;
+  readonly material: Material;
+  /**
+   * What this build can be drawn alongside. Two builds share a batch when they
+   * share this string; the system that made them decides what goes into it.
+   */
+  readonly batchKey: string;
 }
 
 /** What every system may reach, and nothing more. */
@@ -107,8 +127,6 @@ export interface SystemContext {
  * what comes out of it is built once per reconciler rather than shared.
  */
 export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHandle> {
-  abstract readonly type: ComponentType;
-
   /** Builds what this component draws. Called once, on first sight. */
   abstract mount(entityId: string, component: T, ctx: SystemContext): H;
 
@@ -124,6 +142,36 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
 
   /** Gives back everything the handle holds. The objects are detached by the caller. */
   abstract unmount(handle: H, ctx: SystemContext): void;
+
+  /*
+   * The three capabilities below, and no fourth "in case".
+   *
+   * Each replaces a walk in `Reconciler` that asked `doc.type === 'mesh'` or
+   * `=== 'model'` and then cast the handle it found. The reconciler was the one
+   * file written to know about no type in particular, and it knew about two.
+   *
+   * **Optional, and declaring one is what claims it.** A system that does not
+   * implement `whenLoaded` does not load, which is the question
+   * `entitiesThatLoad` asks; the two that implement `materialAsset` are the two
+   * that can draw with a shared material. Nothing is cast: a system proves its
+   * handle is batchable by handing it back as one.
+   */
+
+  /** What this build can be drawn in a batch as, when it can be at all. */
+  batchable?(handle: H): BatchableHandle;
+
+  /**
+   * The asset id of the shared material this build draws with, or `null` for
+   * one it owns.
+   *
+   * A model answers as well as a mesh, since it can override the material its
+   * file shipped with. Asking only meshes left an edit to a shared material
+   * reaching every cube in the scene and none of the imported models using it.
+   */
+  materialAsset?(handle: H): string | null;
+
+  /** Resolves once everything this system has in flight has landed or failed. */
+  whenLoaded?(): Promise<void>;
 }
 
 // --------------------------------------------------------------- the registry

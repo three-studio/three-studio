@@ -275,9 +275,10 @@ export class SceneBinder {
     // invalidated for the same reason; the environment was simply left out.
     this.releaseEnvironment();
     this.models.setResolver(resolver);
-    // Every model has to be built again against the new resolver, so the
-    // entities holding one are marked for a full remount on the next sync.
-    for (const entityId of this.reconciler.entitiesWithModels()) {
+    // Everything loaded through the resolver has to be built again against the
+    // new one, so the entities holding such a build are marked for a full
+    // remount on the next sync.
+    for (const entityId of this.reconciler.entitiesThatLoad()) {
       const view = this.reconciler.view(entityId);
       if (view) view.components = [];
     }

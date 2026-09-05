@@ -1,9 +1,7 @@
 import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
 import { buildSystems, type AnySystem } from './components';
-import type { MeshHandle } from './components/mesh/MeshSystem';
-import type { ModelHandle } from './components/model/ModelSystem';
-import type { SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY } from './systems/identity';
 
 /*
@@ -191,32 +189,31 @@ export class Reconciler {
     return false;
   }
 
-  /** Every live mesh build in the scene, which is what the batcher groups. */
-  *meshHandles(): Generator<MeshHandle> {
+  /** Every live build that can be drawn in a batch, which is what the batcher groups. */
+  *batchableHandles(): Generator<BatchableHandle> {
     for (const view of this.views.values()) {
       for (const mounted of view.mounted.values()) {
-        if (mounted.doc.type === 'mesh') yield mounted.handle as MeshHandle;
+        const batchable = mounted.system.batchable?.(mounted.handle);
+        if (batchable) yield batchable;
       }
     }
   }
 
   /**
-   * Resolves once every model in flight has landed or failed.
+   * Resolves once everything in flight has landed or failed.
    *
-   * Still `model` by name, and still assuming it is the only system that loads
-   * anything — one of the four places this file knows a type, all of which
-   * T-029 turns into capabilities the systems declare. It can no longer hold
-   * the system by its class, because it no longer builds one, so the lookup is
-   * narrowed to the single method it wants.
+   * Every system that loads, not the one that happens to today: a second
+   * asynchronous type is waited for by declaring `whenLoaded`, and this line
+   * does not change.
    */
   whenLoaded(): Promise<void> {
-    const loader = this.systems.get('model') as { whenLoaded?: () => Promise<void> } | undefined;
-    return loader?.whenLoaded?.() ?? Promise.resolve();
+    const settled = [...this.systems.values()].map((system) => system.whenLoaded?.());
+    return Promise.all(settled).then(() => undefined);
   }
 
   /**
-   * Invalidates every mesh whose material comes from an asset, so each re-reads
-   * what the pool now holds.
+   * Invalidates every build whose material comes from an asset, so each
+   * re-reads what the pool now holds.
    *
    * @returns The entity ids this touched, so the caller can sync exactly those.
    */
@@ -224,24 +221,22 @@ export class Reconciler {
     const found = new Set<string>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
-        // A model draws with a material asset too, since it can override the
-        // one its file shipped with. Asking only about meshes left an edit to a
-        // shared material reaching every cube in the scene and none of the
-        // imported models using it.
-        if (mounted.doc.type !== 'mesh' && mounted.doc.type !== 'model') continue;
-        const handle = mounted.handle as MeshHandle | ModelHandle;
-        if (handle.materialKey !== null) found.add(entityId);
+        const asset = mounted.system.materialAsset?.(mounted.handle) ?? null;
+        if (asset !== null) found.add(entityId);
       }
     }
     return found;
   }
 
-  /** Entity ids carrying a model, for a resolver change that invalidates them all. */
-  entitiesWithModels(): Set<string> {
+  /**
+   * Entity ids whose builds came from a system that loads, for a resolver
+   * change that invalidates them all.
+   */
+  entitiesThatLoad(): Set<string> {
     const found = new Set<string>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
-        if (mounted.doc.type === 'model') found.add(entityId);
+        if (mounted.system.whenLoaded) found.add(entityId);
       }
     }
     return found;

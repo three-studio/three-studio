@@ -44,8 +44,6 @@ export interface WaterHandle extends SystemHandle {
 }
 
 export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
-  readonly type = 'water' as const;
-
   private readonly direction = new Vector3();
 
   mount(entityId: string, component: WaterComponent, ctx: SystemContext): WaterHandle {

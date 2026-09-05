@@ -1,7 +1,11 @@
 import type { GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
 import { Mesh, type BufferGeometry, type Material, type Texture } from 'three/webgpu';
 import { ENTITY_ID_KEY } from '../../systems/identity';
-import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import {
+  ComponentSystem,
+  type BatchableHandle,
+  type SystemContext,
+} from '../../systems/ComponentSystem';
 import { buildGeometry, geometryKeyOf, stableKey } from '../../systems/geometry';
 import { buildMaterial, patchMaterial, sameTextureSlots } from '../../systems/material';
 import { SharedMaterial } from '../../systems/ResourceArena';
@@ -13,7 +17,7 @@ import { SharedMaterial } from '../../systems/ResourceArena';
  * anything a mutation did not touch, so `previous.geometryDef === next` is an
  * exact "nothing here changed" — no deep comparison needed.
  */
-export interface MeshHandle extends SystemHandle {
+export interface MeshHandle extends BatchableHandle {
   mesh: Mesh;
   geometryDef: GeometryDef;
   /** Identifies the pooled geometry this handle holds a reference to. */
@@ -44,7 +48,14 @@ export interface MeshHandle extends SystemHandle {
  * geometry, a node material and its textures, sixty times a second.
  */
 export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
-  readonly type = 'mesh' as const;
+  /** The one system whose builds batch: a batch is a shared geometry and material. */
+  override batchable(handle: MeshHandle): BatchableHandle {
+    return handle;
+  }
+
+  override materialAsset(handle: MeshHandle): string | null {
+    return handle.materialKey;
+  }
 
   mount(entityId: string, component: MeshComponent, ctx: SystemContext): MeshHandle {
     const handle = this.build(component, undefined, ctx);

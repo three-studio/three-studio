@@ -1,7 +1,7 @@
 import { BatchedMesh, Mesh, type Object3D } from 'three/webgpu';
 import type { Reconciler } from './Reconciler';
 import { resolveEntityId } from './systems/identity';
-import type { MeshHandle } from './components/mesh/MeshSystem';
+import type { BatchableHandle } from './systems/ComponentSystem';
 import type { ResourceArena } from './systems/ResourceArena';
 
 /**
@@ -203,8 +203,8 @@ export class MeshBatcher {
     if (!this.dirty) return;
     this.dirty = false;
 
-    const groups = new Map<string, MeshHandle[]>();
-    for (const handle of this.reconciler.meshHandles()) {
+    const groups = new Map<string, BatchableHandle[]>();
+    for (const handle of this.reconciler.batchableHandles()) {
       // Anything hidden is left out rather than given a zero matrix: three's
       // per-instance visibility would need its own bookkeeping, and a batch
       // is regrouped whenever the document changes anyway.
@@ -298,7 +298,7 @@ export class MeshBatcher {
    * @returns Whether the group survives. `false` means the caller must dispose
    *   it and let the create pass build a new one.
    */
-  private refit(group: BatchGroup, members: MeshHandle[]): boolean {
+  private refit(group: BatchGroup, members: BatchableHandle[]): boolean {
     /*
      * The batch draws **one** material object, chosen when it was built, and
      * nothing about the group's key can see that object move.
@@ -325,7 +325,7 @@ export class MeshBatcher {
      * serialised key — so this path is walked for three thousand meshes sixty
      * times a second to conclude that the group is what it was. It has to cost
      * nothing: the difference below allocates a `Set` and an array of N, where
-     * this allocates neither. `meshHandles` yields in map insertion order, so an
+     * this allocates neither. `batchableHandles` yields in map insertion order, so an
      * untouched group always presents itself the same way round.
      */
     if (
@@ -367,7 +367,7 @@ export class MeshBatcher {
     return kept.length > 0;
   }
 
-  private createBatch(key: string, members: MeshHandle[]): void {
+  private createBatch(key: string, members: BatchableHandle[]): void {
     const first = members[0]!;
     const position = first.geometry.getAttribute('position');
     const index = first.geometry.getIndex();

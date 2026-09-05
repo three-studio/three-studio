@@ -18,8 +18,6 @@ export interface CameraHandle extends SystemHandle {
  * `disposable.dispose is not a function` on the first Stop.
  */
 export class CameraSystem extends ComponentSystem<CameraComponent, CameraHandle> {
-  readonly type = 'camera' as const;
-
   mount(entityId: string, component: CameraComponent, _ctx: SystemContext): CameraHandle {
     const camera = buildCamera(component);
     camera.userData[ENTITY_ID_KEY] = entityId;

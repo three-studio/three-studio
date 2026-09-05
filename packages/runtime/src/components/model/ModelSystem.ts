@@ -59,7 +59,9 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   /** In-flight loads, so `whenLoaded()` can wait for a settled scene. */
   private readonly pending = new Set<Promise<void>>();
 
-  readonly type = 'model' as const;
+  override materialAsset(handle: ModelHandle): string | null {
+    return handle.materialKey;
+  }
 
   mount(entityId: string, component: ModelComponent, ctx: SystemContext): ModelHandle {
     const handle: ModelHandle = {
@@ -132,7 +134,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   }
 
   /** Resolves once every model in flight has landed or failed. */
-  async whenLoaded(): Promise<void> {
+  override async whenLoaded(): Promise<void> {
     while (this.pending.size > 0) await Promise.all([...this.pending]);
   }
 
