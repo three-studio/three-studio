@@ -1,20 +1,18 @@
 import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
-import { CameraSystem } from './systems/CameraSystem';
-import type { ComponentSystem, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import { buildSystems, type AnySystem } from './components';
+import type { MeshHandle } from './components/mesh/MeshSystem';
+import type { ModelHandle } from './components/model/ModelSystem';
+import type { SystemContext, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY } from './systems/identity';
-import { LightSystem } from './systems/LightSystem';
-import { MeshSystem, type MeshHandle } from './systems/MeshSystem';
-import { ModelSystem, type ModelHandle } from './systems/ModelSystem';
-import { WaterSystem } from './systems/WaterSystem';
 
 /*
  * Mounts, patches and unmounts, one entity at a time.
  *
  * It knows nothing about any component type: it pairs what is mounted against
  * what the document now holds, **by component id**, and hands each pair to the
- * system that claims its type. Adding a renderable type is a system and a line
- * in the table below.
+ * system that claims its type. Adding a renderable type is a folder under
+ * `components/`, and this file does not change.
  *
  * The pairing key is the id phase 3 gave every component and phase 10 made the
  * storage key. Before it, builds were keyed by *position* in an array, so
@@ -22,21 +20,6 @@ import { WaterSystem } from './systems/WaterSystem';
  * geometry key no longer matched, both were rebuilt, and the churn forced the
  * batch holding them to be rebuilt too.
  */
-
-/**
- * A system with its type parameters erased, so one table can hold all four.
- *
- * The cast is at registration and nowhere else. `ComponentSystem<MeshComponent,
- * …>` is genuinely not a `ComponentSystem<ComponentDoc, …>` — a method taking a
- * mesh is not one taking any component — and the guarantee that makes it safe is
- * the table's own key: a system is only ever handed a component of the type it
- * is filed under.
- */
-type AnySystem = ComponentSystem<ComponentDoc, SystemHandle>;
-
-const erase = <T extends ComponentDoc, H extends SystemHandle>(
-  system: ComponentSystem<T, H>,
-): AnySystem => system as unknown as AnySystem;
 
 /** One mounted component: which system owns it, and what it handed back. */
 interface Mounted {
@@ -61,26 +44,16 @@ export interface EntityView {
 export class Reconciler {
   private readonly views = new Map<string, EntityView>();
 
-  private readonly meshSystem = new MeshSystem();
-  private readonly modelSystem = new ModelSystem();
-
   /**
-   * The five types that draw something. The other seven have no object of their
-   * own — physics, audio, scripts and controllers are built by their own layers
-   * from the same document, and a prefab instance was turned into real entities
-   * by `expandPrefabs` before the runtime ever saw the scene.
+   * One system per type that draws, built for this reconciler alone.
    *
-   * A `switch` returning `null` for nine of eleven used to stand here. What
-   * replaces it is a table that simply does not mention them, which is the same
-   * shape the component registry took in phase 9.
+   * A `switch` returning `null` for nine of eleven used to stand here; a table
+   * of five `new XSystem()` replaced it, and this replaces that. The names are
+   * gone: the types register themselves from `components/<type>/`, and the only
+   * thing this file still knows is that some types have a system and most do
+   * not.
    */
-  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = new Map([
-    ['mesh', erase(this.meshSystem)],
-    ['model', erase(this.modelSystem)],
-    ['light', erase(new LightSystem())],
-    ['camera', erase(new CameraSystem())],
-    ['water', erase(new WaterSystem())],
-  ]);
+  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = buildSystems();
 
   view(entityId: string): EntityView | undefined {
     return this.views.get(entityId);
@@ -227,9 +200,18 @@ export class Reconciler {
     }
   }
 
-  /** Resolves once every model in flight has landed or failed. */
+  /**
+   * Resolves once every model in flight has landed or failed.
+   *
+   * Still `model` by name, and still assuming it is the only system that loads
+   * anything — one of the four places this file knows a type, all of which
+   * T-029 turns into capabilities the systems declare. It can no longer hold
+   * the system by its class, because it no longer builds one, so the lookup is
+   * narrowed to the single method it wants.
+   */
   whenLoaded(): Promise<void> {
-    return this.modelSystem.whenLoaded();
+    const loader = this.systems.get('model') as { whenLoaded?: () => Promise<void> } | undefined;
+    return loader?.whenLoaded?.() ?? Promise.resolve();
   }
 
   /**

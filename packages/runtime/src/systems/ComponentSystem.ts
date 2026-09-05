@@ -1,4 +1,11 @@
-import type { ComponentDoc, ComponentType, Hex, MaterialDef, Vec3 } from '@three-studio/core';
+import type {
+  ComponentDoc,
+  ComponentOfType,
+  ComponentType,
+  Hex,
+  MaterialDef,
+  Vec3,
+} from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { ModelCache } from '../assets/ModelCache';
 import type { StudioTime } from '../time/StudioTime';
@@ -90,10 +97,14 @@ export interface SystemContext {
 }
 
 /**
- * Deliberately not a registry keyed by type at module scope, unlike
- * `registerBehaviour`. A system owns GPU resources through the arena and has a
- * lifetime tied to the binder that made it, and this repo has one rule for
- * that: a class owns a resource with a lifetime, a free function does not.
+ * A class rather than a factory, unlike a behaviour: a system owns GPU
+ * resources through the arena and has a lifetime tied to the binder that made
+ * it, and this repo has one rule for that — a class owns a resource with a
+ * lifetime, a free function does not.
+ *
+ * That is why the registry below registers a **factory of systems** where
+ * `registerBehaviour` registers a factory of behaviours. It is the same seam;
+ * what comes out of it is built once per reconciler rather than shared.
  */
 export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHandle> {
   abstract readonly type: ComponentType;
@@ -113,4 +124,54 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
 
   /** Gives back everything the handle holds. The objects are detached by the caller. */
   abstract unmount(handle: H, ctx: SystemContext): void;
+}
+
+// --------------------------------------------------------------- the registry
+
+/**
+ * A system with its type parameters erased, so one table can hold all five.
+ *
+ * `ComponentSystem<MeshComponent, …>` is genuinely not a
+ * `ComponentSystem<ComponentDoc, …>` — a method taking a mesh is not one taking
+ * any component — and the guarantee that makes the erasure safe is the table's
+ * own key: a system is only ever handed a component of the type it is filed
+ * under. `registerSystem` is where that key and that system meet, so it is the
+ * one place the cast is written, and its signature is what ties the two
+ * together: a factory building a system written against another type does not
+ * compile.
+ */
+export type AnySystem = ComponentSystem<ComponentDoc, SystemHandle>;
+
+const factories = new Map<ComponentType, () => AnySystem>();
+
+/**
+ * Registers the system that draws a component type.
+ *
+ * The seam `registerBehaviour` already is, for the half of the runtime that
+ * draws: a type that has something to show is its own folder under
+ * `components/`, and nothing in the reconciler learns that it exists. What
+ * replaced a hard-coded table of five is this call made five times, at the
+ * imports in `components/index.ts`.
+ */
+export function registerSystem<T extends ComponentType, H extends SystemHandle>(
+  type: T,
+  factory: () => ComponentSystem<ComponentOfType<T>, H>,
+): void {
+  factories.set(type, () => factory() as unknown as AnySystem);
+}
+
+/** Whether a type registered a system at all. Read by the check at load. */
+export function systemRegistered(type: ComponentType): boolean {
+  return factories.has(type);
+}
+
+/**
+ * One system per registered type, freshly built.
+ *
+ * Per call and not shared: a system holds what it built, and two reconcilers
+ * are two scenes. This is the line that used to be five `new XSystem()` in a
+ * field initialiser.
+ */
+export function buildSystems(): ReadonlyMap<ComponentType, AnySystem> {
+  return new Map([...factories].map(([type, factory]) => [type, factory()]));
 }

@@ -1,7 +1,7 @@
 import { BatchedMesh, Mesh, type Object3D } from 'three/webgpu';
 import type { Reconciler } from './Reconciler';
 import { resolveEntityId } from './systems/identity';
-import type { MeshHandle } from './systems/MeshSystem';
+import type { MeshHandle } from './components/mesh/MeshSystem';
 import type { ResourceArena } from './systems/ResourceArena';
 
 /**

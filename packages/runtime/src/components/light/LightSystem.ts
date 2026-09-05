@@ -13,8 +13,8 @@ import {
   type Object3D,
   type Texture,
 } from 'three/webgpu';
-import { ComponentSystem, type SystemContext, type SystemHandle } from './ComponentSystem';
-import { ENTITY_ID_KEY } from './identity';
+import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { ENTITY_ID_KEY } from '../../systems/identity';
 
 export interface LightHandle extends SystemHandle {
   light: Object3D;

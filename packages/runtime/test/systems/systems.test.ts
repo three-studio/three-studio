@@ -14,14 +14,14 @@ import {
 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { ModelCache } from '../../src/assets/ModelCache';
-import { CameraSystem } from '../../src/systems/CameraSystem';
+import { CameraSystem } from '../../src/components/camera/CameraSystem';
 import type { SystemContext } from '../../src/systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../src/systems/identity';
-import { LightSystem } from '../../src/systems/LightSystem';
-import { MeshSystem } from '../../src/systems/MeshSystem';
-import { ModelSystem } from '../../src/systems/ModelSystem';
+import { LightSystem } from '../../src/components/light/LightSystem';
+import { MeshSystem } from '../../src/components/mesh/MeshSystem';
+import { ModelSystem } from '../../src/components/model/ModelSystem';
 import { ResourceArena } from '../../src/systems/ResourceArena';
-import { WaterSystem } from '../../src/systems/WaterSystem';
+import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
 
 /*

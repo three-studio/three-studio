@@ -1,10 +1,10 @@
 import type { GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
 import { Mesh, type BufferGeometry, type Material, type Texture } from 'three/webgpu';
-import { ENTITY_ID_KEY } from './identity';
-import { ComponentSystem, type SystemContext, type SystemHandle } from './ComponentSystem';
-import { buildGeometry, geometryKeyOf, stableKey } from './geometry';
-import { buildMaterial, patchMaterial, sameTextureSlots } from './material';
-import { SharedMaterial } from './ResourceArena';
+import { ENTITY_ID_KEY } from '../../systems/identity';
+import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { buildGeometry, geometryKeyOf, stableKey } from '../../systems/geometry';
+import { buildMaterial, patchMaterial, sameTextureSlots } from '../../systems/material';
+import { SharedMaterial } from '../../systems/ResourceArena';
 
 /**
  * What a mesh component built, kept so the next patch can reuse it.

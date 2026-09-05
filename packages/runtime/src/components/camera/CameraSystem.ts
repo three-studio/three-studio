@@ -1,7 +1,7 @@
 import type { CameraComponent } from '@three-studio/core';
 import { OrthographicCamera, PerspectiveCamera, type Object3D } from 'three/webgpu';
-import { ComponentSystem, type SystemContext, type SystemHandle } from './ComponentSystem';
-import { ENTITY_ID_KEY } from './identity';
+import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { ENTITY_ID_KEY } from '../../systems/identity';
 
 export interface CameraHandle extends SystemHandle {
   camera: PerspectiveCamera | OrthographicCamera;

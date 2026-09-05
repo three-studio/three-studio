@@ -1,9 +1,9 @@
 import type { ModelComponent } from '@three-studio/core';
 import { Mesh, type Material, type Object3D } from 'three/webgpu';
-import { ComponentSystem, type SystemContext, type SystemHandle } from './ComponentSystem';
-import { ENTITY_ID_KEY } from './identity';
-import { buildMaterial } from './material';
-import { SharedMaterial } from './ResourceArena';
+import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { ENTITY_ID_KEY } from '../../systems/identity';
+import { buildMaterial } from '../../systems/material';
+import { SharedMaterial } from '../../systems/ResourceArena';
 
 export interface ModelHandle extends SystemHandle {
   assetId: string;

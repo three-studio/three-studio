@@ -9,11 +9,11 @@ import {
   type BufferGeometry,
   type Texture,
 } from 'three/webgpu';
-import { ComponentSystem, type Sun, type SystemContext, type SystemHandle } from './ComponentSystem';
-import { buildGeometry, geometryKeyOf } from './geometry';
-import { ENTITY_ID_KEY } from './identity';
-import { WaterSurface } from './WaterSurface';
-import { defaultWaterNormals } from './waterNormals';
+import { ComponentSystem, type Sun, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { buildGeometry, geometryKeyOf } from '../../systems/geometry';
+import { ENTITY_ID_KEY } from '../../systems/identity';
+import { WaterSurface } from '../../systems/WaterSurface';
+import { defaultWaterNormals } from '../../systems/waterNormals';
 
 /*
  * Flat reflective water.
