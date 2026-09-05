@@ -1,3 +1,5 @@
+import type { PrefabDoc } from '../scene/prefab';
+import type { RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
   | 'model'
@@ -30,8 +32,110 @@ export const MATERIAL_ASSET_VERSION = 1;
  * ships at its file's own scale and the build does not look like the editor.
  * Additive again, and `textureEncodings` stays: it is subsumed by this but a
  * player from before format 3 reads only that one.
+ *
+ * 4 — `build.json` carries the asset table, the materials and the prefabs that
+ * were `assets.json`, `materials.json` and `prefabs.json` beside it. Six
+ * requests before the first frame become three, and the three that go were
+ * small, always needed, and always fetched. The files are no longer written;
+ * the player falls back to them when the fields are absent, which is what makes
+ * this additive from its side too.
  */
-export const BUILD_FORMAT_VERSION = 3;
+export const BUILD_FORMAT_VERSION = 4;
+
+/**
+ * `build.json` — everything the player needs before the first frame except the
+ * entry scene and the compiled scripts.
+ *
+ * Declared here rather than at either end, for the reason `ScriptBuildResult`
+ * is declared in `bridge.ts`: it crosses a boundary neither side can import
+ * across. The exporter writes it from the main process and the player reads it
+ * in a browser, and it used to be stated three times — written from an
+ * unannotated literal, read back through an interface kept by hand, and
+ * restated in part a third time for the entry scene. That is exactly how the
+ * script build result lost a field on one side.
+ *
+ * **An optional field is one an older build may not have**, never one the
+ * exporter may skip. Each says which format added it, and the player says what
+ * it does without it.
+ */
+export interface BuildManifest {
+  /** Absent on a build written before builds were versioned. */
+  formatVersion?: number;
+  title: string;
+  /**
+   * Kept for a build written before `rendering` existed, and only for that.
+   * Everything reads `rendering` now — see the fallback where it is read.
+   */
+  forceWebGL: boolean;
+  /**
+   * The project's rendering settings, whole.
+   *
+   * Absent on a build written before this field, and then filled from the
+   * factory with `forceWebGL` taken from the field above — which is exactly
+   * what those builds were exported against, since it was the only one of the
+   * six the player ever read. The other five were thrown away: a project
+   * asking for 4096 shadow maps, no antialiasing or a different exposure got
+   * the defaults, and it went unnoticed because the defaults happened to agree.
+   */
+  rendering?: RenderingSettings;
+  /** Entry point first; the rest ship for a script to load later. */
+  scenes: string[];
+  /**
+   * Scene name → file in this build, keyed by id as well.
+   *
+   * A script may hold either, and a build that understood only one would make
+   * the other silently fail to load. Absent on a build written before it.
+   */
+  sceneMap?: Record<string, string>;
+  /** Name of the scene shown while another loads, if the project has one. */
+  loadingScene?: string | null;
+  /**
+   * Asset id → path under `assets/`, so nothing in a scene is a file name.
+   *
+   * Format 4. Before it this was `assets.json` beside the player.
+   */
+  assets?: Record<string, string>;
+  /**
+   * The shared materials a shipped scene links to, by asset id.
+   *
+   * Format 4; `materials.json` before it. Only the ones something references —
+   * an unused material asset is no more part of a build than an unused texture.
+   */
+  materials?: Record<string, MaterialDef>;
+  /**
+   * The prefabs a shipped scene instances, by asset id, expanded before the
+   * engine sees the scene.
+   *
+   * Format 4; `prefabs.json` before it.
+   */
+  prefabs?: Record<string, PrefabDoc>;
+  /**
+   * Images whose file name does not say how they store light.
+   *
+   * Ultra HDR and nothing else today: it is a `.jpg`, and without this the
+   * player decodes it as an ordinary photograph — perfectly, and with every
+   * stop above white gone. Absent on a build that had none, and on one written
+   * before this field existed.
+   */
+  textureEncodings?: Record<string, TextureEncoding>;
+  /**
+   * What each asset was imported with.
+   *
+   * Absent on a build written before this field existed, and then every asset
+   * falls back to its format's defaults — which is what those builds were
+   * exported against anyway.
+   */
+  assetSettings?: Record<string, AssetSettings>;
+  /**
+   * The compiled behaviour bundle, or `null` when the project has none.
+   *
+   * Named here rather than probed for. A static server that answers 404s with
+   * its index page — which many do — returns 200 and HTML for a file that is
+   * not there, so asking the server whether the bundle exists is not a question
+   * that can be answered reliably.
+   */
+  scripts: string | null;
+}
 
 /**
  * On-disk shape of a preset material, `assets/materials/<name>.material.json`.

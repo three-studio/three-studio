@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ASSETS_DIR,
+  BUILD_FORMAT_VERSION,
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
@@ -18,6 +19,7 @@ import {
   insertEntity,
   putComponent,
   serializeScene,
+  type BuildManifest,
   type BuildProfile,
   type MeshComponent,
   type ProjectFile,
@@ -202,11 +204,12 @@ describe('web export', () => {
     };
     expect(Object.keys(scene.entities).length).toBeGreaterThan(0);
 
+    // Read once, and against the declaration the exporter writes to: an inline
+    // shape here would be a fourth statement of the same manifest.
+    const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as BuildManifest;
+
     // Only the referenced texture, and reachable at the path the manifest gives.
-    const paths = JSON.parse(await readFile(join(outputDir, 'assets.json'), 'utf8')) as Record<
-      string,
-      string
-    >;
+    const paths = build.assets ?? {};
     expect(paths['tex-used']).toBe('textures/used.png');
     // Named by `scene.environment` and by no component. It is also the largest
     // file a scene usually carries, so it is the one whose absence is loudest.
@@ -217,11 +220,6 @@ describe('web export', () => {
       'used.png',
     ]);
 
-    const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as {
-      title: string;
-      scenes: string[];
-      scripts: string | null;
-    };
     expect(build.title).toBe('Export Test');
     expect(build.scenes).toEqual(['scene.json']);
     // Named, not probed for: a static server that answers unknown paths with
@@ -238,6 +236,53 @@ describe('web export', () => {
     // Three, not four: the spare texture is not referenced. And three rather
     // than one is the whole point — the sky counts, and so does the sound.
     expect(result).toMatchObject({ sceneCount: 1, assetCount: 3, warnings: [] });
+  });
+
+  it('carries the asset table, the materials and the prefabs in the manifest itself', async () => {
+    /*
+     * Six requests before the first frame, three of them for documents that are
+     * small and always needed. Since format 4 they are fields of `build.json`,
+     * and the three files are not written any more — which is the half of the
+     * change a reader of the player cannot check.
+     */
+    const { projectPath, templateRoot } = await makeProject();
+
+    // A shared material, so the field carries something rather than an empty
+    // object: what has to survive the move is the content, not the key.
+    await mkdir(join(projectPath, ASSETS_DIR, 'materials'), { recursive: true });
+    const materialFile = join(projectPath, ASSETS_DIR, 'materials', 'Shared.material.json');
+    await writeFile(
+      materialFile,
+      JSON.stringify({ version: 1, material: { ...createMaterial(), color: '#00ff00' } }),
+      'utf8',
+    );
+    await writeFile(
+      `${materialFile}.meta.json`,
+      JSON.stringify({ version: 1, id: 'mat-shared', kind: 'material', importedAt: 1, hash: 'h' }),
+      'utf8',
+    );
+    const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    for (const held of Object.values(scene.components.mesh)) {
+      for (const mesh of Object.values(held)) mesh.materialId = 'mat-shared';
+    }
+    await writeFile(scenePath, serializeScene(scene), 'utf8');
+
+    const outputDir = join(projectPath, '..', 'out-manifest');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as BuildManifest;
+    expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
+    expect(build.assets?.['tex-used']).toBe('textures/used.png');
+    expect(build.materials?.['mat-shared']).toMatchObject({ color: '#00ff00' });
+    // An object rather than absent: the player tells "this build has none" from
+    // "this build predates the field", and only one of those needs a fetch.
+    expect(build.prefabs).toEqual({});
+
+    const files = await readdir(outputDir);
+    for (const gone of ['assets.json', 'materials.json', 'prefabs.json']) {
+      expect(files).not.toContain(gone);
+    }
   });
 
   it('ships what a clip was imported with, so the build sounds like the editor', async () => {

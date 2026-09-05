@@ -1,12 +1,4 @@
-import { sceneName } from '@three-studio/core';
-
-/** The part of `build.json` that says which scene the player starts on. */
-export interface EntrySceneManifest {
-  /** Entry point first; the rest ship for a script to load later. */
-  scenes: string[];
-  /** Scene name → file in this build; written by the exporter. */
-  sceneMap?: Record<string, string>;
-}
+import { sceneName, type BuildManifest } from '@three-studio/core';
 
 /**
  * What the entry scene is called, as a script asking `scenes.current` sees it.
@@ -20,8 +12,13 @@ export interface EntrySceneManifest {
  * `sceneMap` is the exporter's own record of which name became which file, so
  * it is what answers the question. The fallback is for a build written before
  * `sceneMap` existed, where the old behaviour is all there is to fall back to.
+ *
+ * Takes the two fields it reads rather than the whole manifest, and takes them
+ * by `Pick` rather than by an interface of its own: a partial copy of a shape
+ * declared elsewhere is still a second declaration, and this one had already
+ * drifted into being a third.
  */
-export function entrySceneName(build: EntrySceneManifest): string {
+export function entrySceneName(build: Pick<BuildManifest, 'scenes' | 'sceneMap'>): string {
   const file = build.scenes[0] ?? 'scene.json';
   const named = Object.entries(build.sceneMap ?? {}).find(([, path]) => path === file);
   return named?.[0] ?? sceneName(file);

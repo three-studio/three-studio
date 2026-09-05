@@ -7,6 +7,7 @@ import {
   findScene,
   BUILD_FORMAT_VERSION,
   type AssetSettings,
+  type BuildManifest,
   basePathProblem,
   deserializeScene,
   normalizeBasePath,
@@ -218,7 +219,7 @@ export async function exportBuild(
     }
   }
 
-  // --- documents ------------------------------------------------------------
+  // --- scenes ---------------------------------------------------------------
   // The first scene is the entry point, as in Unity's Scenes In Build. The
   // others ship beside it for a script to load later.
   const sceneFiles: string[] = [];
@@ -237,19 +238,6 @@ export async function exportBuild(
     sceneMap[entry.id] = file;
   }
 
-  await writeFile(join(outputDir, 'assets.json'), JSON.stringify(paths, null, 2), 'utf8');
-  await writeFile(
-    join(outputDir, 'materials.json'),
-    // Only the ones a scene links to; an unused material asset is not part of
-    // the build any more than an unused texture is.
-    JSON.stringify(pick(materials, referenced), null, 2),
-    'utf8',
-  );
-  await writeFile(
-    join(outputDir, 'prefabs.json'),
-    JSON.stringify(pick(prefabs, referenced), null, 2),
-    'utf8',
-  );
   // --- scripts --------------------------------------------------------------
   report(0.85, 'Compiling scripts');
   const scripts = await buildScripts(projectPath);
@@ -259,54 +247,44 @@ export async function exportBuild(
   const scriptFile = scripts.scriptCount > 0 ? 'scripts.mjs' : null;
   if (scriptFile) await writeFile(join(outputDir, scriptFile), scripts.code, 'utf8');
 
-  await writeFile(
-    join(outputDir, 'build.json'),
-    JSON.stringify(
-      {
-        // Read by the player before anything else; see `BUILD_FORMAT_VERSION`.
-        formatVersion: BUILD_FORMAT_VERSION,
-        title: profile.title,
-        /*
-         * Kept beside `rendering`, which subsumes it: a build written before
-         * that field carries only this one, and the player still falls back to
-         * it. Persisted data gains fields; it does not lose them.
-         */
-        forceWebGL: project.settings.rendering.forceWebGL,
-        /*
-         * The whole of the project's rendering settings, so the build answers
-         * `shadowMapSize`, `antialias`, `maxPixelRatio`, `shadows`, `exposure`
-         * and `batching` the way the editor did. Five of the six used to be
-         * dropped here, and the loss was invisible because `createRenderer`'s
-         * own defaults happened to agree with the factory's — a project set to
-         * 4096 shadow maps exported a build that drew 2048.
-         */
-        rendering: project.settings.rendering,
-        scenes: sceneFiles,
-        /** Scene name → file, so a script can name a scene and be portable. */
-        sceneMap,
-        /**
-         * Shown while another scene loads; a scene like any other. Resolved to
-         * a name here because that is what `sceneMap` is keyed by for a human
-         * to read — the id resolves too, but the file is meant to be readable.
-         */
-        loadingScene: loadingSceneName(project, known),
-        /** See `textureEncodings` above; absent when nothing needed it. */
-        textureEncodings,
-        /** See `assetSettings` above. Kept beside `textureEncodings`, which it
-         * subsumes but does not replace: a player from before this field still
-         * reads that one, and dropping it would break those builds. */
-        assetSettings,
-        // Named here rather than probed for. A static server that answers 404s
-        // with its index page — which many do — returns 200 and HTML for a file
-        // that is not there, so asking the server whether the bundle exists is
-        // not a question that can be answered reliably.
-        scripts: scriptFile,
-      },
-      null,
-      2,
-    ),
-    'utf8',
-  );
+  // --- the manifest ---------------------------------------------------------
+  /*
+   * One file, and the only one the player reads before it knows anything.
+   *
+   * Typed rather than written as a bare literal, and the type lives in core:
+   * the reader is a browser and the writer is the main process, so nothing but
+   * a shared declaration can keep them in step. What each field means is on
+   * `BuildManifest`; what is decided *here* is below.
+   *
+   * The asset table, the materials and the prefabs used to be three files
+   * beside this one — three more round trips before the first frame, for
+   * documents that are small and always needed. See format 4.
+   */
+  const build: BuildManifest = {
+    formatVersion: BUILD_FORMAT_VERSION,
+    title: profile.title,
+    // Kept beside `rendering`, which subsumes it: a build written before that
+    // field carries only this one, and a player from then still falls back to
+    // it. Persisted data gains fields; it does not lose them.
+    forceWebGL: project.settings.rendering.forceWebGL,
+    rendering: project.settings.rendering,
+    scenes: sceneFiles,
+    sceneMap,
+    /*
+     * Resolved to a name here because that is what `sceneMap` is keyed by for a
+     * human to read — the id resolves too, but the file is meant to be legible.
+     */
+    loadingScene: loadingSceneName(project, known),
+    assets: paths,
+    // Only what a shipped scene links to. An unused material or prefab asset is
+    // no more part of the build than an unused texture is.
+    materials: pick(materials, referenced),
+    prefabs: pick(prefabs, referenced),
+    textureEncodings,
+    assetSettings,
+    scripts: scriptFile,
+  };
+  await writeFile(join(outputDir, 'build.json'), JSON.stringify(build, null, 2), 'utf8');
 
   report(1, 'Done');
   return {

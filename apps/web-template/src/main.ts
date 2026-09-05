@@ -1,6 +1,7 @@
 import {
   BUILD_FORMAT_VERSION,
   type AssetSettings,
+  type BuildManifest,
   type TextureEncoding,
   SCRIPT_API_VERSION,
   createRenderingSettings,
@@ -11,7 +12,7 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
-import { entrySceneName, type EntrySceneManifest } from './entryScene';
+import { entrySceneName } from './entryScene';
 import { encodePath } from './urls';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
@@ -29,57 +30,26 @@ import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
  * would be a place the two could drift apart.
  *
  * It reads three files the exporter writes beside it:
- *   build.json     what the build profile chose: title, backend, scene list
+ *   build.json     the manifest: what the profile chose, the scene list, and
+ *                  the asset table, materials and prefabs — see `BuildManifest`
  *   scene.json     the entry scene
- *   assets.json    asset id -> path under assets/
- *   materials.json asset id -> material, for meshes that reference a shared one
- *   prefabs.json   asset id -> prefab, expanded before the engine sees the scene
  *   scripts.mjs    the compiled behaviours, absent when the project has none
+ *
+ * Three, and it used to be six: the asset table, the materials and the prefabs
+ * were files of their own. They are small and always needed, so they were three
+ * round trips spent to learn nothing. `documentsOf` still fetches them for a
+ * build written before format 4.
  */
 
-/** Written by the exporter from the build profile. */
-interface BuildManifest extends EntrySceneManifest {
-  /** Absent on a build written before builds were versioned. */
-  formatVersion?: number;
-  title: string;
-  /**
-   * Kept for a build written before `rendering` existed, and only for that.
-   * Everything reads `rendering` now — see the fallback where it is read.
-   */
-  forceWebGL: boolean;
-  /**
-   * The project's rendering settings, whole.
-   *
-   * Absent on a build written before this field, and then filled from the
-   * factory with `forceWebGL` taken from the field above — which is exactly
-   * what those builds were exported against, since it was the only one of the
-   * six the player ever read. The other five were thrown away here: a project
-   * asking for 4096 shadow maps, no antialiasing or a different exposure got
-   * the defaults, and it went unnoticed because the defaults happened to agree.
-   */
-  rendering?: RenderingSettings;
-  /** Name of the scene shown while another loads, if the project has one. */
-  loadingScene?: string | null;
-  /** The compiled behaviour bundle, or null when the project has none. */
-  scripts: string | null;
-  /**
-   * Images whose file name does not say how they store light.
-   *
-   * Ultra HDR and nothing else today: it is a `.jpg`, and without this the
-   * player decodes it as an ordinary photograph — perfectly, and with every
-   * stop above white gone. Absent on a build that had none, and on one written
-   * before this field existed.
-   */
-  textureEncodings?: Record<string, TextureEncoding>;
-  /**
-   * What each asset was imported with.
-   *
-   * Absent on a build written before this field existed, and then every asset
-   * falls back to its format's defaults — which is what those builds were
-   * exported against anyway.
-   */
-  assetSettings?: Record<string, AssetSettings>;
-}
+/**
+ * The three documents the manifest carries, however they arrive.
+ *
+ * `Required<Pick<…>>` rather than a shape of its own: they are optional on
+ * `BuildManifest` because an older build has them elsewhere, and by the time
+ * they are here that question is settled. Naming the fields again would be the
+ * fourth declaration of a manifest this commit reduced to one.
+ */
+type BuildDocuments = Required<Pick<BuildManifest, 'assets' | 'materials' | 'prefabs'>>;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view');
 const overlay = document.querySelector<HTMLElement>('#overlay');
@@ -122,6 +92,28 @@ function buildResolver(
   };
 }
 
+/**
+ * The asset table, the materials and the prefabs — from the manifest, or from
+ * the three files they used to be.
+ *
+ * Format 4 folded them in. A build written before it still carries them beside
+ * the player, and reading them costs exactly the three requests that build
+ * already made — so nothing that opens today stops opening. Written together by
+ * one export, so one of them being absent means all three are.
+ */
+async function documentsOf(build: BuildManifest): Promise<BuildDocuments> {
+  const { assets, materials, prefabs } = build;
+  if (assets !== undefined && materials !== undefined && prefabs !== undefined) {
+    return { assets, materials, prefabs };
+  }
+  const [fetched, fetchedMaterials, fetchedPrefabs] = await Promise.all([
+    fetchJson<Record<string, string>>('assets.json'),
+    fetchJson<Record<string, MaterialDef>>('materials.json'),
+    fetchJson<Record<string, PrefabDoc>>('prefabs.json'),
+  ]);
+  return { assets: fetched, materials: fetchedMaterials, prefabs: fetchedPrefabs };
+}
+
 async function loadScripts(file: string | null): Promise<void> {
   publishScriptApi();
   if (!file) return; // The build manifest says this project has no scripts.
@@ -142,12 +134,9 @@ async function loadScripts(file: string | null): Promise<void> {
 async function boot(): Promise<void> {
   if (!canvas || !overlay || !message || !startButton) throw new Error('template markup missing');
 
-  const [build, sceneJson, assetPaths, materials, prefabs] = await Promise.all([
+  const [build, sceneJson] = await Promise.all([
     fetchJson<BuildManifest>('build.json'),
     fetch('scene.json').then((response) => response.text()),
-    fetchJson<Record<string, string>>('assets.json'),
-    fetchJson<Record<string, MaterialDef>>('materials.json'),
-    fetchJson<Record<string, PrefabDoc>>('prefabs.json'),
   ]);
   // Checked before the data is touched: a player reading a build it does not
   // understand should say so, not fail on a field it expected to be there.
@@ -158,6 +147,7 @@ async function boot(): Promise<void> {
     );
   }
 
+  const { assets: assetPaths, materials, prefabs } = await documentsOf(build);
   const scene: SceneDoc = deserializeScene(sceneJson);
 
   await loadScripts(build.scripts ?? null);

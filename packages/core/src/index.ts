@@ -57,6 +57,7 @@ export type {
   AssetMeta,
   AssetSettings,
   AudioSettings,
+  BuildManifest,
   FbxModelSettings,
   GltfModelSettings,
   MaterialAssetFile,
