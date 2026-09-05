@@ -10,7 +10,8 @@ import {
   type WaterComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { SCENE_SCHEMA, paneEntriesFor, sceneSignature } from '../src/inspector/schema';
+import { paneEntriesFor } from '../src/components/panes';
+import { SCENE_SCHEMA, sceneSignature } from '../src/inspector/schema';
 import { shapeOf } from '../src/inspector/signature';
 
 /*

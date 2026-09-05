@@ -8,35 +8,7 @@ import {
   type SkySettings,
 } from '@three-studio/core';
 import type { BindingParams } from 'tweakpane';
-import {
-  ASSET_SLOT,
-  GEOMETRY_FIELDS,
-  MATERIAL_FIELDS,
-  asDegrees,
-  isGeometrySlot,
-  type ComponentSchema,
-  type FieldSpec,
-  type GeometrySlotSpec,
-  type PaneEntry,
-} from './fields';
-import {
-  geometryFields,
-  inspector as meshInspector,
-} from '../components/mesh/inspector';
-import { inspector as waterInspector } from '../components/water/inspector';
-import { inspector as modelInspector } from '../components/model/inspector';
-import { inspector as audioSourceInspector } from '../components/audioSource/inspector';
-import { inspector as cameraInspector } from '../components/camera/inspector';
-import { inspector as colliderInspector } from '../components/collider/inspector';
-import { inspector as rigidbodyInspector } from '../components/rigidbody/inspector';
-import { inspector as playerControllerInspector } from '../components/playerController/inspector';
-import {
-  extraFields as scriptExtraFields,
-  inspector as scriptInspector,
-} from '../components/script/inspector';
-import { inspector as prefabInstanceInspector } from '../components/prefabInstance/inspector';
-import { inspector as audioListenerInspector } from '../components/audioListener/inspector';
-import { inspector as lightInspector } from '../components/light/inspector';
+import { ASSET_SLOT, asDegrees, type FieldSpec } from './fields';
 import { shapeOf } from './signature';
 import { setComponentNestedField } from '../commands/sceneCommands';
 import { audioPreview } from '../audio/preview';
@@ -47,11 +19,12 @@ import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 
 /*
- * The field vocabulary lives in `fields.ts` and is re-exported here.
+ * The scene pane, and the door onto the field vocabulary.
  *
- * A slice is written in that vocabulary and this file imports the slices, so
- * the two cannot share a module. Nothing that reads a pane had to move: this
- * is still the door.
+ * The twelve component panes left for `components/<type>/inspector.ts`, and
+ * `components/panes.ts` assembles them. What stays is what is not per-type: the
+ * environment's own pane, and a re-export of `fields.ts` so that nothing which
+ * writes a field has to know where the vocabulary lives.
  */
 export {
   ASSET_SLOT,
@@ -75,20 +48,6 @@ export {
   type SeparatorSpec,
 } from './fields';
 
-export const COMPONENT_SCHEMAS: Record<ComponentType, ComponentSchema> = {
-  mesh: meshInspector,
-  model: modelInspector,
-  water: waterInspector,
-  light: lightInspector,
-  camera: cameraInspector,
-  rigidbody: rigidbodyInspector,
-  collider: colliderInspector,
-  audioSource: audioSourceInspector,
-  audioListener: audioListenerInspector,
-  prefabInstance: prefabInstanceInspector,
-  script: scriptInspector,
-  playerController: playerControllerInspector,
-};
 
 // --- the scene itself --------------------------------------------------------
 
@@ -380,33 +339,3 @@ export function sceneSignature(environment: EnvironmentDef): string {
   return shapeOf(SCENE_ENTRIES, { environment });
 }
 
-/**
- * The rows a component's pane would offer, and the identity of that list.
- *
- * Two entries are not fixed by the component's type. A mesh's geometry slot
- * expands into the fields of whichever primitive it is, and a script's declared
- * properties are whatever its source says today — so for those two the *list*
- * changes, not merely which of a fixed list is visible, and no arrangement of
- * bits could say so. That is what `key` is for; everything else about the shape
- * is `visibleWhen`, and `shapeOf` reads it.
- */
-export function paneEntriesFor(component: ComponentDoc): {
-  key: string;
-  entries: readonly Exclude<PaneEntry, GeometrySlotSpec>[];
-} {
-  // The geometry slot expands in place, so a component that never declares one
-  // — every component except `mesh` — is unaffected.
-  const entries: Exclude<PaneEntry, GeometrySlotSpec>[] = COMPONENT_SCHEMAS[
-    component.type
-  ].fields.flatMap((entry) => (isGeometrySlot(entry) ? [...geometryFields(component)] : [entry]));
-  entries.push(...scriptExtraFields(component));
-
-  const key =
-    component.type === 'mesh'
-      ? `mesh:${component.geometry.kind}`
-      : component.type === 'script'
-        ? `script:${component.assetId}`
-        : component.type;
-
-  return { key, entries };
-}

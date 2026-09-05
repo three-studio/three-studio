@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
 import { revertEntityOverride } from '../commands/prefabCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
-import { COMPONENT_SCHEMAS, sceneSignature } from '../inspector/schema';
+import { COMPONENT_PANES } from '../components/panes';
+import { sceneSignature } from '../inspector/schema';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
@@ -187,7 +188,7 @@ export function InspectorPanel() {
                 placement="above"
                 onClose={() => setAddOpen(false)}
                 items={addableTypes().map((type) => ({
-                  label: COMPONENT_SCHEMAS[type].label,
+                  label: COMPONENT_PANES[type].label,
                   // A second mesh or camera on one entity has no meaning here —
                   // and neither does a mesh on something already drawing a
                   // model, which `componentFits` is what answers.

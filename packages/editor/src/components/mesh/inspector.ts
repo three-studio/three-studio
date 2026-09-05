@@ -46,6 +46,10 @@ export const inspector: ComponentSchema = {
    * material is `model`'s own row now, and this is a primitive again.
    */
   label: 'Mesh',
+  geometryFields,
+  // The rows themselves change with the primitive, so this is a different pane
+  // rather than the same one with other fields hidden.
+  paneKey: (component) => (component.type === 'mesh' ? `mesh:${component.geometry.kind}` : 'mesh'),
   fields: [
     { path: ['castShadow'], label: 'Cast shadows' },
     { path: ['receiveShadow'], label: 'Receive shadows' },
@@ -99,7 +103,7 @@ export const inspector: ComponentSchema = {
  * Looked up rather than declared, because the list itself changes with the
  * kind — which is what `paneKey` is for.
  */
-export function geometryFields(component: ComponentDoc): readonly FieldSpec[] {
+function geometryFields(component: ComponentDoc): readonly FieldSpec[] {
   if (component.type !== 'mesh') return [];
   return GEOMETRY_FIELDS[component.geometry.kind];
 }

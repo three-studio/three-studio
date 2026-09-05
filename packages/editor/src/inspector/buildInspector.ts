@@ -28,15 +28,8 @@ import {
 } from './target';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
-import {
-  COMPONENT_SCHEMAS,
-  SCENE_SCHEMA,
-  isAction,
-  isSeparator,
-  paneEntriesFor,
-  sceneFieldPath,
-  type FieldSpec,
-} from './schema';
+import { COMPONENT_PANES, paneEntriesFor } from '../components/panes';
+import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -253,7 +246,7 @@ export class InspectorBinding {
   ): void {
     const component = target.representative;
     const componentId = component.id;
-    const schema = COMPONENT_SCHEMAS[component.type];
+    const schema = COMPONENT_PANES[component.type];
     const folder = this.binder.pane.addFolder({ title: schema.label });
 
     // Conditional fields read the material the mesh actually renders with, so

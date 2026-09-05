@@ -11,6 +11,7 @@
  * imports the slices, so sharing a module would make every slice a cycle.
  */
 import type { EntityTemplate } from '@three-studio/core';
+import type { ComponentHelper } from '../viewport/overlay/ComponentHelper';
 
 /**
  * The dot an entity gets in the viewport when it draws nothing of its own, and
@@ -54,3 +55,16 @@ export interface AddMenuGroup {
  * and `state/projectStore` still reaches into the viewport (lot 4).
  */
 export type AddMenuEntry = { readonly label: string; readonly create: () => EntityTemplate } | null;
+
+/**
+ * What one type contributes to the viewport: whether it is worth clicking, the
+ * dot it gets when it is not, and the annotation it draws while selected.
+ *
+ * Every type answers all three. A `null` here is a decision, where being absent
+ * from a list was only ever an omission nobody could tell from a choice.
+ */
+export interface EntityOverlay {
+  readonly drawsGeometry: boolean;
+  readonly marker: EntityMarker | null;
+  readonly helper: ComponentHelper | null;
+}

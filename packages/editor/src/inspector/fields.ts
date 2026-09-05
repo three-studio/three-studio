@@ -109,6 +109,27 @@ export function isSeparator(entry: PaneEntry): entry is SeparatorSpec {
 export interface ComponentSchema {
   label: string;
   fields: readonly PaneEntry[];
+
+  /*
+   * The three facets below are declared only by the types that have them, the
+   * way a runtime system declares a capability. Two panes are not fixed by the
+   * component's type: a mesh's geometry slot expands into the fields of
+   * whichever primitive it is, and a script's properties are whatever its
+   * source says today. For those two the *list* changes, not merely which of a
+   * fixed list is visible.
+   */
+
+  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`. */
+  geometryFields?(component: ComponentDoc): readonly FieldSpec[];
+  /** Rows appended after the declared ones, from the document. Declared by `script`. */
+  extraFields?(component: ComponentDoc): readonly FieldSpec[];
+  /**
+   * What makes this component's row list a *different* list.
+   *
+   * The type alone, unless the two above can change what the list contains — no
+   * arrangement of `visibleWhen` bits could say that, which is what this is for.
+   */
+  paneKey?(component: ComponentDoc): string;
 }
 
 /** Tweakpane's 2D pad binds `{x, y}`; the document stores a tuple. */

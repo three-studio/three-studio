@@ -1,10 +1,5 @@
 import { createEntity, type EntityTemplate } from '@three-studio/core';
-import { menu as audioListenerMenu } from '../components/audioListener/menu';
-import { menu as audioSourceMenu } from '../components/audioSource/menu';
-import { menu as cameraMenu } from '../components/camera/menu';
-import { menu as meshMenu } from '../components/mesh/menu';
-import { menu as waterMenu } from '../components/water/menu';
-import { menu as lightMenu } from '../components/light/menu';
+import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
 import { modKey } from '../platform';
@@ -51,13 +46,9 @@ export function buildAddMenu(): MenuEntry[] {
       onSelect: () => groupCommand.run(),
     },
     null,
-    { label: meshMenu.label, submenu: meshMenu.entries.map(offer) },
-    { label: lightMenu.label, submenu: lightMenu.entries.map(offer) },
-    { label: cameraMenu.label, submenu: cameraMenu.entries.map(offer) },
-    {
-      label: audioSourceMenu.label,
-      submenu: [...audioSourceMenu.entries, ...audioListenerMenu.entries].map(offer),
-    },
-    { label: waterMenu.label, submenu: waterMenu.entries.map(offer) },
+    ...addMenuGroups().map((group) => ({
+      label: group.label,
+      submenu: group.entries.map(offer),
+    })),
   ];
 }

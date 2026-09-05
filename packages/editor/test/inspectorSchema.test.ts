@@ -1,6 +1,7 @@
 import { createAudioSource } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { COMPONENT_SCHEMAS, isAction, isSeparator, type FieldSpec } from '../src/inspector/schema';
+import { COMPONENT_PANES } from '../src/components/panes';
+import { isAction, isSeparator, type FieldSpec } from '../src/inspector/schema';
 
 /*
  * The pane declarations, checked where they carry logic of their own.
@@ -12,7 +13,7 @@ import { COMPONENT_SCHEMAS, isAction, isSeparator, type FieldSpec } from '../src
  */
 
 function fields(type: 'audioSource'): FieldSpec[] {
-  return COMPONENT_SCHEMAS[type].fields.filter(
+  return COMPONENT_PANES[type].fields.filter(
     (entry): entry is FieldSpec => !isSeparator(entry) && !isAction(entry) && 'path' in entry,
   );
 }

@@ -1,49 +1,5 @@
 import { COMPONENT_TYPES, hasComponent, type ComponentType, type SceneDoc } from '@three-studio/core';
-import {
-  drawsGeometry as audioListenerDrawsGeometry,
-  marker as audioListenerMarker,
-} from '../../components/audioListener/overlay';
-import {
-  drawsGeometry as playerControllerDrawsGeometry,
-  marker as playerControllerMarker,
-} from '../../components/playerController/overlay';
-import {
-  drawsGeometry as rigidbodyDrawsGeometry,
-  marker as rigidbodyMarker,
-} from '../../components/rigidbody/overlay';
-import {
-  drawsGeometry as colliderDrawsGeometry,
-  marker as colliderMarker,
-} from '../../components/collider/overlay';
-import {
-  drawsGeometry as audioSourceDrawsGeometry,
-  marker as audioSourceMarker,
-} from '../../components/audioSource/overlay';
-import {
-  drawsGeometry as cameraDrawsGeometry,
-  marker as cameraMarker,
-} from '../../components/camera/overlay';
-import {
-  drawsGeometry as modelDrawsGeometry,
-  marker as modelMarker,
-} from '../../components/model/overlay';
-import {
-  drawsGeometry as waterDrawsGeometry,
-  marker as waterMarker,
-} from '../../components/water/overlay';
-import {
-  drawsGeometry as meshDrawsGeometry,
-  marker as meshMarker,
-} from '../../components/mesh/overlay';
-import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
-import {
-  drawsGeometry as scriptDrawsGeometry,
-  marker as scriptMarker,
-} from '../../components/script/overlay';
-import {
-  drawsGeometry as prefabInstanceDrawsGeometry,
-  marker as prefabInstanceMarker,
-} from '../../components/prefabInstance/overlay';
+import { OVERLAYS } from '../../components/overlays';
 import type { EntityMarker } from '../../components/registry';
 
 /*
@@ -58,78 +14,30 @@ import type { EntityMarker } from '../../components/registry';
 export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
 
 /**
- * Types that draw something of their own. An entity carrying one is already
- * clickable, so a marker on top of it would be an icon nobody needs and a click
- * target fighting the mesh behind it.
+ * The types that draw geometry of their own, so the check below stays three
+ * lookups and not twelve.
  *
- * Total rather than the three that are true: a type left out of a list draws
- * geometry *and* gets a marker on top of it, and nothing says whether that was
- * meant. The compiler now asks.
+ * An entity carrying one is already clickable, and a marker on top of it would
+ * be an icon nobody needs and a click target fighting the mesh behind it. Every
+ * type answers, in its own folder — a type left out of a list drew geometry
+ * *and* got a marker on top of it, with nothing anywhere to say that was meant.
  */
-const RENDERABLE: Record<ComponentType, boolean> = {
-  mesh: meshDrawsGeometry,
-  model: modelDrawsGeometry,
-  water: waterDrawsGeometry,
-  light: lightDrawsGeometry,
-  camera: cameraDrawsGeometry,
-  rigidbody: rigidbodyDrawsGeometry,
-  collider: colliderDrawsGeometry,
-  audioSource: audioSourceDrawsGeometry,
-  audioListener: audioListenerDrawsGeometry,
-  script: scriptDrawsGeometry,
-  prefabInstance: prefabInstanceDrawsGeometry,
-  playerController: playerControllerDrawsGeometry,
-};
-
-/** The types that do, so the check below stays three lookups and not twelve. */
-const RENDERS: readonly ComponentType[] = (Object.keys(RENDERABLE) as ComponentType[]).filter(
-  (type) => RENDERABLE[type],
+const RENDERS: readonly ComponentType[] = COMPONENT_TYPES.filter(
+  (type) => OVERLAYS[type].drawsGeometry,
 );
 
 /**
- * The marker each type contributes, `null` for none.
+ * The types worth marking, best first.
  *
- * The ranking used to be the key order of this table. It is a number on the
- * marker now, because a type declares its marker in its own folder and a folder
- * has no place in anyone's key order — and the ranking still has to be
- * expressible: the first styled type an entity carries is the one that colours
- * it. A separate decision from `HierarchyPanel`'s `ICON_PRIORITY`, and for the
- * reason that file already gives: the order is about *this* display, not about
- * the types. A camera outranks a light here because a camera rig is what an
- * author is looking for when both sit on one entity.
- *
- * `null` is a decision — "this type is never worth a marker" — where an absent
- * key was only ever an omission nobody could tell from a choice.
- */
-const STYLES: Record<ComponentType, EntityMarker | null> = {
-  camera: cameraMarker,
-  light: lightMarker,
-  audioSource: audioSourceMarker,
-  audioListener: audioListenerMarker,
-  mesh: meshMarker,
-  model: modelMarker,
-  water: waterMarker,
-  rigidbody: rigidbodyMarker,
-  collider: colliderMarker,
-  script: scriptMarker,
-  prefabInstance: prefabInstanceMarker,
-  playerController: playerControllerMarker,
-};
-
-/**
- * The styled types, best first.
- *
- * Derived rather than repeated: the list this replaced was a second copy of the
- * same four names, and a fifth style would have had to be added to both.
+ * The rank is a number on the marker rather than the key order of a table here,
+ * because the marker is declared in the type's own folder. Still a separate
+ * decision from `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason that
+ * file gives: the order is about *this* display, not about the types.
  */
 const PRIORITY: readonly ComponentType[] = COMPONENT_TYPES.filter(
-  (type) => STYLES[type] !== null,
-).sort((a, b) => STYLES[a]!.priority - STYLES[b]!.priority);
+  (type) => OVERLAYS[type].marker !== null,
+).sort((a, b) => OVERLAYS[a].marker!.priority - OVERLAYS[b].marker!.priority);
 
-/**
- * The types worth marking. Also what a full pass iterates, so it can go through
- * the component tables instead of the entity table — see `EntityMarkers.sync`.
- */
 export const MARKED_TYPES: readonly ComponentType[] = PRIORITY;
 
 /** Whether the entity contributes no geometry of its own. */
@@ -156,8 +64,8 @@ export function markerStyleFor(scene: SceneDoc, entityId: string): MarkerStyle |
   if (!drawsNothing(scene, entityId)) return undefined;
 
   for (const type of PRIORITY) {
-    const style = STYLES[type];
-    if (style !== null && hasComponent(scene, entityId, type)) return style;
+    const marker = OVERLAYS[type].marker;
+    if (marker !== null && hasComponent(scene, entityId, type)) return marker;
   }
   return undefined;
 }

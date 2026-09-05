@@ -6,6 +6,11 @@ import { useScriptStore } from '../../state/scriptStore';
 
 export const inspector: ComponentSchema = {
   label: 'Script',
+  extraFields,
+  // A different script is a different set of rows, so the pane is rebuilt
+  // rather than refreshed when the asset changes.
+  paneKey: (component) =>
+    component.type === 'script' ? `script:${component.assetId}` : 'script',
   fields: [
     {
       path: ['assetId'],
@@ -34,7 +39,7 @@ export const inspector: ComponentSchema = {
  * with the scene. Unity's `[SerializeField]` and Unreal's `UPROPERTY` exist for
  * exactly this, and both engines would be unusable without it.
  */
-export function extraFields(component: ComponentDoc): readonly FieldSpec[] {
+function extraFields(component: ComponentDoc): readonly FieldSpec[] {
   if (component.type !== 'script' || component.assetId === '') return [];
 
   const declared = useScriptStore.getState().propertiesFor(component.assetId);
