@@ -9,6 +9,7 @@
 
 import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
+import type { ColliderComponent } from '../components/collider/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 export type { PlayerControllerComponent } from '../components/playerController/schema';
@@ -26,6 +27,7 @@ import type { ScriptComponent } from '../components/script/schema';
  */
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 export type { AudioListenerComponent } from '../components/audioListener/schema';
+export type { ColliderComponent } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type {
   PrefabInstanceComponent,
@@ -305,19 +307,6 @@ export interface CameraComponent extends ComponentBase {
   frustumSize: number;
   /** The camera play mode renders through when no player controller is active. */
   isMain: boolean;
-}
-
-export interface ColliderComponent extends ComponentBase {
-  type: 'collider';
-  shape: 'box' | 'sphere' | 'capsule' | 'trimesh' | 'convexHull';
-  /** Box half-extents. */
-  size: Vec3;
-  radius: number;
-  halfHeight: number;
-  friction: number;
-  restitution: number;
-  /** Sensors report overlaps without resolving them. */
-  isSensor: boolean;
 }
 
 /**

@@ -7,7 +7,6 @@ import type {
   AudioSourceComponent,
   CameraComponent,
   CameraProjection,
-  ColliderComponent,
   ComponentDoc,
   ComponentOfType,
   ComponentType,
@@ -141,20 +140,6 @@ export function createCamera(projection: CameraProjection = 'perspective'): Came
     far: 2000,
     frustumSize: 10,
     isMain: false,
-  };
-}
-
-export function createCollider(): ColliderComponent {
-  return {
-    id: createId(),
-    type: 'collider',
-    shape: 'box',
-    size: [0.5, 0.5, 0.5],
-    radius: 0.5,
-    halfHeight: 0.5,
-    friction: 0.7,
-    restitution: 0,
-    isSensor: false,
   };
 }
 

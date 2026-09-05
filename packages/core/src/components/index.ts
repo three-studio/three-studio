@@ -7,7 +7,7 @@
  * arrives against `COMPONENT_TYPES`.
  */
 import { COMPONENT_TYPES } from '../scene/components';
-import { createCollider } from '../scene/defaults';
+import { createCollider } from './collider/defaults';
 import type { ComponentDoc, ComponentOfType, ComponentType, MeshComponent } from '../scene/schema';
 import { componentDefinition } from './registry';
 

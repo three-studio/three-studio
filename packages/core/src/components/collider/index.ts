@@ -1,5 +1,5 @@
-import { createCollider } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createCollider } from './defaults';
 
 /** The shape physics uses for an entity. */
 export const colliderComponent = defineComponent({
