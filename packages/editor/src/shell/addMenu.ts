@@ -1,6 +1,5 @@
 import {
   GEOMETRY_LABELS,
-  createAudioListenerEntity,
   createAudioSourceEntity,
   createCameraEntity,
   createEntity,
@@ -9,6 +8,7 @@ import {
   type EntityTemplate,
   type GeometryKind,
 } from '@three-studio/core';
+import { menu as audioListenerMenu } from '../components/audioListener/menu';
 import { menu as lightMenu } from '../components/light/menu';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
@@ -95,9 +95,7 @@ export function buildAddMenu(): MenuEntry[] {
       label: 'Audio',
       submenu: [
         { label: 'Audio Source', onSelect: add(() => createAudioSourceEntity()) },
-        // Rarely reached for, and worth having: without one the ear rides the
-        // camera, which is right until the camera is not where the player is.
-        { label: 'Audio Listener', onSelect: add(() => createAudioListenerEntity()) },
+        ...audioListenerMenu.entries.map(offer),
       ],
     },
     {

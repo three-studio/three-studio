@@ -27,6 +27,7 @@ import {
   type GeometrySlotSpec,
   type PaneEntry,
 } from './fields';
+import { inspector as audioListenerInspector } from '../components/audioListener/inspector';
 import { inspector as lightInspector } from '../components/light/inspector';
 import { shapeOf } from './signature';
 import { setComponentNestedField } from '../commands/sceneCommands';
@@ -501,10 +502,7 @@ export const COMPONENT_SCHEMAS: Record<ComponentType, ComponentSchema> = {
       },
     ],
   },
-  audioListener: {
-    label: 'Audio Listener',
-    fields: [{ path: ['masterVolume'], label: 'Master volume', params: { min: 0, max: 1, step: 0.01 } }],
-  },
+  audioListener: audioListenerInspector,
   prefabInstance: {
     label: 'Prefab',
     fields: [

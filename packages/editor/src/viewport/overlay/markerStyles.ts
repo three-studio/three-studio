@@ -1,4 +1,8 @@
 import { COMPONENT_TYPES, hasComponent, type ComponentType, type SceneDoc } from '@three-studio/core';
+import {
+  drawsGeometry as audioListenerDrawsGeometry,
+  marker as audioListenerMarker,
+} from '../../components/audioListener/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import type { EntityMarker } from '../../components/registry';
 
@@ -31,7 +35,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   rigidbody: false,
   collider: false,
   audioSource: false,
-  audioListener: false,
+  audioListener: audioListenerDrawsGeometry,
   script: false,
   prefabInstance: false,
   playerController: false,
@@ -61,7 +65,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   camera: { color: 0x5eb0ff, pixels: 11, priority: 1 },
   light: lightMarker,
   audioSource: { color: 0x6ee7a8, pixels: 9, priority: 3 },
-  audioListener: { color: 0x6ee7a8, pixels: 9, priority: 4 },
+  audioListener: audioListenerMarker,
   mesh: null,
   model: null,
   water: null,
