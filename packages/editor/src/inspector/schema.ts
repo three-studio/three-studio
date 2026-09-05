@@ -27,6 +27,7 @@ import {
   type GeometrySlotSpec,
   type PaneEntry,
 } from './fields';
+import { inspector as cameraInspector } from '../components/camera/inspector';
 import { inspector as colliderInspector } from '../components/collider/inspector';
 import { inspector as rigidbodyInspector } from '../components/rigidbody/inspector';
 import { inspector as playerControllerInspector } from '../components/playerController/inspector';
@@ -289,31 +290,7 @@ export const COMPONENT_SCHEMAS: Record<ComponentType, ComponentSchema> = {
    * every predicate below rather than getting a group of its own.
    */
   light: lightInspector,
-  camera: {
-    label: 'Camera',
-    fields: [
-      {
-        path: ['projection'],
-        label: 'Projection',
-        params: { options: { Perspective: 'perspective', Orthographic: 'orthographic' } },
-      },
-      {
-        path: ['fov'],
-        label: 'Field of view',
-        params: { min: 10, max: 130, step: 1 },
-        visibleWhen: (c) => c.type === 'camera' && c.projection === 'perspective',
-      },
-      {
-        path: ['frustumSize'],
-        label: 'Size',
-        params: { min: 0.1, step: 0.5 },
-        visibleWhen: (c) => c.type === 'camera' && c.projection === 'orthographic',
-      },
-      { path: ['near'], label: 'Near', params: { min: 0.001, step: 0.01 } },
-      { path: ['far'], label: 'Far', params: { min: 1, step: 10 } },
-      { path: ['isMain'], label: 'Main camera' },
-    ],
-  },
+  camera: cameraInspector,
   rigidbody: rigidbodyInspector,
   collider: colliderInspector,
   audioSource: {

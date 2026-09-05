@@ -1,6 +1,7 @@
 import type { CameraComponent } from '@three-studio/core';
+import type { EntityMarker } from '../registry';
 import { Camera, CameraHelper, type Object3D } from 'three/webgpu';
-import { annotation, type ComponentHelper, type HelperHandle } from '../ComponentHelper';
+import { annotation, type ComponentHelper, type HelperHandle } from '../../viewport/overlay/ComponentHelper';
 
 /**
  * The frustum of a selected camera.
@@ -21,3 +22,15 @@ export class CameraFrustum implements ComponentHelper<'camera'> {
     return annotation(new CameraHelper(source));
   }
 }
+
+/** A camera draws nothing into the scene; it is what the scene is drawn for. */
+export const drawsGeometry = false;
+
+/**
+ * First of the marked types. A camera rig is what an author is looking for when
+ * several marked components sit on one entity, which is the whole reason the
+ * ranking exists.
+ */
+export const marker: EntityMarker = { color: 0x5eb0ff, pixels: 11, priority: 1 };
+
+export const helper = new CameraFrustum();

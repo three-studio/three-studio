@@ -15,6 +15,10 @@ import {
   drawsGeometry as colliderDrawsGeometry,
   marker as colliderMarker,
 } from '../../components/collider/overlay';
+import {
+  drawsGeometry as cameraDrawsGeometry,
+  marker as cameraMarker,
+} from '../../components/camera/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
   drawsGeometry as scriptDrawsGeometry,
@@ -51,7 +55,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   model: true,
   water: true,
   light: lightDrawsGeometry,
-  camera: false,
+  camera: cameraDrawsGeometry,
   rigidbody: rigidbodyDrawsGeometry,
   collider: colliderDrawsGeometry,
   audioSource: false,
@@ -82,7 +86,7 @@ const RENDERS: readonly ComponentType[] = (Object.keys(RENDERABLE) as ComponentT
  * key was only ever an omission nobody could tell from a choice.
  */
 const STYLES: Record<ComponentType, EntityMarker | null> = {
-  camera: { color: 0x5eb0ff, pixels: 11, priority: 1 },
+  camera: cameraMarker,
   light: lightMarker,
   audioSource: { color: 0x6ee7a8, pixels: 9, priority: 3 },
   audioListener: audioListenerMarker,

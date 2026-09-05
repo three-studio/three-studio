@@ -1,7 +1,6 @@
 import {
   GEOMETRY_LABELS,
   createAudioSourceEntity,
-  createCameraEntity,
   createEntity,
   createMeshEntity,
   createWaterEntity,
@@ -9,6 +8,7 @@ import {
   type GeometryKind,
 } from '@three-studio/core';
 import { menu as audioListenerMenu } from '../components/audioListener/menu';
+import { menu as cameraMenu } from '../components/camera/menu';
 import { menu as lightMenu } from '../components/light/menu';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
@@ -84,13 +84,7 @@ export function buildAddMenu(): MenuEntry[] {
       ),
     },
     { label: lightMenu.label, submenu: lightMenu.entries.map(offer) },
-    {
-      label: 'Camera',
-      submenu: [
-        { label: 'Perspective', onSelect: add(() => createCameraEntity('perspective')) },
-        { label: 'Orthographic', onSelect: add(() => createCameraEntity('orthographic')) },
-      ],
-    },
+    { label: cameraMenu.label, submenu: cameraMenu.entries.map(offer) },
     {
       label: 'Audio',
       submenu: [

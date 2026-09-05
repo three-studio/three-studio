@@ -3,7 +3,7 @@ import type { SceneBinder } from '@three-studio/runtime';
 import { Group, type Object3D } from 'three/webgpu';
 import type { ComponentHelper, HelperHandle } from './ComponentHelper';
 import { AudioShape } from './helpers/AudioShape';
-import { CameraFrustum } from './helpers/CameraFrustum';
+import { helper as cameraHelper } from '../../components/camera/overlay';
 import { helper as lightHelper } from '../../components/light/overlay';
 
 /** One mounted annotation, and what it was built against. */
@@ -45,7 +45,7 @@ export class SelectionHelpers {
    * keeps its parameter bivariant. See `ComponentHelper`.
    */
   private readonly helpers = new Map<ComponentType, ComponentHelper>([
-    ['camera', new CameraFrustum()],
+    ['camera', cameraHelper],
     ['light', lightHelper],
     ['audioSource', new AudioShape()],
   ]);
