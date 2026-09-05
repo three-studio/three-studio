@@ -5,12 +5,14 @@ import {
   createLightEntity,
   createMeshComponent,
   createMeshEntity,
+  createRenderingSettings,
   findComponent,
   putComponent,
   type AudioSourceComponent,
   type EntityTemplate,
   type SceneDoc,
 } from '@three-studio/core';
+import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import {
@@ -53,7 +55,11 @@ function mount(scene: SceneDoc): {
   /** Re-runs a frame: the binder, then the overlay, as the viewport does. */
   frame: (next?: SceneDoc, selection?: readonly string[]) => void;
 } {
-  const binder = new SceneBinder();
+  const binder = new SceneBinder({
+    resolver: NULL_ASSET_RESOLVER,
+    // The viewport's own settings, so these read the binder the editor builds.
+    rendering: createRenderingSettings(),
+  });
   const overlay = new ViewportOverlay(binder);
   const camera = new PerspectiveCamera(60, 1.5, 0.1, 1000);
   camera.position.set(0, 0, 10);

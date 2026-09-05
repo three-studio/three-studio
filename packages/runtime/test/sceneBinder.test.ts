@@ -4,9 +4,11 @@ import {
   createLightEntity,
   createMaterial,
   createMeshEntity,
+  createRenderingSettings,
   type LightComponent,
   type MaterialDef,
   type MeshComponent,
+  type RenderingSettings,
 } from '@three-studio/core';
 import {
   Color,
@@ -42,8 +44,18 @@ import type { AssetResolver } from '../src/assets/AssetResolver';
 /** Disposed after each test, so a leak in one does not show up in the next. */
 const live: SceneBinder[] = [];
 
-function binderWith(resolver: AssetResolver = { url: () => null }): SceneBinder {
-  const binder = new SceneBinder(resolver);
+/**
+ * @param rendering Batching off by default, which is *not* what a project
+ *   carries — `createRenderingSettings` says on. Every test outside the
+ *   batching blocks asks about the object a mesh component built, and a batched
+ *   mesh is hidden and drawn by something else; turning it on here would change
+ *   what those tests measure rather than what they assert.
+ */
+function binderWith(
+  resolver: AssetResolver = { url: () => null },
+  rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
+): SceneBinder {
+  const binder = new SceneBinder({ resolver, rendering });
   live.push(binder);
   return binder;
 }
@@ -293,11 +305,12 @@ function cubes(count: number, shadows = false) {
   });
 }
 
-/** Off by default on the binder; the editor turns it on, so these must too. */
+/**
+ * A binder built for a project that batches, which is what the setting defaults
+ * to. It is read at construction and never again — see `SceneBinder.batching`.
+ */
 function batching(resolver: AssetResolver = { url: () => null }): SceneBinder {
-  const binder = binderWith(resolver);
-  binder.batching = true;
-  return binder;
+  return binderWith(resolver, createRenderingSettings());
 }
 
 /**
@@ -702,8 +715,8 @@ describe('what a batch has to notice', () => {
     expect(touched).toContain(slotFor(binder, batch, arrival[0]!.entity.id));
   });
 
-  it('takes a batched member out of the raycast, and gives it back', () => {
-    const field = cubes(4);
+  it('takes a batched member out of the raycast, and gives it back when it leaves', () => {
+    const field = cubes(4, true);
     const binder = batching();
     binder.sync(sceneWith(field));
 
@@ -714,29 +727,37 @@ describe('what a batch has to notice', () => {
      * `Picker` sorted by distance and then threw away, on top of the batch's own
      * instances. Twice the work per click, all of it wasted.
      */
-    const member = meshOf(binder, field[0]!.entity.id);
+    const member = meshOf(binder, field[1]!.entity.id);
     expect(member.layers.test(new Layers())).toBe(false);
 
-    binder.batching = false;
-    binder.sync(sceneWith(field));
+    /*
+     * Out through the door the product has: `castShadow` is in the batch key, so
+     * flipping it moves this cube out of the group, and one cube on its own is
+     * under `MIN_BATCH_SIZE`. It draws itself again, so it has to answer clicks
+     * again. Index 1 rather than 0 because the batch draws the material object
+     * of its first member — losing that one disposes the batch instead of
+     * refitting it, which is the case above.
+     */
+    binder.sync(sceneWith(withoutShadows(field, 1)));
+    expect(batchesOf(binder)).toHaveLength(1);
+    expect(member.visible).toBe(true);
     expect(member.layers.test(new Layers())).toBe(true);
   });
 
-  it('batches again after batching is turned off and back on', () => {
-    const scene = sceneWith(cubes(4));
-    const binder = batching();
-    binder.sync(scene);
-    expect(batchesOf(binder)).toHaveLength(1);
+  it('draws every mesh itself when the project has batching off', () => {
+    // The other half of the setting, and the only way it is reachable now: read
+    // at construction, so a binder is either a batching one for its whole life
+    // or is not one.
+    const field = cubes(4);
+    const binder = binderWith();
+    binder.sync(sceneWith(field));
 
-    binder.batching = false;
-    binder.sync(scene);
     expect(batchesOf(binder)).toHaveLength(0);
-
-    // Taking the batches down says nothing about what the groups should hold, so
-    // the regroup that follows has to run rather than trust its last answer.
-    binder.batching = true;
-    binder.sync(scene);
-    expect(batchesOf(binder)).toHaveLength(1);
+    for (const cube of field) {
+      const mesh = meshOf(binder, cube.entity.id);
+      expect(mesh.visible).toBe(true);
+      expect(mesh.layers.test(new Layers())).toBe(true);
+    }
   });
 });
 

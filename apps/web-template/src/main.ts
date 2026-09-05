@@ -3,9 +3,11 @@ import {
   type AssetSettings,
   type TextureEncoding,
   SCRIPT_API_VERSION,
+  createRenderingSettings,
   deserializeScene,
   type MaterialDef,
   type PrefabDoc,
+  type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
@@ -40,7 +42,22 @@ interface BuildManifest extends EntrySceneManifest {
   /** Absent on a build written before builds were versioned. */
   formatVersion?: number;
   title: string;
+  /**
+   * Kept for a build written before `rendering` existed, and only for that.
+   * Everything reads `rendering` now — see the fallback where it is read.
+   */
   forceWebGL: boolean;
+  /**
+   * The project's rendering settings, whole.
+   *
+   * Absent on a build written before this field, and then filled from the
+   * factory with `forceWebGL` taken from the field above — which is exactly
+   * what those builds were exported against, since it was the only one of the
+   * six the player ever read. The other five were thrown away here: a project
+   * asking for 4096 shadow maps, no antialiasing or a different exposure got
+   * the defaults, and it went unnoticed because the defaults happened to agree.
+   */
+  rendering?: RenderingSettings;
   /** Name of the scene shown while another loads, if the project has one. */
   loadingScene?: string | null;
   /** The compiled behaviour bundle, or null when the project has none. */
@@ -145,7 +162,24 @@ async function boot(): Promise<void> {
 
   await loadScripts(build.scripts ?? null);
 
-  const { renderer } = await createRenderer({ canvas, forceWebGL: build.forceWebGL });
+  /*
+   * One reading of the settings, shared by the renderer and the engine — the
+   * same shape the editor viewport uses. This is the third of the three modes
+   * that used to answer the question for itself.
+   */
+  const rendering: RenderingSettings = build.rendering ?? {
+    ...createRenderingSettings(),
+    forceWebGL: build.forceWebGL,
+  };
+
+  const { renderer } = await createRenderer({
+    canvas,
+    forceWebGL: rendering.forceWebGL,
+    antialias: rendering.antialias,
+    maxPixelRatio: rendering.maxPixelRatio,
+    shadows: rendering.shadows,
+    exposure: rendering.exposure,
+  });
 
   // Built before the host so the engine can mix into it. A browser will not
   // start it here — that takes a user gesture, which is what the Start button
@@ -170,6 +204,7 @@ async function boot(): Promise<void> {
     materials,
     prefabs,
     loadingScene: build.loadingScene ?? null,
+    rendering,
     renderer,
     domElement: canvas,
     audioContext,

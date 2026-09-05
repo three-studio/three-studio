@@ -21,6 +21,7 @@ import {
   type BuildProfile,
   type MeshComponent,
   type ProjectFile,
+  type RenderingSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { readAssetMeta, readMaterialAssets, scanAssets } from '../src/main/assets';
@@ -66,7 +67,9 @@ async function writeAsset(
  * scene that was right in the editor came up with no sky and every surface
  * unlit — with no warning, because the exporter only reports the opposite case.
  */
-async function makeProject(): Promise<{ projectPath: string; templateRoot: string }> {
+async function makeProject(
+  rendering: RenderingSettings = createRenderingSettings(),
+): Promise<{ projectPath: string; templateRoot: string }> {
   const root = await mkdtemp(join(tmpdir(), 'studio-export-'));
   const projectPath = join(root, 'project');
   await mkdir(join(projectPath, SCENES_DIR), { recursive: true });
@@ -103,7 +106,7 @@ async function makeProject(): Promise<{ projectPath: string; templateRoot: strin
     startScene: scene.id,
     settings: {
       loadingScene: null,
-      rendering: createRenderingSettings(),
+      rendering,
       physics: createPhysicsSettings(),
       build: createBuildProfiles('Export Test'),
     },
@@ -256,6 +259,35 @@ describe('web export', () => {
       forceMono: true,
       seconds: 1.5,
     });
+  });
+
+  it('carries the rendering settings, so the build draws what the editor drew', async () => {
+    /*
+     * Only `forceWebGL` used to travel. The other five were dropped, and the
+     * loss was silent because `createRenderer`'s defaults agreed with the
+     * factory's: a project asking for 4096 shadow maps got 4096 in the viewport
+     * and 2048 in the build, with nothing anywhere saying why.
+     */
+    const rendering: RenderingSettings = {
+      ...createRenderingSettings(),
+      shadowMapSize: 4096,
+      antialias: false,
+      exposure: 1.5,
+      batching: false,
+    };
+    const { projectPath, templateRoot } = await makeProject(rendering);
+    const outputDir = join(projectPath, '..', 'out-rendering');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as {
+      forceWebGL: boolean;
+      rendering: RenderingSettings;
+    };
+    expect(build.rendering).toEqual(rendering);
+    // Still written beside it: a build is persisted data, and a player that
+    // predates `rendering` reads this one.
+    expect(build.forceWebGL).toBe(rendering.forceWebGL);
   });
 
   it('tells the player which images its file names do not describe', async () => {

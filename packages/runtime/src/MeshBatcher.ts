@@ -100,7 +100,7 @@ export class MeshBatcher {
     private readonly shadowCasters: ReadonlySet<string>,
   ) {}
 
-  /** Off by default; the editor and the engine both turn it on. */
+  /** Set once by `SceneBinder` from the project's rendering settings. */
   enabled = false;
   private readonly batches = new Map<string, BatchGroup>();
   /**

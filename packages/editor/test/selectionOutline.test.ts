@@ -1,4 +1,10 @@
-import { createCameraEntity, createLightEntity, createMeshEntity } from '@three-studio/core';
+import {
+  createCameraEntity,
+  createLightEntity,
+  createMeshEntity,
+  createRenderingSettings,
+} from '@three-studio/core';
+import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +29,11 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
   outline: SelectionOutline;
   binder: SceneBinder;
 } {
-  const binder = new SceneBinder();
+  const binder = new SceneBinder({
+    resolver: NULL_ASSET_RESOLVER,
+    // The viewport's own settings, so these read the binder the editor builds.
+    rendering: createRenderingSettings(),
+  });
   const scene = sceneWith(templates);
   binder.sync(scene);
   return { outline: new SelectionOutline(), binder };

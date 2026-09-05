@@ -4,6 +4,7 @@ import {
   hasComponent,
   type MaterialDef,
   type PhysicsSettings,
+  type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
 import {
@@ -14,7 +15,7 @@ import {
   type Object3D,
   type Renderer,
 } from 'three/webgpu';
-import { SceneBinder } from './SceneBinder';
+import { SceneBinder, bindScene } from './SceneBinder';
 import type { AssetResolver } from './assets/AssetResolver';
 import { AudioEngine } from './audio/AudioEngine';
 import type { AudioClipCache } from './audio/AudioClipCache';
@@ -80,8 +81,17 @@ export interface EngineOptions {
    */
   renderer?: Renderer | null;
   enablePhysics?: boolean;
-  /** Draws meshes that share a geometry and material in one call. On by default. */
-  batching?: boolean;
+  /**
+   * The project's rendering settings.
+   *
+   * Required, and that is the point of it: it used to be absent entirely, so an
+   * engine answered `shadowMapSize` with the binder's own 2048 whatever the
+   * project said, and answered `batching` with a default of its own that
+   * happened to match the editor's. Being required means the three modes — the
+   * Scene view, Play, and an exported build — cannot each quietly answer this
+   * for themselves; `npm run typecheck` names any that tries.
+   */
+  rendering: RenderingSettings;
   /**
    * Lets scripts move to another scene. Supplied by whatever is hosting this
    * engine; an engine built on its own does not have a next scene to go to.
@@ -128,22 +138,19 @@ export class Engine {
   private listenerOwners = 0;
 
   private constructor(options: EngineOptions, physics: PhysicsWorld | null) {
-    this.binder = new SceneBinder(options.resolver);
+    // The renderer is handed over rather than owned: this engine still neither
+    // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
+    // the one thing the binder cannot do as a transform over data, and it needs
+    // the device the host already has. The order of the rest is `bindScene`'s,
+    // where it is written down.
+    this.binder = bindScene(this.scene, options.scene, {
+      resolver: options.resolver,
+      rendering: options.rendering,
+      materials: options.materials,
+      renderer: options.renderer,
+    });
     this.input = new Input(options.domElement);
     this.physics = physics;
-
-    // On for a running game, off in the editor: a batch is one object, so the
-    // gizmo and the outline would have nothing per entity to attach to.
-    this.binder.batching = options.batching ?? true;
-    if (options.materials) this.binder.setMaterialLibrary(options.materials);
-    this.scene.add(this.binder.root);
-    this.binder.sync(options.scene);
-    // Handed over rather than owned: this engine still neither draws nor holds
-    // a frame loop. Capturing an analytic sky into a cubemap is the one thing
-    // the binder cannot do as a transform over data, and it needs the device
-    // the host already has.
-    this.binder.renderer = options.renderer ?? null;
-    this.binder.syncEnvironment(this.scene, options.scene);
 
     this.audio =
       options.audioContext === undefined

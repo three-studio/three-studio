@@ -251,9 +251,21 @@ export async function exportBuild(
         // Read by the player before anything else; see `BUILD_FORMAT_VERSION`.
         formatVersion: BUILD_FORMAT_VERSION,
         title: profile.title,
-        // From the project's rendering settings, not a copy on the profile.
-        // Two places holding the same flag is how they end up disagreeing.
+        /*
+         * Kept beside `rendering`, which subsumes it: a build written before
+         * that field carries only this one, and the player still falls back to
+         * it. Persisted data gains fields; it does not lose them.
+         */
         forceWebGL: project.settings.rendering.forceWebGL,
+        /*
+         * The whole of the project's rendering settings, so the build answers
+         * `shadowMapSize`, `antialias`, `maxPixelRatio`, `shadows`, `exposure`
+         * and `batching` the way the editor did. Five of the six used to be
+         * dropped here, and the loss was invisible because `createRenderer`'s
+         * own defaults happened to agree with the factory's — a project set to
+         * 4096 shadow maps exported a build that drew 2048.
+         */
+        rendering: project.settings.rendering,
         scenes: sceneFiles,
         /** Scene name → file, so a script can name a scene and be portable. */
         sceneMap,

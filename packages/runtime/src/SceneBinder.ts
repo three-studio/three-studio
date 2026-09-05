@@ -7,6 +7,7 @@ import {
   type EntityDoc,
   type EnvironmentDef,
   type MaterialDef,
+  type RenderingSettings,
   type SceneDoc,
   type Vec3,
 } from '@three-studio/core';
@@ -26,7 +27,7 @@ import {
   type Renderer,
   type Texture,
 } from 'three/webgpu';
-import { NULL_ASSET_RESOLVER, type AssetResolver } from './assets/AssetResolver';
+import type { AssetResolver } from './assets/AssetResolver';
 import { ModelCache } from './assets/ModelCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
@@ -93,6 +94,67 @@ interface EnvironmentMap {
  * anything a mutation did not touch, so a moved entity re-reads its transform
  * without rebuilding its geometry.
  */
+export interface SceneBinderOptions {
+  resolver: AssetResolver;
+  /**
+   * The project's rendering settings, whole.
+   *
+   * Whole rather than the two fields the binder reads, so that adding a
+   * rendering setting is a change to `createRenderingSettings` and to whoever
+   * reads it — not a new parameter threaded through every call site.
+   */
+  rendering: RenderingSettings;
+  /**
+   * Shared materials by asset id.
+   *
+   * Here rather than pushed in afterwards because a mesh is built
+   * synchronously: a table that arrives after the first sync arrives after
+   * every linked material has already fallen back to its embedded copy, which
+   * is what play mode did until it was passed one.
+   */
+  materials?: Readonly<Record<string, MaterialDef>>;
+  /**
+   * The device an analytic sky is captured on. See `SceneBinder.renderer`.
+   */
+  renderer?: Renderer | null;
+  /**
+   * Injected rather than reached for, so a test can drive the clock it hands
+   * in. The default is the document's own — see `time/StudioTime`.
+   */
+  time?: StudioTime;
+}
+
+/**
+ * Builds a binder and puts a document into a scene, in the order that works.
+ *
+ * The order is the reason this exists, and it is four constraints rather than a
+ * preference. Each was paid for once:
+ *
+ * 1. **Materials before the first sync.** A mesh is built synchronously, so a
+ *    material table handed over later is handed over after every linked
+ *    material has already fallen back to its embedded copy — silently, and
+ *    looking merely wrong rather than broken.
+ * 2. **Renderer before the environment.** Capturing an analytic sky into a
+ *    cubemap is six draw calls, so the device has to be in hand before the
+ *    environment is built and not merely before the first frame is drawn.
+ * 3. **Entities before the environment.** The environment reads the world
+ *    matrices the sync has just written, and `sunOf` answers off the lights the
+ *    sync has just bound.
+ * 4. **Environment last**, which is 2 and 3 together.
+ *
+ * Written down here rather than left as the order of four statements in
+ * `Engine`'s constructor, because it is a constraint on *this* class's methods:
+ * a reader of `SceneBinder` should not have to find a caller to learn which of
+ * its methods may not be called first.
+ */
+export function bindScene(scene: Scene, doc: SceneDoc, options: SceneBinderOptions): SceneBinder {
+  const binder = new SceneBinder(options);
+  scene.add(binder.root);
+  binder.sync(doc);
+  binder.syncEnvironment(scene, doc);
+  return binder;
+}
+
 export class SceneBinder {
   /** Parent this into the editor viewport scene or the runtime scene. */
   readonly root = new Group();
@@ -105,8 +167,14 @@ export class SceneBinder {
   /**
    * Per-light shadow map resolution, from the project settings. Square and a
    * power of two; 4096 costs four times the memory of 2048.
+   *
+   * Read once, at construction, because that is already when it was read — the
+   * viewport assigned it in its constructor and nothing ever wrote it again.
+   * `readonly` only says so. It was also the one setting nothing outside the
+   * editor ever wrote at all, which is how a project asking for 4096 got 4096 in
+   * the Scene view, 2048 the moment Play was pressed, and 2048 in the build.
    */
-  shadowMapSize = 2048;
+  readonly shadowMapSize: number;
   /**
    * Entities whose light casts a shadow. Empty means per-instance culling is
    * safe; see `createBatch`.
@@ -116,10 +184,11 @@ export class SceneBinder {
   private readonly orphaned = new Set<string>();
 
   /**
-   * Draws what can be drawn together. On in play mode and on in the editor: a
-   * batch is one `Object3D`, but `resolveBatchHit` turns a click on it back into
-   * the instance it landed on, and the outline and the gizmo work off the
-   * entity's container, which a batched mesh still hangs from.
+   * Draws what can be drawn together. On or off by the project's settings, the
+   * same answer in the editor as in the game: a batch is one `Object3D`, but
+   * `resolveBatchHit` turns a click on it back into the instance it landed on,
+   * and the outline and the gizmo work off the entity's container, which a
+   * batched mesh still hangs from.
    */
   private readonly batcher = new MeshBatcher(
     this.root,
@@ -128,12 +197,16 @@ export class SceneBinder {
     this.shadowCasters,
   );
 
+  /**
+   * Read-only, and set once from the settings handed in.
+   *
+   * It was a public setter written by both call sites, in two orders, and the
+   * two agreed only because two separately written defaults happened to say the
+   * same thing. Nothing in the product ever changed it after construction, so
+   * nothing loses a capability here — see `bindScene`.
+   */
   get batching(): boolean {
     return this.batcher.enabled;
-  }
-
-  set batching(value: boolean) {
-    this.batcher.enabled = value;
   }
 
   /** Writes the world matrices of what moved into the batches holding it. */
@@ -146,16 +219,28 @@ export class SceneBinder {
     return this.batcher.resolveBatchHit(object, batchId);
   }
 
+  private readonly time: StudioTime;
+
   /**
-   * @param time Injected rather than reached for, so a test can drive the clock
-   *   it hands in. The default is the document's own — see `time/StudioTime`.
+   * Everything the binder is configured with, at the one moment it is
+   * configured.
+   *
+   * `rendering` is required rather than defaulted, and that is the whole
+   * mechanism: a default here is a second answer to a question the project has
+   * already answered, and a second answer is what put 4096 in the viewport and
+   * 2048 in the game.
    */
-  constructor(
-    resolver: AssetResolver = NULL_ASSET_RESOLVER,
-    private readonly time: StudioTime = studioTime,
-  ) {
+  constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
-    this.models = new ModelCache(resolver);
+    this.time = options.time ?? studioTime;
+    this.models = new ModelCache(options.resolver);
+    this.shadowMapSize = options.rendering.shadowMapSize;
+    this.batcher.enabled = options.rendering.batching;
+    this.renderer = options.renderer ?? null;
+    // Before any sync, which is the ordering `bindScene` exists to hold: a mesh
+    // is built synchronously, so a table that arrives afterwards has already
+    // been fallen back from.
+    if (options.materials) this.setMaterialLibrary(options.materials);
   }
 
   /**

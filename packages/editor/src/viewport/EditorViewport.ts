@@ -1,8 +1,10 @@
 import {
   capabilitiesOf,
+  createRenderingSettings,
   deserializeScene,
   resolveScene,
   type ExpandedScene,
+  type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
 import {
@@ -81,7 +83,7 @@ export class EditorViewport {
    * Projects the scene document onto three.js objects. The resolver reads the
    * asset store lazily, so it stays correct as assets are imported.
    */
-  readonly binder = new SceneBinder(editorAssetResolver);
+  readonly binder: SceneBinder;
   /**
    * Markers on what draws nothing, helpers on what is selected.
    *
@@ -89,7 +91,7 @@ export class EditorViewport {
    * target for a light or a camera, so the picker needs its root at
    * construction.
    */
-  readonly overlay = new ViewportOverlay(this.binder);
+  readonly overlay: ViewportOverlay;
   readonly picker: Picker;
   /** What the last expansion produced; see `expandDirty`. */
   private lastSources: ExpandedScene['sources'] = new Map();
@@ -151,25 +153,54 @@ export class EditorViewport {
     // Focusable so the viewport can own keyboard input while it is hovered.
     canvas.tabIndex = 0;
 
-    // The project's own settings, so the viewport shows what a build will.
-    const rendering = useProjectStore.getState().project?.settings.rendering;
+    /*
+     * The project's own settings, so the viewport shows what a build will —
+     * read once, here, and carried from here to everything this viewport
+     * builds. Play mode reads the same object rather than the store again, so
+     * pressing Play cannot pick up a different answer than the Scene view is
+     * already showing. That is the whole of this task: one reading, one answer.
+     */
+    const rendering =
+      useProjectStore.getState().project?.settings.rendering ?? createRenderingSettings();
     const { renderer, backend } = await createRenderer({
       canvas,
-      forceWebGL: rendering?.forceWebGL,
-      antialias: rendering?.antialias,
-      maxPixelRatio: rendering?.maxPixelRatio,
-      shadows: rendering?.shadows,
-      exposure: rendering?.exposure,
+      forceWebGL: rendering.forceWebGL,
+      antialias: rendering.antialias,
+      maxPixelRatio: rendering.maxPixelRatio,
+      shadows: rendering.shadows,
+      exposure: rendering.exposure,
     });
     // Off unless `studio.probe.render` is set in localStorage; see `renderProbe`.
     installRenderProbe(renderer);
-    return new EditorViewport(canvas, renderer, backend);
+    return new EditorViewport(canvas, renderer, backend, rendering);
   }
 
-  private constructor(canvas: HTMLCanvasElement, renderer: WebGPURenderer, backend: RendererBackend) {
+  private constructor(
+    canvas: HTMLCanvasElement,
+    renderer: WebGPURenderer,
+    backend: RendererBackend,
+    private readonly rendering: RenderingSettings,
+  ) {
     this.canvas = canvas;
     this.renderer = renderer;
     this.backend = backend;
+
+    /*
+     * Built here rather than as a field initialiser, because a field
+     * initialiser runs before the constructor has been told anything — which is
+     * exactly why these settings used to be assigned onto a finished binder,
+     * one statement each, in an order nothing enforced.
+     */
+    this.binder = new SceneBinder({
+      resolver: editorAssetResolver,
+      rendering,
+      // The one thing the binder cannot do without a device; see `SceneBinder`.
+      renderer,
+      // Shared materials are pushed in rather than pulled: the binder builds a
+      // mesh synchronously, so it cannot await one.
+      materials: useAssetStore.getState().materials,
+    });
+    this.overlay = new ViewportOverlay(this.binder);
 
     this.camera = new PerspectiveCamera(60, 1, 0.1, 5000);
     this.camera.position.set(8, 6, 12);
@@ -177,21 +208,6 @@ export class EditorViewport {
 
     this.scene.background = new Color('#2b2f33');
     this.scene.add(this.helpers, this.fallbackLighting, this.binder.root);
-    // The one thing the binder cannot do without a device; see `SceneBinder`.
-    this.binder.renderer = renderer;
-
-    // Shared materials are pushed in rather than pulled: the binder builds a
-    // mesh synchronously, so it cannot await one. A full reconcile follows
-    // because `setMaterialLibrary` only invalidates the affected bindings — it
-    // has no way to schedule the rebuild itself.
-    this.binder.shadowMapSize =
-      useProjectStore.getState().project?.settings.rendering.shadowMapSize ??
-      this.binder.shadowMapSize;
-    // On here too, now that a click on a batch resolves to the instance it hit.
-    // The outline and the gizmo were never affected: both work off the entity's
-    // container, which a batched mesh still hangs from.
-    this.binder.batching = true;
-    this.binder.setMaterialLibrary(useAssetStore.getState().materials);
     this.buildHelpers();
     this.buildFallbackLighting();
 
@@ -312,6 +328,9 @@ export class EditorViewport {
         loadingScene: useProjectStore.getState().project?.settings.loadingScene ?? null,
         resolver: editorAssetResolver,
         physicsSettings: useProjectStore.getState().project?.settings.physics,
+        // The viewport's own, not the store's: Play has to draw with what the
+        // Scene view is drawing with, and re-reading is how they came apart.
+        rendering: this.rendering,
         // Without this a mesh linked to a material asset would play with its
         // embedded material — the scene would look different the moment you
         // pressed Play, for no reason the author could see.
