@@ -81,16 +81,19 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     };
   };
 
-  // The scene list is read when the menu opens rather than subscribed to: it
-  // changes only through the entries below, and each of those either reloads
-  // the window or writes the project back through the store.
-  const project = useProjectStore((s) => s.project);
+  // Subscribed to the list rather than to the project: the two used to be one
+  // object, and the list is now replaced on its own whenever a scene appears or
+  // goes — including when another window is what made it happen.
+  const storeScenes = useProjectStore((s) => s.scenes);
   const sceneId = useProjectStore((s) => s.sceneId);
-  const scenes = useMemo(() => sceneList(), [project]);
+  const scenes = useMemo(() => sceneList(), [storeScenes]);
   const sceneMenu: readonly MenuEntry[] = [
     ...scenes.map((scene) => ({
       label: scene.name,
       checked: scene.id === sceneId,
+      // Two files, one id: opening this one would open the other. Shown anyway,
+      // because a file that has vanished from the menu is the harder problem.
+      disabled: scene.shadowedBy !== null,
       onSelect: () => void openScene(scene.id),
     })),
     null,
@@ -99,8 +102,8 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     { label: 'Rename Scene…', onSelect: () => void renameCurrentSceneWithPrompt() },
     {
       label: 'Delete Scene',
-      // The registry refuses it anyway; saying so before the click is kinder
-      // than an error toast after it.
+      // The main process refuses it anyway; saying so before the click is
+      // kinder than an error toast after it.
       disabled: scenes.length <= 1,
       onSelect: () => void deleteCurrentScene(),
     },
@@ -113,7 +116,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
           {
             label: 'Open in New Window',
             submenu: scenes
-              .filter((scene) => scene.id !== sceneId)
+              .filter((scene) => scene.id !== sceneId && scene.shadowedBy === null)
               .map((scene) => ({
                 label: scene.name,
                 onSelect: () => void openSceneInNewWindow(scene.id),

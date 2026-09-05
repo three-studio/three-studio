@@ -3,6 +3,7 @@ import type { ImportPlanItem, ImportSessionState } from './assets/import/session
 import type { LayoutPreferences } from './preferences/schema';
 import type {
   OpenProject,
+  ProjectContents,
   ProjectFile,
   ProjectSettings,
   ProjectSummary,
@@ -34,14 +35,13 @@ export type Platform = 'darwin' | 'win32' | 'linux';
 export type WindowRole = 'launcher' | 'editor';
 
 /**
- * What a call that changed the scene registry hands back.
+ * What a call that changed the scenes of a project hands back.
  *
- * The project as well as the path: every one of them rewrites `project.json`,
- * and the window showing it has to see the result without a second round trip
- * during which the two disagree.
+ * The whole list as well as the one scene: the list is the `scenes/` directory
+ * now, which a renderer cannot read, so a window learns what its own write did
+ * to the project the same way it learns what another window's did.
  */
-export interface SceneChange {
-  project: ProjectFile;
+export interface SceneChange extends ProjectContents {
   /** The scene the call produced or changed. */
   scene: SceneEntry;
 }
@@ -94,10 +94,10 @@ export interface ProjectApi {
   readScene: (scenePath: string) => Promise<string>;
 
   /*
-   * The scene registry. Every one of these writes `project.json` and the files
-   * on disk together, which is why none of it happens in the renderer: a scene
-   * added to the list but never written, or written but never listed, is a
-   * project that fails to open later rather than now.
+   * The five things that can be done to the scenes of a project. None of it
+   * happens in the renderer, because all of it is file operations under
+   * `scenes/` — and that directory is the list, so a renderer that could write
+   * there could add a scene to a project it cannot read.
    *
    * Names are unique within a project and are what a script addresses, so a
    * name already taken is refused rather than made unique — see `sceneName`.
@@ -106,11 +106,17 @@ export interface ProjectApi {
   createScene: (name: string) => Promise<SceneChange>;
   /** Copies a scene under a new name, with its own document id. */
   duplicateScene: (sceneId: string, name: string) => Promise<SceneChange>;
-  /** Changes the label. Moves no file and rewrites no reference; see ADR-15. */
+  /**
+   * Renames a scene, which moves its file: the file name is the name.
+   *
+   * Rewrites no reference — those are ids (ADR-15) — but the window showing
+   * the scene has to take the new path out of the result, or its next save
+   * would write the file back under the name it had.
+   */
   renameScene: (sceneId: string, name: string) => Promise<SceneChange>;
   /** Refused for the last scene: a project without one cannot be opened. */
-  deleteScene: (sceneId: string) => Promise<ProjectFile>;
-  setStartScene: (sceneId: string) => Promise<ProjectFile>;
+  deleteScene: (sceneId: string) => Promise<ProjectContents>;
+  setStartScene: (sceneId: string) => Promise<ProjectContents>;
   /** Drops a project from the recents list without touching the files. */
   forget: (projectPath: string) => Promise<void>;
   /** Clears the main process's notion of the open project. */
@@ -126,14 +132,14 @@ export interface ProjectApi {
    */
   updateSettings: (patch: Partial<ProjectSettings>) => Promise<ProjectFile>;
   /**
-   * Fires when another window changed the project file. Returns an unsubscribe.
+   * Fires when another window changed the project. Returns an unsubscribe.
    *
-   * Every window holds a copy of the project, taken when it opened. Without
-   * this, a scene created, renamed or deleted in one window is invisible in
-   * every other one — a stale scene menu, and a title showing a name nobody
-   * uses any more.
+   * Every window holds a copy of the project and of its scene list, taken when
+   * it opened. Without this, a scene created, renamed or deleted in one window
+   * is invisible in every other one — a stale scene menu, and a title showing a
+   * name nobody uses any more.
    */
-  onProjectChanged: (listener: (project: ProjectFile) => void) => () => void;
+  onProjectChanged: (listener: (contents: ProjectContents) => void) => () => void;
 }
 
 export interface BuildApi {

@@ -25,6 +25,7 @@ const INPUT =
 
 export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
   const project = useProjectStore((s) => s.project);
+  const scenes = useProjectStore((s) => s.scenes);
   const [section, setSection] = useState('project');
   const [draft, setDraft] = useState<ProjectSettings | null>(project?.settings ?? null);
   const [saving, setSaving] = useState(false);
@@ -111,24 +112,32 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
             hint="Every scene in the project. The start scene is the one a build opens on."
           >
             <div className="flex flex-col gap-px py-1">
-              {project.scenes.map((scene) => (
+              {scenes.map((scene) => (
                 <label
-                  key={scene.id}
+                  key={scene.path}
                   className="flex cursor-pointer items-center gap-2 rounded-xs px-1 py-0.5 text-2xs text-ink hover:bg-surface-3"
                 >
                   <input
                     type="radio"
                     name="startScene"
-                    checked={scene.id === project.startScene}
+                    checked={scene.shadowedBy === null && scene.id === project.startScene}
+                    // Nothing can start on a file whose id another file already
+                    // claims: the reference would resolve to that other one.
+                    disabled={scene.shadowedBy !== null}
                     // Written straight through rather than into the draft: it
-                    // is a property of the project, not of its settings, and
-                    // the registry is what keeps it pointing at a real scene.
+                    // is a property of the project, not of its settings.
                     onChange={() => void chooseStartScene(scene.id)}
                   />
                   <span className="flex-1">{scene.name}</span>
-                  {/* The file, shown because it stops matching the name as soon
-                      as a scene is renamed — and someone will go looking. */}
+                  {/* Keyed and labelled by path, because two files can now be
+                      one scene as far as every reference is concerned, and the
+                      path is the only thing that tells them apart. */}
                   <span className="text-ink-muted">{scene.path}</span>
+                  {scene.shadowedBy !== null && (
+                    <span className="text-warn" title={`Same id as ${scene.shadowedBy}`}>
+                      duplicate id
+                    </span>
+                  )}
                 </label>
               ))}
             </div>
@@ -148,11 +157,15 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
               className={INPUT}
             >
               <option value="">None — swap straight over</option>
-              {project.scenes.map((scene) => (
-                <option key={scene.id} value={scene.id}>
-                  {scene.name}
-                </option>
-              ))}
+              {scenes
+                // A shadowed file cannot be named: the id resolves to the one
+                // that claimed it first.
+                .filter((scene) => scene.shadowedBy === null)
+                .map((scene) => (
+                  <option key={scene.id} value={scene.id}>
+                    {scene.name}
+                  </option>
+                ))}
             </select>
           </Field>
         </section>

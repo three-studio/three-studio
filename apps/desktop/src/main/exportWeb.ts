@@ -29,7 +29,7 @@ import {
   scanAssets,
 } from './assets';
 import { resolveInside } from './paths';
-import { readProject } from './project';
+import { discoverScenes, readProject } from './project';
 import { buildScripts } from './scripts';
 
 /*
@@ -83,6 +83,7 @@ export async function exportBuild(
 
   report(0.05, 'Reading the project');
   const project = await readProject(projectPath);
+  const known = await discoverScenes(projectPath);
   // An empty list means the start scene, so a project that never opened the
   // build settings still exports something sensible. Ids, as everything that
   // refers to a scene is — see ADR-15.
@@ -90,8 +91,16 @@ export async function exportBuild(
 
   const scenes: { entry: SceneEntry; scene: SceneDoc }[] = [];
   for (const id of sceneIds) {
-    const entry = findScene(project, id);
-    if (!entry) throw new AssetError(`This profile ships a scene the project no longer has.`);
+    const entry = findScene(known, id);
+    if (!entry) {
+      // A warning, not a refusal. A profile is written once and the scenes it
+      // names live in the Finder, where one can be deleted or moved out months
+      // later; refusing the whole export for that means the author cannot ship
+      // the eleven levels that are still there. Loud, and it does not stop the
+      // build — the same trade the missing-asset warning below already makes.
+      warnings.push(`This profile ships a scene the project no longer has (${id}).`);
+      continue;
+    }
     try {
       scenes.push({
         entry,
@@ -100,6 +109,12 @@ export async function exportBuild(
     } catch (cause) {
       throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
     }
+  }
+  // None of them resolved, which is not a build. The player loads `scene.json`
+  // before anything else, and a folder without one is a black page rather than
+  // a message.
+  if (scenes.length === 0) {
+    throw new AssetError('This profile ships no scene this project still has.');
   }
 
   report(0.15, 'Scanning assets');
@@ -274,7 +289,7 @@ export async function exportBuild(
          * a name here because that is what `sceneMap` is keyed by for a human
          * to read — the id resolves too, but the file is meant to be readable.
          */
-        loadingScene: loadingSceneName(project),
+        loadingScene: loadingSceneName(project, known),
         /** See `textureEncodings` above; absent when nothing needed it. */
         textureEncodings,
         /** See `assetSettings` above. Kept beside `textureEncodings`, which it
@@ -310,9 +325,9 @@ function union(sets: readonly Set<string>[]): Set<string> {
 }
 
 /** The loading scene's name, or `null` when the project has none. */
-function loadingSceneName(project: ProjectFile): string | null {
+function loadingSceneName(project: ProjectFile, known: readonly SceneEntry[]): string | null {
   const id = project.settings.loadingScene;
-  return id === null ? null : (findScene(project, id)?.name ?? null);
+  return id === null ? null : (findScene(known, id)?.name ?? null);
 }
 
 /** `scenes/main.scene.json` -> `main.scene.json`; the build has one flat level. */

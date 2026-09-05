@@ -348,8 +348,7 @@ export class EditorViewport {
           // and files the rest elsewhere, so a script naming a path would work
           // here and break once exported.
           read: async (idOrName) => {
-            const project = useProjectStore.getState().project;
-            const entry = project ? resolveScene(project, idOrName) : undefined;
+            const entry = resolveScene(useProjectStore.getState().scenes, idOrName);
             if (!entry) throw new Error(`No scene "${idOrName}" in this project.`);
             return deserializeScene(await window.studio.project.readScene(entry.path));
           },

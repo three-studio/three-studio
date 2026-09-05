@@ -16,7 +16,7 @@ import { ToastHost } from './ui/ToastHost';
 export function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const summary = useProjectStore((s) => s.summary);
-  const project = useProjectStore((s) => s.project);
+  const scenes = useProjectStore((s) => s.scenes);
   const sceneId = useProjectStore((s) => s.sceneId);
   const saveError = useProjectStore((s) => s.error);
 
@@ -27,12 +27,9 @@ export function App() {
     setLayoutResetToken((token) => token + 1);
   }, []);
 
-  // The name the project gives the scene, not its file name. The two part
-  // company the first time anyone renames a scene, and the name is the half
-  // that is meant for a person to read — see ADR-15.
-  const title =
-    (project === null || sceneId === null ? undefined : findScene(project, sceneId)?.name) ??
-    'Scene';
+  // From the list found on disk, which is where a scene's name comes from now:
+  // the file is called what the scene is called — see ADR-15.
+  const title = (sceneId === null ? undefined : findScene(scenes, sceneId)?.name) ?? 'Scene';
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-0">

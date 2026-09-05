@@ -577,10 +577,12 @@ export function setSkyField<K extends keyof SceneDoc['environment']['sky']>(
 }
 
 /**
- * The name inside the document, which is not the file it is saved as.
+ * The name inside the document, which is a copy of the file's.
  *
- * The title bar reads the path today, so this only shows up in the Inspector
- * until the scene registry lands and the two are reconciled.
+ * `renameCurrentScene` moves the file and then calls this, so the two agree.
+ * The document keeps its own copy because a build falls back to it for the
+ * window title, and because a scene should say what it is called when it is
+ * read on its own — this is the only writer that is not a file operation.
  */
 export function setSceneName(name: string): void {
   mutate('Rename scene', (scene) => {

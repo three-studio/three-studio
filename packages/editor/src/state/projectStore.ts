@@ -2,6 +2,7 @@ import {
   deserializeScene,
   serializeScene,
   type OpenProject,
+  type ProjectContents,
   type ProjectFile,
   type ProjectSummary,
   type SceneEntry,
@@ -17,6 +18,15 @@ interface ProjectState {
   /** `null` while the launcher is showing. */
   summary: ProjectSummary | null;
   project: ProjectFile | null;
+  /**
+   * Every scene of the project, as the main process found them on disk.
+   *
+   * Held beside the project rather than in it: the list is the `scenes/`
+   * directory, and this window cannot read a directory. It arrives with the
+   * project and is replaced whenever the project is, so the two never describe
+   * different moments.
+   */
+  scenes: SceneEntry[];
   /** Id of the scene this window edits — what every reference uses. */
   sceneId: string | null;
   /** Where its file is. Needed to save it, and for nothing else. */
@@ -29,6 +39,15 @@ interface ProjectState {
   /** Replaces the project file after its settings were written back. */
   adoptProject: (project: ProjectFile) => void;
   /**
+   * Replaces the project and its scene list together.
+   *
+   * What every write that can add or remove a scene hands back, and what
+   * another window's write arrives as. Separate from `adoptProject` because
+   * settings cannot change the list, and a call that carried it would invite
+   * one that carried a stale one.
+   */
+  adoptContents: (contents: ProjectContents) => void;
+  /**
    * Same document, new file: after a Save As.
    *
    * No reload — nothing about what is on screen has changed, and reloading
@@ -36,10 +55,11 @@ interface ProjectState {
    * reload still finds the scene this window is on; see ADR-12 for why the
    * scene lives in the URL at all.
    *
-   * Renaming does not come through here: a name is not a reference any more,
-   * so nothing about the window changes when one is edited.
+   * Renaming comes through here too, now that the file name is the name: the
+   * document on screen has not changed, but its file has moved, and a window
+   * that kept the old path would write the scene back under the name it had.
    */
-  retarget: (project: ProjectFile, scene: SceneEntry) => void;
+  retarget: (contents: ProjectContents, scene: SceneEntry) => void;
   close: () => void;
   save: () => Promise<void>;
   setError: (error: string | null) => void;
@@ -48,6 +68,7 @@ interface ProjectState {
 export const useProjectStore = create<ProjectState>()((set, get) => ({
   summary: null,
   project: null,
+  scenes: [],
   sceneId: null,
   scenePath: null,
   saving: false,
@@ -55,11 +76,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   adoptProject: (project) => set({ project }),
 
-  retarget: (project, scene) => {
+  adoptContents: ({ project, scenes }) => set({ project, scenes }),
+
+  retarget: ({ project, scenes }, scene) => {
     const url = new URL(window.location.href);
     url.searchParams.set('scene', scene.id);
     window.history.replaceState(null, '', url);
-    set({ project, sceneId: scene.id, scenePath: scene.path });
+    set({ project, scenes, sceneId: scene.id, scenePath: scene.path });
   },
 
   adopt: (opened) => {
@@ -76,6 +99,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({
       summary: opened.summary,
       project: opened.project,
+      scenes: opened.scenes,
       sceneId: opened.sceneId,
       scenePath: opened.scenePath,
       error: null,
@@ -85,7 +109,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   close: () => {
     // The main process stops serving assets for this project too.
     void window.studio.project.close();
-    set({ summary: null, project: null, sceneId: null, scenePath: null, error: null });
+    set({ summary: null, project: null, scenes: [], sceneId: null, scenePath: null, error: null });
   },
 
   save: async () => {

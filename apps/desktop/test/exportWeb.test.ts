@@ -102,7 +102,6 @@ async function makeProject(
     version: PROJECT_FORMAT_VERSION,
     name: 'Export Test',
     engineVersion: '0.1.0',
-    scenes: [{ id: scene.id, name: 'main', path: `${SCENES_DIR}/main.scene.json` }],
     startScene: scene.id,
     settings: {
       loadingScene: null,

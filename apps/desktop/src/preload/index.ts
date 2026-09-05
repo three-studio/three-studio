@@ -9,6 +9,7 @@ import type {
   OpenProject,
   PrefabDoc,
   Platform,
+  ProjectContents,
   ProjectFile,
   ProjectSettings,
   ProjectSummary,
@@ -85,9 +86,9 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke('project:duplicateScene', sceneId, name),
     renameScene: (sceneId, name): Promise<SceneChange> =>
       ipcRenderer.invoke('project:renameScene', sceneId, name),
-    deleteScene: (sceneId): Promise<ProjectFile> =>
+    deleteScene: (sceneId): Promise<ProjectContents> =>
       ipcRenderer.invoke('project:deleteScene', sceneId),
-    setStartScene: (sceneId): Promise<ProjectFile> =>
+    setStartScene: (sceneId): Promise<ProjectContents> =>
       ipcRenderer.invoke('project:setStartScene', sceneId),
     forget: (projectPath): Promise<void> => ipcRenderer.invoke('project:forget', projectPath),
     close: (): Promise<void> => ipcRenderer.invoke('project:close'),
@@ -95,7 +96,7 @@ const bridge: StudioBridge = {
     updateSettings: (patch): Promise<ProjectFile> =>
       ipcRenderer.invoke('project:updateSettings', patch),
     onProjectChanged: (listener) => {
-      const handler = (_event: unknown, project: ProjectFile) => listener(project);
+      const handler = (_event: unknown, contents: ProjectContents) => listener(contents);
       ipcRenderer.on('project:changed', handler);
       return () => ipcRenderer.off('project:changed', handler);
     },

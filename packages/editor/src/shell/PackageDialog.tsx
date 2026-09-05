@@ -37,6 +37,9 @@ const INPUT =
 
 export function PackageDialog({ onClose }: { onClose: () => void }) {
   const project = useProjectStore((s) => s.project);
+  // Only the ones a profile can actually name; a file whose id another file
+  // claimed first would ship that other file. See `SceneEntry.shadowedBy`.
+  const known = useProjectStore((s) => s.scenes).filter((scene) => scene.shadowedBy === null);
   const [draft, setDraft] = useState<BuildProfiles | null>(project?.settings.build ?? null);
   const [activeId, setActiveId] = useState(project?.settings.build.active ?? 'web');
   const [busy, setBusy] = useState(false);
@@ -245,7 +248,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             hint="The first one is the entry point; the rest ship beside it for a script to load."
           >
             <div className="rounded-xs border border-line-soft bg-surface-0">
-              {project.scenes.map((scene, index) => {
+              {known.map((scene, index) => {
                 const checked = scenes.includes(scene.id);
                 const isEntry = checked && scenes[0] === scene.id;
                 return (
@@ -259,7 +262,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
                       onChange={(event) => {
                         // Kept in the project's own order, so the entry point
                         // does not change with the order things were ticked.
-                        const next = project.scenes
+                        const next = known
                           .filter((candidate) =>
                             candidate.id === scene.id
                               ? event.target.checked

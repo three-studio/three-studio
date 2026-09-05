@@ -1,5 +1,5 @@
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { basename, join, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
   CACHE_DIR,
@@ -7,6 +7,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  SCENE_FILE_SUFFIX,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
@@ -16,6 +17,7 @@ import {
   sceneName,
   serializeScene,
   type OpenProject,
+  type ProjectContents,
   type ProjectFile,
   type ProjectSummary,
   type SceneEntry,
@@ -48,18 +50,23 @@ export async function createProject(name: string, directory: string): Promise<Op
     await mkdir(join(projectPath, ASSETS_DIR, kind), { recursive: true });
   }
 
-  // The document is written first so the project can adopt its id: a scene
-  // carries its own identity, and the registry references it rather than
-  // minting a second one that could drift.
+  // The document carries its own identity, and `startScene` adopts it rather
+  // than a second id being minted here that could drift from the one in the
+  // file. The entry below is what `discoverScenes` would read back; it is built
+  // here so the first window does not have to walk a directory it just wrote.
   const starter = createStarterScene();
   const sceneJson = serializeScene(starter);
-  const entry: SceneEntry = { id: starter.id, name: sceneName(DEFAULT_SCENE_PATH), path: DEFAULT_SCENE_PATH };
+  const entry: SceneEntry = {
+    id: starter.id,
+    name: sceneName(DEFAULT_SCENE_PATH),
+    path: DEFAULT_SCENE_PATH,
+    shadowedBy: null,
+  };
 
   const project: ProjectFile = {
     version: PROJECT_FORMAT_VERSION,
     name: trimmed,
     engineVersion: ENGINE_VERSION,
-    scenes: [entry],
     startScene: entry.id,
     settings: {
       loadingScene: null,
@@ -74,7 +81,88 @@ export async function createProject(name: string, directory: string): Promise<Op
   // The cache holds build output and thumbnails; nothing there belongs in git.
   await writeFile(join(projectPath, CACHE_DIR, '.gitignore'), '*\n', 'utf8');
 
-  return finalize(projectPath, project, entry, sceneJson);
+  return finalize(projectPath, { project, scenes: [entry] }, entry, sceneJson);
+}
+
+/**
+ * Every scene in the project, read off the disk.
+ *
+ * `scenes/` is walked rather than a list being consulted, because a list is a
+ * cache of exactly this walk and could go stale: a scene copied in the Finder
+ * was invisible, and one deleted there stopped the project from opening.
+ *
+ * The id lives in each document, so this reads every file — an expense the
+ * project file used to save, and the reason T-019 puts an index in `.studio/`.
+ * A file that cannot be read or parsed is skipped rather than thrown on: one
+ * broken scene must not be a project that will not open.
+ */
+export async function discoverScenes(projectPath: string): Promise<SceneEntry[]> {
+  const found: SceneEntry[] = [];
+
+  const walk = async (directory: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      // No `scenes/` at all, or one that cannot be read. A project with no
+      // scenes is a thing `openProject` reports; it is not a thing to throw
+      // about from here.
+      return;
+    }
+    for (const entry of entries) {
+      const child = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(child);
+      } else if (entry.name.endsWith(SCENE_FILE_SUFFIX)) {
+        const path = toPosix(relative(projectPath, child));
+        const id = await readSceneId(child, path);
+        if (id !== null) found.push({ id, name: sceneName(path), path, shadowedBy: null });
+      }
+    }
+  };
+  await walk(join(projectPath, SCENES_DIR));
+
+  // Sorted before the ids are resolved, and by code unit rather than by locale,
+  // so "the first one" is a property of the project rather than of the order
+  // this file system happened to hand the entries back in — or of the machine
+  // reading it.
+  found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
+  const claimed = new Map<string, string>();
+  for (const entry of found) {
+    const winner = claimed.get(entry.id);
+    if (winner === undefined) claimed.set(entry.id, entry.path);
+    else entry.shadowedBy = winner;
+  }
+  return found;
+}
+
+/**
+ * The `SceneDoc.id` in a scene file, or `null` when the file is not readable.
+ *
+ * Parsed rather than deserialized: `deserializeScene` validates and migrates a
+ * whole document, and this runs once per file every time a project opens.
+ *
+ * A file with no id falls back to its own path. A hand-written `.scene.json`
+ * has no identity of its own, and addressing it by where it is says exactly
+ * that — a reference that its next move will break, which is the truth about a
+ * scene that never carried one. Showing it beats refusing to list it.
+ */
+async function readSceneId(file: string, path: string): Promise<string | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const id = (parsed as { id?: unknown }).id;
+  return typeof id === 'string' && id !== '' ? id : path;
+}
+
+/** Project-relative paths are `/`-separated everywhere; Windows is not. */
+function toPosix(path: string): string {
+  return sep === '/' ? path : path.split(sep).join('/');
 }
 
 /**
@@ -85,11 +173,15 @@ export async function createProject(name: string, directory: string): Promise<Op
  */
 export async function openProject(projectPath: string, wanted?: string): Promise<OpenProject> {
   const project = await readProjectFile(projectPath);
+  const scenes = await discoverScenes(projectPath);
 
+  // Both lookups fall through rather than failing. `startScene` names a file
+  // that can be deleted in the Finder, and this is the fallback that stops one
+  // stale line from making a project unopenable.
   const entry =
-    (wanted === undefined ? undefined : findScene(project, wanted)) ??
-    findScene(project, project.startScene) ??
-    project.scenes[0];
+    (wanted === undefined ? undefined : findScene(scenes, wanted)) ??
+    findScene(scenes, project.startScene) ??
+    scenes[0];
   if (!entry) throw new ProjectError('This project has no scenes.');
 
   let sceneJson: string;
@@ -99,7 +191,7 @@ export async function openProject(projectPath: string, wanted?: string): Promise
     throw new ProjectError(`Scene "${entry.name}" is missing from the project.`);
   }
 
-  return finalize(projectPath, project, entry, sceneJson);
+  return finalize(projectPath, { project, scenes }, entry, sceneJson);
 }
 
 /**
@@ -164,7 +256,11 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   }
 
   const project = parsed as Partial<ProjectFile>;
-  if (typeof project.version !== 'number' || !Array.isArray(project.scenes)) {
+  // The version is the whole of the check. `scenes` was required here too, and
+  // requiring it is exactly what made a project whose list had gone refuse to
+  // open: the list is the `scenes/` directory now, and an empty one is a
+  // project with no scenes rather than a file that is malformed.
+  if (typeof project.version !== 'number') {
     throw new ProjectError(`${PROJECT_FILE_NAME} is missing required fields.`);
   }
   if (project.version > PROJECT_FORMAT_VERSION) {
@@ -195,12 +291,19 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   settings.loadingScene ??= null;
   (parsed as ProjectFile).settings = settings as ProjectFile['settings'];
 
+  // The list this file used to carry. Dropped from the object, not from the
+  // file: reading a project must not rewrite it, so the key leaves `project.json`
+  // the next time something writes for a reason of its own. Until then it is a
+  // stale copy of the directory that nothing reads — which is what it always
+  // was, and why it is going.
+  delete (parsed as { scenes?: unknown }).scenes;
+
   return parsed as ProjectFile;
 }
 
 async function finalize(
   projectPath: string,
-  project: ProjectFile,
+  contents: ProjectContents,
   entry: SceneEntry,
   sceneJson: string,
 ): Promise<OpenProject> {
@@ -209,12 +312,12 @@ async function finalize(
   await writeScriptTypings(projectPath).catch(() => undefined);
 
   const summary: ProjectSummary = {
-    name: project.name,
+    name: contents.project.name,
     path: projectPath,
     lastOpenedAt: Date.now(),
   };
   await remember(summary);
-  return { summary, project, scenePath: entry.path, sceneId: entry.id, sceneJson };
+  return { ...contents, summary, scenePath: entry.path, sceneId: entry.id, sceneJson };
 }
 
 async function exists(path: string): Promise<boolean> {

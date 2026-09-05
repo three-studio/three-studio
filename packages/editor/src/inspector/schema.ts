@@ -1155,9 +1155,9 @@ const skyField = (
 export const SCENE_SCHEMA: readonly SceneSection[] = [
   {
     label: 'Scene',
-    // The scene's *address*, not `SceneDoc.name`: writing it renames the file
-    // through the registry, which is where uniqueness lives. See ADR-14, and
-    // the `on: 'scene'` branch in `buildInspector`.
+    // The scene's *address*, not `SceneDoc.name`: writing it moves the file,
+    // because the file name is the name. See ADR-14, and the `on: 'scene'`
+    // branch in `buildInspector`.
     fields: [{ on: 'scene', key: 'name', label: 'Name' }],
   },
   {

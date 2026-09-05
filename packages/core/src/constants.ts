@@ -129,9 +129,14 @@ export const PREFAB_FORMAT_VERSION = 6;
 /**
  * Project file format version, tracked separately from scenes.
  *
- * 2 — scenes are referenced by id rather than by path. `scenes` holds
- * `{ id, name, path }` entries, and `startScene`, `loadingScene` and each
- * build profile name an id. See ADR-15: a reference that is a path or a name
- * is a reference that renaming breaks.
+ * 2 — scenes are referenced by id rather than by path: `startScene`,
+ * `loadingScene` and each build profile name an id. See ADR-15: a reference
+ * that is a path or a name is a reference that renaming breaks.
+ *
+ * Not bumped when `scenes` left this file. Every reference in a format 2
+ * project still means exactly what it meant — the field that went is the one
+ * nothing reads any more, because the directory answers it. Bumping would have
+ * refused projects that open correctly, which is the failure this version
+ * number exists to prevent, not to cause.
  */
 export const PROJECT_FORMAT_VERSION = 2;

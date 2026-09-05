@@ -144,8 +144,9 @@ export class InspectorBinding {
           write: (value, { last, generation }) => {
             switch (spec.on) {
               case 'scene':
-                // Renaming writes through the registry, which takes the start
-                // scene, the build profiles and the loading scene with it.
+                // Renaming moves the file and rewrites nothing else: the
+                // start scene, the build profiles and the loading scene all
+                // hold ids, and an id does not change when a name does.
                 //
                 // On blur rather than per keystroke: renaming once per letter
                 // would leave a trail of scenes called `A`, `Ar`, `Are`.

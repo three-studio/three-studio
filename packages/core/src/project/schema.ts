@@ -13,26 +13,40 @@
 import type { Vec3 } from '../scene/schema';
 
 /**
- * One scene of a project.
+ * One scene of a project, as it was found on disk.
+ *
+ * Derived, never declared. Every `.scene.json` under `scenes/` **is** the list.
+ * It used to be written into `project.json` as well, which made that file a
+ * cache of a directory — and a cache that could go stale. A scene copied in the
+ * Finder was invisible, a scene deleted there stopped the project from opening
+ * at all, and two people each adding a scene collided in the same three lines
+ * of JSON.
  *
  * The **id** is what everything else refers to — the start scene, the loading
  * scene, a build profile, the window's URL. It is the scene document's own
  * `SceneDoc.id`, so a scene carries its identity inside itself and a file that
  * is moved or restored from a backup is still recognisably the same scene.
  *
- * The **name** is for the person using the editor. It is required, and it is
- * indicative: nothing resolves through it internally, so renaming a scene is a
- * one-line change to this file and breaks nothing.
- *
- * The **path** is where the file happens to be. It is not an identity either:
- * it is fixed when the scene is created and never rewritten, precisely so that
- * a rename cannot move it.
+ * The **name** is `sceneName(path)`: the file name is what the scene is called.
+ * Renaming therefore moves the file, which is the point — the Finder and the
+ * editor can no longer disagree about what a scene is called. Nothing else
+ * moves with it, because no reference is a name.
  */
 export interface SceneEntry {
   id: string;
   name: string;
-  /** Relative to the project root. */
+  /** Relative to the project root, with `/` separators on every platform. */
   path: string;
+  /**
+   * Path of the file that already claims this id, when two files claim one.
+   *
+   * A real case now that a copy in the Finder is a scene: duplicating
+   * `Boss.scene.json` there gives two files carrying the same `SceneDoc.id`.
+   * The first by path order wins every lookup, and this says so on the other
+   * one rather than dropping it from the list — a file that has vanished from
+   * the editor is far harder to find than one shown with a reason beside it.
+   */
+  shadowedBy: string | null;
 }
 
 export interface ProjectFile {
@@ -40,28 +54,57 @@ export interface ProjectFile {
   name: string;
   /** Editor version that last wrote the project, for diagnostics. */
   engineVersion: string;
-  scenes: SceneEntry[];
-  /** Scene **id** the project opens on, and a build starts with. */
+  /**
+   * Scene **id** the project opens on, and a build starts with.
+   *
+   * Not a promise that the scene is there: the file it names can be deleted in
+   * the Finder. `openProject` falls back to the first scene rather than
+   * refusing, so one stale line here never costs a project.
+   */
   startScene: string;
   settings: ProjectSettings;
 }
 
-/** The entry for a scene id, or `undefined` for one the project has dropped. */
-export function findScene(project: ProjectFile, id: string): SceneEntry | undefined {
-  return project.scenes.find((entry) => entry.id === id);
+/**
+ * A project file and the scenes found beside it, read at the same moment.
+ *
+ * They travel together because the list is not in the file any more, and a
+ * renderer cannot read a directory. Everything that hands a window a project
+ * hands it the list too, so the two cannot come to disagree about which scenes
+ * exist — which is precisely what `project.json` keeping its own copy allowed.
+ */
+export interface ProjectContents {
+  project: ProjectFile;
+  /** Every scene found on disk, ordered by path. */
+  scenes: SceneEntry[];
+}
+
+/**
+ * The scene with this id, or `undefined` when no file on disk claims it.
+ *
+ * The first by path order when two files do — see `SceneEntry.shadowedBy`.
+ */
+export function findScene(
+  scenes: readonly SceneEntry[],
+  id: string,
+): SceneEntry | undefined {
+  return scenes.find((entry) => entry.id === id);
 }
 
 /**
  * Resolves what a script named, which may be an id or a name.
  *
  * Ids first: a script that wants to survive a rename can hold one, and a name
- * that happened to look like an id must not shadow the real thing. Names are
- * unique within a project, so the second lookup is unambiguous.
+ * that happened to look like an id must not shadow the real thing. The editor
+ * refuses to create two scenes under one name, but two folders under `scenes/`
+ * can each hold a `Boss.scene.json`, so the second lookup takes the first by
+ * path order for the same reason the first one does.
  */
-export function resolveScene(project: ProjectFile, idOrName: string): SceneEntry | undefined {
-  return (
-    findScene(project, idOrName) ?? project.scenes.find((entry) => entry.name === idOrName)
-  );
+export function resolveScene(
+  scenes: readonly SceneEntry[],
+  idOrName: string,
+): SceneEntry | undefined {
+  return findScene(scenes, idOrName) ?? scenes.find((entry) => entry.name === idOrName);
 }
 
 /**
@@ -74,8 +117,11 @@ export function resolveScene(project: ProjectFile, idOrName: string): SceneEntry
  * unread from the day it was added.
  */
 /**
- * A scene's name, as scripts refer to it: `scenes/Level2.scene.json` is
- * `Level2`.
+ * A scene's name, as the editor and a script both refer to it:
+ * `scenes/Level2.scene.json` is `Level2`.
+ *
+ * The one way a name is derived, and since the list of scenes is the directory
+ * it is now the only way a scene has a name at all.
  *
  * Names rather than paths, because the two are not the same in a build — the
  * exporter renames the entry scene to `scene.json` and files the rest under
@@ -318,9 +364,8 @@ export interface ProjectSummary {
 }
 
 /** Everything the editor needs to show a project, in one round trip. */
-export interface OpenProject {
+export interface OpenProject extends ProjectContents {
   summary: ProjectSummary;
-  project: ProjectFile;
   /** Path of the loaded scene, relative to the project root. */
   scenePath: string;
   /** Id of the loaded scene — what the window and every reference use. */
@@ -331,5 +376,13 @@ export interface OpenProject {
 
 export const PROJECT_FILE_NAME = 'project.json';
 export const SCENES_DIR = 'scenes';
+/**
+ * What makes a file under `scenes/` a scene.
+ *
+ * Load-bearing in two directions: it is what discovery matches, and it is what
+ * `sceneName` strips back off. A scene called `Boss` and the file `Boss.scene.json`
+ * are one fact expressed twice, so they are built from one constant.
+ */
+export const SCENE_FILE_SUFFIX = '.scene.json';
 export const ASSETS_DIR = 'assets';
 export const CACHE_DIR = '.studio';

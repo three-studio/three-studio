@@ -10,6 +10,7 @@ import {
   type ExportResult,
   type MaterialDef,
   type PrefabDoc,
+  type ProjectContents,
   type ProjectFile,
   type ProjectSettings,
   type LayoutPreferences,
@@ -41,6 +42,7 @@ import { loadLayoutPreferences, saveLayoutPreferences } from './preferences';
 import { exportBuild } from './exportWeb';
 import {
   createProject,
+  discoverScenes,
   openProject,
   readProject,
   readSceneFile,
@@ -131,11 +133,19 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * start-scene radio on a choice that has been replaced. The window that asked
    * already has the answer as the call's return value.
    */
-  const announce = <T>(project: ProjectFile, from: Electron.WebContents, result: T): T => {
+  const announce = <T>(
+    contents: ProjectContents,
+    from: Electron.WebContents,
+    result: T,
+  ): T => {
     let told = 0;
     for (const win of deps.editorWindows()) {
       if (win.webContents.id !== from.id && !win.isDestroyed()) {
-        win.webContents.send('project:changed', project);
+        // The scene list as well as the file: it is the `scenes/` directory
+        // now, and a renderer cannot read one. Without it a scene created in
+        // this window would be missing from every other window's menu until
+        // that window was reloaded.
+        win.webContents.send('project:changed', contents);
         told += 1;
       }
     }
@@ -257,21 +267,23 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   });
 
   /*
-   * The scene registry. `writeProject` had one caller until now — updating the
-   * settings — and these are the others: everything that changes which scenes a
-   * project has goes through the main process, because each of them has to
-   * rewrite the project file and the files on disk together.
+   * The scenes of the project. Only the last two write `project.json` at all
+   * now: what scenes a project has is what is under `scenes/`, so creating,
+   * duplicating and renaming one are writes to that directory and nothing else.
+   * They are still here rather than in the renderer because the renderer has no
+   * file system — and because a window that could write there could add a scene
+   * to a project it cannot read.
    */
   ipcMain.handle('project:createScene', async (event, name: string): Promise<SceneChange> => {
     const change = await createScene(requireProject(), name);
-    return announce(change.project, event.sender, change);
+    return announce(change, event.sender, change);
   });
 
   ipcMain.handle(
     'project:duplicateScene',
     async (event, sceneId: string, name: string): Promise<SceneChange> => {
       const change = await duplicateScene(requireProject(), sceneId, name);
-      return announce(change.project, event.sender, change);
+      return announce(change, event.sender, change);
     },
   );
 
@@ -279,25 +291,28 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     'project:renameScene',
     async (event, sceneId: string, name: string): Promise<SceneChange> => {
       const change = await renameScene(requireProject(), sceneId, name);
-      return announce(change.project, event.sender, change);
+      return announce(change, event.sender, change);
     },
   );
 
-  ipcMain.handle('project:deleteScene', async (event, sceneId: string): Promise<ProjectFile> => {
+  ipcMain.handle('project:deleteScene', async (event, sceneId: string): Promise<ProjectContents> => {
     // Refused rather than left to go wrong later: the file would go, the other
     // window would stay open on it, and its next save would write back a scene
     // the project no longer lists.
     if (deps.isSceneOpenElsewhere(event.sender, sceneId)) {
       throw new Error('That scene is open in another window. Close that window first.');
     }
-    const project = await deleteScene(requireProject(), sceneId);
-    return announce(project, event.sender, project);
+    const contents = await deleteScene(requireProject(), sceneId);
+    return announce(contents, event.sender, contents);
   });
 
-  ipcMain.handle('project:setStartScene', async (event, sceneId: string): Promise<ProjectFile> => {
-    const project = await setStartScene(requireProject(), sceneId);
-    return announce(project, event.sender, project);
-  });
+  ipcMain.handle(
+    'project:setStartScene',
+    async (event, sceneId: string): Promise<ProjectContents> => {
+      const contents = await setStartScene(requireProject(), sceneId);
+      return announce(contents, event.sender, contents);
+    },
+  );
 
   ipcMain.handle('assets:list', (): Promise<AssetManifest> => scanAssets(requireProject()));
 
@@ -493,7 +508,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         settings: { ...project.settings, ...patch },
       };
       await writeProject(projectPath, updated);
-      return announce(updated, event.sender, updated);
+      // Settings cannot change which scenes exist, but the broadcast carries
+      // the whole of what a window holds, so the list has to come along or the
+      // other windows would adopt an empty one.
+      const scenes = await discoverScenes(projectPath);
+      return announce({ project: updated, scenes }, event.sender, updated);
     },
   );
 

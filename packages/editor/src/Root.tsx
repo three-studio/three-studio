@@ -27,7 +27,7 @@ export function Root() {
 function EditorWindow() {
   const summary = useProjectStore((s) => s.summary);
   const adopt = useProjectStore((s) => s.adopt);
-  const adoptProject = useProjectStore((s) => s.adoptProject);
+  const adoptContents = useProjectStore((s) => s.adoptContents);
   const error = useProjectStore((s) => s.error);
   const setError = useProjectStore((s) => s.setError);
   const dirty = useDocumentStore(selectDirty);
@@ -59,7 +59,7 @@ function EditorWindow() {
 
   // Another window may add, rename or remove a scene at any moment, and this
   // window holds a copy of the project taken when it opened.
-  useEffect(() => window.studio.project.onProjectChanged(adoptProject), [adoptProject]);
+  useEffect(() => window.studio.project.onProjectChanged(adoptContents), [adoptContents]);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.
