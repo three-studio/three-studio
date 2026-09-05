@@ -14,6 +14,7 @@ import {
   createStarterScene,
   findScene,
   normalizeBuildProfiles,
+  resolveScene,
   sceneName,
   serializeScene,
   type OpenProject,
@@ -254,7 +255,7 @@ export async function writeProject(projectPath: string, project: ProjectFile): P
   await rename(temporary, target);
 }
 
-/** The project file, with anything a newer format added filled in. */
+/** The project file, carried forward and with anything a newer format added filled in. */
 export async function readProject(projectPath: string): Promise<ProjectFile> {
   return readProjectFile(projectPath);
 }
@@ -282,18 +283,13 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   if (typeof project.version !== 'number') {
     throw new ProjectError(`${PROJECT_FILE_NAME} is missing required fields.`);
   }
+  // The one refusal left, and the only one a version number can justify: a
+  // format written after this build was made says nothing about what its
+  // fields mean, so reading it would be guessing. Everything older is carried
+  // forward below.
   if (project.version > PROJECT_FORMAT_VERSION) {
     throw new ProjectError(
-      `This project was created by a newer version of the editor (format ${project.version}).`,
-    );
-  }
-  // Refused rather than migrated. Format 1 addressed scenes by path and the
-  // loading scene by name; format 2 addresses both by id, and reading one as
-  // the other would produce a project whose every reference is wrong. There is
-  // nothing older in the wild to migrate — the editor has never shipped.
-  if (project.version < PROJECT_FORMAT_VERSION) {
-    throw new ProjectError(
-      `This project uses project format ${project.version}; this build reads ${PROJECT_FORMAT_VERSION}. Create it again.`,
+      `This project was created by a newer version of the editor (format ${project.version}; this build reads ${PROJECT_FORMAT_VERSION}). Update Three Studio to open it.`,
     );
   }
 
@@ -317,7 +313,67 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   // was, and why it is going.
   delete (parsed as { scenes?: unknown }).scenes;
 
+  // Migrated after the fill, so a step only has to translate the meanings it
+  // recognises instead of also defending against a section that did not exist
+  // when the file was written. The walk is inside the branch because only an
+  // old file should pay for it: `saveScene` and `readSceneFile` come through
+  // here on every save, and a current project must not read a directory to be
+  // told it is already current. An old one walks twice on open — once here,
+  // once in `openProject` — which the index of T-019 makes a warm `stat` each.
+  if (project.version < PROJECT_FORMAT_VERSION) {
+    adoptSceneIds(parsed as ProjectFile, await discoverScenes(projectPath));
+  }
+  // Stamped, so the object says which format it now conforms to. Nothing is
+  // written back: reading a project must not dirty it in version control, and
+  // the upgraded form reaches the file the next time something writes it for a
+  // reason of its own — the same route the `scenes` key above takes out.
+  (parsed as ProjectFile).version = PROJECT_FORMAT_VERSION;
+
   return parsed as ProjectFile;
+}
+
+/**
+ * Format 1 → 2: every scene reference becomes the id of the scene it named.
+ *
+ * Format 1 addressed the start scene by path and the loading scene by name,
+ * and this build reads both as ids. That is why the old file was refused
+ * outright — "create it again" — rather than misread: opened as it stands, a
+ * format 1 project starts on no scene, shows no loading scene, and exports a
+ * build missing every level, with nothing tying any of it to the upgrade.
+ * Refusing was the safe half of the answer; this is the other half.
+ *
+ * The registry that file carried in `scenes` is not consulted. It was a copy
+ * of `scenes/` that could already be stale on the day it was written — the
+ * reason it is gone — so the disk answers instead, and a scene added or
+ * removed in the Finder since migrates as correctly as one that never moved.
+ */
+function adoptSceneIds(project: ProjectFile, scenes: readonly SceneEntry[]): void {
+  const { settings } = project;
+  project.startScene = sceneIdFor(scenes, project.startScene);
+  if (settings.loadingScene !== null) {
+    settings.loadingScene = sceneIdFor(scenes, settings.loadingScene);
+  }
+  for (const profile of Object.values(settings.build.profiles)) {
+    profile.scenes = profile.scenes.map((reference) => sceneIdFor(scenes, reference));
+  }
+}
+
+/**
+ * The id of the scene an old reference named, or the reference left untouched.
+ *
+ * Path first, because that is what `startScene` held and a path is the one
+ * form that cannot be confused with another scene's; then `resolveScene`,
+ * which takes an id ahead of a name, so a reference that already carries one
+ * survives being read a second time.
+ *
+ * A reference that resolves to nothing is returned exactly as it was found.
+ * The file it names can have been deleted in the Finder, and `openProject`
+ * falls back to the first scene; throwing here would put back the failure this
+ * whole function exists to remove.
+ */
+function sceneIdFor(scenes: readonly SceneEntry[], reference: string): string {
+  const entry = scenes.find((scene) => scene.path === reference) ?? resolveScene(scenes, reference);
+  return entry?.id ?? reference;
 }
 
 async function finalize(
