@@ -97,12 +97,16 @@ describe('two components of one type on one entity', () => {
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
-    const loaded = deserializeScene(serializeScene(scene));
-    expect(componentsOf(loaded, cube.entity.id).map((c) => c.id)).toEqual([
-      componentsOf(scene, cube.entity.id)[0]!.id,
-      first.id,
-      second.id,
-    ]);
+    const loaded = componentsOf(deserializeScene(serializeScene(scene)), cube.entity.id);
+
+    // Registry order across types still holds: the mesh comes before both
+    // scripts. Within one type it does not, and `componentsOf` says so — a
+    // document read back from a file lists two scripts in id order, because
+    // `serializeScene` sorts keys, and ids are random. Asserting the order they
+    // were added in passed only when the two happened to sort that way, which
+    // was about half of every run.
+    expect(loaded[0]!.id).toBe(componentsOf(scene, cube.entity.id)[0]!.id);
+    expect(loaded.slice(1).map((c) => c.id).sort()).toEqual([first.id, second.id].sort());
   });
 });
 
