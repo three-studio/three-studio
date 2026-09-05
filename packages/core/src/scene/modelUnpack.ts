@@ -1,4 +1,5 @@
-import { blankComponent, createEntity, type EntityTemplate } from './defaults';
+import { blankComponent } from './defaults';
+import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
 

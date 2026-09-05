@@ -7,7 +7,8 @@ import {
   isKnownComponentType,
   putComponent,
 } from './components';
-import { createEntity, createEnvironment } from './defaults';
+import { createEnvironment } from './defaults';
+import { createEntity } from './entity';
 import { cycles } from './query';
 import type { ComponentDoc, ComponentTables, EntityDoc, SceneDoc } from './schema';
 

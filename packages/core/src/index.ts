@@ -176,26 +176,25 @@ export {
   createBoxGeometry,
   createCameraEntity,
   createEmptyScene,
-  createEntity,
   createEnvironment,
   createGeometry,
-  createLightEntity,
   createMaterial,
   createMeshComponent,
   createMeshEntity,
   createModelEntity,
   createNewScene,
   createPrefabInstance,
-  createShadowSettings,
   createSkySettings,
   createStarterScene,
-  createTransform,
   createWater,
   createWaterEntity,
   isPlaceable,
   restingOffsetY,
 } from './scene/defaults';
-export type { EntityTemplate } from './scene/defaults';
+export { createEntity, createTransform } from './scene/entity';
+export type { EntityTemplate } from './scene/entity';
+/* A light poses itself, and knows what three's shadow defaults are. */
+export { createLightEntity, createShadowSettings } from './components/light/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

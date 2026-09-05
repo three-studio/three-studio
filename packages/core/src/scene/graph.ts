@@ -5,7 +5,7 @@ import {
   dropComponentsOf,
   setComponentsOf,
 } from './components';
-import type { EntityTemplate } from './defaults';
+import type { EntityTemplate } from './entity';
 import { splitInstancedId } from './prefab';
 import { collectDescendants, cycles, isAncestorOf } from './query';
 import type { EntityDoc, SceneDoc } from './schema';

@@ -7,17 +7,17 @@
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
-export type Vec2 = [number, number];
-export type Vec3 = [number, number, number];
-/** `#rrggbb`. */
-export type Hex = string;
+import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+import type { LightComponent } from '../components/light/schema';
 
-export interface Transform {
-  position: Vec3;
-  /** Euler XYZ in radians. Degrees are a presentation concern of the inspector. */
-  rotation: Vec3;
-  scale: Vec3;
-}
+/*
+ * The vocabulary is re-exported rather than declared, so that everything which
+ * reads the document goes on importing it from here. What lives elsewhere is
+ * what a component slice has to import without importing the union of them all
+ * — see `primitives.ts` — and the types of the slices themselves.
+ */
+export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 
 // --- geometry ---------------------------------------------------------------
 
@@ -206,63 +206,6 @@ export interface ModelComponent extends ComponentBase {
   materialId: string | null;
   castShadow: boolean;
   receiveShadow: boolean;
-}
-
-export type LightKind =
-  | 'ambient'
-  | 'hemisphere'
-  | 'directional'
-  | 'point'
-  | 'spot'
-  | 'rectArea'
-  | 'projector';
-
-/**
- * What three carries on `light.shadow`, for the kinds that cast one.
- *
- * A sub-object rather than eight more fields on the light, for the reason
- * `MeshComponent.material` is one: they are read and written together, and the
- * migration merges them a level deeper in one place instead of eight.
- *
- * Every default is three's own, so filling this into a scene written before it
- * existed changes nothing on screen — which is the only way to add a field to a
- * persisted format without auditing every project that has one.
- */
-export interface ShadowSettings {
-  bias: number;
-  normalBias: number;
-  radius: number;
-  blurSamples: number;
-  near: number;
-  far: number;
-  /** Directional only: half-extent of the orthographic shadow camera. */
-  orthoSize: number;
-  /** Spot and projector only. */
-  focus: number;
-}
-
-export interface LightComponent extends ComponentBase {
-  type: 'light';
-  kind: LightKind;
-  color: Hex;
-  intensity: number;
-  /** Hemisphere only. */
-  groundColor: Hex;
-  /** Point, spot and projector only. `0` means no falloff limit. */
-  distance: number;
-  decay: number;
-  /** Spot and projector only, radians. */
-  angle: number;
-  penumbra: number;
-  /** Rect area only, metres. The rectangle emits from its local -Z face. */
-  width: number;
-  height: number;
-  /** Projector only: the texture it throws. */
-  mapId: string | null;
-  /** Projector only. `0` means take the aspect from the texture. */
-  aspect: number;
-  castShadow: boolean;
-  shadow: ShadowSettings;
 }
 
 /**
@@ -493,22 +436,6 @@ export interface PrefabOverride {
   transform?: Partial<Transform>;
   /** By component id inside the prefab entity, then by property name. */
   components?: Record<string, Record<string, unknown>>;
-}
-
-/**
- * What every component carries, whatever its type.
- *
- * The id is what a prefab override names and what the binder keys its builds
- * on. Before it, both used the component's **position** in the array: adding a
- * component to a prefab slid every override of every instance onto the wrong
- * one (B10), and removing one paired a cube's build with a sphere's component.
- *
- * Opaque. The migration happens to mint `<entityId>:<index>` — see
- * `serialization.ts` for why that particular shape — and nothing may read it
- * back out. An id that can be parsed into a position is a position again.
- */
-export interface ComponentBase {
-  id: string;
 }
 
 export interface ScriptComponent extends ComponentBase {
