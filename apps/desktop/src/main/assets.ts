@@ -26,6 +26,7 @@ import {
   defaultSettings,
   emptyManifest,
   importerForFile,
+  stableJson,
   type TextReader,
   type AssetManifest,
   type AssetMeta,
@@ -540,7 +541,7 @@ export async function createPrefabAsset(
     PREFAB_EXTENSION,
   );
   const file = resolveInside(projectPath, posix.join(directory, fileName));
-  await writeFile(file, JSON.stringify(prefab, null, 2), 'utf8');
+  await writeFile(file, stableJson(prefab), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
@@ -613,7 +614,7 @@ export async function createMaterialAsset(
   const file = resolveInside(projectPath, posix.join(directory, fileName));
 
   const contents: MaterialAssetFile = { version: MATERIAL_ASSET_VERSION, material };
-  await writeFile(file, JSON.stringify(contents, null, 2), 'utf8');
+  await writeFile(file, stableJson(contents), 'utf8');
 
   // The sidecar carries the id every scene will reference, so it is written
   // here rather than left to the next scan to invent.
@@ -641,7 +642,7 @@ export async function saveMaterialAsset(
   }
 
   const contents: MaterialAssetFile = { version: MATERIAL_ASSET_VERSION, material };
-  await writeFile(file, JSON.stringify(contents, null, 2), 'utf8');
+  await writeFile(file, stableJson(contents), 'utf8');
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.
@@ -666,7 +667,7 @@ export async function savePrefabAsset(
     throw new AssetError(`${assetPath} is not a prefab asset.`);
   }
 
-  await writeFile(file, JSON.stringify(prefab, null, 2), 'utf8');
+  await writeFile(file, stableJson(prefab), 'utf8');
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.

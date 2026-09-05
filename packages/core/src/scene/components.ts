@@ -67,11 +67,16 @@ export function entitiesWith(host: ComponentHost, type: ComponentType): string[]
 }
 
 /**
- * Everything one entity carries, in registry order and then insertion order.
+ * Everything one entity carries, in registry order and then table order.
  *
  * The array a component type no longer keeps. It carried the order the author
  * added things in; this one is the order of `COMPONENT_TYPES`, which is stable
  * and — unlike the old one — the same for every entity holding the same types.
+ *
+ * Within a single type the answer is the table's own key order: insertion order
+ * during a session, and id order in any document that has been read back from a
+ * file, since `serializeScene` sorts keys. It shows only on an entity carrying
+ * two of one type, and neither order carries meaning.
  *
  * A fresh array each call: nothing may compare its identity to decide whether
  * anything changed. See `SceneBinder.syncEntity`, which compares the elements.

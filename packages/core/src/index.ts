@@ -228,6 +228,7 @@ export {
 export type { ComponentDefinition, ComponentIcon } from './components';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
+export { stableJson } from './json';
 
 export {
   applyPrefabOverride,

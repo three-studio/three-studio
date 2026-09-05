@@ -223,6 +223,11 @@ describe('a document written before the tables existed', () => {
     // The pass runs at the boundary and has to be idempotent, or a scene saved
     // and reopened has its components migrated against an array that is no
     // longer there.
-    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+    //
+    // Compared as the *file* rather than with a plain `JSON.stringify`: keys
+    // are sorted on the way out now, so a freshly migrated document and the
+    // same document read back differ in key order and in nothing else — and
+    // plain stringify calls that a difference. See `stableJson`.
+    expect(serializeScene(twice)).toBe(serializeScene(once));
   });
 });

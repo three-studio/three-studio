@@ -1,5 +1,6 @@
 import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
+import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
   emptyComponentTables,
@@ -17,9 +18,20 @@ export class SceneFormatError extends Error {
   }
 }
 
-/** Indented so scene files stay reviewable in a diff. */
+/**
+ * Indented so a scene file is reviewable in a diff, and key-sorted so there is
+ * a diff worth reviewing. See `stableJson` for why the keys move and the arrays
+ * do not.
+ *
+ * One consequence is worth knowing, because it is the only place an object's
+ * key order in this format was ever readable: an entity carrying **two
+ * components of one type** — two colliders, say — held them in the order they
+ * were added, and now holds them by id once the document has been through a
+ * file. Nothing reads that order for meaning; what it buys is that two machines
+ * agree on which of the two `findComponent` calls the first.
+ */
 export function serializeScene(scene: SceneDoc): string {
-  return JSON.stringify(scene, null, 2);
+  return stableJson(scene);
 }
 
 export function deserializeScene(json: string): SceneDoc {
