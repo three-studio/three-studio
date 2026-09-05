@@ -1,5 +1,5 @@
-import { createModel } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createModel } from './defaults';
 
 /** An imported glTF, FBX or OBJ. */
 export const modelComponent = defineComponent({

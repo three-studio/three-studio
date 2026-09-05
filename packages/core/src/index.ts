@@ -177,7 +177,6 @@ export {
   createMaterial,
   createMeshComponent,
   createMeshEntity,
-  createModelEntity,
   createNewScene,
   createSkySettings,
   createStarterScene,
@@ -193,6 +192,7 @@ export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCameraEntity } from './components/camera/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
 
 /* The component tables: every read and write of `scene.components`. */

@@ -1,4 +1,4 @@
-import { createModel } from './defaults';
+import { createModel } from '../components/model/defaults';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
