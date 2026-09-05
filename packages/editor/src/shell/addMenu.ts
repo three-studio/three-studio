@@ -1,6 +1,5 @@
 import {
   GEOMETRY_LABELS,
-  createAudioSourceEntity,
   createEntity,
   createMeshEntity,
   createWaterEntity,
@@ -8,6 +7,7 @@ import {
   type GeometryKind,
 } from '@three-studio/core';
 import { menu as audioListenerMenu } from '../components/audioListener/menu';
+import { menu as audioSourceMenu } from '../components/audioSource/menu';
 import { menu as cameraMenu } from '../components/camera/menu';
 import { menu as lightMenu } from '../components/light/menu';
 import type { AddMenuEntry } from '../components/registry';
@@ -86,11 +86,8 @@ export function buildAddMenu(): MenuEntry[] {
     { label: lightMenu.label, submenu: lightMenu.entries.map(offer) },
     { label: cameraMenu.label, submenu: cameraMenu.entries.map(offer) },
     {
-      label: 'Audio',
-      submenu: [
-        { label: 'Audio Source', onSelect: add(() => createAudioSourceEntity()) },
-        ...audioListenerMenu.entries.map(offer),
-      ],
+      label: audioSourceMenu.label,
+      submenu: [...audioSourceMenu.entries, ...audioListenerMenu.entries].map(offer),
     },
     {
       // A submenu for one entry, on purpose: this is where the things that are

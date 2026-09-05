@@ -16,6 +16,10 @@ import {
   marker as colliderMarker,
 } from '../../components/collider/overlay';
 import {
+  drawsGeometry as audioSourceDrawsGeometry,
+  marker as audioSourceMarker,
+} from '../../components/audioSource/overlay';
+import {
   drawsGeometry as cameraDrawsGeometry,
   marker as cameraMarker,
 } from '../../components/camera/overlay';
@@ -58,7 +62,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   camera: cameraDrawsGeometry,
   rigidbody: rigidbodyDrawsGeometry,
   collider: colliderDrawsGeometry,
-  audioSource: false,
+  audioSource: audioSourceDrawsGeometry,
   audioListener: audioListenerDrawsGeometry,
   script: scriptDrawsGeometry,
   prefabInstance: prefabInstanceDrawsGeometry,
@@ -88,7 +92,7 @@ const RENDERS: readonly ComponentType[] = (Object.keys(RENDERABLE) as ComponentT
 const STYLES: Record<ComponentType, EntityMarker | null> = {
   camera: cameraMarker,
   light: lightMarker,
-  audioSource: { color: 0x6ee7a8, pixels: 9, priority: 3 },
+  audioSource: audioSourceMarker,
   audioListener: audioListenerMarker,
   mesh: null,
   model: null,

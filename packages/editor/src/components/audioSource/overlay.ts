@@ -1,3 +1,4 @@
+import type { EntityMarker } from '../registry';
 import type { AudioSourceComponent, ComponentDoc } from '@three-studio/core';
 import {
   BufferAttribute,
@@ -12,7 +13,7 @@ import {
   Vector3,
   type Object3D,
 } from 'three/webgpu';
-import { annotation, type ComponentHelper, type HelperHandle } from '../ComponentHelper';
+import { annotation, type ComponentHelper, type HelperHandle } from '../../viewport/overlay/ComponentHelper';
 
 /** The green the entity marker already uses, so the two read as one object. */
 const NEAR_COLOUR = 0x6ee7a8;
@@ -201,3 +202,14 @@ function writeCone(
   }
   attribute.needsUpdate = true;
 }
+
+/** A source draws nothing; what it plays is heard, not seen. */
+export const drawsGeometry = false;
+
+/**
+ * Green, and smaller than a camera's or a light's: a scene has many sources and
+ * they are scenery, not the thing being framed.
+ */
+export const marker: EntityMarker = { color: 0x6ee7a8, pixels: 9, priority: 3 };
+
+export const helper = new AudioShape();
