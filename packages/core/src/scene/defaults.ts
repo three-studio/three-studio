@@ -1,3 +1,4 @@
+import { createCameraEntity } from '../components/camera/defaults';
 import { createLightEntity } from '../components/light/defaults';
 import { SCENE_FORMAT_VERSION } from '../constants';
 import { createId } from '../ids';
@@ -6,7 +7,6 @@ import { createEntity, type EntityTemplate } from './entity';
 import type {
   AudioSourceComponent,
   CameraComponent,
-  CameraProjection,
   ComponentDoc,
   ComponentOfType,
   ComponentType,
@@ -127,19 +127,6 @@ export function createWater(): WaterComponent {
     resolutionScale: 0.5,
     side: 'front',
     fog: false,
-  };
-}
-
-export function createCamera(projection: CameraProjection = 'perspective'): CameraComponent {
-  return {
-    id: createId(),
-    type: 'camera',
-    projection,
-    fov: 60,
-    near: 0.1,
-    far: 2000,
-    frustumSize: 10,
-    isMain: false,
   };
 }
 
@@ -332,13 +319,6 @@ export function createAudioSourceEntity(assetId = '', name = 'Audio Source'): En
   const component = createAudioSource();
   component.assetId = assetId;
   return createEntity(name, [component]);
-}
-
-export function createCameraEntity(projection: CameraProjection = 'perspective'): EntityTemplate {
-  const name = projection === 'orthographic' ? 'Orthographic Camera' : 'Camera';
-  const template = createEntity(name, [createCamera(projection)]);
-  template.entity.transform.position = [0, 2, 8];
-  return template;
 }
 
 /** three's own `SkyMesh` defaults, which are a clear early morning. */

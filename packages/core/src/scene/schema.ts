@@ -9,6 +9,7 @@
 
 import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
+import type { CameraComponent } from '../components/camera/schema';
 import type { ColliderComponent } from '../components/collider/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
@@ -27,6 +28,7 @@ import type { ScriptComponent } from '../components/script/schema';
  */
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 export type { AudioListenerComponent } from '../components/audioListener/schema';
+export type { CameraComponent, CameraProjection } from '../components/camera/schema';
 export type { ColliderComponent } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type {
@@ -293,20 +295,6 @@ export interface WaterComponent extends ComponentBase {
   resolutionScale: number;
   side: MaterialSide;
   fog: boolean;
-}
-
-export type CameraProjection = 'perspective' | 'orthographic';
-
-export interface CameraComponent extends ComponentBase {
-  type: 'camera';
-  projection: CameraProjection;
-  fov: number;
-  near: number;
-  far: number;
-  /** Orthographic vertical extent. */
-  frustumSize: number;
-  /** The camera play mode renders through when no player controller is active. */
-  isMain: boolean;
 }
 
 /**

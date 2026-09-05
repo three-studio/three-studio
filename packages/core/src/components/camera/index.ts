@@ -1,5 +1,5 @@
-import { createCamera } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createCamera } from './defaults';
 
 /** A camera the game can look through. */
 export const cameraComponent = defineComponent({
