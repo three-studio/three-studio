@@ -23,6 +23,10 @@ import {
   drawsGeometry as cameraDrawsGeometry,
   marker as cameraMarker,
 } from '../../components/camera/overlay';
+import {
+  drawsGeometry as modelDrawsGeometry,
+  marker as modelMarker,
+} from '../../components/model/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
   drawsGeometry as scriptDrawsGeometry,
@@ -56,7 +60,7 @@ export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
  */
 const RENDERABLE: Record<ComponentType, boolean> = {
   mesh: true,
-  model: true,
+  model: modelDrawsGeometry,
   water: true,
   light: lightDrawsGeometry,
   camera: cameraDrawsGeometry,
@@ -95,7 +99,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   audioSource: audioSourceMarker,
   audioListener: audioListenerMarker,
   mesh: null,
-  model: null,
+  model: modelMarker,
   water: null,
   rigidbody: rigidbodyMarker,
   collider: colliderMarker,
