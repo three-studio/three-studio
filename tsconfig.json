@@ -11,7 +11,9 @@
     "apps/*/src/**/*.tsx",
     "apps/*/test/**/*.ts",
     "apps/*/*.config.ts",
-    "*.config.ts"
+    "test/**/*.ts",
+    "*.config.ts",
+    "workspace-aliases.ts"
   ],
   "exclude": ["node_modules", "**/out", "**/dist", "**/release"]
 }
