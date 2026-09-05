@@ -4,11 +4,17 @@
  * ```
  * MyProject/
  *   project.json            this file
+ *   .gitignore              keeps `.studio/` out of the author's repository
  *   scenes/main.scene.json  SceneDoc documents
- *   assets/                 models, textures, materials, scripts
- *     manifest.json
+ *   assets/                 one folder per directory in `ASSET_KIND_INFO`
  *   .studio/                caches and build output — safe to delete
  * ```
+ *
+ * The folders are named there and not here on purpose: this block listed four
+ * of them while the importers declared seven, and it also promised an
+ * `assets/manifest.json` that nothing has ever written. Documentation of a
+ * layout is the one place a reader goes for the truth, so what it can name it
+ * points at instead.
  */
 import type { Vec3 } from '../scene/schema';
 
@@ -52,7 +58,14 @@ export interface SceneEntry {
 export interface ProjectFile {
   version: number;
   name: string;
-  /** Editor version that last wrote the project, for diagnostics. */
+  /**
+   * Editor version that last wrote the project, for diagnostics.
+   *
+   * Read in Project Settings, and stamped by `writeProject` rather than only
+   * at creation — a field naming the build that made a project two years ago
+   * says nothing about the bytes in front of you when one turns up broken,
+   * which is the entire job it has.
+   */
   engineVersion: string;
   /**
    * Scene **id** the project opens on, and a build starts with.

@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promi
 import { basename, join, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
+  ASSET_KIND_INFO,
   CACHE_DIR,
   ENGINE_VERSION,
   PROJECT_FILE_NAME,
@@ -48,8 +49,13 @@ export async function createProject(name: string, directory: string): Promise<Op
 
   await mkdir(join(projectPath, SCENES_DIR), { recursive: true });
   await mkdir(join(projectPath, CACHE_DIR), { recursive: true });
-  for (const kind of ['models', 'textures', 'materials', 'scripts']) {
-    await mkdir(join(projectPath, ASSETS_DIR, kind), { recursive: true });
+  // Taken from the importers rather than listed here. The list that used to be
+  // here named four of the seven: `prefabs`, `shaders` and `audio` each had an
+  // importer and no folder, so the one place an author would look for them was
+  // the one place they were not — and a new importer would have landed the same
+  // way. A `Set` because nothing stops two kinds sharing a directory.
+  for (const directory of new Set(Object.values(ASSET_KIND_INFO).map((it) => it.directory))) {
+    await mkdir(join(projectPath, ASSETS_DIR, directory), { recursive: true });
   }
 
   // The document carries its own identity, and `startScene` adopts it rather
@@ -80,7 +86,15 @@ export async function createProject(name: string, directory: string): Promise<Op
 
   await writeFile(join(projectPath, PROJECT_FILE_NAME), JSON.stringify(project, null, 2), 'utf8');
   await writeFile(join(projectPath, DEFAULT_SCENE_PATH), sceneJson, 'utf8');
-  // The cache holds build output and thumbnails; nothing there belongs in git.
+  // Two files, and they are not the same promise. The root one is the author's
+  // to edit — they will add their own rules to it — and it exists because a
+  // project put into git without one commits its own build cache, which is the
+  // default outcome for anyone who does not already know the folder is there.
+  // The one inside `.studio/` is the editor's guarantee about its own
+  // directory, and it still holds when the root file has been rewritten or the
+  // cache has been copied somewhere else. Nothing in there belongs in git: it
+  // is build output and thumbnails.
+  await writeFile(join(projectPath, '.gitignore'), `${CACHE_DIR}/\n`, 'utf8');
   await writeFile(join(projectPath, CACHE_DIR, '.gitignore'), '*\n', 'utf8');
 
   return finalize(projectPath, { project, scenes: [entry] }, entry, sceneJson);
@@ -247,8 +261,22 @@ export async function readSceneFile(projectPath: string, scenePath: string): Pro
   return readFile(resolveInside(projectPath, scenePath), 'utf8');
 }
 
-/** Writes the project file back, through a temporary file like a scene. */
+/**
+ * Writes the project file back, through a temporary file like a scene.
+ *
+ * Stamps `engineVersion` on the way, because this is the one place the file is
+ * written and the field claims to name the build that last wrote it. Only
+ * `createProject` ever set it, so what it actually named was the build that
+ * created the project — which says nothing about the bytes you are reading
+ * when one turns up broken, and that is the whole of what it is for.
+ *
+ * The caller's object is stamped too, rather than a copy being written: every
+ * caller hands the same object straight back to the renderer, and a window
+ * showing one version while the file on disk says another is a worse answer
+ * than no version at all.
+ */
 export async function writeProject(projectPath: string, project: ProjectFile): Promise<void> {
+  project.engineVersion = ENGINE_VERSION;
   const target = join(projectPath, PROJECT_FILE_NAME);
   const temporary = `${target}.tmp`;
   await writeFile(temporary, JSON.stringify(project, null, 2), 'utf8');
