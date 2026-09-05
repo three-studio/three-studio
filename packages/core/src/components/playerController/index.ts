@@ -1,5 +1,5 @@
-import { createPlayerController } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createPlayerController } from './defaults';
 
 /** A first-, third-person or fly controller. */
 export const playerControllerComponent = defineComponent({

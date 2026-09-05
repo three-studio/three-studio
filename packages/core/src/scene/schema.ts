@@ -11,7 +11,9 @@ import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
+export type { PlayerControllerComponent } from '../components/playerController/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
+import type { PlayerControllerComponent } from '../components/playerController/schema';
 import type { ScriptComponent } from '../components/script/schema';
 
 /*
@@ -402,19 +404,6 @@ export interface AudioSourceComponent extends ComponentBase {
    * the largest number is taken first, and among equals the oldest.
    */
   priority: number;
-}
-
-export interface PlayerControllerComponent extends ComponentBase {
-  type: 'playerController';
-  mode: 'fps' | 'tps' | 'fly';
-  moveSpeed: number;
-  sprintMultiplier: number;
-  jumpHeight: number;
-  mouseSensitivity: number;
-  /** Camera height above the entity origin in FPS mode. */
-  eyeHeight: number;
-  /** Camera distance behind the character in TPS mode. */
-  cameraDistance: number;
 }
 
 export type ComponentDoc =

@@ -18,7 +18,6 @@ import type {
   LightKind,
   MaterialDef,
   MeshComponent,
-  PlayerControllerComponent,
   RigidBodyComponent,
   SceneDoc,
   SkySettings,
@@ -203,20 +202,6 @@ export function createAudioSource(): AudioSourceComponent {
     // to say "this one matters" in both directions without editing everything
     // else first.
     priority: 128,
-  };
-}
-
-export function createPlayerController(): PlayerControllerComponent {
-  return {
-    id: createId(),
-    type: 'playerController',
-    mode: 'fps',
-    moveSpeed: 6,
-    sprintMultiplier: 1.8,
-    jumpHeight: 1.2,
-    mouseSensitivity: 0.0022,
-    eyeHeight: 1.7,
-    cameraDistance: 5,
   };
 }
 
