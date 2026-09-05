@@ -18,7 +18,6 @@ import type {
   LightKind,
   MaterialDef,
   MeshComponent,
-  RigidBodyComponent,
   SceneDoc,
   SkySettings,
   WaterComponent,
@@ -142,19 +141,6 @@ export function createCamera(projection: CameraProjection = 'perspective'): Came
     far: 2000,
     frustumSize: 10,
     isMain: false,
-  };
-}
-
-export function createRigidBody(): RigidBodyComponent {
-  return {
-    id: createId(),
-    type: 'rigidbody',
-    bodyType: 'dynamic',
-    mass: 1,
-    linearDamping: 0,
-    angularDamping: 0.05,
-    gravityScale: 1,
-    ccd: false,
   };
 }
 

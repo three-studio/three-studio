@@ -1,5 +1,5 @@
-import { createRigidBody } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createRigidBody } from './defaults';
 
 /** Physics motion for an entity. */
 export const rigidbodyComponent = defineComponent({

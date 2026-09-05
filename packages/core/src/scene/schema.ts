@@ -12,8 +12,10 @@ import type { AudioListenerComponent } from '../components/audioListener/schema'
 import type { LightComponent } from '../components/light/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 export type { PlayerControllerComponent } from '../components/playerController/schema';
+export type { RigidBodyComponent } from '../components/rigidbody/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
 import type { PlayerControllerComponent } from '../components/playerController/schema';
+import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 
 /*
@@ -303,17 +305,6 @@ export interface CameraComponent extends ComponentBase {
   frustumSize: number;
   /** The camera play mode renders through when no player controller is active. */
   isMain: boolean;
-}
-
-export interface RigidBodyComponent extends ComponentBase {
-  type: 'rigidbody';
-  bodyType: 'fixed' | 'dynamic' | 'kinematicPosition';
-  mass: number;
-  linearDamping: number;
-  angularDamping: number;
-  gravityScale: number;
-  /** Continuous collision detection: costly, needed for fast small bodies. */
-  ccd: boolean;
 }
 
 export interface ColliderComponent extends ComponentBase {
