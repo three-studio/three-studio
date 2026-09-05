@@ -3,6 +3,10 @@ import {
   drawsGeometry as audioListenerDrawsGeometry,
   marker as audioListenerMarker,
 } from '../../components/audioListener/overlay';
+import {
+  drawsGeometry as playerControllerDrawsGeometry,
+  marker as playerControllerMarker,
+} from '../../components/playerController/overlay';
 import { drawsGeometry as lightDrawsGeometry, marker as lightMarker } from '../../components/light/overlay';
 import {
   drawsGeometry as scriptDrawsGeometry,
@@ -46,7 +50,7 @@ const RENDERABLE: Record<ComponentType, boolean> = {
   audioListener: audioListenerDrawsGeometry,
   script: scriptDrawsGeometry,
   prefabInstance: prefabInstanceDrawsGeometry,
-  playerController: false,
+  playerController: playerControllerDrawsGeometry,
 };
 
 /** The types that do, so the check below stays three lookups and not twelve. */
@@ -81,7 +85,7 @@ const STYLES: Record<ComponentType, EntityMarker | null> = {
   collider: null,
   script: scriptMarker,
   prefabInstance: prefabInstanceMarker,
-  playerController: null,
+  playerController: playerControllerMarker,
 };
 
 /**
