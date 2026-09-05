@@ -1,4 +1,4 @@
-import { blankComponent } from './defaults';
+import { createModel } from './defaults';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
@@ -135,7 +135,7 @@ export function entitiesFromNodes(
       // group, and a `model` naming a path that draws nothing would load the
       // file to produce an empty object.
       node.draws
-        ? [{ ...blankComponent('model'), assetId, nodePath: node.path, nodeName: node.name }]
+        ? [{ ...createModel(), assetId, nodePath: node.path, nodeName: node.name }]
         : [],
     );
     template.entity.transform = structuredClone(node.transform);

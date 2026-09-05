@@ -11,6 +11,8 @@ import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
+export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
+import type { ScriptComponent } from '../components/script/schema';
 
 /*
  * The vocabulary is re-exported rather than declared, so that everything which
@@ -325,8 +327,6 @@ export interface ColliderComponent extends ComponentBase {
   isSensor: boolean;
 }
 
-export type ScriptPropValue = number | string | boolean | Vec3;
-
 /**
  * Mixer buses, borrowed from Unreal's sound classes: a shallow, fixed set is
  * enough to duck music under dialogue or mute effects, and it keeps every
@@ -402,12 +402,6 @@ export interface AudioSourceComponent extends ComponentBase {
    * the largest number is taken first, and among equals the oldest.
    */
   priority: number;
-}
-
-export interface ScriptComponent extends ComponentBase {
-  type: 'script';
-  assetId: string;
-  props: Record<string, ScriptPropValue>;
 }
 
 export interface PlayerControllerComponent extends ComponentBase {

@@ -1,11 +1,11 @@
-import { blankComponent as blank } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createScript } from './defaults';
 
 /** A user script and its declared properties. */
 export const scriptComponent = defineComponent({
   type: 'script',
-  create: () => blank('script'),
-  fill: (stored) => ({ ...blank('script'), ...stored }),
+  create: createScript,
+  fill: (stored) => ({ ...createScript(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'file-code',
   runtime: true,

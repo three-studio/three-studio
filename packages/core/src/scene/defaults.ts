@@ -11,6 +11,7 @@ import type {
   ComponentDoc,
   ComponentOfType,
   ComponentType,
+  ModelComponent,
   EnvironmentDef,
   GeometryDef,
   GeometryKind,
@@ -220,29 +221,25 @@ export function createPlayerController(): PlayerControllerComponent {
 }
 
 /**
- * The types whose default is a plain literal, with no shaping to do.
+ * A model pointing at nothing, until a drop or an unpack supplies the ids.
  *
- * Kept beside the other factories rather than inlined in each component module:
- * an object literal repeated in a module is a second definition of the shape, and
- * it stops matching the interface silently.
+ * The last of what `blankComponent` held: one generic function over the four
+ * types whose default is a plain literal, written that way so that a literal
+ * repeated in a component module could not quietly stop matching its
+ * interface. Its reason went with the folders — a factory beside its own type
+ * is checked against it — and what is left of it is four ordinary factories.
  */
-export function blankComponent<T extends 'model' | 'script'>(
-  type: T,
-): ComponentOfType<T> {
-  const created: ComponentDoc =
-    type === 'model'
-      ? {
-          id: createId(),
-          type: 'model',
-          assetId: '',
-          nodePath: '',
-          nodeName: '',
-          materialId: null,
-          castShadow: true,
-          receiveShadow: true,
-        }
-      : { id: createId(), type: 'script', assetId: '', props: {} };
-  return created as ComponentOfType<T>;
+export function createModel(): ModelComponent {
+  return {
+    id: createId(),
+    type: 'model',
+    assetId: '',
+    nodePath: '',
+    nodeName: '',
+    materialId: null,
+    castShadow: true,
+    receiveShadow: true,
+  };
 }
 
 export function createMeshComponent(kind: GeometryKind): MeshComponent {
@@ -364,7 +361,7 @@ export function isPlaceable(template: EntityTemplate): boolean {
 }
 
 export function createModelEntity(assetId: string, name: string): EntityTemplate {
-  return createEntity(name, [{ ...blankComponent('model'), assetId }]);
+  return createEntity(name, [{ ...createModel(), assetId }]);
 }
 
 /**
