@@ -12,7 +12,6 @@ import {
   FIXED_STEP,
   SceneHost,
   createRenderer,
-  rendererCount,
   studioTime,
   type RendererBackend,
   type SceneBinder,
@@ -88,6 +87,19 @@ export class EditorViewport {
   private readonly sceneView = new Presentation('scene');
   /** The running game's panel. The engine's `Input` listens on its canvas. */
   private readonly gameView = new Presentation('game');
+  /**
+   * The third view: a scene of somebody else's, drawn through this renderer.
+   *
+   * Today that is the import dialog's model preview, and it is the whole of
+   * `attachPreview`'s reason to exist — see there.
+   */
+  private readonly previewView = new Presentation('preview');
+  /** What the third view is currently showing, or null while nothing is. */
+  private preview: {
+    scene: Scene;
+    camera: PerspectiveCamera;
+    onFrame: () => void;
+  } | null = null;
 
   /**
    * Projects the scene document onto three.js objects. The resolver reads the
@@ -456,6 +468,41 @@ export class EditorViewport {
   }
 
   /**
+   * Lends the third view to a scene this viewport knows nothing else about, and
+   * hands back the canvas it will land in.
+   *
+   * The import dialog's model preview is what this is for. It used to open a
+   * **second `WebGPURenderer`** of its own, and two of those drawing inside one
+   * animation frame destroy and rebuild each other's output target every frame
+   * — so the viewport counted the renderers on the page and stood down for as
+   * long as it was not alone. On screen that read as the viewport freezing the
+   * moment the import dialog opened. One renderer with several presentations is
+   * the answer to both, and the mechanism already existed for the Scene and the
+   * Game; this is a third caller of it.
+   *
+   * The canvas comes back because a preview builds its own `OrbitControls`, and
+   * controls need an element. `onFrame` runs once per frame immediately before
+   * the draw: damped controls have to be updated every frame, and doing it from
+   * a loop of the caller's own would put it outside the frame the render
+   * belongs to, which is the mistake this whole seam exists to stop making.
+   */
+  attachPreview(
+    host: HTMLElement,
+    scene: Scene,
+    camera: PerspectiveCamera,
+    onFrame: () => void,
+  ): HTMLCanvasElement {
+    this.preview = { scene, camera, onFrame };
+    this.attachView(this.previewView, host);
+    return this.previewView.canvas;
+  }
+
+  detachPreview(): void {
+    this.preview = null;
+    this.detachView(this.previewView);
+  }
+
+  /**
    * Moves one view's canvas into a dock panel.
    *
    * Two of these rather than one shared canvas handed back and forth, which is
@@ -503,6 +550,7 @@ export class EditorViewport {
     this.binder.dispose();
     this.detachScene();
     this.detachGame();
+    this.detachPreview();
     this.renderer.dispose();
   }
 
@@ -560,7 +608,7 @@ export class EditorViewport {
   }
 
   /**
-   * Takes both panels' boxes, and sizes the one surface to hold the larger.
+   * Takes every view's box, and sizes the one surface to hold the largest.
    *
    * Each view is drawn into the top-left corner of the surface at its own size,
    * so the surface has to be as large as the largest of them and there is no
@@ -572,8 +620,10 @@ export class EditorViewport {
   private resize(): void {
     const sceneMoved = this.sceneView.measure();
     // Measured for the side effect, and the answer is not needed: the game's
-    // aspect is pushed below whether or not its panel is the thing that moved.
+    // and the preview's aspects are pushed below whether or not their panel is
+    // the thing that moved.
     this.gameView.measure();
+    this.previewView.measure();
 
     // Each view's camera answers to its own panel, whatever the surface is.
     if (sceneMoved && this.sceneView.visible) {
@@ -585,9 +635,18 @@ export class EditorViewport {
     // engine exists precisely so that this hands it the shape of its panel, and
     // that panel has usually not changed size at all.
     if (this.engine) this.syncGameAspect(this.engine);
+    // Unconditionally for the same reason, and for one of its own: selecting
+    // another file in the import dialog swaps one preview camera for another
+    // without the panel it sits in moving a pixel. A camera that never hears a
+    // box keeps the 1:1 aspect it was constructed with.
+    if (this.preview && this.previewView.visible) {
+      const { camera } = this.preview;
+      camera.aspect = this.previewView.width / this.previewView.height;
+      camera.updateProjectionMatrix();
+    }
 
-    const width = Math.max(this.sceneView.width, this.gameView.width);
-    const height = Math.max(this.sceneView.height, this.gameView.height);
+    const width = Math.max(this.sceneView.width, this.gameView.width, this.previewView.width);
+    const height = Math.max(this.sceneView.height, this.gameView.height, this.previewView.height);
 
     // Measured, not acted on. Whether a same-size `setSize` is worth skipping is
     // the question the probe is here to answer, and skipping it now would change
@@ -620,42 +679,28 @@ export class EditorViewport {
    * Whether something owns the whole window, so there is nothing to draw for.
    *
    * A modal is defined by `overlayStore` as a surface that "owns the whole
-   * window until it is answered", and the import dialog is one. Skipping the
-   * render while one is up is worth it twice over.
+   * window until it is answered". The scene is behind an opaque panel then, and
+   * drawing four thousand draw calls nobody can see is pure waste.
    *
-   * The cheap half: the scene is behind an opaque panel, and drawing four
-   * thousand draw calls nobody can see is pure waste.
-   *
-   * The half that is not cheap at all: the import dialog opens **a second
-   * WebGPU renderer** for its model preview, and two renderers drawing in the
-   * same animation frame make both of them destroy and rebuild their output
-   * target every frame. It reports as hundreds of `Destroyed texture … used in
-   * a submit` per second, on both renderers at once, and it costs a texture
-   * allocation per renderer per frame. Measured: 111 errors in four seconds with
-   * both drawing, none in five with only one.
-   *
-   * What this gives up is that the strip of scene visible through the dialog's
+   * What this gives up is that the strip of scene visible through a dialog's
    * 50%-black backdrop holds still. For a scene it is indistinguishable; for one
    * with moving clouds it is a frozen frame in a nine-pixel margin.
    *
-   * **Two conditions, and they are not the same condition.** The modal is the
-   * intent — nothing to draw for. `rendererCount()` is the mechanism, and it is
-   * what closes the edge the modal alone leaves open: the overlay comes off the
-   * stack and the preview's renderer is disposed in the same React commit, in an
-   * order this side does not get to choose. Asking how many renderers are
-   * actually alive answers exactly the question, without guessing at frames.
+   * **It answers for the Scene and the Game, and not for the preview**, which is
+   * *inside* the modal — see `tick`.
    *
-   * One error survives all of this: exactly one, on the first import dialog
-   * closed in a session, on the viewport's own target. It is not this pause —
-   * pausing and resuming the loop on its own emits nothing — but the teardown of
-   * the second renderer. A frame of hysteresis before drawing again was tried
-   * and measured, and changed nothing, so it is not here.
+   * There used to be a second condition here, `rendererCount() > 1`, and it was
+   * the mechanism rather than the intent: the import dialog opened a second
+   * `WebGPURenderer` for its model preview, two renderers drawing in one frame
+   * destroy and rebuild each other's output target, and standing down was the
+   * only way out that did not need to guess at frames. The preview draws through
+   * this renderer now — `attachPreview` — so there is no second one to count and
+   * nothing left here but the question this side can actually answer: is anyone
+   * looking. The hazard itself has not gone anywhere; it is written down where
+   * the one-renderer rule lives, in `Presentation`.
    */
   private shouldSkipRender(): boolean {
-    return (
-      rendererCount() > 1 ||
-      useOverlayStore.getState().stack.some((overlay) => overlay.kind === 'modal')
-    );
+    return useOverlayStore.getState().stack.some((overlay) => overlay.kind === 'modal');
   }
 
   private tick(time: number): void {
@@ -738,6 +783,17 @@ export class EditorViewport {
     // which refreshes the batches itself.
     if (this.gizmo.isEngaged) this.binder.updateBatches();
 
+    // The preview draws whether or not a modal is up, because it is *in* the
+    // modal that covers everything else: skipping it would leave the import
+    // dialog showing a blank rectangle where the model should be. Its own
+    // per-frame work runs here too, in the frame its render belongs to — see
+    // `attachPreview`.
+    const preview = this.preview;
+    if (preview && this.previewView.visible) {
+      preview.onFrame();
+      this.draw(preview.scene, preview.camera, this.previewView);
+    }
+
     // Simulation carries on; only the drawing stops. Pausing the game because
     // a dialog opened would be a different decision, and not one to take here.
     if (covered) return;
@@ -762,6 +818,19 @@ export class EditorViewport {
     // visible panel — so the view fits in its corner. `setSize` resets this,
     // which is why it is set per draw rather than per resize.
     this.renderer.setViewport(0, 0, view.width, view.height);
+    /*
+     * `render()` and **not** `renderAsync()`. The two look interchangeable — the
+     * async one is `await this.init(); this.render(...)` and nothing else — but
+     * the await defers the render past the end of the animation frame callback,
+     * and a WebGPU render that submits outside the frame it was started in
+     * submits against textures that frame has already invalidated. It cost
+     * hundreds of `Destroyed texture … used in a submit` per second back when
+     * the import preview had a renderer of its own to make the mistake on; it
+     * would cost the same here, on the only renderer there is.
+     *
+     * `render()` has one precondition, an initialised backend, and
+     * `createRenderer` already awaits `renderer.init()`.
+     */
     this.renderer.render(scene, camera);
     view.show(this.surface, this.renderer.getPixelRatio());
   }

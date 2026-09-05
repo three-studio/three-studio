@@ -9,7 +9,8 @@
  * renderer draws into one surface that is in no document, each view takes its
  * turn in a corner of it, and each panel blits its own corner out here. That is
  * what lets the Scene and the Game be on screen at once, which one canvas moved
- * between them could never do.
+ * between them could never do — and what lets the import dialog's model preview
+ * be a third view rather than the second renderer it used to be.
  *
  * The corner is always the top-left, because that is where
  * `renderer.setViewport(0, 0, w, h)` lands in both backends: three's WebGPU
@@ -36,7 +37,7 @@ export class Presentation {
 
   private readonly context: CanvasRenderingContext2D;
 
-  constructor(view: 'scene' | 'game') {
+  constructor(view: 'scene' | 'game' | 'preview') {
     // `alpha: false` because what arrives is opaque — the scene clears to its
     // own background — and an opaque 2D canvas is the cheaper composite.
     const context = this.canvas.getContext('2d', { alpha: false });
@@ -48,10 +49,11 @@ export class Presentation {
     this.canvas.className = 'block h-full w-full outline-none';
     // Focusable, because this is the element the panel's input works against:
     // the editor's pointer and keyboard on the Scene view, the game's `Input`
-    // on the Game view. They used to be the same element and had to take turns.
+    // on the Game view, the preview's `OrbitControls` on its own. The first two
+    // used to be the same element and had to take turns.
     this.canvas.tabIndex = 0;
-    // Named because the two are otherwise identical elements in different
-    // panels, and the headless check has to tell them apart.
+    // Named because they are otherwise identical elements in different panels,
+    // and the headless check has to tell them apart.
     this.canvas.dataset['view'] = view;
   }
 
