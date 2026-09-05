@@ -18,6 +18,27 @@ import {
 // and loaders cannot fetch through it.
 registerAssetScheme();
 
+/*
+ * A software GPU, for a machine that has none.
+ *
+ * A CI runner has no graphics hardware, and Chromium will not fall back to
+ * SwiftShader for WebGL on its own — software rendering is blocklisted, so the
+ * canvas comes up with no context at all and three's `WebGPURenderer` has
+ * nothing left to fall back to. What that produces is not a crash: it is a
+ * window with the whole editor chrome painted and zero triangles in it, which
+ * is exactly the "looks like it works" failure the harness exists to catch.
+ *
+ * Its own variable rather than part of `STUDIO_SMOKE`, because a developer's
+ * machine has a GPU and forcing software rendering there would measure
+ * something nobody ships. Must be set before the app is ready; switches
+ * appended after that are ignored.
+ */
+if (process.env['STUDIO_SMOKE_SOFTWARE_GPU']) {
+  app.commandLine.appendSwitch('use-gl', 'angle');
+  app.commandLine.appendSwitch('use-angle', 'swiftshader');
+  app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+}
+
 const isDev = !app.isPackaged;
 
 void app.whenReady().then(() => {
