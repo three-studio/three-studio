@@ -117,6 +117,7 @@ function ViewportStats() {
   const drawCalls = useViewportStore((s) => s.drawCalls);
   const triangles = useViewportStore((s) => s.triangles);
   const flySpeed = useViewportStore((s) => s.flySpeed);
+  const fallbackLighting = useViewportStore((s) => s.fallbackLighting);
 
   return (
     <div className="pointer-events-none absolute right-2 top-2 rounded-sm border border-line-soft/60 bg-surface-0/75 px-2 py-1.5 font-mono text-2xs text-ink-muted backdrop-blur-sm">
@@ -142,6 +143,16 @@ function ViewportStats() {
         <span>Fly</span>
         <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
       </div>
+      {/* Only while it is on, and last, so it reads as a note about this scene
+          rather than as one more counter — and so the numbers above it do not
+          move when it appears. What it says is that this view is lit by
+          something Play and a build do not have. */}
+      {fallbackLighting && (
+        <div className="flex justify-between gap-4">
+          <span>Lighting</span>
+          <span className="text-warn">Editor default</span>
+        </div>
+      )}
     </div>
   );
 }

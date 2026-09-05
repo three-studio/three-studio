@@ -244,6 +244,22 @@ export class Engine {
     }
   }
 
+  /**
+   * A scene with no light at all renders black, and nothing else says so.
+   *
+   * Silent at runtime like the rest of these, and worse than silent: the Scene
+   * view lights such a scene with a default pair of its own, so the author has
+   * already seen it lit. What is named here is therefore the difference, not
+   * the absence — the same condition that switches the editor's pair on, said
+   * from the side that does not have it. See `viewport/editorProjection`.
+   */
+  private checkLighting(scene: SceneDoc): void {
+    if (entitiesWith(scene, 'light').length > 0) return;
+    this.warnings.push(
+      'This scene has no lights, so it renders black. The Scene view shows a default light that a build will not have.',
+    );
+  }
+
   static async create(options: EngineOptions): Promise<Engine> {
     const physics =
       options.enablePhysics === false ? null : await PhysicsWorld.create(options.physicsSettings);
@@ -263,6 +279,7 @@ export class Engine {
     engine.pickCamera(options.scene);
     engine.checkPhysicsSetup(options.scene);
     engine.checkAudioSetup(options.scene);
+    engine.checkLighting(options.scene);
 
     return engine;
   }

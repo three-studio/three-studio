@@ -929,6 +929,10 @@ export class EditorViewport {
     // once per sync.
     const hasAuthoredLight = Object.keys(scene.components.light).length > 0;
     this.fallbackLighting.visible = !hasAuthoredLight;
+    // And published, because the pair is editor-only: the same document is
+    // black in Play and in a build. `Engine.create` says the other half of this
+    // sentence, on the screen where that half is the one that matters.
+    useViewportStore.getState().setFallbackLighting(!hasAuthoredLight);
   }
 }
 
