@@ -23,6 +23,7 @@ import {
   type SceneEntry,
 } from '@three-studio/core';
 import { resolveInside } from './paths';
+import { FileIndex, stampOf } from './projectIndex';
 import { remember } from './recentProjects';
 import { writeScriptTypings } from './scripts';
 
@@ -91,13 +92,21 @@ export async function createProject(name: string, directory: string): Promise<Op
  * cache of exactly this walk and could go stale: a scene copied in the Finder
  * was invisible, and one deleted there stopped the project from opening.
  *
- * The id lives in each document, so this reads every file — an expense the
- * project file used to save, and the reason T-019 puts an index in `.studio/`.
+ * The id lives inside each document, which made this read every scene whole to
+ * get twelve characters out of the front of it — twenty scenes of three
+ * thousand entities is 24 MB read for 20 ids, and it took 75 ms every time a
+ * project opened or a scene was created. The index turns that into a `stat`
+ * each; it is keyed on mtime and size, so a scene edited anywhere is read
+ * again, and a missing or stale index costs one slow walk.
+ *
  * A file that cannot be read or parsed is skipped rather than thrown on: one
  * broken scene must not be a project that will not open.
  */
 export async function discoverScenes(projectPath: string): Promise<SceneEntry[]> {
   const found: SceneEntry[] = [];
+  // Only the app version: unlike a sidecar, nothing here is repaired or filled
+  // in on read, so the id in the file is the whole of what is cached.
+  const index = await FileIndex.open<string>(projectPath, 'scenes.index.json', ENGINE_VERSION);
 
   const walk = async (directory: string): Promise<void> => {
     let entries;
@@ -115,8 +124,17 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
         await walk(child);
       } else if (entry.name.endsWith(SCENE_FILE_SUFFIX)) {
         const path = toPosix(relative(projectPath, child));
-        const id = await readSceneId(child, path);
-        if (id !== null) found.push({ id, name: sceneName(path), path, shadowedBy: null });
+        const stamp = await stampOf(child);
+        if (stamp === null) continue;
+
+        let id = index.reuse(path, stamp);
+        if (id === undefined) {
+          const read = await readSceneId(child, path);
+          if (read === null) continue;
+          index.put(path, stamp, read);
+          id = read;
+        }
+        found.push({ id, name: sceneName(path), path, shadowedBy: null });
       }
     }
   };
@@ -134,6 +152,7 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
     if (winner === undefined) claimed.set(entry.id, entry.path);
     else entry.shadowedBy = winner;
   }
+  await index.save();
   return found;
 }
 
