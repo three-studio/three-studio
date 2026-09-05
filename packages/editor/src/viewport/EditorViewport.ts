@@ -20,6 +20,7 @@ import {
 import {
   PerspectiveCamera,
   Vector3,
+  type Camera,
   type Group,
   type Scene,
   type WebGPURenderer,
@@ -48,6 +49,7 @@ import { Picker } from './Picker';
 import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 import { retireFrameBufferTarget } from './frameBufferTarget';
 import { createEditorProjection } from './editorProjection';
+import { Presentation } from './Presentation';
 import type { SelectionOutline } from './SelectionOutline';
 import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -62,9 +64,11 @@ const SCRATCH_DIRECTION = new Vector3();
  * The editor's 3D view: renderer, camera, navigation and the helper geometry
  * that is not part of the scene document (grid, and later gizmos).
  *
- * It owns a single canvas which is moved between dock panels rather than
- * recreated, because a second WebGPU device is expensive and the Scene and Game
- * tabs are never visible at the same time.
+ * It owns the one renderer this document is allowed — a second `WebGPURenderer`
+ * drawing in the same frame destroys this one's output target — and draws every
+ * view through it, into a surface no panel holds. What a panel shows is a copy
+ * of its own corner of that surface; see `Presentation`. That is what lets the
+ * Scene and the Game be on screen together.
  */
 export class EditorViewport {
   /**
@@ -74,9 +78,16 @@ export class EditorViewport {
    */
   readonly scene: Scene;
   readonly camera: PerspectiveCamera;
-  readonly canvas: HTMLCanvasElement;
   readonly controls: FlyControls;
   readonly backend: RendererBackend;
+
+  /**
+   * The Scene view's panel, and what the editor's pointer and keyboard work
+   * against — the canvas of the panel the handles are actually drawn in.
+   */
+  private readonly sceneView = new Presentation('scene');
+  /** The running game's panel. The engine's `Input` listens on its canvas. */
+  private readonly gameView = new Presentation('game');
 
   /**
    * Projects the scene document onto three.js objects. The resolver reads the
@@ -101,6 +112,15 @@ export class EditorViewport {
   private readonly outline: SelectionOutline;
   private readonly fallbackLighting: Group;
   private readonly renderer: WebGPURenderer;
+  /**
+   * Where the renderer draws, and it is in no document.
+   *
+   * Everything on screen is a copy taken out of a corner of this. It is as big
+   * as the largest panel showing a view, never bigger: resizing it retires
+   * three's tone-mapping target, which is what `retireFrameBufferTarget` is
+   * about, so it is a thing to do when a panel moves and not per frame.
+   */
+  private readonly surface: HTMLCanvasElement;
   /** Non-null while the game is running; owns its own scene graph and physics. */
   private engine: Engine | null = null;
   /** Owns the engine while playing, and moves between scenes. */
@@ -127,7 +147,6 @@ export class EditorViewport {
    */
   private readonly listeners = new AbortController();
   private readonly resizeObserver: ResizeObserver;
-  private container: HTMLElement | null = null;
   /** Last size handed to `setSize`, so an unchanged one can be skipped. */
   private lastWidth = 0;
   private lastHeight = 0;
@@ -147,10 +166,10 @@ export class EditorViewport {
   private disposed = false;
 
   static async create(): Promise<EditorViewport> {
-    const canvas = document.createElement('canvas');
-    canvas.className = 'block h-full w-full outline-none';
-    // Focusable so the viewport can own keyboard input while it is hovered.
-    canvas.tabIndex = 0;
+    // The renderer's own canvas, which no panel ever holds and which therefore
+    // needs neither a class nor a tab index: what is on screen is a copy of a
+    // corner of it, taken by `Presentation`.
+    const surface = document.createElement('canvas');
 
     /*
      * The project's own settings, so the viewport shows what a build will —
@@ -162,7 +181,7 @@ export class EditorViewport {
     const rendering =
       useProjectStore.getState().project?.settings.rendering ?? createRenderingSettings();
     const { renderer, backend } = await createRenderer({
-      canvas,
+      canvas: surface,
       forceWebGL: rendering.forceWebGL,
       antialias: rendering.antialias,
       maxPixelRatio: rendering.maxPixelRatio,
@@ -171,16 +190,16 @@ export class EditorViewport {
     });
     // Off unless `studio.probe.render` is set in localStorage; see `renderProbe`.
     installRenderProbe(renderer);
-    return new EditorViewport(canvas, renderer, backend, rendering);
+    return new EditorViewport(surface, renderer, backend, rendering);
   }
 
   private constructor(
-    canvas: HTMLCanvasElement,
+    surface: HTMLCanvasElement,
     renderer: WebGPURenderer,
     backend: RendererBackend,
     private readonly rendering: RenderingSettings,
   ) {
-    this.canvas = canvas;
+    this.surface = surface;
     this.renderer = renderer;
     this.backend = backend;
 
@@ -220,7 +239,7 @@ export class EditorViewport {
     // arbitration actually arbitrates. See `installPointerArbitration`.
     this.installPointerArbitration();
 
-    this.controls = new FlyControls(this.camera, canvas);
+    this.controls = new FlyControls(this.camera, this.sceneView.canvas);
     // B11: `locked` was documented as "excluded from picking" and read by
     // nobody. One rule, `capabilitiesOf`, answers here and at the gizmo below.
     this.picker = new Picker(
@@ -236,7 +255,7 @@ export class EditorViewport {
       // their marker. Tested before the scene — see `Picker.pickOverlay`.
       this.overlay.markers,
     );
-    this.gizmo = new GizmoController(this.camera, canvas);
+    this.gizmo = new GizmoController(this.camera, this.sceneView.canvas);
     // Into the group the projection reserved for it, because `TransformControls`
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
@@ -259,8 +278,9 @@ export class EditorViewport {
    * Starts and stops the game in response to the transport buttons.
    *
    * The engine is created here rather than in a React component because it
-   * shares this renderer and canvas — a second renderer would mean a second
-   * WebGPU device for a view that is never visible at the same time.
+   * draws through this renderer, and this document only gets one: a second
+   * `WebGPURenderer` in the same frame destroys this one's output target every
+   * frame. It has a canvas of its own, though — the Game panel's.
    */
   private watchPlayState(): void {
     let previous = useEditorStore.getState().playState;
@@ -336,7 +356,10 @@ export class EditorViewport {
         // Play mode draws on this same renderer, so the running scene captures
         // its sky on the device the editor already holds.
         renderer: this.renderer,
-        domElement: this.canvas,
+        // The Game panel's own canvas. The two views had to share one until
+        // they could be drawn separately, and sharing it is what made pressing
+        // Play hand the editor's pointer handling over to the game's.
+        domElement: this.gameView.canvas,
         // The editor's one context, shared with the preview and kept apart from
         // it by a root gain each (ADR-4). `undefined` where there is no Web
         // Audio, which makes the game silent rather than broken.
@@ -360,7 +383,7 @@ export class EditorViewport {
         next.onWarning = (warnings) => {
           useViewportStore.getState().setPlayWarnings(warnings);
         };
-        next.setViewportAspect(this.canvas.clientWidth / Math.max(this.canvas.clientHeight, 1));
+        this.syncGameAspect(next);
       };
       if (useEditorStore.getState().playState === 'stopped') {
         // Stopped again while the physics module was loading. The host goes
@@ -381,9 +404,10 @@ export class EditorViewport {
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
       void engine.audio?.unlock();
-      // The editor camera and gizmo share this canvas. Left running they would
-      // fight the game for the pointer — and the right button would hand the
-      // pointer lock to the editor's fly camera mid-play.
+      // Not because they would fight the game for the pointer — each view has
+      // its own canvas now — but because the Scene view is a *view* while the
+      // game runs: flying it or dragging a handle would edit a document that
+      // Stop is about to put back the way it was.
       this.controls.setEnabled(false);
       this.gizmo.setEnabled(false);
       useViewportStore.getState().setPlayWarnings([...engine.warnings]);
@@ -413,21 +437,51 @@ export class EditorViewport {
     }
   }
 
-  /** Move the canvas into a dock panel. Safe to call repeatedly. */
-  attach(container: HTMLElement): void {
-    if (this.disposed || this.container === container) return;
-    this.detach();
-    this.container = container;
-    container.appendChild(this.canvas);
-    this.resizeObserver.observe(container);
+  /** Show the Scene view in this panel. Safe to call repeatedly. */
+  attachScene(host: HTMLElement): void {
+    this.attachView(this.sceneView, host);
+  }
+
+  detachScene(): void {
+    this.detachView(this.sceneView);
+  }
+
+  /** Show the running game in this panel. Safe to call repeatedly. */
+  attachGame(host: HTMLElement): void {
+    this.attachView(this.gameView, host);
+  }
+
+  detachGame(): void {
+    this.detachView(this.gameView);
+  }
+
+  /**
+   * Moves one view's canvas into a dock panel.
+   *
+   * Two of these rather than one shared canvas handed back and forth, which is
+   * what the Scene and Game panels used to do: whichever unmounted last took
+   * the canvas away from the one that had just claimed it, so they each had to
+   * know about play state to keep out of each other's way. A panel now owns its
+   * own element and says nothing about the other.
+   */
+  private attachView(view: Presentation, host: HTMLElement): void {
+    if (this.disposed || view.host === host) return;
+    this.detachView(view);
+    view.host = host;
+    host.appendChild(view.canvas);
+    this.resizeObserver.observe(host);
     this.sizeDirty = true;
   }
 
-  detach(): void {
-    if (!this.container) return;
-    this.resizeObserver.unobserve(this.container);
-    this.canvas.remove();
-    this.container = null;
+  private detachView(view: Presentation): void {
+    const host = view.host;
+    if (!host) return;
+    this.resizeObserver.unobserve(host);
+    view.canvas.remove();
+    view.host = null;
+    // The surface is as large as the largest visible panel, so one going away
+    // is a size change like any other.
+    this.sizeDirty = true;
   }
 
   dispose(): void {
@@ -447,7 +501,8 @@ export class EditorViewport {
     this.outline.dispose();
     this.overlay.dispose();
     this.binder.dispose();
-    this.detach();
+    this.detachScene();
+    this.detachGame();
     this.renderer.dispose();
   }
 
@@ -478,7 +533,7 @@ export class EditorViewport {
    * fallback is at the floor's own height.
    */
   dropPoint(clientX: number, clientY: number): Vector3 {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this.sceneView.canvas.getBoundingClientRect();
     const hit = this.picker.raycast(clientX, clientY, rect, this.camera);
     if (hit) return hit;
 
@@ -500,18 +555,39 @@ export class EditorViewport {
    * same reason.
    */
   placementPoint(): Vector3 {
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this.sceneView.canvas.getBoundingClientRect();
     return this.dropPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
+  /**
+   * Takes both panels' boxes, and sizes the one surface to hold the larger.
+   *
+   * Each view is drawn into the top-left corner of the surface at its own size,
+   * so the surface has to be as large as the largest of them and there is no
+   * reason for it to be larger. Sizing it per view instead — a `setSize` before
+   * each render — would retire three's tone-mapping target twice a frame, which
+   * is the churn `retireFrameBufferTarget` exists to keep down to one per
+   * resize.
+   */
   private resize(): void {
-    const container = this.container;
-    if (!container) return;
+    const sceneMoved = this.sceneView.measure();
+    // Measured for the side effect, and the answer is not needed: the game's
+    // aspect is pushed below whether or not its panel is the thing that moved.
+    this.gameView.measure();
 
-    const { clientWidth, clientHeight } = container;
-    // A dock panel on a hidden tab reports zero; resizing to it would destroy
-    // the swap chain and produce a black canvas when the tab comes back.
-    if (clientWidth === 0 || clientHeight === 0) return;
+    // Each view's camera answers to its own panel, whatever the surface is.
+    if (sceneMoved && this.sceneView.visible) {
+      this.camera.aspect = this.sceneView.width / this.sceneView.height;
+      this.camera.updateProjectionMatrix();
+    }
+    // Unconditionally rather than on `gameMoved`, because the engine may have
+    // arrived since the last resize: `beginPlay` raises the dirty flag once the
+    // engine exists precisely so that this hands it the shape of its panel, and
+    // that panel has usually not changed size at all.
+    if (this.engine) this.syncGameAspect(this.engine);
+
+    const width = Math.max(this.sceneView.width, this.gameView.width);
+    const height = Math.max(this.sceneView.height, this.gameView.height);
 
     // Measured, not acted on. Whether a same-size `setSize` is worth skipping is
     // the question the probe is here to answer, and skipping it now would change
@@ -520,17 +596,24 @@ export class EditorViewport {
     // rewrites `domElement.width`/`height` unconditionally, which reconfigures
     // the WebGPU swap chain even for an identical value — so the one that counts
     // has to live here.
-    const changed = clientWidth !== this.lastWidth || clientHeight !== this.lastHeight;
-    probeResize(clientWidth, clientHeight, changed);
+    const changed = width !== this.lastWidth || height !== this.lastHeight;
+    probeResize(width, height, changed);
     if (!changed) return;
-    this.lastWidth = clientWidth;
-    this.lastHeight = clientHeight;
+    // Nothing is showing a view: a dock panel on a hidden tab reports zero, and
+    // resizing to that would destroy the swap chain and hand back a black
+    // canvas when the tab comes forward again. The surface keeps its size.
+    if (width === 0 || height === 0) return;
 
-    this.camera.aspect = clientWidth / clientHeight;
-    this.camera.updateProjectionMatrix();
-    this.engine?.setViewportAspect(clientWidth / clientHeight);
-    this.renderer.setSize(clientWidth, clientHeight, false);
+    this.lastWidth = width;
+    this.lastHeight = height;
+    this.renderer.setSize(width, height, false);
     retireFrameBufferTarget(this.renderer);
+  }
+
+  /** Hands the running game the shape of the panel it is drawn in. */
+  private syncGameAspect(engine: Engine): void {
+    if (!this.gameView.visible) return;
+    engine.setViewportAspect(this.gameView.width / this.gameView.height);
   }
 
   /**
@@ -580,7 +663,7 @@ export class EditorViewport {
 
     // First thing in the frame, so a destroy reported later can be attributed to
     // this frame's size or to no size change at all. No-op unless armed.
-    probeFrame(this.renderer, this.container);
+    probeFrame(this.renderer, this.sceneView.host);
 
     // Before `beginFrame` and before either render, and *before* the covered
     // check: a viewport parked behind a modal still has to take the new size, or
@@ -624,37 +707,63 @@ export class EditorViewport {
       // Paused means paused, including the part you can hear. The root gain
       // rather than the context, which the preview is sharing.
       engine.audio?.setSuspended(playState !== 'playing');
-
-      // Simulation carries on; only the drawing stops. Pausing the game because
-      // a dialog opened would be a different decision, and not one to take here.
-      if (covered) return;
-      this.renderer.render(engine.scene, engine.activeCamera);
-      this.reportStats(time);
-      return;
+    } else {
+      // `raw`, not the simulated delta: flying the editor camera is not part of
+      // the simulation, and a timescale of zero must not nail it to the spot.
+      //
+      // Only while the Scene view is in a panel: the loop keeps running once it
+      // is detached, and integrating a gesture nobody can see is how a stuck key
+      // used to travel while the Scene tab was closed.
+      if (this.sceneView.host) this.controls.update(raw);
+      // The ear rides the editor camera while nothing is running, which is what
+      // makes an audition of a positional source worth anything: fly toward the
+      // source and it gets louder. A no-op until something has actually been
+      // previewed, because the preview builds its engine lazily. Not while the
+      // game runs: the ear is the game's then, and two writers of one listener
+      // is a mixing bug that sounds like a bad scene.
+      audioPreview.setListener(...cameraPose(this.camera));
     }
 
-    this.syncDocument();
-    // `raw`, not the simulated delta: flying the editor camera is not part of
-    // the simulation, and a timescale of zero must not nail it to the spot.
-    //
-    // Only while the canvas is in a panel: the loop keeps running once it is
-    // detached, and integrating a gesture nobody can see is how a stuck key
-    // used to travel while the Scene tab was closed.
-    if (this.container) this.controls.update(raw);
-    this.syncSelection();
-    // The ear rides the editor camera while nothing is running, which is what
-    // makes an audition of a positional source worth anything: fly toward the
-    // source and it gets louder. A no-op until something has actually been
-    // previewed, because the preview builds its engine lazily.
-    audioPreview.setListener(...cameraPose(this.camera));
+    // The Scene view is a view of the *document*, playing or not — which is the
+    // whole point of being able to see it next to the game. It used to be that
+    // pressing Play took the canvas away from this panel, so none of this ran
+    // and none of it had to.
+    if (this.sceneView.visible) {
+      this.syncDocument();
+      this.syncSelection();
+    }
     // Only while a handle is held: the gizmo moves the object directly and the
     // document catches up a frame later, so without this a batched object
     // lags the handle by a frame. Every other change comes through `sync`,
     // which refreshes the batches itself.
     if (this.gizmo.isEngaged) this.binder.updateBatches();
+
+    // Simulation carries on; only the drawing stops. Pausing the game because
+    // a dialog opened would be a different decision, and not one to take here.
     if (covered) return;
-    this.renderer.render(this.scene, this.camera);
+
+    this.draw(this.scene, this.camera, this.sceneView);
+    if (engine) this.draw(engine.scene, engine.activeCamera, this.gameView);
     this.reportStats(time);
+  }
+
+  /**
+   * Renders one view into its corner of the surface, and hands its panel a copy.
+   *
+   * A panel nobody is looking at — a closed tab, or one behind another — has a
+   * zero-sized box and is not drawn at all. That is the same answer a hidden
+   * dock panel gave before by being the panel the canvas was not in, arrived at
+   * by measuring rather than by which panel happened to hold the canvas.
+   */
+  private draw(scene: Scene, camera: Camera, view: Presentation): void {
+    if (!view.visible) return;
+
+    // The surface is at least this big — `resize` sized it to the largest
+    // visible panel — so the view fits in its corner. `setSize` resets this,
+    // which is why it is set per draw rather than per resize.
+    this.renderer.setViewport(0, 0, view.width, view.height);
+    this.renderer.render(scene, camera);
+    view.show(this.surface, this.renderer.getPixelRatio());
   }
 
   private syncSelection(): void {
@@ -677,20 +786,32 @@ export class EditorViewport {
      * the same rule that greys the menu entry.
      */
     const current = Selection.of(selection, expandedScene().scene);
-    // `isNavigating` only covers the fly gesture; `navigating` covers pan and
-    // orbit too, and it is what keeps the handles away for the whole press.
-    this.gizmo.setEnabled(!this.controls.isNavigating && !this.navigating);
-    this.gizmo.update(current, resolve, bounds, transformMode);
+    /*
+     * Not while the game runs, which is new: this used to be reached only when
+     * nothing was playing, because Play took the canvas away from this panel.
+     * The Scene view is drawn every frame of Play now, and handles that cannot
+     * be dragged — `beginPlay` switches them off, and a drag would edit a
+     * document Stop is about to put back — must not be drawn either. Leaving
+     * `update` to run would draw them: it ends by showing the helper.
+     *
+     * `isNavigating` only covers the fly gesture; `navigating` covers pan and
+     * orbit too, and it is what keeps the handles away for the whole press.
+     */
+    if (this.engine === null) {
+      this.gizmo.setEnabled(!this.controls.isNavigating && !this.navigating);
+      this.gizmo.update(current, resolve, bounds, transformMode);
+    }
 
     // `current.ids` rather than the store's: an id naming nothing has already
     // been dropped there, and a marker for it would sit at the origin forever.
-    // The canvas height, not the container's — the canvas is what the projection
-    // was built against, and the two differ for a frame after a dock resize.
+    // The measured height, not the panel's current one — it is the height the
+    // camera's aspect was built from, and the two differ for a frame after a
+    // dock resize.
     this.overlay.update(
       expandedScene().scene,
       current.ids,
       this.camera,
-      this.canvas.clientHeight,
+      this.sceneView.height,
       showGizmos,
     );
 
@@ -720,7 +841,7 @@ export class EditorViewport {
   private installPointerArbitration(): void {
     const { signal } = this.listeners;
 
-    this.canvas.addEventListener(
+    this.sceneView.canvas.addEventListener(
       'pointerdown',
       (event) => {
         if (this.engine) return;
@@ -756,7 +877,7 @@ export class EditorViewport {
     };
     window.addEventListener('pointerup', endGesture, { signal });
     window.addEventListener('pointercancel', endGesture, { signal });
-    this.canvas.addEventListener('lostpointercapture', endGesture, { signal });
+    this.sceneView.canvas.addEventListener('lostpointercapture', endGesture, { signal });
   }
 
   /**
@@ -764,7 +885,7 @@ export class EditorViewport {
    * anything else is a camera drag, and the gizmo takes priority over both.
    */
   private installSelectionHandlers(): void {
-    this.canvas.addEventListener(
+    this.sceneView.canvas.addEventListener(
       'pointerup',
       (event) => {
         const down = this.pointerDownAt;
@@ -779,7 +900,7 @@ export class EditorViewport {
         const entityId = this.picker.pick(
           event.clientX,
           event.clientY,
-          this.canvas.getBoundingClientRect(),
+          this.sceneView.canvas.getBoundingClientRect(),
           this.camera,
         );
 
@@ -808,6 +929,10 @@ export class EditorViewport {
     const elapsed = time - this.lastReportTime;
     if (elapsed < STATS_INTERVAL_MS) return;
 
+    // Everything the frame drew, both views included: three resets `info` once
+    // per animation frame, not per render. That is the honest number for a frame
+    // that drew the Scene and the Game, and it is unchanged for the frames that
+    // drew only one.
     const { render } = this.renderer.info;
     useViewportStore.getState().setStats({
       fps: Math.round((this.framesSinceReport * 1000) / elapsed),

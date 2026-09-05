@@ -8,8 +8,11 @@ import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 /**
  * Where the running game is shown.
  *
- * It borrows the same canvas as the Scene panel — the two are never visible at
- * once, and a second WebGPU device for an idle view would be wasteful.
+ * Its own canvas, but not its own renderer: a second `WebGPURenderer` in the
+ * same document would destroy this one's output target every frame. The one
+ * renderer draws both views and each panel is handed a copy of its own — see
+ * `Presentation` — which is what lets this be read next to the Scene view
+ * instead of in place of it.
  */
 export function GamePanel() {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -23,13 +26,14 @@ export function GamePanel() {
 
     void acquireViewport().then((viewport) => {
       if (cancelled || !hostRef.current) return;
-      viewport.attach(hostRef.current);
+      viewport.attachGame(hostRef.current);
     });
 
     return () => {
       cancelled = true;
-      // Hand the canvas back so the Scene panel can claim it again.
-      peekViewport()?.detach();
+      // The canvas outlives this component; hand it back rather than leaving it
+      // parented to a container React is about to drop.
+      peekViewport()?.detachGame();
     };
   }, [isRunning]);
 

@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { addEntity } from '../commands/sceneCommands';
 import { useAssetStore } from '../state/assetStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
-import { useEditorStore } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
@@ -13,19 +12,15 @@ import { instantiatePrefab } from '../commands/prefabCommands';
 export function ViewportPanel() {
   const hostRef = useRef<HTMLDivElement>(null);
   const error = useViewportStore((s) => s.error);
-  const playState = useEditorStore((s) => s.playState);
   const [dropping, setDropping] = useState(false);
 
   useEffect(() => {
-    // While the game runs the canvas belongs to the Game panel; claiming it
-    // here would leave the player looking at an idle editor view.
-    if (playState !== 'stopped') return;
     let cancelled = false;
 
     void acquireViewport()
       .then((viewport) => {
         if (cancelled || !hostRef.current) return;
-        viewport.attach(hostRef.current);
+        viewport.attachScene(hostRef.current);
       })
       .catch((cause: unknown) => {
         useViewportStore
@@ -35,11 +30,15 @@ export function ViewportPanel() {
 
     return () => {
       cancelled = true;
-      // The canvas is shared and outlives this component, so hand it back
-      // rather than leaving it parented to a container React is about to drop.
-      peekViewport()?.detach();
+      // The canvas outlives this component, so hand it back rather than leaving
+      // it parented to a container React is about to drop.
+      peekViewport()?.detachScene();
     };
-  }, [playState]);
+    // Play state is not in here any more: the Scene view keeps its own canvas
+    // while the game runs, which is what lets the two panels be read side by
+    // side. It used to have to stand down so the Game panel could take the one
+    // canvas there was.
+  }, []);
 
   if (error) {
     return (
@@ -100,8 +99,8 @@ export function ViewportPanel() {
       onDrop={onDrop}
     >
       <PrefabModeBar />
-      {/* The canvas is inserted here by EditorViewport.attach and is shared
-          with the Game panel, so it is never rendered by React. */}
+      {/* The canvas is inserted here by `EditorViewport.attachScene`, and
+          outlives this component, so it is never rendered by React. */}
       <div ref={hostRef} className="absolute inset-0" />
       <ViewportStats />
       {dropping && (
