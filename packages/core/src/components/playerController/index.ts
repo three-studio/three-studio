@@ -5,7 +5,6 @@ import { createPlayerController } from './defaults';
 export const playerControllerComponent = defineComponent({
   type: 'playerController',
   create: () => createPlayerController(),
-  fill: (stored) => ({ ...createPlayerController(), ...stored }),
   assets: () => [],
   icon: 'move',
   placeable: () => true,

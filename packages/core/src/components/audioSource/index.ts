@@ -17,7 +17,6 @@ import { createAudioSource } from './defaults';
 export const audioSourceComponent = defineComponent({
   type: 'audioSource',
   create: () => createAudioSource(),
-  fill: (stored) => ({ ...createAudioSource(), ...stored }),
   assets: (component) => [component.assetId],
   icon: 'volume',
   placeable: () => true,

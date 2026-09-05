@@ -12,7 +12,6 @@ import { createAudioListener } from './defaults';
 export const audioListenerComponent = defineComponent({
   type: 'audioListener',
   create: createAudioListener,
-  fill: (stored) => ({ ...createAudioListener(), ...stored }),
   assets: () => [],
   icon: 'volume',
   placeable: () => true,

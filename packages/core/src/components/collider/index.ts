@@ -5,7 +5,6 @@ import { createCollider } from './defaults';
 export const colliderComponent = defineComponent({
   type: 'collider',
   create: () => createCollider(),
-  fill: (stored) => ({ ...createCollider(), ...stored }),
   assets: () => [],
   icon: 'box',
   placeable: () => true,

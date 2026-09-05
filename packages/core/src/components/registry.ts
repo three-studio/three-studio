@@ -41,14 +41,25 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   /** A blank one, for "Add Component" and for filling a stored one's gaps. */
   create: () => ComponentOfType<T>;
   /**
-   * A stored component with everything it lacks filled in.
+   * A stored component with everything it lacks filled in — declared **only by
+   * the types the default is wrong for**.
    *
-   * Per type rather than one general rule, because the general rule only works
-   * for the flat ones: `mesh` owns a material and a geometry that have to be
-   * merged a level deeper, and a shallow spread would leave a scene written
-   * before texture slots existed with `undefined` where three expects a value.
+   * The default is `{ ...create(), ...stored }`, and it was written out nine
+   * times identically before it was written once. Leaving it out is not a hole
+   * in the definition: the default asks for nothing this table does not
+   * already hold, since it fills from the type's own `create()`. That is also
+   * what keeps it inside the persisted-format rule — a missing field is filled
+   * from the factory for its type, never from a second list.
+   *
+   * What the default cannot do is reach a level deeper, and a **nested object**
+   * is exactly what the three overrides have: `mesh` (its material and its
+   * geometry), `water` (its geometry), `light` (its shadow settings, and a
+   * `kind` that decides which defaults to merge against at all). A scene
+   * written before a sub-object gained a field comes back with `undefined`
+   * inside it otherwise — the bug that shipped twice on this project. Each of
+   * the three says so in its own module.
    */
-  fill: (stored: ComponentOfType<T>) => ComponentOfType<T>;
+  fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
   /** Asset ids this component points at. Empty for most types. */
   assets: (component: ComponentOfType<T>) => readonly (string | null)[];
   readonly icon: ComponentIcon;
@@ -176,8 +187,15 @@ export function componentIsPlaceable(component: ComponentDoc): boolean {
  * An unknown type comes back **exactly as found**. Filling it against a type we
  * do not have would invent a shape, and the next save would write that invention
  * over the author's data. A field is deprecated, never lost.
+ *
+ * A type that declared no `fill` gets the default: its own factory underneath
+ * what was stored, so nothing the author wrote is overwritten and nothing added
+ * since is left `undefined`. See `ComponentDefinition.fill` for the three that
+ * need more than that.
  */
 export function fillComponent(stored: ComponentDoc): ComponentDoc {
   const definition = componentDefinition(stored.type);
-  return definition ? definition.fill(stored as never) : stored;
+  if (!definition) return stored;
+  if (definition.fill) return definition.fill(stored as never);
+  return { ...definition.create(), ...stored };
 }

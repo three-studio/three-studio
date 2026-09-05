@@ -5,7 +5,6 @@ import { createRigidBody } from './defaults';
 export const rigidbodyComponent = defineComponent({
   type: 'rigidbody',
   create: () => createRigidBody(),
-  fill: (stored) => ({ ...createRigidBody(), ...stored }),
   assets: () => [],
   icon: 'weight',
   placeable: () => true,

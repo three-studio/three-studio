@@ -4,6 +4,14 @@ import type { ComponentBase } from '../../scene/primitives';
 export interface ModelComponent extends ComponentBase {
   type: 'model';
   assetId: string;
+  /*
+   * `nodePath`, `nodeName` and `materialId` are three flat fields rather than
+   * one `node: { … }` object, and that is a decision rather than a shape that
+   * happened: a sub-object would need the deeper merge `meshComponent.fill`
+   * documents, and the day someone forgot it is the day a stored model comes
+   * back with `undefined` where three expects a string. Flat is what lets
+   * `model` take the default fill and declare none of its own.
+   */
   /**
    * Which node of the file this draws. `''` draws the whole thing.
    *
