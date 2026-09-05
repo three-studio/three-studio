@@ -32,6 +32,7 @@ export type ComponentIcon =
   | 'lightbulb'
   | 'move'
   | 'shapes'
+  | 'sparkles'
   | 'volume'
   | 'waves'
   | 'weight';

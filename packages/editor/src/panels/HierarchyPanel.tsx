@@ -24,6 +24,7 @@ import {
   Move,
   Search,
   Shapes,
+  Sparkles,
   Trash2,
   Volume2,
   Waves,
@@ -81,6 +82,7 @@ const COMPONENT_ICONS: Record<ComponentIcon, LucideIcon> = {
   lightbulb: Lightbulb,
   move: Move,
   shapes: Shapes,
+  sparkles: Sparkles,
   volume: Volume2,
   waves: Waves,
   weight: Weight,
@@ -114,6 +116,9 @@ const ICON_PRIORITY: Record<ComponentType, number> = {
   // surface would otherwise draw the same box as a mesh, and the one thing a
   // hierarchy row has to say is what the entity is.
   water: 6,
+  // Beside water, and for the same reason: an emitter draws nothing an
+  // author can click, so the row is the only place the tree can say what it is.
+  particleEmitter: 7,
   mesh: FALLS_THROUGH,
   model: FALLS_THROUGH,
   collider: FALLS_THROUGH,

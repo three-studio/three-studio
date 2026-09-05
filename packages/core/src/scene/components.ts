@@ -22,6 +22,7 @@ export const COMPONENT_TYPES = [
   'mesh',
   'model',
   'water',
+  'particleEmitter',
   'light',
   'camera',
   'rigidbody',

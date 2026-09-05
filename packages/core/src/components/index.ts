@@ -24,6 +24,7 @@ import './script';
 import './prefabInstance';
 import './playerController';
 import './water';
+import './particleEmitter';
 
 /*
  * Checked here, once, rather than trusted.

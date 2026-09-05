@@ -13,6 +13,7 @@ import { menu as collider } from './collider/menu';
 import { menu as light } from './light/menu';
 import { menu as mesh } from './mesh/menu';
 import { menu as model } from './model/menu';
+import { menu as particleEmitter } from './particleEmitter/menu';
 import { menu as playerController } from './playerController/menu';
 import { menu as prefabInstance } from './prefabInstance/menu';
 import type { AddMenuGroup } from './registry';
@@ -24,6 +25,7 @@ const ADD_MENUS: Record<ComponentType, AddMenuGroup | null> = {
   mesh,
   model,
   water,
+  particleEmitter,
   light,
   camera,
   rigidbody,

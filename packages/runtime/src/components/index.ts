@@ -20,6 +20,7 @@ import './model';
 import './light';
 import './camera';
 import './water';
+import './particleEmitter';
 
 /*
  * Checked here, once, rather than trusted.
@@ -41,6 +42,7 @@ const DRAWN_TYPES = [
   'light',
   'camera',
   'water',
+  'particleEmitter',
 ] as const satisfies readonly ComponentType[];
 
 const unregistered = DRAWN_TYPES.filter((type) => !systemRegistered(type));

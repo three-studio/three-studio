@@ -150,6 +150,8 @@ export type {
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
+  EmitterShape,
+  ParticleEmitterComponent,
   PlayerControllerComponent,
   RigidBodyComponent,
   SceneDoc,
@@ -189,6 +191,10 @@ export { createMeshComponent, createMeshEntity } from './components/mesh/default
 export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';
+export {
+  createParticleEmitter,
+  createParticleEmitterEntity,
+} from './components/particleEmitter/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

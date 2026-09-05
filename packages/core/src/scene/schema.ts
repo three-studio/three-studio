@@ -25,6 +25,7 @@ import type { ColliderComponent } from '../components/collider/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { MeshComponent } from '../components/mesh/schema';
 import type { ModelComponent } from '../components/model/schema';
+import type { ParticleEmitterComponent } from '../components/particleEmitter/schema';
 import type { PlayerControllerComponent } from '../components/playerController/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
@@ -48,6 +49,10 @@ export type { ColliderComponent } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
+export type {
+  EmitterShape,
+  ParticleEmitterComponent,
+} from '../components/particleEmitter/schema';
 export type { PlayerControllerComponent } from '../components/playerController/schema';
 export type {
   PrefabInstanceComponent,
@@ -71,7 +76,8 @@ export type ComponentDoc =
   | ScriptComponent
   | PrefabInstanceComponent
   | PlayerControllerComponent
-  | WaterComponent;
+  | WaterComponent
+  | ParticleEmitterComponent;
 
 export type ComponentType = ComponentDoc['type'];
 

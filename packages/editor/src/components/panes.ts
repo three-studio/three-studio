@@ -29,6 +29,7 @@ import { inspector as collider } from './collider/inspector';
 import { inspector as light } from './light/inspector';
 import { inspector as mesh } from './mesh/inspector';
 import { inspector as model } from './model/inspector';
+import { inspector as particleEmitter } from './particleEmitter/inspector';
 import { inspector as playerController } from './playerController/inspector';
 import { inspector as prefabInstance } from './prefabInstance/inspector';
 import { inspector as rigidbody } from './rigidbody/inspector';
@@ -39,6 +40,7 @@ export const COMPONENT_PANES: Record<ComponentType, ComponentSchema> = {
   mesh,
   model,
   water,
+  particleEmitter,
   light,
   camera,
   rigidbody,

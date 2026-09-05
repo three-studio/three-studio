@@ -13,6 +13,7 @@ import * as collider from './collider/overlay';
 import * as light from './light/overlay';
 import * as mesh from './mesh/overlay';
 import * as model from './model/overlay';
+import * as particleEmitter from './particleEmitter/overlay';
 import * as playerController from './playerController/overlay';
 import * as prefabInstance from './prefabInstance/overlay';
 import type { EntityOverlay } from './registry';
@@ -24,6 +25,7 @@ export const OVERLAYS: Record<ComponentType, EntityOverlay> = {
   mesh,
   model,
   water,
+  particleEmitter,
   light,
   camera,
   rigidbody,
