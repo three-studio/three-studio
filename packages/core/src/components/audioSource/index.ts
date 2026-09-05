@@ -1,5 +1,5 @@
-import { createAudioSource } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createAudioSource } from './defaults';
 
 /**
  * A sound placed in the world.

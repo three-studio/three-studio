@@ -170,8 +170,6 @@ export { AUDIO_BUSES } from './scene/schema';
 
 export {
   GEOMETRY_LABELS,
-  createAudioSource,
-  createAudioSourceEntity,
   createBoxGeometry,
   createEmptyScene,
   createEnvironment,
@@ -192,6 +190,7 @@ export { createEntity, createTransform } from './scene/entity';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';
+export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCameraEntity } from './components/camera/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
