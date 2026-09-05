@@ -1,5 +1,5 @@
-import { blankComponent as blank } from '../scene/defaults';
-import { defineComponent } from './registry';
+import { defineComponent } from '../registry';
+import { createAudioListener } from './defaults';
 
 /**
  * The ear the mix is rendered for.
@@ -11,8 +11,8 @@ import { defineComponent } from './registry';
  */
 export const audioListenerComponent = defineComponent({
   type: 'audioListener',
-  create: () => blank('audioListener'),
-  fill: (stored) => ({ ...blank('audioListener'), ...stored }),
+  create: createAudioListener,
+  fill: (stored) => ({ ...createAudioListener(), ...stored }),
   assets: () => [],
   icon: 'volume',
   runtime: true,

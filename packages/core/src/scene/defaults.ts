@@ -227,7 +227,7 @@ export function createPlayerController(): PlayerControllerComponent {
  * an object literal repeated in a module is a second definition of the shape, and
  * it stops matching the interface silently.
  */
-export function blankComponent<T extends 'model' | 'audioListener' | 'script' | 'prefabInstance'>(
+export function blankComponent<T extends 'model' | 'script' | 'prefabInstance'>(
   type: T,
 ): ComponentOfType<T> {
   const created: ComponentDoc =
@@ -242,11 +242,9 @@ export function blankComponent<T extends 'model' | 'audioListener' | 'script' | 
           castShadow: true,
           receiveShadow: true,
         }
-      : type === 'audioListener'
-        ? { id: createId(), type: 'audioListener', masterVolume: 1 }
-        : type === 'script'
-          ? { id: createId(), type: 'script', assetId: '', props: {} }
-          : { id: createId(), type: 'prefabInstance', assetId: '', overrides: {} };
+      : type === 'script'
+        ? { id: createId(), type: 'script', assetId: '', props: {} }
+        : { id: createId(), type: 'prefabInstance', assetId: '', overrides: {} };
   return created as ComponentOfType<T>;
 }
 
@@ -394,11 +392,6 @@ export function createAudioSourceEntity(assetId = '', name = 'Audio Source'): En
   const component = createAudioSource();
   component.assetId = assetId;
   return createEntity(name, [component]);
-}
-
-/** The ear, as its own entity, for a scene that wants it off the camera. */
-export function createAudioListenerEntity(): EntityTemplate {
-  return createEntity('Audio Listener', [blankComponent('audioListener')]);
 }
 
 export function createCameraEntity(projection: CameraProjection = 'perspective'): EntityTemplate {

@@ -8,6 +8,7 @@
  */
 
 import type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+import type { AudioListenerComponent } from '../components/audioListener/schema';
 import type { LightComponent } from '../components/light/schema';
 
 /*
@@ -17,6 +18,7 @@ import type { LightComponent } from '../components/light/schema';
  * — see `primitives.ts` — and the types of the slices themselves.
  */
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
+export type { AudioListenerComponent } from '../components/audioListener/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 
 // --- geometry ---------------------------------------------------------------
@@ -395,15 +397,6 @@ export interface AudioSourceComponent extends ComponentBase {
    * the largest number is taken first, and among equals the oldest.
    */
   priority: number;
-}
-
-/**
- * The ears. Exactly one should be active — normally on the play camera or the
- * player — and the runtime warns when a scene has none or several.
- */
-export interface AudioListenerComponent extends ComponentBase {
-  type: 'audioListener';
-  masterVolume: number;
 }
 
 /**

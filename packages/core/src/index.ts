@@ -170,7 +170,6 @@ export { AUDIO_BUSES } from './scene/schema';
 
 export {
   GEOMETRY_LABELS,
-  createAudioListenerEntity,
   createAudioSource,
   createAudioSourceEntity,
   createBoxGeometry,
@@ -193,7 +192,8 @@ export {
 } from './scene/defaults';
 export { createEntity, createTransform } from './scene/entity';
 export type { EntityTemplate } from './scene/entity';
-/* A light poses itself, and knows what three's shadow defaults are. */
+/* Each slice's own factories, from the slice that owns them. */
+export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createLightEntity, createShadowSettings } from './components/light/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
