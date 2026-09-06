@@ -296,13 +296,13 @@ function cycles(): string[][] {
 }
 
 /*
- * The cycles that exist today, named so that a fifth one cannot arrive quietly.
+ * The cycles that exist today, named so that a fourth one cannot arrive quietly.
  *
- * This list is debt, not permission. Two of these are the ones the audit found
- * by hand; the other two it never saw, because nothing had ever built the graph.
- * Each is closed by a task in this refactor, and each entry goes away with it —
- * the test fails on a cycle that is gone just as loudly as on a new one, which
- * is what keeps the list honest.
+ * This list is debt, not permission. Each is closed by a task in this refactor,
+ * and each entry goes away with it — the test fails on a cycle that is gone
+ * just as loudly as on a new one, which is what keeps the list honest. One has
+ * gone that way already: `assetField` reached into the import store to open a
+ * dialog and into the dock to raise a panel, and both are handed to it now.
  *
  * Ordered by first path, which is how `cycles()` returns them.
  */
@@ -331,18 +331,6 @@ const KNOWN_CYCLES: string[][] = [
     'packages/editor/src/viewport/viewportHost.ts',
   ],
   /*
-   * importStore -> plan -> settingsPane -> PaneBinder -> assetField -> importStore.
-   * Closed in lot 3 by pulling the hand-written Tweakpane plugin in
-   * `assetField.ts` off `importStore`.
-   */
-  [
-    'packages/editor/src/import/importStore.ts',
-    'packages/editor/src/import/plan.ts',
-    'packages/editor/src/import/settingsPane.ts',
-    'packages/editor/src/inspector/PaneBinder.ts',
-    'packages/editor/src/inspector/assetField.ts',
-  ],
-  /*
    * The preview surfaces and the surface they share. The three previews take
    * only the type; `PreviewSurface` reaches back with a dynamic `import()`,
    * which is also why `ModelPreview` is a chunk of its own in the build.
@@ -356,7 +344,7 @@ const KNOWN_CYCLES: string[][] = [
 ];
 
 describe('import cycles', () => {
-  it('has exactly the four this refactor is here to remove', () => {
+  it('has exactly the three this refactor is here to remove', () => {
     expect(cycles()).toEqual(KNOWN_CYCLES);
   });
 });

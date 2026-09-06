@@ -1,5 +1,5 @@
+import type { TpPluginBundle } from '@tweakpane/core';
 import { Pane, type FolderApi } from 'tweakpane';
-import { assetFieldBundle } from './assetField';
 import { declaredControl } from './declaredFields';
 import type { BoundSpec } from './fields';
 
@@ -66,9 +66,15 @@ export class PaneBinder {
    */
   private disposed = false;
 
-  constructor(container: HTMLElement) {
+  /**
+   * @param plugins Tweakpane controls this pane may need, built by whoever owns
+   *   it. The asset slot is one, and it needs an import dialog and a dock —
+   *   neither of which a binder should know how to reach. An import settings
+   *   pane passes none: an importer declares no asset slot.
+   */
+  constructor(container: HTMLElement, plugins: readonly TpPluginBundle[]) {
     this.pane = new Pane({ container });
-    this.pane.registerPlugin(assetFieldBundle);
+    for (const plugin of plugins) this.pane.registerPlugin(plugin);
   }
 
   /** True while `refresh()` is running: a change now is the source talking back. */

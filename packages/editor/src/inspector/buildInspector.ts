@@ -18,6 +18,7 @@ import {
 } from '../commands/sceneCommands';
 import { currentSceneName, renameCurrentScene } from '../commands/sceneFiles';
 import { useAssetStore } from '../state/assetStore';
+import { assetFieldBundle, type AssetFieldActions } from './assetField';
 import { PaneBinder, numeric, type Holder } from './PaneBinder';
 import {
   MultiTarget,
@@ -58,8 +59,13 @@ export type InspectorTarget =
 export class InspectorBinding {
   private readonly binder: PaneBinder;
 
-  constructor(container: HTMLElement, target: InspectorTarget) {
-    this.binder = new PaneBinder(container);
+  /**
+   * @param actions What the asset slot cannot reach for itself; see
+   *   `AssetFieldActions`. Handed down rather than imported, because the edge
+   *   from a field control to the import store was an import cycle.
+   */
+  constructor(container: HTMLElement, target: InspectorTarget, actions: AssetFieldActions) {
+    this.binder = new PaneBinder(container, [assetFieldBundle(actions)]);
 
     if (target.kind === 'scene') {
       this.buildScene();

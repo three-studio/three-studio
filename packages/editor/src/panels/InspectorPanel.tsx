@@ -1,10 +1,13 @@
 import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { revealAsset } from '../commands/assetCommands';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
 import { revertEntityOverride } from '../commands/prefabCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
 import { COMPONENT_PANES } from '../components/panes';
+import type { AssetFieldActions } from '../inspector/assetField';
+import { browseAndImport } from '../import/importStore';
 import { sceneSignature } from '../inspector/schema';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
@@ -13,6 +16,21 @@ import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { useScriptStore } from '../state/scriptStore';
 import { Menu } from '../ui/Menu';
+
+/**
+ * What the Inspector's asset slots cannot reach for themselves.
+ *
+ * The panel is where they come from because it is the outermost thing that owns
+ * an Inspector: a Tweakpane control reaching into the import store closed an
+ * import cycle, and one reaching into the dock decided which panel is in front
+ * — neither is a field table's business. Module-level rather than rebuilt per
+ * render: nothing here depends on props, and a new object each render would
+ * rebuild the pane.
+ */
+const ASSET_FIELD_ACTIONS: AssetFieldActions = {
+  importAssets: async () => (await browseAndImport())?.imported ?? [],
+  reveal: revealAsset,
+};
 
 export function InspectorPanel() {
   const selection = useEditorStore((s) => s.selection);
@@ -127,6 +145,7 @@ export function InspectorPanel() {
         : selection.length > 1
           ? { kind: 'entities', ids: selection }
           : { kind: 'scene' },
+      ASSET_FIELD_ACTIONS,
     );
     bindingRef.current = binding;
     return () => {

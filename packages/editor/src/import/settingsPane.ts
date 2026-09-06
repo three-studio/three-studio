@@ -27,7 +27,9 @@ export class ImportSettingsPane {
     private readonly onChange: (settings: Record<string, unknown>) => void,
     private readonly onAction: ImportActionHandler,
   ) {
-    this.binder = new PaneBinder(container);
+    // No plugins: an importer declares numbers, toggles, enums and buttons,
+    // and none of the controls those need is a hand-written one.
+    this.binder = new PaneBinder(container, []);
     this.build(this.binder.pane, fields);
   }
 

@@ -1,8 +1,29 @@
 import { findAssetUsage, isUsed, totalUses, type AssetEntry } from '@three-studio/core';
+import { showPanel } from '../shell/dockApi';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { notify } from '../state/toastStore';
+
+/**
+ * Points the Project panel at an asset and brings it to the front.
+ *
+ * A gesture rather than a method on the control that offers it: the asset slot
+ * in the Inspector is a Tweakpane plugin, and a declarative field table has no
+ * business driving the dock. It asks for this by name and is handed it.
+ */
+export function revealAsset(assetId: string): void {
+  const store = useAssetStore.getState();
+  const entry = store.byId(assetId);
+  if (!entry) return;
+
+  store.setFolder(entry.folder);
+  // A leftover search or kind filter would hide the asset we just navigated to,
+  // which reads as the button having done nothing.
+  store.setQuery('');
+  store.setKindFilter('all');
+  showPanel('project');
+}
 
 /**
  * Deletes an asset, after saying what it would take with it.

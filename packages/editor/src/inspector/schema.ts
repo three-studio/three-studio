@@ -13,13 +13,6 @@ import {
 } from '@three-studio/core';
 import { ASSET_SLOT, asDegrees, type DistributiveOmit, type FieldSpec } from './fields';
 import { shapeOf } from './signature';
-import { setComponentNestedField } from '../commands/sceneCommands';
-import { audioPreview } from '../audio/preview';
-import { peekViewport } from '../viewport/viewportHost';
-import { useAssetStore } from '../state/assetStore';
-import { askForText } from '../state/dialogStore';
-import { useDocumentStore } from '../state/documentStore';
-import { expandedScene } from '../state/expansion';
 
 /*
  * The scene pane, and the door onto the field vocabulary.
