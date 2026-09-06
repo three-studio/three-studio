@@ -150,13 +150,16 @@ export interface ProjectApi {
 
 export interface BuildApi {
   /**
-   * Produces a build from a saved profile, into the folder that profile names.
+   * Produces a build from the active profile, into the folder that profile
+   * names.
    *
-   * The destination is part of the profile rather than something asked for at
-   * the last moment: a build should be reproducible from what is on disk, and
-   * the dialog should say where the files are going before it goes there.
+   * **Which** profile is not a parameter, and that is the same decision as the
+   * destination: a build should be reproducible from what is on disk. The
+   * Package dialog writes `active` before it asks for this, so the choice is
+   * already saved by the time the export runs — passing it again would let the
+   * two disagree, with the dialog's copy winning over the file's.
    */
-  export: (profileId?: string) => Promise<ExportResult>;
+  export: () => Promise<ExportResult>;
   /** Native folder picker. `null` when dismissed. */
   chooseOutputDir: (startIn?: string | null) => Promise<string | null>;
   /** Phase updates while an export runs. Returns an unsubscribe. */

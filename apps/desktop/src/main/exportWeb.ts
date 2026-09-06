@@ -40,10 +40,16 @@ import { buildScripts } from './scripts';
 /**
  * The profile an export will run, and the folder it will write into.
  *
- * Both refusals are the ones a person can act on: an id no profile answers to
- * is a stale dialog or a profile someone deleted in another window, and a
- * profile with no output folder is the ordinary state of a new one — the
- * message names the panel where it is chosen.
+ * The active one, and only the active one. The caller used to be able to name
+ * a different profile, and nothing has passed that argument since the Package
+ * dialog started saving `active` before asking for the export — which it does
+ * because a build has to be reproducible from what is on disk. An override
+ * would be the dialog's copy of the choice quietly beating the file's.
+ *
+ * Both refusals are the ones a person can act on: an `active` no profile
+ * answers to is a stale project file or a profile someone deleted in another
+ * window, and a profile with no output folder is the ordinary state of a new
+ * one — the message names the panel where it is chosen.
  *
  * Here rather than in the IPC handler that used to hold it, because the whole
  * of it is a decision about `BuildProfiles` and nothing about Electron. See the
@@ -52,9 +58,8 @@ import { buildScripts } from './scripts';
  */
 export function requireBuildProfile(
   settings: BuildProfiles,
-  profileId?: string,
 ): { profile: BuildProfile; outputDir: string } {
-  const id = profileId ?? settings.active;
+  const id = settings.active;
   const profile = settings.profiles[id];
   if (!profile) throw new Error(`No build profile "${id}".`);
 

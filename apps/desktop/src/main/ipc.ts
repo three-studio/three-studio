@@ -446,10 +446,13 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
   },
   build: {
-    export: async (event, profileId?: string): Promise<ExportResult> => {
+    export: async (event): Promise<ExportResult> => {
       const projectPath = requireProject();
+      // Re-read rather than trusting what the dialog held: the dialog saved the
+      // active profile before asking, and the file is what a build has to be
+      // reproducible from.
       const project = await readProject(projectPath);
-      const { profile, outputDir } = requireBuildProfile(project.settings.build, profileId);
+      const { profile, outputDir } = requireBuildProfile(project.settings.build);
 
       // Packaged, the player sits in the app's resources; in development it is
       // the workspace build, found by walking up from the app path.

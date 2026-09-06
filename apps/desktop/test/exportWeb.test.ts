@@ -172,22 +172,33 @@ describe('choosing the profile an export runs', () => {
     return { settings, id };
   };
 
-  it('takes the active one when the caller names none', () => {
+  it('takes the active one, which is the whole of the choice', () => {
     const { settings, id } = profiles();
     expect(requireBuildProfile(settings).profile).toBe(settings.profiles[id]);
     expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
   });
 
-  it('takes the one the caller names', () => {
+  it('follows `active` and nothing else, even with another profile to hand', () => {
+    // There is no argument for naming a different one, and that is the
+    // decision: the Package dialog saves `active` before asking for the export,
+    // so a second way to choose would be its copy beating the file's.
     const { settings, id } = profiles();
     settings.profiles['itch'] = { ...settings.profiles[id]!, name: 'itch', outputDir: '/builds/itch' };
-    expect(requireBuildProfile(settings, 'itch').outputDir).toBe('/builds/itch');
+
+    expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
+
+    settings.active = 'itch';
+    expect(requireBuildProfile(settings).outputDir).toBe('/builds/itch');
   });
 
-  it('refuses an id no profile answers to, and says which', () => {
-    // A stale dialog, or a profile another window deleted. Naming the id is
-    // what tells those two apart from a bug.
-    expect(() => requireBuildProfile(profiles().settings, 'gone')).toThrow('No build profile "gone"');
+  it('refuses an `active` no profile answers to, and says which', () => {
+    // Reachable from the renderer: a settings patch may set `active` to any
+    // string — the id is the author's — and deleting a profile in another
+    // window leaves it pointing at nothing. Naming the id tells those apart
+    // from a bug.
+    const { settings } = profiles();
+    settings.active = 'gone';
+    expect(() => requireBuildProfile(settings)).toThrow('No build profile "gone"');
   });
 
   it('refuses a profile with no output folder, and says where to choose one', () => {
