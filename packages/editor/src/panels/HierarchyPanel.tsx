@@ -41,6 +41,7 @@ import { hasModifier } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
 import { shortcutHint } from '../shell/shortcutBindings';
 import { expandedScene } from '../state/expansion';
+import { isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
 import { buildRows, type Row } from './hierarchyRows';
 import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
 import { Selection } from '../state/selection';
@@ -192,16 +193,11 @@ export function HierarchyPanel() {
 
   const onRowClick = (event: MouseEvent, id: string) => {
     if (event.shiftKey) {
-      // A range, from whatever was picked last. The rows are a flat array since
-      // phase 7, so this is two indices — the reason that extraction paid twice.
-      const from = rows.findIndex((row) => row.entity.id === (selected.primary ?? id));
-      const to = rows.findIndex((row) => row.entity.id === id);
-      if (from !== -1 && to !== -1) {
-        const [start, end] = from <= to ? [from, to] : [to, from];
-        // The anchor stays last, so it remains the primary and the gizmo does not
-        // jump to the other end of the range.
-        const span = rows.slice(start, end + 1).map((row) => row.entity.id);
-        setSelection([...span.filter((other) => other !== id), id]);
+      // A range, from whatever was picked last. `null` when either end is off
+      // the list — a filter can hide the anchor — and the click is then plain.
+      const range = rangeSelection(rows, selected.primary, id);
+      if (range) {
+        setSelection(range);
         return;
       }
     }
@@ -396,11 +392,8 @@ export function HierarchyPanel() {
                 if (instance) return;
                 event.preventDefault();
                 event.stopPropagation();
-                // The top quarter of a row means "between this one and the one
-                // above": Unity, Unreal and Blender all put reordering there, and
-                // it is the only place it can go without a second gesture.
                 const box = event.currentTarget.getBoundingClientRect();
-                const between = event.clientY - box.top < box.height * 0.25;
+                const between = isBetweenRows(event.clientY - box.top, box.height);
                 setDropBetween(between ? entity.id : null);
                 setDropTarget(between ? null : entity.id);
               }}
@@ -409,18 +402,17 @@ export function HierarchyPanel() {
                 setDropBetween((current) => (current === entity.id ? null : current));
               }}
               onDrop={(event) => {
-                if (dropBetween !== entity.id) {
+                // Inserted where this row sits among its own siblings, under the
+                // same parent it has.
+                const at =
+                  dropBetween === entity.id
+                    ? insertionAt(useDocumentStore.getState().scene, entity.id)
+                    : null;
+                if (at === null) {
                   onDrop(event, entity.id);
                   return;
                 }
-                // Inserted where this row sits among its own siblings, under the
-                // same parent it has.
-                const parent = entity.parent;
-                const siblings =
-                  parent === null
-                    ? useDocumentStore.getState().scene.rootOrder
-                    : (useDocumentStore.getState().scene.entities[parent]?.children ?? []);
-                onDrop(event, parent, Math.max(0, siblings.indexOf(entity.id)));
+                onDrop(event, at.parent, at.index);
               }}
               onClick={(event) => onRowClick(event, entity.id)}
               // Through the command, like the menu entry: the double-click used
