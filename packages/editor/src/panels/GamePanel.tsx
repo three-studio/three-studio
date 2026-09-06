@@ -1,4 +1,5 @@
 import { Gamepad2, MousePointerClick, TriangleAlert } from 'lucide-react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef } from 'react';
 import { commandById } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
@@ -14,7 +15,17 @@ import { acquireViewport, peekViewport } from '../viewport/viewportHost';
  * `Presentation` — which is what lets this be read next to the Scene view
  * instead of in place of it.
  */
-export function GamePanel() {
+export function GamePanel(props: IDockviewPanelProps) {
+  // What the box cannot say: dockview parks an inactive tab at full size, so a
+  // hidden panel goes on being drawn unless something tells the viewport. The
+  // dock is the only thing that knows, and it publishes it here.
+  useEffect(() => {
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setGameOnScreen(onScreen));
+    push(props.api.isVisible);
+    const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
+    return () => sub.dispose();
+  }, [props.api]);
+
   const hostRef = useRef<HTMLDivElement>(null);
   const playState = useEditorStore((s) => s.playState);
   const warnings = useViewportStore((s) => s.playWarnings);

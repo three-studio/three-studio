@@ -1,5 +1,6 @@
 import { createAudioSourceEntity, createModelEntity, variantBaseOf } from '@three-studio/core';
 import { Boxes, ChevronLeft } from 'lucide-react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { addEntity } from '../commands/sceneCommands';
 import { useAssetStore } from '../state/assetStore';
@@ -9,7 +10,17 @@ import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { instantiatePrefab } from '../commands/prefabCommands';
 
-export function ViewportPanel() {
+export function ViewportPanel(props: IDockviewPanelProps) {
+  // What the box cannot say: dockview parks an inactive tab at full size, so a
+  // hidden panel goes on being drawn unless something tells the viewport. The
+  // dock is the only thing that knows, and it publishes it here.
+  useEffect(() => {
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setSceneOnScreen(onScreen));
+    push(props.api.isVisible);
+    const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
+    return () => sub.dispose();
+  }, [props.api]);
+
   const hostRef = useRef<HTMLDivElement>(null);
   const error = useViewportStore((s) => s.error);
   const [dropping, setDropping] = useState(false);

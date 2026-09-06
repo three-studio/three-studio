@@ -104,6 +104,28 @@ export class ViewportRenderer {
   }
 
   /**
+   * Records whether a panel is somewhere a person could see it.
+   *
+   * Pushed in by the panel rather than observed from here, because **nothing on
+   * this side can work it out**. The box does not say it — dockview parks an
+   * inactive tab at full size — and an `IntersectionObserver` does not either:
+   * it measures intersection with the viewport, and a tab hidden *behind*
+   * another still intersects. Tried, measured, and it changed nothing.
+   *
+   * The dock is the only thing that knows, and it already publishes it as
+   * `panel.api.isVisible`. So the panel, which is on the shell side and holds
+   * that api, hands the answer down — the same direction `attach` already goes,
+   * and no import from `viewport/` into `shell/`.
+   */
+  setOnScreen(view: Presentation, onScreen: boolean): void {
+    if (view.onScreen === onScreen) return;
+    view.onScreen = onScreen;
+    // The surface is as large as the largest *visible* view, so one appearing or
+    // going is a size change like any other.
+    this.sizeDirty = true;
+  }
+
+  /**
    * The box changed and the surface has not been told yet.
    *
    * A flag rather than an action, and the frame loop is what acts on it.
@@ -148,8 +170,12 @@ export class ViewportRenderer {
     this.gameView.measure();
     this.previewView.measure();
 
-    const width = Math.max(this.sceneView.width, this.gameView.width, this.previewView.width);
-    const height = Math.max(this.sceneView.height, this.gameView.height, this.previewView.height);
+    // The largest *visible* view, not the largest box. A parked tab keeps its
+    // full size, so counting it kept the surface at 3024 × 1698 while the game
+    // drew into a 1904 × 1202 corner of it.
+    const shown = [this.sceneView, this.gameView, this.previewView].filter((view) => view.visible);
+    const width = Math.max(0, ...shown.map((view) => view.width));
+    const height = Math.max(0, ...shown.map((view) => view.height));
 
     // Measured, not acted on. Whether a same-size `setSize` is worth skipping is
     // the question the probe is here to answer, and skipping it now would change
@@ -161,9 +187,10 @@ export class ViewportRenderer {
     const changed = width !== this.lastWidth || height !== this.lastHeight;
     probeResize(width, height, changed);
     if (!changed) return sceneMoved;
-    // Nothing is showing a view: a dock panel on a hidden tab reports zero, and
-    // resizing to that would destroy the swap chain and hand back a black
-    // canvas when the tab comes forward again. The surface keeps its size.
+    // Nothing is showing a view at all — every panel closed, or every one of
+    // them parked. Resizing to zero would destroy the swap chain and hand back a
+    // black canvas when a tab comes forward again, so the surface keeps its
+    // size and the frame loop simply draws nothing.
     if (width === 0 || height === 0) return sceneMoved;
 
     this.lastWidth = width;
@@ -176,8 +203,9 @@ export class ViewportRenderer {
   /**
    * Renders one view into its corner of the surface, and hands its panel a copy.
    *
-   * A panel nobody is looking at — a closed tab, or one behind another — has a
-   * zero-sized box and is not drawn at all. That is the same answer a hidden
+   * A panel nobody is looking at — a closed tab, or one behind another — is not
+   * drawn at all. A closed one has a zero-sized box; one behind another keeps
+   * its box and fails `onScreen` instead. That is the same answer a hidden
    * dock panel gave before by being the panel the canvas was not in, arrived at
    * by measuring rather than by which panel happened to hold the canvas.
    *
@@ -281,6 +309,9 @@ export class ViewportRenderer {
     this.resizeObserver.unobserve(host);
     view.canvas.remove();
     view.host = null;
+    // Back to the default, so a panel that is attached again draws its first
+    // frame rather than inheriting a verdict about the element it used to be in.
+    view.onScreen = true;
     // The surface is as large as the largest visible panel, so one going away
     // is a size change like any other.
     this.sizeDirty = true;

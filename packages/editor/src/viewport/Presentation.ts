@@ -28,12 +28,31 @@ export class Presentation {
   /**
    * The host's box in CSS pixels, as of the last `measure`.
    *
-   * Zero while nothing is showing this view — a dock panel on a hidden tab
-   * reports zero too, which is the same answer for the same reason: there is
-   * nobody to draw this view for.
+   * Zero while nothing is showing this view. **Not zero for a panel on a hidden
+   * tab**, which is what this comment used to claim: dockview parks an inactive
+   * tab off-screen at the full window size rather than collapsing it, so the box
+   * stays large and only its position says it is gone. See `onScreen`.
    */
   width = 0;
   height = 0;
+
+  /**
+   * Whether the host is anywhere a person could see it.
+   *
+   * The half `width`/`height` cannot answer, and the difference was measured:
+   * with the Game tab forward, the parked Scene panel still reported 1512 × 849,
+   * so the editor went on drawing it behind the game — 18 016 draw calls a frame
+   * instead of 9 006, and 20.1 ms instead of 10.8.
+   *
+   * Written by an `IntersectionObserver` in `ViewportRenderer`, which asks the
+   * question the box cannot and asks it of the viewport rather than of the dock:
+   * a tab behind another, a collapsed group and a scrolled-away panel are all
+   * "not on screen" without this side having to know which of them happened.
+   *
+   * `true` until the observer says otherwise, so a panel that has just been
+   * attached draws its first frame instead of blinking.
+   */
+  onScreen = true;
 
   private readonly context: CanvasRenderingContext2D;
 
@@ -59,7 +78,7 @@ export class Presentation {
 
   /** Whether anyone is looking at this view. */
   get visible(): boolean {
-    return this.width > 0 && this.height > 0;
+    return this.width > 0 && this.height > 0 && this.onScreen;
   }
 
   /** Reads the host's box. True when it moved. */

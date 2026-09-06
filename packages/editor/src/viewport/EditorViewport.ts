@@ -213,6 +213,22 @@ export class EditorViewport {
     this.view.attach(this.view.sceneView, host);
   }
 
+  /**
+   * Whether the Scene panel is on a tab someone can see.
+   *
+   * Separate from `attachScene`, because a panel stays attached while it is
+   * hidden — that is the whole case: with the Game tab forward, the Scene panel
+   * kept its host, kept its box, and went on being drawn behind the game. 18 016
+   * draw calls a frame instead of 9 006, 20.1 ms instead of 10.8.
+   */
+  setSceneOnScreen(onScreen: boolean): void {
+    this.view.setOnScreen(this.view.sceneView, onScreen);
+  }
+
+  setGameOnScreen(onScreen: boolean): void {
+    this.view.setOnScreen(this.view.gameView, onScreen);
+  }
+
   detachScene(): void {
     this.view.detach(this.view.sceneView);
   }
