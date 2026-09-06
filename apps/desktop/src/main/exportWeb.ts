@@ -9,6 +9,7 @@ import {
   type AssetSettings,
   type BuildManifest,
   basePathProblem,
+  buildScenePath,
   deserializeScene,
   normalizeBasePath,
   serializeScene,
@@ -18,7 +19,6 @@ import {
   type ExportResult,
   type MaterialDef,
   type PrefabDoc,
-  type ProjectFile,
   type SceneDoc,
   type SceneEntry,
 } from '@three-studio/core';
@@ -111,9 +111,9 @@ export async function exportBuild(
       throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
     }
   }
-  // None of them resolved, which is not a build. The player loads `scene.json`
-  // before anything else, and a folder without one is a black page rather than
-  // a message.
+  // None of them resolved, which is not a build. The player loads the first
+  // scene in the manifest before anything else, and a manifest naming none is a
+  // black page rather than a message.
   if (scenes.length === 0) {
     throw new AssetError('This profile ships no scene this project still has.');
   }
@@ -220,22 +220,31 @@ export async function exportBuild(
   }
 
   // --- scenes ---------------------------------------------------------------
-  // The first scene is the entry point, as in Unity's Scenes In Build. The
-  // others ship beside it for a script to load later.
-  const sceneFiles: string[] = [];
-  // Names as scripts use them, mapped to where the file actually landed. The
-  // entry scene is renamed to `scene.json`, so a path from the project would
-  // not resolve here — the name is what survives the move.
-  const sceneMap: Record<string, string> = {};
-  for (const [index, { scene, entry }] of scenes.entries()) {
-    const file = index === 0 ? 'scene.json' : `scenes/${sceneFileName(entry.path)}`;
+  /*
+   * One shape for all of them: `scenes/<id>.json`, entry point first — as in
+   * Unity's Scenes In Build, where the first is where the game starts and the
+   * rest ship for a script to load later.
+   *
+   * The entry scene used to be renamed to `scene.json` at the root while the
+   * others went under `scenes/`, and that one asymmetry paid for three
+   * functions: a map from every scene's name *and* id to the file it became, a
+   * resolution of the loading scene's id back into a name, and a flattener for
+   * the project's own paths. A build is not a thing to hand-edit, so the id
+   * wins and the path is derived from it.
+   */
+  const shipped: string[] = [];
+  // An alias, not an address: a script may name a level, and the name is what
+  // an author reads in the editor. Nothing is found by it — see `sceneNames`.
+  const sceneNames: Record<string, string> = {};
+  for (const { scene, entry } of scenes) {
+    const file = buildScenePath(entry.id);
+    // A scene file carrying no id of its own is addressed by its project path,
+    // so an id can contain slashes. Rare, and cheaper to make directories for
+    // than to special-case.
     await mkdir(dirname(join(outputDir, file)), { recursive: true });
     await writeFile(join(outputDir, file), serializeScene(scene), 'utf8');
-    sceneFiles.push(file);
-    // Keyed by name *and* by id: a script may hold either, and a build that
-    // only understood one would make the other silently fail to load.
-    sceneMap[entry.name] = file;
-    sceneMap[entry.id] = file;
+    shipped.push(entry.id);
+    sceneNames[entry.name] = entry.id;
   }
 
   // --- scripts --------------------------------------------------------------
@@ -268,13 +277,12 @@ export async function exportBuild(
     // it. Persisted data gains fields; it does not lose them.
     forceWebGL: project.settings.rendering.forceWebGL,
     rendering: project.settings.rendering,
-    scenes: sceneFiles,
-    sceneMap,
-    /*
-     * Resolved to a name here because that is what `sceneMap` is keyed by for a
-     * human to read — the id resolves too, but the file is meant to be legible.
-     */
-    loadingScene: loadingSceneName(project, known),
+    scenes: shipped,
+    sceneNames,
+    // The id the project already holds, passed through. An id naming a scene
+    // this profile does not ship reaches the player as a loading scene it
+    // cannot read, which it says out loud — where dropping it here was silent.
+    loadingScene: project.settings.loadingScene,
     assets: paths,
     // Only what a shipped scene links to. An unused material or prefab asset is
     // no more part of the build than an unused texture is.
@@ -300,17 +308,6 @@ function union(sets: readonly Set<string>[]): Set<string> {
   const all = new Set<string>();
   for (const set of sets) for (const id of set) all.add(id);
   return all;
-}
-
-/** The loading scene's name, or `null` when the project has none. */
-function loadingSceneName(project: ProjectFile, known: readonly SceneEntry[]): string | null {
-  const id = project.settings.loadingScene;
-  return id === null ? null : (findScene(known, id)?.name ?? null);
-}
-
-/** `scenes/main.scene.json` -> `main.scene.json`; the build has one flat level. */
-function sceneFileName(path: string): string {
-  return path.split('/').pop() ?? 'scene.json';
 }
 
 function describe(cause: unknown): string {

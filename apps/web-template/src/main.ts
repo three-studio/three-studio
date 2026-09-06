@@ -4,6 +4,7 @@ import {
   type BuildManifest,
   type TextureEncoding,
   SCRIPT_API_VERSION,
+  buildScenePath,
   createRenderingSettings,
   deserializeScene,
   type MaterialDef,
@@ -12,7 +13,7 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
-import { entrySceneName } from './entryScene';
+import { entrySceneName, sceneIdOf } from './scenes';
 import { encodePath } from './urls';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
@@ -30,15 +31,16 @@ import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
  * would be a place the two could drift apart.
  *
  * It reads three files the exporter writes beside it:
- *   build.json     the manifest: what the profile chose, the scene list, and
- *                  the asset table, materials and prefabs — see `BuildManifest`
- *   scene.json     the entry scene
- *   scripts.mjs    the compiled behaviours, absent when the project has none
+ *   build.json          the manifest: what the profile chose, the scene list,
+ *                       and the asset table, materials and prefabs — see
+ *                       `BuildManifest`
+ *   scenes/<id>.json    every scene, the entry point first in `build.scenes`
+ *   scripts.mjs         the compiled behaviours, absent when the project has
+ *                       none
  *
  * Three, and it used to be six: the asset table, the materials and the prefabs
  * were files of their own. They are small and always needed, so they were three
- * round trips spent to learn nothing. `documentsOf` still fetches them for a
- * build written before format 4.
+ * round trips spent to learn nothing.
  */
 
 /**
@@ -96,10 +98,16 @@ function buildResolver(
  * The asset table, the materials and the prefabs — from the manifest, or from
  * the three files they used to be.
  *
- * Format 4 folded them in. A build written before it still carries them beside
- * the player, and reading them costs exactly the three requests that build
- * already made — so nothing that opens today stops opening. Written together by
- * one export, so one of them being absent means all three are.
+ * Format 4 folded them in, and this still reads the older shape. Written
+ * together by one export, so one of them being absent means all three are.
+ *
+ * **Format 5 put that branch out of reach**, and it is worth knowing why rather
+ * than finding out: moving every scene under `scenes/<id>.json` is not a field
+ * with a default, so a build old enough to take this path has its scenes
+ * somewhere this player never looks and fails on the next line anyway. The same
+ * is now true of every optional field on `BuildManifest` — which is one
+ * decision to take in one pass, not six times in six places, so this is left
+ * standing until it is taken.
  */
 async function documentsOf(build: BuildManifest): Promise<BuildDocuments> {
   const { assets, materials, prefabs } = build;
@@ -112,6 +120,23 @@ async function documentsOf(build: BuildManifest): Promise<BuildDocuments> {
     fetchJson<Record<string, PrefabDoc>>('prefabs.json'),
   ]);
   return { assets: fetched, materials: fetchedMaterials, prefabs: fetchedPrefabs };
+}
+
+/**
+ * One scene, by whichever half of its identity was named.
+ *
+ * The only place a scene's URL is formed, and it is *formed* rather than looked
+ * up: `buildScenePath` is the same function the exporter wrote the file with,
+ * so the two cannot disagree. Still encoded — a scene file carrying no id of
+ * its own is addressed by its project path, which can hold spaces.
+ */
+async function readScene(build: BuildManifest, named: string): Promise<SceneDoc> {
+  const path = buildScenePath(sceneIdOf(build, named));
+  const response = await fetch(encodePath(path));
+  // Named, so a missing scene reads as a missing scene. Without it a static
+  // server's 404 page is handed to the parser, which reports a syntax error.
+  if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
+  return deserializeScene(await response.text());
 }
 
 async function loadScripts(file: string | null): Promise<void> {
@@ -134,10 +159,7 @@ async function loadScripts(file: string | null): Promise<void> {
 async function boot(): Promise<void> {
   if (!canvas || !overlay || !message || !startButton) throw new Error('template markup missing');
 
-  const [build, sceneJson] = await Promise.all([
-    fetchJson<BuildManifest>('build.json'),
-    fetch('scene.json').then((response) => response.text()),
-  ]);
+  const build = await fetchJson<BuildManifest>('build.json');
   // Checked before the data is touched: a player reading a build it does not
   // understand should say so, not fail on a field it expected to be there.
   const version = build.formatVersion ?? 0;
@@ -147,8 +169,18 @@ async function boot(): Promise<void> {
     );
   }
 
-  const { assets: assetPaths, materials, prefabs } = await documentsOf(build);
-  const scene: SceneDoc = deserializeScene(sceneJson);
+  /*
+   * The entry scene can only be asked for once the manifest has arrived, since
+   * the manifest is what names it. It used to be `scene.json` and could go out
+   * in the same breath as `build.json`; that fixed name is exactly the
+   * asymmetry format 5 removed, and one round trip is what it cost.
+   */
+  const entryId = build.scenes[0];
+  if (entryId === undefined) throw new Error('This build lists no scene to start on.');
+  const [{ assets: assetPaths, materials, prefabs }, scene] = await Promise.all([
+    documentsOf(build),
+    readScene(build, entryId),
+  ]);
 
   await loadScripts(build.scripts ?? null);
 
@@ -180,15 +212,9 @@ async function boot(): Promise<void> {
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
     source: {
-      // By name, resolved through the map the exporter wrote: the entry scene
-      // is renamed to `scene.json` here, so the project's paths do not survive.
-      read: async (name: string) => {
-        const file = build.sceneMap?.[name];
-        if (file === undefined) throw new Error(`This build has no scene named "${name}".`);
-        // Encoded like an asset path: a scene called `My Level` ships as
-        // `scenes/My Level.scene.json`, which is a name and not yet a URL.
-        return deserializeScene(await (await fetch(encodePath(file))).text());
-      },
+      // By id, or by the name a script held: `sceneIdOf` turns one into the
+      // other, and the id is what says where the file is.
+      read: (named: string) => readScene(build, named),
     },
     resolver: buildResolver(assetPaths, build.textureEncodings, build.assetSettings),
     materials,

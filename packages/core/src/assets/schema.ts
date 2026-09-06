@@ -39,8 +39,33 @@ export const MATERIAL_ASSET_VERSION = 1;
  * small, always needed, and always fetched. The files are no longer written;
  * the player falls back to them when the fields are absent, which is what makes
  * this additive from its side too.
+ *
+ * 5 — every scene is `scenes/<sceneId>.json`, and `scenes` lists ids rather
+ * than files. **The first that is not additive**, and the one that shows why
+ * the number is the mechanism and a per-field default is not: a moved file has
+ * nothing to fall back to and nothing left where it was. The entry scene used
+ * to be renamed to `scene.json` at the root while the rest went into `scenes/`,
+ * and that asymmetry is what `sceneMap` — keyed by name *and* by id — existed
+ * to undo.
  */
-export const BUILD_FORMAT_VERSION = 4;
+export const BUILD_FORMAT_VERSION = 5;
+
+/**
+ * Where a scene lives in a build, from its id alone.
+ *
+ * Derived on both sides rather than listed anywhere: the exporter writes here
+ * and the player fetches here, and a path written twice is a path that can
+ * disagree with itself. That is the whole of what replaced `sceneMap`.
+ *
+ * The id is normally `createId()`'s alphabet and needs no escaping, but a scene
+ * file that carries no id of its own falls back to **its project path** — see
+ * `discoverScenes` — so the result can contain slashes and spaces. The exporter
+ * makes the directories and the player encodes the URL; neither assumes a flat
+ * name.
+ */
+export function buildScenePath(sceneId: string): string {
+  return `scenes/${sceneId}.json`;
+}
 
 /**
  * `build.json` — everything the player needs before the first frame except the
@@ -78,16 +103,31 @@ export interface BuildManifest {
    * the defaults, and it went unnoticed because the defaults happened to agree.
    */
   rendering?: RenderingSettings;
-  /** Entry point first; the rest ship for a script to load later. */
+  /**
+   * Every scene in the build **by id**, entry point first; the rest ship for a
+   * script to load later.
+   *
+   * Files, until format 5. What the id buys is that the path is `buildScenePath`
+   * of it rather than something to look up — which is ADR-15 reaching the end
+   * of the chain: a reference is an id, never a name and never a path.
+   */
   scenes: string[];
   /**
-   * Scene name → file in this build, keyed by id as well.
+   * Scene name → id. An alias table, and deliberately not a second address.
    *
-   * A script may hold either, and a build that understood only one would make
-   * the other silently fail to load. Absent on a build written before it.
+   * A script may name a level rather than hold its id, and a name is what an
+   * author reads in the editor. Nothing is *found* by name: this resolves to an
+   * id first, and the id is what says where the file is. Absent on a build
+   * written before format 5.
    */
-  sceneMap?: Record<string, string>;
-  /** Name of the scene shown while another loads, if the project has one. */
+  sceneNames?: Record<string, string>;
+  /**
+   * Id of the scene shown while another loads, if the project has one.
+   *
+   * The id the project settings already hold, passed through. It was resolved
+   * back into a name until format 5, on the grounds that the manifest should be
+   * legible — which is a reason to print a build, not to address one.
+   */
   loadingScene?: string | null;
   /**
    * Asset id → path under `assets/`, so nothing in a scene is a file name.

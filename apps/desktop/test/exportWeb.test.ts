@@ -5,6 +5,7 @@ import {
   ASSETS_DIR,
   BUILD_FORMAT_VERSION,
   PROJECT_FILE_NAME,
+  buildScenePath,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   createBuildProfiles,
@@ -198,15 +199,26 @@ describe('web export', () => {
     expect(await readdir(outputDir)).toContain('index.html');
     expect(await readdir(join(outputDir, '_studio'))).toContain('player.js');
 
-    // The scene, parseable, with the entity that was added.
-    const scene = JSON.parse(await readFile(join(outputDir, 'scene.json'), 'utf8')) as {
-      entities: Record<string, unknown>;
-    };
-    expect(Object.keys(scene.entities).length).toBeGreaterThan(0);
-
     // Read once, and against the declaration the exporter writes to: an inline
     // shape here would be a fourth statement of the same manifest.
     const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as BuildManifest;
+
+    /*
+     * The scene, at the path its own id gives — which is the whole of what
+     * replaced the map from name to file. Nothing at the root: the entry scene
+     * used to be renamed to `scene.json` there while the others went under
+     * `scenes/`, and that asymmetry is what this build no longer has.
+     */
+    const entryId = build.scenes[0]!;
+    expect(entryId).toMatch(/\S/);
+    expect(await readdir(outputDir)).not.toContain('scene.json');
+    const scene = JSON.parse(
+      await readFile(join(outputDir, buildScenePath(entryId)), 'utf8'),
+    ) as { id: string; entities: Record<string, unknown> };
+    expect(scene.id).toBe(entryId);
+    expect(Object.keys(scene.entities).length).toBeGreaterThan(0);
+    // An alias beside it, so a script naming the level still finds it.
+    expect(build.sceneNames?.['main']).toBe(entryId);
 
     // Only the referenced texture, and reachable at the path the manifest gives.
     const paths = build.assets ?? {};
@@ -221,7 +233,6 @@ describe('web export', () => {
     ]);
 
     expect(build.title).toBe('Export Test');
-    expect(build.scenes).toEqual(['scene.json']);
     // Named, not probed for: a static server that answers unknown paths with
     // its index page returns 200 and HTML, so asking it whether the bundle
     // exists cannot be answered. This project has no scripts.
@@ -423,8 +434,9 @@ describe('a profile that names a scene the project no longer has', () => {
 
     expect(result.sceneCount).toBe(1);
     expect(result.warnings.join(' ')).toMatch(/a-scene-that-was-deleted/);
-    // And the build is a build: the player loads this before anything else.
-    expect(await readdir(outputDir)).toContain('scene.json');
+    // And the build is a build: the scene that is left is there, under its own
+    // id, and it is the one the manifest names first.
+    expect(await readdir(join(outputDir, 'scenes'))).toEqual([`${scene.id}.json`]);
   });
 
   /*

@@ -127,9 +127,10 @@ describe('what a scene needs before it can be shown', () => {
 
 describe('naming a scene', () => {
   it('reduces a path to what a script says', () => {
-    // Paths do not survive an export — the entry scene is renamed to
-    // `scene.json` — so a script naming one would work in the editor and break
-    // in a build. The name is what both ends agree on.
+    // Paths do not survive an export — a build files every scene under its own
+    // id — so a script naming one would work in the editor and break in a
+    // build. The name is what both ends agree on, through the manifest's alias
+    // table.
     expect(sceneName('scenes/Level2.scene.json')).toBe('Level2');
     expect(sceneName('scene.json')).toBe('scene');
     expect(sceneName('Main')).toBe('Main');

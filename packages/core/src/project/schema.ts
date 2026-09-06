@@ -136,11 +136,11 @@ export function resolveScene(
  * The one way a name is derived, and since the list of scenes is the directory
  * it is now the only way a scene has a name at all.
  *
- * Names rather than paths, because the two are not the same in a build — the
- * exporter renames the entry scene to `scene.json` and files the rest under
- * `scenes/`. A script saying `load('Level2')` has to mean the same thing in the
- * editor and in an exported game, and a path cannot. Unity addresses scenes the
- * same way, and for the same reason.
+ * Names rather than paths, because a path does not survive an export: a build
+ * files every scene under its own id and carries the names beside them as an
+ * alias table. A script saying `load('Level2')` has to mean the same thing in
+ * the editor and in an exported game, and a path cannot. Unity addresses scenes
+ * the same way, and for the same reason.
  */
 export function sceneName(path: string): string {
   const file = path.split('/').at(-1) ?? path;

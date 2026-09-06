@@ -45,6 +45,7 @@ export {
   ASSET_META_VERSION,
   BUILD_FORMAT_VERSION,
   MATERIAL_ASSET_VERSION,
+  buildScenePath,
   emptyManifest,
   hasImagePreview,
   isTslMaterial,
