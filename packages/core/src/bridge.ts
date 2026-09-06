@@ -1,6 +1,6 @@
 import type { AssetImportResult, AssetKind, AssetManifest, AssetSettings } from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
-import type { LayoutPreferences } from './preferences/schema';
+import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
   ProjectContents,
@@ -306,6 +306,9 @@ export interface PreferencesApi {
   /** Window layouts, stored in the app's data directory. */
   loadLayouts: () => Promise<LayoutPreferences>;
   saveLayouts: (preferences: LayoutPreferences) => Promise<void>;
+  /** Remapped key bindings, stored beside the layouts. */
+  loadShortcuts: () => Promise<ShortcutPreferences>;
+  saveShortcuts: (preferences: ShortcutPreferences) => Promise<void>;
 }
 
 export interface StudioBridge {
@@ -452,6 +455,8 @@ export const IPC_INVOKE = {
   preferences: {
     loadLayouts: 'prefs:loadLayouts',
     saveLayouts: 'prefs:saveLayouts',
+    loadShortcuts: 'prefs:loadShortcuts',
+    saveShortcuts: 'prefs:saveShortcuts',
   },
 } as const satisfies InvokeChannels;
 

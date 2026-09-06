@@ -5,6 +5,7 @@ import type {
   ExportProgress,
   ExportResult,
   LayoutPreferences,
+  ShortcutPreferences,
   MaterialDef,
   OpenProject,
   PrefabDoc,
@@ -142,6 +143,10 @@ const bridge: StudioBridge = {
     loadLayouts: (): Promise<LayoutPreferences> => ipcRenderer.invoke(IPC_INVOKE.preferences.loadLayouts),
     saveLayouts: (preferences): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.preferences.saveLayouts, preferences),
+    loadShortcuts: (): Promise<ShortcutPreferences> =>
+      ipcRenderer.invoke(IPC_INVOKE.preferences.loadShortcuts),
+    saveShortcuts: (preferences): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.preferences.saveShortcuts, preferences),
   },
 };
 

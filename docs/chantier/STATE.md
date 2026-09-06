@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-063 — `rename` est une commande, plus un emplacement de callback
-**Tâche courante** : **T-064** — les raccourcis se lisent depuis le registre
-**Faites** : T-001 → T-061, **T-062a → T-062e, T-063**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-064 — les raccourcis sont une donnée, et ils se remappent
+**Tâche courante** : **T-065** — palette de commandes
+**Faites** : T-001 → T-061, **T-062a → T-062e, T-063, T-064**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,41 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-064 — il y avait trois orthographes d'un raccourci, pas deux, et la troisième était morte.** Le
+`switch` de `useShortcuts` décidait ; les hints des menus étaient tapés à la main (`${modKey}Z` une
+fois dans `MenuBar`, une fois dans `HierarchyPanel`, une fois dans `addMenu`) ; et
+**`Command.shortcut` n'était lu nulle part** — vérifié, le seul `.shortcut` lu est celui de
+`MenuItem`. Un remappage aurait dû trouver les trois. Il y a maintenant **une** table,
+`shell/shortcutBindings.ts`, et les deux sens en sortent : le clavier demande binding → commande, un
+menu demande commande → binding et le formate. `Command.shortcut` est supprimé.
+
+**La table est indexée par binding, pas par commande**, et c'est ce qui permet à un geste d'avoir
+plusieurs touches : redo répond à `Mod+Shift+Z` **et** `Mod+Y`, delete à `Delete` **et** `Backspace`.
+Une table dans l'autre sens aurait dû en faire des listes. Un override vaut `null` pour **libérer**
+une touche — sans ça, on ne peut qu'ajouter, jamais reprendre.
+
+**`shortcuts.json`, à côté de `layouts.json` et pas dedans.** Les deux s'écrivent sur des rythmes sans
+rapport : la disposition à chaque glissement de séparateur, un raccourci une fois par an. Partager un
+fichier voudrait dire réécrire les liaisons des centaines de fois par session, et les perdre sur un
+crash pendant une de ces écritures.
+
+**Vérifié en deux passages du harnais, parce que le critère parle de redémarrage.** Le premier écrit
+`Mod+K → save` et libère `Mod+S` ; le second relance et les lit depuis le disque avant toute action.
+Le menu Fichier affiche alors **`Save Scene⌘K`** — la preuve que l'affichage vient bien de la même
+table. Préférences de l'utilisateur remises à `{}` en sortant.
+
+**⚠️ `shortcutsApply` n'a pas bougé d'une ligne**, comme la fiche l'exigeait : les deux questions — la
+pile d'overlays *et* le focus — sont posées comme avant, et leurs quatre tests sont intacts.
+
+**Un changement de comportement, petit et voulu** : un accord avec modificateur que la table ne nomme
+pas rend maintenant la main au navigateur au lieu de tomber dans les touches d'outil. Avant, `Cmd+R`
+passait le `switch` (null → return) ; la structure est différente, donc c'est écrit explicitement.
+
+**⚠️ La fuite signalée dans « Attention » n'a pas été reproduite et n'a pas été corrigée** :
+`peekViewport()?.controls.isNavigating` est toujours là. Elle concerne les **touches d'outil**, qui ne
+sont pas des commandes — elles se résolvent sur `event.code`, la position physique, délibérément, pour
+que Q/W/E/R restent sous les mêmes doigts en AZERTY. Elles ne sont donc pas dans la table.
 
 **T-063 — la solution était déjà dans le dépôt, pour le geste que la fiche citait en exemple.** Elle
 demandait de résoudre « une commande doit demander à une vue de se mettre en édition » sans inventer
@@ -2357,7 +2392,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 faits ; reste T-062f, après T-066 |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063, T-064 faits ; reste T-062f, après T-066 |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

@@ -37,8 +37,9 @@ import {
   renameEntity,
   reparentSelection,
 } from '../commands/sceneCommands';
-import { hasModifier, isMac, modKey } from '../platform';
+import { hasModifier } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
+import { shortcutHint } from '../shell/shortcutBindings';
 import { expandedScene } from '../state/expansion';
 import { buildRows, type Row } from './hierarchyRows';
 import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
@@ -239,11 +240,11 @@ export function HierarchyPanel() {
     // selection — the reason a command's context can be supplied rather than
     // only read. Labels, verdicts and bodies all come from the registry.
     const ctx = { selection: targets };
-    const entry = (id: CommandId, shortcut?: string): MenuEntry => {
+    const entry = (id: CommandId): MenuEntry => {
       const command = commandById(id);
       return {
         label: command.label(ctx),
-        shortcut,
+        shortcut: shortcutHint(id),
         disabled: !command.can(ctx),
         onSelect: () => command.run(ctx),
       };
@@ -276,8 +277,8 @@ export function HierarchyPanel() {
       // Label, verdict and body all the command's now — the body used to stay
       // here because the registry had no way to ask a view for a text field.
       entry('rename'),
-      entry('duplicate', `${modKey}D`),
-      entry('delete', isMac ? '⌫' : 'Del'),
+      entry('duplicate'),
+      entry('delete'),
       null,
       ...(isPrefabHost
         ? ([

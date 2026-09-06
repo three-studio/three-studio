@@ -2,8 +2,8 @@ import { createEntity, type EntityTemplate } from '@three-studio/core';
 import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
-import { modKey } from '../platform';
 import { commandById } from '../commands/registry';
+import { shortcutHint } from './shortcutBindings';
 import type { MenuEntry } from '../ui/Menu';
 
 /*
@@ -41,7 +41,7 @@ export function buildAddMenu(): MenuEntry[] {
       // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
       // object was refused by the shortcut and grouped by the menu.
       label: commandById('group').label(),
-      shortcut: `${modKey}G`,
+      shortcut: shortcutHint('group'),
       disabled: !commandById('group').can(),
       onSelect: () => commandById('group').run(),
     },

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
+import { loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { LauncherApp } from './launcher/LauncherApp';
 import { selectDirty, useDocumentStore } from './state/documentStore';
@@ -35,9 +36,16 @@ function EditorWindow() {
 
   // Read once, up front. dockview builds its arrangement synchronously, so
   // waiting until then would show the default layout and swap it a frame later.
+  //
+  // The key bindings ride along: they are read from the same directory at the
+  // same moment, and a menu drawn before them would show the default key beside
+  // a gesture the author has rebound. Failure on either side leaves the
+  // product's own defaults, which is why neither is awaited separately.
   useEffect(() => {
     if (layoutsReady) return;
-    void loadLayoutPreferences().finally(() => setLayoutsReady(true));
+    void Promise.allSettled([loadLayoutPreferences(), loadShortcutBindings()]).finally(() =>
+      setLayoutsReady(true),
+    );
   }, [layoutsReady]);
 
   // The window is created for one project and opens it itself. The launcher

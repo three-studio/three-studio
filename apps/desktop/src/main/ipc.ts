@@ -14,6 +14,7 @@ import {
   type ProjectFile,
   type ProjectSettings,
   type LayoutPreferences,
+  type ShortcutPreferences,
   type OpenProject,
   type ProjectSummary,
   type SceneChange,
@@ -21,6 +22,7 @@ import {
   IPC_EVENTS,
   IPC_INVOKE,
   conformLayoutPreferences,
+  conformShortcutPreferences,
   conformMaterial,
   conformSettingsPatch,
   migratePrefab,
@@ -54,7 +56,12 @@ import {
 import { scanAssets, updateAssetSettings } from './assetScan';
 import { importSessions } from './import/ImportSession';
 import { resolveInside } from './paths';
-import { loadLayoutPreferences, saveLayoutPreferences } from './preferences';
+import {
+  loadLayoutPreferences,
+  loadShortcutPreferences,
+  saveLayoutPreferences,
+  saveShortcutPreferences,
+} from './preferences';
 import { exportBuild, requireBuildProfile } from './exportWeb';
 import {
   createProject,
@@ -482,6 +489,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     saveLayouts: (_event, preferences: LayoutPreferences): Promise<void> =>
       saveLayoutPreferences(conformLayoutPreferences(preferences)),
+
+    loadShortcuts: (): Promise<ShortcutPreferences> => loadShortcutPreferences(),
+
+    saveShortcuts: (_event, preferences: ShortcutPreferences): Promise<void> =>
+      saveShortcutPreferences(conformShortcutPreferences(preferences)),
   },
   };
 

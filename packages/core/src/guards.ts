@@ -4,7 +4,12 @@ import {
   createMaterial,
   type MaterialDef,
 } from './scene/material';
-import { emptyLayoutPreferences, type LayoutPreferences } from './preferences/schema';
+import {
+  emptyLayoutPreferences,
+  emptyShortcutPreferences,
+  type LayoutPreferences,
+  type ShortcutPreferences,
+} from './preferences/schema';
 import { createBuildProfiles, type BuildProfiles, type ProjectSettings } from './project/schema';
 import { defaultSettings } from './assets/import';
 import type { AssetKind, AssetSettings } from './assets/schema';
@@ -230,6 +235,30 @@ export function conformAssetSettings(
   // and reads as its default at load; it is a gap, not a hole, and closing it
   // means giving those unions the same treatment `MaterialSide` has.
   return { ...conform(value, model), kind: model.kind } as AssetSettings;
+}
+
+/**
+ * The remapped shortcuts, written beside the layouts.
+ *
+ * Every entry is checked one at a time rather than the object being trusted:
+ * this file is meant to be edited by hand — there is no interface for it yet —
+ * so a stray value is the expected case, not the surprising one. A binding whose
+ * value is neither a string nor `null` is dropped; a binding naming a command
+ * this build does not have is dropped later, by the editor, which is the only
+ * side that knows the list.
+ */
+export function conformShortcutPreferences(value: unknown): ShortcutPreferences {
+  const base = conform(value, emptyShortcutPreferences());
+  const given = (typeof value === 'object' && value !== null ? value : {}) as {
+    bindings?: unknown;
+  };
+  const bindings: Record<string, string | null> = {};
+  if (typeof given.bindings === 'object' && given.bindings !== null) {
+    for (const [binding, command] of Object.entries(given.bindings)) {
+      if (command === null || typeof command === 'string') bindings[binding] = command;
+    }
+  }
+  return { ...base, bindings };
 }
 
 /** The window layouts, written to the preferences file outside any project. */

@@ -67,8 +67,6 @@ export function contextForScene(sceneId: string): EditorContext {
 export interface Command {
   /** A function, because "Undo Move" names the gesture it would take back. */
   label(ctx?: EditorContext): string;
-  /** Shown in menus. The key handling itself is `useShortcuts`. */
-  readonly shortcut?: string;
   /** Blender's `poll()`, Unreal's `CanEditChange`. */
   can(ctx?: EditorContext): boolean;
   run(ctx?: EditorContext): void;
@@ -77,7 +75,6 @@ export interface Command {
 /** What a gesture is declared as, before `run` is wrapped in its own guard. */
 interface CommandSpec {
   label: (ctx: EditorContext) => string;
-  readonly shortcut?: string;
   can: (ctx: EditorContext) => boolean;
   /**
    * May be asynchronous, and most of the gestures still to arrive are: creating
@@ -96,9 +93,12 @@ interface CommandSpec {
 /**
  * Declares a gesture.
  *
- * **No `id`.** The key it is filed under in the table is its id, written once —
- * declaring it here as well would be the same string in two places, and two
- * places is where the list this whole refactor removes comes back from.
+ * **No `id` and no `shortcut`.** The key it is filed under in the table is its
+ * id, written once; declaring it here as well would be the same string in two
+ * places, and two places is where the list this whole refactor removes comes
+ * back from. The shortcut went for a sharper reason — the field was here, and
+ * **nothing ever read it**, while three other spellings of the same fact decided
+ * what the keys did. It lives in `shell/shortcutBindings.ts` now, once.
  *
  * `can` is required rather than optional. An optional guard is a guard somebody
  * forgets, which is the same argument ADR-4 makes for the selection carried by a
@@ -107,7 +107,6 @@ interface CommandSpec {
  */
 export function defineCommand(spec: CommandSpec): Command {
   return {
-    shortcut: spec.shortcut,
     label: (ctx) => spec.label(ctx ?? currentContext()),
     can: (ctx) => spec.can(ctx ?? currentContext()),
     /**

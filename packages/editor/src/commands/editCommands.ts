@@ -38,7 +38,6 @@ function visibleIn(ctx: EditorContext): boolean {
 
 export const EDIT_COMMANDS = {
   undo: defineCommand({
-    shortcut: 'Z',
     label: () => {
       const entry = documentStore().undoLabel();
       return entry === null ? 'Undo' : `Undo ${entry}`;
@@ -48,7 +47,6 @@ export const EDIT_COMMANDS = {
   }),
 
   redo: defineCommand({
-    shortcut: 'Shift+Z',
     label: () => {
       const entry = documentStore().redoLabel();
       return entry === null ? 'Redo' : `Redo ${entry}`;
@@ -58,7 +56,6 @@ export const EDIT_COMMANDS = {
   }),
 
   save: defineCommand({
-    shortcut: 'S',
     label: () => 'Save Scene',
     /**
      * The menu greyed this out on a clean document and Cmd+S wrote the file
@@ -75,7 +72,6 @@ export const EDIT_COMMANDS = {
   }),
 
   duplicate: defineCommand({
-    shortcut: 'D',
     label: (ctx) =>
       ctx.selection.isMultiple ? `Duplicate ${ctx.selection.size} Objects` : 'Duplicate',
     can: (ctx) => ctx.selection.can('duplicate'),
@@ -110,7 +106,6 @@ export const EDIT_COMMANDS = {
   }),
 
   group: defineCommand({
-    shortcut: 'G',
     label: () => 'Group Selection',
     can: (ctx) => ctx.selection.can('group'),
     run: (ctx) => {

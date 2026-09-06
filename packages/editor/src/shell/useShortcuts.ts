@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { commandById, type CommandId } from '../commands/registry';
+import { commandById } from '../commands/registry';
+import { bindingOf, commandForBinding } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { topOverlay } from '../state/overlayStore';
@@ -19,34 +20,6 @@ const TOOL_KEYS: Record<string, TransformMode> = {
   KeyE: 'rotate',
   KeyR: 'scale',
 };
-
-export type CommandAction = CommandId | null;
-
-/**
- * Resolves a modifier shortcut from the character a key produces.
- *
- * Matching on `event.code` here was a bug: `code` names physical positions on
- * a US layout, so on AZERTY the key labelled Z reports as `KeyW` and Cmd+Z did
- * nothing at all. Users press the key they can read.
- */
-export function commandShortcut(key: string, shiftKey: boolean): CommandAction {
-  switch (key.toLowerCase()) {
-    case 'z':
-      return shiftKey ? 'redo' : 'undo';
-    case 'y':
-      return 'redo';
-    case 'd':
-      return 'duplicate';
-    case 'g':
-      // Ctrl+G groups, everywhere from Unreal to Figma. Shift+G is what
-      // ungroups in Unreal, and is not wired yet.
-      return shiftKey ? null : 'group';
-    case 's':
-      return 'save';
-    default:
-      return null;
-  }
-}
 
 /** What the decision below needs, so it can be taken without a `KeyboardEvent`. */
 export interface ShortcutContext {
@@ -102,17 +75,26 @@ export function useShortcuts(): void {
       }
       const store = useEditorStore.getState();
 
-      if (hasModifier(event)) {
-        const action = commandShortcut(event.key, event.shiftKey);
-        if (action === null) return;
-        event.preventDefault();
+      const binding = bindingOf(event);
+      const action = binding === null ? null : commandForBinding(binding);
+      if (action !== null) {
+        const command = commandById(action);
+        // A modifier binding is the editor's whether or not the command will
+        // act — Cmd+S must not open the browser's save dialog on a clean
+        // document. A bare one is only swallowed when something will happen: a
+        // preventDefault on a refusal makes Backspace feel broken everywhere
+        // else.
+        if (hasModifier(event) || command.can()) event.preventDefault();
 
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        commandById(action).run();
+        command.run();
         return;
       }
+      // A modifier chord this table does not name belongs to the browser, not
+      // to the tool keys below: Cmd+R is a reload, not the Rotate tool.
+      if (hasModifier(event)) return;
 
       const tool = TOOL_KEYS[event.code];
       if (tool !== undefined) {
@@ -120,17 +102,6 @@ export function useShortcuts(): void {
         // switching tools mid-flight would be maddening.
         if (!event.repeat && peekViewport()?.controls.isNavigating !== true) {
           store.setTransformMode(tool);
-        }
-        return;
-      }
-
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        const remove = commandById('delete');
-        // The key is only swallowed when something will happen: a preventDefault
-        // on a refusal makes Backspace feel broken everywhere else.
-        if (remove.can()) {
-          event.preventDefault();
-          remove.run();
         }
         return;
       }

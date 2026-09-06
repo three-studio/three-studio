@@ -6,7 +6,7 @@ import {
   type EditorContext,
 } from '../commands/registry';
 import { sceneList } from '../commands/sceneFiles';
-import { isMac, modKey, shiftKey } from '../platform';
+import { isMac, modKey } from '../platform';
 import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
@@ -14,6 +14,7 @@ import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
 import { MenuTrigger, type MenuEntry, type MenuItem } from '../ui/Menu';
 import { buildAddMenu } from './addMenu';
+import { shortcutHint } from './shortcutBindings';
 import { PackageDialog } from './PackageDialog';
 import { openPanelIds, togglePanel } from './dockApi';
 import { ProjectSettingsDialog } from './ProjectSettingsDialog';
@@ -66,12 +67,15 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
    * would re-render the bar once per frame of a gizmo drag, which phase 7
    * removed.
    */
-  const entryFor = (id: CommandId, shortcut?: string, target?: EditorContext): MenuItem => {
+  const entryFor = (id: CommandId, target?: EditorContext): MenuItem => {
     const command = commandById(id);
     const ctx = target ?? { selection: current };
     return {
       label: command.label(ctx),
-      shortcut,
+      // The table's, not typed in here. `${modKey}Z` used to be written once in
+      // this file and once in the hierarchy, beside a third spelling in
+      // `useShortcuts` that actually decided.
+      shortcut: shortcutHint(id),
       disabled: !command.can(ctx),
       onSelect: () => command.run(ctx),
     };
@@ -88,7 +92,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     // files claiming one id, where opening this one would open the other — is
     // the command's now, and the submenu below reads the same one.
     ...scenes.map((scene) => ({
-      ...entryFor('openScene', undefined, contextForScene(scene.id)),
+      ...entryFor('openScene', contextForScene(scene.id)),
       checked: scene.id === sceneId,
     })),
     null,
@@ -116,7 +120,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
               .filter((scene) =>
                 commandById('openSceneInNewWindow').can(contextForScene(scene.id)),
               )
-              .map((scene) => entryFor('openSceneInNewWindow', undefined, contextForScene(scene.id))),
+              .map((scene) => entryFor('openSceneInNewWindow', contextForScene(scene.id))),
           },
         ] satisfies readonly MenuEntry[])
       : []),
@@ -147,7 +151,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
       null,
       entryFor('newScene'),
       null,
-      entryFor('save', `${modKey}S`),
+      entryFor('save'),
       // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
       // both, and this project has no Save All to be confused with yet.
       entryFor('saveSceneAs'),
@@ -157,14 +161,14 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     Edit: [
       // Every entry below is the command's own label, its own verdict and its
       // own body. Greying an entry and refusing a key are the same line now.
-      entryFor('undo', `${modKey}Z`),
-      entryFor('redo', `${modKey}${shiftKey}Z`),
+      entryFor('undo'),
+      entryFor('redo'),
       null,
-      entryFor('duplicate', `${modKey}D`),
-      entryFor('delete', isMac ? '⌫' : 'Del'),
+      entryFor('duplicate'),
+      entryFor('delete'),
       // Group had no menu entry at all: it existed as Cmd+G and nowhere a user
       // could discover it.
-      entryFor('group', `${modKey}G`),
+      entryFor('group'),
       null,
       // Under Edit, where both Unity and Unreal put it.
       { label: 'Project Settings…', onSelect: () => setSettingsOpen(true) },

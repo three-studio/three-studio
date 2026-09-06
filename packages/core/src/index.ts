@@ -116,6 +116,7 @@ export {
   conform,
   conformAssetSettings,
   conformLayoutPreferences,
+  conformShortcutPreferences,
   conformMaterial,
   conformPatch,
   conformSettingsPatch,
@@ -307,12 +308,15 @@ export type { ExpandedScene, PrefabDoc, PrefabLibrary } from './scene/prefab';
 
 export {
   LAYOUT_PREFERENCES_VERSION,
+  SHORTCUT_PREFERENCES_VERSION,
   emptyLayoutPreferences,
+  emptyShortcutPreferences,
 } from './preferences/schema';
 export type {
   LayoutPreferences,
   LayoutTemplateRecord,
   SerializedLayout,
+  ShortcutPreferences,
 } from './preferences/schema';
 
 export { capabilitiesOf } from './scene/capabilities';
