@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-068 — les bugs que les commentaires nomment sont enregistrés
-**Tâche courante** : **T-069** — ADR de l'extensibilité tierce
-**Faites** : T-001 → T-068. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
+**Dernier commit** : T-069 — ce que la tranche verticale rend possible, et pourquoi on ne le construit pas
+**Tâche courante** : **T-070** — `ARCHITECTURE.md` remis d'accord avec le code (**la dernière**)
+**Faites** : T-001 → T-069. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
 terminés.** Lot 1 : les neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne
 d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,31 @@ d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 �
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-069 — ⚠️ le chargement de code tiers n'est pas à inventer : il tourne déjà, pour les scripts de
+jeu.** C'est la trouvaille de l'écriture, et elle change ce que l'ADR pouvait dire. `esbuild` est une
+dépendance **runtime**, pas de build — l'app packagée compile le code de l'auteur elle-même ; le bundle
+s'enregistre par `registerScript` à l'import ; il **ne peut pas importer le vrai runtime**, donc l'API
+lui est *passée* ; et **`SCRIPT_API_VERSION` est gravé dans le bundle et comparé à celui qui tourne**,
+avec un message qui nomme les deux numéros. Le versionnement d'API — la partie difficile d'un système
+de plugins — **existe déjà**, démontré sur la surface la plus étroite possible.
+
+**Ce qui manque vraiment est donc plus court que la fiche ne le laissait croire** : l'isolation
+(`sandbox` et `contextIsolation` protègent la frontière du preload, pas la page d'elle-même), une
+surface stable côté éditeur, et **les trois listes de T-031**.
+
+**Et les trois listes changent de nature vues d'ici.** Pour un type maison, `COMPONENT_TYPES` et les
+deux listes d'imports sont une corvée que `tsc` ne rattrape pas. **Pour un type tiers, c'est le
+blocage** : un plugin ne peut pas ajouter une ligne à `COMPONENT_TYPES` dans un `core` compilé. Le
+reste de T-031 vaut la peine indépendamment ; celui-là est une condition.
+
+**Le test des ADR a maintenant une *classe*, pas une exception.** « Les décisions qui décrivent un seam
+par lequel rien n'est encore passé » — `0001` (la compression) et `0018`. Être non cité **est l'état
+que ces documents décrivent** ; une citation voudrait dire que la chose a été construite. Cassé pour
+vérifier : un ADR non cité hors de la classe fait tomber le test.
+
+**Aucune ligne de code de production**, comme la fiche l'exigeait, et vérifié plutôt qu'affirmé :
+`git status packages apps` est vide.
 
 **T-068 — la règle « seul → remplacer, cité plusieurs fois → registre » ne tranche qu'un cas.** Compté :
 B1 seize citations, B10 dix, B2/B5/B6/B9 sept, B3/B8/B11 cinq, B15 trois, B4 trois, B7 deux — et **B12
@@ -2519,6 +2544,6 @@ choisi par bénéfice visible :
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
 | 8 | T-062 → T-066 | La couche de commandes | **5/5 ✅** (T-062 scindé en 6 tranches) |
-| 11 | T-067 → T-070 | La mémoire du projet | 2/4 |
+| 11 | T-067 → T-070 | La mémoire du projet | 3/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

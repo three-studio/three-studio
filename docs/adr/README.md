@@ -18,7 +18,11 @@ invariants are named "nine" and only three are named individually — the gap is
 rather than filled in.
 
 `0001` predates the reconstruction and was written as an ordinary ADR; it is longer than the rest for
-that reason.
+that reason. `0018` was written afterwards, in the same shape.
+
+Two of these describe a seam **nothing has come through yet** — `0001` and `0018`. They are the only
+ones the code does not cite, and that is the state they describe: a citation would mean the thing had
+been built.
 
 ## The rule
 
@@ -49,3 +53,4 @@ Citations are four digits — `ADR-0005` — so that a grep and an `ls` of this 
 | [0015](0015-the-listener-is-the-component-then-the-camera.md) | The listener is the component, then the active camera |
 | [0016](0016-a-clips-facts-are-read-by-the-renderer.md) | A clip's facts are read by the renderer |
 | [0017](0017-the-cone-is-drawn-from-the-document.md) | A positional source's cone is drawn from the document |
+| [0018](0018-third-party-extension-enters-through-the-registries.md) | Third-party extension enters through the registries |

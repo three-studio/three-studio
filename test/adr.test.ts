@@ -37,12 +37,19 @@ const SOURCE_ROOTS = ['packages', 'apps', 'test'];
 const SKIP = ['node_modules', 'dist', 'out', 'release', '.vite'];
 
 /**
- * `0001` documents where compression *would* enter, and no compression exists —
- * being uncited is the state that document describes. Every other ADR is about
- * code that is here, so silence about it would mean the decision has drifted out
- * of the codebase without anyone noticing.
+ * The decisions that describe a seam nothing has come through yet.
+ *
+ * `0001` says where compression would enter and no compression exists; `0018`
+ * says where a third-party extension would, and none exists either. **Being
+ * uncited is the state those documents describe** — a citation would mean the
+ * thing had been built.
+ *
+ * A class, not a list of exceptions: an ADR belongs here when its subject is
+ * deliberately unbuilt, and comes out of it the day something cites it. Every
+ * other ADR is about code that is here, so silence about one of those would mean
+ * a decision has drifted out of the codebase with nobody noticing.
  */
-const UNCITED_BY_DESIGN = new Set(['0001']);
+const UNCITED_BY_DESIGN = new Set(['0001', '0018']);
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
