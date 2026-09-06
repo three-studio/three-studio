@@ -2,6 +2,62 @@ import { createEmptyScene, splitInstancedId, validateHierarchy, type SceneDoc } 
 import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
 import { create } from 'zustand';
 import { useEditorStore } from './editorStore';
+import { pushEdit, type ExternalEdit, type HistoryEntry, type HistoryStash } from './history';
+import { revisionLog, type Changes } from './revisionLog';
+
+/*
+ * The document, and nothing else. Its history is `history.ts` and what changed
+ * when is `revisionLog.ts` — six hundred lines of one file were three jobs that
+ * only ever met here, in `mutate`.
+ */
+
+export type { Changes } from './revisionLog';
+export type { ExternalEdit, HistoryStash } from './history';
+
+export interface MutationOptions {
+  /**
+   * Consecutive mutations sharing a key collapse into one history entry. Used
+   * by gizmo drags and slider scrubs, which otherwise produce hundreds of
+   * undo steps for a single user gesture.
+   */
+  coalesceKey?: string;
+  /**
+   * An edit outside the document that must be taken back with this one, in a
+   * single step. Writing an asset and clearing what it replaced are one action
+   * to the user; two history entries would need two Cmd+Z.
+   */
+  external?: ExternalEdit;
+  /**
+   * What is selected once this has happened, applied inside the transaction.
+   *
+   * The function form is for commands that only learn the new ids from their own
+   * recipe — `duplicateEntities` above all. It is handed the scene the recipe
+   * produced, not the one it started from.
+   *
+   * Setting the selection *after* `mutate` is what B2 was: the change was not in
+   * the entry, so undo could not take it back.
+   */
+  select?: readonly string[] | ((scene: SceneDoc) => readonly string[]);
+}
+
+/**
+ * Drops selected ids that no longer name anything.
+ *
+ * Checked against the document rather than the expanded scene, on purpose: an
+ * expanded id (`owner/local`) is not in `scene.entities` and would all be thrown
+ * away, which is every selection made inside a prefab. What is asked instead is
+ * whether the instance that produces it is still there. That keeps an id whose
+ * `local` half no longer resolves — coarser, but wrong in the harmless
+ * direction, where the alternative clears a selection the user can see.
+ */
+function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
+  const kept = selection.filter((id) => {
+    const parts = splitInstancedId(id);
+    return scene.entities[parts === null ? id : parts.owner] !== undefined;
+  });
+  // Same array when nothing went, so subscribers do not see a change.
+  return kept.length === selection.length ? selection : kept;
+}
 
 enablePatches();
 
@@ -51,118 +107,7 @@ function assertHierarchy(scene: SceneDoc, patches: readonly Patch[], label: stri
 }
 
 /** How much history is kept. Each entry holds patches, not scene snapshots. */
-const HISTORY_LIMIT = 200;
 
-/**
- * How far back a consumer may fall and still be told precisely what changed.
- *
- * Past this it is told `'*'` and re-reads everything, which is the cheaper
- * answer anyway: merging 256 deltas costs more than one full reconcile, and a
- * consumer that far behind has not drawn a frame in four seconds.
- */
-const REVISION_LOG_LIMIT = 256;
-
-/** What one mutation touched. The unit the log is made of. */
-interface Change {
-  revision: number;
-  /** `'*'` means everything: a document was loaded, or the table was replaced. */
-  entities: ReadonlySet<string> | '*';
-  environment: boolean;
-  /**
-   * Which asset table moved. No entity did, and yet what is drawn changed.
-   *
-   * Two flags rather than one, because the two need opposite answers. A material
-   * edit invalidates a known set of bindings, and the binder hands that set
-   * back. A prefab edit changes what the *expansion produces* — entities appear
-   * and vanish — so there is nothing to name and the pass has to be full.
-   */
-  materials: boolean;
-  prefabs: boolean;
-}
-
-export interface Changes {
-  entities: ReadonlySet<string> | '*';
-  environment: boolean;
-  materials: boolean;
-  prefabs: boolean;
-  /** Pass this back as `since` next time. */
-  revision: number;
-}
-
-/**
- * Work that belongs to an undo step but does not live in the document.
- *
- * Material assets are the reason: they are files, shared by many entities, so
- * editing one changes nothing in the scene — but it is still an edit the user
- * made and expects Cmd+Z to take back. Rather than a second history stack that
- * would interleave wrongly with the first, such an edit rides in the same
- * entry and is replayed by calling back out.
- */
-export interface ExternalEdit {
-  apply: () => void;
-  revert: () => void;
-}
-
-/**
- * One user action, whole.
- *
- * `selectionBefore` and `selectionAfter` are not optional, and that is the point:
- * an optional field is a field somebody forgets, which is exactly how undo used
- * to leave the gizmo pointing at an entity it had just deleted (B2). See ADR-4,
- * invariant 2.
- */
-interface HistoryEntry {
-  label: string;
-  patches: Patch[];
-  inverse: Patch[];
-  selectionBefore: readonly string[];
-  selectionAfter: readonly string[];
-  /** Non-null while the entry may absorb further edits from the same gesture. */
-  coalesceKey: string | null;
-  external?: ExternalEdit;
-}
-
-export interface MutationOptions {
-  /**
-   * Consecutive mutations sharing a key collapse into one history entry. Used
-   * by gizmo drags and slider scrubs, which otherwise produce hundreds of
-   * undo steps for a single user gesture.
-   */
-  coalesceKey?: string;
-  /**
-   * An edit outside the document that must be taken back with this one, in a
-   * single step. Writing an asset and clearing what it replaced are one action
-   * to the user; two history entries would need two Cmd+Z.
-   */
-  external?: ExternalEdit;
-  /**
-   * What is selected once this has happened, applied inside the transaction.
-   *
-   * The function form is for commands that only learn the new ids from their own
-   * recipe — `duplicateEntities` above all. It is handed the scene the recipe
-   * produced, not the one it started from.
-   *
-   * Setting the selection *after* `mutate` is what B2 was: the change was not in
-   * the entry, so undo could not take it back.
-   */
-  select?: readonly string[] | ((scene: SceneDoc) => readonly string[]);
-}
-
-/**
- * The undo stack and where the file stands, as one value.
- *
- * Taken and put back together by Prefab Mode: opening a prefab sets the scene's
- * history aside instead of destroying it, which is B4. They travel as one
- * because `savedRevision` means nothing without the `revision` it is compared
- * to — restoring one and not the other is how a document ends up permanently
- * dirty, or permanently clean.
- */
-export interface HistoryStash {
-  past: HistoryEntry[];
-  future: HistoryEntry[];
-  revision: number;
-  savedRevision: number;
-}
 
 interface DocumentState {
   scene: SceneDoc;
@@ -268,207 +213,7 @@ export const selectUndoLabel = (state: DocumentState): string | null =>
 export const selectRedoLabel = (state: DocumentState): string | null =>
   state.future[0]?.label ?? null;
 
-/**
- * Derives which entities a set of immer patches touched.
- *
- * Patch paths look like `['entities', <id>, 'transform', 'position', 1]`, so
- * the affected entity is always at index 1. The binder then re-reads only those
- * entities instead of diffing the whole tree every frame.
- */
-function affectedEntities(patches: readonly Patch[]): {
-  entities: Set<string>;
-  environment: boolean;
-  structural: boolean;
-  component: boolean;
-} {
-  const entities = new Set<string>();
-  let environment = false;
-  let structural = false;
-  let component = false;
 
-  for (const patch of patches) {
-    const [root, second, third] = patch.path;
-    if (root === 'environment') {
-      environment = true;
-    } else if (root === 'components') {
-      /*
-       * `['components', <type>, <entityId>, <componentId>, …]` — the entity is
-       * at index **2**, not 1. Reading it from 1 would name a component type and
-       * wake nothing at all.
-       */
-      if (typeof third === 'string') entities.add(third);
-      else entities.add('*');
-      component = true;
-      /*
-       * Structural only down to the component itself.
-       *
-       * A path of four segments or fewer adds or removes one — which the
-       * hierarchy does show, in the icon `iconFor` picks from `hasComponent`.
-       * Anything deeper is a value written *inside* a component, and no list in
-       * the editor shows one: dragging a roughness slider used to rebuild the
-       * hierarchy's whole row model, a full walk of the scene, sixty times a
-       * second to produce an identical list.
-       *
-       * What that narrowing takes away from the Inspector — whose set of fields
-       * *does* turn on values a component holds, a light's `kind`, a mesh's
-       * filled texture slots — `componentRevision` gives back.
-       */
-      if (patch.path.length <= 4) structural = true;
-    } else if (root === 'entities' && typeof second === 'string') {
-      entities.add(second);
-      // A transform is the one thing that changes nothing anyone lists: not the
-      // hierarchy rows, not the Inspector's set of fields, not a menu. Every
-      // other write may.
-      if (third !== 'transform') structural = true;
-    } else if (root === 'rootOrder') {
-      /*
-       * Names no entity at all — and that is not a shortcut.
-       *
-       * `link`/`unlink` write `rootOrder` for **any** root entity, so adding or
-       * deleting a cube at the top level, the commonest gesture in the editor,
-       * used to be answered with `'*'` and degenerate into a full reconcile.
-       *
-       * Nothing has to be named because `rootOrder` is an *ordering*: it decides
-       * what the hierarchy lists and in which order, and nothing about what is
-       * drawn. Whatever actually appeared, vanished or moved is named by another
-       * patch of the same mutation — an `entities.<id>` add or remove, or a
-       * change to its `parent`. So the binder needs nothing from here, and the
-       * panels need only to know the list changed, which `structural` says.
-       */
-      structural = true;
-    } else if (root === 'entities') {
-      // A whole-table replacement names nothing: the binder must resync fully.
-      entities.add('*');
-      structural = true;
-    }
-  }
-
-  return { entities, environment, structural, component };
-}
-
-/**
- * Collapses repeated writes to the same path down to one.
- *
- * A ten-second drag at 60fps leaves ~600 patch/inverse pairs in a single
- * coalesced entry, none of which will ever be reduced (ADR-4, invariant 6). Each
- * frame overwrites the same `transform.position`, so all but one of them are
- * dead weight — kept in memory, walked by `affectedEntities`, and copied on
- * every subsequent mutation of the gesture.
- *
- * The surviving patch keeps the **position of the first** and the **value of the
- * last**, which is correct for both directions: applied in order, the last
- * writer to a path wins, and an inverse array is stored oldest-last, so its last
- * occurrence is the oldest value — the one an undo must land on.
- *
- * Only when every patch is a `replace`. An `add` or a `remove` on an array moves
- * the indices its neighbours refer to, so reordering around one changes what the
- * patches mean. A drag produces nothing but `replace`, which is the case this is
- * for; anything else is left exactly as it came.
- */
-function compact(patches: Patch[]): Patch[] {
-  if (patches.length < 2) return patches;
-  if (!patches.every((patch) => patch.op === 'replace')) return patches;
-
-  const out: Patch[] = [];
-  const seen = new Map<string, number>();
-  for (const patch of patches) {
-    const key = patch.path.join(' ');
-    const at = seen.get(key);
-    if (at === undefined) {
-      seen.set(key, out.length);
-      out.push(patch);
-    } else {
-      out[at] = patch;
-    }
-  }
-  return out;
-}
-
-/**
- * Drops selected ids that no longer name anything.
- *
- * Checked against the document rather than the expanded scene, on purpose: an
- * expanded id (`owner/local`) is not in `scene.entities` and would all be thrown
- * away, which is every selection made inside a prefab. What is asked instead is
- * whether the instance that produces it is still there. That keeps an id whose
- * `local` half no longer resolves — coarser, but wrong in the harmless
- * direction, where the alternative clears a selection the user can see.
- */
-function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
-  const kept = selection.filter((id) => {
-    const parts = splitInstancedId(id);
-    return scene.entities[parts === null ? id : parts.owner] !== undefined;
-  });
-  // Same array when nothing went, so subscribers do not see a change.
-  return kept.length === selection.length ? selection : kept;
-}
-
-/**
- * The revision log.
- *
- * Deliberately outside the zustand state. Nothing renders from it — consumers
- * ask it a question and remember the answer — and putting it in the store would
- * hand every subscriber a new array on every mutation, which is the kind of
- * per-frame wake-up this project keeps finding and removing.
- *
- * Its counter is **strictly increasing**, which the store's `revision` is not:
- * that one is the save marker and goes back down on undo (phase 2). Two ideas,
- * two numbers — sharing one would make an undo look like a rewind of the log.
- */
-const log = {
-  entries: [] as Change[],
-  next: 1,
-
-  append(change: Omit<Change, 'revision'>): void {
-    this.entries.push({ ...change, revision: this.next });
-    this.next += 1;
-    if (this.entries.length > REVISION_LOG_LIMIT) {
-      this.entries.splice(0, this.entries.length - REVISION_LOG_LIMIT);
-    }
-  },
-
-  since(revision: number): Changes {
-    const current = this.next - 1;
-    const oldest = this.entries[0]?.revision;
-
-    // Nothing kept from that far back — or nothing kept at all, on a store that
-    // has just been replaced. Either way the honest answer is "re-read".
-    if (oldest === undefined) {
-      return {
-        entities: revision === current ? new Set() : '*',
-        environment: false,
-        materials: false,
-        prefabs: false,
-        revision: current,
-      };
-    }
-    if (revision < oldest - 1) {
-      return { entities: '*', environment: true, materials: true, prefabs: true, revision: current };
-    }
-
-    const entities = new Set<string>();
-    let everything = false;
-    let environment = false;
-    let materials = false;
-    let prefabs = false;
-
-    for (const entry of this.entries) {
-      if (entry.revision <= revision) continue;
-      if (entry.entities === '*') everything = true;
-      else for (const id of entry.entities) entities.add(id);
-      environment ||= entry.environment;
-      materials ||= entry.materials;
-      prefabs ||= entry.prefabs;
-    }
-
-    return { entities: everything ? '*' : entities, environment, materials, prefabs, revision: current };
-  },
-
-  reset(): void {
-    this.entries.length = 0;
-    this.next = 1;
-  },
-};
 
 export const useDocumentStore = create<DocumentState>()((set, get) => ({
   scene: createEmptyScene(),
@@ -494,47 +239,21 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       typeof options?.select === 'function' ? options.select(scene) : options?.select;
     const selectionAfter = pruneSelection(scene, asked ?? selectionBefore);
 
-    const coalesceKey = options?.coalesceKey ?? null;
-    const previous = state.past.at(-1);
-    const canCoalesce =
-      coalesceKey !== null && previous !== undefined && previous.coalesceKey === coalesceKey;
-
-    const entry: HistoryEntry = canCoalesce
-      ? {
-          label: previous.label,
-          patches: compact([...previous.patches, ...patches]),
-          // Inverse patches undo in reverse order, so the older ones go last.
-          inverse: compact([...inverse, ...previous.inverse]),
-          // The gesture began where the first mutation of it began: one undo has
-          // to reach the start of the drag, not its second frame.
-          selectionBefore: previous.selectionBefore,
-          selectionAfter,
-          coalesceKey,
-          external: previous.external,
-        }
-      : {
-          label,
-          patches: [...patches],
-          inverse: [...inverse],
-          selectionBefore,
-          selectionAfter,
-          coalesceKey,
-          external: options?.external,
-        };
-
-    const past = canCoalesce ? [...state.past.slice(0, -1), entry] : [...state.past, entry];
-    const touched = affectedEntities(patches);
-    assertHierarchy(scene, patches, label);
-    log.append({
-      entities: touched.entities.has('*') ? '*' : touched.entities,
-      environment: touched.environment,
-      materials: false,
-      prefabs: false,
+    const past = pushEdit(state.past, {
+      label,
+      patches: [...patches],
+      inverse: [...inverse],
+      selectionBefore,
+      selectionAfter,
+      coalesceKey: options?.coalesceKey ?? null,
+      external: options?.external,
     });
+    assertHierarchy(scene, patches, label);
+    const touched = revisionLog.note(patches);
 
     set({
       scene,
-      past: past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past,
+      past,
       future: [],
       revision: state.revision + 1,
       structureRevision: state.structureRevision + (touched.structural ? 1 : 0),
@@ -561,9 +280,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       coalesceKey: null,
       external,
     };
-    const past = [...state.past, entry];
     set({
-      past: past.length > HISTORY_LIMIT ? past.slice(past.length - HISTORY_LIMIT) : past,
+      past: pushEdit(state.past, entry),
       future: [],
       // An external edit is unsaved work too — it wrote a file, and the entry
       // that would take it back is only in memory.
@@ -578,16 +296,10 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
     entry.external?.revert();
 
-    const touched = affectedEntities(entry.inverse);
     const scene = applyPatches(state.scene, entry.inverse);
     // An undo is a change like any other: its delta is that of its inverse
     // patches.
-    log.append({
-      entities: touched.entities.has('*') ? '*' : touched.entities,
-      environment: touched.environment,
-      materials: false,
-      prefabs: false,
-    });
+    const touched = revisionLog.note(entry.inverse);
     // Checked on the way back too: an inverse patch set restores a shape nobody
     // wrote by hand, and taking back a structural edit is where an inconsistency
     // would first show.
@@ -599,7 +311,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       future: [entry, ...state.future],
       // Down, not up: this is what lets undoing back to the last save report the
       // document as saved again, which a boolean could never do. The log's own
-      // counter keeps climbing — see `log`.
+      // counter keeps climbing — see `revisionLog`.
       revision: state.revision - 1,
       structureRevision: state.structureRevision + (touched.structural ? 1 : 0),
       componentRevision: state.componentRevision + (touched.component ? 1 : 0),
@@ -618,15 +330,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
     entry.external?.apply();
 
-    const touched = affectedEntities(entry.patches);
     const scene = applyPatches(state.scene, entry.patches);
     assertHierarchy(scene, entry.patches, `redo ${entry.label}`);
-    log.append({
-      entities: touched.entities.has('*') ? '*' : touched.entities,
-      environment: touched.environment,
-      materials: false,
-      prefabs: false,
-    });
+    const touched = revisionLog.note(entry.patches);
 
     set({
       scene,
@@ -652,7 +358,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       // `'*'`, not an ordinary entry: every consumer must re-read whatever its
       // own `since` is, and a delta cannot express "this is a different
       // document".
-      log.append({ entities: '*', environment: true, materials: true, prefabs: true });
+      revisionLog.noteWholeDocument();
 
       return {
         scene,
@@ -661,7 +367,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
         ...marker,
         structureRevision: state.structureRevision + 1,
         // A different document holds different components, whatever the old one
-        // held. Both counters move for the same reason the log gets a `'*'`.
+        // held. Both counters move for the same reason the revision log is told
+        // the whole document changed.
         componentRevision: state.componentRevision + 1,
       };
     }),
@@ -688,14 +395,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       savedRevision: stash.savedRevision,
     }),
 
-  changesSince: (since) => log.since(since),
-  noteLibraryChange: (table) =>
-    log.append({
-      entities: new Set(),
-      environment: false,
-      materials: table === 'materials',
-      prefabs: table === 'prefabs',
-    }),
+  changesSince: (since) => revisionLog.since(since),
+  noteLibraryChange: (table) => revisionLog.noteLibrary(table),
 
   canUndo: () => get().past.length > 0,
   canRedo: () => get().future.length > 0,
