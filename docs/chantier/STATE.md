@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-065 — une palette de commandes, que le registre offre désormais
-**Tâche courante** : **T-066** — `playCommands` cesse de piloter la disposition
-**Faites** : T-001 → T-061, **T-062a → T-062e, T-063 → T-065**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-066 — démarrer le jeu et montrer un panneau sont deux choses
+**Tâche courante** : **T-062f** — le transport entre dans le registre (dernière tranche du lot 8)
+**Faites** : T-001 → T-061, **T-062a → T-062e, T-063 → T-066**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,31 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-066 — ⚠️ il y avait deux sites, pas un, et j'avais écrit le contraire.** `assetCommands.ts`
+appelait `showPanel('project')` comme `playCommands` appelait `showPanel('game')`. T-062b avait
+consigné que ce n'était « pas le jalon 8.5 », au motif qu'amener le panneau devant **est** le geste de
+révéler. Le critère de T-066 est mécanique — « `commands/` n'importe plus `shell/` » — et il couvre
+les deux. **Un argument sur l'intention ne survit pas à un critère sur la structure** : il fallait
+relire le dossier, pas la note.
+
+**Et le sortir a payé.** `assetStore.reveal` posé par n'importe quel chemin amène désormais le panneau
+Project devant ; avant, seule la commande le faisait. `revealAsset` la fonction a disparu au passage —
+une fois `showPanel` parti, elle ne faisait plus qu'une ligne.
+
+**⚠️ La décision est une transition, jamais un état**, et c'est la seule chose subtile du commit.
+`panelForChange(before, after)` tourne à **chaque** changement de store — une sélection, un filtre,
+une mutation. Décider depuis l'état ramènerait l'onglet Scene au premier plan chaque fois que quoi que
+ce soit bouge, et une fois au démarrage par-dessus l'onglet que l'auteur avait laissé devant. Cassé
+pour vérifier : trois tests tombent.
+
+**Un panneau ne peut pas se montrer lui-même** — fermé, il n'est pas monté pour lire quoi que ce soit.
+C'est pour ça que la lecture est faite une fois, dans la coque, et pas dans chaque panneau. Différence
+avec `renaming` et `paletteOpen`, où la vue concernée est toujours là.
+
+**`togglePlay` n'a aucun appelant, pour un commit seulement** : T-062f les met tous les trois dans le
+registre, et elle avait été placée après celle-ci pour ne pas y enregistrer un geste qui atteignait le
+dock. Elle est débloquée — c'est la dernière tranche du lot 8.
 
 **T-065 — la palette est 150 lignes et ne sait rien des gestes qui existent.** Libellés `label(ctx)`,
 filtre `can(ctx)`, touches de la table de T-064, liste `commandIds()`. Une commande ajoutée à
@@ -2418,7 +2443,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 → T-065 faits ; restent T-066 puis T-062f |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 → T-066 faits ; reste **T-062f** |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

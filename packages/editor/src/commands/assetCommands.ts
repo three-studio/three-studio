@@ -5,37 +5,11 @@ import {
   totalUses,
   type AssetEntry,
 } from '@three-studio/core';
-import { showPanel } from '../shell/dockApi';
 import { defineCommand } from './command';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { notify } from '../state/toastStore';
-
-/**
- * Points the Project panel at an asset and brings it to the front.
- *
- * A gesture rather than a method on the control that offers it: the asset slot
- * in the Inspector is a Tweakpane plugin, and a declarative field table has no
- * business driving the dock. It asks for this by name and is handed it.
- *
- * Not exported: the command below is the only way in. Leaving the function
- * public as well would be the second door the registry exists to close — a
- * caller that reaches past `can()` is exactly the divergence that started all
- * this.
- *
- * **There were two ways to reveal an asset and each did half the job.** This one
- * cleared the folder and the filters and brought the panel forward, but never
- * set `revealed`, so the asset was never highlighted or scrolled to. The prefab
- * buttons called `assetStore.reveal`, which sets `revealed` and does *not* bring
- * the panel forward — from a Project tab sitting behind another, that button did
- * nothing visible at all. The store keeps the half that is its own and this adds
- * the half that is not, which also deletes three lines that were a copy of it.
- */
-function revealAsset(assetId: string): void {
-  useAssetStore.getState().reveal(assetId);
-  showPanel('project');
-}
 
 /**
  * Deletes an asset, after saying what it would take with it.
@@ -281,8 +255,16 @@ export const ASSET_COMMANDS = {
       return asset ? `Reveal "${asset.name}" in Project` : 'Reveal in Project';
     },
     can: (ctx) => target(ctx.assetId) !== undefined,
+    /*
+     * The store, and nothing else. There were once two ways to reveal an asset
+     * and each did half the job: a gesture here cleared the folder and the
+     * filters and brought the panel forward without ever setting `revealed`, so
+     * nothing was highlighted, while the prefab buttons called `assetStore.reveal`
+     * and left the Project tab behind whatever was in front of it. There is one
+     * now, and the panel coming forward is `shell/panelFocus.ts` reacting to it.
+     */
     run: (ctx) => {
-      if (ctx.assetId !== undefined) revealAsset(ctx.assetId);
+      if (ctx.assetId !== undefined) useAssetStore.getState().reveal(ctx.assetId);
     },
   }),
 

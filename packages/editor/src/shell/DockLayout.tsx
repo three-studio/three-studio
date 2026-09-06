@@ -4,7 +4,7 @@ import {
   type DockviewReadyEvent,
   type IDockviewPanelProps,
 } from 'dockview-react';
-import { useCallback, type FunctionComponent } from 'react';
+import { useCallback, useEffect, type FunctionComponent } from 'react';
 import {
   ConsolePanel,
   GamePanel,
@@ -14,6 +14,7 @@ import {
   ViewportPanel,
 } from '../panels';
 import { setDockApi } from './dockApi';
+import { watchPanelFocus } from './panelFocus';
 import { loadLayout, saveLayout } from './layoutStorage';
 
 /**
@@ -104,6 +105,11 @@ export function DockLayout({ resetToken }: DockLayoutProps) {
 }
 
 function DockviewHost() {
+  // What the arrangement does about state: bring the Game panel forward when
+  // the game starts, the Project panel when an asset is revealed. It used to be
+  // `commands/` calling `showPanel` itself — see `panelFocus.ts`.
+  useEffect(() => watchPanelFocus(), []);
+
   const onReady = useCallback((event: DockviewReadyEvent) => {
     setDockApi(event.api);
 
