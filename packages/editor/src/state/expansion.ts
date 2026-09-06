@@ -1,9 +1,8 @@
-import { expandPrefabs, type ExpandedScene } from '@three-studio/core';
+import { expandPrefabs, type ExpandedScene, type PrefabDoc, type SceneDoc } from '@three-studio/core';
 import { useAssetStore } from './assetStore';
-import { derived } from './derived';
 import { useDocumentStore } from './documentStore';
 
-/**
+/*
  * The scene with every prefab instance replaced by its contents, shared by
  * everyone who needs to see inside an instance.
  *
@@ -13,29 +12,52 @@ import { useDocumentStore } from './documentStore';
  * second expansion handing back fresh copies would have thrown away every
  * geometry in the scene on each keystroke.
  *
- * A declared derivation since phase 12. It was a module-level `let` read during
- * React render, which meant every consumer restated these two inputs in its own
- * `useMemo` array — a global React cannot see, mirrored by hand. Now the inputs
- * are written once, beside what reads them, and a component subscribes rather
- * than guesses.
- *
- * The previous result is handed to `expandPrefabs` so an instance nothing
- * touched gives back the entities and components it produced last time. That is
- * what stops the binder rebuilding every geometry in the scene per keystroke.
+ * Memoised on its two inputs, below, and the comparison is written out there
+ * rather than handed to a `derived()` primitive. That primitive had exactly one
+ * caller — this one — and its whole argument was that memoisation by hand
+ * cannot say *what it is memoised on*. Two named identity checks say it better
+ * than a pair of callbacks does.
  */
-export const expansion = derived<ExpandedScene>(
-  (previous) => {
-    const scene = useDocumentStore.getState().scene;
-    const prefabs = useAssetStore.getState().prefabs;
-    return expandPrefabs(scene, { get: (id) => prefabs[id] }, previous);
-  },
-  // Identity is the signal: immer preserves it for anything untouched, so this
-  // is an exact "neither the document nor the prefab library changed".
-  () => [useDocumentStore.getState().scene, useAssetStore.getState().prefabs],
-);
+let expanded: ExpandedScene | undefined;
+let from: { scene: SceneDoc; prefabs: Record<string, PrefabDoc> } | null = null;
 
+/**
+ * The expansion, recomputed only when one of its two inputs moved.
+ *
+ * **Identity is the signal**, and immer is what makes it exact: anything a
+ * mutation did not touch keeps its reference, so `scene === from.scene` is a
+ * true "the document did not change" rather than a guess. Ten lines of
+ * comparison rather than a signals library, which is the "more patterns" ADR-8
+ * refuses.
+ *
+ * The previous result is handed back to `expandPrefabs` so an instance nothing
+ * touched gives back the entities and components it produced last time. That is
+ * not an optimisation of this function: the binder decides what to rebuild by
+ * comparing identity, so without it every geometry in the scene is thrown away
+ * on each keystroke.
+ *
+ * **This does not replace the dependency arrays of its consumers, and it must
+ * not.** `HierarchyPanel` memoises its rows on `structureRevision`, which is
+ * deliberately *narrower* than these two inputs: the scene changes on every
+ * frame of a gizmo drag, and the whole point of the row extraction was that the
+ * hierarchy does not rebuild four thousand rows when only a transform moved —
+ * 422 ms per nudge, of which 404 ms was that walk. A component subscribing to
+ * "the expansion changed" would put every one of those milliseconds back, and
+ * the Inspector's are measured too: it watches the selected entity rather than
+ * the scene because subscribing to the scene refreshed every Tweakpane binding
+ * on every mutation. Narrower is not a mirror gone wrong; it is a filter this
+ * cannot express.
+ */
 export function expandedScene(): ExpandedScene {
-  return expansion.get();
+  const scene = useDocumentStore.getState().scene;
+  const prefabs = useAssetStore.getState().prefabs;
+
+  if (from !== null && from.scene === scene && from.prefabs === prefabs) {
+    return expanded as ExpandedScene;
+  }
+  from = { scene, prefabs };
+  expanded = expandPrefabs(scene, { get: (id) => prefabs[id] }, expanded);
+  return expanded;
 }
 
 /** The entity as it is drawn — an instance's contents included. */
