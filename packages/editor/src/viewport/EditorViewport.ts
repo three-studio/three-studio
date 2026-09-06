@@ -49,6 +49,7 @@ import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 import { retireFrameBufferTarget } from './frameBufferTarget';
 import { createEditorProjection } from './editorProjection';
 import { Presentation } from './Presentation';
+import { ViewportInput } from './ViewportInput';
 import type { SelectionOutline } from './SelectionOutline';
 import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -140,24 +141,10 @@ export class EditorViewport {
   /** The document as it was when Play was pressed, restored on Stop. */
   private playSnapshot: SceneDoc | null = null;
   private unsubscribePlayState: (() => void) | null = null;
-  /** Pointer-down position, to tell a click apart from a camera drag. */
-  private pointerDownAt: { x: number; y: number; button: number } | null = null;
-  /**
-   * True from the press that starts a camera move until its release.
-   *
-   * The gizmo is switched off for the whole gesture, not just while
-   * `isNavigating` is true: pan and orbit never set that flag, and the frame
-   * loop would hand the handles back mid-drag.
-   */
-  private navigating = false;
-  /**
-   * Removes every listener this class puts on the canvas and the window.
-   *
-   * A signal rather than four stored handlers: the four below were installed as
-   * anonymous closures and never removed, which is invisible while the canvas
-   * is a singleton and a leak the moment it is not.
-   */
-  private readonly listeners = new AbortController();
+
+  /** Who gets the pointer: the camera, the gizmo, or the selection. */
+  private readonly input: ViewportInput;
+
   private readonly resizeObserver: ResizeObserver;
   /** Last size handed to `setSize`, so an unchanged one can be skipped. */
   private lastWidth = 0;
@@ -248,8 +235,9 @@ export class EditorViewport {
 
     // Before both, and it has to stay before both: listeners on the target
     // element run in registration order, so this is the only way the
-    // arbitration actually arbitrates. See `installPointerArbitration`.
-    this.installPointerArbitration();
+    // arbitration actually arbitrates. Which is why it is handed `this` — the
+    // fields it reads are filled in on the lines below. See `InputSubjects`.
+    this.input = new ViewportInput(this.sceneView.canvas, this);
 
     this.controls = new FlyControls(this.camera, this.sceneView.canvas);
     // B11: `locked` was documented as "excluded from picking" and read by
@@ -274,7 +262,8 @@ export class EditorViewport {
     // to, and an object outside the graph never gets one.
     projection.transformGizmo.add(this.gizmo.helper, this.gizmo.pivotObject);
 
-    this.installSelectionHandlers();
+    // Last, after the camera's listeners and the gizmo's; see `InputSubjects`.
+    this.input.installSelection();
     this.resizeObserver = new ResizeObserver(() => (this.sizeDirty = true));
 
     useViewportStore.getState().setBackend(backend);
@@ -532,7 +521,7 @@ export class EditorViewport {
 
   dispose(): void {
     this.disposed = true;
-    this.listeners.abort();
+    this.input.dispose();
     this.unsubscribePlayState?.();
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on
@@ -554,6 +543,11 @@ export class EditorViewport {
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
+  /** True while the game is running; see `InputSubjects`. */
+  get playing(): boolean {
+    return this.engine !== null;
+  }
+
   get playEngine(): Engine | null {
     return this.engine;
   }
@@ -884,7 +878,7 @@ export class EditorViewport {
      * orbit too, and it is what keeps the handles away for the whole press.
      */
     if (this.engine === null) {
-      this.gizmo.setEnabled(!this.controls.isNavigating && !this.navigating);
+      this.gizmo.setEnabled(!this.controls.isNavigating && !this.input.navigating);
       this.gizmo.update(current, resolve, bounds, transformMode);
     }
 
@@ -906,106 +900,6 @@ export class EditorViewport {
       bounds.getCenter(this.controls.pivot);
       this.controls.focusRadius = Math.max(bounds.getSize(SCRATCH_SIZE).length() * 0.5, 0.5);
     }
-  }
-
-  /**
-   * Decides who owns a press, before either library sees it.
-   *
-   * Registered first, and that is the whole point: on the target element every
-   * listener runs in registration order regardless of the capture flag, so this
-   * only arbitrates if it is installed before `FlyControls` and
-   * `TransformControls`. It used to be installed last, and the comment claiming
-   * otherwise was simply wrong.
-   *
-   * What it cost: right-dragging to fly with something selected threw
-   * `InvalidStateError: Failed to execute 'setPointerCapture'`. FlyControls
-   * claimed the pointer and asked for the lock; `TransformControls` then ran on
-   * the same press, saw `document.pointerLockElement` still null — the request
-   * is asynchronous — and captured a pointer the browser had already retired
-   * for the lock transition.
-   */
-  private installPointerArbitration(): void {
-    const { signal } = this.listeners;
-
-    this.sceneView.canvas.addEventListener(
-      'pointerdown',
-      (event) => {
-        if (this.engine) return;
-
-        // Right, middle and Alt+left move the camera. The gizmo has no business
-        // with any of them, and letting it capture the pointer is what threw.
-        this.navigating =
-          event.button === 2 || event.button === 1 || (event.button === 0 && event.altKey);
-        if (this.navigating) this.gizmo.setEnabled(false);
-
-        // The other direction: a press that starts on a gizmo handle must not
-        // also move the camera.
-        this.controls.setEnabled(!this.gizmo.isEngaged);
-        this.pointerDownAt = { x: event.clientX, y: event.clientY, button: event.button };
-      },
-      { signal },
-    );
-
-    /**
-     * The press latches `navigating` and may switch the camera off; only this
-     * unlatches both, so it has to run for every way a press can end.
-     *
-     * It used to listen on the canvas, which is not where a release
-     * necessarily lands: dockview parks each panel in its own render overlay
-     * and reparents it, and a reparent drops the pointer capture that was
-     * bringing the release back. A release the canvas never saw left the
-     * camera disabled and the gizmo hidden with no path back — the state the
-     * user could only clear by closing the Scene tab.
-     */
-    const endGesture = () => {
-      this.navigating = false;
-      if (!this.engine) this.controls.setEnabled(true);
-    };
-    window.addEventListener('pointerup', endGesture, { signal });
-    window.addEventListener('pointercancel', endGesture, { signal });
-    this.sceneView.canvas.addEventListener('lostpointercapture', endGesture, { signal });
-  }
-
-  /**
-   * Click-to-select. A click is a press and release that did not move far —
-   * anything else is a camera drag, and the gizmo takes priority over both.
-   */
-  private installSelectionHandlers(): void {
-    this.sceneView.canvas.addEventListener(
-      'pointerup',
-      (event) => {
-        const down = this.pointerDownAt;
-        this.pointerDownAt = null;
-        // Clicking in the game view captures the mouse; it must not also select.
-        if (this.engine) return;
-
-        if (!down || down.button !== 0 || event.button !== 0) return;
-        if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;
-        if (this.gizmo.isEngaged || event.altKey) return;
-
-        const entityId = this.picker.pick(
-          event.clientX,
-          event.clientY,
-          this.sceneView.canvas.getBoundingClientRect(),
-          this.camera,
-        );
-
-        const store = useEditorStore.getState();
-        if (entityId === undefined) {
-          store.clearSelection();
-        } else if (event.shiftKey || event.metaKey || event.ctrlKey) {
-          const selection = store.selection;
-          store.setSelection(
-            selection.includes(entityId)
-              ? selection.filter((id) => id !== entityId)
-              : [...selection, entityId],
-          );
-        } else {
-          store.setSelection([entityId]);
-        }
-      },
-      { signal: this.listeners.signal },
-    );
   }
 
   private reportStats(time: number): void {
