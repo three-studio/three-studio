@@ -53,6 +53,7 @@ import {
 import { unpackModel } from '../commands/modelCommands';
 import { expandedScene } from '../state/expansion';
 import { buildRows, type Row } from './hierarchyRows';
+import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
 import { Selection } from '../state/selection';
 import { useAssetStore } from '../state/assetStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
@@ -63,9 +64,6 @@ import { PanelToolbar } from './PanelShell';
 
 const DRAG_MIME = 'application/x-studio-entity';
 const INDENT_PX = 12;
-/** Matches the `h-6` on a row; windowing needs a height it can trust. */
-const ROW_HEIGHT = 24;
-const OVERSCAN_ROWS = 8;
 
 /**
  * The lucide component for each icon name a component definition can carry.
@@ -174,14 +172,7 @@ export function HierarchyPanel() {
     [structureRevision, prefabs, collapsed, filter],
   );
 
-  /*
-   * Only the rows that fit are rendered.
-   *
-   * A scene with two thousand prefab instances is four thousand rows, and
-   * React re-rendered every one of them on every edit: measured at 422ms per
-   * gizmo nudge against 18ms with this panel closed. Nothing else in the edit
-   * path came close — the mutation was 0.5ms and the binder 1.2ms.
-   */
+  /* Only the rows that fit are rendered; the arithmetic is `rowWindow`. */
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(0);
@@ -195,16 +186,8 @@ export function HierarchyPanel() {
     return () => observer.disconnect();
   }, []);
 
-  // A margin either side, so a fast scroll does not show a blank strip before
-  // React catches up.
-  const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
-  const last = Math.min(
-    rows.length,
-    Math.ceil((scrollTop + Math.max(height, ROW_HEIGHT)) / ROW_HEIGHT) + OVERSCAN_ROWS,
-  );
+  const { first, last, above, below } = rowWindow(rows.length, scrollTop, height);
   const visibleRows = rows.slice(first, last);
-  const before = first;
-  const after = rows.length - last;
 
   const toggleCollapsed = (id: string) =>
     setCollapsed((current) => {
@@ -421,7 +404,7 @@ export function HierarchyPanel() {
 
         {/* Spacers stand in for the rows above and below, so the scrollbar is
             the size the whole tree would be while only what fits is rendered. */}
-        {before > 0 && <div style={{ height: before * ROW_HEIGHT }} />}
+        {above > 0 && <div style={{ height: above }} />}
 
         {visibleRows.map(({ entity, depth, hasChildren, instance }) => {
           const Icon = entityIcon(expanded, entity.id);
@@ -480,8 +463,12 @@ export function HierarchyPanel() {
               onClick={(event) => onRowClick(event, entity.id)}
               onDoubleClick={() => setRenaming(entity.id)}
               onContextMenu={(event) => openMenu(event, entity.id)}
-              style={{ paddingLeft: 4 + depth * INDENT_PX }}
-              className={`group flex h-6 items-center gap-1 pr-1 text-2xs ${
+              // The height is the windowing's, not a class of its own: `h-6`
+              // beside a `ROW_HEIGHT` of 24 was one number in two languages,
+              // and the arithmetic is *on* that number — the two parting would
+              // not break a layout, it would scroll to the wrong rows.
+              style={{ height: ROW_HEIGHT, paddingLeft: 4 + depth * INDENT_PX }}
+              className={`group flex items-center gap-1 pr-1 text-2xs ${
                 isSelected
                   ? 'bg-accent-dim text-ink'
                   : `${instance ? 'text-prefab/75' : 'text-ink-muted'} hover:bg-surface-2`
@@ -569,7 +556,7 @@ export function HierarchyPanel() {
           );
         })}
 
-        {after > 0 && <div style={{ height: after * ROW_HEIGHT }} />}
+        {below > 0 && <div style={{ height: below }} />}
       </div>
 
       {menu && (
