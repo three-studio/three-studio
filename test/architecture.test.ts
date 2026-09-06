@@ -328,6 +328,11 @@ const KNOWN_CYCLES: string[][] = [
     'packages/editor/src/commands/sceneFiles.ts',
     'packages/editor/src/state/projectStore.ts',
     'packages/editor/src/viewport/EditorViewport.ts',
+    // Not a fifth cycle: the knot gained a member when the play cycle came out
+    // of `EditorViewport` into a file of its own. `PlaySession` asks which
+    // scene is open, which is a fair question for the thing that runs it; the
+    // knot is still the store reaching for the viewport.
+    'packages/editor/src/viewport/PlaySession.ts',
     'packages/editor/src/viewport/viewportHost.ts',
   ],
   /*
