@@ -8,8 +8,8 @@ import {
   removeAsset,
   removeAssetFolder,
   renameAssetFolder,
-  scanAssets,
-} from '../src/main/assets';
+} from '../src/main/assetMutations';
+import { scanAssets } from '../src/main/assetScan';
 
 /*
  * Folders are the one part of `assets/` the author edits directly, and the two

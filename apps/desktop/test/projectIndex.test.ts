@@ -13,7 +13,7 @@ import {
   type AssetMeta,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { scanAssets } from '../src/main/assets';
+import { scanAssets } from '../src/main/assetScan';
 import { discoverScenes } from '../src/main/project';
 
 /*

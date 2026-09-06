@@ -27,7 +27,8 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { readAssetMeta, readMaterialAssets, scanAssets } from '../src/main/assets';
+import { readMaterialAssets } from '../src/main/assetLibraries';
+import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/buildFiles';
 import { exportBuild } from '../src/main/exportWeb';
 

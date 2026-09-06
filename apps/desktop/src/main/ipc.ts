@@ -20,22 +20,23 @@ import {
   type ScriptBuildResult,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
+import { AssetError } from './assetFiles';
 import {
-  AssetError,
-  createAssetFolder,
   createMaterialAsset,
   createPrefabAsset,
-  moveAsset,
   readMaterialAssets,
   readPrefabAssets,
+  saveMaterialAsset,
+  savePrefabAsset,
+} from './assetLibraries';
+import {
+  createAssetFolder,
+  moveAsset,
   removeAsset,
   removeAssetFolder,
   renameAssetFolder,
-  saveMaterialAsset,
-  savePrefabAsset,
-  scanAssets,
-  updateAssetSettings,
-} from './assets';
+} from './assetMutations';
+import { scanAssets, updateAssetSettings } from './assetScan';
 import { importSessions } from './import/ImportSession';
 import { resolveInside } from './paths';
 import { loadLayoutPreferences, saveLayoutPreferences } from './preferences';

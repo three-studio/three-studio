@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASSETS_DIR, ASSET_META_SUFFIX, type ImportPlanItem } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { scanAssets } from '../src/main/assets';
+import { scanAssets } from '../src/main/assetScan';
 import { ImportSession } from '../src/main/import/ImportSession';
 
 /*

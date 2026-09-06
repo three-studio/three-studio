@@ -7,7 +7,7 @@ import {
   type ScriptBuildResult,
 } from '@three-studio/core';
 import { build, type Message } from 'esbuild';
-import { scanAssets } from './assets';
+import { scanAssets } from './assetScan';
 import { resolveInside } from './paths';
 
 // The shape is defined once, in @three-studio/core, because it crosses the bridge:

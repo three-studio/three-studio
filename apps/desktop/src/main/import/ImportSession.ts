@@ -10,7 +10,8 @@ import {
   type ImportSessionState,
   type StagedFile,
 } from '@three-studio/core';
-import { companionsOf, hashFile, scanAssets, settingsFor } from '../assets';
+import { hashFile } from '../assetFiles';
+import { companionsOf, scanAssets, settingsFor } from '../assetScan';
 import { ImportPipeline } from './ImportPipeline';
 import { expandSources } from './sources';
 

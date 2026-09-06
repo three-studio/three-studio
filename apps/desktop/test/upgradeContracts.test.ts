@@ -10,7 +10,7 @@ import {
   type AssetEntry,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { scanAssets } from '../src/main/assets';
+import { scanAssets } from '../src/main/assetScan';
 import { writeScriptTypings } from '../src/main/scripts';
 
 /*

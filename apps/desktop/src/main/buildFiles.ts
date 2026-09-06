@@ -1,7 +1,7 @@
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ASSET_KIND_INFO, type AssetKind, type BuildSize } from '@three-studio/core';
-import { AssetError, hashFile } from './assets';
+import { AssetError, hashFile } from './assetFiles';
 
 /*
  * What an export wrote, and how to check a folder still holds exactly that.

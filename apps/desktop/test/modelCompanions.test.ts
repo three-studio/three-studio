@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASSETS_DIR } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { moveAsset, removeAsset, scanAssets } from '../src/main/assets';
+import { moveAsset, removeAsset } from '../src/main/assetMutations';
+import { scanAssets } from '../src/main/assetScan';
 import { ImportSession } from '../src/main/import/ImportSession';
 
 /*

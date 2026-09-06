@@ -11,13 +11,8 @@ import {
   type AssetMeta,
   type ImportPlanItem,
 } from '@three-studio/core';
-import {
-  AssetError,
-  toPosix,
-  uniqueFileName,
-  uniqueFolderName,
-  writeAssetMeta,
-} from '../assets';
+import { AssetError, toPosix, uniqueFileName, uniqueFolderName } from '../assetFiles';
+import { writeAssetMeta } from '../assetScan';
 import { resolveInside } from '../paths';
 import type { StagedSource } from './ImportSession';
 

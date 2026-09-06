@@ -22,14 +22,9 @@ import {
   type SceneDoc,
   type SceneEntry,
 } from '@three-studio/core';
-import {
-  AssetError,
-  companionsOf,
-  hashFile,
-  readMaterialAssets,
-  readPrefabAssets,
-  scanAssets,
-} from './assets';
+import { AssetError, hashFile } from './assetFiles';
+import { readMaterialAssets, readPrefabAssets } from './assetLibraries';
+import { companionsOf, scanAssets } from './assetScan';
 import { sizeOf, writeBuildFiles } from './buildFiles';
 import { resolveInside } from './paths';
 import { discoverScenes, readProject } from './project';
