@@ -2,6 +2,15 @@ import { join } from 'node:path';
 import { BrowserWindow, app, dialog, shell } from 'electron';
 import type { WindowRole } from '@three-studio/core';
 import { forgetWindow, isDirty } from './session';
+import {
+  isSceneOpenElsewhere as sceneIsOpenElsewhere,
+  leftWithNothing,
+  needsDiscardPrompt,
+  planOpenEditor,
+  planSceneWindow,
+  planSwitchScene,
+  type OpenScene,
+} from './windowPolicy';
 
 /**
  * The windows, and the rules that move between them.
@@ -20,21 +29,21 @@ import { forgetWindow, isDirty } from './session';
 
 const isDev = !app.isPackaged;
 
-/** One open scene, in one window. */
-interface Editor {
+/**
+ * One open scene, in one window.
+ *
+ * The three fields the rules read are `OpenScene`, in `windowPolicy.ts`, and
+ * they are read from there: what the rules decide, this carries out, and the
+ * plans they answer with hand this whole entry back — window included.
+ *
+ * `sceneId` is null until the renderer says which scene it settled on: a window
+ * opened without one lands on the project's start scene, and only the
+ * renderer's `project:open` resolves which that is. `noteScene` fills it in —
+ * it is what makes "open a scene that is already open" focus a window rather
+ * than build a second one onto the same file.
+ */
+interface Editor extends OpenScene {
   win: BrowserWindow;
-  projectPath: string;
-  /**
-   * The scene it is showing, once its renderer has said which one.
-   *
-   * Null until then: a window opened without a scene lands on the project's
-   * start scene, and only the renderer's `project:open` resolves which that is.
-   * `noteScene` fills it in — it is what makes "open a scene that is already
-   * open" focus a window rather than build a second one onto the same file.
-   */
-  sceneId: string | null;
-  /** Captured at creation: `closed` fires after the webContents is gone. */
-  contentsId: number;
   /** Set once the user has confirmed discarding this window's unsaved work. */
   allowClose: boolean;
 }
@@ -91,20 +100,24 @@ function editorFor(contents: Electron.WebContents): Editor | undefined {
   return editors.find((entry) => entry.contentsId === contents.id);
 }
 
-function editorShowing(sceneId: string): Editor | undefined {
-  return editors.find((entry) => entry.sceneId === sceneId);
+/** The two exclusions every "is anything left" question has to allow for. */
+function flags(): { quitting: boolean; transitioning: boolean } {
+  return { quitting, transitioning };
 }
 
 /**
- * True when a scene is open in a window other than the one asking.
+ * Whether the harness is driving, in which case no one can answer a modal.
  *
- * What stops one window deleting the scene another is editing: the file would
- * go, the window would stay, and its next save would write a scene back that
- * the project no longer lists — invisible in the editor and shipped by nothing.
+ * Truthiness rather than presence, which is how the variable is read
+ * everywhere else here: `STUDIO_SMOKE=` is a shell saying "not this run".
  */
+function smokeTest(): boolean {
+  return Boolean(process.env['STUDIO_SMOKE']);
+}
+
+/** See `windowPolicy`. Exported here because the IPC layer asks the windows. */
 export function isSceneOpenElsewhere(from: Electron.WebContents, sceneId: string): boolean {
-  const showing = editorShowing(sceneId);
-  return showing !== undefined && showing.contentsId !== from.id;
+  return sceneIsOpenElsewhere(editors, from.id, sceneId);
 }
 
 /** Every editor window, for telling them all that the project has changed. */
@@ -253,7 +266,7 @@ export function openLauncher(): BrowserWindow {
     // convention would be to stay resident. Asked for explicitly: there is
     // nothing left to come back to, and an app with no window and no dock menu
     // reads as a hang.
-    if (editors.length === 0 && !quitting && !transitioning) app.quit();
+    if (leftWithNothing(editors.length, flags())) app.quit();
   });
 
   return win;
@@ -268,22 +281,15 @@ export function openLauncher(): BrowserWindow {
  * build.
  */
 export function openEditor(projectPath: string, sceneId?: string): BrowserWindow | null {
-  const open = editors[0];
-
-  if (open?.projectPath === projectPath) {
-    // The same project. Never a second window onto the same scene: two
-    // documents over one file means whichever saves last silently wins.
-    const showing = sceneId === undefined ? open : editorShowing(sceneId);
-    if (showing) {
-      showing.win.focus();
-      return showing.win;
-    }
-  } else if (open) {
-    // Another project. Every window has to go, and any of them may still say
-    // no at its unsaved-changes prompt — so nothing is built until they have
-    // all actually gone.
-    if (!closeAllEditors()) return null;
+  const plan = planOpenEditor(editors, projectPath, sceneId);
+  if (plan.do === 'focus') {
+    plan.entry.win.focus();
+    return plan.entry.win;
   }
+  // Another project. Every window has to go, and any of them may still say no
+  // at its unsaved-changes prompt — so nothing is built until they have all
+  // actually gone.
+  if (plan.do === 'replace' && !closeAllEditors()) return null;
 
   return createEditor(projectPath, sceneId);
 }
@@ -295,15 +301,13 @@ export function openEditor(projectPath: string, sceneId?: string): BrowserWindow
  * building a second one onto the same file.
  */
 export function openSceneWindow(sceneId: string): BrowserWindow | null {
-  const open = editors[0];
-  if (!open) return null;
-
-  const showing = editorShowing(sceneId);
-  if (showing) {
-    showing.win.focus();
-    return showing.win;
+  const plan = planSceneWindow(editors, sceneId);
+  if (plan.do === 'nothing') return null;
+  if (plan.do === 'focus') {
+    plan.entry.win.focus();
+    return plan.entry.win;
   }
-  return createEditor(open.projectPath, sceneId);
+  return createEditor(plan.projectPath, sceneId);
 }
 
 function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
@@ -334,7 +338,7 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
   trace(`editor opened on ${sceneId ?? 'the start scene'}`);
 
   win.on('close', (event) => {
-    if (entry.allowClose || !isDirty(entry.contentsId) || process.env['STUDIO_SMOKE']) return;
+    if (entry.allowClose || !needsDiscardPrompt(isDirty(entry.contentsId), smokeTest())) return;
     event.preventDefault();
 
     if (confirmDiscard(win, 'Closing now discards them.')) {
@@ -352,7 +356,7 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
     // Back to the picker rather than out of the app: closing the last scene is
     // leaving the project, not leaving the editor. Not during a project switch,
     // which builds its own window once every old one has gone.
-    if (editors.length === 0 && !quitting && !transitioning) openLauncher();
+    if (leftWithNothing(editors.length, flags())) openLauncher();
   });
 
   launcher?.close();
@@ -363,13 +367,14 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
 function closeAllEditors(): boolean {
   transitioning = true;
   try {
-    for (const entry of [...editors]) {
+    // `every` stops at the first window that is still here, which means it was
+    // cancelled. Everything already closed stays closed — the alternative is
+    // reopening windows the user has watched disappear. Over a copy, because
+    // each close splices the entry out of `editors` from its own handler.
+    return [...editors].every((entry) => {
       entry.win.close();
-      // Still here: cancelled. Everything already closed stays closed — the
-      // alternative is reopening windows the user has watched disappear.
-      if (!entry.win.isDestroyed()) return false;
-    }
-    return true;
+      return entry.win.isDestroyed();
+    });
   } finally {
     transitioning = false;
   }
@@ -390,18 +395,15 @@ function closeAllEditors(): boolean {
  * @returns `false` when the user cancelled at the unsaved-changes prompt.
  */
 export function switchScene(from: Electron.WebContents, sceneId: string): boolean {
-  const entry = editorFor(from);
-  if (!entry) return false;
-
-  // Already open elsewhere: bring that window forward rather than show one
-  // scene in two windows, which is the same file edited twice.
-  const showing = editorShowing(sceneId);
-  if (showing && showing !== entry) {
-    showing.win.focus();
+  const plan = planSwitchScene(editors, from.id, sceneId);
+  if (plan.do === 'nothing') return false;
+  if (plan.do === 'focus') {
+    plan.entry.win.focus();
     return true;
   }
 
-  if (isDirty(entry.contentsId) && !process.env['STUDIO_SMOKE']) {
+  const entry = plan.entry;
+  if (needsDiscardPrompt(isDirty(entry.contentsId), smokeTest())) {
     if (!confirmDiscard(entry.win, 'Opening another scene now discards them.')) return false;
   }
 
