@@ -230,7 +230,7 @@ export class EditorViewport {
       scene: expandedScene().scene,
       resolver: editorAssetResolver,
       rendering,
-      // The one thing the binder cannot do without a device; see `SceneBinder`.
+      // The one thing the binder cannot do without a device; see `EnvironmentBinder`.
       renderer,
       // Shared materials are pushed in rather than pulled: the binder builds a
       // mesh synchronously, so it cannot await one.
