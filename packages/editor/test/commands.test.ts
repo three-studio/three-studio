@@ -45,9 +45,9 @@ describe('one answer per gesture, whoever asks', () => {
     // The menu used to ask a different question — `selection.length === 0` —
     // and let the click through. `run` is the last guard: it asks `can` itself,
     // so a caller that forgets cannot put the divergence back one level down.
-    expect(group?.can()).toBe(false);
+    expect(group.can()).toBe(false);
     const before = doc().past.length;
-    group?.run();
+    group.run();
     expect(doc().past.length).toBe(before);
     expect(doc().scene.entities[id]?.parent).toBeNull();
   });
@@ -59,9 +59,9 @@ describe('one answer per gesture, whoever asks', () => {
 
     const { commandById } = await import('../src/commands/registry');
     const group = commandById('group');
-    expect(group?.can()).toBe(true);
+    expect(group.can()).toBe(true);
 
-    group?.run();
+    group.run();
     expect(doc().scene.entities[first]?.parent).not.toBeNull();
     expect(doc().scene.entities[second]?.parent).toBe(doc().scene.entities[first]?.parent);
   });
@@ -73,8 +73,8 @@ describe('one answer per gesture, whoever asks', () => {
     // Both were decided in three places each — the shortcut, the menu bar and
     // the hierarchy's context menu — with the same predicate written out three
     // times.
-    expect(commandById('delete')?.can()).toBe(false);
-    expect(commandById('duplicate')?.can()).toBe(true);
+    expect(commandById('delete').can()).toBe(false);
+    expect(commandById('duplicate').can()).toBe(true);
   });
 });
 
@@ -99,7 +99,7 @@ describe('the registry itself', () => {
     // Nothing selected: every gesture on a selection is off, and none of them
     // may throw — a menu is built before the user has selected anything.
     for (const id of ['delete', 'duplicate', 'group', 'rename'] as const) {
-      expect(commandById(id)?.can(), id).toBe(false);
+      expect(commandById(id).can(), id).toBe(false);
     }
   });
 
@@ -107,12 +107,40 @@ describe('the registry itself', () => {
     const { commandById } = await import('../src/commands/registry');
     const undo = commandById('undo');
 
-    expect(undo?.can()).toBe(false);
-    expect(undo?.label()).toBe('Undo');
+    expect(undo.can()).toBe(false);
+    expect(undo.label()).toBe('Undo');
 
     addEntity(createMeshEntity('box'));
-    expect(undo?.can()).toBe(true);
+    expect(undo.can()).toBe(true);
     // The label names the gesture it would take back, as every editor does.
-    expect(undo?.label()).toContain('Add');
+    expect(undo.label()).toContain('Add');
+  });
+});
+
+describe('the table is the list of ids, so nothing can be filed twice', () => {
+  it('keeps every family whole when they are spread together', async () => {
+    const { COMMANDS } = await import('../src/commands/registry');
+    const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
+    const { SCENE_FILE_COMMANDS } = await import('../src/commands/sceneFileCommands');
+
+    // The one failure mode a composed table has: two families using one id, in
+    // which case the later spread wins and the earlier command disappears with
+    // no error anywhere. Counting is what says it did not happen — the same
+    // check `core`'s component registry makes against `COMPONENT_TYPES`, which
+    // commands have no equivalent of precisely because the table *is* the list.
+    const declared = Object.keys(EDIT_COMMANDS).length + Object.keys(SCENE_FILE_COMMANDS).length;
+    expect(Object.keys(COMMANDS)).toHaveLength(declared);
+  });
+
+  it('offers no scene-file gesture while no project is open', async () => {
+    const { commandById } = await import('../src/commands/registry');
+
+    // The menu used to offer all four regardless: Duplicate and Rename with no
+    // `disabled` at all, against gestures that open with
+    // `if (sceneId === null) return`. A dialog that takes a name and does
+    // nothing with it is worse than a greyed entry.
+    for (const id of ['newScene', 'saveSceneAs', 'duplicateScene', 'renameScene', 'deleteScene'] as const) {
+      expect(commandById(id).can(), id).toBe(false);
+    }
   });
 });

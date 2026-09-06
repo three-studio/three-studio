@@ -3,7 +3,7 @@ import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
 import { modKey } from '../platform';
-import { groupCommand } from '../commands/registry';
+import { commandById } from '../commands/registry';
 import type { MenuEntry } from '../ui/Menu';
 
 /*
@@ -40,10 +40,10 @@ export function buildAddMenu(): MenuEntry[] {
       // Through the registry since phase 12. This entry asked
       // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
       // object was refused by the shortcut and grouped by the menu.
-      label: groupCommand.label(),
+      label: commandById('group').label(),
       shortcut: `${modKey}G`,
-      disabled: !groupCommand.can(),
-      onSelect: () => groupCommand.run(),
+      disabled: !commandById('group').can(),
+      onSelect: () => commandById('group').run(),
     },
     null,
     ...addMenuGroups().map((group) => ({

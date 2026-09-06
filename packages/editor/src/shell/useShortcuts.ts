@@ -110,7 +110,7 @@ export function useShortcuts(): void {
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        commandById(action)?.run();
+        commandById(action).run();
         return;
       }
 
@@ -128,7 +128,7 @@ export function useShortcuts(): void {
         const remove = commandById('delete');
         // The key is only swallowed when something will happen: a preventDefault
         // on a refusal makes Backspace feel broken everywhere else.
-        if (remove?.can()) {
+        if (remove.can()) {
           event.preventDefault();
           remove.run();
         }

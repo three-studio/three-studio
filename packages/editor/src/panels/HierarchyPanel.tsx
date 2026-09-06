@@ -277,10 +277,10 @@ export function HierarchyPanel() {
     const entry = (id: CommandId, shortcut?: string): MenuEntry => {
       const command = commandById(id);
       return {
-        label: command?.label(ctx) ?? id,
+        label: command.label(ctx),
         shortcut,
-        disabled: !command?.can(ctx),
-        onSelect: () => command?.run(ctx),
+        disabled: !command.can(ctx),
+        onSelect: () => command.run(ctx),
       };
     };
 
@@ -291,7 +291,7 @@ export function HierarchyPanel() {
         // row into edit mode, and only this panel has rows. The verdict is the
         // registry's, the body stays here.
         label: 'Rename',
-        disabled: !commandById('rename')?.can(ctx),
+        disabled: !commandById('rename').can(ctx),
         onSelect: () => setRenaming(entityId),
       },
       entry('duplicate', `${modKey}D`),
@@ -542,7 +542,7 @@ export function HierarchyPanel() {
                   event.stopPropagation();
                   // Through the command, like the menu entry above it: a
                   // padlock has to stop the row button too.
-                  commandById('delete')?.run(
+                  commandById('delete').run(
                     contextFor(
                       selected.has(entity.id) ? [...selected.ids] : [entity.id],
                     ),

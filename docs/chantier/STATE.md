@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-061 — mesurer ce que l'index d'assets a réellement fait gagner
-**Tâche courante** : **T-062** — tous les gestes entrent dans le registre (début du lot 8)
-**Faites** : T-001 → T-061. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-062a — les ids de commande viennent de la table, plus d'une liste
+**Tâche courante** : **T-062b** — les assets entrent dans le registre
+**Faites** : T-001 → T-061, **T-062a**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,59 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062 était une tâche à six commits ; elle est scindée en `T-062a` … `T-062f`.** Sa propre fiche
+prescrivait « un commit par famille », et la règle du chantier veut qu'on scinde dans `tasks/` avant
+de coder. T-062 reste comme **chapeau** et porte le tableau des six tranches. L'ordre n'est pas
+a→f : **T-062f (le transport) passe après T-066**, parce que `startPlay` appelle `showPanel` et que
+T-066 doit précisément l'en sortir — l'enregistrer avant, ce serait mettre dans le registre ce que la
+tâche suivante doit en retirer.
+
+**⚠️ La cible n'est pas « ~50 fonctions », c'est 30 gestes dans 12 `.tsx`.** Compté, pas estimé.
+`commands/` exporte aussi des **questions** (`sceneList`, `instanceInfo`, `overridesOf`,
+`componentFits`, `placedAt`), les maths de `transformSpace.ts`, et des **mutations paramétrées** que
+seuls le gizmo et Tweakpane appellent — `setEnvironmentField('fogNear', 30)` n'a pas de `run(ctx)`, et
+`transformSelection` est appelé soixante fois par seconde pendant un drag. La frontière est **« ce
+qu'un auteur peut demander sans argument »**, pas « ce qui est dans `commands/` ».
+
+**T-062a — `id` a disparu de la déclaration, et c'est la vraie soustraction.** La clé sous laquelle
+une commande est rangée *est* son id : `CommandId = keyof typeof COMMANDS`. Le déclarer aussi dans le
+spec aurait été la même chaîne à deux endroits, ce qui est exactement d'où la liste supprimée
+revenait.
+
+**⚠️ L'objection écrite dans `registry.ts` contre les familles en modules ne tient que pour un
+registre rempli par effet de bord.** Elle disait : « a module nobody imports registers nothing, and
+the command simply goes missing ». Vrai d'une `Map` remplie à l'import — et c'est ce que c'était. Une
+**table composée par valeur** n'a pas ce mode : une famille absente du spread disparaît de
+`CommandId`, et tout appelant qui nomme un de ses ids **cesse de compiler**. C'est plus strict que le
+`throw` du registre de composants de `core`, qui n'a ce recours que parce que `COMPONENT_TYPES` est
+une union canonique indépendante. Les commandes n'en ont pas — d'où l'union tirée de la table.
+
+**Le seul mode d'échec qui reste est la collision d'ids entre deux familles**, où le dernier spread
+gagne en silence. Un test compte les clés de `COMMANDS` contre la somme des familles. Cassé pour
+vérifier : un `save` ajouté aux commandes de scène → `expected 13, got 12`.
+
+**`commandById` est devenu total**, ce qui a retiré un `?.` à cinq appelants qui traitaient un cas que
+le type interdisait déjà : l'argument est un `CommandId`, et un `CommandId` est une clé de la table
+par construction.
+
+**Trois divergences trouvées en chemin, dans `MenuBar`, et corrigées par le déplacement seul** :
+`Duplicate Scene…` et `Rename Scene…` n'avaient **aucun** `disabled` alors que les deux gestes
+s'ouvrent sur `if (sceneId === null) return` — le menu prenait le clic, ouvrait un dialogue et ne
+faisait rien de la réponse. `Save Scene As…` pareil, avec `if (!summary) return`. Et `Delete Scene`
+portait `scenes.length <= 1` dans le menu, pas dans le geste. C'est la divergence exacte que le
+registre existe pour tuer, retrouvée sur une deuxième famille.
+
+**⚠️ `setRenameHandler` n'a aucun appelant dans tout le dépôt** — vérifié sur `packages`, `apps` et
+`test`. Donc `renameCommand.run()` ne fait jamais rien : `onRenameRequested` est toujours `undefined`,
+et c'est `HierarchyPanel` qui appelle `setRenaming` de son côté. C'est le jalon 8.2 et **T-063, la
+tâche suivante après T-062b** ; laissé exactement en l'état plutôt qu'à moitié réparé, avec la note
+au point de déclaration.
+
+**Le harnais a servi à lire un menu**, ce qu'aucun test ne peut faire ici faute de DOM (T-055) :
+`[role="menu"] [role="menuitem"]`, libellé et `disabled`. **Deux pièges** — la barre de menus et le
+titre de scène sont tous deux dans un `nav.app-no-drag`, donc le déclencheur du menu Scène est le
+**dernier**, pas le premier ; et son libellé est le **nom de la scène**, pas « Scene ».
 
 **T-061 — le gain de l'index est réel, vérifié par deux chemins, et T-019 se reproduit au chiffre
 près.** Projet de référence de T-060 plus 3000 textures dans 30 dossiers. Relevé complet dans
@@ -2140,7 +2193,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | 0/5 |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a fait ; T-062 scindé en 6 tranches |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

@@ -1,15 +1,6 @@
 import { useMemo, useState } from 'react';
 import { commandById, type CommandId } from '../commands/registry';
-import {
-  deleteCurrentScene,
-  duplicateCurrentScene,
-  newScene,
-  openScene,
-  openSceneInNewWindow,
-  renameCurrentSceneWithPrompt,
-  saveSceneAs,
-  sceneList,
-} from '../commands/sceneFiles';
+import { openScene, openSceneInNewWindow, sceneList } from '../commands/sceneFiles';
 import { isMac, modKey, shiftKey } from '../platform';
 import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
@@ -74,10 +65,10 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     const command = commandById(id);
     const ctx = { selection: current };
     return {
-      label: command?.label(ctx) ?? id,
+      label: command.label(ctx),
       shortcut,
-      disabled: !command?.can(ctx),
-      onSelect: () => command?.run(ctx),
+      disabled: !command.can(ctx),
+      onSelect: () => command.run(ctx),
     };
   };
 
@@ -97,16 +88,15 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
       onSelect: () => void openScene(scene.id),
     })),
     null,
-    { label: 'New Scene…', onSelect: () => void newScene() },
-    { label: 'Duplicate Scene…', onSelect: () => void duplicateCurrentScene() },
-    { label: 'Rename Scene…', onSelect: () => void renameCurrentSceneWithPrompt() },
-    {
-      label: 'Delete Scene',
-      // The main process refuses it anyway; saying so before the click is
-      // kinder than an error toast after it.
-      disabled: scenes.length <= 1,
-      onSelect: () => void deleteCurrentScene(),
-    },
+    // Four entries that used to write their own guards here, or none at all:
+    // Duplicate and Rename had no `disabled` while both gestures open with
+    // `if (sceneId === null) return`, and Delete carried the last-scene rule in
+    // the menu rather than in the gesture. Each one is now the command's own
+    // label and the command's own verdict.
+    entryFor('newScene'),
+    entryFor('duplicateScene'),
+    entryFor('renameScene'),
+    entryFor('deleteScene'),
     // Every window holds one scene, so a second scene means a second window.
     // Left out entirely with one scene rather than shown disabled: a disabled
     // row that opens an empty submenu on hover is worse than no row.
@@ -149,15 +139,12 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
         onSelect: () => window.close(),
       },
       null,
-      {
-        label: 'New Scene…',
-        onSelect: () => void newScene(),
-      },
+      entryFor('newScene'),
       null,
       entryFor('save', `${modKey}S`),
       // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
       // both, and this project has no Save All to be confused with yet.
-      { label: 'Save Scene As…', onSelect: () => void saveSceneAs() },
+      entryFor('saveSceneAs'),
       null,
       { label: 'Package…', onSelect: () => setPackageOpen(true) },
     ],
