@@ -379,14 +379,48 @@ export class MeshBatcher {
      * triangles against 51K for the same view unbatched, and slower for the
      * trouble. This culls per instance.
      *
-     * **But only when nothing casts a shadow.** A `BatchedMesh` holds one
-     * multi-draw list for the whole frame and rebuilds it in `onBeforeRender`,
-     * i.e. once per camera — so the six faces of a point light's shadow map each
-     * overwrite it, and the last one decides what the *colour* pass draws. With
-     * a point light above four cubes, the list came out empty and all four
-     * vanished; moving the light changed how many came back. That is B15 as
-     * well, where a shadow frustum narrower than the field left 178 of 2000
-     * crates on screen.
+     * **But only when nothing casts a shadow**, and the reason is a collision
+     * inside three rather than anything here.
+     *
+     * A `BatchedMesh` holds **one** multi-draw list and rebuilds it in
+     * `onBeforeRender`, for whichever camera is passed. Under the WebGPU
+     * renderer a shadow map is not a pass of its own that runs before the
+     * frame: `ShadowNode.updateBefore` calls `renderer.render(scene,
+     * shadow.camera)` (`ShadowNode.js:710`) from inside the node update of a
+     * lit material — which happens inside `Renderer.renderObject`, *after* that
+     * object's `onBeforeRender` (`Renderer.js:3558`) and *before* its draw is
+     * encoded. So the batch builds its list for the view camera, the nested
+     * shadow render immediately overwrites it with the light's frustum, and the
+     * colour pass draws that. `BatchedMesh.onBeforeShadow` exists for exactly
+     * this and is called only by `WebGLShadowMap`; the WebGPU path never calls
+     * it. (three 0.185.1.)
+     *
+     * **Measured, because reading it twice was not enough.** 3600 spheres in
+     * one batch, 11M source triangles, one shadow-casting sun, the editor
+     * camera on the whole field — see T-056:
+     *
+     * | | drawn | median | p95 |
+     * |---|---|---|---|
+     * | as shipped | 3600 / 3600 | 11.7 ms | 12.7 ms |
+     * | culling forced on | **30** / 3600 | 8.2 ms | 10.0 ms |
+     *
+     * Thirty. The frame is faster because the scene is gone: thirty is what the
+     * sun's 5-unit ortho box holds. That is B15 exactly — a shadow frustum
+     * narrower than the field left 178 of 2000 crates on screen — and it is not
+     * a bug that has since been fixed.
+     *
+     * There is no seam to fix it behind: nothing runs between the nested shadow
+     * render and the colour draw. Making the shadow pass reuse the view's list
+     * would cull shadows by the view frustum, so an instance just off screen
+     * would stop casting onto what is on screen. Giving the shadow pass a mesh
+     * of its own doubles the geometry and the walk. Both are worse than the
+     * thing they buy, which brings us to what that is:
+     *
+     * **it buys nothing measurable here.** With shadows switched off — where
+     * the culling *is* correct, 3120 of 3600 drawn — the frame sits at 8.4 ms
+     * either way, which is the 120 Hz vsync. The saving is real and smaller
+     * than the budget. Worth reopening on a field that misses vsync with the
+     * culling off, and not before.
      *
      * So the culling is given up in exactly the scenes that cannot have it. A
      * large static field with no shadow-casting light — the case it was built
