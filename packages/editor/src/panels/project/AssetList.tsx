@@ -1,6 +1,7 @@
 import type { AssetEntry } from '@three-studio/core';
 import { Folder, FolderOpen, Pencil, Trash2 } from 'lucide-react';
-import { deleteAsset, deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { commandById, contextForAsset } from '../../commands/registry';
 import { setAssetDragPayload } from '../../assets/assetDrag';
 import { useAssetStore, type AssetSortKey } from '../../state/assetStore';
 import { KIND_ICON, formatBytes } from './kinds';
@@ -26,7 +27,8 @@ export function AssetList({
 }) {
   const onSort = useAssetStore((s) => s.setSort);
   const onOpenFolder = useAssetStore((s) => s.setFolder);
-  const onRemove = (asset: AssetEntry) => void deleteAsset(asset);
+  const onRemove = (asset: AssetEntry) =>
+    commandById('deleteAsset').run(contextForAsset(asset.id));
   const columns: readonly { key: AssetSortKey; label: string; className: string }[] = [
     { key: 'name', label: 'Name', className: 'flex-1' },
     { key: 'kind', label: 'Type', className: 'w-16' },

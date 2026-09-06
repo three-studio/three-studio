@@ -1,8 +1,9 @@
+import { ASSET_COMMANDS } from './assetCommands';
 import type { Command } from './command';
 import { EDIT_COMMANDS } from './editCommands';
 import { SCENE_FILE_COMMANDS } from './sceneFileCommands';
 
-export { contextFor, currentContext } from './command';
+export { contextFor, contextForAsset, currentContext } from './command';
 export type { Command, EditorContext } from './command';
 
 /*
@@ -32,6 +33,7 @@ export type { Command, EditorContext } from './command';
 export const COMMANDS = {
   ...EDIT_COMMANDS,
   ...SCENE_FILE_COMMANDS,
+  ...ASSET_COMMANDS,
 };
 
 export type CommandId = keyof typeof COMMANDS;

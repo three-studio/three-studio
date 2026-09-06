@@ -120,16 +120,33 @@ describe('the registry itself', () => {
 describe('the table is the list of ids, so nothing can be filed twice', () => {
   it('keeps every family whole when they are spread together', async () => {
     const { COMMANDS } = await import('../src/commands/registry');
+    const { ASSET_COMMANDS } = await import('../src/commands/assetCommands');
     const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
     const { SCENE_FILE_COMMANDS } = await import('../src/commands/sceneFileCommands');
 
     // The one failure mode a composed table has: two families using one id, in
     // which case the later spread wins and the earlier command disappears with
-    // no error anywhere. Counting is what says it did not happen — the same
-    // check `core`'s component registry makes against `COMPONENT_TYPES`, which
-    // commands have no equivalent of precisely because the table *is* the list.
-    const declared = Object.keys(EDIT_COMMANDS).length + Object.keys(SCENE_FILE_COMMANDS).length;
+    // no error anywhere. `delete` and `deleteAsset` are one keystroke apart, so
+    // this is not hypothetical.
+    //
+    // The list below is the one thing here that has to be kept up to date, and
+    // it is meant to be: a family added to the registry and not to this line
+    // makes the count wrong, which is the test asking whether the new family
+    // arrived whole. `core`'s component registry checks the same thing against
+    // `COMPONENT_TYPES`; commands have no such canonical union, precisely
+    // because the table *is* the list.
+    const families = [EDIT_COMMANDS, SCENE_FILE_COMMANDS, ASSET_COMMANDS];
+    const declared = families.reduce((total, family) => total + Object.keys(family).length, 0);
     expect(Object.keys(COMMANDS)).toHaveLength(declared);
+
+    // Counting alone would pass if two families collided and a third grew by
+    // one in the same commit. Identity says each command is the one its family
+    // declared.
+    for (const family of families) {
+      for (const [id, command] of Object.entries(family)) {
+        expect(COMMANDS[id as keyof typeof COMMANDS], id).toBe(command);
+      }
+    }
   });
 
   it('offers no scene-file gesture while no project is open', async () => {
@@ -142,5 +159,48 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     for (const id of ['newScene', 'saveSceneAs', 'duplicateScene', 'renameScene', 'deleteScene'] as const) {
       expect(commandById(id).can(), id).toBe(false);
     }
+  });
+});
+
+describe('a gesture aimed at an asset', () => {
+  it('refuses when the context names none, and when the one it names is gone', async () => {
+    const { commandById, contextForAsset } = await import('../src/commands/registry');
+
+    // Both cases end at the same place — `byId` hands back `undefined` — and
+    // both are real: the Inspector's asset slot can hold an id whose file was
+    // deleted from another window, and a menu built from the registry has no
+    // asset in mind at all.
+    for (const id of ['revealAsset', 'deleteAsset'] as const) {
+      expect(commandById(id).can(), `${id}, no target`).toBe(false);
+      expect(commandById(id).can(contextForAsset('gone')), `${id}, missing`).toBe(false);
+    }
+  });
+
+  it('names the asset in its label once there is one', async () => {
+    const { commandById, contextForAsset } = await import('../src/commands/registry');
+    const { useAssetStore } = await import('../src/state/assetStore');
+
+    const asset = {
+      id: 'tex1',
+      name: 'brick',
+      kind: 'texture',
+      path: 'assets/textures/brick.png',
+      folder: 'textures',
+      sizeBytes: 1,
+      modifiedAt: 0,
+      importedAt: 0,
+      hash: '',
+      settings: {},
+    };
+    useAssetStore.setState({
+      manifest: { version: 1, assets: [asset], folders: ['textures'] },
+    } as never);
+
+    const ctx = contextForAsset('tex1');
+    expect(commandById('deleteAsset').can(ctx)).toBe(true);
+    // The label names what it would act on, the way `undo` names what it would
+    // take back — which is what a command palette shows.
+    expect(commandById('deleteAsset').label(ctx)).toBe('Delete "brick"');
+    expect(commandById('revealAsset').label(ctx)).toContain('brick');
   });
 });

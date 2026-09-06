@@ -1,7 +1,7 @@
 import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { revealAsset } from '../commands/assetCommands';
+import { commandById, contextForAsset } from '../commands/registry';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
 import { revertEntityOverride } from '../commands/prefabCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
@@ -29,7 +29,7 @@ import { Menu } from '../ui/Menu';
  */
 const ASSET_FIELD_ACTIONS: AssetFieldActions = {
   importAssets: async () => (await browseAndImport())?.imported ?? [],
-  reveal: revealAsset,
+  reveal: (assetId: string) => commandById('revealAsset').run(contextForAsset(assetId)),
 };
 
 export function InspectorPanel() {

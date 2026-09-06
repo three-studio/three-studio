@@ -8,7 +8,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
-import { deleteAsset, deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { commandById, contextForAsset } from '../../commands/registry';
 import { ASSET_PATH_MIME, setAssetDragPayload } from '../../assets/assetDrag';
 import { clipPeaks } from '../../audio/peaks';
 import { audioPreview } from '../../audio/preview';
@@ -163,7 +164,7 @@ export const AssetTile = memo(function AssetTile({
   asset: AssetEntry;
   revealed: boolean;
 }) {
-  const onRemove = () => void deleteAsset(asset);
+  const onRemove = () => commandById('deleteAsset').run(contextForAsset(asset.id));
   const clearRevealed = useAssetStore((s) => s.clearRevealed);
   // Scrolled to and flashed, then forgotten: a highlight that stayed would
   // still be there next time the panel opened, meaning nothing.

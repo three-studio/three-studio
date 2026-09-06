@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062a — les ids de commande viennent de la table, plus d'une liste
-**Tâche courante** : **T-062b** — les assets entrent dans le registre
-**Faites** : T-001 → T-061, **T-062a**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-062b — les gestes d'asset sont des commandes
+**Tâche courante** : **T-062c** — les prefabs entrent dans le registre
+**Faites** : T-001 → T-061, **T-062a, T-062b**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,39 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062b — le bord de la règle est trouvé, et il est structurel.** `createFolder`, `renameFolder` et
+`deleteFolder` **restent des fonctions**. `Command.run` revérifie `can()` et sort quand il refuse :
+un refus n'a pas de valeur à rendre, donc `run` ne peut pas en rendre. Or les trois en rendent une et
+`DestinationBrowser.tsx:253-265` la lit pour naviguer. **Un geste dont un appelant lit le résultat est
+un appel de fonction, pas une commande** — une commande est lancée par un menu, une touche ou une
+palette, dont aucune n'est en position de faire quoi que ce soit d'un retour. Inscrit dans
+`RESTES.md` : à rouvrir quand la palette (8.4) voudra « New Folder ».
+
+**La cible dans `EditorContext` est un `assetId`, pas une `AssetEntry`.** Le contexte se lit au moment
+où il sert et ne se garde jamais — c'est déjà ce que dit son commentaire pour la sélection — donc une
+entrée copiée dedans serait une copie qui peut périmer : le manifeste est reconstruit après chaque
+mutation et une autre fenêtre peut supprimer le fichier. La commande résout l'id quand elle tourne,
+ce qui donne aussi à `can()` de quoi répondre « cet asset n'est plus là ».
+
+**⚠️ T-062b n'a supprimé aucune divergence, contrairement à T-062a, et il faut le savoir avant de
+juger les tranches suivantes.** Les trois sites d'appel passaient déjà par une seule fonction et
+n'écrivaient aucune garde. Ce que la table achète ici est ce pour quoi T-062 existe — un geste avec
+un id, un libellé et un verdict est listable par une palette (8.4) et nommable par un script — pas un
+bug corrigé. **T-062c doit se poser la même question pour les prefabs** : sa fiche le dit déjà.
+
+**Ce qui a été gagné concrètement : une porte au lieu de deux.** `revealAsset` et `deleteAsset` ne
+sont plus exportés. Une fonction publique à côté de sa commande est exactement le chemin qui contourne
+`can()`.
+
+**`revealAsset` amène le panneau Project devant, et ce n'est pas le jalon 8.5.** Celui-là vise
+`playCommands`, qui pilote la disposition **par effet de bord** en démarrant le jeu. Ici, mettre le
+panneau devant **est** le geste. Écrit dans `assetCommands.ts` pour que T-066 ne s'y arrête pas.
+
+**Le test de comptage des familles est tombé en ajoutant les assets, et c'est son travail.** Il porte
+la liste des familles ; une famille ajoutée au registre et pas à cette ligne fausse le compte. Il
+vérifie aussi l'**identité** de chaque commande, parce que compter seul passerait si deux familles se
+télescopaient pendant qu'une troisième grossit d'une unité dans le même commit.
 
 **T-062 était une tâche à six commits ; elle est scindée en `T-062a` … `T-062f`.** Sa propre fiche
 prescrivait « un commit par famille », et la règle du chantier veut qu'on scinde dans `tasks/` avant
@@ -2193,7 +2226,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a fait ; T-062 scindé en 6 tranches |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a, T-062b faits ; T-062 scindé en 6 tranches |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

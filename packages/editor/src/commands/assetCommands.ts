@@ -6,6 +6,7 @@ import {
   type AssetEntry,
 } from '@three-studio/core';
 import { showPanel } from '../shell/dockApi';
+import { defineCommand } from './command';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
@@ -17,8 +18,13 @@ import { notify } from '../state/toastStore';
  * A gesture rather than a method on the control that offers it: the asset slot
  * in the Inspector is a Tweakpane plugin, and a declarative field table has no
  * business driving the dock. It asks for this by name and is handed it.
+ *
+ * Not exported: the command below is the only way in. Leaving the function
+ * public as well would be the second door the registry exists to close — a
+ * caller that reaches past `can()` is exactly the divergence that started all
+ * this.
  */
-export function revealAsset(assetId: string): void {
+function revealAsset(assetId: string): void {
   const store = useAssetStore.getState();
   const entry = store.byId(assetId);
   if (!entry) return;
@@ -39,8 +45,10 @@ export function revealAsset(assetId: string): void {
  * references an asset; asking instead is the middle ground — sometimes deleting
  * a used asset is exactly the intent, and an editor that only says no makes you
  * go around it in Finder.
+ *
+ * Not exported, for the reason `revealAsset` is not: one door.
  */
-export async function deleteAsset(asset: AssetEntry): Promise<void> {
+async function deleteAsset(asset: AssetEntry): Promise<void> {
   const store = useAssetStore.getState();
   const usage = findAssetUsage(
     asset.id,
@@ -64,6 +72,28 @@ export async function deleteAsset(asset: AssetEntry): Promise<void> {
   await store.remove(asset.path);
   notify({ kind: 'success', title: `Deleted "${asset.name}"` });
 }
+
+/*
+ * The three folder gestures below stay functions, and the reason is structural
+ * rather than a matter of taste.
+ *
+ * `Command.run` re-checks `can()` and returns early when it refuses. A refusal
+ * has no value to hand back, so `run` cannot return one — and all three of these
+ * return something a caller depends on: `DestinationBrowser` navigates into the
+ * folder that was created (whose name may have been suffixed on collision),
+ * follows the one that was renamed, and leaves the one that was deleted. Making
+ * them commands would either drop that or force `run` to return `unknown` for
+ * every command in the editor to serve one caller.
+ *
+ * So the line "no gesture called from React without going through the registry"
+ * has an edge, and this is where it is: **a gesture whose result a caller reads
+ * is a function call, not a command**. A command is something a person asked
+ * for, dispatched by a menu, a key or a palette — none of which is in a position
+ * to do anything with a return value.
+ *
+ * Recorded in `RESTES.md`, because a command palette (milestone 8.4) would
+ * plausibly want "New Folder", and that is the day to reopen it.
+ */
 
 /** Everything under a folder, itself included. */
 function subtreeOf(path: string): { assets: AssetEntry[]; folders: string[] } {
@@ -217,3 +247,59 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
 
   return lines;
 }
+
+/*
+ * The two asset gestures that go through the registry, declared beside the
+ * gestures themselves rather than in a file of their own: this module is 219
+ * lines and the table is forty, where `sceneFiles.ts` was big enough that its
+ * table earned a module.
+ *
+ * **Neither removes a divergence, and that is worth saying plainly.** The Edit
+ * and scene-file families each found callers guarding in their own words and
+ * getting it wrong; here the three call sites already went through one function
+ * and asked nothing. What the table buys is what T-062 is for — a gesture with
+ * an id, a label and a verdict is one a command palette can list (8.4) and a
+ * script can name — and the target-carrying context these two need is the same
+ * one the remaining families will use.
+ *
+ * **`revealAsset` brings a panel forward, and that is not milestone 8.5.** That
+ * one is about `playCommands` reaching into the dock *as a side effect* of
+ * starting the game. Here, putting the Project panel in front **is** the
+ * gesture: "show me this asset" with the panel left behind whatever is on top of
+ * it has not happened.
+ */
+
+/** The asset this context names, or `undefined` if it names none or it is gone. */
+function target(assetId: string | undefined) {
+  return assetId === undefined ? undefined : useAssetStore.getState().byId(assetId);
+}
+
+export const ASSET_COMMANDS = {
+  revealAsset: defineCommand({
+    label: (ctx) => {
+      const asset = target(ctx.assetId);
+      return asset ? `Reveal "${asset.name}" in Project` : 'Reveal in Project';
+    },
+    can: (ctx) => target(ctx.assetId) !== undefined,
+    run: (ctx) => {
+      if (ctx.assetId !== undefined) revealAsset(ctx.assetId);
+    },
+  }),
+
+  deleteAsset: defineCommand({
+    label: (ctx) => {
+      const asset = target(ctx.assetId);
+      return asset ? `Delete "${asset.name}"` : 'Delete Asset';
+    },
+    /**
+     * Only that the asset is still there. Being *used* is not a refusal — the
+     * gesture says what it would take with it and lets the author decide, which
+     * is the whole argument in `deleteAsset` above.
+     */
+    can: (ctx) => target(ctx.assetId) !== undefined,
+    run: async (ctx) => {
+      const asset = target(ctx.assetId);
+      if (asset) await deleteAsset(asset);
+    },
+  }),
+};

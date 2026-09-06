@@ -21,6 +21,19 @@ import { Selection } from '../state/selection';
  */
 export interface EditorContext {
   readonly selection: Selection;
+  /**
+   * The asset a gesture was aimed at, when it was aimed at one.
+   *
+   * An **id**, not the `AssetEntry` the caller is holding. The context is read
+   * at the moment it is needed and never kept, and an entry copied into it would
+   * be a copy that can go stale — the manifest is rebuilt after every mutation,
+   * and another window can delete the file. The command looks the id up when it
+   * runs, which is also what lets `can()` answer "that asset is gone" rather
+   * than acting on a row that is no longer there.
+   *
+   * Absent for every gesture that acts on the selection, which is most of them.
+   */
+  readonly assetId?: string;
 }
 
 export function currentContext(): EditorContext {
@@ -30,6 +43,11 @@ export function currentContext(): EditorContext {
 /** The context for a specific set of ids — a right-click outside the selection. */
 export function contextFor(ids: readonly string[]): EditorContext {
   return { selection: Selection.of(ids, expandedScene().scene) };
+}
+
+/** The context for a gesture aimed at one asset — a tile, a row, an Inspector slot. */
+export function contextForAsset(assetId: string): EditorContext {
+  return { ...currentContext(), assetId };
 }
 
 export interface Command {
