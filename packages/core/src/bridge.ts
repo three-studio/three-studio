@@ -335,6 +335,162 @@ export interface StudioBridge {
   readonly preferences: PreferencesApi;
 }
 
+/*
+ * The wiring, derived from the type above.
+ *
+ * The *type* of the bridge has always been here, and the file says why. The
+ * wiring was not: forty-seven channel names were string literals written twice,
+ * once in `ipc.ts` and once in the preload, and nothing tied a handler's
+ * signature to the member it answers for. A typo was `No handler registered` at
+ * run time rather than a red squiggle, and neither side could tell you that a
+ * member had no handler at all.
+ *
+ * What follows is three small mapped types and one table. The table is the only
+ * place a channel name is written; the mapped types are what make a missing
+ * handler a compile error in `ipc.ts`.
+ */
+
+/**
+ * The members of a namespace that cross as a call and a reply.
+ *
+ * Everything returning a promise. The four that do not are deliberate and each
+ * has its reason: `setDirty` is fire-and-forget, `onProjectChanged` and
+ * `onProgress` are subscriptions, and `pathForFile` never leaves the renderer —
+ * `webUtils.getPathForFile` is synchronous and local.
+ */
+type Invocable<T> = {
+  [K in keyof T as T[K] extends (...args: never[]) => Promise<unknown> ? K : never]: T[K];
+};
+
+/**
+ * The bridge's namespaces: everything on it that is not one of the five values.
+ *
+ * Named as an exclusion rather than as a shape, and that is not a taste. An
+ * `interface` has no implicit index signature, so `ProjectApi extends
+ * Record<string, …>` is **false** — the obvious filter selects nothing, every
+ * mapped type below collapses to `{}`, and every check in this file passes
+ * vacuously. It was written that way first and caught by deleting a channel and
+ * watching the build stay green.
+ *
+ * Excluding instead means a member added to `StudioBridge` is assumed to be an
+ * API until someone says otherwise, and does not compile until it has channels
+ * and a handler. That is the direction to fail in.
+ */
+type ApiGroups = Omit<
+  StudioBridge,
+  'platform' | 'windowRole' | 'projectPath' | 'sceneId' | 'versions'
+>;
+
+/** One channel name per invocable member, and the compiler counts them. */
+export type InvokeChannels = {
+  [G in keyof ApiGroups]: { [M in keyof Invocable<ApiGroups[G]>]: string };
+};
+
+/**
+ * Every request/reply channel, once.
+ *
+ * `satisfies` rather than an annotation so the literal strings survive for a
+ * reader, while the check stays total: a member added to an API above does not
+ * compile until it has a channel here, and a channel here that names no member
+ * does not compile either.
+ *
+ * The names are not derived from the members — `revealInFileManager` answers on
+ * `assets:reveal` — because they are a wire format. Renaming a method should
+ * not be able to rename a channel by accident.
+ */
+export const IPC_INVOKE = {
+  project: {
+    listRecent: 'project:listRecent',
+    pickDirectory: 'project:pickDirectory',
+    create: 'project:create',
+    open: 'project:open',
+    switchScene: 'project:switchScene',
+    openSceneWindow: 'project:openSceneWindow',
+    browseAndOpen: 'project:browseAndOpen',
+    launch: 'project:launch',
+    browseForProject: 'project:browseForProject',
+    saveScene: 'project:saveScene',
+    readScene: 'project:readScene',
+    createScene: 'project:createScene',
+    duplicateScene: 'project:duplicateScene',
+    renameScene: 'project:renameScene',
+    deleteScene: 'project:deleteScene',
+    setStartScene: 'project:setStartScene',
+    forget: 'project:forget',
+    close: 'project:close',
+    updateSettings: 'project:updateSettings',
+  },
+  assets: {
+    list: 'assets:list',
+    openImport: 'assets:openImport',
+    browseAndOpenImport: 'assets:browseAndOpenImport',
+    commitImport: 'assets:commitImport',
+    cancelImport: 'assets:cancelImport',
+    remove: 'assets:remove',
+    move: 'assets:move',
+    createFolder: 'assets:createFolder',
+    renameFolder: 'assets:renameFolder',
+    removeFolder: 'assets:removeFolder',
+    updateSettings: 'assets:updateSettings',
+    readMaterials: 'assets:readMaterials',
+    createMaterial: 'assets:createMaterial',
+    readPrefabs: 'assets:readPrefabs',
+    createPrefab: 'assets:createPrefab',
+    saveMaterial: 'assets:saveMaterial',
+    savePrefab: 'assets:savePrefab',
+    revealInFileManager: 'assets:reveal',
+  },
+  scripts: {
+    build: 'scripts:build',
+    create: 'scripts:create',
+  },
+  build: {
+    export: 'build:export',
+    chooseOutputDir: 'build:chooseOutputDir',
+    revealOutput: 'build:revealOutput',
+  },
+  preferences: {
+    loadLayouts: 'prefs:loadLayouts',
+    saveLayouts: 'prefs:saveLayouts',
+  },
+} as const satisfies InvokeChannels;
+
+/**
+ * The three channels that are not a call and a reply.
+ *
+ * Two are the main process talking first — a project that changed under another
+ * window, and an export reporting progress — and one is the renderer telling
+ * and not asking. They are listed rather than derived because there are three
+ * of them and no shape to derive from.
+ */
+export const IPC_EVENTS = {
+  projectChanged: 'project:changed',
+  buildProgress: 'build:progress',
+  setDirty: 'project:setDirty',
+} as const;
+
+/**
+ * What the main process must provide, one function per invocable member.
+ *
+ * Total: leave one out and this does not compile; add a member to an API above
+ * and this does not compile until it has a handler. The event comes first
+ * because a handler often needs to know which window asked — which scene to
+ * switch, which dialog to parent — and `ipcMain.handle` hands it over anyway.
+ *
+ * `Event` is a parameter so that `core` names no Electron type. It is
+ * `IpcMainInvokeEvent` at the one call site.
+ */
+export type BridgeHandlers<Event> = {
+  [G in keyof ApiGroups]: {
+    [M in keyof Invocable<ApiGroups[G]>]: Handler<Invocable<ApiGroups[G]>[M], Event>;
+  };
+};
+
+/** A handler may answer a promise or the value itself; `ipcMain` awaits either. */
+type Handler<F, Event> = F extends (...args: infer A) => infer R
+  ? (event: Event, ...args: A) => R | Awaited<R>
+  : never;
+
 declare global {
   interface Window {
     readonly studio: StudioBridge;

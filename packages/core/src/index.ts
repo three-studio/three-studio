@@ -21,6 +21,9 @@ export type {
   StudioBridge,
   WindowRole,
 } from './bridge';
+/* The wiring the two sides of the boundary derive from, rather than repeat. */
+export type { BridgeHandlers, InvokeChannels } from './bridge';
+export { IPC_EVENTS, IPC_INVOKE } from './bridge';
 
 export {
   ASSETS_DIR,

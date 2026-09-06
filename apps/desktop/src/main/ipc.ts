@@ -18,8 +18,20 @@ import {
   type ProjectSummary,
   type SceneChange,
   type ScriptBuildResult,
+  IPC_EVENTS,
+  IPC_INVOKE,
+  type BridgeHandlers,
 } from '@three-studio/core';
-import { BrowserWindow, app, dialog, ipcMain, shell } from 'electron';
+import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
+
+/**
+ * One entry of the table, as the registration loop sees it once the type above
+ * has done its work. `any[]` because `ipcMain.handle` declares its own handler
+ * that way and a stricter one is not assignable to it — the arguments are
+ * checked where they are written, in the table.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
 import { AssetError } from './assetFiles';
 import {
   createMaterialAsset,
@@ -146,7 +158,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         // now, and a renderer cannot read one. Without it a scene created in
         // this window would be missing from every other window's menu until
         // that window was reloaded.
-        win.webContents.send('project:changed', contents);
+        win.webContents.send(IPC_EVENTS.projectChanged, contents);
         told += 1;
       }
     }
@@ -154,104 +166,117 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     return result;
   };
 
-  ipcMain.handle('project:launch', (_event, projectPath: string): void => {
-    deps.openEditor(projectPath);
+  ipcMain.on(IPC_EVENTS.setDirty, (event, dirty: boolean) => {
+    unsavedByWindow.set(event.sender.id, dirty === true);
   });
 
-  ipcMain.handle('project:browseForProject', async (event): Promise<string | null> => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const options: Electron.OpenDialogOptions = {
-      title: 'Open Project',
-      properties: ['openFile'],
-      filters: [{ name: 'Three Studio Project', extensions: ['json'] }],
-    };
-    const result = await (window
-      ? dialog.showOpenDialog(window, options)
-      : dialog.showOpenDialog(options));
+  // Only folders this session produced. The renderer naming a path and the
+  // main process opening it is a hole; naming one it was just handed back is
+  // not.
+  const exportedDirs = new Set<string>();
 
-    const picked = result.canceled ? undefined : result.filePaths[0];
-    if (picked === undefined) return null;
-    // The picker selects project.json; the project is the directory holding it.
-    return picked.endsWith(PROJECT_FILE_NAME) ? dirname(picked) : picked;
-  });
+  /*
+   * Every handler, in one table, and the table is the check.
+   *
+   * `BridgeHandlers` is derived from `StudioBridge`: leave a member out and
+   * this does not compile, and add one to an API in `core` and this does not
+   * compile until it has an answer here. Before, forty-four `ipcMain.handle`
+   * calls each named their channel as a string and re-annotated their own
+   * arguments; a typo was `No handler registered` at run time, and a member
+   * with no handler at all was nothing anyone could be told about.
+   *
+   * The event comes first, as it does for `ipcMain.handle`, because a handler
+   * often has to know which window asked — which one to reload onto another
+   * scene, which one to parent a dialog to.
+   */
+  const handlers: BridgeHandlers<IpcMainInvokeEvent> = {
+  project: {
+    launch: (_event, projectPath: string): void => {
+      deps.openEditor(projectPath);
+    },
 
-  ipcMain.handle('project:listRecent', (): Promise<ProjectSummary[]> => listRecent());
+    browseForProject: async (event): Promise<string | null> => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.OpenDialogOptions = {
+        title: 'Open Project',
+        properties: ['openFile'],
+        filters: [{ name: 'Three Studio Project', extensions: ['json'] }],
+      };
+      const result = await (window
+        ? dialog.showOpenDialog(window, options)
+        : dialog.showOpenDialog(options));
 
-  ipcMain.handle('project:forget', (_event, projectPath: string): Promise<void> => {
-    return forget(projectPath);
-  });
+      const picked = result.canceled ? undefined : result.filePaths[0];
+      if (picked === undefined) return null;
+      // The picker selects project.json; the project is the directory holding it.
+      return picked.endsWith(PROJECT_FILE_NAME) ? dirname(picked) : picked;
+    },
 
-  ipcMain.handle('project:pickDirectory', async (event): Promise<string | null> => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const result = await (window
-      ? dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] })
-      : dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }));
-    return result.canceled ? null : (result.filePaths[0] ?? null);
-  });
 
-  ipcMain.handle(
-    'project:create',
-    async (_event, input: { name: string; directory: string }): Promise<OpenProject> => {
+    listRecent: (): Promise<ProjectSummary[]> => listRecent(),
+
+    forget: (_event, projectPath: string): Promise<void> => {
+      return forget(projectPath);
+    },
+
+    pickDirectory: async (event): Promise<string | null> => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const result = await (window
+        ? dialog.showOpenDialog(window, { properties: ['openDirectory', 'createDirectory'] })
+        : dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] }));
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+
+    create: async (_event, input: { name: string; directory: string }): Promise<OpenProject> => {
       return adopt(await createProject(input.name, input.directory));
     },
-  );
 
-  ipcMain.handle(
-    'project:open',
-    async (event, projectPath: string, sceneId?: string | null): Promise<OpenProject> => {
+    open: async (event, projectPath: string, sceneId?: string | null): Promise<OpenProject> => {
       const opened = adopt(await openProject(projectPath, sceneId ?? undefined));
       // A window opened without a scene id lands on the start scene, and this
       // is where the main process learns which that was — see `noteScene`.
       deps.noteScene(event.sender, opened.sceneId);
       return opened;
     },
-  );
 
-  ipcMain.handle('project:close', () => {
-    // Any import still open belongs to a project that is not open any more, and
-    // its staged sources were checked against a manifest nobody can reach.
-    if (activeProjectPath !== null) importSessions.closeProject(activeProjectPath);
-    activeProjectPath = null;
-    setCurrentProject(null);
-  });
+    close: () => {
+      // Any import still open belongs to a project that is not open any more, and
+      // its staged sources were checked against a manifest nobody can reach.
+      if (activeProjectPath !== null) importSessions.closeProject(activeProjectPath);
+      activeProjectPath = null;
+      setCurrentProject(null);
+    },
 
-  ipcMain.handle('project:browseAndOpen', async (event): Promise<OpenProject | null> => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    const options: Electron.OpenDialogOptions = {
-      title: 'Open Project',
-      properties: ['openFile'],
-      filters: [{ name: 'Three Studio Project', extensions: ['json'] }],
-    };
-    const result = await (window
-      ? dialog.showOpenDialog(window, options)
-      : dialog.showOpenDialog(options));
+    browseAndOpen: async (event): Promise<OpenProject | null> => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const options: Electron.OpenDialogOptions = {
+        title: 'Open Project',
+        properties: ['openFile'],
+        filters: [{ name: 'Three Studio Project', extensions: ['json'] }],
+      };
+      const result = await (window
+        ? dialog.showOpenDialog(window, options)
+        : dialog.showOpenDialog(options));
 
-    const picked = result.canceled ? undefined : result.filePaths[0];
-    if (picked === undefined) return null;
-    // The picker selects project.json; the project is the directory holding it.
-    return adopt(await openProject(picked.endsWith(PROJECT_FILE_NAME) ? dirname(picked) : picked));
-  });
+      const picked = result.canceled ? undefined : result.filePaths[0];
+      if (picked === undefined) return null;
+      // The picker selects project.json; the project is the directory holding it.
+      return adopt(await openProject(picked.endsWith(PROJECT_FILE_NAME) ? dirname(picked) : picked));
+    },
 
-  ipcMain.handle(
-    'project:saveScene',
-    (
+    saveScene: (
       _event,
       input: { projectPath: string; scenePath: string; contents: string },
     ): Promise<void> => {
       return saveScene(input.projectPath, input.scenePath, input.contents);
     },
-  );
 
   // Reading a scene other than the open one is what a running game does when
   // it moves to the next level. Guarded like everything else: the renderer
   // names a path, and `readSceneFile` proves it stayed inside the project.
-  ipcMain.handle('project:readScene', (_event, scenePath: string): Promise<string> => {
-    return readSceneFile(requireProject(), scenePath);
-  });
-
-  ipcMain.on('project:setDirty', (event, dirty: boolean) => {
-    unsavedByWindow.set(event.sender.id, dirty === true);
-  });
+    readScene: (_event, scenePath: string): Promise<string> => {
+      return readSceneFile(requireProject(), scenePath);
+    },
 
   /*
    * Changing scene reloads the window on another one, prompt included. The
@@ -259,13 +284,13 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * renderer asking permission to destroy itself would be asking the thing it
    * is about to destroy.
    */
-  ipcMain.handle('project:switchScene', (event, sceneId: string): boolean => {
-    return deps.switchScene(event.sender, sceneId);
-  });
+    switchScene: (event, sceneId: string): boolean => {
+      return deps.switchScene(event.sender, sceneId);
+    },
 
-  ipcMain.handle('project:openSceneWindow', (_event, sceneId: string): void => {
-    deps.openSceneWindow(sceneId);
-  });
+    openSceneWindow: (_event, sceneId: string): void => {
+      deps.openSceneWindow(sceneId);
+    },
 
   /*
    * The scenes of the project. Only the last two write `project.json` at all
@@ -275,58 +300,62 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * file system — and because a window that could write there could add a scene
    * to a project it cannot read.
    */
-  ipcMain.handle('project:createScene', async (event, name: string): Promise<SceneChange> => {
-    const change = await createScene(requireProject(), name);
-    return announce(change, event.sender, change);
-  });
+    createScene: async (event, name: string): Promise<SceneChange> => {
+      const change = await createScene(requireProject(), name);
+      return announce(change, event.sender, change);
+    },
 
-  ipcMain.handle(
-    'project:duplicateScene',
-    async (event, sceneId: string, name: string): Promise<SceneChange> => {
+    duplicateScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
       const change = await duplicateScene(requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
-  );
 
-  ipcMain.handle(
-    'project:renameScene',
-    async (event, sceneId: string, name: string): Promise<SceneChange> => {
+    renameScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
       const change = await renameScene(requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
-  );
 
-  ipcMain.handle('project:deleteScene', async (event, sceneId: string): Promise<ProjectContents> => {
-    // Refused rather than left to go wrong later: the file would go, the other
-    // window would stay open on it, and its next save would write back a scene
-    // the project no longer lists.
-    if (deps.isSceneOpenElsewhere(event.sender, sceneId)) {
-      throw new Error('That scene is open in another window. Close that window first.');
-    }
-    const contents = await deleteScene(requireProject(), sceneId);
-    return announce(contents, event.sender, contents);
-  });
+    deleteScene: async (event, sceneId: string): Promise<ProjectContents> => {
+      // Refused rather than left to go wrong later: the file would go, the other
+      // window would stay open on it, and its next save would write back a scene
+      // the project no longer lists.
+      if (deps.isSceneOpenElsewhere(event.sender, sceneId)) {
+        throw new Error('That scene is open in another window. Close that window first.');
+      }
+      const contents = await deleteScene(requireProject(), sceneId);
+      return announce(contents, event.sender, contents);
+    },
 
-  ipcMain.handle(
-    'project:setStartScene',
-    async (event, sceneId: string): Promise<ProjectContents> => {
+    setStartScene: async (event, sceneId: string): Promise<ProjectContents> => {
       const contents = await setStartScene(requireProject(), sceneId);
       return announce(contents, event.sender, contents);
     },
-  );
 
-  ipcMain.handle('assets:list', (): Promise<AssetManifest> => scanAssets(requireProject()));
+    updateSettings: async (event, patch: Partial<ProjectSettings>): Promise<ProjectFile> => {
+      const projectPath = requireProject();
+      // Re-read inside the write rather than trusting the renderer's copy: the
+      // file may have moved on since the dialog opened, and another window may
+      // be setting the start scene at this very moment. `updateProject` is what
+      // makes the read and the write one step.
+      const updated = await updateProject(projectPath, (project) => ({
+        ...project,
+        settings: { ...project.settings, ...patch },
+      }));
+      // Settings cannot change which scenes exist, but the broadcast carries
+      // the whole of what a window holds, so the list has to come along or the
+      // other windows would adopt an empty one.
+      const scenes = await discoverScenes(projectPath);
+      return announce({ project: updated, scenes }, event.sender, updated);
+    },
+  },
+  assets: {
+    list: (): Promise<AssetManifest> => scanAssets(requireProject()),
 
-  ipcMain.handle(
-    'assets:openImport',
-    (_event, sourcePaths: readonly string[], folder?: string): Promise<ImportSessionState> => {
+    openImport: (_event, sourcePaths: readonly string[], folder?: string): Promise<ImportSessionState> => {
       return importSessions.start(requireProject(), sourcePaths, folder ?? '');
     },
-  );
 
-  ipcMain.handle(
-    'assets:browseAndOpenImport',
-    async (event, folder?: string): Promise<ImportSessionState> => {
+    browseAndOpenImport: async (event, folder?: string): Promise<ImportSessionState> => {
       const projectPath = requireProject();
       const window = BrowserWindow.fromWebContents(event.sender);
       const options: Electron.OpenDialogOptions = {
@@ -348,11 +377,8 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       }
       return importSessions.start(projectPath, result.filePaths, folder ?? '');
     },
-  );
 
-  ipcMain.handle(
-    'assets:commitImport',
-    async (
+    commitImport: async (
       _event,
       sessionId: string,
       plan: readonly ImportPlanItem[],
@@ -369,91 +395,69 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         importSessions.close(sessionId);
       }
     },
-  );
 
-  ipcMain.handle('assets:cancelImport', (_event, sessionId: string): void => {
-    importSessions.close(sessionId);
-  });
+    cancelImport: (_event, sessionId: string): void => {
+      importSessions.close(sessionId);
+    },
 
-  ipcMain.handle('assets:remove', (_event, assetPath: string): Promise<void> => {
-    return removeAsset(requireProject(), assetPath);
-  });
+    remove: (_event, assetPath: string): Promise<void> => {
+      return removeAsset(requireProject(), assetPath);
+    },
 
-  ipcMain.handle(
-    'assets:move',
-    (_event, assetPath: string, targetFolder: string): Promise<string> => {
+    move: (_event, assetPath: string, targetFolder: string): Promise<string> => {
       return moveAsset(requireProject(), assetPath, targetFolder);
     },
-  );
 
-  ipcMain.handle('assets:createFolder', (_event, folder: string): Promise<string> => {
-    return createAssetFolder(requireProject(), folder);
-  });
+    createFolder: (_event, folder: string): Promise<string> => {
+      return createAssetFolder(requireProject(), folder);
+    },
 
-  ipcMain.handle(
-    'assets:renameFolder',
-    (_event, folder: string, name: string): Promise<string> => {
+    renameFolder: (_event, folder: string, name: string): Promise<string> => {
       return renameAssetFolder(requireProject(), folder, name);
     },
-  );
 
-  ipcMain.handle('assets:removeFolder', (_event, folder: string): Promise<void> => {
-    return removeAssetFolder(requireProject(), folder);
-  });
+    removeFolder: (_event, folder: string): Promise<void> => {
+      return removeAssetFolder(requireProject(), folder);
+    },
 
-  ipcMain.handle(
-    'assets:updateSettings',
-    (_event, assetPath: string, settings: AssetSettings): Promise<void> => {
+    updateSettings: (_event, assetPath: string, settings: AssetSettings): Promise<void> => {
       return updateAssetSettings(requireProject(), assetPath, settings);
     },
-  );
 
-  ipcMain.handle(
-    'assets:readMaterials',
-    (): Promise<Record<string, MaterialDef>> => readMaterialAssets(requireProject()),
-  );
+    readMaterials: (): Promise<Record<string, MaterialDef>> => readMaterialAssets(requireProject()),
 
-  ipcMain.handle(
-    'assets:createMaterial',
-    (_event, name: string, material: MaterialDef): Promise<string> => {
+    createMaterial: (_event, name: string, material: MaterialDef): Promise<string> => {
       return createMaterialAsset(requireProject(), name, material);
     },
-  );
 
-  ipcMain.handle(
-    'assets:readPrefabs',
-    (): Promise<Record<string, PrefabDoc>> => readPrefabAssets(requireProject()),
-  );
+    readPrefabs: (): Promise<Record<string, PrefabDoc>> => readPrefabAssets(requireProject()),
 
-  ipcMain.handle(
-    'assets:createPrefab',
-    (_event, name: string, prefab: PrefabDoc, assetId?: string): Promise<string> => {
+    createPrefab: (_event, name: string, prefab: PrefabDoc, assetId?: string): Promise<string> => {
       return createPrefabAsset(requireProject(), name, prefab, assetId);
     },
-  );
 
-  ipcMain.handle(
-    'assets:saveMaterial',
-    (_event, assetPath: string, material: MaterialDef): Promise<void> => {
+    saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
       return saveMaterialAsset(requireProject(), assetPath, material);
     },
-  );
 
-  ipcMain.handle(
-    'assets:savePrefab',
-    (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
+    savePrefab: (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
       return savePrefabAsset(requireProject(), assetPath, prefab);
     },
-  );
 
-  // Only folders this session produced. The renderer naming a path and the
-  // main process opening it is a hole; naming one it was just handed back is
-  // not.
-  const exportedDirs = new Set<string>();
+    revealInFileManager: (_event, assetPath: string) => {
+      // `showItemInFolder` takes an absolute path, so the guard still applies.
+      shell.showItemInFolder(resolveInside(requireProject(), assetPath));
+    },
+  },
+  scripts: {
+    build: (): Promise<ScriptBuildResult> => buildScripts(requireProject()),
 
-  ipcMain.handle(
-    'build:export',
-    async (event, profileId?: string): Promise<ExportResult> => {
+    create: (_event, name: string): Promise<string> => {
+      return createScript(requireProject(), name);
+    },
+  },
+  build: {
+    export: async (event, profileId?: string): Promise<ExportResult> => {
       const projectPath = requireProject();
       const project = await readProject(projectPath);
       const settings = project.settings.build;
@@ -476,17 +480,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         (progress) => {
           // `isDestroyed` because an export outlives a window that is closed
           // mid-run, and sending to a dead frame throws.
-          if (!event.sender.isDestroyed()) event.sender.send('build:progress', progress);
+          if (!event.sender.isDestroyed()) event.sender.send(IPC_EVENTS.buildProgress, progress);
         },
       );
       exportedDirs.add(outputDir);
       return result;
     },
-  );
 
-  ipcMain.handle(
-    'build:chooseOutputDir',
-    async (_event, startIn?: string | null): Promise<string | null> => {
+    chooseOutputDir: async (_event, startIn?: string | null): Promise<string | null> => {
       const picked = await dialog.showOpenDialog({
         title: 'Build output folder',
         properties: ['openDirectory', 'createDirectory'],
@@ -495,50 +496,30 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
     },
-  );
 
-  ipcMain.handle(
-    'project:updateSettings',
-    async (event, patch: Partial<ProjectSettings>): Promise<ProjectFile> => {
-      const projectPath = requireProject();
-      // Re-read inside the write rather than trusting the renderer's copy: the
-      // file may have moved on since the dialog opened, and another window may
-      // be setting the start scene at this very moment. `updateProject` is what
-      // makes the read and the write one step.
-      const updated = await updateProject(projectPath, (project) => ({
-        ...project,
-        settings: { ...project.settings, ...patch },
-      }));
-      // Settings cannot change which scenes exist, but the broadcast carries
-      // the whole of what a window holds, so the list has to come along or the
-      // other windows would adopt an empty one.
-      const scenes = await discoverScenes(projectPath);
-      return announce({ project: updated, scenes }, event.sender, updated);
+    revealOutput: (_event, outputDir: string): void => {
+      if (!exportedDirs.has(outputDir)) {
+        throw new Error('That folder was not produced by this session.');
+      }
+      shell.openPath(outputDir).catch(() => undefined);
     },
-  );
+  },
+  preferences: {
+    loadLayouts: (): Promise<LayoutPreferences> => loadLayoutPreferences(),
 
-  ipcMain.handle('build:revealOutput', (_event, outputDir: string): void => {
-    if (!exportedDirs.has(outputDir)) {
-      throw new Error('That folder was not produced by this session.');
+    saveLayouts: (_event, preferences: LayoutPreferences): Promise<void> => saveLayoutPreferences(preferences),
+  },
+  };
+
+  /*
+   * One registration, walked. The casts are `Object.entries` widening its keys
+   * to `string` and nothing more: what may be in the table is settled above, by
+   * the type.
+   */
+  for (const [group, methods] of Object.entries(handlers)) {
+    const channels = IPC_INVOKE[group as keyof typeof IPC_INVOKE] as Record<string, string>;
+    for (const [method, handler] of Object.entries(methods as Record<string, IpcHandler>)) {
+      ipcMain.handle(channels[method]!, handler);
     }
-    shell.openPath(outputDir).catch(() => undefined);
-  });
-
-  ipcMain.handle('prefs:loadLayouts', (): Promise<LayoutPreferences> => loadLayoutPreferences());
-
-  ipcMain.handle(
-    'prefs:saveLayouts',
-    (_event, preferences: LayoutPreferences): Promise<void> => saveLayoutPreferences(preferences),
-  );
-
-  ipcMain.handle('scripts:build', (): Promise<ScriptBuildResult> => buildScripts(requireProject()));
-
-  ipcMain.handle('scripts:create', (_event, name: string): Promise<string> => {
-    return createScript(requireProject(), name);
-  });
-
-  ipcMain.handle('assets:reveal', (_event, assetPath: string) => {
-    // `showItemInFolder` takes an absolute path, so the guard still applies.
-    shell.showItemInFolder(resolveInside(requireProject(), assetPath));
-  });
+  }
 }

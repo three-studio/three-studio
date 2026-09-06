@@ -11,13 +11,18 @@ import type {
   Platform,
   ProjectContents,
   ProjectFile,
-  ProjectSettings,
   ProjectSummary,
   SceneChange,
   ScriptBuildResult,
   StudioBridge,
   WindowRole,
 } from '@three-studio/core';
+/*
+ * The channel names, from the one table that has them. Written here as
+ * literals until now, and written again in `ipc.ts` — forty-seven of them,
+ * twice, with a typo landing as `No handler registered` at run time.
+ */
+import { IPC_EVENTS, IPC_INVOKE } from '@three-studio/core';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 /**
@@ -65,97 +70,97 @@ const bridge: StudioBridge = {
     node: process.versions.node ?? '',
   },
   project: {
-    listRecent: (): Promise<ProjectSummary[]> => ipcRenderer.invoke('project:listRecent'),
-    pickDirectory: (): Promise<string | null> => ipcRenderer.invoke('project:pickDirectory'),
-    create: (input): Promise<OpenProject> => ipcRenderer.invoke('project:create', input),
+    listRecent: (): Promise<ProjectSummary[]> => ipcRenderer.invoke(IPC_INVOKE.project.listRecent),
+    pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC_INVOKE.project.pickDirectory),
+    create: (input): Promise<OpenProject> => ipcRenderer.invoke(IPC_INVOKE.project.create, input),
     open: (projectPath, sceneId): Promise<OpenProject> =>
-      ipcRenderer.invoke('project:open', projectPath, sceneId),
+      ipcRenderer.invoke(IPC_INVOKE.project.open, projectPath, sceneId),
     switchScene: (sceneId): Promise<boolean> =>
-      ipcRenderer.invoke('project:switchScene', sceneId),
+      ipcRenderer.invoke(IPC_INVOKE.project.switchScene, sceneId),
     openSceneWindow: (sceneId): Promise<void> =>
-      ipcRenderer.invoke('project:openSceneWindow', sceneId),
-    browseAndOpen: (): Promise<OpenProject | null> => ipcRenderer.invoke('project:browseAndOpen'),
-    launch: (projectPath): Promise<void> => ipcRenderer.invoke('project:launch', projectPath),
+      ipcRenderer.invoke(IPC_INVOKE.project.openSceneWindow, sceneId),
+    browseAndOpen: (): Promise<OpenProject | null> => ipcRenderer.invoke(IPC_INVOKE.project.browseAndOpen),
+    launch: (projectPath): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.project.launch, projectPath),
     browseForProject: (): Promise<string | null> =>
-      ipcRenderer.invoke('project:browseForProject'),
-    saveScene: (input): Promise<void> => ipcRenderer.invoke('project:saveScene', input),
+      ipcRenderer.invoke(IPC_INVOKE.project.browseForProject),
+    saveScene: (input): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.project.saveScene, input),
     readScene: (scenePath): Promise<string> =>
-      ipcRenderer.invoke('project:readScene', scenePath),
-    createScene: (name): Promise<SceneChange> => ipcRenderer.invoke('project:createScene', name),
+      ipcRenderer.invoke(IPC_INVOKE.project.readScene, scenePath),
+    createScene: (name): Promise<SceneChange> => ipcRenderer.invoke(IPC_INVOKE.project.createScene, name),
     duplicateScene: (sceneId, name): Promise<SceneChange> =>
-      ipcRenderer.invoke('project:duplicateScene', sceneId, name),
+      ipcRenderer.invoke(IPC_INVOKE.project.duplicateScene, sceneId, name),
     renameScene: (sceneId, name): Promise<SceneChange> =>
-      ipcRenderer.invoke('project:renameScene', sceneId, name),
+      ipcRenderer.invoke(IPC_INVOKE.project.renameScene, sceneId, name),
     deleteScene: (sceneId): Promise<ProjectContents> =>
-      ipcRenderer.invoke('project:deleteScene', sceneId),
+      ipcRenderer.invoke(IPC_INVOKE.project.deleteScene, sceneId),
     setStartScene: (sceneId): Promise<ProjectContents> =>
-      ipcRenderer.invoke('project:setStartScene', sceneId),
-    forget: (projectPath): Promise<void> => ipcRenderer.invoke('project:forget', projectPath),
-    close: (): Promise<void> => ipcRenderer.invoke('project:close'),
-    setDirty: (dirty): void => ipcRenderer.send('project:setDirty', dirty),
+      ipcRenderer.invoke(IPC_INVOKE.project.setStartScene, sceneId),
+    forget: (projectPath): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.project.forget, projectPath),
+    close: (): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.project.close),
+    setDirty: (dirty): void => ipcRenderer.send(IPC_EVENTS.setDirty, dirty),
     updateSettings: (patch): Promise<ProjectFile> =>
-      ipcRenderer.invoke('project:updateSettings', patch),
+      ipcRenderer.invoke(IPC_INVOKE.project.updateSettings, patch),
     onProjectChanged: (listener) => {
       const handler = (_event: unknown, contents: ProjectContents) => listener(contents);
-      ipcRenderer.on('project:changed', handler);
-      return () => ipcRenderer.off('project:changed', handler);
+      ipcRenderer.on(IPC_EVENTS.projectChanged, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.projectChanged, handler);
     },
   },
   assets: {
-    list: (): Promise<AssetManifest> => ipcRenderer.invoke('assets:list'),
+    list: (): Promise<AssetManifest> => ipcRenderer.invoke(IPC_INVOKE.assets.list),
     openImport: (sourcePaths, folder): Promise<ImportSessionState> =>
-      ipcRenderer.invoke('assets:openImport', sourcePaths, folder),
+      ipcRenderer.invoke(IPC_INVOKE.assets.openImport, sourcePaths, folder),
     browseAndOpenImport: (folder): Promise<ImportSessionState> =>
-      ipcRenderer.invoke('assets:browseAndOpenImport', folder),
+      ipcRenderer.invoke(IPC_INVOKE.assets.browseAndOpenImport, folder),
     commitImport: (sessionId, plan): Promise<AssetImportResult> =>
-      ipcRenderer.invoke('assets:commitImport', sessionId, plan),
+      ipcRenderer.invoke(IPC_INVOKE.assets.commitImport, sessionId, plan),
     cancelImport: (sessionId): Promise<void> =>
-      ipcRenderer.invoke('assets:cancelImport', sessionId),
-    remove: (assetPath): Promise<void> => ipcRenderer.invoke('assets:remove', assetPath),
+      ipcRenderer.invoke(IPC_INVOKE.assets.cancelImport, sessionId),
+    remove: (assetPath): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.assets.remove, assetPath),
     move: (assetPath, targetFolder): Promise<string> =>
-      ipcRenderer.invoke('assets:move', assetPath, targetFolder),
-    createFolder: (folder): Promise<string> => ipcRenderer.invoke('assets:createFolder', folder),
+      ipcRenderer.invoke(IPC_INVOKE.assets.move, assetPath, targetFolder),
+    createFolder: (folder): Promise<string> => ipcRenderer.invoke(IPC_INVOKE.assets.createFolder, folder),
     renameFolder: (folder, name): Promise<string> =>
-      ipcRenderer.invoke('assets:renameFolder', folder, name),
-    removeFolder: (folder): Promise<void> => ipcRenderer.invoke('assets:removeFolder', folder),
+      ipcRenderer.invoke(IPC_INVOKE.assets.renameFolder, folder, name),
+    removeFolder: (folder): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.assets.removeFolder, folder),
     updateSettings: (assetPath, settings): Promise<void> =>
-      ipcRenderer.invoke('assets:updateSettings', assetPath, settings),
+      ipcRenderer.invoke(IPC_INVOKE.assets.updateSettings, assetPath, settings),
     readMaterials: (): Promise<Record<string, MaterialDef>> =>
-      ipcRenderer.invoke('assets:readMaterials'),
+      ipcRenderer.invoke(IPC_INVOKE.assets.readMaterials),
     createMaterial: (name, material): Promise<string> =>
-      ipcRenderer.invoke('assets:createMaterial', name, material),
+      ipcRenderer.invoke(IPC_INVOKE.assets.createMaterial, name, material),
     readPrefabs: (): Promise<Record<string, PrefabDoc>> =>
-      ipcRenderer.invoke('assets:readPrefabs'),
+      ipcRenderer.invoke(IPC_INVOKE.assets.readPrefabs),
     createPrefab: (name, prefab, assetId): Promise<string> =>
-      ipcRenderer.invoke('assets:createPrefab', name, prefab, assetId),
+      ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefab, assetId),
     saveMaterial: (assetPath, material): Promise<void> =>
-      ipcRenderer.invoke('assets:saveMaterial', assetPath, material),
+      ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
     savePrefab: (assetPath, prefab): Promise<void> =>
-      ipcRenderer.invoke('assets:savePrefab', assetPath, prefab),
+      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefab),
     revealInFileManager: (assetPath): Promise<void> =>
-      ipcRenderer.invoke('assets:reveal', assetPath),
+      ipcRenderer.invoke(IPC_INVOKE.assets.revealInFileManager, assetPath),
     pathForFile: (file): string => webUtils.getPathForFile(file),
   },
   scripts: {
-    build: (): Promise<ScriptBuildResult> => ipcRenderer.invoke('scripts:build'),
-    create: (name): Promise<string> => ipcRenderer.invoke('scripts:create', name),
+    build: (): Promise<ScriptBuildResult> => ipcRenderer.invoke(IPC_INVOKE.scripts.build),
+    create: (name): Promise<string> => ipcRenderer.invoke(IPC_INVOKE.scripts.create, name),
   },
   build: {
-    export: (profileId): Promise<ExportResult> => ipcRenderer.invoke('build:export', profileId),
+    export: (profileId): Promise<ExportResult> => ipcRenderer.invoke(IPC_INVOKE.build.export, profileId),
     chooseOutputDir: (startIn): Promise<string | null> =>
-      ipcRenderer.invoke('build:chooseOutputDir', startIn),
+      ipcRenderer.invoke(IPC_INVOKE.build.chooseOutputDir, startIn),
     onProgress: (listener) => {
       const handler = (_event: unknown, progress: ExportProgress) => listener(progress);
-      ipcRenderer.on('build:progress', handler);
-      return () => ipcRenderer.off('build:progress', handler);
+      ipcRenderer.on(IPC_EVENTS.buildProgress, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.buildProgress, handler);
     },
     revealOutput: (outputDir): Promise<void> =>
-      ipcRenderer.invoke('build:revealOutput', outputDir),
+      ipcRenderer.invoke(IPC_INVOKE.build.revealOutput, outputDir),
   },
   preferences: {
-    loadLayouts: (): Promise<LayoutPreferences> => ipcRenderer.invoke('prefs:loadLayouts'),
+    loadLayouts: (): Promise<LayoutPreferences> => ipcRenderer.invoke(IPC_INVOKE.preferences.loadLayouts),
     saveLayouts: (preferences): Promise<void> =>
-      ipcRenderer.invoke('prefs:saveLayouts', preferences),
+      ipcRenderer.invoke(IPC_INVOKE.preferences.saveLayouts, preferences),
   },
 };
 
