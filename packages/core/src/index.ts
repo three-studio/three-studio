@@ -13,6 +13,7 @@ export type {
   ProjectApi,
   ScriptApi,
   BuildApi,
+  BuildSize,
   ExportProgress,
   ExportResult,
   SceneChange,

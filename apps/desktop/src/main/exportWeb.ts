@@ -30,7 +30,7 @@ import {
   readPrefabAssets,
   scanAssets,
 } from './assets';
-import { writeBuildFiles } from './buildFiles';
+import { sizeOf, writeBuildFiles } from './buildFiles';
 import { resolveInside } from './paths';
 import { discoverScenes, readProject } from './project';
 import { buildScripts } from './scripts';
@@ -343,7 +343,7 @@ export async function exportBuild(
   // Last, and after `build.json`, so the list covers everything including the
   // manifest itself. See `buildFiles.ts` for why it is not part of it.
   report(0.97, 'Listing what was written');
-  await writeBuildFiles(outputDir);
+  const written = await writeBuildFiles(outputDir);
 
   report(1, 'Done');
   return {
@@ -351,6 +351,9 @@ export async function exportBuild(
     sceneCount: scenes.length,
     assetCount,
     scriptCount: scripts.scriptCount,
+    // Off the list rather than counted along the way: the sizes are already
+    // there, and a second tally is a second thing to keep in step.
+    size: sizeOf(written, scriptFile),
     warnings,
   };
 }

@@ -1,5 +1,6 @@
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ASSET_KIND_INFO, type AssetKind, type BuildSize } from '@three-studio/core';
 import { AssetError, hashFile } from './assets';
 
 /*
@@ -158,4 +159,51 @@ async function contentsOf(root: string, from = ''): Promise<string[]> {
 async function describe(root: string, path: string): Promise<BuildFile> {
   const file = join(root, ...path.split('/'));
   return { path, bytes: (await stat(file)).size, sha256: await hashFile(file) };
+}
+
+/**
+ * Which asset kind owns each directory under `assets/`.
+ *
+ * Read off the importers rather than listed, for the reason `createProject`
+ * makes the folders that way: the list that used to be written by hand named
+ * four of the seven. One directory per kind today; two kinds sharing one would
+ * put both on a single row, which is a cosmetic answer to a case that does not
+ * exist.
+ */
+const KIND_BY_DIRECTORY = new Map<string, AssetKind>(
+  Object.entries(ASSET_KIND_INFO).map(([kind, info]) => [info.directory, kind as AssetKind]),
+);
+
+/**
+ * What the build weighs, from the list of what was written.
+ *
+ * Every file lands in exactly one row, and the rows sum to the total — which is
+ * checked, because a breakdown that nearly adds up is worse than none.
+ *
+ * @param scriptFile The compiled bundle's name, or `null`. Passed in rather
+ *   than assumed: the exporter chooses it, and the player is *told* it in the
+ *   manifest rather than guessing, so this is not the place to guess either.
+ */
+export function sizeOf(files: readonly BuildFile[], scriptFile: string | null): BuildSize {
+  const assets = Object.fromEntries(
+    [...KIND_BY_DIRECTORY.values()].map((kind) => [kind, 0]),
+  ) as Record<AssetKind, number>;
+  const size: BuildSize = { total: 0, player: 0, scenes: 0, scripts: 0, assets };
+
+  for (const file of files) {
+    size.total += file.bytes;
+    const [head, next] = file.path.split('/');
+    const kind = head === 'assets' && next !== undefined ? KIND_BY_DIRECTORY.get(next) : undefined;
+
+    if (kind !== undefined) size.assets[kind] += file.bytes;
+    else if (head === 'scenes') size.scenes += file.bytes;
+    else if (file.path === scriptFile) size.scripts += file.bytes;
+    // Everything else, `build.json` included, and deliberately with no bucket
+    // of its own: the page, the engine and the manifest are one fixed cost as
+    // far as anyone reading this is concerned, and a row nothing lands in is a
+    // row that has to be explained.
+    else size.player += file.bytes;
+  }
+
+  return size;
 }

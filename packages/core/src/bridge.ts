@@ -1,4 +1,4 @@
-import type { AssetImportResult, AssetManifest, AssetSettings } from './assets/schema';
+import type { AssetImportResult, AssetKind, AssetManifest, AssetSettings } from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
 import type { LayoutPreferences } from './preferences/schema';
 import type {
@@ -170,11 +170,48 @@ export interface ExportProgress {
   step: string;
 }
 
+/**
+ * What a build weighs, in bytes, and where the weight is.
+ *
+ * The first thing an author looks at after an export, and the one thing the
+ * result could not answer: it counted scenes, assets and scripts, and never
+ * counted bytes.
+ *
+ * Every file the export wrote falls in exactly one row, so the parts sum to
+ * `total`. That is what makes a breakdown worth reading — a set of numbers that
+ * nearly add up sends the reader looking for the rest.
+ */
+export interface BuildSize {
+  /**
+   * Every byte the export wrote, minus the list of what it wrote: that one is
+   * written last and cannot appear in its own list. See `files.json`.
+   */
+  total: number;
+  /**
+   * The page, the engine bundle and the build's own manifest — what a build
+   * carries whatever is in it.
+   *
+   * Also where anything the rows below do not claim lands, so the parts always
+   * sum to the total rather than nearly summing to it.
+   */
+  player: number;
+  scenes: number;
+  /** The compiled behaviour bundle. */
+  scripts: number;
+  /**
+   * What shipped out of `assets/`, by kind rather than by the three that
+   * usually matter. Read off the importers' own directories, so a kind added
+   * there arrives here with nothing to edit.
+   */
+  assets: Record<AssetKind, number>;
+}
+
 export interface ExportResult {
   outputDir: string;
   sceneCount: number;
   assetCount: number;
   scriptCount: number;
+  size: BuildSize;
   /** Non-fatal: assets a scene references that are no longer in the project. */
   warnings: string[];
 }

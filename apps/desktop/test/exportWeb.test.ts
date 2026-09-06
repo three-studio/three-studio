@@ -142,6 +142,9 @@ const TEMPLATE_HTML = `<!doctype html>
 
 const manifestOf = (json: string): BuildManifest => JSON.parse(json) as BuildManifest;
 
+const listOf = async (outputDir: string): Promise<BuildFileList> =>
+  JSON.parse(await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8')) as BuildFileList;
+
 function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
   return {
     name: 'Web',
@@ -727,9 +730,6 @@ describe('models that come with other files', () => {
  * folder from a published folder with one file swapped.
  */
 describe('the list of what an export wrote', () => {
-  const listOf = async (outputDir: string): Promise<BuildFileList> =>
-    JSON.parse(await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8')) as BuildFileList;
-
   it('names the player, the scenes, the assets and the manifest itself', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-files');
@@ -842,5 +842,42 @@ describe('the list of what an export wrote', () => {
     await rm(join(outputDir, BUILD_FILES_NAME));
 
     await expect(verifyBuild(outputDir)).rejects.toThrow(/nothing to check it against/);
+  });
+});
+
+/*
+ * The first thing an author looks at after an export, and the one thing the
+ * result could not answer: it counted scenes, assets and scripts, never bytes.
+ */
+describe('what the build weighs', () => {
+  it('puts every file in one row, and the rows add up', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-size');
+
+    const { size } = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    // The page, the bundle and `build.json`: what a build carries whatever is
+    // in it.
+    expect(size.player).toBeGreaterThan(0);
+    expect(size.scenes).toBeGreaterThan(0);
+    expect(size.assets.texture).toBeGreaterThan(0);
+    expect(size.assets.audio).toBeGreaterThan(0);
+    // Nothing shipped of these, and the rows exist anyway: a total record is
+    // what makes a kind added to the importers arrive here on its own.
+    expect(size.assets.model).toBe(0);
+    expect(size.scripts).toBe(0);
+
+    /*
+     * The invariant that makes the breakdown worth reading. A set of numbers
+     * that nearly adds up sends the reader looking for the rest, so anything a
+     * row does not claim falls into `player` rather than into nothing.
+     */
+    const assets = Object.values(size.assets).reduce((sum, bytes) => sum + bytes, 0);
+    expect(size.player + size.scenes + size.scripts + assets).toBe(size.total);
+
+    // And the total is what the list says, since that is where it comes from —
+    // minus the list itself, which cannot appear in it.
+    const listed = (await listOf(outputDir)).files;
+    expect(listed.reduce((sum, file) => sum + file.bytes, 0)).toBe(size.total);
   });
 });
