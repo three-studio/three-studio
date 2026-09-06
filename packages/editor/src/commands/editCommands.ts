@@ -71,6 +71,20 @@ export const EDIT_COMMANDS = {
     },
   }),
 
+  /**
+   * Shows every gesture that can act right now.
+   *
+   * A command rather than a special case in the key handler, so its key comes
+   * out of the one binding table like every other. It lists itself, which is
+   * what VS Code does too: running it from inside closes the palette and opens
+   * it again, and nothing is worse for the entry being there.
+   */
+  openCommandPalette: defineCommand({
+    label: () => 'Command Palette…',
+    can: () => true,
+    run: () => useEditorStore.getState().openPalette(),
+  }),
+
   duplicate: defineCommand({
     label: (ctx) =>
       ctx.selection.isMultiple ? `Duplicate ${ctx.selection.size} Objects` : 'Duplicate',

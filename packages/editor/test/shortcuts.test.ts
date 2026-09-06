@@ -91,6 +91,12 @@ describe('what a menu shows', () => {
     expect(bindingForCommand('duplicate')).toBe('Mod+D');
     // A command with no key: the menu shows no hint rather than an empty one.
     expect(bindingForCommand('newScene')).toBeNull();
+
+    // Two keys, and the first is the one shown. Off a Mac that is Del; on one it
+    // is `⌫`, because a Mac keyboard's delete key is Backspace. The menus each
+    // used to carry their own `isMac ? '⌫' : 'Del'`.
+    expect(bindingForCommand('delete')).toBe('Delete');
+    expect(formatBinding('Delete')).toBe('Del');
   });
 });
 

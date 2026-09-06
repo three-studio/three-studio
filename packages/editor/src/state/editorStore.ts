@@ -44,6 +44,15 @@ interface EditorState {
    * that happens to draw it.
    */
   renaming: string | null;
+  /**
+   * Whether the command palette is up.
+   *
+   * A field a command writes and a view reads, the same shape as `renaming`
+   * above: opening it is a gesture, and a gesture reached from a key has to go
+   * through the registry or it needs a fourth spelling of "which key does what",
+   * which is exactly what T-064 removed.
+   */
+  paletteOpen: boolean;
 
   setTransformMode: (mode: TransformMode) => void;
   toggleTransformSpace: () => void;
@@ -56,6 +65,8 @@ interface EditorState {
   beginRename: (entityId: string) => void;
   /** Cleared by the view when the field closes, committed or abandoned. */
   endRename: () => void;
+  openPalette: () => void;
+  closePalette: () => void;
 
   play: () => void;
   togglePause: () => void;
@@ -75,9 +86,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
   stepRequested: false,
   selection: [],
   renaming: null,
+  paletteOpen: false,
 
   beginRename: (renaming) => set({ renaming }),
   endRename: () => set({ renaming: null }),
+  openPalette: () => set({ paletteOpen: true }),
+  closePalette: () => set({ paletteOpen: false }),
 
   setTransformMode: (transformMode) => set({ transformMode }),
   toggleTransformSpace: () =>

@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-064 — les raccourcis sont une donnée, et ils se remappent
-**Tâche courante** : **T-065** — palette de commandes
-**Faites** : T-001 → T-061, **T-062a → T-062e, T-063, T-064**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-065 — une palette de commandes, que le registre offre désormais
+**Tâche courante** : **T-066** — `playCommands` cesse de piloter la disposition
+**Faites** : T-001 → T-061, **T-062a → T-062e, T-063 → T-065**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,32 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-065 — la palette est 150 lignes et ne sait rien des gestes qui existent.** Libellés `label(ctx)`,
+filtre `can(ctx)`, touches de la table de T-064, liste `commandIds()`. Une commande ajoutée à
+n'importe quelle famille y apparaît sans toucher `CommandPalette.tsx`. C'est la vérification que les
+quatre tranches précédentes ont produit ce qu'elles annonçaient.
+
+**Elle s'ouvre par une commande, `openCommandPalette`.** Un cas particulier dans `useShortcuts` aurait
+été une quatrième orthographe de « quelle touche fait quoi », que T-064 vient de supprimer. Elle se
+liste elle-même — VS Code fait pareil, et la relancer depuis elle-même est inoffensif.
+
+**⚠️ Une régression d'affichage introduite par T-064, trouvée par le harnais.** La palette montrait
+`Delete⌦` là où le menu affichait `⌫`. `bindingForCommand` rend le **premier** binding, et `Delete`
+précédait `Backspace`. Or la touche « supprimer » d'un clavier Mac **est** Backspace, dessinée `⌫`
+partout ; un PC a un Del séparé. L'ordre des deux entrées dépend donc de la plateforme — ce que les
+menus disaient chacun par `isMac ? '⌫' : 'Del'` avant que la table ne les remplace. **Une table
+indexée par binding a un ordre, et cet ordre est une décision d'affichage.** Épinglé par un test.
+
+**Le critère d'empilement est vérifié dans les deux sens** : Escape ferme la palette **et la sélection
+derrière survit**. La palette ne traite pas Escape elle-même — `useOverlay` suffit, et le prendre en
+main aurait remis le bug des deux surfaces qui se ferment ensemble.
+
+**⚠️ Cinq gestes ne peuvent pas apparaître dans la palette** : ceux qui portent une cible
+(`openScene`, `openSceneInNewWindow`, `setStartScene`, `revealAsset`, `deleteAsset`).
+`currentContext()` ne porte ni `assetId` ni `sceneId`, donc leur `can()` répond `false` — ce qui est
+correct, mais les met hors de portée du clavier. Inscrit dans `RESTES.md` : la réponse est une palette
+en deux temps.
 
 **T-064 — il y avait trois orthographes d'un raccourci, pas deux, et la troisième était morte.** Le
 `switch` de `useShortcuts` décidait ; les hints des menus étaient tapés à la main (`${modKey}Z` une
@@ -2392,7 +2418,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063, T-064 faits ; reste T-062f, après T-066 |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 → T-065 faits ; restent T-066 puis T-062f |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

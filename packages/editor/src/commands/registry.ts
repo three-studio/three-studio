@@ -59,3 +59,15 @@ export type CommandId = keyof typeof COMMANDS;
 export function commandById(id: CommandId): Command {
   return COMMANDS[id];
 }
+
+/**
+ * Every gesture the editor has, in declaration order.
+ *
+ * The command palette is this list, filtered by `can()` and by what has been
+ * typed — which is the whole of milestone 8.4. `Object.keys` with the cast is
+ * here rather than at the call site because this is the one place that knows the
+ * table's keys *are* the ids.
+ */
+export function commandIds(): readonly CommandId[] {
+  return Object.keys(COMMANDS) as CommandId[];
+}

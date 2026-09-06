@@ -44,8 +44,19 @@ export const DEFAULT_BINDINGS: Readonly<Record<ShortcutBinding, CommandId>> = {
   'Mod+D': 'duplicate',
   'Mod+G': 'group',
   'Mod+S': 'save',
-  Delete: 'delete',
-  Backspace: 'delete',
+  // What VS Code, Unity and Blender all put it on. `Mod+P` alone is "go to
+  // file" in most of them, and this project has no files to go to.
+  'Mod+Shift+P': 'openCommandPalette',
+  /*
+   * Both keys delete, and their order is not cosmetic: `bindingForCommand`
+   * returns the first, and that is the one a menu draws. A Mac keyboard's
+   * delete key *is* Backspace and every Mac menu shows `⌫` for it; a PC has a
+   * separate Del and shows that. The menus used to say this as
+   * `isMac ? '⌫' : 'Del'` written into each of them by hand.
+   */
+  ...(isMac
+    ? ({ Backspace: 'delete', Delete: 'delete' } as const)
+    : ({ Delete: 'delete', Backspace: 'delete' } as const)),
 };
 
 /**

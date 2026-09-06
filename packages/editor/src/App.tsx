@@ -2,6 +2,7 @@ import { findScene } from '@three-studio/core';
 import { useCallback, useState } from 'react';
 import { DockLayout } from './shell/DockLayout';
 import { MenuBar } from './shell/MenuBar';
+import { CommandPalette } from './shell/CommandPalette';
 import { StatusBar } from './shell/StatusBar';
 import { Toolbar } from './shell/Toolbar';
 import { clearLayout } from './shell/layoutStorage';
@@ -63,6 +64,7 @@ export function App() {
         </div>
       )}
       <StatusBar />
+      <CommandPalette />
       <PromptDialog />
       <ImportDialog />
       <ToastHost />

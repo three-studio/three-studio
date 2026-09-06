@@ -394,3 +394,42 @@ describe('rename is a command that finishes', () => {
     expect(useEditorStore.getState().renaming).toBeNull();
   });
 });
+
+describe('the palette is a view over the table, not a feature', () => {
+  it('opens through a command, so its key comes out of the one binding table', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const { bindingOf, commandForBinding } = await import('../src/shell/shortcutBindings');
+
+    const binding = bindingOf({ key: 'P', shiftKey: true, metaKey: false, ctrlKey: true });
+    expect(binding).toBe('Mod+Shift+P');
+    expect(commandForBinding(binding!)).toBe('openCommandPalette');
+
+    expect(useEditorStore.getState().paletteOpen).toBe(false);
+    commandById('openCommandPalette').run();
+    expect(useEditorStore.getState().paletteOpen).toBe(true);
+    useEditorStore.getState().closePalette();
+  });
+
+  it('lists only what can act, which is what the palette shows', async () => {
+    const { commandById, commandIds, currentContext } = await import('../src/commands/registry');
+    const { useProjectStore } = await import('../src/state/projectStore');
+
+    // Nothing selected, no project: the state the editor is in before anything
+    // has been opened.
+    useEditorStore.getState().clearSelection();
+    useProjectStore.setState({ summary: null, sceneId: null, scenes: [] } as never);
+
+    const ctx = currentContext();
+    const offered = commandIds().filter((id) => commandById(id).can(ctx));
+
+    // The palette itself always can, and it is the only one here that does not
+    // need a document, a project or a selection.
+    expect(offered).toContain('openCommandPalette');
+    for (const id of ['undo', 'delete', 'duplicate', 'newScene', 'runExport', 'deleteAsset'] as const) {
+      expect(offered, id).not.toContain(id);
+    }
+
+    // And the labels are the commands' own, which is what makes the list read.
+    expect(commandById('openCommandPalette').label(ctx)).toBe('Command Palette…');
+  });
+});

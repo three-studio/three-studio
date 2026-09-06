@@ -161,6 +161,8 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     Edit: [
       // Every entry below is the command's own label, its own verdict and its
       // own body. Greying an entry and refusing a key are the same line now.
+      entryFor('openCommandPalette'),
+      null,
       entryFor('undo'),
       entryFor('redo'),
       null,
