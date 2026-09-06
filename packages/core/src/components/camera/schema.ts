@@ -2,6 +2,11 @@ import type { ComponentBase } from '../../scene/primitives';
 
 export type CameraProjection = 'perspective' | 'orthographic';
 
+export const CAMERA_PROJECTION_LABELS: Record<CameraProjection, string> = {
+  perspective: 'Perspective',
+  orthographic: 'Orthographic',
+};
+
 export interface CameraComponent extends ComponentBase {
   type: 'camera';
   projection: CameraProjection;

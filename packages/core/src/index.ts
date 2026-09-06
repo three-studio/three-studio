@@ -104,7 +104,7 @@ export type {
  * importers, because it stopped belonging to them: a script declares in it too,
  * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
  */
-export { field, fieldOptions } from './fields';
+export { field, fieldOptions, optionsFrom } from './fields';
 export type {
   FieldAction,
   FieldDef,
@@ -178,6 +178,36 @@ export type {
 export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/water';
 
 export { AUDIO_BUSES } from './scene/schema';
+
+/*
+ * A label for each member of a closed union, beside the union it names — see
+ * the note in `scene/schema.ts`. Total records, so the compiler is what makes a
+ * member without a name impossible; `optionsFrom` turns one into the choices a
+ * control offers.
+ */
+export {
+  AUDIO_BUS_LABELS,
+  BACKGROUND_MODE_LABELS,
+  BODY_TYPE_LABELS,
+  CAMERA_PROJECTION_LABELS,
+  COLLIDER_SHAPE_LABELS,
+  DISTANCE_MODEL_LABELS,
+  EMITTER_SHAPE_LABELS,
+  ENVIRONMENT_MODE_LABELS,
+  FOG_MODE_LABELS,
+  MATERIAL_SIDE_LABELS,
+  PLAYER_CONTROLLER_MODE_LABELS,
+  TEXTURE_WRAP_LABELS,
+} from './scene/schema';
+export type {
+  BackgroundMode,
+  BodyType,
+  ColliderShape,
+  DistanceModel,
+  EnvironmentMode,
+  FogMode,
+  PlayerControllerMode,
+} from './scene/schema';
 
 export {
   createEmptyScene,

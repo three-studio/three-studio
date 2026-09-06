@@ -37,15 +37,33 @@ import type { Hex, Transform, Vec3 } from './primitives';
 
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
+export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
-// --- one slice per component type -------------------------------------------
+/*
+ * One slice per component type — and beside each union, a label for each of its
+ * members. A `*_LABELS` is a **total** `Record`, so a member added to the union
+ * above it does not compile until it has a name; `optionsFrom` turns one into
+ * the choices a control offers, in the order the record is written. The editor
+ * imports these rather than re-listing them, which is what it used to do, in a
+ * Tweakpane literal, unchecked. `GEOMETRY_LABELS` has always been this shape.
+ */
 
 export type { AudioListenerComponent } from '../components/audioListener/schema';
-export type { AudioBus, AudioSourceComponent } from '../components/audioSource/schema';
-export { AUDIO_BUSES } from '../components/audioSource/schema';
+export type {
+  AudioBus,
+  AudioSourceComponent,
+  DistanceModel,
+} from '../components/audioSource/schema';
+export {
+  AUDIO_BUSES,
+  AUDIO_BUS_LABELS,
+  DISTANCE_MODEL_LABELS,
+} from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
-export type { ColliderComponent } from '../components/collider/schema';
+export { CAMERA_PROJECTION_LABELS } from '../components/camera/schema';
+export type { ColliderComponent, ColliderShape } from '../components/collider/schema';
+export { COLLIDER_SHAPE_LABELS } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
@@ -53,12 +71,18 @@ export type {
   EmitterShape,
   ParticleEmitterComponent,
 } from '../components/particleEmitter/schema';
-export type { PlayerControllerComponent } from '../components/playerController/schema';
+export { EMITTER_SHAPE_LABELS } from '../components/particleEmitter/schema';
+export type {
+  PlayerControllerComponent,
+  PlayerControllerMode,
+} from '../components/playerController/schema';
+export { PLAYER_CONTROLLER_MODE_LABELS } from '../components/playerController/schema';
 export type {
   PrefabInstanceComponent,
   PrefabOverride,
 } from '../components/prefabInstance/schema';
-export type { RigidBodyComponent } from '../components/rigidbody/schema';
+export type { BodyType, RigidBodyComponent } from '../components/rigidbody/schema';
+export { BODY_TYPE_LABELS } from '../components/rigidbody/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
 export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 
@@ -185,6 +209,32 @@ export interface SkySettings {
   cloudSpeed: number;
 }
 
+/** A flat colour, an equirectangular texture, or the analytic sky. */
+export type BackgroundMode = 'color' | 'texture' | 'sky';
+
+export const BACKGROUND_MODE_LABELS: Record<BackgroundMode, string> = {
+  color: 'Colour',
+  texture: 'Texture',
+  sky: 'Sky',
+};
+
+/** Where image-based lighting comes from. */
+export type EnvironmentMode = 'none' | 'background' | 'texture';
+
+export const ENVIRONMENT_MODE_LABELS: Record<EnvironmentMode, string> = {
+  none: 'None',
+  background: 'Background',
+  texture: 'Texture',
+};
+
+/** Linear fog ramps between two distances; exponential has no far edge. */
+export type FogMode = 'linear' | 'exponential';
+
+export const FOG_MODE_LABELS: Record<FogMode, string> = {
+  linear: 'Linear',
+  exponential: 'Exponential',
+};
+
 export interface EnvironmentDef {
   /**
    * A flat colour, an equirectangular texture, or the analytic sky.
@@ -193,7 +243,7 @@ export interface EnvironmentDef {
    * not lose the colour — and the same is true of `backgroundTexture` and
    * `sky`. Nothing here is cleared by choosing something else.
    */
-  backgroundMode: 'color' | 'texture' | 'sky';
+  backgroundMode: BackgroundMode;
   background: Hex;
   /** Asset id of an equirectangular image — HDR, EXR or PNG. */
   backgroundTexture: string | null;
@@ -218,7 +268,7 @@ export interface EnvironmentDef {
    * paired with a large one for the sky: the prefiltering throws away that
    * resolution anyway, so only the background ever needs it.
    */
-  environmentMode: 'none' | 'background' | 'texture';
+  environmentMode: EnvironmentMode;
   environmentTexture: string | null;
   environmentIntensity: number;
 
@@ -241,7 +291,7 @@ export interface EnvironmentDef {
    * exponential has no far edge, which is what makes a horizon rather than a
    * wall. `fogNear`/`fogFar` serve the first, `fogDensity` the second.
    */
-  fogMode: 'linear' | 'exponential';
+  fogMode: FogMode;
   fogNear: number;
   fogFar: number;
   fogDensity: number;

@@ -60,6 +60,25 @@ export function fieldOptions(
 }
 
 /**
+ * The choices of a closed union, from a label for each of its members.
+ *
+ * The check is not here — it is on the record, which is declared beside its
+ * union as a **total** `Record<Union, string>`. That is what makes a member
+ * added without a label a compile error. Every dropdown in the editor used to
+ * re-enumerate its union by hand in a Tweakpane literal instead, and nothing
+ * checked those against the document: adding a member gave a control that
+ * could not select it, silently.
+ *
+ * The order of the record is the order of the control, which is not the order
+ * of the union: a `bodyType` reads best as Dynamic, Fixed, Kinematic, and is
+ * declared fixed-first. Keeping the two apart is deliberate, and it is why the
+ * labels are a record rather than an array of members.
+ */
+export function optionsFrom<T extends string>(labels: Record<T, string>): readonly FieldOption[] {
+  return Object.entries<string>(labels).map(([value, label]) => ({ value, label }));
+}
+
+/**
  * One row of a declared list, which is a field plus where it is stored.
  *
  * A script declares a `Record<string, FieldDef>` and gets its keys from the

@@ -1,3 +1,4 @@
+import { CAMERA_PROJECTION_LABELS, optionsFrom } from '@three-studio/core';
 import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -7,10 +8,7 @@ export const inspector: ComponentSchema = {
       path: ['projection'],
       label: 'Projection',
       type: 'enum',
-      options: [
-        { value: 'perspective', label: 'Perspective' },
-        { value: 'orthographic', label: 'Orthographic' },
-      ],
+      options: optionsFrom(CAMERA_PROJECTION_LABELS),
     },
     {
       path: ['fov'],

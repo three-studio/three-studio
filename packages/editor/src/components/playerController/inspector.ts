@@ -1,3 +1,4 @@
+import { PLAYER_CONTROLLER_MODE_LABELS, optionsFrom } from '@three-studio/core';
 import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -7,11 +8,7 @@ export const inspector: ComponentSchema = {
       path: ['mode'],
       label: 'Mode',
       type: 'enum',
-      options: [
-        { value: 'fps', label: 'FPS' },
-        { value: 'tps', label: 'TPS' },
-        { value: 'fly', label: 'Fly' },
-      ],
+      options: optionsFrom(PLAYER_CONTROLLER_MODE_LABELS),
     },
     { path: ['moveSpeed'], label: 'Move speed', type: 'number', min: 0.1, max: 40, step: 0.1 },
     {

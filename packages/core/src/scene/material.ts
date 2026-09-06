@@ -9,11 +9,23 @@ import type { Hex, Vec2 } from './primitives';
 /** Which faces are drawn. Named because two component types now take it. */
 export type MaterialSide = 'front' | 'back' | 'double';
 
+export const MATERIAL_SIDE_LABELS: Record<MaterialSide, string> = {
+  front: 'Front',
+  back: 'Back',
+  double: 'Double',
+};
+
 /**
  * How a texture repeats past the 0..1 UV range. Named after three's constants;
  * `mirror` is what stops a tiled ground from showing a hard seam.
  */
 export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
+
+export const TEXTURE_WRAP_LABELS: Record<TextureWrap, string> = {
+  repeat: 'Repeat',
+  clamp: 'Clamp',
+  mirror: 'Mirror',
+};
 
 export interface MaterialDef {
   color: Hex;

@@ -9,6 +9,12 @@ import type { ComponentBase, Hex, Vec3 } from '../../scene/primitives';
  */
 export type EmitterShape = 'point' | 'sphere' | 'box';
 
+export const EMITTER_SHAPE_LABELS: Record<EmitterShape, string> = {
+  point: 'Point',
+  sphere: 'Sphere',
+  box: 'Box',
+};
+
 /**
  * A stream of billboarded particles.
  *

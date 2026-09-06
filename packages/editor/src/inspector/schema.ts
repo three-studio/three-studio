@@ -1,5 +1,9 @@
 import {
+  BACKGROUND_MODE_LABELS,
+  ENVIRONMENT_MODE_LABELS,
+  FOG_MODE_LABELS,
   SUN_CUSTOM,
+  optionsFrom,
   type ComponentDoc,
   type ComponentType,
   type EnvironmentDef,
@@ -29,7 +33,6 @@ export {
   ASSET_SLOT,
   GEOMETRY_FIELDS,
   MATERIAL_FIELDS,
-  SIDE_OPTIONS,
   asDegrees,
   assetSlot,
   isAction,
@@ -181,11 +184,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         key: 'backgroundMode',
         label: 'Mode',
         type: 'enum',
-        options: [
-          { value: 'color', label: 'Colour' },
-          { value: 'texture', label: 'Texture' },
-          { value: 'sky', label: 'Sky' },
-        ],
+        options: optionsFrom(BACKGROUND_MODE_LABELS),
       },
       {
         on: 'environment',
@@ -224,11 +223,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         key: 'environmentMode',
         label: 'Source',
         type: 'enum',
-        options: [
-          { value: 'none', label: 'None' },
-          { value: 'background', label: 'Background' },
-          { value: 'texture', label: 'Texture' },
-        ],
+        options: optionsFrom(ENVIRONMENT_MODE_LABELS),
       },
       {
         ...environmentSlot('environmentTexture', 'Lighting'),
@@ -291,10 +286,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         key: 'fogMode',
         label: 'Mode',
         type: 'enum',
-        options: [
-          { value: 'linear', label: 'Linear' },
-          { value: 'exponential', label: 'Exponential' },
-        ],
+        options: optionsFrom(FOG_MODE_LABELS),
         visibleWhen: isFogOn,
       },
       {

@@ -1,3 +1,4 @@
+import { BODY_TYPE_LABELS, optionsFrom } from '@three-studio/core';
 import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -7,11 +8,7 @@ export const inspector: ComponentSchema = {
       path: ['bodyType'],
       label: 'Type',
       type: 'enum',
-      options: [
-        { value: 'dynamic', label: 'Dynamic' },
-        { value: 'fixed', label: 'Fixed' },
-        { value: 'kinematicPosition', label: 'Kinematic' },
-      ],
+      options: optionsFrom(BODY_TYPE_LABELS),
     },
     { path: ['mass'], label: 'Mass', type: 'number', min: 0.001, step: 0.1 },
     {

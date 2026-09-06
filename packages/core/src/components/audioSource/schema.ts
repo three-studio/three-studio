@@ -7,21 +7,37 @@ import type { ComponentBase } from '../../scene/primitives';
  */
 export type AudioBus = 'master' | 'music' | 'sfx' | 'ui' | 'ambience';
 
+/** One name per bus, in the order the Inspector offers them. */
+export const AUDIO_BUS_LABELS: Record<AudioBus, string> = {
+  master: 'Master',
+  music: 'Music',
+  sfx: 'SFX',
+  ui: 'UI',
+  ambience: 'Ambience',
+};
+
 /**
  * The same set, as a value, because the mixer has to build one gain node per bus
  * and a type cannot be iterated.
  *
- * `satisfies` rather than a plain annotation, so adding a bus to the union
- * without adding it here is a compile error rather than a bus nothing routes to
- * — the same guard `COMPONENT_TYPES` uses.
+ * Read off the labels rather than written again. It used to be an array of its
+ * own under `satisfies readonly AudioBus[]`, with a comment claiming that made a
+ * missing bus a compile error — it does not. `satisfies` checks that every
+ * element *is* an `AudioBus`, never that every `AudioBus` is an element, so the
+ * list could quietly lose one and the mixer would build one fewer gain node. A
+ * total `Record` is the check that comment wanted; the cast is `Object.keys`
+ * returning `string[]`, and nothing more.
  */
-export const AUDIO_BUSES = [
-  'master',
-  'music',
-  'sfx',
-  'ui',
-  'ambience',
-] as const satisfies readonly AudioBus[];
+export const AUDIO_BUSES = Object.keys(AUDIO_BUS_LABELS) as readonly AudioBus[];
+
+/** Web Audio's own falloff curves, under the names three and the spec use. */
+export type DistanceModel = 'linear' | 'inverse' | 'exponential';
+
+export const DISTANCE_MODEL_LABELS: Record<DistanceModel, string> = {
+  inverse: 'Inverse',
+  linear: 'Linear',
+  exponential: 'Exponential',
+};
 
 export interface AudioSourceComponent extends ComponentBase {
   type: 'audioSource';
@@ -40,7 +56,7 @@ export interface AudioSourceComponent extends ComponentBase {
   bus: AudioBus;
 
   /** Web Audio `PannerNode` falloff, used when `spatialBlend > 0`. */
-  distanceModel: 'linear' | 'inverse' | 'exponential';
+  distanceModel: DistanceModel;
   /** Distance at which the sound is at full volume. */
   refDistance: number;
   maxDistance: number;

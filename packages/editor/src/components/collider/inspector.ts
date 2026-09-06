@@ -1,3 +1,4 @@
+import { COLLIDER_SHAPE_LABELS, optionsFrom } from '@three-studio/core';
 import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -7,13 +8,7 @@ export const inspector: ComponentSchema = {
       path: ['shape'],
       label: 'Shape',
       type: 'enum',
-      options: [
-        { value: 'box', label: 'Box' },
-        { value: 'sphere', label: 'Sphere' },
-        { value: 'capsule', label: 'Capsule' },
-        { value: 'convexHull', label: 'Convex hull' },
-        { value: 'trimesh', label: 'Triangle mesh' },
-      ],
+      options: optionsFrom(COLLIDER_SHAPE_LABELS),
     },
     {
       path: ['radius'],

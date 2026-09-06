@@ -3,6 +3,7 @@ import {
   createAudioSource,
   createComponent,
   createEmptyScene,
+  fieldOptions,
   type ComponentType,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -171,6 +172,65 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
           row: `${field.on}.${field.key}`,
           unknown: [],
         });
+      }
+    }
+  });
+});
+
+/*
+ * What a row says its control is, checked against what the document holds there.
+ *
+ * `sameShape` used to guard this at runtime, in the two setters of the scene
+ * pane, with a comment saying that "the Inspector schema pairing a field with a
+ * control that fits it is a promise the compiler cannot check". Most of it can
+ * be checked — here, once, against real documents — and what is checked here
+ * does not need re-checking on every keystroke of every drag.
+ *
+ * The `enum` case is the one this was written for: its choices are now derived
+ * from the union they show, so a stored value outside them means the derivation
+ * and the document have come apart.
+ */
+describe('a declared control fits the value it is bound to', () => {
+  /** Rows that answer for themselves: a converter, or a control of its own. */
+  const declaresItsOwn = (spec: FieldSpec) => spec.toModel !== undefined || spec.params !== undefined;
+
+  function check(where: string, spec: FieldSpec, value: unknown): void {
+    if (declaresItsOwn(spec)) return;
+    const at = `${where}.${spec.path.join('.')}`;
+
+    if (spec.type === 'enum') {
+      const values = fieldOptions(spec.options).map((option) => option.value);
+      expect({ at, ok: values.includes(value as string) }).toEqual({ at, ok: true });
+      return;
+    }
+    if (spec.type === 'number') {
+      expect({ at, type: typeof value }).toEqual({ at, type: 'number' });
+      return;
+    }
+    if (spec.type === undefined) {
+      // Nothing declared, so Tweakpane reads the value — and it can only read
+      // the three primitives it builds a control from.
+      expect({ at, ok: ['boolean', 'string', 'number'].includes(typeof value) }).toEqual({
+        at,
+        ok: true,
+      });
+    }
+  }
+
+  it.each(COMPONENT_TYPES)('%s', (type) => {
+    const component = createComponent(type);
+    for (const spec of paneEntriesFor(component).entries) {
+      if (!('path' in spec)) continue;
+      check(type, spec, readPath(component, spec.path));
+    }
+  });
+
+  it('holds for the scene pane too', () => {
+    const scene = createEmptyScene();
+    for (const section of SCENE_SCHEMA) {
+      for (const field of section.fields) {
+        const spec = { ...field, path: sceneFieldPath(field) } as FieldSpec;
+        check(field.on, spec, readPath(scene, spec.path));
       }
     }
   });

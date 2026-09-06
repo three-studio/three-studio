@@ -1,4 +1,9 @@
-import type { ComponentDoc } from '@three-studio/core';
+import {
+  AUDIO_BUS_LABELS,
+  DISTANCE_MODEL_LABELS,
+  optionsFrom,
+  type ComponentDoc,
+} from '@three-studio/core';
 import { audioPreview } from '../../audio/preview';
 import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 import { peekViewport } from '../../viewport/viewportHost';
@@ -65,13 +70,7 @@ export const inspector: ComponentSchema = {
       path: ['bus'],
       label: 'Bus',
       type: 'enum',
-      options: [
-        { value: 'master', label: 'Master' },
-        { value: 'music', label: 'Music' },
-        { value: 'sfx', label: 'SFX' },
-        { value: 'ui', label: 'UI' },
-        { value: 'ambience', label: 'Ambience' },
-      ],
+      options: optionsFrom(AUDIO_BUS_LABELS),
     },
     { kind: 'separator' },
 
@@ -102,11 +101,7 @@ export const inspector: ComponentSchema = {
       path: ['distanceModel'],
       label: 'Falloff',
       type: 'enum',
-      options: [
-        { value: 'inverse', label: 'Inverse' },
-        { value: 'linear', label: 'Linear' },
-        { value: 'exponential', label: 'Exponential' },
-      ],
+      options: optionsFrom(DISTANCE_MODEL_LABELS),
       visibleWhen: isPositional,
     },
     {

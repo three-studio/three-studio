@@ -1,6 +1,12 @@
-import { SUN_CUSTOM, SUN_FROM_SKY, entitiesWith, type ComponentDoc } from '@three-studio/core';
 import {
-  SIDE_OPTIONS,
+  MATERIAL_SIDE_LABELS,
+  SUN_CUSTOM,
+  SUN_FROM_SKY,
+  entitiesWith,
+  optionsFrom,
+  type ComponentDoc,
+} from '@three-studio/core';
+import {
   asDegrees,
   assetSlot,
   type ComponentSchema,
@@ -73,7 +79,7 @@ export const inspector: ComponentSchema = {
       // a second.
       type: 'number', min: 0.1, max: 1, step: 0.05,
     },
-    { path: ['side'], label: 'Side', type: 'enum', options: SIDE_OPTIONS },
+    { path: ['side'], label: 'Side', type: 'enum', options: optionsFrom(MATERIAL_SIDE_LABELS) },
     { path: ['fog'], label: 'Affected by fog' },
   ],
 };

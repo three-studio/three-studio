@@ -519,27 +519,23 @@ export function setComponentNestedField(
   );
 }
 
-/**
- * Whether a control handed back something of the shape the document holds.
+/*
+ * The two setters below take `unknown` and write it, and the cast each of them
+ * needs is the whole of what used to be `sameShape` — a per-keystroke
+ * `typeof` comparison against the value already in the document.
  *
- * Tweakpane types every binding as `unknown`, and the Inspector schema pairing
- * a field with a control that fits it is a promise the compiler cannot check.
- * Checking it here can be, and this is the same defence the format migration
- * makes at the other boundary: a value of the wrong shape is refused rather
- * than written, where it would reach the binder as something three cannot use.
+ * It was there because "the Inspector schema pairing a field with a control
+ * that fits it is a promise the compiler cannot check". Most of that promise is
+ * checked now, once, in `inspectorSchema.test.ts`: every declared control is
+ * held against the value the document actually keeps at its path, and a
+ * dropdown's choices come from the union they show rather than from a literal
+ * beside it. What a guard on every drag was standing in for, a test states.
  *
- * A predicate rather than a cast, so refusing is the compiler's business too —
- * the assignment below does not typecheck without it.
+ * The entity panes never had the guard at all — `setComponentNestedField`
+ * writes through `Record<string, unknown>` and needs no cast — so this was one
+ * pane's belt, not a boundary. The boundary that does matter, a file written by
+ * an older version, is the format migration's, and that has not moved.
  */
-function sameShape<T>(current: T, value: unknown): value is T {
-  // The nullable fields are the asset slots, whose control round-trips the
-  // empty choice through `''` and back to `null`. So either side being null
-  // means the pair is a slot, and the other side must be a slot's two values.
-  if (current === null || value === null) {
-    return value === null || typeof value === 'string';
-  }
-  return typeof value === typeof current;
-}
 
 export function setEnvironmentField<K extends keyof SceneDoc['environment']>(
   field: K,
@@ -549,7 +545,7 @@ export function setEnvironmentField<K extends keyof SceneDoc['environment']>(
   mutate(
     'Edit environment',
     (scene) => {
-      if (sameShape(scene.environment[field], value)) scene.environment[field] = value;
+      scene.environment[field] = value as SceneDoc['environment'][K];
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
@@ -570,7 +566,7 @@ export function setSkyField<K extends keyof SceneDoc['environment']['sky']>(
   mutate(
     'Edit sky',
     (scene) => {
-      if (sameShape(scene.environment.sky[field], value)) scene.environment.sky[field] = value;
+      scene.environment.sky[field] = value as SceneDoc['environment']['sky'][K];
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );

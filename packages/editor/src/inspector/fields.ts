@@ -12,12 +12,14 @@
  * `schema.ts` re-exports all of it, so nothing that builds a pane has to know
  * this file exists.
  */
-import type {
-  AssetKind,
-  ComponentDoc,
-  FieldDef,
-  FieldOption,
-  GeometryKind,
+import {
+  MATERIAL_SIDE_LABELS,
+  TEXTURE_WRAP_LABELS,
+  optionsFrom,
+  type AssetKind,
+  type ComponentDoc,
+  type FieldDef,
+  type GeometryKind,
 } from '@three-studio/core';
 
 /**
@@ -228,13 +230,6 @@ export const asDegrees: Pick<FieldSpec, 'toModel' | 'fromModel'> = {
   fromModel: (value) => (value as number) * DEG_TO_RAD,
 };
 
-/** The `MaterialSide` union, as a list of choices. Two panes bind it. */
-export const SIDE_OPTIONS: readonly FieldOption[] = [
-  { value: 'front', label: 'Front' },
-  { value: 'back', label: 'Back' },
-  { value: 'double', label: 'Double' },
-];
-
 /**
  * Keyed by `GeometryKind`, so adding a primitive to the union without giving it
  * inspector fields is a compile error rather than an empty panel.
@@ -444,7 +439,12 @@ export const MATERIAL_FIELDS: readonly FieldSpec[] = [
   { path: ['material', 'opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
   { path: ['material', 'transparent'], label: 'Transparent' },
   { path: ['material', 'wireframe'], label: 'Wireframe' },
-  { path: ['material', 'side'], label: 'Side', type: 'enum', options: SIDE_OPTIONS },
+  {
+    path: ['material', 'side'],
+    label: 'Side',
+    type: 'enum',
+    options: optionsFrom(MATERIAL_SIDE_LABELS),
+  },
 
   textureSlot('colorMap', 'Base colour map'),
   textureSlot('normalMap', 'Normal map'),
@@ -497,10 +497,6 @@ export const MATERIAL_FIELDS: readonly FieldSpec[] = [
     path: ['material', 'wrap'],
     label: 'Wrap',
     type: 'enum',
-    options: [
-      { value: 'repeat', label: 'Repeat' },
-      { value: 'clamp', label: 'Clamp' },
-      { value: 'mirror', label: 'Mirror' },
-    ],
+    options: optionsFrom(TEXTURE_WRAP_LABELS),
   },
 ];
