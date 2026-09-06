@@ -176,7 +176,6 @@ export class Reconciler {
    * The identity check is on the **handle**, not on the entity: a delete
    * followed by a rebuild under the same id produces a new one, and the old
    * handle's model would otherwise be attached to a container nothing draws.
-   * That is B8.
    */
   attachLate(entityId: string, handle: SystemHandle, object: Object3D): boolean {
     const view = this.views.get(entityId);

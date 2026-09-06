@@ -113,7 +113,7 @@ describe('who gets a marker', () => {
     /*
      * The `Scene` node every new scene opens with is one of these, and a marker
      * on it says "an entity is at the origin" — which the hierarchy says better.
-     * ADR-0007 rules out naming that node as a special case, so the rule has to
+     * Naming that node as a special case is ruled out, so the rule has to
      * hold for every bare entity, and it does: a group is scaffolding, and what
      * hangs under it is what gets clicked.
      */
@@ -185,7 +185,7 @@ describe('a marker as a click target', () => {
   it('goes invisible with its entity, so a hidden light cannot be clicked', () => {
     // Three does not inherit `visible` and its raycaster does not test it, so
     // this flag is the whole of what keeps a hidden entity unclickable — the
-    // same rule as B7 in `Picker`.
+    // same rule as in `Picker`.
     const light = createLightEntity('point');
     const scene = sceneWith([light]);
     const { overlay, frame } = mount(scene);

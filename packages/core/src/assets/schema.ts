@@ -108,7 +108,7 @@ export interface BuildManifest {
    * script to load later.
    *
    * Files, until format 5. What the id buys is that the path is `buildScenePath`
-   * of it rather than something to look up — which is ADR-0005 reaching the end
+   * of it rather than something to look up — the end
    * of the chain: a reference is an id, never a name and never a path.
    */
   scenes: string[];
@@ -341,7 +341,7 @@ export interface AudioSettings {
    * and a file this browser cannot decode has no facts to report. The browser is
    * the only thing here that can read them — there is no `decodeAudioData` under
    * Node — so the main process cannot fill them in, and asking it to would mean
-   * a header parser per format for three numbers of display. See ADR-0016.
+   * a header parser per format for three numbers of display.
    */
   /** Length in seconds, at the file's own rate. */
   seconds?: number;

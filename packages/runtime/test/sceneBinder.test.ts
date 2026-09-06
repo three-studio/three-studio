@@ -106,7 +106,7 @@ describe('binding a scene', () => {
     // Ten syncs of a document nothing touched, as a drag on another entity
     // produces. The list of an entity's components is now built fresh on every
     // read, so comparing its *identity* would differ every time and rebuild the
-    // whole scene once per frame — B9's leak, through a new door. The elements
+    // whole scene once per frame — the shadow-map leak, through a new door. The elements
     // still carry immer's identity, and that is what the check uses.
     for (let step = 0; step < 10; step++) binder.sync(scene);
 
@@ -128,7 +128,7 @@ describe('binding a scene', () => {
 });
 
 /*
- * B5 — the worst of the twelve. Three meshes named the same material asset, and
+ * The worst of the twelve. Three meshes named the same material asset, and
  * one texture change gave each of them its own copy, each replacement freeing
  * the one the previous mesh had just adopted. Written in the shape it must have
  * once phase 5 lands, not in the shape of the bug.
@@ -160,7 +160,7 @@ describe('a material asset shared by several meshes', () => {
 });
 
 /*
- * B8 — a glTF that lands after its entity was deleted. `attachModel` guards
+ * A glTF that lands after its entity was deleted. `attachModel` guards
  * against an *edit* with a generation counter, but a removed binding keeps its
  * generation, so the guard passes and the model is attached to a container
  * nothing walks any more.
@@ -190,7 +190,7 @@ describe('a model that arrives late', () => {
 });
 
 /*
- * B9 — a light allocates a shadow map render target, `shadowMapSize` squared and
+ * A light allocates a shadow map render target, `shadowMapSize` squared and
  * up to 4096, that only `light.entity.entity.dispose()` frees. Every change to a component
  * array rebuilt the object, so dragging an intensity slider allocated one per
  * frame and abandoned the last.
@@ -272,7 +272,7 @@ describe('editing a light', () => {
 });
 
 /*
- * B6 — the retire queue is a frame-scale idea, and `sync` is neither once per
+ * The retire queue is a frame-scale idea, and `sync` is neither once per
  * frame nor guaranteed to happen.
  */
 describe('when retired objects are freed', () => {
@@ -556,7 +556,7 @@ describe('what a batch has to notice', () => {
      * `onBeforeRender` returns early only when visibility, per-instance culling
      * and sorting are all off (`BatchedMesh.js:1522`). Sorting is on by default,
      * so it rebuilt the list for every camera — including the six faces of a
-     * point light's shadow map, which is the whole of B15. Front-to-back order
+     * point light's shadow map, which is the whole of it. Front-to-back order
      * buys nothing for the opaque geometry this batches.
      */
     expect(batchOf(binder).sortObjects).toBe(false);

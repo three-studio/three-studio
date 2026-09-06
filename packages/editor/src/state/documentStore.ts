@@ -34,7 +34,7 @@ export interface MutationOptions {
    * recipe — `duplicateEntities` above all. It is handed the scene the recipe
    * produced, not the one it started from.
    *
-   * Setting the selection *after* `mutate` is what B2 was: the change was not in
+   * Setting the selection *after* `mutate` was the defect: the change was not in
    * the entry, so undo could not take it back.
    */
   select?: readonly string[] | ((scene: SceneDoc) => readonly string[]);
@@ -87,7 +87,7 @@ function touchesHierarchy(patches: readonly Patch[]): boolean {
  * The three stored copies of the tree — `parent`, `children[]`, `rootOrder` —
  * used to be checked only by `repairHierarchy`, at load. An edit that broke an
  * edge stayed broken all session and was quietly healed on the next open, which
- * is why B1 survived so long: nothing said anything until the evidence was gone.
+ * is why it survived so long: nothing said anything until the evidence was gone.
  *
  * Console rather than a throw. A half-written document is not worth losing the
  * session over, and `graph.ts` refuses the operations that would cause this — so
@@ -121,7 +121,7 @@ interface DocumentState {
   /**
    * The revision that is on disk. `revision !== savedRevision` is what "unsaved"
    * means — a marker rather than a boolean, because with a boolean undoing back
-   * to the last save leaves the document marked modified for ever (B3).
+   * to the last save leaves the document marked modified for ever.
    */
   savedRevision: number;
   /**
@@ -167,7 +167,7 @@ interface DocumentState {
    * because it is what the file holds. With it, a document that was set aside is
    * being *restored* — Play/Stop, leaving Prefab Mode — and a restore decides
    * nothing about whether the work is saved. Forcing `dirty: false` in both
-   * cases was B3, and it lost unsaved work with no warning.
+   * cases was the defect, and it lost unsaved work with no warning.
    */
   replaceScene: (scene: SceneDoc, options?: { keepHistory?: boolean }) => void;
   /** Records that what is in the document is now what is on disk. */

@@ -1,31 +1,30 @@
 # Three Studio
 
-A desktop 3D game editor built on Three.js (WebGPU), React and Electron.
-See `docs/ARCHITECTURE.md` for how the pieces fit, and `README.md` for how to run it.
+Un éditeur de jeux vidéo 3D pour ordinateur, basé sur Three.js (WebGPU), React et Electron.
+Voir `README.md` pour savoir comment le lancer.
 
-## There is a refactor in progress. Read this first.
+## Les notes de travail ne sont pas dans le dépôt
 
-A large re-architecture is underway on the `refactor/architecture` branch. It is not held in any
-conversation — it lives in `docs/chantier/`, so that any session can pick it up cold.
+`docs/` est **ignoré par git**. Les notes, les plans et les documents de décision y vivent en local et
+n'y sont jamais commités. Si le dossier est là sur cette machine, il est à lire ; s'il ne l'est pas
+après un clone, c'est normal, et rien dans le code n'en dépend.
 
-**If the user says `go` (or "continue the chantier", or anything of that shape), do this:**
+Conséquence à connaître : **n'ajoutez pas de citation vers un document de `docs/`** dans un commentaire.
+Elle ne résoudrait pour personne d'autre. Le raisonnement va dans le commentaire lui-même — c'est de
+toute façon là qu'il est le plus utile, juste à côté du code qu'il explique.
 
-1. Read `docs/chantier/README.md` — it is the loop, and it is short.
-2. Read `docs/chantier/STATE.md` — it names the current task.
-3. Do exactly that one task. Not the next one too.
+## Conventions déjà imposées par ce dépôt
 
-Do not start refactoring from your own reading of the code. The analysis is already done and written
-down in `docs/chantier/PLAN.md`; the tasks are derived from it. If something in a task looks wrong
-against the code you are reading, say so and stop — a task that no longer matches reality is worth more
-as a question than as a guess.
+- **Les commentaires expliquent *pourquoi*, avec autant de détails que nécessaire lorsque le pourquoi
+  a déjà fait perdre une matinée à quelqu'un.** Faites de même. Un commentaire qui se contente de
+  reformuler le code est du bruit ; un commentaire qui explique le problème ou l'échec ayant motivé
+  le code est utile.
+- **Ajoutez des champs, n'en supprimez jamais, dans tout ce qui est persisté.** Remplissez les champs
+  manquants à partir de la factory propre au type, jamais à partir d'une seconde liste. Laissez les
+  données non reconnues exactement telles qu'elles ont été trouvées.
+- **Une référence est un identifiant** — jamais un nom, jamais un chemin.
+- `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
+  l'éditeur. Ces deux règles sont vérifiées par des tests.
+- `npm run typecheck && npm test` doit être au vert à chaque commit.
 
-## Conventions this repo already holds you to
-
-- **Comments explain *why*, at length where the why cost someone a morning.** Match that. A comment
-  restating the code is noise; a comment naming the failure that shaped the code is the point.
-- **Add fields, never remove them, in anything persisted.** Fill missing ones from the type's own
-  factory, never from a second list. Leave unrecognised data exactly as found.
-- **A reference is an id** — never a name, never a path.
-- `packages/core` imports nothing but `.` and `node:`. `packages/runtime` never imports the editor.
-  Both are enforced by test.
-- `npm run typecheck && npm test` must be green at every commit.
+On parle et on échange en français, mais on écrit en anglais.

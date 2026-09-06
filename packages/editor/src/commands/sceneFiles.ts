@@ -21,7 +21,7 @@ import { setSceneName } from './sceneCommands';
  *   history.
  * - **Switch** — different document (open another scene, delete this one). A
  *   reload, through the main process, with the unsaved-changes prompt on the
- *   way. See ADR-0008.
+ *   way.
  */
 
 function report(cause: unknown): void {
@@ -126,7 +126,7 @@ export async function saveSceneAs(): Promise<void> {
 /**
  * Renames the scene: the file moves, and the document's own copy follows.
  *
- * No reference is rewritten — every one of them is an id (ADR-0005) — but the
+ * No reference is rewritten — every one of them is an id — but the
  * path is not a reference, it is where this window saves, so the window
  * retargets onto the file that has just moved. Forgetting that is a scene
  * written back under its old name at the next save, and two files afterwards.

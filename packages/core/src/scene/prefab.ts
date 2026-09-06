@@ -533,7 +533,7 @@ export function applyPrefabOverride(
     // The prefab no longer has that component: drop the stale override rather
     // than fail. Unity does the same, and by id this now covers the case that
     // used to be silent — an index still in range but pointing at a different
-    // component, which is what B10 wrote onto the wrong one.
+    // component, which is what the old scheme wrote onto the wrong one.
     if (index === -1) continue;
     out[index] = {
       ...out[index],

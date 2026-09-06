@@ -21,7 +21,7 @@ export const inspector: ComponentSchema = {
     assetSlot(['assetId'], 'Clip', 'audio'),
     // Auditioned through the editor's own engine, never the game's: stopping
     // play must not stop a preview, and a preview must not turn up in the
-    // game's mix (ADR-0012).
+    // game's mix.
     {
       kind: 'action',
       label: 'Preview',

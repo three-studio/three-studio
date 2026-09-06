@@ -127,16 +127,16 @@ export interface EntityDoc {
  *
  * `EntityDoc.components` was an array, and an array answers none of the
  * questions asked of it: "every light" was a walk of the whole entity table, an
- * override named a component by its *position* (B10), and touching one field
+ * override named a component by its *position*, and touching one field
  * changed the identity of the array, so the binder rebuilt every non-mesh
- * component of the entity (B9).
+ * component of the entity.
  *
  * Each level earns its place. **Type first** — `Object.keys(components.light)`
  * is the query that motivated the phase. **Entity second** — deleting, cloning
  * or instancing an entity moves one key per type rather than one per component.
  * **Component id last** — the identity phase 3 established, which is what a
  * prefab override names; keying by a slot index would be a position again, and
- * would reopen B10 for any entity carrying two components of one type (ADR-0003).
+ * would reopen the override defect for any entity carrying two components of one type.
  *
  * One shape for all eleven types, singletons included. "One mesh per entity" is
  * a rule the commands keep, exactly as it was when the array kept none.

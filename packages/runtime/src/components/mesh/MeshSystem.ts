@@ -201,7 +201,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
 
       // Read-only on this path. Whether the asset changed, and what to do about
       // it, was decided once by the library pass — deciding it again here, per
-      // mesh, against a stale `previous`, is B5.
+      // mesh, against a stale `previous`, is the defect.
       return { material: shared.material, textures: shared.textures, materialKey: key };
     }
 

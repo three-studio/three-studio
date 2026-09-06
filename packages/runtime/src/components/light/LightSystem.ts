@@ -33,7 +33,7 @@ export interface LightHandle extends SystemHandle {
 /**
  * The light, and the shadow map it owns.
  *
- * B9 lives here and is the reason the `patch`/`'remount'` contract is worth
+ * The costly case lives here, and it is why the `patch`/`'remount'` contract is worth
  * having at all: a directional, spot or point light allocates a render target of
  * `shadowMapSize` squared — 2048 by default, up to 4096 — and only
  * `light.dispose()` frees it. Rebuilding on every edit meant dragging an
@@ -86,7 +86,7 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
    *
    * A projector's cookie is swapped in place rather than answered with
    * `'remount'`, even though it is a resource: remounting throws away the shadow
-   * map, which is the whole subject of B9 above. Changing which texture a light
+   * map, which is the whole subject above. Changing which texture a light
    * throws should not cost a shadow-map reallocation.
    */
   patch(

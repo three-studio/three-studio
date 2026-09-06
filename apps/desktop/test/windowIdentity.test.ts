@@ -50,7 +50,7 @@ describe('what a window was told it is', () => {
 describe('the scene, which travels in the URL', () => {
   it('reads it from the query string', () => {
     // Not argv, because `webContents.reload()` replays argv verbatim and the
-    // scene is the one thing about a window that changes. See ADR-0008.
+    // scene is the one thing about a window that changes.
     expect(windowIdentity(editorOf('/projects/Races'), '?scene=KnnOIzJdX1KB').sceneId).toBe(
       'KnnOIzJdX1KB',
     );

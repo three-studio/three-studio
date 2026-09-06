@@ -33,7 +33,7 @@ export interface Transform {
  * The id is what a prefab override names and what the binder keys its builds
  * on. Before it, both used the component's **position** in the array: adding a
  * component to a prefab slid every override of every instance onto the wrong
- * one (B10), and removing one paired a cube's build with a sphere's component.
+ * one, and removing one paired a cube's build with a sphere's component.
  *
  * Opaque. The migration happens to mint `<entityId>:<index>` — see
  * `serialization.ts` for why that particular shape — and nothing may read it

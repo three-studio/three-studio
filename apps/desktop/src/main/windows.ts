@@ -155,7 +155,7 @@ interface WindowOptions {
  * `webContents.reload()` replays the same `additionalArguments`, so argv can
  * only carry what is fixed for the life of the window. Role and project are;
  * the scene is exactly the thing that changes. A query string survives a reload
- * and can be replaced without one — see ADR-0008 and ADR-0006.
+ * and can be replaced without one.
  */
 function sceneQuery(sceneId: string | undefined): Record<string, string> {
   return sceneId === undefined ? {} : { scene: sceneId };
@@ -387,7 +387,7 @@ function closeAllEditors(): boolean {
  * `replaceScene`, which is what prefab mode and leaving Play already use, and
  * it carries two open bugs — the unsaved flag is overwritten and the undo
  * history is destroyed. A reload gives a fresh document, a fresh history and a
- * teardown nobody can forget to write. See ADR-0008; the cost is about a second
+ * teardown nobody can forget to write. The cost is about a second
  * of empty window, and it is accepted.
  *
  * @param from The window asking. With several open, "the editor" is not a

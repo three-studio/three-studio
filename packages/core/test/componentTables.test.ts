@@ -24,7 +24,7 @@ import { sceneWith } from './fixtures';
 
 /*
  * Components live in `scene.components`, by type then by entity then by their
- * own id — ADR-0003.
+ * own id.
  *
  * Three things are worth pinning here, and only the first is the headline. The
  * query is O(1) rather than a walk of every entity. The identity of a component
@@ -80,8 +80,8 @@ describe('two components of one type on one entity', () => {
     deleteComponent(scene, cube.entity.id, first.id);
 
     // This is why the third level is the id and not a slot: a slot is a
-    // position, and removing the first would slide the second onto it — B10
-    // reduced to a narrower case but intact. See ADR-0004 and ADR-0003.
+    // position, and removing the first would slide the second onto it — the
+    // override defect reduced to a narrower case but intact.
     const left = componentsOf(scene, cube.entity.id).filter((c) => c.type === 'collider');
     expect(left).toHaveLength(1);
     expect(left[0]!.id).toBe(second.id);
@@ -141,7 +141,7 @@ describe('an entity that comes and goes', () => {
     removeSubtree(scene, parent.entity.id);
 
     // A component left behind is reachable from nothing, drawn by nothing, and
-    // written to disk on the next save — the same family of silent leak as B1.
+    // written to disk on the next save — the same family of silent leak.
     expect(entitiesWith(scene, 'mesh')).toEqual([]);
     expect(validateHierarchy(scene)).toEqual([]);
   });

@@ -15,7 +15,7 @@ export class Picker {
   /**
    * @param pickable Whether a click may land on this entity at all. Injected
    *   rather than read from a store so this class stays testable and knows
-   *   nothing about the document — see ADR-0011.
+   *   nothing about the document.
    * @param overlay Editor-only stand-ins for entities that draw nothing, tested
    *   *before* the scene. Injected as a bare `Object3D` for the same reason:
    *   this class needs a root to raycast, not a notion of what a marker is.
@@ -43,7 +43,7 @@ export class Picker {
 
     for (const hit of this.raycaster.intersectObject(this.root, true)) {
       /*
-       * B7. `hit.object.visible` is the mesh's own flag, and hiding an entity
+       * `hit.object.visible` is the mesh's own flag, and hiding an entity
        * sets it on the *container* above it — three does not inherit `visible`,
        * and its raycaster does not test it at all, so a hidden object stayed
        * clickable and `dropPoint` placed things on invisible surfaces.

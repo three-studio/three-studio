@@ -172,7 +172,7 @@ export function ProjectPanel() {
         </button>
 
         {/*
-          The editor's own audition level, not the project's (ADR-0012). It lives
+          The editor's own audition level, not the project's. It lives
           here because this is where auditioning is done, and one preview engine
           means it governs the Inspector's ▶ Play just as much as this panel's
           tiles.

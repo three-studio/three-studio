@@ -188,7 +188,7 @@ export function setComponentsOf(
  * Drops everything an entity carries.
  *
  * Called by every path that removes an entity. A component left behind is
- * unreachable and still serialised — the same family of silent leak as B1, and
+ * unreachable and still serialised — the same family of silent leak, and
  * as invisible.
  */
 export function dropComponentsOf(host: ComponentHost, entityId: string): void {

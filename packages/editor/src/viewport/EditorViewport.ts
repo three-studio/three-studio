@@ -173,7 +173,7 @@ export class EditorViewport {
     this.input = new ViewportInput(this.view.sceneView.canvas, this);
 
     this.controls = new FlyControls(this.camera, this.view.sceneView.canvas);
-    // B11: `locked` was documented as "excluded from picking" and read by
+    // `locked` was documented as "excluded from picking" and read by
     // nobody. One rule, `capabilitiesOf`, answers here and at the gizmo below.
     this.picker = new Picker(
       this.binder,
@@ -430,7 +430,7 @@ export class EditorViewport {
 
     // Once per frame, before anything else can retire more: the previous frame's
     // render has been submitted, so what it may have been reading is now safe to
-    // free. B6 — this used to ride on `sync`, which is neither once per frame nor
+    // free. This used to ride on `sync`, which is neither once per frame nor
     // guaranteed to happen at all.
     this.binder.beginFrame();
 
@@ -639,7 +639,7 @@ export class EditorViewport {
      * used to be handled by two out-of-band `binder.sync(expandedScene().scene)`
      * calls with no dirty set at all, i.e. a full reconcile per material tint;
      * and `assetStore.refresh` fires both in one microtask, so the second freed
-     * what the first had retired. That was B6's other half.
+     * what the first had retired. That was the other half of it.
      */
     /*
      * A material edit names no entity, and it does not have to: the binder knows
@@ -663,8 +663,8 @@ export class EditorViewport {
 
     this.binder.sync(scene, merged);
     // The same dirty set, and for the same reason: deciding whether an entity
-    // carries a marker means reading the entity table, which is exactly the scan
-    // ADR-0003 kept out of the frame loop. What runs per frame is only the placing.
+    // carries a marker means reading the entity table, which is exactly the scan the
+    // component tables kept out of the frame loop. What runs per frame is only the placing.
     this.overlay.sync(scene, merged);
     if (changes.environment) this.binder.syncEnvironment(this.scene, scene);
 

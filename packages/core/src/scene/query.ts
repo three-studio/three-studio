@@ -3,7 +3,7 @@ import type { SceneDoc } from './schema';
 /*
  * `findComponent` was here, taking an `EntityDoc`. It lives in `components.ts`
  * now and takes the document and an entity id, because an entity no longer
- * holds its components — see ADR-0003.
+ * holds its components.
  */
 
 /*
@@ -48,7 +48,7 @@ export function collectDescendants(scene: SceneDoc, id: string): string[] {
  *
  * Answers `false` for an id the document does not hold, which reads like a guard
  * that passed and is not one — this is not an existence check, and mistaking it
- * for one is B1. Callers wanting both want `graph.reparentEntity`.
+ * for one is how an entity ends up in no branch of the tree. Callers wanting both want `graph.reparentEntity`.
  */
 export function isAncestorOf(scene: SceneDoc, ancestorId: string, id: string): boolean {
   const seen = new Set<string>();

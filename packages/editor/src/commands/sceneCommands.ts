@@ -67,7 +67,7 @@ import {
 /*
  * One door, carrying everything. It used to take a bare `coalesceKey` and drop
  * `external` on the floor — two ways in, one of which lost information, which is
- * the first of ADR-0009's nine invariants.
+ * the first thing the undo invariants forbid.
  */
 const mutate = (
   label: string,
@@ -86,7 +86,7 @@ export function addEntity(template: EntityTemplate, parentId: string | null = nu
     },
     // Inside the transaction, so undo takes it back with the entity. Set after
     // `mutate`, it was in no entry at all, and undo left the gizmo pointing at
-    // something deleted — B2.
+    // something deleted.
     { select: [entity.id] },
   );
   return entity.id;
@@ -186,7 +186,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
   mutate('Reparent entity', (draft) => {
     // Every guard lives in `reparentInScene`, and the move is atomic: a parent
     // the document does not hold — a hierarchy row a prefab produced, which is
-    // B1 — leaves the entity exactly where it was rather than in no list at all.
+    // the defect — leaves the entity exactly where it was rather than in no list at all.
     if (!reparentInScene(draft, id, parentId, index)) return;
     const entity = draft.entities[id];
     if (entity) entity.transform = transform;

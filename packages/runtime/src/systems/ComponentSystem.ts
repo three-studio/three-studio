@@ -14,7 +14,7 @@ import type { ResourceArena } from './ResourceArena';
 /*
  * One class per component type that has something to draw.
  *
- * ADR-0013 put these on the *view* side and not in the hierarchy, and the reason is
+ * These are on the *view* side and not in the hierarchy, and the reason is
  * the one the schema opens with: the document is authoritative and three.js is a
  * derived view. A hierarchy made of objects wrapping `Object3D` cannot be
  * serialised without three, cannot be snapshotted for play mode, and leaves
@@ -107,7 +107,7 @@ export interface SystemContext {
    * glTF loading is asynchronous, so a model arrives one or more frames late —
    * and by then its entity may have been edited, deleted, or rebuilt under the
    * same id. The caller checks that `handle` is still the one mounted there and
-   * drops the object otherwise. That is B8, and it is a check the systems cannot
+   * drops the object otherwise. It is a check the systems cannot
    * make for themselves: only the reconciler knows what is currently mounted.
    *
    * @returns Whether it was taken. `false` means the arrival is stale and the

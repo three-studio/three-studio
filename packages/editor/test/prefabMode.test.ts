@@ -12,9 +12,9 @@ import { usePrefabModeStore } from '../src/state/prefabModeStore';
  * that was set aside — the document, the selection, the undo stack, and whether
  * the work was saved.
  *
- * B4 was the third of those: `open` cleared history rather than stashing it, so
+ * The third of those went wrong: `open` cleared history rather than stashing it, so
  * an unlucky double-click on a prefab erased an hour of scene undos with nothing
- * to restore from. B3 was the fourth: coming back forced the document clean.
+ * to restore from. The fourth went wrong too: coming back forced the document clean.
  *
  * The prefab is put straight into the asset store and left out of the manifest,
  * so `savePrefab` returns before it reaches `window.studio` — there is no bridge
@@ -70,7 +70,7 @@ describe('a round trip through Prefab Mode', () => {
     await usePrefabModeStore.getState().open(ASSET_ID);
     await usePrefabModeStore.getState().exit();
 
-    // B3 through the other door: leaving Prefab Mode restores a document, and a
+    // The same thing through the other door: leaving Prefab Mode restores a document, and a
     // restore has no business declaring it saved.
     expect(dirty()).toBe(true);
   });

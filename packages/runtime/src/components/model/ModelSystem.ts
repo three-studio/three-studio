@@ -44,7 +44,7 @@ export interface ModelHandle extends SystemHandle {
  * wrong in that window has gone wrong at least once: the entity is deleted, the
  * component is edited, or the entity is rebuilt under the same id. The handle
  * itself is the identity that answers all three — the reconciler drops an
- * arrival whose handle is no longer the mounted one, which is B8.
+ * arrival whose handle is no longer the mounted one.
  *
  * It draws **one node or the whole file**, which is what an unpacked model is
  * made of: `unpackModel` turns an import into one entity per node, each naming
@@ -144,7 +144,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
    * Read-only against the pool once it is there, exactly as `MeshSystem` is on
    * the same path: whether the asset's definition changed, and what to do about
    * it, is decided once by the library pass in `SceneBinder.setMaterialLibrary`.
-   * Deciding it again per model, against a stale copy, is B5.
+   * Deciding it again per model, against a stale copy, is the defect.
    */
   private claimMaterial(
     handle: ModelHandle,

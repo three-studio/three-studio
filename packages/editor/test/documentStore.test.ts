@@ -236,7 +236,7 @@ describe('what a transaction carries', () => {
 
     doc().undo();
 
-    // B2. The selection used to be set after `mutate`, so no entry described it
+    // The selection used to be set after `mutate`, so no entry described it
     // and undo could not take it back — the gizmo then asked the binder for an
     // object that no longer existed.
     expect(selection()).toEqual([]);
@@ -320,7 +320,7 @@ describe('knowing whether the work is saved', () => {
     expect(dirty()).toBe(true);
     const snapshot = scene();
 
-    // B3. What Play/Stop and leaving Prefab Mode do: hand back a document that
+    // What Play/Stop and leaving Prefab Mode do: hand back a document that
     // was set aside. `keepHistory` is what tells a restore from a load — a load
     // legitimately starts clean, a restore must not lie about unsaved work,
     // which is how it got lost with no warning on close.
@@ -355,7 +355,7 @@ describe('knowing whether the work is saved', () => {
 
 /*
  * The compaction that keeps a long drag from carrying six hundred patch pairs.
- * ADR-0009 calls this the part where a mistake breaks undo subtly, so the property
+ * This is the part where a mistake breaks undo subtly, so the property
  * test below is the real check and these pin the shape.
  */
 describe('bounding a coalesced entry', () => {

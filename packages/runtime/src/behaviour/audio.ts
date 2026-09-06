@@ -210,7 +210,7 @@ function remember(audio: AudioEngine, entityId: string, behaviour: AudioSourceBe
  * Writing it here rather than in the engine is what lets the listener sit on the
  * player while the camera orbits behind it — the case that makes the component
  * worth having at all. The engine only steps in when there is no such component
- * (ADR-0015), because a scene with no ear that plays nothing is the worst possible
+ * , because a scene with no ear that plays nothing is the worst possible
  * first contact with the system.
  */
 class AudioListenerBehaviour implements Behaviour {

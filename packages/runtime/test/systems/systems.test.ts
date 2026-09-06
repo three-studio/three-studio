@@ -249,7 +249,7 @@ describe('the light system', () => {
 
     const patched = system.patch(handle, component, { ...component, intensity: 9 }, ctx);
 
-    // B9: a directional light owns a shadow map of `shadowMapSize` squared and
+    // A directional light owns a shadow map of `shadowMapSize` squared and
     // only `dispose()` frees it. Rebuilding on every edit allocated one per
     // frame of a slider drag and abandoned the last.
     expect(patched).not.toBe('remount');
@@ -373,7 +373,7 @@ describe('the light system', () => {
     const patched = system.patch(handle, component, { ...component, mapId: 'gobo-b' }, ctx);
 
     // Not a remount: a light's shadow map costs far more than a texture, and
-    // changing which picture it throws should not cost one. See B9.
+    // changing which picture it throws should not cost one.
     expect(patched).not.toBe('remount');
     expect((handle.light as ProjectorLight).map).not.toBe(first);
     // Retired, not disposed where it stands — a frame already encoding may still

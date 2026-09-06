@@ -64,7 +64,7 @@ export function formatBytes(bytes: number): string {
  *
  * `null` rather than a placeholder: a file adopted by the scan never went
  * through the dialog that decodes it, and there is no `decodeAudioData` under
- * Node for the main process to fill the gap with (ADR-0016). Saying nothing is the
+ * Node for the main process to fill the gap with. Saying nothing is the
  * honest answer, and the numbers appear the day the file is imported properly.
  */
 export function audioLine(asset: AssetEntry): string | null {

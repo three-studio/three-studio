@@ -8,7 +8,7 @@ import type { SceneDoc } from './schema';
  * One derivation, read by everything that offers an action: the gizmo, the
  * picker, the hierarchy's context menu, the keyboard shortcuts. Before it, each
  * of those asked its own question in its own way and answered it differently —
- * and `entity.locked` was read by nobody at all, which is B11: the padlock did
+ * and `entity.locked` was read by nobody at all, so the padlock did
  * nothing.
  *
  * This is Blender's `poll()` and Unreal's `CanEditChange`, as a function on

@@ -34,7 +34,7 @@ describe('a locked entity', () => {
     entity.entity.locked = true;
     const can = capabilitiesOf(sceneWith([entity]), entity.entity.id);
 
-    // B11. The field existed from the first version and nothing read it, so the
+    // The field existed from the first version and nothing read it, so the
     // padlock in the hierarchy did precisely nothing.
     for (const denied of ['translate', 'rotate', 'scale', 'delete', 'reparent', 'group'] as const) {
       expect(can.has(denied), denied).toBe(false);

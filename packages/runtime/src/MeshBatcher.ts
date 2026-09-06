@@ -405,7 +405,7 @@ export class MeshBatcher {
      * | culling forced on | **30** / 3600 | 8.2 ms | 10.0 ms |
      *
      * Thirty. The frame is faster because the scene is gone: thirty is what the
-     * sun's 5-unit ortho box holds. That is B15 exactly — a shadow frustum
+     * sun's 5-unit ortho box holds. That is the open defect exactly — a shadow frustum
      * narrower than the field left 178 of 2000 crates on screen — and it is not
      * a bug that has since been fixed.
      *
@@ -437,7 +437,7 @@ export class MeshBatcher {
     batched.perObjectFrustumCulled = this.shadowCasters.size === 0;
 
     /*
-     * Sorting off, and it is what closes B15 rather than working around it.
+     * Sorting off, and it is what closes the waste rather than working around it.
      *
      * `onBeforeRender` returns early only when visibility, per-instance culling
      * and sorting are *all* off. Sorting is on by default, so the list was

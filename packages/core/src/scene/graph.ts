@@ -15,17 +15,16 @@ import type { EntityDoc, SceneDoc } from './schema';
  *
  * The tree is stored three times over — `child.parent`, `parent.children[]` and
  * `scene.rootOrder` — which is what makes reparenting O(1) and immer patches
- * shallow (ADR-0002). The price is that three writes have to agree, and until this
+ * shallow. The price is that three writes have to agree, and until this
  * module existed the only thing checking that was `repairHierarchy`, at load
- * time. An edit that broke an edge stayed broken for the rest of the session:
- * that is B1.
+ * time. An edit that broke an edge stayed broken for the rest of the session.
  *
  * Two rules hold everything here together.
  *
  * **Refuse rather than corrupt.** Every function checks its arguments against
  * the document and returns `false` — or `[]`, or `null` — when the operation
  * cannot be performed. A partial write is worse than no write: the entity that
- * B1 loses is still rendered, still clickable, and reachable from nothing.
+ * a partial write loses is still rendered, still clickable, and reachable from nothing.
  *
  * **Never throw.** These run inside immer producers. An exception there leaves
  * the draft half-applied and the message reaches no one, so a refusal is a
@@ -39,7 +38,7 @@ import type { EntityDoc, SceneDoc } from './schema';
  * Whether this id can be an edge of the document's own tree.
  *
  * An `owner/local` id names an entity prefab expansion produced. It is not in
- * `scene.entities`, so writing an edge to it produces exactly B1: a `parent`
+ * `scene.entities`, so writing an edge to it produces exactly the defect this module exists for: a `parent`
  * pointing at nothing, and an entity in no children list at all.
  */
 function isDocumentId(id: string): boolean {
@@ -154,7 +153,7 @@ export function reparentEntity(
   parentId: string | null,
   index?: number,
 ): boolean {
-  // Asked first, and this is the whole of B1: `isAncestorOf` answers `false`
+  // Asked first, and this is the whole of it: `isAncestorOf` answers `false`
   // for an id the document does not have, so the ancestor guard alone looks
   // like it passed. It is not an existence check.
   if (!canLink(scene, id, parentId)) return false;
@@ -167,7 +166,7 @@ export function reparentEntity(
  *
  * The ids come back because the caller has to clean up after them — the
  * selection above all, which is how an undo of an Add leaves the gizmo pointing
- * at an entity that no longer exists (B2).
+ * at an entity that no longer exists.
  */
 export function removeSubtree(scene: SceneDoc, id: string): string[] {
   if (!isDocumentId(id) || scene.entities[id] === undefined) return [];
@@ -181,7 +180,7 @@ export function removeSubtree(scene: SceneDoc, id: string): string[] {
     // Components are keyed by entity id, not held by the entity, so deleting
     // one no longer takes them with it. Left behind they would be unreachable,
     // still serialised, and still counted by every query — invisible in exactly
-    // the way B1 was.
+    // the way a detached entity was.
     dropComponentsOf(scene, victim);
   }
   return removed;

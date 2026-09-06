@@ -165,7 +165,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
   {
     label: 'Scene',
     // The scene's *address*, not `SceneDoc.name`: writing it moves the file,
-    // because the file name is the name. See ADR-0006, and the `on: 'scene'`
+    // because the file name is the name. See the `on: 'scene'`
     // branch in `buildInspector`.
     fields: [{ on: 'scene', key: 'name', label: 'Name' }],
   },

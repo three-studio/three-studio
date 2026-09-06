@@ -218,7 +218,7 @@ function componentIdAt(entityId: string, index: number): string {
 /**
  * Moves prefab overrides from naming a component by position to naming it by id.
  *
- * B10: `components` was `Record<number, …>`, so inserting a component into a
+ * `components` was `Record<number, …>`, so inserting a component into a
  * prefab slid every override of every instance one place along — mass landed on
  * the collider, and the override that had been last landed on nothing.
  *

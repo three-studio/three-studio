@@ -288,7 +288,7 @@ export class SceneBinder {
     this.materials = materials;
 
     /*
-     * Reconciled here, once per asset — B5.
+     * Reconciled here, once per asset.
      *
      * Each mesh used to do this for itself inside `buildMaterialFor`, holding
      * its own stale `previous`. So for N meshes on one asset, N of them took the
@@ -343,7 +343,7 @@ export class SceneBinder {
   /**
    * Frees what the previous frame let go of. Call once per rendered frame.
    *
-   * B6, and the queue now lives in the arena. This used to hang off `sync`,
+   * The queue now lives in the arena. This used to hang off `sync`,
    * whose comment claimed the queue was "a frame old now" — true only if syncs
    * come one per frame, and two paths break that in opposite directions.
    */
@@ -592,7 +592,7 @@ export class SceneBinder {
       } else if (import.meta.env?.DEV) {
         // Since phase 1 this is an impossible state: the tree layer refuses an
         // edge to an entity the document does not hold. Falling back to the root
-        // in silence is exactly what hid B1 for months — an object visible and
+        // in silence is exactly what hid it for months — an object visible and
         // clickable in the viewport and present in no branch of the hierarchy.
         console.warn(
           `[binder] "${entity.id}" names parent "${entity.parent}", which has no view; attached to the root.`,
@@ -630,7 +630,7 @@ export class SceneBinder {
       }
     }
 
-    // B8 is now the reconciler's: a model that lands after this drops on the
+    // The late arrival is now the reconciler's: a model that lands after this drops on the
     // floor, because the handle it was mounted under is no longer mounted.
     this.reconciler.remove(id, this.context);
     view.container.removeFromParent();

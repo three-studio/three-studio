@@ -101,7 +101,7 @@ interface CommandSpec {
  * what the keys did. It lives in `shell/shortcutBindings.ts` now, once.
  *
  * `can` is required rather than optional. An optional guard is a guard somebody
- * forgets, which is the same argument ADR-0009 makes for the selection carried by a
+ * forgets, which is the same argument that makes the selection required on a
  * history entry — and forgetting it here is exactly how the menu and the
  * shortcut came to disagree.
  */
