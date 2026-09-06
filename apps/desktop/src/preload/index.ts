@@ -15,7 +15,6 @@ import type {
   SceneChange,
   ScriptBuildResult,
   StudioBridge,
-  WindowRole,
 } from '@three-studio/core';
 /*
  * The channel names, from the one table that has them. Written here as
@@ -24,32 +23,17 @@ import type {
  */
 import { IPC_EVENTS, IPC_INVOKE } from '@three-studio/core';
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
+import { windowIdentity } from './windowIdentity';
 
 /**
- * Reads a value the main process put in `additionalArguments`.
+ * What this window is, read from what it was handed.
  *
- * Through argv rather than over IPC because the renderer needs its role before
- * the first render: asking for it would paint the launcher shell for a frame
- * inside the editor window, and vice versa. A value may itself contain `=` — a
- * project path can — so only the first one separates the two.
+ * Through argv and the URL rather than over IPC because the renderer needs its
+ * role before the first render: asking for it would paint the launcher shell
+ * for a frame inside the editor window, and vice versa. The reading is in
+ * `windowIdentity.ts`, where it can be run without a window.
  */
-function argValue(name: string): string | null {
-  const prefix = `--${name}=`;
-  const found = process.argv.find((argument) => argument.startsWith(prefix));
-  return found === undefined ? null : found.slice(prefix.length);
-}
-
-/**
- * Reads a value the main process put in the window's URL.
- *
- * The scene comes this way rather than through argv because argv is replayed
- * verbatim by `webContents.reload()`, and the scene is the one thing about a
- * window that changes. Role and project stay in argv: they are fixed for the
- * life of the window. See ADR-12.
- */
-function queryValue(name: string): string | null {
-  return new URLSearchParams(location.search).get(name);
-}
+const identity = windowIdentity(process.argv, location.search);
 
 /**
  * Everything the renderer is allowed to reach in the main process goes through
@@ -58,12 +42,9 @@ function queryValue(name: string): string | null {
  */
 const bridge: StudioBridge = {
   platform: process.platform as Platform,
-  // Defaults to the launcher: a window created without a role is the one that
-  // has no project, and showing the picker is the recoverable half of that
-  // mistake. Coming up in the editor with nothing to edit is not.
-  windowRole: (argValue('studio-role') ?? 'launcher') as WindowRole,
-  projectPath: argValue('studio-project'),
-  sceneId: queryValue('scene'),
+  windowRole: identity.windowRole,
+  projectPath: identity.projectPath,
+  sceneId: identity.sceneId,
   versions: {
     electron: process.versions.electron ?? '',
     chrome: process.versions.chrome ?? '',
