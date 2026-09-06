@@ -3,13 +3,7 @@ import { net, protocol } from 'electron';
 import { ASSET_HOST, ASSET_SCHEME, IMPORT_SCHEME, parseImportPreviewUrl } from '@three-studio/core';
 import { importSessions } from './import/ImportSession';
 import { PathEscapeError, resolveInside } from './paths';
-
-let currentProjectPath: string | null = null;
-
-/** Called whenever a project is opened or closed. */
-export function setCurrentProject(projectPath: string | null): void {
-  currentProjectPath = projectPath;
-}
+import { currentProject } from './session';
 
 /**
  * Must run before `app.whenReady()`. Without the privileged registration the
@@ -50,7 +44,12 @@ export function registerAssetScheme(): void {
  */
 export function handleAssetProtocol(): void {
   protocol.handle(ASSET_SCHEME, async (request) => {
-    if (currentProjectPath === null) {
+    // Read rather than held: this used to be a copy of `session.ts`'s, set by
+    // hand from the IPC layer, and a copy that falls out of step is either an
+    // asset that will not load or a scheme still serving a project that has
+    // been closed.
+    const projectPath = currentProject();
+    if (projectPath === null) {
       return new Response('No project is open', { status: 409 });
     }
 
@@ -68,7 +67,7 @@ export function handleAssetProtocol(): void {
     const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '');
     let absolute: string;
     try {
-      absolute = resolveInside(currentProjectPath, relative);
+      absolute = resolveInside(projectPath, relative);
     } catch (error) {
       if (error instanceof PathEscapeError) {
         console.warn(`[assets] blocked traversal attempt: ${relative}`);

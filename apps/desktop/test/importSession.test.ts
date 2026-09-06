@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ASSETS_DIR, ASSET_META_SUFFIX, type ImportPlanItem } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
-import { ImportSession } from '../src/main/import/ImportSession';
+import { ImportSession, importSessions } from '../src/main/import/ImportSession';
 
 /*
  * The buffer, and what it promises: nothing reaches the project until the
@@ -278,5 +278,56 @@ describe('what a preview may read', () => {
     expect(session.resolvePreview(staged.id, 'secret.txt')).toBeNull();
     expect(session.resolvePreview(staged.id, '../../../etc/passwd')).toBeNull();
     expect(session.resolvePreview('not-a-file-id', 'tree.obj')).toBeNull();
+  });
+});
+
+describe('the store the import handler talks to', () => {
+  /*
+   * The lookup, the refusal and the `finally` were four lines inside an IPC
+   * handler that no test imports. They are the difference between a dialog left
+   * open across a project close being an ordinary refusal and being a crash, and
+   * between a failed import ending the session and leaving it serving previews
+   * of files the author walked away from.
+   */
+
+  it('refuses a session that is no longer open', async () => {
+    await expect(importSessions.commit('never-existed', [])).rejects.toThrow(
+      'That import is no longer open.',
+    );
+  });
+
+  it('spends the session when the import succeeds', async () => {
+    const root = await project();
+    const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
+    const state = await importSessions.start(root, [join(sources, 'tree.fbx')], '');
+
+    await importSessions.commit(state.sessionId, planFor(state.files as never[]));
+    expect(await assetFiles(root)).toContain('models/tree.fbx');
+
+    // A second commit would be deciding collisions against a manifest one
+    // import out of date.
+    await expect(importSessions.commit(state.sessionId, [])).rejects.toThrow(
+      'That import is no longer open.',
+    );
+  });
+
+  it('spends it when the import throws, which is the case that used to leak', async () => {
+    const root = await project();
+    const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
+    const state = await importSessions.start(root, [join(sources, 'tree.fbx')], '');
+    const staged = state.files[0]!;
+
+    await expect(
+      importSessions.commit(state.sessionId, [
+        // A folder that is not a path at all: `posix.join` refuses it before
+        // anything reaches the project.
+        { fileId: staged.id, folder: 42 as never, fileName: staged.fileName, settings: staged.settings! },
+      ]),
+    ).rejects.toThrow();
+
+    expect(await assetFiles(root)).toEqual([]);
+    await expect(importSessions.commit(state.sessionId, [])).rejects.toThrow(
+      'That import is no longer open.',
+    );
   });
 });

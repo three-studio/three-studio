@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, dialog, shell } from 'electron';
 import type { WindowRole } from '@three-studio/core';
-import { forgetWindow, isDirty } from './ipc';
+import { forgetWindow, isDirty } from './session';
 
 /**
  * The windows, and the rules that move between them.

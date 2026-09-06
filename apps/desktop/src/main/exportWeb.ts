@@ -14,6 +14,7 @@ import {
   normalizeBasePath,
   serializeScene,
   type BuildProfile,
+  type BuildProfiles,
   type ComponentDoc,
   type ExportProgress,
   type ExportResult,
@@ -35,6 +36,34 @@ import { buildScripts } from './scripts';
  * again here. The same pair was declared twice for `ScriptBuildResult` earlier
  * and drifted the moment one side gained a field.
  */
+
+/**
+ * The profile an export will run, and the folder it will write into.
+ *
+ * Both refusals are the ones a person can act on: an id no profile answers to
+ * is a stale dialog or a profile someone deleted in another window, and a
+ * profile with no output folder is the ordinary state of a new one — the
+ * message names the panel where it is chosen.
+ *
+ * Here rather than in the IPC handler that used to hold it, because the whole
+ * of it is a decision about `BuildProfiles` and nothing about Electron. See the
+ * note on `searchRoots` below: this module has kept out of electron's way from
+ * the start, and this is the same argument one step earlier.
+ */
+export function requireBuildProfile(
+  settings: BuildProfiles,
+  profileId?: string,
+): { profile: BuildProfile; outputDir: string } {
+  const id = profileId ?? settings.active;
+  const profile = settings.profiles[id];
+  if (!profile) throw new Error(`No build profile "${id}".`);
+
+  const outputDir = profile.outputDir;
+  if (!outputDir) {
+    throw new Error(`"${profile.name}" has no output folder. Choose one in Package.`);
+  }
+  return { profile, outputDir };
+}
 
 /**
  * Writes a self-contained web build from a build profile.

@@ -30,7 +30,7 @@ import { describe, expect, it } from 'vitest';
 import { readMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/buildFiles';
-import { exportBuild } from '../src/main/exportWeb';
+import { exportBuild, requireBuildProfile } from '../src/main/exportWeb';
 
 /*
  * The export is the one place the editor writes something a stranger runs, so
@@ -158,6 +158,45 @@ function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
     ...overrides,
   };
 }
+
+describe('choosing the profile an export runs', () => {
+  /*
+   * The one part of the export handler that was a decision rather than a call.
+   * It lived in `ipc.ts`, which no test imports, so both refusals had only ever
+   * been read.
+   */
+  const profiles = () => {
+    const settings = createBuildProfiles('Races');
+    const id = Object.keys(settings.profiles)[0]!;
+    settings.profiles[id] = { ...settings.profiles[id]!, outputDir: '/builds/Races' };
+    return { settings, id };
+  };
+
+  it('takes the active one when the caller names none', () => {
+    const { settings, id } = profiles();
+    expect(requireBuildProfile(settings).profile).toBe(settings.profiles[id]);
+    expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
+  });
+
+  it('takes the one the caller names', () => {
+    const { settings, id } = profiles();
+    settings.profiles['itch'] = { ...settings.profiles[id]!, name: 'itch', outputDir: '/builds/itch' };
+    expect(requireBuildProfile(settings, 'itch').outputDir).toBe('/builds/itch');
+  });
+
+  it('refuses an id no profile answers to, and says which', () => {
+    // A stale dialog, or a profile another window deleted. Naming the id is
+    // what tells those two apart from a bug.
+    expect(() => requireBuildProfile(profiles().settings, 'gone')).toThrow('No build profile "gone"');
+  });
+
+  it('refuses a profile with no output folder, and says where to choose one', () => {
+    // The ordinary state of a new profile, so the message names the panel
+    // rather than reporting a fault.
+    const settings = createBuildProfiles('Races');
+    expect(() => requireBuildProfile(settings)).toThrow('has no output folder. Choose one in Package.');
+  });
+});
 
 describe('asset and material migration', () => {
   it('fills settings a sidecar predates, and material properties a file predates', async () => {

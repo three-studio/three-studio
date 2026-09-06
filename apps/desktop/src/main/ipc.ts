@@ -36,7 +36,6 @@ import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } f
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
-import { AssetError } from './assetFiles';
 import {
   createMaterialAsset,
   createPrefabAsset,
@@ -56,7 +55,7 @@ import { scanAssets, updateAssetSettings } from './assetScan';
 import { importSessions } from './import/ImportSession';
 import { resolveInside } from './paths';
 import { loadLayoutPreferences, saveLayoutPreferences } from './preferences';
-import { exportBuild } from './exportWeb';
+import { exportBuild, requireBuildProfile } from './exportWeb';
 import {
   createProject,
   discoverScenes,
@@ -68,44 +67,26 @@ import {
 } from './project';
 import { createScene, deleteScene, duplicateScene, renameScene, setStartScene } from './scenes';
 import { buildScripts, createScript } from './scripts';
-import { setCurrentProject } from './protocol';
 import { forget, listRecent } from './recentProjects';
+import {
+  adoptProject,
+  currentProject,
+  noteExport,
+  releaseProject,
+  requireProject,
+  setDirty,
+  wasExported,
+} from './session';
 
 /**
- * The renderer's unsaved state, mirrored per window so the close handler can
- * warn about the right one.
+ * Remembers which project a window just opened, and hands it straight back.
  *
- * A single boolean was enough while there was one editor window. With two, it
- * names whichever renderer spoke last: the close guard would throw away another
- * window's work, or block this one over a document it does not hold. Keyed by
- * `webContents.id` and purged when the window goes — the prerequisite for step
- * 4, put in place here while there is still only one window to get it wrong.
+ * Every path the renderer names is proved to be inside the open project, so
+ * something has to know which that is. It is `session.ts` — the protocol
+ * handler needs the same fact, and it used to hold a copy of its own.
  */
-const unsavedByWindow = new Map<number, boolean>();
-/**
- * The open project, held here rather than passed from the renderer on every
- * call: an asset request that could name its own root would be a way around
- * the project sandbox.
- */
-let activeProjectPath: string | null = null;
-
-export function isDirty(windowId: number): boolean {
-  return unsavedByWindow.get(windowId) === true;
-}
-
-/** Called when a window is gone, or reloaded onto another scene. */
-export function forgetWindow(windowId: number): void {
-  unsavedByWindow.delete(windowId);
-}
-
-function requireProject(): string {
-  if (activeProjectPath === null) throw new Error('No project is open.');
-  return activeProjectPath;
-}
-
 function adopt(opened: OpenProject): OpenProject {
-  activeProjectPath = opened.summary.path;
-  setCurrentProject(activeProjectPath);
+  adoptProject(opened.summary.path);
   return opened;
 }
 
@@ -117,9 +98,11 @@ function adopt(opened: OpenProject): OpenProject {
 /**
  * What the handlers need from the window layer.
  *
- * Injected rather than imported: `windows.ts` already reads `isDirty` from
- * here, and importing it back would be a cycle between the two modules that
- * hold the app together.
+ * Injected rather than imported. The cycle this used to avoid is gone —
+ * `windows.ts` read `isDirty` from here, and now reads it from `session.ts` —
+ * but the seam is worth more than the cycle was: what a window does when a
+ * scene changes under it is a policy of its own, and the handlers are supposed
+ * to ask for it rather than contain it.
  */
 export interface IpcDeps {
   openEditor: (projectPath: string) => void;
@@ -171,13 +154,8 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   };
 
   ipcMain.on(IPC_EVENTS.setDirty, (event, dirty: boolean) => {
-    unsavedByWindow.set(event.sender.id, dirty === true);
+    setDirty(event.sender.id, dirty === true);
   });
-
-  // Only folders this session produced. The renderer naming a path and the
-  // main process opening it is a hole; naming one it was just handed back is
-  // not.
-  const exportedDirs = new Set<string>();
 
   /*
    * Every handler, in one table, and the table is the check.
@@ -246,9 +224,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     close: () => {
       // Any import still open belongs to a project that is not open any more, and
       // its staged sources were checked against a manifest nobody can reach.
-      if (activeProjectPath !== null) importSessions.closeProject(activeProjectPath);
-      activeProjectPath = null;
-      setCurrentProject(null);
+      const projectPath = currentProject();
+      if (projectPath !== null) importSessions.closeProject(projectPath);
+      releaseProject();
     },
 
     browseAndOpen: async (event): Promise<OpenProject | null> => {
@@ -385,22 +363,12 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return importSessions.start(projectPath, result.filePaths, folder ?? '');
     },
 
-    commitImport: async (
+    commitImport: (
       _event,
       sessionId: string,
       plan: readonly ImportPlanItem[],
     ): Promise<AssetImportResult> => {
-      const session = importSessions.get(sessionId);
-      if (session === undefined) {
-        throw new AssetError('That import is no longer open.');
-      }
-      try {
-        return await session.commit(plan);
-      } finally {
-        // Committed or thrown, the session is spent: its sources were staged
-        // against a project state that the commit has just changed.
-        importSessions.close(sessionId);
-      }
+      return importSessions.commit(sessionId, plan);
     },
 
     cancelImport: (_event, sessionId: string): void => {
@@ -473,15 +441,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     export: async (event, profileId?: string): Promise<ExportResult> => {
       const projectPath = requireProject();
       const project = await readProject(projectPath);
-      const settings = project.settings.build;
-      const id = profileId ?? settings.active;
-      const profile = settings.profiles[id];
-      if (!profile) throw new Error(`No build profile "${id}".`);
-
-      const outputDir = profile.outputDir;
-      if (!outputDir) {
-        throw new Error(`"${profile.name}" has no output folder. Choose one in Package.`);
-      }
+      const { profile, outputDir } = requireBuildProfile(project.settings.build, profileId);
 
       // Packaged, the player sits in the app's resources; in development it is
       // the workspace build, found by walking up from the app path.
@@ -496,7 +456,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
           if (!event.sender.isDestroyed()) event.sender.send(IPC_EVENTS.buildProgress, progress);
         },
       );
-      exportedDirs.add(outputDir);
+      noteExport(outputDir);
       return result;
     },
 
@@ -511,7 +471,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     revealOutput: (_event, outputDir: string): void => {
-      if (!exportedDirs.has(outputDir)) {
+      if (!wasExported(outputDir)) {
         throw new Error('That folder was not produced by this session.');
       }
       shell.openPath(outputDir).catch(() => undefined);
