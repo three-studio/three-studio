@@ -27,7 +27,7 @@ let from: { scene: SceneDoc; prefabs: Record<string, PrefabDoc> } | null = null;
  * **Identity is the signal**, and immer is what makes it exact: anything a
  * mutation did not touch keeps its reference, so `scene === from.scene` is a
  * true "the document did not change" rather than a guess. Ten lines of
- * comparison rather than a signals library, which is the "more patterns" ADR-8
+ * comparison rather than a signals library, which is the "more patterns" ADR-0010
  * refuses.
  *
  * The previous result is handed back to `expandPrefabs` so an instance nothing

@@ -9,7 +9,7 @@ import { DEFAULT_MAX_VOICES, VoicePool } from './VoicePool';
 
 export interface AudioEngineOptions {
   /**
-   * The audio context, injected rather than created (ADR-7).
+   * The audio context, injected rather than created (ADR-0013).
    *
    * Two engines normally share one — the editor's preview and the running game
    * — and stay independent through `destination` rather than through a context
@@ -41,7 +41,7 @@ export interface AudioEngineOptions {
  *
  * Owns things with a lifetime, so it is a class — the rule `ComponentSystem`
  * states and `registerBehaviour` is the exception to. One instance per root
- * (ADR-4): the editor builds one for preview, `Engine` builds one for the game,
+ * (ADR-0012): the editor builds one for preview, `Engine` builds one for the game,
  * and neither can hear the other.
  */
 export class AudioEngine {

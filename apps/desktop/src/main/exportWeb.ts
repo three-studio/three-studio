@@ -113,7 +113,7 @@ export async function exportBuild(
   const known = await discoverScenes(projectPath);
   // An empty list means the start scene, so a project that never opened the
   // build settings still exports something sensible. Ids, as everything that
-  // refers to a scene is — see ADR-15.
+  // refers to a scene is — see ADR-0005.
   const sceneIds = profile.scenes.length > 0 ? profile.scenes : [project.startScene];
 
   const scenes: { entry: SceneEntry; scene: SceneDoc }[] = [];

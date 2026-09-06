@@ -57,7 +57,7 @@ export interface EngineOptions {
    * The audio context this engine mixes into.
    *
    * Passed in rather than created, because it is shared: the editor's preview
-   * uses the same one through its own root (ADR-4), a browser caps how many a
+   * uses the same one through its own root (ADR-0012), a browser caps how many a
    * page may have, and each one needs its own user gesture before it makes a
    * sound. Omitting it is a game with no audio, which is what a test wants and
    * what a browser without Web Audio gets.
@@ -376,7 +376,7 @@ export class Engine {
    * The count is also what decides the fallback: with no `audioListener`
    * anywhere the engine places the ear on whatever camera the game is rendered
    * through, which is right far more often than it is wrong and is very much
-   * better than a silent scene (ADR-9). With several, the first behaviour to
+   * better than a silent scene (ADR-0015). With several, the first behaviour to
    * write each frame wins, and saying so is the whole value of the warning —
    * two ears is a bug that sounds like a mixing problem.
    */

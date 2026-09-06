@@ -113,7 +113,7 @@ describe('who gets a marker', () => {
     /*
      * The `Scene` node every new scene opens with is one of these, and a marker
      * on it says "an entity is at the origin" — which the hierarchy says better.
-     * ADR-13 rules out naming that node as a special case, so the rule has to
+     * ADR-0007 rules out naming that node as a special case, so the rule has to
      * hold for every bare entity, and it does: a group is scaffolding, and what
      * hangs under it is what gets clicked.
      */

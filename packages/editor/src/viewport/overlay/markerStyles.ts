@@ -51,13 +51,13 @@ export function drawsNothing(scene: SceneDoc, entityId: string): boolean {
  * An entity carrying nothing at all gets none. It used to get a grey one, and
  * the entity that showed why it was wrong is the `Scene` node every new scene
  * opens with: a marker there says "an entity is at the origin", which the
- * hierarchy already says better. ADR-13 rules out treating that node as a
+ * hierarchy already says better. ADR-0007 rules out treating that node as a
  * special case — it is "une entité ordinaire, ni protégée, ni spéciale" — so the
  * rule has to hold for every bare entity, and it does: a group is scaffolding,
  * and what hangs under it is what an author clicks.
  *
  * Every lookup below is against a component table, never a walk of the entity
- * table — see ADR-16.
+ * table — see ADR-0003.
  */
 export function markerStyleFor(scene: SceneDoc, entityId: string): MarkerStyle | undefined {
   if (scene.entities[entityId] === undefined) return undefined;

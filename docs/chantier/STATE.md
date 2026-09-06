@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062f — Play et Stop sont des commandes
-**Tâche courante** : **T-067** — reconstruire les ADR (début du lot 11, le dernier)
-**Faites** : T-001 → T-066. **Lot 8 terminé.** **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
+**Dernier commit** : T-067 — les décisions que le code cite existent
+**Tâche courante** : **T-068** — registre des bugs cités (`B1`…`B15`)
+**Faites** : T-001 → T-067. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
 terminés.** Lot 1 : les neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne
 d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,39 @@ d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 �
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-067 — ⚠️ il y avait *trois* collisions de numéro, pas une.** La fiche en annonçait une (`ADR-4` :
+contexte audio / invariants de l'undo). Trouvées en plus :
+- **`ADR-9`** : l'identité d'un composant (dans `core`) **et** l'auditeur audio (dans `runtime`).
+- **`ADR-1`** : la hiérarchie stockée trois fois — alors que `docs/adr/0001-…` existait déjà et parlait
+  de compression. **Le seul document présent était en collision avec une citation**, et personne ne
+  pouvait le voir parce qu'il n'était référencé que par son chemin.
+
+Chaque collision se tranche **par fichier**, jamais par numéro : la conversion porte une table
+`(citation, fichier) → numéro`.
+
+**⚠️ La fiche et le `PLAN.md` se contredisaient sur la numérotation.** Jalon 11.1 : « renuméroter en
+**deux séries distinctes** ». Fiche : « une seule suite ». Tranché pour **une suite** — c'est la
+convention ADR, `0001` l'était déjà, et deux séries auraient demandé un préfixe pour exactement le
+même travail de réécriture.
+
+**Les citations sont à quatre chiffres** (`ADR-0005`). C'est ce qui rend « un grep et un `ls`
+s'accordent » littéral plutôt qu'approximatif, et le test l'exige.
+
+**`test/adr.test.ts` vérifie les deux sens** : une citation sans document, **et un document que rien
+ne cite** — parce qu'un ADR orphelin est une décision qui a quitté le code sans que personne le
+remarque. Cassé pour vérifier dans les deux sens.
+
+**Ce qui n'a pas été romancé** : les invariants de l'undo sont « neuf » et trois seulement sont nommés
+dans le code. `0009` porte les trois et un avertissement en tête. La fiche le demandait explicitement,
+et c'est la partie qu'il aurait été le plus facile de combler en inventant.
+
+**`docs/chantier/` n'est pas réécrit et le test l'exclut** : ces notes décrivent l'état *d'avant*, et y
+renuméroter effacerait le constat même de la collision.
+
+**Reste une citation morte hors périmètre** : la compétence `smoke-harness` renvoie à « ADR-11, ADR-12
+dans `docs/refonte-scene/DECISIONS.md` », un fichier qui n'existe pas. Elle n'est pas dans le dépôt
+suivi. T-063 avait trouvé la même chose pour `docs/audio/DECISIONS.md` ADR-8.
 
 **T-062f — deux commandes, pas trois, et c'est la deuxième fiche du lot écrite depuis les *exports*
 d'un fichier plutôt que depuis ses *appelants*** (la première était T-062d). `togglePlay` n'avait
@@ -2468,6 +2501,6 @@ choisi par bénéfice visible :
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
 | 8 | T-062 → T-066 | La couche de commandes | **5/5 ✅** (T-062 scindé en 6 tranches) |
-| 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
+| 11 | T-067 → T-070 | La mémoire du projet | 1/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

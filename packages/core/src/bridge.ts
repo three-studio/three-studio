@@ -73,7 +73,7 @@ export interface ProjectApi {
    * Reloads this window on another scene, unsaved-changes prompt included.
    *
    * Resolves `false` when the user cancelled at that prompt. A reload rather
-   * than a swap in place: see ADR-12, and `switchScene` in `windows.ts`.
+   * than a swap in place: see ADR-0008, and `switchScene` in `windows.ts`.
    */
   switchScene: (sceneId: string) => Promise<boolean>;
   /**
@@ -109,7 +109,7 @@ export interface ProjectApi {
   /**
    * Renames a scene, which moves its file: the file name is the name.
    *
-   * Rewrites no reference — those are ids (ADR-15) — but the window showing
+   * Rewrites no reference — those are ids (ADR-0005) — but the window showing
    * the scene has to take the new path out of the result, or its next save
    * would write the file back under the name it had.
    */
@@ -322,8 +322,8 @@ export interface StudioBridge {
    *
    * Null falls back to the project's start scene. It is in the URL because
    * `reload()` replays argv verbatim, and the scene is the one thing about an
-   * editor window that changes — see ADR-12. An id rather than a path so that
-   * renaming a scene cannot invalidate an open window — ADR-15.
+   * editor window that changes — see ADR-0008. An id rather than a path so that
+   * renaming a scene cannot invalidate an open window — ADR-0005.
    */
   readonly sceneId: string | null;
   readonly versions: {

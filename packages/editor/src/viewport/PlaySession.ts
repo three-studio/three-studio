@@ -150,7 +150,7 @@ export class PlaySession {
         // Play hand the editor's pointer handling over to the game's.
         domElement: this.host.gameView.canvas,
         // The editor's one context, shared with the preview and kept apart from
-        // it by a root gain each (ADR-4). `undefined` where there is no Web
+        // it by a root gain each (ADR-0012). `undefined` where there is no Web
         // Audio, which makes the game silent rather than broken.
         audioContext: editorAudioContext() ?? undefined,
       });
@@ -159,7 +159,7 @@ export class PlaySession {
       // The document, not the expansion: the host expands every scene it runs,
       // and handing it one already expanded would do the work twice.
       // The name, which is what a script comparing `scenes.current` reads. It
-      // is the indicative half of a scene's identity — see ADR-15 — and a
+      // is the indicative half of a scene's identity — see ADR-0005 — and a
       // script that wants the stable half can name the id instead.
       await host.adopt(currentSceneName(), document.scene);
       const engine = host.engine;

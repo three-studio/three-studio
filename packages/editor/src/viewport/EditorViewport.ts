@@ -664,7 +664,7 @@ export class EditorViewport {
     this.binder.sync(scene, merged);
     // The same dirty set, and for the same reason: deciding whether an entity
     // carries a marker means reading the entity table, which is exactly the scan
-    // ADR-16 kept out of the frame loop. What runs per frame is only the placing.
+    // ADR-0003 kept out of the frame loop. What runs per frame is only the placing.
     this.overlay.sync(scene, merged);
     if (changes.environment) this.binder.syncEnvironment(this.scene, scene);
 

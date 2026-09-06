@@ -52,7 +52,7 @@ interface ProjectState {
    *
    * No reload — nothing about what is on screen has changed, and reloading
    * would cost the undo history. The URL is rewritten in place so that a later
-   * reload still finds the scene this window is on; see ADR-12 for why the
+   * reload still finds the scene this window is on; see ADR-0008 for why the
    * scene lives in the URL at all.
    *
    * Renaming comes through here too, now that the file name is the name: the

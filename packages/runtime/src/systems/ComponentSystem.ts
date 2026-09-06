@@ -14,7 +14,7 @@ import type { ResourceArena } from './ResourceArena';
 /*
  * One class per component type that has something to draw.
  *
- * ADR-7 put these on the *view* side and not in the hierarchy, and the reason is
+ * ADR-0013 put these on the *view* side and not in the hierarchy, and the reason is
  * the one the schema opens with: the document is authoritative and three.js is a
  * derived view. A hierarchy made of objects wrapping `Object3D` cannot be
  * serialised without three, cannot be snapshotted for play mode, and leaves

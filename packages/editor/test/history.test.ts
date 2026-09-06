@@ -19,7 +19,7 @@ import { expandedScene } from '../src/state/expansion';
 const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
 
 /*
- * The round-trip property, which ADR-4 calls the measure that pays for itself
+ * The round-trip property, which ADR-0009 calls the measure that pays for itself
  * most: on any sequence of commands, N undos return the editor to where it
  * started and N redos to where it ended.
  *

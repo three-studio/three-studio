@@ -89,7 +89,7 @@ export const useImportStore = create<ImportState>()((set, get) => ({
    * Records what the preview found, and — for a clip — writes it into the
    * settings that will become the sidecar.
    *
-   * This is the whole of ADR-6 in six lines. The renderer is the only thing in
+   * This is the whole of ADR-0016 in six lines. The renderer is the only thing in
    * the app that can read a sound's length: there is no `decodeAudioData` under
    * Node, so the main process cannot sniff it the way it sniffs an Ultra HDR
    * marker. The preview has already decoded the file to draw its waveform, and

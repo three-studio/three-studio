@@ -3,7 +3,7 @@ import type { SceneDoc } from './schema';
 /*
  * `findComponent` was here, taking an `EntityDoc`. It lives in `components.ts`
  * now and takes the document and an entity id, because an entity no longer
- * holds its components — see ADR-16.
+ * holds its components — see ADR-0003.
  */
 
 /*

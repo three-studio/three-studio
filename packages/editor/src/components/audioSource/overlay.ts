@@ -40,7 +40,7 @@ const CONE_SEGMENTS = 24;
  *
  * Drawn from the **document**, not from an audio graph, and that is the whole
  * reason this file is short. There is no `PositionalAudio` to hand to three's
- * `PositionalAudioHelper` (ADR-2), and there does not need to be: the numbers a
+ * `PositionalAudioHelper` (ADR-0017), and there does not need to be: the numbers a
  * designer is trying to read — where full volume ends, where the sound stops
  * carrying, which way the cone points — are all fields of the component. The
  * gizmo therefore shows what was *authored*, which is what someone adjusting a

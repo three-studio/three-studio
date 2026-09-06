@@ -67,7 +67,7 @@ import {
 /*
  * One door, carrying everything. It used to take a bare `coalesceKey` and drop
  * `external` on the floor — two ways in, one of which lost information, which is
- * the first of ADR-4's nine invariants.
+ * the first of ADR-0009's nine invariants.
  */
 const mutate = (
   label: string,

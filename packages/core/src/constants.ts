@@ -77,12 +77,12 @@ export const SCRIPT_API_VERSION = 2;
  * 4 — components live in `scene.components`, by type then by entity then by
  * their own id, instead of in an array on each entity. The array is read once
  * for its order — which is the only thing in it that is not derivable — and
- * removed. See ADR-16.
+ * removed. See ADR-0003.
  *
  * 3 — every component carries an `id`, and prefab overrides name a component by
  * it rather than by its position. A document written before it gets ids derived
  * from where its components already are, so a scene and the prefabs it places
- * agree without either being able to read the other. See ADR-9 and B10.
+ * agree without either being able to read the other. See ADR-0004 and B10.
  *
  * 2 — the environment gained a background mode and its texture, an IBL slot
  * and its intensity, and a fog mode with an exponential density.
@@ -122,7 +122,7 @@ export const PREFAB_ID_SEPARATOR = '/';
  * function; the two format numbers move together for that reason.
  *
  * 2 — components carry an `id`, and prefab overrides name them by it rather
- * than by their position in the array. See ADR-9 and B10.
+ * than by their position in the array. See ADR-0004 and B10.
  */
 export const PREFAB_FORMAT_VERSION = 6;
 
@@ -130,7 +130,7 @@ export const PREFAB_FORMAT_VERSION = 6;
  * Project file format version, tracked separately from scenes.
  *
  * 2 — scenes are referenced by id rather than by path: `startScene`,
- * `loadingScene` and each build profile name an id. See ADR-15: a reference
+ * `loadingScene` and each build profile name an id. See ADR-0005: a reference
  * that is a path or a name is a reference that renaming breaks.
  *
  * Not bumped when `scenes` left this file. Every reference in a format 2

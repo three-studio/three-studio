@@ -7,7 +7,7 @@
  * unloadable in a test, and everything worth testing here — the mix, the solo,
  * the crossfade, the voice stealing — becomes unobservable.
  *
- * So the context is a parameter (ADR-7), and a fake that satisfies these
+ * So the context is a parameter (ADR-0013), and a fake that satisfies these
  * interfaces is a few dozen lines. The real `AudioContext` satisfies them too:
  * every member below is a subset of the real shape, and the methods are
  * declared as methods rather than as properties holding functions, which leaves

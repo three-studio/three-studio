@@ -83,7 +83,7 @@ export class EntityMarkers {
    * table, which it could not do while a bare entity earned a marker: only
    * `Object.keys(scene.entities)` can name an entity that carries nothing. Now
    * that it earns none, the candidates are exactly the entities in four tables
-   * plus the markers already standing — a lookup, as ADR-16 asks, in place of
+   * plus the markers already standing — a lookup, as ADR-0003 asks, in place of
    * the last scan this file had.
    *
    * @param dirty Entity ids to re-read; `undefined` re-reads everything.

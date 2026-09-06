@@ -15,7 +15,7 @@ import type { EntityDoc, SceneDoc } from './schema';
  *
  * The tree is stored three times over — `child.parent`, `parent.children[]` and
  * `scene.rootOrder` — which is what makes reparenting O(1) and immer patches
- * shallow (ADR-1). The price is that three writes have to agree, and until this
+ * shallow (ADR-0002). The price is that three writes have to agree, and until this
  * module existed the only thing checking that was `repairHierarchy`, at load
  * time. An edit that broke an edge stayed broken for the rest of the session:
  * that is B1.

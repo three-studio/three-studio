@@ -50,7 +50,7 @@ export class ViewportOverlay {
    *
    * Structural, and driven from `syncDocument` with the same dirty set the
    * binder gets — not from the frame loop. Deciding it for a bare entity means
-   * reading the entity table, which is exactly the per-frame scan ADR-16 set out
+   * reading the entity table, which is exactly the per-frame scan ADR-0003 set out
    * to remove.
    */
   sync(scene: SceneDoc, dirty: ReadonlySet<string> | undefined): void {

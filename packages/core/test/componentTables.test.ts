@@ -24,7 +24,7 @@ import { sceneWith } from './fixtures';
 
 /*
  * Components live in `scene.components`, by type then by entity then by their
- * own id — ADR-16.
+ * own id — ADR-0003.
  *
  * Three things are worth pinning here, and only the first is the headline. The
  * query is O(1) rather than a walk of every entity. The identity of a component
@@ -81,7 +81,7 @@ describe('two components of one type on one entity', () => {
 
     // This is why the third level is the id and not a slot: a slot is a
     // position, and removing the first would slide the second onto it — B10
-    // reduced to a narrower case but intact. See ADR-9 and ADR-16.
+    // reduced to a narrower case but intact. See ADR-0004 and ADR-0003.
     const left = componentsOf(scene, cube.entity.id).filter((c) => c.type === 'collider');
     expect(left).toHaveLength(1);
     expect(left[0]!.id).toBe(second.id);

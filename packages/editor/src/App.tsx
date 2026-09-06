@@ -29,7 +29,7 @@ export function App() {
   }, []);
 
   // From the list found on disk, which is where a scene's name comes from now:
-  // the file is called what the scene is called — see ADR-15.
+  // the file is called what the scene is called — see ADR-0005.
   const title = (sceneId === null ? undefined : findScene(scenes, sceneId)?.name) ?? 'Scene';
 
   return (

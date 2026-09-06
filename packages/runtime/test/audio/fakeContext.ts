@@ -13,7 +13,7 @@ import type {
 /*
  * A Web Audio context made of numbers.
  *
- * The whole reason `AudioContextLike` exists (ADR-7): vitest runs under node,
+ * The whole reason `AudioContextLike` exists (ADR-0013): vitest runs under node,
  * where the Web Audio *types* are in `lib.dom` and the *values* are nowhere. A
  * fake of a hundred lines makes the mix, the crossfade, the voice stealing and
  * the cache observable, which is the part of an audio engine that is worth

@@ -136,7 +136,7 @@ export interface EntityDoc {
  * or instancing an entity moves one key per type rather than one per component.
  * **Component id last** — the identity phase 3 established, which is what a
  * prefab override names; keying by a slot index would be a position again, and
- * would reopen B10 for any entity carrying two components of one type (ADR-16).
+ * would reopen B10 for any entity carrying two components of one type (ADR-0003).
  *
  * One shape for all eleven types, singletons included. "One mesh per entity" is
  * a rule the commands keep, exactly as it was when the array kept none.

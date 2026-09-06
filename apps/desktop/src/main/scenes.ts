@@ -24,7 +24,7 @@ import { ProjectError, discoverScenes, readProject, updateProject } from './proj
  * duplicate one, rename one, delete one, and choose the one a project opens on.
  *
  * **Everything here addresses a scene by id** — `SceneDoc.id`, written into the
- * document when the scene is created. See ADR-15.
+ * document when the scene is created. See ADR-0005.
  *
  * The list itself is not here any more: `scenes/` is the list, and
  * `discoverScenes` reads it. Every operation below is therefore a file
@@ -235,7 +235,7 @@ export async function duplicateScene(
  * Moves the file, and rewrites nothing else.
  *
  * The file name is the name, so this is what renaming is. No reference moves
- * with it — every one of them is an id (ADR-15) — which is why a rename that
+ * with it — every one of them is an id (ADR-0005) — which is why a rename that
  * changes where a scene lives still costs one write and breaks nothing. The
  * file used to stay put and the label move instead, and the price was that the
  * Finder and the editor disagreed about the name of every renamed scene.

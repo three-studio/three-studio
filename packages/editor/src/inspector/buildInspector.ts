@@ -40,7 +40,7 @@ const DEG_TO_RAD = Math.PI / 180;
  * What a pane is showing.
  *
  * The scene has no id because there is only ever one of it in a window — see
- * ADR-12, which put one scene per window rather than tabs.
+ * ADR-0008, which put one scene per window rather than tabs.
  */
 export type InspectorTarget =
   | { kind: 'entity'; entityId: string }
@@ -138,7 +138,7 @@ export class InspectorBinding {
         this.binder.bind(folder, { ...spec, path }, {
           read: () =>
             // A scene's name is its file name, not the label inside the
-            // document — ADR-14 — so this one field reads the address.
+            // document — ADR-0006 — so this one field reads the address.
             spec.on === 'scene' ? currentSceneName() : readPath(currentScene(), path),
           write: (value, { last, generation }) => {
             switch (spec.on) {

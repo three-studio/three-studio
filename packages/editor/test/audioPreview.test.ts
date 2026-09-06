@@ -112,7 +112,7 @@ describe('the editor audition', () => {
   /*
    * The mixer builds its root before anything else, so the root — the node
    * `setMasterVolume` acts on, and the one that keeps the audition out of the
-   * game's mix (ADR-4) — is the first gain the context ever made.
+   * game's mix (ADR-0012) — is the first gain the context ever made.
    */
   const ROOT_GAIN = 0;
 

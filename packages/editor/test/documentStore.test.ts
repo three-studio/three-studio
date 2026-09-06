@@ -355,7 +355,7 @@ describe('knowing whether the work is saved', () => {
 
 /*
  * The compaction that keeps a long drag from carrying six hundred patch pairs.
- * ADR-4 calls this the part where a mistake breaks undo subtly, so the property
+ * ADR-0009 calls this the part where a mistake breaks undo subtly, so the property
  * test below is the real check and these pin the shape.
  */
 describe('bounding a coalesced entry', () => {

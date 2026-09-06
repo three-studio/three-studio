@@ -42,7 +42,7 @@ function argValue(argv: readonly string[], name: string): string | null {
  * The scene comes this way rather than through argv because argv is replayed
  * verbatim by `webContents.reload()`, and the scene is the one thing about a
  * window that changes. Role and project stay in argv: they are fixed for the
- * life of the window. See ADR-12.
+ * life of the window. See ADR-0008.
  */
 function queryValue(search: string, name: string): string | null {
   return new URLSearchParams(search).get(name);
