@@ -7,6 +7,7 @@ import {
   ENGINE_VERSION,
   assetKindForFile,
   assetDisplayName,
+  conformAssetSettings,
   createId,
   defaultSettings,
   emptyManifest,
@@ -340,7 +341,12 @@ export async function updateAssetSettings(
   const assetFile = resolveInside(projectPath, assetPath);
   const meta = await readAssetMeta(assetFile);
   if (!meta) throw new AssetError(`No metadata for ${assetPath}.`);
-  await writeAssetMeta(assetFile, { ...meta, settings });
+  // Conformed here rather than at the IPC handler, because this is where the
+  // kind is known: the **sidecar's**, never the payload's. A renderer that
+  // could choose the kind could have a `.png`'s settings filled from the model
+  // importer's defaults, and the next load would build a mesh out of an image.
+  const kept = conformAssetSettings(settings, meta.kind, basename(assetFile));
+  await writeAssetMeta(assetFile, { ...meta, settings: kept });
 }
 
 /**

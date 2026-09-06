@@ -108,6 +108,15 @@ export type {
  * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
  */
 export { field, fieldOptions, optionsFrom } from './fields';
+/* What the renderer sends, made safe before it reaches the disk. */
+export {
+  conform,
+  conformAssetSettings,
+  conformLayoutPreferences,
+  conformMaterial,
+  conformPatch,
+  conformSettingsPatch,
+} from './guards';
 export type {
   FieldAction,
   FieldDef,

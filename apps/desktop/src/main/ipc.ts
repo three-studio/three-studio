@@ -20,6 +20,10 @@ import {
   type ScriptBuildResult,
   IPC_EVENTS,
   IPC_INVOKE,
+  conformLayoutPreferences,
+  conformMaterial,
+  conformSettingsPatch,
+  migratePrefab,
   type BridgeHandlers,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
@@ -339,7 +343,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // makes the read and the write one step.
       const updated = await updateProject(projectPath, (project) => ({
         ...project,
-        settings: { ...project.settings, ...patch },
+        // Conformed against the settings on disk, not spread in as they came:
+        // a patch is whatever the renderer sent, and this one lands in
+        // `project.json`. See `conformSettingsPatch`.
+        settings: { ...project.settings, ...conformSettingsPatch(patch, project.settings) },
       }));
       // Settings cannot change which scenes exist, but the broadcast carries
       // the whole of what a window holds, so the list has to come along or the
@@ -421,27 +428,33 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     updateSettings: (_event, assetPath: string, settings: AssetSettings): Promise<void> => {
+      // Conformed inside, where the sidecar's kind is known; see there.
       return updateAssetSettings(requireProject(), assetPath, settings);
     },
 
     readMaterials: (): Promise<Record<string, MaterialDef>> => readMaterialAssets(requireProject()),
 
     createMaterial: (_event, name: string, material: MaterialDef): Promise<string> => {
-      return createMaterialAsset(requireProject(), name, material);
+      return createMaterialAsset(requireProject(), name, conformMaterial(material));
     },
 
     readPrefabs: (): Promise<Record<string, PrefabDoc>> => readPrefabAssets(requireProject()),
 
     createPrefab: (_event, name: string, prefab: PrefabDoc, assetId?: string): Promise<string> => {
-      return createPrefabAsset(requireProject(), name, prefab, assetId);
+      // `migratePrefab` rather than `conform`, and the difference is who wrote
+      // the data. A prefab has been read off the disk, possibly written by a
+      // build that knew a component type this one does not, and the migration
+      // is the one repair that keeps such a type instead of inventing a shape
+      // for it. Conforming it would drop the author's work on the round trip.
+      return createPrefabAsset(requireProject(), name, migratePrefab(prefab), assetId);
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
-      return saveMaterialAsset(requireProject(), assetPath, material);
+      return saveMaterialAsset(requireProject(), assetPath, conformMaterial(material));
     },
 
     savePrefab: (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
-      return savePrefabAsset(requireProject(), assetPath, prefab);
+      return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
     },
 
     revealInFileManager: (_event, assetPath: string) => {
@@ -507,7 +520,8 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   preferences: {
     loadLayouts: (): Promise<LayoutPreferences> => loadLayoutPreferences(),
 
-    saveLayouts: (_event, preferences: LayoutPreferences): Promise<void> => saveLayoutPreferences(preferences),
+    saveLayouts: (_event, preferences: LayoutPreferences): Promise<void> =>
+      saveLayoutPreferences(conformLayoutPreferences(preferences)),
   },
   };
 

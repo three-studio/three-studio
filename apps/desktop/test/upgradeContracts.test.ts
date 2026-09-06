@@ -10,7 +10,7 @@ import {
   type AssetEntry,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { scanAssets } from '../src/main/assetScan';
+import { scanAssets, updateAssetSettings } from '../src/main/assetScan';
 import { writeScriptTypings } from '../src/main/scripts';
 
 /*
@@ -130,6 +130,29 @@ describe('the asset sidecar', () => {
     );
     expect(ids[1]).toBe(ids[0]);
     expect(ids[2]).toBe(ids[0]);
+  });
+
+  it('refuses settings the renderer made up rather than writing them', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'studio-sidecar-'));
+    const textures = join(project, ASSETS_DIR, 'textures');
+    await mkdir(textures, { recursive: true });
+    await writeFile(join(textures, 'brick.png'), 'pixels', 'utf8');
+    const path = (await scanAssets(project)).assets[0]!.path;
+
+    // `AssetSettings` on the IPC handler is an annotation, and annotations are
+    // gone by the time this runs: what arrives is whatever the renderer sent.
+    await updateAssetSettings(project, path, {
+      kind: 'model',
+      anisotropy: 'lots',
+      evil: 'rm -rf',
+    } as never);
+
+    const asset = (await scanAssets(project)).assets[0]!;
+    // The kind is the sidecar's and not the payload's — a `.png` filed as a
+    // model would be built as a mesh on the next load — and a field of the
+    // wrong type reads as the one a fresh import would have had.
+    expect(asset.settings).toMatchObject({ kind: 'texture', anisotropy: 1 });
+    expect(asset.settings).not.toHaveProperty('evil');
   });
 
   it('upgrades a format 1 sidecar in place, keeping its id and its settings', async () => {

@@ -127,6 +127,31 @@ describe('an import session', () => {
     expect(asset.settings).toMatchObject({ kind: 'model', scale: 0.01 });
   });
 
+  it('refuses settings the plan made up rather than writing them to the sidecar', async () => {
+    const root = await project();
+    const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
+    const session = await ImportSession.open(root, [join(sources, 'tree.fbx')], '');
+    const staged = session.state().files[0]!;
+
+    await session.commit([
+      {
+        fileId: staged.id,
+        folder: '',
+        fileName: staged.fileName,
+        // A plan is whatever the renderer sent, and what it says lands in the
+        // sidecar as the settings of a real asset.
+        settings: { kind: 'texture', scale: 'enormous', evil: 'rm -rf' } as never,
+      },
+    ]);
+
+    const asset = (await scanAssets(root)).assets[0]!;
+    // The kind is the importer's, so the file cannot be made to load as
+    // something it is not, and a scale that is not a number reads as the one
+    // a fresh import would have had.
+    expect(asset.settings).toMatchObject({ kind: 'model', scale: 1 });
+    expect(asset.settings).not.toHaveProperty('evil');
+  });
+
   it('walks a dropped folder and skips what nothing imports', async () => {
     const root = await project();
     const sources = await sourceFolder({
