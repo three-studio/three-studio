@@ -4,6 +4,7 @@ import type {
   ImportSessionState,
   ExportProgress,
   ExportResult,
+  AssetChange,
   LayoutPreferences,
   ShortcutPreferences,
   MaterialDef,
@@ -98,13 +99,16 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.commitImport, sessionId, plan),
     cancelImport: (sessionId): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.cancelImport, sessionId),
-    remove: (assetPath): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.assets.remove, assetPath),
-    move: (assetPath, targetFolder): Promise<string> =>
+    remove: (assetPath): Promise<AssetChange> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.remove, assetPath),
+    move: (assetPath, targetFolder): Promise<AssetChange> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.move, assetPath, targetFolder),
-    createFolder: (folder): Promise<string> => ipcRenderer.invoke(IPC_INVOKE.assets.createFolder, folder),
-    renameFolder: (folder, name): Promise<string> =>
+    createFolder: (folder): Promise<AssetChange> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.createFolder, folder),
+    renameFolder: (folder, name): Promise<AssetChange> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.renameFolder, folder, name),
-    removeFolder: (folder): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.assets.removeFolder, folder),
+    removeFolder: (folder): Promise<AssetChange> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.removeFolder, folder),
     updateSettings: (assetPath, settings): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.updateSettings, assetPath, settings),
     readMaterials: (): Promise<Record<string, MaterialDef>> =>

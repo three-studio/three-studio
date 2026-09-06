@@ -1,4 +1,10 @@
-import type { AssetImportResult, AssetKind, AssetManifest, AssetSettings } from './assets/schema';
+import type {
+  AssetChange,
+  AssetImportResult,
+  AssetKind,
+  AssetManifest,
+  AssetSettings,
+} from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
@@ -240,19 +246,19 @@ export interface AssetApi {
   /** Drops the session. Nothing was written, so there is nothing to undo. */
   cancelImport: (sessionId: string) => Promise<void>;
   /** Deletes the file and its sidecar. Takes a project-relative path. */
-  remove: (assetPath: string) => Promise<void>;
+  remove: (assetPath: string) => Promise<AssetChange>;
   /** Moves an asset and its sidecar; returns the new project-relative path. */
-  move: (assetPath: string, targetFolder: string) => Promise<string>;
+  move: (assetPath: string, targetFolder: string) => Promise<AssetChange>;
   /** Creates a folder under `assets/`; returns the path it actually got. */
-  createFolder: (folder: string) => Promise<string>;
+  createFolder: (folder: string) => Promise<AssetChange>;
   /**
    * Renames a folder under `assets/`; returns its new path.
    *
    * Safe for references: ids live in the sidecars, which move with their files.
    */
-  renameFolder: (folder: string, name: string) => Promise<string>;
+  renameFolder: (folder: string, name: string) => Promise<AssetChange>;
   /** Removes a folder under `assets/`. Rejects one that is not empty. */
-  removeFolder: (folder: string) => Promise<void>;
+  removeFolder: (folder: string) => Promise<AssetChange>;
   updateSettings: (assetPath: string, settings: AssetSettings) => Promise<void>;
   /**
    * Every preset material in the project, by asset id.

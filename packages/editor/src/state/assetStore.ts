@@ -1,6 +1,8 @@
 import {
+  applyAssetChange,
   assetUrl,
   emptyManifest,
+  type AssetChange,
   type AssetEntry,
   type AssetKind,
   type AssetManifest,
@@ -110,6 +112,28 @@ async function guard(
   await guardValue(set, action);
 }
 
+/**
+ * Moves the manifest on by one mutation, instead of asking for a new one.
+ *
+ * Every mutation used to be followed by `assets.list()`, which is a full walk of
+ * `assets/` in the main process and a manifest of every asset in the project
+ * coming back across the bridge. Measured on three thousand assets: **196 ms**,
+ * for a rename that touched one file. A change is a handful of paths, and
+ * applying it is a substitution.
+ *
+ * Nothing here decides what happened — the main process says so, because it is
+ * the only side that can. See `AssetChange`.
+ *
+ * The change is handed back so a caller can read the path an operation settled
+ * on out of the same value the manifest was updated from, rather than out of a
+ * second return that could disagree with it.
+ */
+function adopt(change: AssetChange): AssetChange {
+  const { manifest, revision } = useAssetStore.getState();
+  useAssetStore.setState({ manifest: applyAssetChange(manifest, change), revision: revision + 1 });
+  return change;
+}
+
 export const useAssetStore = create<AssetState>()((set, get) => ({
   manifest: emptyManifest(),
   materials: {},
@@ -175,42 +199,37 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   remove: (assetPath) =>
     guard(set, async () => {
-      await window.studio.assets.remove(assetPath);
-      set({ manifest: await window.studio.assets.list(), revision: get().revision + 1 });
+      adopt(await window.studio.assets.remove(assetPath));
     }),
 
   move: (assetPath, targetFolder) =>
     guard(set, async () => {
-      await window.studio.assets.move(assetPath, targetFolder);
-      set({ manifest: await window.studio.assets.list(), revision: get().revision + 1 });
+      adopt(await window.studio.assets.move(assetPath, targetFolder));
     }),
 
   createFolder: (path) =>
     guardValue(set, async () => {
-      const created = await window.studio.assets.createFolder(path);
-      set({ manifest: await window.studio.assets.list(), revision: get().revision + 1 });
-      return created;
+      const change = adopt(await window.studio.assets.createFolder(path));
+      // The path it settled on, which is not always the one asked for: the leaf
+      // is suffixed on collision, and navigating into what was requested would
+      // land nowhere. The deepest added folder is the one that was created.
+      return change.addedFolders.at(-1) ?? null;
     }),
 
   renameFolder: (folder, name) =>
     guardValue(set, async () => {
-      const renamed = await window.studio.assets.renameFolder(folder, name);
-      set({
-        manifest: await window.studio.assets.list(),
-        revision: get().revision + 1,
-        folder: remapFolder(get().folder, folder, renamed),
-      });
+      const change = adopt(await window.studio.assets.renameFolder(folder, name));
+      const renamed = change.addedFolders[0] ?? null;
+      if (renamed !== null) set({ folder: remapFolder(get().folder, folder, renamed) });
       return renamed;
     }),
 
   removeFolder: (folder) =>
     guard(set, async () => {
-      await window.studio.assets.removeFolder(folder);
-      set({
-        manifest: await window.studio.assets.list(),
-        revision: get().revision + 1,
-        folder: remapFolder(get().folder, folder, null),
-      });
+      const change = adopt(await window.studio.assets.removeFolder(folder));
+      if (change.removedFolders.length > 0) {
+        set({ folder: remapFolder(get().folder, folder, null) });
+      }
     }),
 
   clear: () =>

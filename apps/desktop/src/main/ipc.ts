@@ -13,6 +13,7 @@ import {
   type ProjectContents,
   type ProjectFile,
   type ProjectSettings,
+  type AssetChange,
   type LayoutPreferences,
   type ShortcutPreferences,
   type OpenProject,
@@ -382,23 +383,23 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       importSessions.close(sessionId);
     },
 
-    remove: (_event, assetPath: string): Promise<void> => {
+    remove: (_event, assetPath: string): Promise<AssetChange> => {
       return removeAsset(requireProject(), assetPath);
     },
 
-    move: (_event, assetPath: string, targetFolder: string): Promise<string> => {
+    move: (_event, assetPath: string, targetFolder: string): Promise<AssetChange> => {
       return moveAsset(requireProject(), assetPath, targetFolder);
     },
 
-    createFolder: (_event, folder: string): Promise<string> => {
+    createFolder: (_event, folder: string): Promise<AssetChange> => {
       return createAssetFolder(requireProject(), folder);
     },
 
-    renameFolder: (_event, folder: string, name: string): Promise<string> => {
+    renameFolder: (_event, folder: string, name: string): Promise<AssetChange> => {
       return renameAssetFolder(requireProject(), folder, name);
     },
 
-    removeFolder: (_event, folder: string): Promise<void> => {
+    removeFolder: (_event, folder: string): Promise<AssetChange> => {
       return removeAssetFolder(requireProject(), folder);
     },
 
