@@ -120,12 +120,6 @@ export interface EntityDoc {
   visible: boolean;
   /** Excluded from picking and locked against gizmo edits. */
   locked: boolean;
-  /**
-   * Streaming cell. Unused by the MVP, which loads whole scenes, but present
-   * from the start so open-world streaming is a load-time filter rather than a
-   * schema migration.
-   */
-  chunk?: string;
 }
 
 /**

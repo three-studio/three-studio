@@ -184,6 +184,31 @@ describe('scene migration', () => {
     expect(light).toMatchObject({ kind: 'directional', angle: 0.5, castShadow: true });
   });
 
+  it('keeps a field this build has never heard of', () => {
+    /*
+     * The other half of the rule, and the half nothing pinned: add fields,
+     * never remove them, and **leave unrecognised data exactly as found**.
+     *
+     * `chunk` is the case that prompted this. It was declared on `EntityDoc`
+     * for a streaming feature nobody wrote, read by nothing, and removed — and
+     * removing a *declaration* is not removing a field from the format, because
+     * `migrateScene` fills in place and `serializeScene` writes whatever the
+     * document holds. A scene that carries one keeps it, which is what makes
+     * that removal owe no migration.
+     */
+    const json = olderScene((raw) => {
+      const entity = Object.values(raw['entities'] as Record<string, Record<string, unknown>>)[0]!;
+      entity['chunk'] = 'cell-04-11';
+      entity['somethingElseEntirely'] = { written: 'by a build this one never saw' };
+    });
+
+    const written = JSON.parse(serializeScene(deserializeScene(json))) as Record<string, unknown>;
+    const entity = Object.values(written['entities'] as Record<string, Record<string, unknown>>)[0]!;
+
+    expect(entity['chunk']).toBe('cell-04-11');
+    expect(entity['somethingElseEntirely']).toEqual({ written: 'by a build this one never saw' });
+  });
+
   it('fills entity and environment properties', () => {
     const json = olderScene((raw) => {
       const entity = Object.values(raw['entities'] as Record<string, Record<string, unknown>>)[0]!;
