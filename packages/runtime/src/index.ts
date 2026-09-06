@@ -73,7 +73,12 @@ export type { PhysicsBody } from './physics/PhysicsWorld';
 
 /* Scripting: the base class user scripts extend, and the registry the host compiles into. */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';
-export type { EntityHandle, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
+export type {
+  BehaviourMember,
+  EntityHandle,
+  ScriptProperties,
+  ScriptPropertyDef,
+} from './scripting/ScriptApi';
 export { clearScripts, registerScript, scriptClassFor } from './scripting/ScriptHost';
 export type { ScriptClass } from './scripting/ScriptHost';
 

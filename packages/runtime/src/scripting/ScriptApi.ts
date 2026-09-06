@@ -9,7 +9,7 @@ import type { SceneApi } from '../behaviour/Behaviour';
  * Declared shape of one editable property. Drives the inspector.
  *
  * The name is the contract, not the shape: user scripts and the generated
- * `.d.ts` say `ScriptPropertyDef`, so it stays — but the eight variants moved
+ * `.d.ts` say `ScriptPropertyDef`, so it stays — but the variants moved
  * to `core` as `FieldDef`, where an importer declares its rows in the same
  * words and one adapter in the editor binds both. See `core/src/fields.ts`.
  */
@@ -18,33 +18,56 @@ export type ScriptPropertyDef = FieldDef;
 export type ScriptProperties = Record<string, ScriptPropertyDef>;
 
 /**
+ * The members `keyof` cannot see.
+ *
+ * Private and protected members are not part of a type's key set, so the four
+ * helpers a script calls on itself have to be named. They are the only names
+ * below that are written rather than derived.
+ */
+type ProtectedMember = 'resolve' | 'log' | 'wait' | 'repeat';
+
+/** Every name the base class occupies. What the editor publishes is keyed on it. */
+export type BehaviourMember = keyof Behaviour | ProtectedMember;
+
+/**
  * Names a script property may not take.
  *
  * Applying properties onto the instance is what makes them editable, but it
  * also means a property called `transform` replaces the object the script is
  * supposed to move, and one called `log` replaces the method — silently, with
  * no error, leaving a script that cannot do anything and gives no clue why.
+ *
+ * A **total record** rather than a list of strings, and that is the whole
+ * mechanism: `keyof Behaviour` is the class, so a member added below and
+ * forgotten here does not compile, and a name here that the class does not have
+ * does not compile either. The list it replaces was correct — nothing was
+ * keeping it that way, and the same names copied a third time into the editor's
+ * generated typings had already fallen two behind.
+ *
+ * The values carry nothing. It is a set with a compiler behind it.
  */
-export const RESERVED_PROPERTY_NAMES: ReadonlySet<string> = new Set([
-  'entity',
-  'transform',
-  'input',
-  'scenes',
-  'audio',
-  'time',
-  'log',
-  'resolve',
-  'wait',
-  'repeat',
-  'cancelTimers',
-  'onAwake',
-  'onStart',
-  'onUpdate',
-  'onFixedUpdate',
-  'onLateUpdate',
-  'onSceneUnload',
-  'onDestroy',
-]);
+const OCCUPIED_NAMES: Record<BehaviourMember, true> = {
+  entity: true,
+  transform: true,
+  input: true,
+  scenes: true,
+  audio: true,
+  time: true,
+  log: true,
+  resolve: true,
+  wait: true,
+  repeat: true,
+  cancelTimers: true,
+  onAwake: true,
+  onStart: true,
+  onUpdate: true,
+  onFixedUpdate: true,
+  onLateUpdate: true,
+  onSceneUnload: true,
+  onDestroy: true,
+};
+
+export const RESERVED_PROPERTY_NAMES: ReadonlySet<string> = new Set(Object.keys(OCCUPIED_NAMES));
 
 /** A live handle to another entity, resolved from an `entity` property. */
 export interface EntityHandle {
