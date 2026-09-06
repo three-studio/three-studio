@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import {
   ASSETS_DIR,
@@ -25,6 +25,7 @@ import {
 import {
   AssetError,
   companionsOf,
+  hashFile,
   readMaterialAssets,
   readPrefabAssets,
   scanAssets,
@@ -181,6 +182,18 @@ export async function exportBuild(
   let assetCount = 0;
   let copied = 0;
 
+  /*
+   * Emptied first, because the names below are content addresses.
+   *
+   * An unhashed copy overwrote its predecessor; a hashed one lands beside it,
+   * so a folder re-exported through twenty rounds of tweaking one texture would
+   * carry twenty copies of it — and the author uploads the folder. Only
+   * `assets/`, which the exporter alone creates and fills: emptying the whole
+   * output directory would take whatever else has been put there, and the
+   * player's own files are overwritten by the copy above anyway.
+   */
+  await rm(join(outputDir, 'assets'), { recursive: true, force: true });
+
   for (const id of referenced) {
     // Reported per file: on a project with a few hundred textures this is the
     // part that takes the time, and a bar that sits still reads as a hang.
@@ -193,10 +206,29 @@ export async function exportBuild(
     // Scripts ship compiled, not as source: the build has no TypeScript in it.
     if (entry.kind === 'script') continue;
 
-    const relativeToAssets = toPosix(relative(ASSETS_DIR, entry.path));
+    /*
+     * Named by its content, so a re-export is never served from a stale cache.
+     *
+     * The player bundle has been hashed by Vite since the first build; the
+     * project's own files kept their names, so a site somebody had already
+     * visited went on showing the texture they had already downloaded. A
+     * production bug, and a silent one — the build was right and the browser
+     * was serving something else.
+     *
+     * Hashed **here**, from the bytes, and deliberately not from
+     * `entry.hash`: that one is the digest taken at import and refreshed only
+     * when the editor itself rewrites a material or a prefab. A texture edited
+     * in Photoshop keeps its sidecar hash for ever, which is exactly the case
+     * this is for. It costs one extra read per asset, once per export.
+     *
+     * Free in every other sense, because the indirection was already there: the
+     * player never sees a file name, it reads `assets` in the manifest.
+     */
+    const source = resolveInside(projectPath, entry.path);
+    const relativeToAssets = hashedName(toPosix(relative(ASSETS_DIR, entry.path)), await hashFile(source));
     const destination = join(outputDir, 'assets', ...relativeToAssets.split(posix.sep));
     await mkdir(dirname(destination), { recursive: true });
-    await cp(resolveInside(projectPath, entry.path), destination);
+    await cp(source, destination);
     paths[id] = relativeToAssets;
     if (entry.settings.kind === 'texture' && entry.settings.encoding === 'ultrahdr') {
       textureEncodings[id] = entry.settings.encoding;
@@ -204,10 +236,17 @@ export async function exportBuild(
     assetSettings[id] = entry.settings;
     assetCount += 1;
 
-    // A `.gltf` names its buffer and its images in the file, not by asset id,
-    // so nothing in `referenced` accounts for them — the build would ship a
-    // model with no geometry. Same for an `.obj` and its `.mtl`.
-    const source = resolveInside(projectPath, entry.path);
+    /*
+     * A `.gltf` names its buffer and its images in the file, not by asset id,
+     * so nothing in `referenced` accounts for them — the build would ship a
+     * model with no geometry. Same for an `.obj` and its `.mtl`.
+     *
+     * Copied under their own names, and that is the point: the names are
+     * written inside the model, relative to it, and the model has not moved —
+     * only its own file name carries the hash. Hashing a companion would break
+     * the reference that names it, and the only way to hash one is to rewrite
+     * the model that points at it.
+     */
     for (const companion of await companionsOf(source)) {
       const target = join(dirname(destination), ...companion.split('/'));
       try {
@@ -308,6 +347,27 @@ function union(sets: readonly Set<string>[]): Set<string> {
   const all = new Set<string>();
   for (const set of sets) for (const id of set) all.add(id);
   return all;
+}
+
+/**
+ * `textures/brick.png` and a digest -> `textures/brick.a1b2c3d4.png`.
+ *
+ * Eight hex characters, as Vite uses for the same job: thirty-two bits, so a
+ * collision inside one build is not a thing that happens, and short enough that
+ * the name still reads as the file it came from when someone opens the folder.
+ *
+ * The last dot only, so `Brick.material.json` becomes `Brick.material.<h>.json`
+ * and still reads as a material. A leading dot is a whole name — `.gitkeep` is
+ * not an extension — which is what `dot <= 0` says.
+ */
+function hashedName(path: string, hash: string): string {
+  const slash = path.lastIndexOf('/');
+  const directory = slash === -1 ? '' : path.slice(0, slash + 1);
+  const file = path.slice(slash + 1);
+  const dot = file.lastIndexOf('.');
+  const stem = dot <= 0 ? file : file.slice(0, dot);
+  const extension = dot <= 0 ? '' : file.slice(dot);
+  return `${directory}${stem}.${hash.slice(0, 8)}${extension}`;
 }
 
 function describe(cause: unknown): string {

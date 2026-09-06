@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   ASSETS_DIR,
   BUILD_FORMAT_VERSION,
@@ -139,6 +139,8 @@ const TEMPLATE_HTML = `<!doctype html>
 </html>
 `;
 
+const manifestOf = (json: string): BuildManifest => JSON.parse(json) as BuildManifest;
+
 function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
   return {
     name: 'Web',
@@ -220,17 +222,21 @@ describe('web export', () => {
     // An alias beside it, so a script naming the level still finds it.
     expect(build.sceneNames?.['main']).toBe(entryId);
 
-    // Only the referenced texture, and reachable at the path the manifest gives.
+    /*
+     * Only the referenced texture, and reachable at the path the manifest
+     * gives. The name carries eight hex characters of the file's own digest —
+     * see `hashedName` — so the assertion is on the shape, and then on the
+     * folder holding exactly what the manifest points at.
+     */
     const paths = build.assets ?? {};
-    expect(paths['tex-used']).toBe('textures/used.png');
+    expect(paths['tex-used']).toMatch(/^textures\/used\.[0-9a-f]{8}\.png$/);
     // Named by `scene.environment` and by no component. It is also the largest
     // file a scene usually carries, so it is the one whose absence is loudest.
-    expect(paths['tex-sky']).toBe('textures/sky.hdr');
+    expect(paths['tex-sky']).toMatch(/^textures\/sky\.[0-9a-f]{8}\.hdr$/);
     expect(paths['tex-spare']).toBeUndefined();
-    expect((await readdir(join(outputDir, 'assets', 'textures'))).sort()).toEqual([
-      'sky.hdr',
-      'used.png',
-    ]);
+    expect((await readdir(join(outputDir, 'assets', 'textures'))).sort()).toEqual(
+      [paths['tex-sky']!, paths['tex-used']!].map((path) => basename(path)).sort(),
+    );
 
     expect(build.title).toBe('Export Test');
     // Named, not probed for: a static server that answers unknown paths with
@@ -242,7 +248,7 @@ describe('web export', () => {
     // The clip travels like anything else. `collectSceneAssets` reaches it
     // through `componentAssets`, which has followed `audioSource.assetId` since
     // long before anything could play it.
-    expect(paths['clip-beep']).toBe('audio/beep.wav');
+    expect(paths['clip-beep']).toMatch(/^audio\/beep\.[0-9a-f]{8}\.wav$/);
 
     // Three, not four: the spare texture is not referenced. And three rather
     // than one is the whole point — the sky counts, and so does the sound.
@@ -284,7 +290,7 @@ describe('web export', () => {
 
     const build = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8')) as BuildManifest;
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
-    expect(build.assets?.['tex-used']).toBe('textures/used.png');
+    expect(build.assets?.['tex-used']).toMatch(/^textures\/used\./);
     expect(build.materials?.['mat-shared']).toMatchObject({ color: '#00ff00' });
     // An object rather than absent: the player tells "this build has none" from
     // "this build predates the field", and only one of those needs a fetch.
@@ -294,6 +300,43 @@ describe('web export', () => {
     for (const gone of ['assets.json', 'materials.json', 'prefabs.json']) {
       expect(files).not.toContain(gone);
     }
+  });
+
+  it('renames an asset whose bytes changed, so a re-export is not served stale', async () => {
+    /*
+     * The bug this closes was silent and only ever hit people who had already
+     * visited the page: the player bundle was hashed by Vite from the start,
+     * the project's own files were not, so a re-exported texture kept its URL
+     * and the browser went on serving the one it had.
+     *
+     * The file is rewritten *outside* the editor, which is the case that decides
+     * where the digest comes from. `AssetMeta.hash` is taken at import and
+     * refreshed only when the editor itself rewrites a material or a prefab, so
+     * a texture edited in another program keeps it for ever — reusing it here
+     * would have reproduced the very bug, for the commonest way of hitting it.
+     */
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-rehash');
+    const texture = join(projectPath, ASSETS_DIR, 'textures', 'used.png');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const before = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8'));
+
+    await writeFile(texture, 'something else entirely', 'utf8');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const after = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8'));
+
+    expect(after.assets?.['tex-used']).not.toBe(before.assets?.['tex-used']);
+    // The one that did not change keeps its name, or the hash would be naming
+    // the export rather than the file.
+    expect(after.assets?.['tex-sky']).toBe(before.assets?.['tex-sky']);
+
+    // And the folder holds one of it, not two. A hashed copy lands beside its
+    // predecessor rather than over it, so without emptying `assets/` first a
+    // folder re-exported through a morning of tweaking carries every round.
+    const shipped = await readdir(join(outputDir, 'assets', 'textures'));
+    expect(shipped).toContain(basename(after.assets!['tex-used']!));
+    expect(shipped).not.toContain(basename(before.assets!['tex-used']!));
   });
 
   it('ships what a clip was imported with, so the build sounds like the editor', async () => {
@@ -386,7 +429,8 @@ describe('web export', () => {
     // Unreal's "cook everything": a script can load an asset by name, which no
     // static walk of the scene can see.
     expect(result.assetCount).toBe(4);
-    expect((await readdir(join(outputDir, 'assets', 'textures'))).sort()).toEqual([
+    const shipped = await readdir(join(outputDir, 'assets', 'textures'));
+    expect(shipped.map((file) => file.replace(/\.[0-9a-f]{8}\./, '.')).sort()).toEqual([
       'sky.hdr',
       'spare.png',
       'used.png',
@@ -637,6 +681,18 @@ describe('models that come with other files', () => {
     expect(await readFile(join(shipped, 'maps', 'albedo.png'), 'utf8')).toBe('png');
     // A data URI is already inside the file and is not a path to copy.
     expect(result.warnings).toEqual([]);
+
+    /*
+     * The companions keep their names and the model does not: the names are
+     * written *inside* the `.gltf`, relative to it, so hashing one would break
+     * the reference that points at it. Hashing the model alone is safe because
+     * it stays in the same directory — which is the whole of what makes those
+     * relative URIs still resolve.
+     */
+    const manifest = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8'));
+    const model = manifest.assets?.['model-tri'];
+    expect(model).toMatch(/^models\/Tri\/Tri\.[0-9a-f]{8}\.gltf$/);
+    expect(await readdir(shipped)).toContain(basename(model!));
   });
 
   it('says so when a companion is named but missing', async () => {
