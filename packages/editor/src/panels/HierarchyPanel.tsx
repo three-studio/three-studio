@@ -39,7 +39,6 @@ import {
 } from '../commands/sceneCommands';
 import { hasModifier, isMac, modKey } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
-import { unpackModel } from '../commands/modelCommands';
 import { expandedScene } from '../state/expansion';
 import { buildRows, type Row } from './hierarchyRows';
 import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
@@ -231,13 +230,6 @@ export function HierarchyPanel() {
       document.entities[entityId] !== undefined &&
       hasComponent(document, entityId, 'prefabInstance');
     const prefabInfo = isPrefabHost ? instanceInfo(entityId) : null;
-    // Only on the entity that still draws a whole file: a piece of an unpacked
-    // model carries a `model` too, and there is nothing left in it to take
-    // apart.
-    const unpackable =
-      !many &&
-      capabilitiesOf(document, entityId).has('unpackModel') &&
-      findComponent(document, entityId, 'model')?.nodePath === '';
 
     // Built against `targets`, which is the clicked row when it is not in the
     // selection — the reason a command's context can be supplied rather than
@@ -306,14 +298,15 @@ export function HierarchyPanel() {
             entry('unpackPrefab'),
           ] satisfies MenuEntry[])
         : []),
-      ...(unpackable
+      // Left out rather than greyed, because it applies to almost nothing: the
+      // entry belongs to an entity that still draws a whole file. Asked of the
+      // command rather than recomputed here — this row used to carry its own
+      // copy of the three conditions.
+      ...(commandById('unpackModel').can(ctx)
         ? ([
-            {
-              // Unity's "Unpack Prefab", for a file: one entity per node, each
-              // movable, hideable and re-materialable on its own.
-              label: 'Unpack Model',
-              onSelect: () => void unpackModel(entityId),
-            },
+            // Unity's "Unpack Prefab", for a file: one entity per node, each
+            // movable, hideable and re-materialable on its own.
+            entry('unpackModel'),
             null,
           ] satisfies MenuEntry[])
         : []),

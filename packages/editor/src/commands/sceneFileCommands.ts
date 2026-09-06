@@ -1,9 +1,13 @@
+import { findScene, type SceneEntry } from '@three-studio/core';
 import { useProjectStore } from '../state/projectStore';
-import { defineCommand } from './command';
+import { defineCommand, type EditorContext } from './command';
 import {
+  chooseStartScene,
   deleteCurrentScene,
   duplicateCurrentScene,
   newScene,
+  openScene,
+  openSceneInNewWindow,
   renameCurrentSceneWithPrompt,
   saveSceneAs,
 } from './sceneFiles';
@@ -36,6 +40,30 @@ const project = () => useProjectStore.getState();
  */
 const hasScene = (): boolean => project().sceneId !== null;
 
+/**
+ * The scene this context names, when it names one that exists.
+ *
+ * `undefined` rather than a throw for an id naming nothing: the Scene menu is
+ * built from a list the main process last sent, and a file can go from under it
+ * — deleted in the Finder, or by another window.
+ */
+function target(ctx: EditorContext): SceneEntry | undefined {
+  return ctx.sceneId === undefined ? undefined : findScene(project().scenes, ctx.sceneId);
+}
+
+/**
+ * Whether a named scene can be opened at all.
+ *
+ * `shadowedBy` is the case worth stating: two files under `scenes/` can carry
+ * one `SceneDoc.id` — duplicating one in the Finder is enough — and only the
+ * first by path order answers to it. Opening the second would open the first,
+ * so it is offered and refused rather than dropped from the list, where it would
+ * be far harder to find.
+ */
+function openable(ctx: EditorContext): boolean {
+  return target(ctx)?.shadowedBy === null;
+}
+
 export const SCENE_FILE_COMMANDS = {
   newScene: defineCommand({
     label: () => 'New Scene…',
@@ -62,6 +90,39 @@ export const SCENE_FILE_COMMANDS = {
     label: () => 'Rename Scene…',
     can: hasScene,
     run: () => renameCurrentSceneWithPrompt(),
+  }),
+
+  /**
+   * Reloads this window on another scene.
+   *
+   * The current scene is *not* refused: it is the checked row of what reads as a
+   * radio list, and greying the row that says where you are would be strange.
+   * `openScene` returns early for it — see there.
+   */
+  openScene: defineCommand({
+    label: (ctx) => target(ctx)?.name ?? 'Open Scene',
+    can: openable,
+    run: (ctx) => (ctx.sceneId === undefined ? undefined : openScene(ctx.sceneId)),
+  }),
+
+  /** The same scene in a second window; focuses the one that already has it. */
+  openSceneInNewWindow: defineCommand({
+    label: (ctx) => target(ctx)?.name ?? 'Open in New Window',
+    // Every window holds one scene, so the scene this window is on has no second
+    // window to be opened in. The menu used to say this in a `.filter`, in its
+    // own words, beside a `disabled` that said the `shadowedBy` half.
+    can: (ctx) => openable(ctx) && ctx.sceneId !== project().sceneId,
+    run: (ctx) => (ctx.sceneId === undefined ? undefined : openSceneInNewWindow(ctx.sceneId)),
+  }),
+
+  /** Which scene the project — and a build — starts on. */
+  setStartScene: defineCommand({
+    label: (ctx) => {
+      const scene = target(ctx);
+      return scene ? `Start On "${scene.name}"` : 'Set Start Scene';
+    },
+    can: (ctx) => target(ctx) !== undefined,
+    run: (ctx) => (ctx.sceneId === undefined ? undefined : chooseStartScene(ctx.sceneId)),
   }),
 
   deleteScene: defineCommand({

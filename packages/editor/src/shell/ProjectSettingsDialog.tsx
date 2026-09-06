@@ -1,6 +1,6 @@
 import type { ProjectSettings } from '@three-studio/core';
 import { useState } from 'react';
-import { chooseStartScene } from '../commands/sceneFiles';
+import { commandById, contextForScene } from '../commands/registry';
 import { notify } from '../state/toastStore';
 import { useProjectStore } from '../state/projectStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
@@ -126,7 +126,7 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
                     disabled={scene.shadowedBy !== null}
                     // Written straight through rather than into the draft: it
                     // is a property of the project, not of its settings.
-                    onChange={() => void chooseStartScene(scene.id)}
+                    onChange={() => commandById('setStartScene').run(contextForScene(scene.id))}
                   />
                   <span className="flex-1">{scene.name}</span>
                   {/* Keyed and labelled by path, because two files can now be

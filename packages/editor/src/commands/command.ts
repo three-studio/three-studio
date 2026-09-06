@@ -34,6 +34,15 @@ export interface EditorContext {
    * Absent for every gesture that acts on the selection, which is most of them.
    */
   readonly assetId?: string;
+  /**
+   * The scene a gesture was aimed at — the Scene menu lists one entry per scene,
+   * and each is the same gesture pointed somewhere else.
+   *
+   * An id for the same reason `assetId` is one, and because the project says so
+   * everywhere else: a scene is referred to by the id inside its own document,
+   * never by its path or its name.
+   */
+  readonly sceneId?: string;
 }
 
 export function currentContext(): EditorContext {
@@ -48,6 +57,11 @@ export function contextFor(ids: readonly string[]): EditorContext {
 /** The context for a gesture aimed at one asset — a tile, a row, an Inspector slot. */
 export function contextForAsset(assetId: string): EditorContext {
   return { ...currentContext(), assetId };
+}
+
+/** The context for a gesture aimed at one scene — a row of the Scene menu. */
+export function contextForScene(sceneId: string): EditorContext {
+  return { ...currentContext(), sceneId };
 }
 
 export interface Command {

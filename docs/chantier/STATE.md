@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062d — la frontière entre un geste et une mutation paramétrée
-**Tâche courante** : **T-062e** — les scènes ciblées, les modèles, l'export
-**Faites** : T-001 → T-061, **T-062a → T-062d**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-062e — les scènes ciblées, les modèles et l'export sont des commandes
+**Tâche courante** : **T-063** — `rename` cesse d'être un demi-geste
+**Faites** : T-001 → T-061, **T-062a → T-062e**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,35 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062e — `EditorContext` gagne `sceneId`, sa deuxième cible.** Trois appelants d'un coup — le menu
+Scène, le sous-menu *Open in New Window*, la radio des réglages de projet. Le champ `assetId` de
+T-062b sert de patron ; les deux sont des ids, jamais des chemins ni des noms.
+
+**Deux formulations de « cette scène est-elle ouvrable » n'en font plus qu'une.** `openScene` portait
+`disabled: scene.shadowedBy !== null` dans le menu ; `openSceneInNewWindow` disait la même chose plus
+« pas la scène courante » dans un `.filter`, avec ses propres mots. Le sous-menu filtre maintenant sur
+`can()`. **La scène courante n'est délibérément pas refusée par `openScene`** : c'est la ligne cochée
+de ce qui se lit comme une liste radio, et griser la ligne qui dit où l'on est serait étrange —
+`openScene` sort tout seul pour elle.
+
+**⚠️ `runExport(profileId)` contredisait l'intention de son propre appelant, et le paramètre est
+parti.** `PackageDialog` écrit `active: activeId` sur disque **avant** d'exporter, et son commentaire
+dit pourquoi : « a build must be reproducible from what is on disk, not from what happened to be typed
+into a dialog that is about to close ». Puis il rejouait la valeur du dialogue par-dessus le fichier
+qu'il venait d'écrire pour cette raison. Le main relit le projet et retombe sur
+`settings.build.active`. **Le paramètre du canal IPC `build:export` n'a plus d'appelant** — laissé en
+place, il touche quatre fichiers et la table de canaux vérifiée de T-047 ; inscrit dans `RESTES.md`.
+
+**`unpackable` disparaît de `HierarchyPanel`.** Trois conditions recopiées dans le panneau, dont
+`nodePath === ''` — un morceau de modèle déjà dépaqueté porte un `model` lui aussi et n'a plus rien
+dedans à défaire. C'est le `can()` de la commande, et le menu filtre dessus. **Laissé absent plutôt
+que grisé** : l'entrée ne s'applique presque à rien, et une ligne grisée sur chaque entité sans
+modèle serait pire.
+
+**Deux familles d'une seule commande** (`MODEL_COMMANDS`, `EXPORT_COMMANDS`). Un module chacune et non
+une ligne dans une table voisine : c'est le module qui porte la propriété — une famille non *spread*
+dans `registry.ts` disparaît de `CommandId` et ses appelants cessent de compiler.
 
 **T-062d — ⚠️ la fiche annonçait cinq gestes ; un seul en était un.** Elle avait été écrite en listant
 les *imports*, sans lire les signatures. Vérifié : `addEntity(template)` prend le template construit
@@ -2303,7 +2332,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062d faits ; T-062 scindé en 6 tranches |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e faits ; reste T-062f, après T-066 |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

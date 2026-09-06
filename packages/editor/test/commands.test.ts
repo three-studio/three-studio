@@ -128,6 +128,8 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     const { COMMANDS } = await import('../src/commands/registry');
     const { ASSET_COMMANDS } = await import('../src/commands/assetCommands');
     const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
+    const { EXPORT_COMMANDS } = await import('../src/commands/exportCommands');
+    const { MODEL_COMMANDS } = await import('../src/commands/modelCommands');
     const { PREFAB_COMMANDS } = await import('../src/commands/prefabCommands');
     const { SCENE_FILE_COMMANDS } = await import('../src/commands/sceneFileCommands');
 
@@ -142,7 +144,14 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // arrived whole. `core`'s component registry checks the same thing against
     // `COMPONENT_TYPES`; commands have no such canonical union, precisely
     // because the table *is* the list.
-    const families = [EDIT_COMMANDS, SCENE_FILE_COMMANDS, ASSET_COMMANDS, PREFAB_COMMANDS];
+    const families = [
+      EDIT_COMMANDS,
+      SCENE_FILE_COMMANDS,
+      ASSET_COMMANDS,
+      PREFAB_COMMANDS,
+      MODEL_COMMANDS,
+      EXPORT_COMMANDS,
+    ];
     const declared = families.reduce((total, family) => total + Object.keys(family).length, 0);
     expect(Object.keys(COMMANDS)).toHaveLength(declared);
 
@@ -315,5 +324,40 @@ describe('hiding is a target and nothing else, which is what makes it a command'
     // Hiding a whole selection would need one `mutate` over all of it; looping
     // would write an undo entry per object. No caller asks for it yet.
     expect(commandById('toggleVisibility').can(contextFor([first, second]))).toBe(false);
+  });
+});
+
+describe('a gesture aimed at a scene', () => {
+  it('refuses one that is shadowed, and one that names nothing', async () => {
+    const { commandById, contextForScene } = await import('../src/commands/registry');
+    const { useProjectStore } = await import('../src/state/projectStore');
+
+    useProjectStore.setState({
+      sceneId: 'a',
+      scenes: [
+        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+        // Two files under `scenes/` carrying one `SceneDoc.id` — duplicating one
+        // in the Finder is enough. Only the first by path order answers to it.
+        { id: 'b', name: 'Boss', path: 'scenes/Boss copy.scene.json', shadowedBy: 'scenes/Boss.scene.json' },
+        { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+      ],
+    } as never);
+
+    expect(commandById('openScene').can(contextForScene('c'))).toBe(true);
+    expect(commandById('openScene').can(contextForScene('b')), 'shadowed').toBe(false);
+    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('openScene').can(), 'no target').toBe(false);
+    // The label is the scene's name, which is what the menu row shows.
+    expect(commandById('openScene').label(contextForScene('c'))).toBe('Level2');
+
+    // A second window on the scene this window already holds is not a second
+    // window. The menu said this in a `.filter` and the shadow rule in a
+    // `disabled`, in two different sets of words.
+    expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
+    expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
+    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(false);
+
+    expect(commandById('setStartScene').can(contextForScene('b'))).toBe(true);
+    expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
   });
 });

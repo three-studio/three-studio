@@ -7,7 +7,7 @@ import {
 } from '@three-studio/core';
 import { Copy, FolderOpen, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { runExport } from '../commands/exportCommands';
+import { commandById } from '../commands/registry';
 import { useProjectStore } from '../state/projectStore';
 import { notify } from '../state/toastStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
@@ -91,7 +91,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     void persist({ ...draft, active: activeId })
       .then(() => {
         onClose();
-        runExport(activeId);
+        commandById('runExport').run();
       })
       .catch((cause: unknown) => {
         notify({

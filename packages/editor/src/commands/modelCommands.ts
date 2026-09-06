@@ -7,6 +7,7 @@ import {
 } from '@three-studio/core';
 import { askToConfirm } from '../state/dialogStore';
 import { useDocumentStore } from '../state/documentStore';
+import { defineCommand } from './command';
 import { notify } from '../state/toastStore';
 import { peekViewport } from '../viewport/viewportHost';
 
@@ -129,3 +130,31 @@ export async function unpackModel(entityId: string): Promise<void> {
     title: `Unpacked into ${unpacked.length} ${unpacked.length === 1 ? 'entity' : 'entities'}`,
   });
 }
+
+/*
+ * One gesture, one family. A module rather than a line in someone else's table
+ * for the reason the others are modules: a family that is not spread into
+ * `registry.ts` disappears from `CommandId`, and the callers naming its ids stop
+ * compiling — which only works if it is a module of its own.
+ */
+export const MODEL_COMMANDS = {
+  unpackModel: defineCommand({
+    label: () => 'Unpack Model',
+    /**
+     * Three conditions the hierarchy was computing for itself, under the name
+     * `unpackable`. The last one is the one nobody would guess: a piece of an
+     * already-unpacked model carries a `model` component too, and there is
+     * nothing left inside it to take apart — `nodePath` is what tells them apart.
+     */
+    can: (ctx) => {
+      const entityId = ctx.selection.isSingle ? ctx.selection.primary : null;
+      if (entityId === null || !ctx.selection.can('unpackModel')) return false;
+      const scene = useDocumentStore.getState().scene;
+      return findComponent(scene, entityId, 'model')?.nodePath === '';
+    },
+    run: async (ctx) => {
+      const entityId = ctx.selection.primary;
+      if (entityId !== null) await unpackModel(entityId);
+    },
+  }),
+};

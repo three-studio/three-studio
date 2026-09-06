@@ -1,13 +1,18 @@
 import { useMemo, useState } from 'react';
-import { commandById, type CommandId } from '../commands/registry';
-import { openScene, openSceneInNewWindow, sceneList } from '../commands/sceneFiles';
+import {
+  commandById,
+  contextForScene,
+  type CommandId,
+  type EditorContext,
+} from '../commands/registry';
+import { sceneList } from '../commands/sceneFiles';
 import { isMac, modKey, shiftKey } from '../platform';
 import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
-import { MenuTrigger, type MenuEntry } from '../ui/Menu';
+import { MenuTrigger, type MenuEntry, type MenuItem } from '../ui/Menu';
 import { buildAddMenu } from './addMenu';
 import { PackageDialog } from './PackageDialog';
 import { openPanelIds, togglePanel } from './dockApi';
@@ -61,9 +66,9 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
    * would re-render the bar once per frame of a gizmo drag, which phase 7
    * removed.
    */
-  const entryFor = (id: CommandId, shortcut?: string): MenuEntry => {
+  const entryFor = (id: CommandId, shortcut?: string, target?: EditorContext): MenuItem => {
     const command = commandById(id);
-    const ctx = { selection: current };
+    const ctx = target ?? { selection: current };
     return {
       label: command.label(ctx),
       shortcut,
@@ -79,13 +84,12 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   const sceneId = useProjectStore((s) => s.sceneId);
   const scenes = useMemo(() => sceneList(), [storeScenes]);
   const sceneMenu: readonly MenuEntry[] = [
+    // One gesture pointed at each scene in turn. The `shadowedBy` rule — two
+    // files claiming one id, where opening this one would open the other — is
+    // the command's now, and the submenu below reads the same one.
     ...scenes.map((scene) => ({
-      label: scene.name,
+      ...entryFor('openScene', undefined, contextForScene(scene.id)),
       checked: scene.id === sceneId,
-      // Two files, one id: opening this one would open the other. Shown anyway,
-      // because a file that has vanished from the menu is the harder problem.
-      disabled: scene.shadowedBy !== null,
-      onSelect: () => void openScene(scene.id),
     })),
     null,
     // Four entries that used to write their own guards here, or none at all:
@@ -105,12 +109,14 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
           null,
           {
             label: 'Open in New Window',
+            // Filtered on the command rather than on a `.filter` writing the
+            // same two conditions in its own words — which is where they were,
+            // beside a `disabled` that said only half of them.
             submenu: scenes
-              .filter((scene) => scene.id !== sceneId && scene.shadowedBy === null)
-              .map((scene) => ({
-                label: scene.name,
-                onSelect: () => void openSceneInNewWindow(scene.id),
-              })),
+              .filter((scene) =>
+                commandById('openSceneInNewWindow').can(contextForScene(scene.id)),
+              )
+              .map((scene) => entryFor('openSceneInNewWindow', undefined, contextForScene(scene.id))),
           },
         ] satisfies readonly MenuEntry[])
       : []),
