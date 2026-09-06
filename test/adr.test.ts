@@ -70,6 +70,41 @@ function citations(): Map<string, string[]> {
   return found;
 }
 
+/**
+ * The bugs the comments name, from the register that answers for them.
+ *
+ * One file rather than one per bug, because a bug is history: it is read when a
+ * citation is met, never navigated to on its own. The decisions in `docs/adr/`
+ * are the opposite, and are a file each.
+ */
+const registeredBugs = new Set(
+  [...readFileSync(join(repoRoot, 'docs/bugs.md'), 'utf8').matchAll(/^## (B\d+)\b/gm)].map(
+    (match) => match[1]!,
+  ),
+);
+
+/**
+ * Every `Bn` a comment names, with the file it was found in.
+ *
+ * A bare pattern, and it is right for this codebase today — nothing else here
+ * spells a capital B beside one or two digits. Should something start to, the
+ * fix is to name the false positive rather than to loosen the check: the whole
+ * value is that a citation cannot quietly point at nothing.
+ */
+function bugCitations(): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  for (const root of SOURCE_ROOTS) {
+    for (const file of sourceFiles(join(repoRoot, root))) {
+      for (const match of readFileSync(file, 'utf8').matchAll(/\bB\d{1,2}\b/g)) {
+        const where = found.get(match[0]) ?? [];
+        where.push(relative(repoRoot, file));
+        found.set(match[0], where);
+      }
+    }
+  }
+  return found;
+}
+
 const documents = new Set(
   readdirSync(adrDir)
     .filter((name) => name.endsWith('.md') && name !== 'README.md')
@@ -106,5 +141,26 @@ describe('the decisions the code cites', () => {
   it('numbers no document, since a gap reads as a lost decision', () => {
     const numbers = [...documents].map(Number).sort((a, b) => a - b);
     expect(numbers).toEqual(numbers.map((_, index) => index + 1));
+  });
+});
+
+describe('the bugs the comments name', () => {
+  it('every citation resolves to the register', () => {
+    // "which is B6" with no B6 anywhere is a lookup with no destination, and
+    // the comment that carries it reads as if the reader is expected to know.
+    const missing = [...bugCitations().entries()]
+      .filter(([bug]) => !registeredBugs.has(bug))
+      .map(([bug, where]) => `${bug} (${where[0]})`);
+
+    expect(missing).toEqual([]);
+  });
+
+  it('every entry is cited by the code it shaped', () => {
+    const cited = new Set(bugCitations().keys());
+    const orphans = [...registeredBugs].filter((bug) => !cited.has(bug));
+
+    // A bug nobody names any more is one whose guard has been removed or
+    // rewritten past recognition — which is the moment to find out, not later.
+    expect(orphans).toEqual([]);
   });
 });

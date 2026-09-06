@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-067 — les décisions que le code cite existent
-**Tâche courante** : **T-068** — registre des bugs cités (`B1`…`B15`)
-**Faites** : T-001 → T-067. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
+**Dernier commit** : T-068 — les bugs que les commentaires nomment sont enregistrés
+**Tâche courante** : **T-069** — ADR de l'extensibilité tierce
+**Faites** : T-001 → T-068. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
 terminés.** Lot 1 : les neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne
 d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,24 @@ d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 �
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-068 — la règle « seul → remplacer, cité plusieurs fois → registre » ne tranche qu'un cas.** Compté :
+B1 seize citations, B10 dix, B2/B5/B6/B9 sept, B3/B8/B11 cinq, B15 trois, B4 trois, B7 deux — et **B12
+une seule**. Douze entrent au registre ; `B12` sort du code et sa phrase reste, parce que son unique
+commentaire disait déjà tout ce qu'une entrée en aurait dit.
+
+**Un fichier unique, `docs/bugs.md`, et non un par bug comme les ADR.** Un bug se lit **quand on
+rencontre une citation**, jamais en y naviguant pour lui-même ; une décision est l'inverse, elle
+contraint ce qu'on écrit ensuite. La forme suit l'usage.
+
+**`B13` et `B14` ne sont cités nulle part** et rien dans le code ne dit ce qu'ils étaient. Le registre
+le note explicitement, pour que le trou se lise comme connu plutôt que comme un oubli. Les commentaires
+parlent des « douze bugs » ; `B15` en est visiblement un autre, et il est **le seul encore ouvert** —
+le registre porte ses mesures.
+
+**Le test des ADR couvre maintenant les deux registres**, et dans les deux sens. Le sens « une entrée
+que rien ne cite » vaut autant ici que pour les ADR, mais il dit autre chose : un bug que plus personne
+ne nomme est un bug dont la garde a disparu ou a été réécrite au point d'être méconnaissable.
 
 **T-067 — ⚠️ il y avait *trois* collisions de numéro, pas une.** La fiche en annonçait une (`ADR-4` :
 contexte audio / invariants de l'undo). Trouvées en plus :
@@ -2501,6 +2519,6 @@ choisi par bénéfice visible :
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
 | 8 | T-062 → T-066 | La couche de commandes | **5/5 ✅** (T-062 scindé en 6 tranches) |
-| 11 | T-067 → T-070 | La mémoire du projet | 1/4 |
+| 11 | T-067 → T-070 | La mémoire du projet | 2/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

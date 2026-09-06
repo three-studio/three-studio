@@ -671,9 +671,10 @@ export class EditorViewport {
     // A scene with no lights of its own would render black, which reads as a
     // bug rather than as "you have not added a light yet".
     //
-    // B12: asked of the *expanded* scene. A level whose lights all come from
-    // prefab instances has none in the document, so the fallback pair stayed on
-    // over the real ones — every such scene lit twice.
+    // Asked of the *expanded* scene, and that is the whole of it: a level whose
+    // lights all come from prefab instances has none in the document, so the
+    // fallback pair stayed on over the real ones and every such scene was lit
+    // twice.
     // A table lookup: it used to walk every entity and every component of each,
     // once per sync.
     const hasAuthoredLight = Object.keys(scene.components.light).length > 0;
