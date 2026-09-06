@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062b — les gestes d'asset sont des commandes
-**Tâche courante** : **T-062c** — les prefabs entrent dans le registre
-**Faites** : T-001 → T-061, **T-062a, T-062b**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-062c — les gestes de prefab sont des commandes
+**Tâche courante** : **T-062d** — les gestes de scène entrent dans le registre
+**Faites** : T-001 → T-061, **T-062a → T-062c**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,47 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062c — l'exclusion écrite dans `registry.ts` était fausse, et la vérifier était la tâche.** Elle
+disait que les entrées prefab étaient « decided in exactly one place ». Quatre gestes sont décidés
+**deux fois** — menu contextuel de la hiérarchie *et* schéma d'Inspector du composant
+`prefabInstance` — et les deux ne s'accordaient pas :
+
+| | Hiérarchie | Inspector |
+|---|---|---|
+| Apply Overrides | grisé sans override | **bouton actif, clic sans effet** |
+| Revert Overrides | grisé sans override | **bouton actif, clic sans effet** |
+| Show in Project | grisé si le prefab manque | **actif, clic avalé** |
+| Unpack · Select All Instances | grisé en multi-sélection | **aucun verdict** |
+
+Contrairement à T-062b, cette tranche **corrige de vrais bugs**. La leçon vaut pour les suivantes :
+l'exclusion motivée d'hier n'est pas une réponse d'aujourd'hui — la vérifier coûte un grep.
+
+**⚠️ Il y avait deux façons de révéler un asset, et chacune faisait la moitié du travail.**
+`revealAsset` vidait dossier et filtres et amenait le panneau devant, **sans jamais poser
+`revealed`** — donc ni surlignage ni défilement vers l'asset. `assetStore.reveal` posait `revealed` et
+**n'amenait pas le panneau devant** — depuis un onglet Project caché derrière un autre, le bouton ne
+faisait rien de visible. Le geste appelle maintenant le store et n'ajoute que la moitié qui n'est pas
+la sienne (`showPanel`), ce qui **supprime trois lignes qui en étaient une copie**. Personne ne
+cherchait ce bug : il est tombé de la question « laquelle des deux la commande appelle-t-elle ? ».
+
+**Le libellé porte le compte d'instances**, et c'est un gain gratuit du registre : la hiérarchie
+affichait `Select All Instances (3)`, l'Inspector un `Select All Instances` nu. Un `label(ctx)` et les
+deux l'ont.
+
+**⚠️ Un bouton d'action de l'Inspector ne peut pas être *dessiné* grisé aujourd'hui.** Tweakpane le
+construit une fois (`buildInspector:269`) et le pane n'est reconstruit que sur un changement de
+**structure** (`inspectorSignature`). Tenir l'état activé à jour demanderait d'abonner l'Inspector à
+chaque mutation — ce que T-057 a mesuré et refusé. Donc les boutons **refusent** mais **ont l'air
+actifs** : la divergence de comportement est morte, celle d'apparence reste. Inscrit dans `RESTES.md`.
+
+**`instantiatePrefab` n'entre pas dans le registre** : appelé avec le point où le drop a atterri, donc
+mutation paramétrée. Même frontière que T-062d annonce pour `sceneCommands`.
+
+**Un test de l'éditeur fabrique enfin une instance de prefab** — il n'y en avait aucun.
+`createPrefabInstance` + `putComponent` + un `PrefabDoc` dans `assetStore.prefabs`, dont les
+`components` doivent être des `emptyComponentTables()` complètes : un `{}` fait tomber `chainOf` sur
+`Object.values(prefab.components.prefabInstance)`.
 
 **T-062b — le bord de la règle est trouvé, et il est structurel.** `createFolder`, `renameFolder` et
 `deleteFolder` **restent des fonctions**. `Command.run` revérifie `can()` et sort quand il refuse :
@@ -2226,7 +2267,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a, T-062b faits ; T-062 scindé en 6 tranches |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062c faits ; T-062 scindé en 6 tranches |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

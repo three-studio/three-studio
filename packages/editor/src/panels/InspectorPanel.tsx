@@ -1,9 +1,8 @@
 import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { commandById, contextForAsset } from '../commands/registry';
+import { commandById, contextFor, contextForAsset } from '../commands/registry';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
-import { revertEntityOverride } from '../commands/prefabCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
 import { COMPONENT_PANES } from '../components/panes';
 import type { AssetFieldActions } from '../inspector/assetField';
@@ -243,7 +242,7 @@ function PrefabBanner({ id, depth }: { id: string; depth: number }) {
         <button
           type="button"
           title="Revert to the prefab"
-          onClick={() => revertEntityOverride(id)}
+          onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim hover:bg-surface-3 hover:text-ink"
         >
           <RotateCcw size={11} />

@@ -1,4 +1,10 @@
-import { createEmptyScene, createMeshEntity } from '@three-studio/core';
+import {
+  createEmptyScene,
+  createMeshEntity,
+  createPrefabInstance,
+  emptyComponentTables,
+  putComponent,
+} from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { addEntity, groupSelection } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -122,6 +128,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     const { COMMANDS } = await import('../src/commands/registry');
     const { ASSET_COMMANDS } = await import('../src/commands/assetCommands');
     const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
+    const { PREFAB_COMMANDS } = await import('../src/commands/prefabCommands');
     const { SCENE_FILE_COMMANDS } = await import('../src/commands/sceneFileCommands');
 
     // The one failure mode a composed table has: two families using one id, in
@@ -135,7 +142,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // arrived whole. `core`'s component registry checks the same thing against
     // `COMPONENT_TYPES`; commands have no such canonical union, precisely
     // because the table *is* the list.
-    const families = [EDIT_COMMANDS, SCENE_FILE_COMMANDS, ASSET_COMMANDS];
+    const families = [EDIT_COMMANDS, SCENE_FILE_COMMANDS, ASSET_COMMANDS, PREFAB_COMMANDS];
     const declared = families.reduce((total, family) => total + Object.keys(family).length, 0);
     expect(Object.keys(COMMANDS)).toHaveLength(declared);
 
@@ -202,5 +209,77 @@ describe('a gesture aimed at an asset', () => {
     // take back — which is what a command palette shows.
     expect(commandById('deleteAsset').label(ctx)).toBe('Delete "brick"');
     expect(commandById('revealAsset').label(ctx)).toContain('brick');
+  });
+});
+
+describe('the two prefab menus ask one question', () => {
+  /** A cube that is an instance of prefab `p1`, selected, with no overrides yet. */
+  async function instanceOfAPrefab(): Promise<string> {
+    const { useAssetStore } = await import('../src/state/assetStore');
+    const id = addEntity(createMeshEntity('box'));
+    doc().mutate('Instance', (draft) => {
+      putComponent(draft, id, createPrefabInstance('p1'));
+    });
+    useAssetStore.setState({
+      prefabs: {
+        p1: {
+          version: 1,
+          id: 'p1',
+          name: 'Crate',
+          entities: {},
+          components: emptyComponentTables(),
+          root: '',
+        },
+      },
+    } as never);
+    useEditorStore.getState().setSelection([id]);
+    return id;
+  }
+
+  it('refuses to apply or revert overrides on an instance that has none', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const id = await instanceOfAPrefab();
+
+    // The hierarchy greyed both of these; the Inspector drew them live and
+    // swallowed the click. One `can()` now, and it is the hierarchy's.
+    expect(commandById('applyPrefabOverrides').can()).toBe(false);
+    expect(commandById('revertPrefabOverrides').can()).toBe(false);
+
+    // The gestures that only need an instance are offered on the same row.
+    expect(commandById('unpackPrefab').can()).toBe(true);
+    expect(commandById('selectPrefabInstances').can()).toBe(true);
+    // And the label carries the count, which the Inspector's button never had.
+    expect(commandById('selectPrefabInstances').label()).toContain('(1)');
+    expect(id).not.toBe('');
+  });
+
+  it('offers them once the instance carries an override', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const id = await instanceOfAPrefab();
+    doc().mutate('Override', (draft) => {
+      const component = Object.values(draft.components.prefabInstance[id] ?? {})[0];
+      if (component) component.overrides = { local: { name: 'Renamed' } };
+    });
+
+    expect(commandById('applyPrefabOverrides').can()).toBe(true);
+    expect(commandById('revertPrefabOverrides').can()).toBe(true);
+  });
+
+  it('offers nothing on an entity that is not an instance', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    useEditorStore.getState().setSelection([addEntity(createMeshEntity('box'))]);
+
+    for (const id of [
+      'applyPrefabOverrides',
+      'revertPrefabOverrides',
+      'unpackPrefab',
+      'selectPrefabInstances',
+      'createPrefabVariant',
+      'revertEntityOverride',
+    ] as const) {
+      expect(commandById(id).can(), id).toBe(false);
+    }
+    // Making a prefab out of one, on the other hand, is exactly what it is for.
+    expect(commandById('createPrefab').can()).toBe(true);
   });
 });

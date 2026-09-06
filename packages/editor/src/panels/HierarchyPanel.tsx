@@ -32,24 +32,14 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
-import { commandById, contextFor, type CommandId } from '../commands/registry';
+import { commandById, contextFor, contextForAsset, type CommandId } from '../commands/registry';
 import {
   renameEntity,
   reparentSelection,
   setEntityVisible,
 } from '../commands/sceneCommands';
 import { hasModifier, isMac, modKey } from '../platform';
-import {
-  applyInstanceOverrides,
-  createPrefabFromEntity,
-  createPrefabVariant,
-  instanceInfo,
-  overridesOf,
-  selectPrefabInstances,
-  revertEntityOverride,
-  revertInstanceOverrides,
-  unpackPrefabInstance,
-} from '../commands/prefabCommands';
+import { instanceInfo } from '../commands/prefabCommands';
 import { unpackModel } from '../commands/modelCommands';
 import { expandedScene } from '../state/expansion';
 import { buildRows, type Row } from './hierarchyRows';
@@ -250,26 +240,6 @@ export function HierarchyPanel() {
       capabilitiesOf(document, entityId).has('unpackModel') &&
       findComponent(document, entityId, 'model')?.nodePath === '';
 
-    // A produced entity belongs to a prefab, not to the scene. Renaming it is an
-    // override and works; adding or removing one is a change to the asset, and
-    // an item that silently does nothing is worse than one that is greyed out.
-    if (instance) {
-      const owner = instanceInfo(instance.owner);
-      return [
-        { label: 'Rename', onSelect: () => setRenaming(entityId) },
-        { label: 'Revert to Prefab', onSelect: () => revertEntityOverride(entityId) },
-        null,
-        { label: 'Select Prefab Instance', onSelect: () => setSelection([instance.owner]) },
-        {
-          label: 'Show Prefab in Project',
-          disabled: owner === null || owner.missing,
-          onSelect: () => {
-            if (owner) useAssetStore.getState().reveal(owner.assetId);
-          },
-        },
-      ];
-    }
-
     // Built against `targets`, which is the clicked row when it is not in the
     // selection — the reason a command's context can be supplied rather than
     // only read. Labels, verdicts and bodies all come from the registry.
@@ -283,6 +253,28 @@ export function HierarchyPanel() {
         onSelect: () => command.run(ctx),
       };
     };
+
+    // A produced entity belongs to a prefab, not to the scene. Renaming it is an
+    // override and works; adding or removing one is a change to the asset, and
+    // an item that silently does nothing is worse than one that is greyed out.
+    if (instance) {
+      const owner = instanceInfo(instance.owner);
+      return [
+        { label: 'Rename', onSelect: () => setRenaming(entityId) },
+        entry('revertEntityOverride'),
+        null,
+        { label: 'Select Prefab Instance', onSelect: () => setSelection([instance.owner]) },
+        // The owner's asset, not this row's: the context here names the produced
+        // entity, and what is being revealed is the prefab it came out of.
+        {
+          label: 'Show Prefab in Project',
+          disabled: owner === null || owner.missing,
+          onSelect: () => {
+            if (owner) commandById('revealAsset').run(contextForAsset(owner.assetId));
+          },
+        },
+      ];
+    }
 
     return [
       // No shortcut shown: renaming is bound to double-click, not a key.
@@ -299,36 +291,20 @@ export function HierarchyPanel() {
       null,
       ...(isPrefabHost
         ? ([
-            {
-              // The count is the question anyone asks before editing a prefab:
-              // what exactly am I about to change.
-              label: `Select All Instances${prefabInfo ? ` (${prefabInfo.siblings.length})` : ''}`,
-              disabled: many,
-              onSelect: () => selectPrefabInstances(entityId),
-            },
+            // The count in the label is the command's now, so the Inspector's
+            // button carries it too.
+            entry('selectPrefabInstances'),
             {
               label: 'Show Prefab in Project',
               disabled: many || prefabInfo === null || prefabInfo.missing,
               onSelect: () => {
-                if (prefabInfo) useAssetStore.getState().reveal(prefabInfo.assetId);
+                if (prefabInfo) commandById('revealAsset').run(contextForAsset(prefabInfo.assetId));
               },
             },
             null,
-            {
-              label: 'Apply Overrides to Prefab',
-              disabled: many || Object.keys(overridesOf(entityId)).length === 0,
-              onSelect: () => void applyInstanceOverrides(entityId),
-            },
-            {
-              label: 'Revert All Overrides',
-              disabled: many || Object.keys(overridesOf(entityId)).length === 0,
-              onSelect: () => revertInstanceOverrides(entityId),
-            },
-            {
-              label: 'Unpack Prefab',
-              disabled: many,
-              onSelect: () => unpackPrefabInstance(entityId),
-            },
+            entry('applyPrefabOverrides'),
+            entry('revertPrefabOverrides'),
+            entry('unpackPrefab'),
           ] satisfies MenuEntry[])
         : []),
       ...(unpackable
@@ -342,13 +318,7 @@ export function HierarchyPanel() {
             null,
           ] satisfies MenuEntry[])
         : []),
-      {
-        label: 'Create Prefab…',
-        // One entity and its children. A prefab of several unrelated roots
-        // would need a wrapper nobody asked for.
-        disabled: many,
-        onSelect: () => void createPrefabFromEntity(entityId),
-      },
+      entry('createPrefab'),
     ];
   };
 

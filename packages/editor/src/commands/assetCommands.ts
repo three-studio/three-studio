@@ -23,17 +23,17 @@ import { notify } from '../state/toastStore';
  * public as well would be the second door the registry exists to close — a
  * caller that reaches past `can()` is exactly the divergence that started all
  * this.
+ *
+ * **There were two ways to reveal an asset and each did half the job.** This one
+ * cleared the folder and the filters and brought the panel forward, but never
+ * set `revealed`, so the asset was never highlighted or scrolled to. The prefab
+ * buttons called `assetStore.reveal`, which sets `revealed` and does *not* bring
+ * the panel forward — from a Project tab sitting behind another, that button did
+ * nothing visible at all. The store keeps the half that is its own and this adds
+ * the half that is not, which also deletes three lines that were a copy of it.
  */
 function revealAsset(assetId: string): void {
-  const store = useAssetStore.getState();
-  const entry = store.byId(assetId);
-  if (!entry) return;
-
-  store.setFolder(entry.folder);
-  // A leftover search or kind filter would hide the asset we just navigated to,
-  // which reads as the button having done nothing.
-  store.setQuery('');
-  store.setKindFilter('all');
+  useAssetStore.getState().reveal(assetId);
   showPanel('project');
 }
 
