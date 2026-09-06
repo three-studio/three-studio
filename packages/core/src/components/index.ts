@@ -5,6 +5,13 @@
  * registers nothing — the type then goes missing with no error at all. This file
  * is the single place that has to be complete, and `registry.test.ts` counts what
  * arrives against `COMPONENT_TYPES`.
+ *
+ * **That check starts from the list and looks for the code.** The throw below and
+ * that test both do, and neither can see the other direction: a folder on disk
+ * that nobody listed registers nothing, throws nothing, and fails nothing — the
+ * type simply does not exist, and the author who wrote nine files finds out by
+ * noticing their component is missing from a menu. `test/componentRegistration.test.ts`
+ * starts from the folders instead, and is the only thing that catches it.
  */
 import { COMPONENT_TYPES } from '../scene/components';
 import { createColliderFor } from './collider/defaults';
