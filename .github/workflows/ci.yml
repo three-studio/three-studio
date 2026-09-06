@@ -57,6 +57,16 @@ jobs:
 
       - run: npm ci
 
+      # The Electron binary is *not* part of `npm ci`. The `electron` package
+      # declares no `postinstall` at this version, so nothing writes
+      # `node_modules/electron/path.txt`, and electron-vite reads that file to
+      # find what to launch — missing, it answers `Error: Electron uninstall`
+      # and the run is over before a window exists. A developer's machine hides
+      # this: the file is left behind by an earlier install and never goes away.
+      # `install.js` exits immediately when the binary is already there, so this
+      # costs nothing on a warm runner.
+      - run: node node_modules/electron/install.js
+
       # `npm run dev` at the root builds this first and then starts the desktop
       # workspace. The steps below start that workspace directly, so that they
       # can pass `--noSandbox`, which means building it here instead.
