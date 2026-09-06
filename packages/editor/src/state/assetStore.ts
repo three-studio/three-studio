@@ -1,4 +1,5 @@
 import {
+  assetUrl,
   emptyManifest,
   type AssetEntry,
   type AssetKind,
@@ -350,9 +351,7 @@ export function childFolders(manifest: AssetManifest, parent: string): string[] 
 export const editorAssetResolver: AssetResolver = {
   url: (assetId) => {
     const entry = useAssetStore.getState().byId(assetId);
-    if (!entry) return null;
-    const encoded = entry.path.split('/').map(encodeURIComponent).join('/');
-    return `studio-asset://project/${encoded}`;
+    return entry ? assetUrl(entry.path) : null;
   },
   // Off the sidecar, where the import worked it out from the file's own bytes.
   // The manifest is a cache of those sidecars, so this costs a map lookup where

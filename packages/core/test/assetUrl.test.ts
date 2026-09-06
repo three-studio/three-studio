@@ -1,5 +1,5 @@
+import { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { encodePath } from '../src/urls';
 
 /*
  * The exporter writes file names, and the player fetches URLs. They are not the
@@ -7,6 +7,9 @@ import { encodePath } from '../src/urls';
  * asset and a URL that stops at the `#`, taking the extension with it. The
  * editor's resolver has always encoded; the web player was the one that did
  * not, and the failure is a missing texture with nothing in the console.
+ *
+ * This was the only tested one of the four places that built such a URL. Now
+ * that there is one place, this is its test.
  */
 
 describe('encodePath', () => {
@@ -28,5 +31,21 @@ describe('encodePath', () => {
     // and nowhere else. This looks like double encoding and is the opposite:
     // encoding once is what survives the server decoding once.
     expect(encodePath('brick%20wall.png')).toBe('brick%2520wall.png');
+  });
+});
+
+describe('assetUrl', () => {
+  it('names the one host, and encodes the path', () => {
+    expect(assetUrl('textures/brick wall #2.png')).toBe(
+      `${ASSET_SCHEME}://${ASSET_HOST}/textures/brick%20wall%20%232.png`,
+    );
+  });
+
+  it('is what the main process registers and serves', () => {
+    // Spelled out rather than composed, because the string is the contract: it
+    // is in the renderer's CSP and in `protocol.registerSchemesAsPrivileged`,
+    // and a scheme renamed on one side alone is every asset failing to load.
+    expect(ASSET_SCHEME).toBe('studio-asset');
+    expect(ASSET_HOST).toBe('project');
   });
 });

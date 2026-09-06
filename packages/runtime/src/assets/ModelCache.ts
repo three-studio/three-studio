@@ -8,14 +8,19 @@ import {
   type Object3D,
   type Texture,
 } from 'three/webgpu';
-import type { AssetSettings, TextureEncoding } from '@three-studio/core';
+import { ASSET_KIND_INFO, type AssetSettings, type TextureEncoding } from '@three-studio/core';
 import type { AssetResolver } from './AssetResolver';
 import { applyModelSettings, applyTextureSettings } from './importSettings';
 import { MODEL_EXTENSIONS, extensionOf, loadModelFromUrl } from './loadModel';
 import { describeNodes, resolveNode, type ModelShape } from './modelNodes';
 
-/** Read from the URL, because that is all the cache is given about an asset. */
-const TEXTURE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'hdr', 'exr', 'ktx2']);
+/**
+ * Read from the URL, because that is all the cache is given about an asset.
+ *
+ * Same rule as `MODEL_EXTENSIONS`: the importers are what say a file is a
+ * texture, and a second list here could only ever disagree with them.
+ */
+const TEXTURE_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.texture.extensions);
 /** Formats whose extension already says they store light rather than pixels. */
 const HDR_EXTENSIONS = new Set(['hdr', 'exr']);
 

@@ -12,7 +12,17 @@
  * and `isStopped` — and a star re-export would silently drop one side of each.
  */
 
-export const RUNTIME_VERSION = '0.2.0';
+import { ENGINE_VERSION } from '@three-studio/core';
+
+/**
+ * The same number as the editor's, because they ship together.
+ *
+ * It was a second copy of the string, which is a third if the `package.json`
+ * beside it counts — and a version that can disagree with itself answers no
+ * question anyone asks it. Nothing in this repository reads it; it is here for
+ * a consumer of the published package, which is why it is still exported.
+ */
+export const RUNTIME_VERSION = ENGINE_VERSION;
 
 /* The engine loop and the scene it drives. */
 export { Engine, isPerspective } from './Engine';

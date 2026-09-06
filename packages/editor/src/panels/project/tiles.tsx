@@ -1,4 +1,4 @@
-import { hasImagePreview, type AssetEntry } from '@three-studio/core';
+import { assetUrl, hasImagePreview, type AssetEntry } from '@three-studio/core';
 import {
   FolderOpen,
   Folder,
@@ -180,9 +180,7 @@ export const AssetTile = memo(function AssetTile({
   // protocol; other kinds need a rendered thumbnail, which is a later
   // milestone. `hasImagePreview` rather than `kind === 'texture'` because an
   // `.hdr` is a texture an `<img>` cannot open, and it drew a broken tile.
-  const previewUrl = hasImagePreview(asset)
-    ? `studio-asset://project/${asset.path.split('/').map(encodeURIComponent).join('/')}`
-    : null;
+  const previewUrl = hasImagePreview(asset) ? assetUrl(asset.path) : null;
 
   return (
     <div

@@ -31,7 +31,7 @@ import { FileIndex, stampOf } from './projectIndex';
 import { remember } from './recentProjects';
 import { writeScriptTypings } from './scripts';
 
-const DEFAULT_SCENE_PATH = `${SCENES_DIR}/main.scene.json`;
+const DEFAULT_SCENE_PATH = `${SCENES_DIR}/main${SCENE_FILE_SUFFIX}`;
 
 export class ProjectError extends Error {
   constructor(message: string) {

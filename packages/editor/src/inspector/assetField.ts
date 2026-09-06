@@ -1,4 +1,10 @@
-import { createId, hasImagePreview, type AssetEntry, type AssetKind } from '@three-studio/core';
+import {
+  assetUrl,
+  createId,
+  hasImagePreview,
+  type AssetEntry,
+  type AssetKind,
+} from '@three-studio/core';
 import {
   VERSION as CORE_VERSION,
   type BaseInputParams,
@@ -71,10 +77,6 @@ const PREVIEW_SIZE = 128;
 
 function isAssetFieldParams(params: Record<string, unknown>): params is AssetFieldParams {
   return params['view'] === 'asset' && typeof params['assetKind'] === 'string';
-}
-
-function assetUrl(entry: AssetEntry): string {
-  return `studio-asset://project/${entry.path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 /** lucide paths, inlined because this control is plain DOM rather than React. */
@@ -217,7 +219,7 @@ class AssetPicker {
             'width:18px;height:18px;flex:0 0 auto;border-radius:2px;background:var(--color-surface-0);' +
             'background-size:cover;background-position:center;';
           if (entry && hasImagePreview(entry)) {
-            thumb.style.backgroundImage = `url("${assetUrl(entry)}")`;
+            thumb.style.backgroundImage = `url("${assetUrl(entry.path)}")`;
           }
           row.appendChild(thumb);
         }
@@ -343,7 +345,7 @@ class AssetFieldView implements View {
     // reading as "None" would drop it on the next edit without a word.
     this.name.style.color = !empty && !entry ? '#e0704f' : '';
 
-    const url = entry && hasImagePreview(entry) ? assetUrl(entry) : null;
+    const url = entry && hasImagePreview(entry) ? assetUrl(entry.path) : null;
     this.preview.style.backgroundImage = url === null ? '' : `url("${url}")`;
     this.preview.style.cursor = url === null ? '' : 'zoom-in';
 

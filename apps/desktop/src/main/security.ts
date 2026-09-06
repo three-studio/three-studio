@@ -1,4 +1,15 @@
+import { ASSET_SCHEME, IMPORT_SCHEME } from '@three-studio/core';
 import type { Session } from 'electron';
+
+/**
+ * The two schemes the main process serves, as a CSP source list.
+ *
+ * Written out six times before this, which is six chances to rename a scheme in
+ * `core` and leave the policy still naming the old one — and a CSP that refuses
+ * a scheme is every texture in the project failing to load, with the reason in
+ * a console nobody has open.
+ */
+const SERVED_SCHEMES = `${ASSET_SCHEME}: ${IMPORT_SCHEME}:`;
 
 /**
  * The renderer runs sandboxed with no Node access, so the CSP is the second
@@ -12,10 +23,10 @@ const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: studio-asset: studio-import:",
+  `img-src 'self' data: blob: ${SERVED_SCHEMES}`,
   "font-src 'self' data:",
-  "media-src 'self' blob: studio-asset: studio-import:",
-  "connect-src 'self' data: blob: studio-asset: studio-import:",
+  `media-src 'self' blob: ${SERVED_SCHEMES}`,
+  `connect-src 'self' data: blob: ${SERVED_SCHEMES}`,
   "worker-src 'self' blob:",
   "object-src 'none'",
   "frame-src 'none'",
@@ -28,10 +39,10 @@ const DEVELOPMENT_CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: studio-asset: studio-import:",
+  `img-src 'self' data: blob: ${SERVED_SCHEMES}`,
   "font-src 'self' data:",
-  "media-src 'self' blob: studio-asset: studio-import:",
-  "connect-src 'self' data: blob: studio-asset: studio-import: ws://localhost:* http://localhost:*",
+  `media-src 'self' blob: ${SERVED_SCHEMES}`,
+  `connect-src 'self' data: blob: ${SERVED_SCHEMES} ws://localhost:* http://localhost:*`,
   "worker-src 'self' blob:",
   "object-src 'none'",
   "base-uri 'none'",

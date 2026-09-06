@@ -7,6 +7,7 @@ import {
   buildScenePath,
   createRenderingSettings,
   deserializeScene,
+  encodePath,
   type MaterialDef,
   type PrefabDoc,
   type RenderingSettings,
@@ -14,7 +15,6 @@ import {
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { entrySceneName, sceneIdOf } from './scenes';
-import { encodePath } from './urls';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';

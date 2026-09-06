@@ -1,12 +1,8 @@
 import { pathToFileURL } from 'node:url';
 import { net, protocol } from 'electron';
-import { IMPORT_SCHEME, parseImportPreviewUrl } from '@three-studio/core';
+import { ASSET_HOST, ASSET_SCHEME, IMPORT_SCHEME, parseImportPreviewUrl } from '@three-studio/core';
 import { importSessions } from './import/ImportSession';
 import { PathEscapeError, resolveInside } from './paths';
-
-export const ASSET_SCHEME = 'studio-asset';
-/** Only host accepted; the open project is implicit, never named in the URL. */
-const ASSET_HOST = 'project';
 
 let currentProjectPath: string | null = null;
 

@@ -447,8 +447,14 @@ export function isTslMaterial(fileName: string): boolean {
  * An allow list rather than a deny list: a format added to `ASSET_KIND_INFO`
  * because some loader handles it is not thereby something an `<img>` handles,
  * and the failure of guessing the other way round is silent.
+ *
+ * It listed `gif` and `avif` too, and both were unreachable: nothing imports
+ * either, so no asset ever has that extension *and* the `texture` kind this
+ * checks first. An allow list may be smaller than what the browser can decode;
+ * it may not name things the project cannot contain, or it stops saying which
+ * of the two it is.
  */
-const PREVIEWABLE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'];
+const PREVIEWABLE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp'];
 
 export function hasImagePreview(asset: { kind: AssetKind; path: string }): boolean {
   if (asset.kind !== 'texture') return false;
