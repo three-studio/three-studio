@@ -16,7 +16,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { startPlay, stopPlay } from '../commands/playCommands';
+import { commandById } from '../commands/registry';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { MenuTrigger } from '../ui/Menu';
@@ -68,6 +68,7 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
   const toggleAnimated = useViewportStore((s) => s.toggleAnimated);
 
   const isStopped = playState === 'stopped';
+  const transport = commandById(isStopped ? 'play' : 'stop');
 
   return (
     <div className="app-drag relative flex h-10 shrink-0 items-center gap-0.5 border-b border-line bg-surface-2 px-2">
@@ -117,12 +118,16 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
       {/* Transport sits dead centre regardless of how wide the flanking groups get. */}
       <div className="app-no-drag pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5">
         <div className="pointer-events-auto flex items-center gap-0.5">
+          {/* One button, and it still picks its own icon — an icon is not
+              something the registry carries. What it no longer decides is the
+              word and the gesture: `transport.label()` and `transport.run()`
+              are the command's, and a palette says the same word. */}
           <ToolButton
             icon={isStopped ? Play : Square}
-            label={isStopped ? 'Play' : 'Stop'}
+            label={transport.label()}
             active={!isStopped}
             activeClassName="bg-play/15 text-play"
-            onClick={isStopped ? startPlay : stopPlay}
+            onClick={() => transport.run()}
           />
           <ToolButton
             icon={Pause}

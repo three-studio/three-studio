@@ -1,11 +1,11 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-066 — démarrer le jeu et montrer un panneau sont deux choses
-**Tâche courante** : **T-062f** — le transport entre dans le registre (dernière tranche du lot 8)
-**Faites** : T-001 → T-061, **T-062a → T-062e, T-063 → T-066**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
-tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
-voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
+**Dernier commit** : T-062f — Play et Stop sont des commandes
+**Tâche courante** : **T-067** — reconstruire les ADR (début du lot 11, le dernier)
+**Faites** : T-001 → T-066. **Lot 8 terminé.** **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
+terminés.** Lot 1 : les neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne
+d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 → T-070).
 
 > **Ce qui a été laissé de côté est dans `RESTES.md`** — une ligne par chose qu'une tâche aurait pu
 > faire et n'a pas faite, avec ce qui la rouvrirait. Les notes ci-dessous sont chronologiques ; ce
@@ -15,6 +15,30 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062f — deux commandes, pas trois, et c'est la deuxième fiche du lot écrite depuis les *exports*
+d'un fichier plutôt que depuis ses *appelants*** (la première était T-062d). `togglePlay` n'avait
+aucun appelant, et une fois que `play` et `stop` portent chacune leur `can()`, il ne lui reste rien à
+faire : le bouton unique de la barre demande laquelle des deux s'applique — il le doit de toute façon,
+puisqu'il choisit aussi son icône — et la palette montre celle qui peut agir. **Vérifié dans
+l'application : la palette n'offre que `["Stop"]` en cours de jeu**, jamais les deux. Une *touche* de
+transport voudrait un bascule ; rien n'en lie une, ce sera trois lignes le jour venu.
+
+**La barre d'outils garde son icône et rend le reste.** Une icône n'est pas quelque chose que le
+registre porte — il n'y a pas de `CommandIcon` comme il y a un `ComponentIcon` — donc
+`isStopped ? Play : Square` reste sur place, tandis que le mot et le geste deviennent
+`transport.label()` et `transport.run()`.
+
+**⚠️ LE LOT 8 EST TERMINÉ.** 30 commandes, et le registre n'a pas seulement rangé : à chaque tranche
+il a trouvé des divergences que personne ne cherchait — deux entrées de menu sans garde du tout
+(T-062a), des boutons d'Inspector actifs qui ne faisaient rien (T-062c), **deux `reveal` faisant
+chacun la moitié du travail** (T-062c), un `rename` qui ne faisait rien depuis toujours (T-063),
+**trois** orthographes d'un raccourci dont une morte (T-064), deux sites où `commands/` atteignait
+`shell/` là où la fiche n'en nommait qu'un (T-066). Le tableau est dans la fiche chapeau `T-062`.
+
+**Ce qu'il faut retenir pour le lot 11 :** une fiche décrit ce que l'audit a vu, pas ce que le code
+fait aujourd'hui. **Lire les signatures et les appelants avant de coder** a corrigé le périmètre de
+trois tranches sur six.
 
 **T-066 — ⚠️ il y avait deux sites, pas un, et j'avais écrit le contraire.** `assetCommands.ts`
 appelait `showPanel('project')` comme `playCommands` appelait `showPanel('game')`. T-062b avait
@@ -2443,7 +2467,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 → T-066 faits ; reste **T-062f** |
+| 8 | T-062 → T-066 | La couche de commandes | **5/5 ✅** (T-062 scindé en 6 tranches) |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

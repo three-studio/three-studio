@@ -1,5 +1,5 @@
 # T-062 — Tous les gestes entrent dans le registre
-Lot 8 · dépend de T-046 · **grosse tâche, scindée** · statut: **CHAPEAU** — voir les six tranches
+Lot 8 · dépend de T-046 · **grosse tâche, scindée** · statut: **FAIT** — les six tranches sont faites
 
 ## Pourquoi
 `commands/registry.ts:55-62` déclare un `CommandId` fermé de **sept** entrées :
@@ -50,9 +50,23 @@ l'en sortir. L'enregistrer avant reviendrait à mettre dans le registre ce que l
 en retirer.
 
 ## Terminé quand
-- [ ] Aucun geste appelé depuis React sans passer par le registre
-- [ ] Chaque commande a un libellé et un `can()` réel
-- [ ] `npm run typecheck && npm test` verts à chaque commit
+- [x] Aucun geste appelé depuis React sans passer par le registre, **avec un bord nommé** : un geste
+      dont un appelant lit le résultat est un appel de fonction, pas une commande (T-062b), et une
+      mutation paramétrée par une *valeur* non plus (T-062d). Les deux sont écrits dans le code
+- [x] Chaque commande a un libellé et un `can()` réel — **30 commandes**
+- [x] `npm run typecheck && npm test` verts à chaque commit
+
+## Ce que le lot a réellement corrigé
+Le registre n'a pas seulement rangé : à chaque tranche il a trouvé des divergences que personne ne
+cherchait.
+
+| | |
+|---|---|
+| T-062a | `Duplicate Scene…` et `Rename Scene…` sans aucun `disabled`, `Save Scene As…` idem, `Delete Scene` avec sa règle dans le menu |
+| T-062c | Apply/Revert Overrides actifs dans l'Inspector et grisés dans la hiérarchie ; **deux `reveal` faisant chacun la moitié du travail** |
+| T-063 | `rename` ne faisait **rien** — son emplacement n'était rempli par personne — et sous ce silence, `run` ignorait le contexte |
+| T-064 | **Trois** orthographes d'un raccourci, dont une morte |
+| T-066 | Deux sites où `commands/` atteignait `shell/`, pas un |
 
 ## Commit
 `refactor(editor): every gesture is a command` — un par famille

@@ -130,6 +130,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
     const { EXPORT_COMMANDS } = await import('../src/commands/exportCommands');
     const { MODEL_COMMANDS } = await import('../src/commands/modelCommands');
+    const { PLAY_COMMANDS } = await import('../src/commands/playCommands');
     const { PREFAB_COMMANDS } = await import('../src/commands/prefabCommands');
     const { SCENE_FILE_COMMANDS } = await import('../src/commands/sceneFileCommands');
 
@@ -151,6 +152,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
       PREFAB_COMMANDS,
       MODEL_COMMANDS,
       EXPORT_COMMANDS,
+      PLAY_COMMANDS,
     ];
     const declared = families.reduce((total, family) => total + Object.keys(family).length, 0);
     expect(Object.keys(COMMANDS)).toHaveLength(declared);
@@ -431,5 +433,39 @@ describe('the palette is a view over the table, not a feature', () => {
 
     // And the labels are the commands' own, which is what makes the list read.
     expect(commandById('openCommandPalette').label(ctx)).toBe('Command Palette…');
+  });
+});
+
+describe('transport', () => {
+  it('offers exactly one of play and stop, whichever applies', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const store = useEditorStore.getState();
+
+    expect(store.playState).toBe('stopped');
+    expect(commandById('play').can()).toBe(true);
+    expect(commandById('stop').can()).toBe(false);
+
+    commandById('play').run();
+    expect(useEditorStore.getState().playState).toBe('playing');
+    expect(commandById('play').can()).toBe(false);
+    expect(commandById('stop').can()).toBe(true);
+
+    // Paused counts as running: it is Stop that gets you out of either, and the
+    // toolbar's Pause button is a different gesture entirely.
+    useEditorStore.getState().togglePause();
+    expect(useEditorStore.getState().playState).toBe('paused');
+    expect(commandById('play').can()).toBe(false);
+    expect(commandById('stop').can()).toBe(true);
+
+    commandById('stop').run();
+    expect(useEditorStore.getState().playState).toBe('stopped');
+  });
+
+  it('says the word the toolbar shows', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    // The toolbar wrote `isStopped ? 'Play' : 'Stop'` for itself; the palette
+    // would have written it a second time.
+    expect(commandById('play').label()).toBe('Play');
+    expect(commandById('stop').label()).toBe('Stop');
   });
 });

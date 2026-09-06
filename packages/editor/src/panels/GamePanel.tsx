@@ -1,6 +1,6 @@
 import { Gamepad2, MousePointerClick, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { startPlay } from '../commands/playCommands';
+import { commandById } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
@@ -44,7 +44,7 @@ export function GamePanel() {
         <p className="text-ink-muted">Not playing</p>
         <button
           type="button"
-          onClick={startPlay}
+          onClick={() => commandById('play').run()}
           className="rounded-sm bg-accent px-3 py-1.5 text-2xs font-medium text-white hover:bg-accent/85"
         >
           Play

@@ -3,6 +3,7 @@ import type { Command } from './command';
 import { EDIT_COMMANDS } from './editCommands';
 import { EXPORT_COMMANDS } from './exportCommands';
 import { MODEL_COMMANDS } from './modelCommands';
+import { PLAY_COMMANDS } from './playCommands';
 import { PREFAB_COMMANDS } from './prefabCommands';
 import { SCENE_FILE_COMMANDS } from './sceneFileCommands';
 
@@ -44,6 +45,7 @@ export const COMMANDS = {
   ...PREFAB_COMMANDS,
   ...MODEL_COMMANDS,
   ...EXPORT_COMMANDS,
+  ...PLAY_COMMANDS,
 };
 
 export type CommandId = keyof typeof COMMANDS;
