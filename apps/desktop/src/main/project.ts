@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
@@ -16,6 +16,7 @@ import {
   findScene,
   normalizeBuildProfiles,
   resolveScene,
+  safeFileName,
   sceneName,
   serializeScene,
   type OpenProject,
@@ -24,6 +25,7 @@ import {
   type ProjectSummary,
   type SceneEntry,
 } from '@three-studio/core';
+import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
 import { FileIndex, stampOf } from './projectIndex';
 import { remember } from './recentProjects';
@@ -229,11 +231,11 @@ export async function openProject(projectPath: string, wanted?: string): Promise
 }
 
 /**
- * Writes a scene through a temporary file and a rename.
+ * Writes a scene, whole or not at all.
  *
  * A crash or a full disk part-way through a direct write would leave the user
  * with a truncated scene and no copy of the original — the one failure mode an
- * editor must not have.
+ * editor must not have. See `atomicWrite`.
  */
 export async function saveScene(
   projectPath: string,
@@ -241,11 +243,7 @@ export async function saveScene(
   contents: string,
 ): Promise<void> {
   await readProjectFile(projectPath);
-  const target = resolveInside(projectPath, scenePath);
-  const temporary = `${target}.tmp`;
-
-  await writeFile(temporary, contents, 'utf8');
-  await rename(temporary, target);
+  await atomicWrite(resolveInside(projectPath, scenePath), contents);
 }
 
 /**
@@ -262,12 +260,11 @@ export async function readSceneFile(projectPath: string, scenePath: string): Pro
 }
 
 /**
- * Writes the project file back, through a temporary file like a scene.
+ * Writes the project file back, whole or not at all, like a scene.
  *
  * Private, and reachable only from inside `updateProject`: a second door to
  * this file is a second way past the queue, and the queue is the only thing
- * stopping two windows from losing each other's work. It is also what makes
- * the fixed `.tmp` name safe here, where `FileIndex` needs a unique one.
+ * stopping two windows from losing each other's work.
  *
  * Stamps `engineVersion` on the way, because this is the one place the file is
  * written and the field claims to name the build that last wrote it. Only
@@ -281,10 +278,7 @@ export async function readSceneFile(projectPath: string, scenePath: string): Pro
  */
 async function writeProject(projectPath: string, project: ProjectFile): Promise<void> {
   project.engineVersion = ENGINE_VERSION;
-  const target = join(projectPath, PROJECT_FILE_NAME);
-  const temporary = `${target}.tmp`;
-  await writeFile(temporary, JSON.stringify(project, null, 2), 'utf8');
-  await rename(temporary, target);
+  await atomicWrite(join(projectPath, PROJECT_FILE_NAME), JSON.stringify(project, null, 2));
 }
 
 /**
@@ -483,20 +477,7 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/**
- * Keeps a project name usable as a directory on all three platforms: removes
- * the characters Windows reserves plus control characters, collapses runs of
- * whitespace, and drops trailing dots and spaces (which Windows would strip
- * silently, leaving the on-disk name different from the one in project.json).
- *
- * Spaces are kept — they are legal everywhere, and quoting paths is the
- * caller's job.
- */
+/** The one file-name rule, plus what a project with no name left is called. */
 function sanitizeFolderName(name: string): string {
-  const cleaned = name
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
-    .replace(/\s+/g, ' ')
-    .replace(/[. ]+$/, '')
-    .trim();
-  return cleaned === '' ? 'Untitled Project' : cleaned;
+  return safeFileName(name) || 'Untitled Project';
 }

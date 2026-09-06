@@ -1,6 +1,6 @@
 import { mkdir, readdir, rename, rm, rmdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, posix, relative } from 'node:path';
-import { ASSETS_DIR, ASSET_META_SUFFIX, assetDisplayName } from '@three-studio/core';
+import { ASSETS_DIR, ASSET_META_SUFFIX, assetDisplayName, safeFileName } from '@three-studio/core';
 import { resolveInside } from './paths';
 import { AssetError, toPosix, uniqueFolderName } from './assetFiles';
 import { companionsOf } from './assetScan';
@@ -119,7 +119,6 @@ export async function moveAsset(
   return toPosix(relative(projectPath, destination));
 }
 
-const ILLEGAL_IN_NAME = /[/\\:*?"<>|]/g;
 
 /**
  * Creates a folder under `assets/`, returning the path it actually got.
@@ -131,7 +130,7 @@ const ILLEGAL_IN_NAME = /[/\\:*?"<>|]/g;
 export async function createAssetFolder(projectPath: string, folder: string): Promise<string> {
   const parent = posix.dirname(folder);
   const base = parent === '.' ? '' : parent;
-  const leaf = posix.basename(folder).trim().replace(ILLEGAL_IN_NAME, '-');
+  const leaf = safeFileName(posix.basename(folder));
   if (leaf === '') throw new AssetError('A folder needs a name.');
 
   const directory = posix.join(ASSETS_DIR, base);
@@ -158,7 +157,7 @@ export async function renameAssetFolder(
 ): Promise<string> {
   if (folder === '') throw new AssetError('The assets folder itself cannot be renamed.');
 
-  const safe = name.trim().replace(ILLEGAL_IN_NAME, '-');
+  const safe = safeFileName(name);
   if (safe === '') throw new AssetError('A folder needs a name.');
 
   const parent = posix.dirname(folder);

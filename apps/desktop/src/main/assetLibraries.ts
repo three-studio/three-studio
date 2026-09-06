@@ -9,6 +9,7 @@ import {
   createId,
   createMaterial,
   defaultSettings,
+  safeFileName,
   stableJson,
   type AssetManifest,
   type AssetMeta,
@@ -88,7 +89,7 @@ export async function createPrefabAsset(
   const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO.prefab.directory);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
-  const safe = name.trim().replace(/[/\\:*?"<>|]/g, '-') || 'Prefab';
+  const safe = safeFileName(name) || 'Prefab';
   const fileName = await uniqueFileName(
     projectPath,
     directory,
@@ -159,7 +160,7 @@ export async function createMaterialAsset(
   const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO.material.directory);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
-  const safe = name.trim().replace(/[/\\:*?"<>|]/g, '-') || 'Material';
+  const safe = safeFileName(name) || 'Material';
   const fileName = await uniqueFileName(
     projectPath,
     directory,

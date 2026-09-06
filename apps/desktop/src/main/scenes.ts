@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname, posix } from 'node:path';
 import {
   SCENES_DIR,
@@ -7,6 +7,7 @@ import {
   createNewScene,
   deserializeScene,
   findScene,
+  safeFileName,
   sceneName,
   serializeScene,
   type ProjectContents,
@@ -14,6 +15,7 @@ import {
   type SceneChange,
   type SceneEntry,
 } from '@three-studio/core';
+import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
 import { ProjectError, discoverScenes, readProject, updateProject } from './project';
 
@@ -80,13 +82,9 @@ import { ProjectError, discoverScenes, readProject, updateProject } from './proj
  * it did, because the name is now read back out of the path every time.
  */
 function toSceneName(requested: string): string {
-  // The characters Windows reserves, plus separators and control characters:
-  // the name becomes a file name, and a `/` in it would silently make a folder.
-  let name = requested
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '-')
-    .replace(/\s+/g, ' ')
-    .replace(/[. ]+$/, '')
-    .trim();
+  // The name becomes a file name, so it goes through the one rule for those.
+  // Empty comes back out of it, and `requireNameAvailable` is what refuses it.
+  let name = safeFileName(requested);
 
   for (let next = sceneName(name); next !== name; next = sceneName(name)) name = next;
   return name;
@@ -328,7 +326,7 @@ export async function setStartScene(
   return { project, scenes };
 }
 
-/** Through a temporary file and a rename, like every other write to a project. */
+/** Whole or not at all, like every other write to a project. See `atomicWrite`. */
 async function writeSceneFile(
   projectPath: string,
   scenePath: string,
@@ -336,8 +334,5 @@ async function writeSceneFile(
 ): Promise<void> {
   const target = resolveInside(projectPath, scenePath);
   await mkdir(dirname(target), { recursive: true });
-
-  const temporary = `${target}.tmp`;
-  await writeFile(temporary, contents, 'utf8');
-  await rename(temporary, target);
+  await atomicWrite(target, contents);
 }

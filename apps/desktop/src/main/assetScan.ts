@@ -1,4 +1,4 @@
-import { link, open, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { link, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import {
   ASSETS_DIR,
@@ -18,6 +18,7 @@ import {
   type AssetSettings,
   type TextureEncoding,
 } from '@three-studio/core';
+import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
 import { FileIndex, stampOf } from './projectIndex';
 import { AssetError, hashFile, toPosix } from './assetFiles';
@@ -158,32 +159,12 @@ export async function readAssetMeta(assetFile: string): Promise<AssetMeta | null
 /**
  * Writes a sidecar so that no reader can ever see half of one.
  *
- * Through a temporary file and a rename, which is atomic: a reader gets the old
- * bytes or the new ones, never a truncated file. `writeFile` alone does not
- * give that, and the gap is reachable, because a scan writes sidecars as well
- * as reading them and more than one can be in flight — `exportBuild` ran three
- * at once until it was made to read the tree once, and the IPC handlers behind
- * the material and prefab libraries still scan independently.
- *
- * The failure was not a crash. A half-written sidecar fails to parse,
- * `readAssetMeta` answers `null`, and the asset is adopted **with a fresh id** —
- * so a scene that referenced it now references nothing, and an export ships a
- * level with a texture missing. It showed up first as a test that passed four
- * runs out of six.
- *
- * The temporary name carries an id of its own so that two writers racing on one
- * sidecar do not overwrite each other's half-written file.
+ * This is the write `atomicWrite` was written for, and the argument for it is
+ * there: a half-written sidecar is not a crash, it is an asset re-adopted under
+ * a new id and a scene that now references nothing.
  */
 export async function writeAssetMeta(assetFile: string, meta: AssetMeta): Promise<void> {
-  const target = `${assetFile}${ASSET_META_SUFFIX}`;
-  const staging = `${target}.${createId()}.tmp`;
-  try {
-    await writeFile(staging, JSON.stringify(meta, null, 2), 'utf8');
-    await rename(staging, target);
-  } catch (cause) {
-    await rm(staging, { force: true });
-    throw cause;
-  }
+  await atomicWrite(`${assetFile}${ASSET_META_SUFFIX}`, JSON.stringify(meta, null, 2));
 }
 
 /** True for the "it was already there" failure, and only that one. */
@@ -205,6 +186,9 @@ function isAlreadyExists(error: unknown): boolean {
  *
  * The content is complete before it is linked, so a third reader arriving
  * mid-write sees no file rather than half of one.
+ *
+ * Not `atomicWrite`, and it cannot be: that ends in a `rename`, which replaces
+ * whatever is there. Replacing is the one thing this must not do.
  *
  * @returns What is on disk afterwards, which may be someone else's.
  */

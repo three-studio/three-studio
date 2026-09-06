@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { CACHE_DIR, createId } from '@three-studio/core';
+import { CACHE_DIR } from '@three-studio/core';
+import { atomicWrite } from './atomicWrite';
 
 /*
  * What a file held, last time it looked like this.
@@ -129,6 +130,9 @@ export class FileIndex<T> {
    * carried over untouched. Failure is swallowed — `.studio/` may be read-only,
    * or absent on a volume that will not make it — because a cache that cannot
    * be written is a slow scan, not a failed one.
+   *
+   * Whole or not at all all the same: three scans run at once during an export,
+   * and a reader must get one of them whole rather than the middle of another.
    */
   async save(): Promise<void> {
     if (!this.changed && this.next.size === this.known.size) return;
@@ -137,16 +141,11 @@ export class FileIndex<T> {
       builtBy: this.builtBy,
       entries: Object.fromEntries(this.next),
     };
-    // Through a temporary file and a rename, like every other write to a
-    // project: three scans run at once during an export, and a reader must get
-    // one of them whole rather than the middle of another.
-    const staging = `${this.file}.${createId()}.tmp`;
     try {
       await mkdir(join(this.file, '..'), { recursive: true });
-      await writeFile(staging, JSON.stringify(body), 'utf8');
-      await rename(staging, this.file);
+      await atomicWrite(this.file, JSON.stringify(body));
     } catch {
-      await rm(staging, { force: true }).catch(() => undefined);
+      // Swallowed here rather than in `atomicWrite`, for the reason above.
     }
   }
 }

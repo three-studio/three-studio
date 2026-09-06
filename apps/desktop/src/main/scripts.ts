@@ -420,6 +420,9 @@ export default class __NAME__ extends Behaviour {
 `;
 
 export async function createScript(projectPath: string, name: string): Promise<string> {
+  // Stricter than `safeFileName`, and for a different reason: the name is also
+  // the class name in the template below, so it has to be a TypeScript
+  // identifier and not merely something a file system will keep.
   const safeName = name.replace(/[^A-Za-z0-9_]/g, '') || 'NewScript';
   const relative = `assets/scripts/${safeName}.ts`;
   const target = resolveInside(projectPath, relative);

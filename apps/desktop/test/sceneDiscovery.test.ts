@@ -91,7 +91,9 @@ describe('the scenes of a project are the files under scenes/', () => {
   it('ignores what is not a scene file', async () => {
     const root = await projectWith(['main']);
     await writeFile(join(root, SCENES_DIR, 'notes.txt'), 'nothing to see', 'utf8');
-    await writeFile(join(root, SCENES_DIR, 'main.scene.json.tmp'), '{}', 'utf8');
+    // The shape an interrupted write leaves behind: `atomicWrite` stages beside
+    // the target under an id of its own, and a crash is the one way one stays.
+    await writeFile(join(root, SCENES_DIR, 'main.scene.json.a1b2c3d4.tmp'), '{}', 'utf8');
 
     expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['main']);
   });

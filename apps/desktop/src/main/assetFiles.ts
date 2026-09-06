@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, join, posix, sep } from 'node:path';
+import { safeFileName } from '@three-studio/core';
 
 /*
  * The small things every other asset module needs, and one error type.
@@ -35,7 +36,7 @@ export async function uniqueFolderName(
   directory: string,
   name: string,
 ): Promise<string> {
-  const safe = name.trim().replace(/[/\\:*?"<>|]/g, '-') || 'Model';
+  const safe = safeFileName(name) || 'Model';
 
   for (let index = 0; index < 1000; index++) {
     const candidate = index === 0 ? safe : `${safe}-${index}`;

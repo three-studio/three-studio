@@ -282,6 +282,8 @@ export type { ComponentDefinition, ComponentIcon } from './components';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';
+/* One rule for a name that has to become a file. */
+export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 
 export {
   applyPrefabOverride,

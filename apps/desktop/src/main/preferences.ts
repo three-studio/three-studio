@@ -1,4 +1,4 @@
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   LAYOUT_PREFERENCES_VERSION,
@@ -6,6 +6,7 @@ import {
   type LayoutPreferences,
 } from '@three-studio/core';
 import { app } from 'electron';
+import { atomicWrite } from './atomicWrite';
 
 const FILE_NAME = 'layouts.json';
 
@@ -29,19 +30,19 @@ export async function loadLayoutPreferences(): Promise<LayoutPreferences> {
 }
 
 /**
- * Written through a temporary file and a rename.
+ * Written whole or not at all.
  *
  * The working layout is saved on every rearrangement, so a crash mid-write is
  * a real possibility; a half-written file would lose every saved template at
  * once.
  */
 export async function saveLayoutPreferences(preferences: LayoutPreferences): Promise<void> {
-  const target = layoutsPath();
-  const temporary = `${target}.tmp`;
   try {
-    await writeFile(temporary, JSON.stringify(preferences, null, 2), 'utf8');
-    await rename(temporary, target);
+    await atomicWrite(layoutsPath(), JSON.stringify(preferences, null, 2));
   } catch (cause) {
+    // Swallowed here rather than in `atomicWrite`: a preferences directory that
+    // cannot be written is a layout that will not come back next launch, which
+    // is not worth failing the rearrangement the author just made.
     console.error('[preferences] could not save layouts:', cause);
   }
 }

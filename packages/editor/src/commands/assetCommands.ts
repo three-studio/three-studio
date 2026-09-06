@@ -1,4 +1,10 @@
-import { findAssetUsage, isUsed, totalUses, type AssetEntry } from '@three-studio/core';
+import {
+  FORBIDDEN_FILE_NAME_CHARS,
+  findAssetUsage,
+  isUsed,
+  totalUses,
+  type AssetEntry,
+} from '@three-studio/core';
 import { showPanel } from '../shell/dockApi';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useAssetStore } from '../state/assetStore';
@@ -90,8 +96,8 @@ export async function renameFolder(path: string): Promise<string | null> {
     validate: (value) =>
       value.trim() === ''
         ? 'A folder needs a name.'
-        : /[/\\:*?"<>|]/.test(value)
-          ? 'A folder name cannot contain / \\ : * ? " < > |'
+        : FORBIDDEN_FILE_NAME_CHARS.test(value)
+          ? 'A folder name cannot contain / \\ : * ? " < > | or a control character'
           : null,
   });
   if (name === null || name.trim() === current) return null;
@@ -171,8 +177,8 @@ export async function createFolder(parent: string): Promise<string | null> {
     validate: (value) =>
       value.trim() === ''
         ? 'A folder needs a name.'
-        : /[/\\:*?"<>|]/.test(value)
-          ? 'A folder name cannot contain / \\ : * ? " < > |'
+        : FORBIDDEN_FILE_NAME_CHARS.test(value)
+          ? 'A folder name cannot contain / \\ : * ? " < > | or a control character'
           : null,
   });
   if (name === null) return null;
