@@ -361,3 +361,36 @@ describe('a gesture aimed at a scene', () => {
     expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
   });
 });
+
+describe('rename is a command that finishes', () => {
+  it('puts the entity into edit, and the one the context names', async () => {
+    const { commandById, contextFor } = await import('../src/commands/registry');
+    const store = useEditorStore.getState();
+    const selected = addEntity(createMeshEntity('box'));
+    const clicked = addEntity(createMeshEntity('sphere'));
+    store.setSelection([selected]);
+
+    // The old `run` read `editorStore.selection` and ignored the context it was
+    // handed, so a right-click outside the selection would have renamed the
+    // wrong row. It never surfaced because `run` did nothing at all: the module
+    // slot it called was filled by no one.
+    commandById('rename').run(contextFor([clicked]));
+    expect(useEditorStore.getState().renaming).toBe(clicked);
+
+    useEditorStore.getState().endRename();
+    expect(useEditorStore.getState().renaming).toBeNull();
+  });
+
+  it('refuses a selection of several, because one field edits one name', async () => {
+    const { commandById, contextFor } = await import('../src/commands/registry');
+    const first = addEntity(createMeshEntity('box'));
+    const second = addEntity(createMeshEntity('sphere'));
+
+    expect(commandById('rename').can(contextFor([first, second]))).toBe(false);
+    expect(commandById('rename').can(contextFor([first]))).toBe(true);
+
+    // And a refusal leaves nothing half-started: `run` re-checks `can` itself.
+    commandById('rename').run(contextFor([first, second]));
+    expect(useEditorStore.getState().renaming).toBeNull();
+  });
+});

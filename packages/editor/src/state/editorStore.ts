@@ -26,6 +26,24 @@ interface EditorState {
   playState: PlayState;
   stepRequested: boolean;
   selection: readonly string[];
+  /**
+   * The entity a view has been asked to put into inline edit, or `null`.
+   *
+   * Here rather than in the panel's own `useState`, and the reason is the whole
+   * of T-063. Renaming is the one gesture a command cannot finish: what it does
+   * is put a *row* into edit mode, and only the hierarchy has rows. That used to
+   * be wired through a mutable module slot in `commands/` — a command registry
+   * containing a callback registry — filled by nobody, so `rename.run()` did
+   * nothing at all.
+   *
+   * A field a command writes and a view reads is the same shape `assetStore`
+   * already uses for `revealed`, and it is deliberately **not** an event bus: it
+   * holds no queue, nothing subscribes to a channel, and a view that is not
+   * mounted simply never reads it. What it is, is the answer to "which row is
+   * being edited", which is a question about the editor and not about the panel
+   * that happens to draw it.
+   */
+  renaming: string | null;
 
   setTransformMode: (mode: TransformMode) => void;
   toggleTransformSpace: () => void;
@@ -34,6 +52,10 @@ interface EditorState {
   toggleGizmos: () => void;
   setSelection: (ids: readonly string[]) => void;
   clearSelection: () => void;
+  /** Asks whichever view holds this entity to edit its name in place. */
+  beginRename: (entityId: string) => void;
+  /** Cleared by the view when the field closes, committed or abandoned. */
+  endRename: () => void;
 
   play: () => void;
   togglePause: () => void;
@@ -52,6 +74,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
   playState: 'stopped',
   stepRequested: false,
   selection: [],
+  renaming: null,
+
+  beginRename: (renaming) => set({ renaming }),
+  endRename: () => set({ renaming: null }),
 
   setTransformMode: (transformMode) => set({ transformMode }),
   toggleTransformSpace: () =>

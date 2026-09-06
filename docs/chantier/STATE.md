@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062e — les scènes ciblées, les modèles et l'export sont des commandes
-**Tâche courante** : **T-063** — `rename` cesse d'être un demi-geste
-**Faites** : T-001 → T-061, **T-062a → T-062e**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-063 — `rename` est une commande, plus un emplacement de callback
+**Tâche courante** : **T-064** — les raccourcis se lisent depuis le registre
+**Faites** : T-001 → T-061, **T-062a → T-062e, T-063**. Reste **T-062f**, après T-066. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,31 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-063 — la solution était déjà dans le dépôt, pour le geste que la fiche citait en exemple.** Elle
+demandait de résoudre « une commande doit demander à une vue de se mettre en édition » sans inventer
+un bus. `assetStore.reveal(assetId)` pose `revealed`, le panneau le lit, le dessine, l'efface : un
+champ qu'une commande écrit et qu'une vue lit. Pas de file, pas d'abonnement à un canal, et une vue
+non montée ne lit rien. `editorStore.renaming` est le même, avec `beginRename` / `endRename`.
+
+**⚠️ `docs/audio/DECISIONS.md` n'existe pas**, ni aucun ADR-8, nulle part dans `docs/` — la fiche s'y
+référait. C'est exactement ce que **T-067** doit réparer. Consigné sur la fiche.
+
+**⚠️ Deux défauts de plus, cachés derrière le premier.** `renameCommand.run` ne faisait rien parce que
+`setRenameHandler` n'était appelé par personne — et sous ce silence, son corps lisait
+`editorStore.selection` en **ignorant le contexte qu'on lui passait**. Un clic droit hors sélection
+aurait mis en édition la mauvaise ligne. Un geste mort ne montre pas ses bugs : c'est un argument de
+plus pour que `run` ne soit jamais un no-op silencieux.
+
+**Trois chemins vers un renommage, un seul qui demandait la permission.** Le double-clic posait l'état
+local sans passer par `can('rename')`, et l'entrée « Rename » du menu d'une entité produite par un
+prefab n'avait aucun verdict du tout. Les trois sont `entry('rename')` ou
+`commandById('rename').run(contextFor([id]))` maintenant.
+
+**⚠️ Piège du harnais, pour la prochaine sonde qui pilote un champ React :** `input.blur()`, jamais
+`dispatchEvent(new Event('blur'))`. React écoute `focusout`, que seule la méthode native émet — le
+premier passage a rendu « le champ s'ouvre mais le nom n'est pas écrit », ce qui ressemblait à un bug
+du produit et venait de la sonde. Même famille que le `pointerenter` déjà noté dans la compétence.
 
 **T-062e — `EditorContext` gagne `sceneId`, sa deuxième cible.** Trois appelants d'un coup — le menu
 Scène, le sous-menu *Open in New Window*, la radio des réglages de projet. Le champ `assetId` de
@@ -2332,7 +2357,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e faits ; reste T-062f, après T-066 |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062e, T-063 faits ; reste T-062f, après T-066 |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

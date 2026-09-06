@@ -149,7 +149,11 @@ export function HierarchyPanel() {
 
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   const [filter, setFilter] = useState('');
-  const [renaming, setRenaming] = useState<string | null>(null);
+  // The store's, not this panel's: a command has to be able to start a rename,
+  // and only something outside the panel can be reached from a menu, a key or a
+  // palette. See `editorStore.renaming`.
+  const renaming = useEditorStore((s) => s.renaming);
+  const endRename = useEditorStore((s) => s.endRename);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   /** The row a between-rows drop would land above, for the insertion line. */
   const [dropBetween, setDropBetween] = useState<string | null>(null);
@@ -251,7 +255,7 @@ export function HierarchyPanel() {
     if (instance) {
       const owner = instanceInfo(instance.owner);
       return [
-        { label: 'Rename', onSelect: () => setRenaming(entityId) },
+        entry('rename'),
         entry('revertEntityOverride'),
         null,
         { label: 'Select Prefab Instance', onSelect: () => setSelection([instance.owner]) },
@@ -269,14 +273,9 @@ export function HierarchyPanel() {
 
     return [
       // No shortcut shown: renaming is bound to double-click, not a key.
-      {
-        // The only gesture the registry cannot finish: what it does is put a
-        // row into edit mode, and only this panel has rows. The verdict is the
-        // registry's, the body stays here.
-        label: 'Rename',
-        disabled: !commandById('rename').can(ctx),
-        onSelect: () => setRenaming(entityId),
-      },
+      // Label, verdict and body all the command's now — the body used to stay
+      // here because the registry had no way to ask a view for a text field.
+      entry('rename'),
       entry('duplicate', `${modKey}D`),
       entry('delete', isMac ? '⌫' : 'Del'),
       null,
@@ -423,7 +422,9 @@ export function HierarchyPanel() {
                 onDrop(event, parent, Math.max(0, siblings.indexOf(entity.id)));
               }}
               onClick={(event) => onRowClick(event, entity.id)}
-              onDoubleClick={() => setRenaming(entity.id)}
+              // Through the command, like the menu entry: the double-click used
+              // to walk straight past `can('rename')`.
+              onDoubleClick={() => commandById('rename').run(contextFor([entity.id]))}
               onContextMenu={(event) => openMenu(event, entity.id)}
               // The height is the windowing's, not a class of its own: `h-6`
               // beside a `ROW_HEIGHT` of 24 was one number in two languages,
@@ -461,11 +462,11 @@ export function HierarchyPanel() {
                   defaultValue={entity.name}
                   onBlur={(event) => {
                     renameEntity(entity.id, event.target.value);
-                    setRenaming(null);
+                    endRename();
                   }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') event.currentTarget.blur();
-                    if (event.key === 'Escape') setRenaming(null);
+                    if (event.key === 'Escape') endRename();
                     event.stopPropagation();
                   }}
                   className="min-w-0 flex-1 rounded-xs bg-surface-3 px-1 text-ink outline-none"

@@ -119,32 +119,26 @@ export const EDIT_COMMANDS = {
   }),
 
   /**
-   * Renaming is the one gesture the registry cannot finish: what it does is put
-   * a row into edit mode, and only the hierarchy has rows. It is here for its
-   * `can()`, which three callers were asking in their own words, and `run` is
-   * supplied by whoever owns the row.
+   * Renaming asks a view to put a row into edit mode, because only a view has
+   * rows — and it does it by writing `editorStore.renaming`, which is the state
+   * "this entity is being renamed" rather than a message to a particular panel.
+   *
+   * It used to call a mutable module slot filled by `setRenameHandler`, which
+   * **nothing ever called**: the slot stayed `undefined` and `run` did nothing
+   * at all, while the hierarchy set its own local state behind the registry's
+   * back. Two ways to start a rename, one of them dead — the exact shape this
+   * layer exists to remove.
+   *
+   * `ctx.selection`, not `editorStore.selection`: the row that was
+   * right-clicked is not always the one that is selected, and reading the store
+   * directly was how this ignored the context it was handed.
    */
   rename: defineCommand({
     label: () => 'Rename',
     can: (ctx) => !ctx.selection.isMultiple && ctx.selection.can('rename'),
-    run: () => {
-      const [id] = useEditorStore.getState().selection;
-      if (id !== undefined) onRenameRequested?.(id);
+    run: (ctx) => {
+      const id = ctx.selection.primary;
+      if (id !== null) useEditorStore.getState().beginRename(id);
     },
   }),
 };
-
-/**
- * Where a rename actually happens. Set by the hierarchy panel while it is
- * mounted; `undefined` means nothing can show a text field, and the command
- * quietly does nothing rather than pretending.
- *
- * **Nothing calls the setter today**, so `rename` is a gesture that never runs.
- * That is milestone 8.2 and task T-063, which is the next one along; it is left
- * exactly as it was rather than half-fixed here.
- */
-let onRenameRequested: ((entityId: string) => void) | undefined;
-
-export function setRenameHandler(handler: ((entityId: string) => void) | undefined): void {
-  onRenameRequested = handler;
-}
