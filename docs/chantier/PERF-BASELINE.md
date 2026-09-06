@@ -6,6 +6,9 @@ le seul dont les résultats sont des nombres, et il n'avait pas de point de dép
 **Ce relevé n'est pas un seuil.** Rien n'échoue s'il bouge. C'est une photographie datée, avec la
 machine et la version de three dessus, et la recette pour en reprendre une.
 
+Deux relevés, en fait : **le rendu** (T-060) ci-dessous, et **le scan d'assets** (T-061) plus bas. Ils
+partagent la machine, la pile et le projet de référence.
+
 ## La machine et la pile
 
 | | |
@@ -17,14 +20,16 @@ machine et la version de three dessus, et la recette pour en reprendre une.
 | Backend | WebGPU (la barre d'état affiche `WEBGPU`) |
 | Electron | 43.2.0 · Node 22.11.0 |
 | Build | `npm run dev` — développement, non minifié |
-| Commit | `cbb0799` (T-059), arbre de travail propre hors `docs/` |
-| Date | 2026-09-06 |
+| Commit | `cbb0799` pour le rendu, `65c84d5` pour le scan d'assets. Arbre propre hors `docs/` dans les deux cas |
+| Date | 2026-09-06 (rendu) · 2026-09-07 (scan d'assets) |
 
 **La fenêtre compte, et c'est la première chose à vérifier avant de comparer.** Fenêtre Electron par
 défaut : 1512 × 849 CSS pour le dock, panneau *Scene* 952 × 601 CSS, surface de dessin 1904 × 1202
 pixels physiques (`maxPixelRatio` 2). Un autre écran ou une autre taille de fenêtre déplace les temps
 de frame et **rien d'autre** : les appels de dessin, les triangles, les pools et la mémoire sont
 indépendants de la surface.
+
+# Le rendu (T-060)
 
 ## La scène
 
@@ -42,7 +47,7 @@ Le projet n'est pas dans le dépôt — cinq mégaoctets de JSON généré que p
 recette est dans `baseline/make-scene.mjs`, et elle se construit sur les fabriques de `core`, donc une
 scène refaite dans un an est une scène que ce build sait ouvrir.
 
-## Le relevé
+## Les chiffres
 
 Médiane, p95 et max sur 239 frames, après 60 frames de chauffe. Les trois lectures sont prises dans
 **un seul passage** de l'application : comparer des temps de frame entre deux lancements, c'est
@@ -133,7 +138,7 @@ Mesuré, pas déduit : la troisième colonne est le même passage avec `viewport
 retombe exactement sur le temps d'édition. Inscrit dans `RESTES.md` — **T-060 mesure, T-060 ne
 corrige pas.**
 
-## Refaire le relevé
+## Refaire ce relevé
 
 ```bash
 SCRATCH=/tmp/baseline          # n'importe quel dossier neuf, jamais un projet réel
@@ -177,9 +182,129 @@ remet l'onglet *Scene* au premier plan en sortant.
 1,5 ms selon l'onglet que le passage précédent avait laissé devant. `measure.js` épingle l'onglet
 *Scene* avant de mesurer quoi que ce soit. Sans cet épinglage, le relevé mesure le passage d'avant.
 
+# Le scan d'assets (T-061)
+
+T-019 a posé un index et annoncé un gain. Ceci le vérifie sur le projet de référence, avec 3000
+assets ajoutés dessus — même compte que T-019, pour que les deux chiffres se comparent.
+
+Même machine, même pile, même projet de référence que le relevé ci-dessus, pris le lendemain.
+
+## Le projet
+
+Le projet de T-060 (3005 entités), plus **3000 textures PNG réparties dans 30 dossiers**. 37 dossiers
+en tout, une fois comptés les sept que le scaffolding crée. Recette :
+
+```bash
+node docs/chantier/baseline/make-scene.mjs  "$SCRATCH/projet"
+node docs/chantier/baseline/make-assets.mjs "$SCRATCH/projet"
+```
+
+Les PNG font 16 × 16, et **seule la toute première analyse s'en aperçoit** : `scanAssets` hache un
+fichier une fois, quand il écrit le sidecar que ce fichier n'a jamais eu ; ensuite il `stat` le sidecar
+et ne lit plus rien. Trois mille vraies textures seraient un gigaoctet de scratch pour prouver ça.
+
+## Deux mesures, et il faut les deux
+
+| | ce qui est chronométré | ce que ça répond |
+|---|---|---|
+| `baseline/scan-direct.ts` | `scanAssets` seul, dans Node, hors Electron | **ce que l'index fait gagner** |
+| `baseline/measure-assets.js` | `assets.list()` depuis le renderer, à travers l'IPC | **ce qu'un renommage coûte à l'auteur** |
+
+La première supprime `.studio/assets.index.json` entre deux lectures — la seule façon de mesurer une
+analyse *sans* index, et la seule chose qu'un renderer ne peut pas faire. La seconde ne le peut pas,
+alors elle invalide au lieu de supprimer : `FileIndex` est indexé sur le chemin relatif au projet, donc
+renommer les 30 dossiers fait manquer les 3000 entrées d'un coup.
+
+### `scanAssets` seul
+
+Deux passages, cinq lectures à chaud chacun, deux suppressions d'index chacun :
+
+| | |
+|---|---|
+| **Sans index** | **391 · 428 · 441 · 514 ms** |
+| **À chaud** | **130 ms** de médiane (124 – 163) |
+| Rapport | **≈ 3,2×** |
+
+**T-019 se reproduit.** Il annonçait 391 ms sans index et 111 ms à chaud ; on retrouve 391 ms au
+chiffre près sur le premier et 130 ms sur le second. L'écart de 19 ms sur le chaud est le projet, pas
+le code : 37 dossiers au lieu de la disposition de l'époque, et une scène de 5 Mo ouverte à côté.
+
+### Depuis le renderer, à travers l'IPC
+
+| | scan | + la mutation | total |
+|---|---|---|---|
+| À chaud, rien n'a bougé | **196 – 199 ms** | — | — |
+| **Un asset déplacé** (1 clé) | 202 – 222 ms | 6 – 7 ms | **210 – 229 ms** |
+| Un dossier renommé (100 clés) | 221 – 236 ms | — | — |
+| Les 30 dossiers renommés (3000 clés) | **819 – 1002 ms** | — | — |
+
+**Le gain est là, et il est même plus grand vu d'ici** : 4,3× entre « toutes les clés manquent » et
+« rien n'a bougé ». Un renommage coûte 210 ms au lieu des 840 ms qu'il coûterait sans index.
+
+### L'invalidation est exactement proportionnelle
+
+C'était la question que la tâche posait — « si le gain n'est pas là, l'index a un défaut, probablement
+une invalidation trop large ». Il n'y en a pas :
+
+| clés invalidées | surcoût sur l'analyse |
+|---|---|
+| 1 (un asset déplacé) | + 4 ms |
+| 100 (un dossier renommé) | + 27 ms |
+| 3000 (tous les dossiers) | + 620 ms |
+
+≈ 0,2 ms par sidecar relu, linéaire sur trois ordres de grandeur. Un déplacement n'invalide qu'une
+entrée parce que seul son chemin a changé — un `rename` ne touche ni la taille ni le `mtime` du
+sidecar, et l'index est indexé sur le chemin.
+
+## Ce que la vérification a trouvé en plus
+
+**Le pont IPC coûte ~60 ms par analyse, soit 30 % du prix d'une mutation.** 196 ms end-to-end contre
+130 – 138 ms pour l'analyse seule. Le manifeste fait **1 238 831 octets** pour 3000 assets, et il
+traverse la frontière de processus **entièrement, à chaque appel**. Pour situer : `structuredClone` du
+même objet dans le renderer prend **4,4 ms**. La sérialisation d'Electron est plus d'un ordre de
+grandeur au-dessus d'une copie en processus.
+
+**Le jalon 7.2 du `PLAN.md` n'est pas atteint, et l'index n'y pouvait rien.** Il demandait que
+« `scanAssets` cesse de reparcourir le disque à chaque mutation ». Il le reparcourt toujours — 6000
+`stat`, 3000 objets de manifeste construits, 1,2 Mo poussés à travers l'IPC — il ne le *lit* plus.
+C'est trois fois moins cher et ce n'est pas la même phrase. Inscrit dans `RESTES.md`.
+
+**Ce qui reste dans les 130 ms** est déjà écrit dans les notes de T-019 et se confirme : deux `stat`
+par asset, irréductibles tant qu'on veut détecter à la fois un fichier modifié et un sidecar modifié.
+Pour descendre plus bas, il faut ne pas analyser du tout, pas analyser plus vite.
+
+## Refaire ces mesures
+
+```bash
+SCRATCH=/tmp/baseline
+node docs/chantier/baseline/make-scene.mjs  "$SCRATCH/projet"
+node docs/chantier/baseline/make-assets.mjs "$SCRATCH/projet"
+
+# `scanAssets` seul — le gain de l'index
+npx esbuild docs/chantier/baseline/scan-direct.ts \
+  --bundle --format=esm --platform=node --packages=external \
+  --outfile="$SCRATCH/scan-direct.mjs"
+node "$SCRATCH/scan-direct.mjs" "$SCRATCH/projet"
+
+# end-to-end — le coût d'un renommage
+STUDIO_SMOKE=1 \
+STUDIO_SMOKE_PROJECT="$SCRATCH/projet" \
+STUDIO_SMOKE_SETTLE=500 \
+STUDIO_SMOKE_SETUP="$(cat docs/chantier/baseline/measure-assets.js)" \
+npm run dev > "$SCRATCH/assets.log" 2>&1
+
+sed -n '/\[smoke\] setup/,/\[smoke\] result/p' "$SCRATCH/assets.log"
+```
+
+Les deux scripts laissent le projet dans l'état où ils l'ont trouvé — `measure-assets.js` renvoie
+`unchanged: true` pour le dire, en comparant le compte d'assets et de dossiers avant et après.
+
 ## Les fichiers
 
 | | |
 |---|---|
 | `baseline/make-scene.mjs` | Écrit le projet de référence. Refuse un dossier existant |
-| `baseline/measure.js` | Le script de setup du harnais. Les trois lectures, dans un passage |
+| `baseline/measure.js` | Le script de setup du harnais. Les trois lectures de T-060, dans un passage |
+| `baseline/make-assets.mjs` | Ajoute 3000 textures au projet, dans 30 dossiers |
+| `baseline/measure-assets.js` | Le coût d'un renommage vu du renderer, IPC compris |
+| `baseline/scan-direct.ts` | `scanAssets` seul, avec et sans index. À bundler par esbuild |

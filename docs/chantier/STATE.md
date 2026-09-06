@@ -1,11 +1,11 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-060 — un relevé de performance de référence
-**Tâche courante** : **T-061** — scan d'assets incrémental, vérifié
-**Faites** : T-001 → T-060. **Lots 0, 2, 3a, 3b, 4, 5, 6, 9 et 10 terminés.** Lot 1 : les neuf tâches
-sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée — voir
-`RESTES.md`.
+**Dernier commit** : T-061 — mesurer ce que l'index d'assets a réellement fait gagner
+**Tâche courante** : **T-062** — tous les gestes entrent dans le registre (début du lot 8)
+**Faites** : T-001 → T-061. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
+voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
 > **Ce qui a été laissé de côté est dans `RESTES.md`** — une ligne par chose qu'une tâche aurait pu
 > faire et n'a pas faite, avec ce qui la rouvrirait. Les notes ci-dessous sont chronologiques ; ce
@@ -15,6 +15,51 @@ sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'e
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-061 — le gain de l'index est réel, vérifié par deux chemins, et T-019 se reproduit au chiffre
+près.** Projet de référence de T-060 plus 3000 textures dans 30 dossiers. Relevé complet dans
+`PERF-BASELINE.md` § *Le scan d'assets (T-061)*.
+
+| | sans index | à chaud | un renommage |
+|---|---|---|---|
+| `scanAssets` seul (Node, hors Electron) | **391 · 428 · 441 · 514 ms** | **130 ms** | — |
+| end-to-end depuis le renderer (IPC) | **819 – 1002 ms** | **196 – 199 ms** | **210 – 229 ms** |
+
+T-019 annonçait 391 ms sans index et 111 ms à chaud : on retrouve 391 ms exactement, et 130 ms sur le
+chaud. Rapport 3,2× sur l'analyse seule, 4,3× vu du renderer.
+
+**⚠️ Le « Pourquoi » de la fiche T-061 était faux, et la fiche le dit maintenant.** Il affirmait que le
+gain n'avait pas été mesuré ; T-019 l'avait mesuré et son tableau est plus haut dans ce fichier. La
+tâche reste utile parce que son **titre** dit « vérifier » : une deuxième mesure, indépendante, sur un
+autre projet et par un autre chemin. Ne pas s'arrêter sur un « Pourquoi » périmé quand le « Quoi » et
+le titre décrivent un travail qui a encore un objet.
+
+**Pas de défaut d'invalidation, et c'était la question de la tâche.** Le surcoût est exactement
+proportionnel à ce qui a bougé : 1 clé → +4 ms, 100 clés (un dossier renommé) → +27 ms, 3000 clés
+(tous les dossiers) → +620 ms. Linéaire sur trois ordres de grandeur. Un déplacement n'invalide qu'une
+entrée : un `rename` ne touche ni la taille ni le `mtime` du sidecar, et l'index est indexé sur le
+chemin — seule la clé change.
+
+**⚠️ Le pont IPC coûte ~60 ms par analyse, soit 30 % du prix d'une mutation.** 196 ms end-to-end contre
+130 ms pour l'analyse seule. `AssetManifest` fait **1 238 831 octets** pour 3000 assets et traverse la
+frontière de processus **en entier, à chaque appel**. Pour situer : `structuredClone` du même objet
+dans le renderer prend **4,4 ms**. La sérialisation d'Electron est plus d'un ordre de grandeur au-dessus
+d'une copie en processus. Personne ne l'avait chiffré ; c'est maintenant le deuxième poste après
+l'analyse elle-même.
+
+**⚠️ Le jalon 7.2 du `PLAN.md` n'est pas atteint, et l'index n'y pouvait rien.** Il demandait que
+« `scanAssets` cesse de reparcourir le disque à chaque mutation ». Il le reparcourt toujours — 6000
+`stat`, 3000 objets de manifeste, 1,2 Mo poussés à travers l'IPC — il ne le *lit* plus. Trois fois
+moins cher, et ce n'est pas la même phrase. Descendre plus bas demande de **ne pas analyser du tout** :
+une mutation qui corrige le manifeste en place, ou une analyse ciblée. Inscrit dans `RESTES.md`.
+
+**Le renderer ne peut pas mesurer une analyse sans index**, et c'est pour ça qu'il y a deux scripts.
+L'index vit dans `.studio/`, aucun canal IPC ne l'atteint, et l'éditeur l'a déjà reconstruit quand le
+script de setup démarre. `measure-assets.js` contourne en **invalidant** — renommer les 30 dossiers
+fait manquer les 3000 clés — ce qui est un majorant, pas la même chose. `scan-direct.ts` prend le
+vrai chiffre en appelant `scanAssets` depuis Node : aucun module du chemin d'analyse n'importe
+`electron`, donc esbuild le bundle et node l'exécute. **C'est la seule façon d'isoler l'analyse du
+pont, et sans cette isolation les 196 ms n'auraient dit sur quoi agir.**
 
 **T-060 — le relevé est dans `docs/chantier/PERF-BASELINE.md`, et il a un point de départ chiffré
 pour le reste du lot 7.** Scène de 3005 entités, M1 Pro, three 0.185.1, le 2026-09-06 : **11,0 ms en
@@ -2094,7 +2139,7 @@ choisi par bénéfice visible :
 | 4 | T-042 → T-046 | Les god objects | **5/5 ✅** |
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
-| 7 | T-056 → T-061 | Le moteur et la performance | 5/6 |
+| 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
 | 8 | T-062 → T-066 | La couche de commandes | 0/5 |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
