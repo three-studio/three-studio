@@ -6,20 +6,14 @@ import {
   selectPrefabInstances,
   unpackPrefabInstance,
 } from '../../commands/prefabCommands';
-import type { ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 import { useAssetStore } from '../../state/assetStore';
 import { usePrefabModeStore } from '../../state/prefabModeStore';
 
 export const inspector: ComponentSchema = {
   label: 'Prefab',
   fields: [
-    {
-      path: ['assetId'],
-      label: 'Prefab',
-      params: { view: 'asset', assetKind: 'prefab' },
-      toModel: (value) => value ?? '',
-      fromModel: (value) => (value === '' ? null : value),
-    },
+    assetSlot(['assetId'], 'Prefab', 'prefab'),
     {
       kind: 'action',
       title: 'Open Prefab',

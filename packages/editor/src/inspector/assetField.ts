@@ -10,6 +10,7 @@ import {
   type ViewProps,
 } from '@tweakpane/core';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
+import type { AssetSlotParams } from './fields';
 import { showPanel } from '../shell/dockApi';
 import { browseAndImport } from '../import/importStore';
 import { useAssetStore } from '../state/assetStore';
@@ -39,19 +40,14 @@ import { useOverlayStore } from '../state/overlayStore';
  *     └ thumbnail; hover for a larger preview
  */
 
-export interface AssetFieldParams extends BaseInputParams {
-  view: 'asset';
-  assetKind: AssetKind;
-  /**
-   * What the empty value is called, where "None" would be a lie.
-   *
-   * A mesh with no material asset draws its own embedded one; a model with none
-   * draws the materials its file shipped with. Both are a *choice* rather than
-   * an absence, and calling either "None" reads as "this object has no
-   * material", which is the opposite of what is on screen.
-   */
-  emptyLabel?: string;
-}
+/**
+ * The shape a field declares to be claimed by this plugin.
+ *
+ * `AssetSlotParams` is the half a pane writes and lives with the rest of the
+ * field vocabulary; `BaseInputParams` is Tweakpane's own, and this is the one
+ * place the two meet.
+ */
+export type AssetFieldParams = AssetSlotParams & BaseInputParams;
 
 /** Empty selection. `null` in the document; a primitive here, as the DOM needs. */
 const NONE = '';

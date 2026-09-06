@@ -7,8 +7,7 @@ import {
   type SceneDoc,
   type SkySettings,
 } from '@three-studio/core';
-import type { BindingParams } from 'tweakpane';
-import { ASSET_SLOT, asDegrees, type FieldSpec } from './fields';
+import { ASSET_SLOT, asDegrees, type DistributiveOmit, type FieldSpec } from './fields';
 import { shapeOf } from './signature';
 import { setComponentNestedField } from '../commands/sceneCommands';
 import { audioPreview } from '../audio/preview';
@@ -32,8 +31,6 @@ export {
   MATERIAL_FIELDS,
   SIDE_OPTIONS,
   asDegrees,
-  asVec2,
-  asVec3,
   assetSlot,
   isAction,
   isGeometrySlot,
@@ -73,7 +70,7 @@ export {
  */
 export type SceneSubject = Pick<SceneDoc, 'environment'>;
 
-type SceneFieldBase = Omit<FieldSpec<SceneSubject>, 'path'>;
+type SceneFieldBase = DistributiveOmit<FieldSpec<SceneSubject>, 'path'>;
 
 /**
  * One editable value of the scene, and which block of it holds that value.
@@ -149,14 +146,17 @@ const environmentSlot = (key: keyof EnvironmentDef, label: string): SceneField =
 });
 
 /**
- * One of the sky's uniforms. `params` is optional: `Sun Disc` is a checkbox,
+ * One of the sky's uniforms. The range is optional: `Sun Disc` is a checkbox,
  * and Tweakpane builds one from the value's type with nothing else to say.
  */
 const skyField = (
   key: keyof SkySettings,
   label: string,
-  params?: BindingParams,
-): SceneField => ({ on: 'sky', key, label, params });
+  range?: { min: number; max: number; step: number },
+): SceneField =>
+  range === undefined
+    ? { on: 'sky', key, label }
+    : { on: 'sky', key, label, type: 'number', ...range };
 
 /**
  * What the Inspector shows when nothing is selected — Blender's Scene tab.
@@ -180,7 +180,12 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         on: 'environment',
         key: 'backgroundMode',
         label: 'Mode',
-        params: { options: { Colour: 'color', Texture: 'texture', Sky: 'sky' } },
+        type: 'enum',
+        options: [
+          { value: 'color', label: 'Colour' },
+          { value: 'texture', label: 'Texture' },
+          { value: 'sky', label: 'Sky' },
+        ],
       },
       {
         on: 'environment',
@@ -193,7 +198,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         on: 'environment',
         key: 'backgroundIntensity',
         label: 'Intensity',
-        params: { min: 0, max: 5, step: 0.01 },
+        type: 'number', min: 0, max: 5, step: 0.01,
         visibleWhen: showsImageBackground,
       },
       {
@@ -203,7 +208,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         // Only the sky, never the reflections — which is the point of having
         // it: a blurred backdrop behind sharp reflections is how a subject is
         // put in front of an environment without it reading as a photograph.
-        params: { min: 0, max: 1, step: 0.01 },
+        type: 'number', min: 0, max: 1, step: 0.01,
         // Texture only, and it loses nothing. Blurring softens a photographed
         // room behind a subject; an analytic sky is already smooth, has no
         // detail to lose, and as a mesh has no mip chain to sample.
@@ -218,7 +223,12 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         on: 'environment',
         key: 'environmentMode',
         label: 'Source',
-        params: { options: { None: 'none', Background: 'background', Texture: 'texture' } },
+        type: 'enum',
+        options: [
+          { value: 'none', label: 'None' },
+          { value: 'background', label: 'Background' },
+          { value: 'texture', label: 'Texture' },
+        ],
       },
       {
         ...environmentSlot('environmentTexture', 'Lighting'),
@@ -228,7 +238,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         on: 'environment',
         key: 'environmentIntensity',
         label: 'Intensity',
-        params: { min: 0, max: 5, step: 0.01 },
+        type: 'number', min: 0, max: 5, step: 0.01,
         visibleWhen: (scene) => scene.environment.environmentMode !== 'none',
       },
       {
@@ -239,7 +249,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         // Degrees in the panel, radians in the document, like every other
         // rotation the Inspector shows.
         ...asDegrees,
-        params: { min: -180, max: 180, step: 1 },
+        type: 'number', min: -180, max: 180, step: 1,
         visibleWhen: turnsAnImage,
       },
     ],
@@ -280,21 +290,25 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         on: 'environment',
         key: 'fogMode',
         label: 'Mode',
-        params: { options: { Linear: 'linear', Exponential: 'exponential' } },
+        type: 'enum',
+        options: [
+          { value: 'linear', label: 'Linear' },
+          { value: 'exponential', label: 'Exponential' },
+        ],
         visibleWhen: isFogOn,
       },
       {
         on: 'environment',
         key: 'fogNear',
         label: 'Start',
-        params: { min: 0, step: 1 },
+        type: 'number', min: 0, step: 1,
         visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear',
       },
       {
         on: 'environment',
         key: 'fogFar',
         label: 'End',
-        params: { min: 0, step: 1 },
+        type: 'number', min: 0, step: 1,
         visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear',
       },
       {
@@ -303,7 +317,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
         label: 'Density',
         // Exponential in effect as well as in name: 0.05 already closes the
         // horizon at about forty units.
-        params: { min: 0, max: 0.2, step: 0.001 },
+        type: 'number', min: 0, max: 0.2, step: 0.001,
         visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'exponential',
       },
     ],

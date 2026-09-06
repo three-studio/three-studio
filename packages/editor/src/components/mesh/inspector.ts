@@ -3,6 +3,7 @@ import { setComponentNestedField } from '../../commands/sceneCommands';
 import {
   GEOMETRY_FIELDS,
   MATERIAL_FIELDS,
+  assetSlot,
   type ComponentSchema,
   type FieldSpec,
 } from '../../inspector/fields';
@@ -58,13 +59,7 @@ export const inspector: ComponentSchema = {
     { kind: 'separator' },
     { kind: 'geometry' },
     { kind: 'separator' },
-    {
-      path: ['materialId'],
-      label: 'Material',
-      params: { view: 'asset', assetKind: 'material' },
-      toModel: (value) => value ?? '',
-      fromModel: (value) => (value === '' ? null : value),
-    },
+    assetSlot(['materialId'], 'Material', 'material'),
     {
       kind: 'action',
       title: 'Save as Asset…',

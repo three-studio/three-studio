@@ -1,5 +1,5 @@
 import { unpackModel } from '../../commands/modelCommands';
-import type { ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
   label: 'Model',
@@ -22,13 +22,9 @@ export const inspector: ComponentSchema = {
        * file, and pulling one out means decoding the images it references,
        * which is an import question rather than an inspector one.
        */
-      path: ['materialId'],
-      label: 'Material',
       // "From file", not the mesh's "Embedded": a model has no embedded
       // `MaterialDef` to fall back on, it has whatever the glTF shipped with.
-      params: { view: 'asset', assetKind: 'material', emptyLabel: 'From file' },
-      toModel: (value) => value ?? '',
-      fromModel: (value) => (value === '' ? null : value),
+      ...assetSlot(['materialId'], 'Material', 'material', 'From file'),
     },
     { kind: 'separator' },
     {

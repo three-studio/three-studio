@@ -10,7 +10,8 @@ import {
 } from '@three-studio/core';
 import type { ScriptProperties } from '@three-studio/runtime';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { specFor, type KeyedField } from '../src/inspector/declaredFields';
+import { declaredControl, specFor, type KeyedField } from '../src/inspector/declaredFields';
+import { GEOMETRY_FIELDS, MATERIAL_FIELDS, type FieldSpec } from '../src/inspector/fields';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 
@@ -39,6 +40,15 @@ const EVERY_VARIANT: ScriptProperties = {
 const bind = (key: string, def: FieldDef = EVERY_VARIANT[key]!) =>
   specFor({ ...def, key } as KeyedField, ['props', key]);
 
+/** What the declared type alone says, which is what the binder asks it. */
+const control = (key: string, def: FieldDef = EVERY_VARIANT[key]!) => declaredControl(def);
+
+const row = (fields: readonly FieldSpec[], label: string): FieldSpec => {
+  const found = fields.find((field) => field.label === label);
+  if (!found) throw new Error(`no field labelled ${label}`);
+  return found;
+};
+
 beforeEach(() => {
   useDocumentStore.setState({ scene: createEmptyScene() });
   useAssetStore.setState({ manifest: emptyManifest() });
@@ -55,8 +65,8 @@ describe('a script property, whichever variant it is', () => {
   });
 
   it('narrows a number with only the bounds that were declared', () => {
-    expect(bind('speed').params).toEqual({ min: 0, max: 20, step: 0.5 });
-    expect(bind('speed', { type: 'number' }).params).toEqual({});
+    expect(control('speed').params).toEqual({ min: 0, max: 20, step: 0.5 });
+    expect(control('speed', { type: 'number' }).params).toEqual({});
   });
 
   it('coerces a number saved as something else, and falls back to the default', () => {
@@ -81,12 +91,12 @@ describe('a script property, whichever variant it is', () => {
   });
 
   it('offers an enum as label -> value, from either spelling', () => {
-    expect(bind('mode').params?.options).toEqual({ walk: 'walk', run: 'run' });
-    const labelled = bind('mode', {
+    expect(control('mode').params?.['options']).toEqual({ walk: 'walk', run: 'run' });
+    const labelled = control('mode', {
       type: 'enum',
       options: [{ value: 'walk', label: 'Walking' }],
     });
-    expect(labelled.params?.options).toEqual({ Walking: 'walk' });
+    expect(labelled.params?.['options']).toEqual({ Walking: 'walk' });
   });
 
   it('converts a vec3 both ways, because the document stores a tuple', () => {
@@ -103,7 +113,7 @@ describe('a script property, whichever variant it is', () => {
     scene.entities[crate.entity.id] = crate.entity;
     useDocumentStore.setState({ scene });
 
-    expect(bind('target').optionsProvider?.()).toEqual({ None: '', Crate: crate.entity.id });
+    expect(control('target').optionsProvider?.()).toEqual({ None: '', Crate: crate.entity.id });
     expect(bind('target').toModel?.(undefined)).toBe('');
   });
 
@@ -127,8 +137,8 @@ describe('a script property, whichever variant it is', () => {
       },
     });
 
-    expect(bind('clip').optionsProvider?.()).toEqual({ None: '', Step: 'a1' });
-    expect(bind('clip', { type: 'asset' }).optionsProvider?.()).toEqual({
+    expect(control('clip').optionsProvider?.()).toEqual({ None: '', Step: 'a1' });
+    expect(control('clip', { type: 'asset' }).optionsProvider?.()).toEqual({
       None: '',
       Step: 'a1',
       Brick: 't1',
@@ -149,7 +159,10 @@ describe('an importer declares in the same words', () => {
     const spec = specFor(colorSpace as KeyedField, [colorSpace.key]);
     // A key on a flat settings object, not a path into the document.
     expect(spec.path).toEqual(['colorSpace']);
-    expect(spec.params?.options).toEqual({ 'sRGB (colour)': 'srgb', 'Linear (data)': 'linear' });
+    expect(declaredControl(colorSpace as KeyedField).params?.['options']).toEqual({
+      'sRGB (colour)': 'srgb',
+      'Linear (data)': 'linear',
+    });
   });
 
   it('spells a checkbox `toggle` and stores the tag a script writes', () => {
@@ -161,5 +174,38 @@ describe('an importer declares in the same words', () => {
       key: 'flipY',
       label: 'Flip Y',
     });
+  });
+});
+
+describe('a component pane declares in the same words', () => {
+  it('narrows a number without naming Tweakpane', () => {
+    expect(declaredControl(row(GEOMETRY_FIELDS.box, 'Segments X')).params).toEqual({
+      min: 1,
+      max: 256,
+      step: 1,
+    });
+  });
+
+  it('spreads one set of bounds over every axis of a pad', () => {
+    const tiling = row(MATERIAL_FIELDS, 'Tiling');
+    const { params, toModel, fromModel } = declaredControl(tiling);
+    expect(params).toEqual({ x: { step: 0.1 }, y: { step: 0.1 } });
+    expect(toModel?.([2, 3])).toEqual({ x: 2, y: 3 });
+    expect(fromModel?.({ x: 2, y: 3 })).toEqual([2, 3]);
+  });
+
+  it('leaves a row that has nothing to add alone, for Tweakpane to read the value', () => {
+    // A colour, a checkbox and a text field all come from the bound value. A
+    // declared type would be a restatement of what the document already says.
+    expect(declaredControl(row(MATERIAL_FIELDS, 'Colour'))).toEqual({});
+    expect(declaredControl(row(MATERIAL_FIELDS, 'Transparent'))).toEqual({});
+  });
+
+  it('does not fill a missing component value the way it fills a script one', () => {
+    // The belt in `PaneBinder`: a field the document has no value for is
+    // skipped and said out loud, rather than shown as a zero that would be
+    // written back on the first drag.
+    expect(declaredControl(row(MATERIAL_FIELDS, 'Roughness')).toModel).toBeUndefined();
+    expect(bind('speed').toModel?.(undefined)).toBe(5);
   });
 });

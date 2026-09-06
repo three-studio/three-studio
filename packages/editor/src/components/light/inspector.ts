@@ -38,7 +38,7 @@ export const inspector: ComponentSchema = {
   label: 'Light',
   fields: [
     { path: ['color'], label: 'Colour' },
-    { path: ['intensity'], label: 'Intensity', params: { min: 0, max: 50, step: 0.1 } },
+    { path: ['intensity'], label: 'Intensity', type: 'number', min: 0, max: 50, step: 0.1 },
     {
       path: ['groundColor'],
       label: 'Ground colour',
@@ -47,38 +47,38 @@ export const inspector: ComponentSchema = {
     {
       path: ['distance'],
       label: 'Range',
-      params: { min: 0, max: 200, step: 0.5 },
+      type: 'number', min: 0, max: 200, step: 0.5,
       visibleWhen: isLightKind('point', 'spot', 'projector'),
     },
     {
       path: ['decay'],
       label: 'Decay',
-      params: { min: 0, max: 4, step: 0.1 },
+      type: 'number', min: 0, max: 4, step: 0.1,
       visibleWhen: isLightKind('point', 'spot', 'projector'),
     },
     {
       path: ['angle'],
       label: 'Cone angle',
-      params: { min: 1, max: 89, step: 1 },
+      type: 'number', min: 1, max: 89, step: 1,
       visibleWhen: isLightKind('spot', 'projector'),
       ...asDegrees,
     },
     {
       path: ['penumbra'],
       label: 'Penumbra',
-      params: { min: 0, max: 1, step: 0.01 },
+      type: 'number', min: 0, max: 1, step: 0.01,
       visibleWhen: isLightKind('spot', 'projector'),
     },
     {
       path: ['width'],
       label: 'Width',
-      params: { min: 0.01, max: 50, step: 0.05 },
+      type: 'number', min: 0.01, max: 50, step: 0.05,
       visibleWhen: isLightKind('rectArea'),
     },
     {
       path: ['height'],
       label: 'Height',
-      params: { min: 0.01, max: 50, step: 0.05 },
+      type: 'number', min: 0.01, max: 50, step: 0.05,
       visibleWhen: isLightKind('rectArea'),
     },
     {
@@ -90,7 +90,7 @@ export const inspector: ComponentSchema = {
       // `0` is the useful default and means "take it from the texture", the
       // same convention `distance: 0` uses for an unbounded range.
       label: 'Aspect (0 = image)',
-      params: { min: 0, max: 4, step: 0.01 },
+      type: 'number', min: 0, max: 4, step: 0.01,
       visibleWhen: isLightKind('projector'),
     },
     {
@@ -115,37 +115,37 @@ export const inspector: ComponentSchema = {
       // The one an author reaches for first, and the one whose useful range is
       // nothing like its slider's: acne goes at about -0.0005.
       label: 'Bias',
-      params: { min: -0.01, max: 0.01, step: 0.0001 },
+      type: 'number', min: -0.01, max: 0.01, step: 0.0001,
       visibleWhen: casts(),
     },
     {
       path: ['shadow', 'normalBias'],
       label: 'Normal bias',
-      params: { min: 0, max: 0.5, step: 0.001 },
+      type: 'number', min: 0, max: 0.5, step: 0.001,
       visibleWhen: casts(),
     },
     {
       path: ['shadow', 'radius'],
       label: 'Softness',
-      params: { min: 0, max: 25, step: 0.5 },
+      type: 'number', min: 0, max: 25, step: 0.5,
       visibleWhen: casts(),
     },
     {
       path: ['shadow', 'blurSamples'],
       label: 'Blur samples',
-      params: { min: 1, max: 32, step: 1 },
+      type: 'number', min: 1, max: 32, step: 1,
       visibleWhen: casts(),
     },
     {
       path: ['shadow', 'near'],
       label: 'Shadow near',
-      params: { min: 0.001, max: 10, step: 0.01 },
+      type: 'number', min: 0.001, max: 10, step: 0.01,
       visibleWhen: casts(),
     },
     {
       path: ['shadow', 'far'],
       label: 'Shadow far',
-      params: { min: 1, max: 2000, step: 10 },
+      type: 'number', min: 1, max: 2000, step: 10,
       visibleWhen: casts(),
     },
     {
@@ -154,13 +154,13 @@ export const inspector: ComponentSchema = {
       // objects stop casting entirely; too large and the same map is spread
       // thinner, which reads as shadows going soft and blocky at once.
       label: 'Shadow area',
-      params: { min: 1, max: 200, step: 1 },
+      type: 'number', min: 1, max: 200, step: 1,
       visibleWhen: casts('directional'),
     },
     {
       path: ['shadow', 'focus'],
       label: 'Shadow focus',
-      params: { min: 0.1, max: 4, step: 0.05 },
+      type: 'number', min: 0.1, max: 4, step: 0.05,
       visibleWhen: casts('spot', 'projector'),
     },
   ],

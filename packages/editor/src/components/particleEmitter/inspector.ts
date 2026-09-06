@@ -1,5 +1,5 @@
 import type { ComponentDoc } from '@three-studio/core';
-import { asVec3, assetSlot, type ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 
 /**
  * The two shape fields, each shown for the one shape that reads it.
@@ -22,12 +22,17 @@ export const inspector: ComponentSchema = {
     {
       path: ['shape'],
       label: 'Emit from',
-      params: { options: { Point: 'point', Sphere: 'sphere', Box: 'box' } },
+      type: 'enum',
+      options: [
+        { value: 'point', label: 'Point' },
+        { value: 'sphere', label: 'Sphere' },
+        { value: 'box', label: 'Box' },
+      ],
     },
     {
       path: ['radius'],
       label: 'Radius',
-      params: { min: 0, max: 50, step: 0.05 },
+      type: 'number', min: 0, max: 50, step: 0.05,
       visibleWhen: isShape('sphere'),
     },
     {
@@ -37,27 +42,26 @@ export const inspector: ComponentSchema = {
       // the editor rather than reasoned about — the two sit fifteen rows apart
       // in the source and one screen apart on the panel.
       label: 'Box size',
-      params: { x: { min: 0, step: 0.1 }, y: { min: 0, step: 0.1 }, z: { min: 0, step: 0.1 } },
-      ...asVec3,
+      type: 'vec3', min: 0, step: 0.1,
       visibleWhen: isShape('box'),
     },
     { kind: 'separator' },
     // Capped well below the system's own ceiling: a hundred thousand is what a
     // hand-edited file may ask for, five thousand is what a slider should offer.
-    { path: ['count'], label: 'Particles', params: { min: 0, max: 5000, step: 1 } },
+    { path: ['count'], label: 'Particles', type: 'number', min: 0, max: 5000, step: 1 },
     // The emission rate is `count / lifetime`; there is no third field for it,
     // which is why this one is labelled for the span rather than for the rate.
-    { path: ['lifetime'], label: 'Lifetime (s)', params: { min: 0.1, max: 30, step: 0.1 } },
+    { path: ['lifetime'], label: 'Lifetime (s)', type: 'number', min: 0.1, max: 30, step: 0.1 },
     { kind: 'separator' },
-    { path: ['velocity'], label: 'Velocity', params: { x: { step: 0.1 }, y: { step: 0.1 }, z: { step: 0.1 } }, ...asVec3 },
+    { path: ['velocity'], label: 'Velocity', type: 'vec3', step: 0.1 },
     // Plus and minus this, per particle. Zero on every axis is a beam.
-    { path: ['spread'], label: 'Spread', params: { x: { min: 0, step: 0.1 }, y: { min: 0, step: 0.1 }, z: { min: 0, step: 0.1 } }, ...asVec3 },
-    { path: ['gravity'], label: 'Gravity', params: { min: -20, max: 20, step: 0.1 } },
+    { path: ['spread'], label: 'Spread', type: 'vec3', min: 0, step: 0.1 },
+    { path: ['gravity'], label: 'Gravity', type: 'number', min: -20, max: 20, step: 0.1 },
     { kind: 'separator' },
     assetSlot(['spriteId'], 'Sprite'),
     { path: ['color'], label: 'Colour' },
-    { path: ['size'], label: 'Size', params: { min: 0.001, max: 10, step: 0.01 } },
-    { path: ['opacity'], label: 'Opacity', params: { min: 0, max: 1, step: 0.01 } },
+    { path: ['size'], label: 'Size', type: 'number', min: 0.001, max: 10, step: 0.01 },
+    { path: ['opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
     { path: ['additive'], label: 'Additive' },
   ],
 };

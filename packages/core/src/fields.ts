@@ -1,4 +1,4 @@
-import type { Vec3 } from './scene/primitives';
+import type { Vec2, Vec3 } from './scene/primitives';
 
 /**
  * One editable value, described without saying how it is drawn.
@@ -25,7 +25,15 @@ export type FieldDef =
   | { type: 'boolean'; default?: boolean; label?: string }
   | { type: 'string'; default?: string; label?: string }
   | { type: 'color'; default?: string; label?: string }
-  | { type: 'vec3'; default?: Vec3; label?: string }
+  /**
+   * Two or three numbers the author edits as a pad.
+   *
+   * `min`, `max` and `step` apply to every axis, because every declaration
+   * there has ever been sets them the same on each — a per-axis form is a
+   * shape to invent the day one differs.
+   */
+  | { type: 'vec2'; default?: Vec2; min?: number; max?: number; step?: number; label?: string }
+  | { type: 'vec3'; default?: Vec3; min?: number; max?: number; step?: number; label?: string }
   | { type: 'enum'; options: readonly FieldOption[]; default?: string; label?: string }
   /** An entity picked in the scene; a script receives a live handle. */
   | { type: 'entity'; label?: string }

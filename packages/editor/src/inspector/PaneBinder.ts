@@ -1,6 +1,7 @@
 import { Pane, type FolderApi } from 'tweakpane';
 import { assetFieldBundle } from './assetField';
-import type { BoundSpec } from './schema';
+import { declaredControl } from './declaredFields';
+import type { BoundSpec } from './fields';
 
 /** Tweakpane binds to mutable plain objects, so each field gets its own. */
 export interface Holder {
@@ -90,9 +91,16 @@ export class PaneBinder {
 
   /** One control, wired to whatever `io` says its value is. */
   bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO): void {
+    // What the declared type decides, which the row may still override: a
+    // `vec3` converts because it is a vec3, but a row is free to say something
+    // else about how its value reaches the control.
+    const declared = declaredControl(spec);
+    const toModel = spec.toModel ?? declared.toModel;
+    const fromModel = spec.fromModel ?? declared.fromModel;
+
     const read = () => {
       const raw = io.read();
-      return spec.toModel ? spec.toModel(raw) : raw;
+      return toModel ? toModel(raw) : raw;
     };
 
     // A field whose value is missing must cost that field, not the panel.
@@ -117,10 +125,10 @@ export class PaneBinder {
 
     // Computed at build time so a dropdown lists the scripts, entities or
     // assets that exist right now, not whatever existed when the schema loaded.
-    const dynamicOptions = spec.optionsProvider?.();
+    const dynamicOptions = (spec.optionsProvider ?? declared.optionsProvider)?.();
     const params = {
       label: spec.label,
-      ...numeric(spec.params),
+      ...numeric({ ...declared.params, ...spec.params }),
       ...(dynamicOptions ? { options: dynamicOptions } : {}),
     };
 
@@ -131,7 +139,7 @@ export class PaneBinder {
       // A pane that has been taken down has nothing left to say. See `disposed`.
       if (this.disposed) return;
 
-      const value = spec.fromModel ? spec.fromModel(event.value) : event.value;
+      const value = fromModel ? fromModel(event.value) : event.value;
       // Belt to the brace above, and a rule worth stating on its own: no field
       // in this editor has a use for `NaN` or an infinity. A number that is not
       // one is a control that has lost its footing — a detached slider, a text

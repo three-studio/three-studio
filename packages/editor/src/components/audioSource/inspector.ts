@@ -1,6 +1,6 @@
 import type { ComponentDoc } from '@three-studio/core';
 import { audioPreview } from '../../audio/preview';
-import type { ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 import { peekViewport } from '../../viewport/viewportHost';
 
 /** 3D falloff only matters once a source has some spatial blend. */
@@ -13,13 +13,7 @@ export const inspector: ComponentSchema = {
     // First, because everything below it is a way of shaping *this*. The
     // component has carried an `assetId` since the day it was added to the
     // schema and there was no way to fill it in until now.
-    {
-      path: ['assetId'],
-      label: 'Clip',
-      params: { view: 'asset', assetKind: 'audio' },
-      toModel: (value) => value ?? '',
-      fromModel: (value) => (value === '' ? null : value),
-    },
+    assetSlot(['assetId'], 'Clip', 'audio'),
     // Auditioned through the editor's own engine, never the game's: stopping
     // play must not stop a preview, and a preview must not turn up in the
     // game's mix (ADR-4).
@@ -48,31 +42,36 @@ export const inspector: ComponentSchema = {
     { kind: 'action', title: '■  Stop', run: () => audioPreview.stop() },
     { kind: 'separator' },
 
-    { path: ['volume'], label: 'Volume', params: { min: 0, max: 2, step: 0.01 } },
-    { path: ['pitch'], label: 'Pitch', params: { min: 0.1, max: 4, step: 0.01 } },
+    { path: ['volume'], label: 'Volume', type: 'number', min: 0, max: 2, step: 0.01 },
+    { path: ['pitch'], label: 'Pitch', type: 'number', min: 0.1, max: 4, step: 0.01 },
     // Cents. ±100 is a semitone, ±1200 an octave — the unit a variation is
     // written in, where `pitch` is the one a designer reaches for.
-    { path: ['detune'], label: 'Detune', params: { min: -1200, max: 1200, step: 1 } },
+    { path: ['detune'], label: 'Detune', type: 'number', min: -1200, max: 1200, step: 1 },
     { path: ['mute'], label: 'Mute' },
     { path: ['loop'], label: 'Loop' },
     { path: ['playOnStart'], label: 'Play on start' },
     { kind: 'separator' },
 
-    { path: ['startOffset'], label: 'Start offset', params: { min: 0, step: 0.01 } },
-    { path: ['delay'], label: 'Delay', params: { min: 0, step: 0.01 } },
-    { path: ['fadeIn'], label: 'Fade in', params: { min: 0, max: 30, step: 0.01 } },
-    { path: ['fadeOut'], label: 'Fade out', params: { min: 0, max: 30, step: 0.01 } },
+    { path: ['startOffset'], label: 'Start offset', type: 'number', min: 0, step: 0.01 },
+    { path: ['delay'], label: 'Delay', type: 'number', min: 0, step: 0.01 },
+    { path: ['fadeIn'], label: 'Fade in', type: 'number', min: 0, max: 30, step: 0.01 },
+    { path: ['fadeOut'], label: 'Fade out', type: 'number', min: 0, max: 30, step: 0.01 },
     // `0` is the highest, as in Unity. Idle until the voice ceiling is
     // reached, and then it decides everything.
-    { path: ['priority'], label: 'Priority', params: { min: 0, max: 256, step: 1 } },
+    { path: ['priority'], label: 'Priority', type: 'number', min: 0, max: 256, step: 1 },
     { kind: 'separator' },
 
     {
       path: ['bus'],
       label: 'Bus',
-      params: {
-        options: { Master: 'master', Music: 'music', SFX: 'sfx', UI: 'ui', Ambience: 'ambience' },
-      },
+      type: 'enum',
+      options: [
+        { value: 'master', label: 'Master' },
+        { value: 'music', label: 'Music' },
+        { value: 'sfx', label: 'SFX' },
+        { value: 'ui', label: 'UI' },
+        { value: 'ambience', label: 'Ambience' },
+      ],
     },
     { kind: 'separator' },
 
@@ -97,48 +96,53 @@ export const inspector: ComponentSchema = {
     {
       path: ['spatialBlend'],
       label: '2D  ↔  3D',
-      params: { min: 0, max: 1, step: 0.01 },
+      type: 'number', min: 0, max: 1, step: 0.01,
     },
     {
       path: ['distanceModel'],
       label: 'Falloff',
-      params: { options: { Inverse: 'inverse', Linear: 'linear', Exponential: 'exponential' } },
+      type: 'enum',
+      options: [
+        { value: 'inverse', label: 'Inverse' },
+        { value: 'linear', label: 'Linear' },
+        { value: 'exponential', label: 'Exponential' },
+      ],
       visibleWhen: isPositional,
     },
     {
       path: ['refDistance'],
       label: 'Full volume within',
-      params: { min: 0.1, max: 100, step: 0.1 },
+      type: 'number', min: 0.1, max: 100, step: 0.1,
       visibleWhen: isPositional,
     },
     {
       path: ['maxDistance'],
       label: 'Max distance',
-      params: { min: 1, max: 2000, step: 1 },
+      type: 'number', min: 1, max: 2000, step: 1,
       visibleWhen: isPositional,
     },
     {
       path: ['rolloffFactor'],
       label: 'Rolloff',
-      params: { min: 0, max: 10, step: 0.1 },
+      type: 'number', min: 0, max: 10, step: 0.1,
       visibleWhen: isPositional,
     },
     {
       path: ['coneInnerAngle'],
       label: 'Cone inner',
-      params: { min: 0, max: 360, step: 1 },
+      type: 'number', min: 0, max: 360, step: 1,
       visibleWhen: isPositional,
     },
     {
       path: ['coneOuterAngle'],
       label: 'Cone outer',
-      params: { min: 0, max: 360, step: 1 },
+      type: 'number', min: 0, max: 360, step: 1,
       visibleWhen: isPositional,
     },
     {
       path: ['coneOuterGain'],
       label: 'Outside cone',
-      params: { min: 0, max: 1, step: 0.01 },
+      type: 'number', min: 0, max: 1, step: 0.01,
       visibleWhen: isPositional,
     },
   ],
