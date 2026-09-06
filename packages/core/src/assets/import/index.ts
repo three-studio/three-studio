@@ -16,7 +16,6 @@ import {
 export { AssetImporter, type TextReader } from './AssetImporter';
 export { ImporterRegistry } from './ImporterRegistry';
 export { ModelImporter, FIT_TO_METRE } from './importers/ModelImporter';
-export * from './ImportField';
 export * from './session';
 
 /**

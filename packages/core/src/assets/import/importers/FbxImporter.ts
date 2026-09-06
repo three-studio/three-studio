@@ -1,5 +1,5 @@
 import type { FbxModelSettings } from '../../schema';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 import { ModelImporter } from './ModelImporter';
 
 /**
@@ -20,7 +20,7 @@ export class FbxImporter extends ModelImporter<FbxModelSettings> {
     return { ...this.baseDefaults(), format: 'fbx', collisionMeshes: 'ignore' };
   }
 
-  protected override formatFields(): readonly ImportField[] {
+  protected override formatFields(): readonly FieldRow[] {
     return [
       field.group('FBX', [
         field.enum('collisionMeshes', 'Collision meshes', [

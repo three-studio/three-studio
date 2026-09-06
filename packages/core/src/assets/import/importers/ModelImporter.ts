@@ -1,6 +1,6 @@
 import type { AssetKind, ModelSettings, ModelSettingsBase } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 /** The action key the dialog answers with the model's bounding box. */
 export const FIT_TO_METRE = 'fitToMetre';
@@ -28,7 +28,7 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
     };
   }
 
-  override fields(settings: S): readonly ImportField[] {
+  override fields(settings: S): readonly FieldRow[] {
     return [
       field.group('Model', [
         field.number('scale', 'Scale', { min: 0.000001, step: 0.01 }),
@@ -48,7 +48,7 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
   }
 
   /** Rows below the trunk. Empty is a fair answer — most formats decide little. */
-  protected formatFields(_settings: S): readonly ImportField[] {
+  protected formatFields(_settings: S): readonly FieldRow[] {
     return [];
   }
 }

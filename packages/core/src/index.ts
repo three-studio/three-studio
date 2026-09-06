@@ -85,27 +85,33 @@ export {
   assetDisplayName,
   assetKindForFile,
   defaultSettings,
-  field,
   importerForFile,
   importPreviewUrl,
   parseImportPreviewUrl,
   importers,
 } from './assets/import';
 export type {
-  ImportAction,
   ImportConflict,
-  ImportEnum,
-  ImportField,
-  ImportGroup,
-  ImportNumber,
-  ImportOption,
   ImportPlanItem,
   ImportPreviewRequest,
   ImportSessionState,
-  ImportToggle,
   StagedFile,
   TextReader,
 } from './assets/import';
+
+/*
+ * The field vocabulary sits at the root of `core` rather than under the
+ * importers, because it stopped belonging to them: a script declares in it too,
+ * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
+ */
+export { field, fieldOptions } from './fields';
+export type {
+  FieldAction,
+  FieldDef,
+  FieldGroup,
+  FieldOption,
+  FieldRow,
+} from './fields';
 
 export {
   collectSceneAssets,

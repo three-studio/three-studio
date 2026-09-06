@@ -1,7 +1,7 @@
 import type { ObjModelSettings } from '../../schema';
 import type { TextReader } from '../AssetImporter';
 import { CompanionSet, relativeDirname, relativeJoin } from '../companions';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 import { ModelImporter } from './ModelImporter';
 
 /** `map_Kd`, `bump`, `disp`, `decal`, `norm`, `refl` — every map an `.mtl` names. */
@@ -27,7 +27,7 @@ export class ObjImporter extends ModelImporter<ObjModelSettings> {
     return { ...this.baseDefaults(), format: 'obj', computeNormals: true };
   }
 
-  protected override formatFields(): readonly ImportField[] {
+  protected override formatFields(): readonly FieldRow[] {
     return [field.group('OBJ', [field.toggle('computeNormals', 'Compute normals if missing')])];
   }
 

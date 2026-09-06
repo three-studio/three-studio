@@ -1,7 +1,7 @@
-import type { AssetSettings, ImportField } from '@three-studio/core';
+import type { AssetSettings, FieldRow } from '@three-studio/core';
 import type { FolderApi } from 'tweakpane';
+import { specFor } from '../inspector/declaredFields';
 import { PaneBinder } from '../inspector/PaneBinder';
-import type { BoundSpec } from '../inspector/schema';
 
 /** What a button in the settings pane asks the dialog to do. */
 export type ImportActionHandler = (key: string) => void;
@@ -9,10 +9,9 @@ export type ImportActionHandler = (key: string) => void;
 /**
  * Renders an importer's declared fields, and writes back what is edited.
  *
- * The adapter between `core`'s `ImportField` — which knows nothing of any UI
- * toolkit, because `core` depends on nothing — and the Tweakpane rows the
- * inspector already uses. `scriptFields` does the same for a script's declared
- * properties; this is that trick applied to a file format.
+ * The rows come from the importer as `FieldRow`s and are bound by `specFor`,
+ * which is the same function that binds a script's declared properties — one
+ * vocabulary, one adapter, whichever producer wrote the declaration.
  *
  * The settings object is mutated in place and `onChange` is told, so the caller
  * decides what a change means: for the import dialog it is a draft to keep, and
@@ -23,7 +22,7 @@ export class ImportSettingsPane {
 
   constructor(
     container: HTMLElement,
-    fields: readonly ImportField[],
+    fields: readonly FieldRow[],
     private settings: Record<string, unknown>,
     private readonly onChange: (settings: Record<string, unknown>) => void,
     private readonly onAction: ImportActionHandler,
@@ -42,7 +41,7 @@ export class ImportSettingsPane {
     this.binder.dispose();
   }
 
-  private build(parent: FolderApi | PaneBinder['pane'], fields: readonly ImportField[]): void {
+  private build(parent: FolderApi | PaneBinder['pane'], fields: readonly FieldRow[]): void {
     for (const field of fields) {
       if (field.type === 'group') {
         // Expanded: a group is a heading here, not a drawer. There are two of
@@ -59,7 +58,7 @@ export class ImportSettingsPane {
         continue;
       }
 
-      this.binder.bind(parent as FolderApi, specFor(field), {
+      this.binder.bind(parent as FolderApi, specFor(field, [field.key]), {
         read: () => this.settings[field.key],
         write: (value) => {
           this.settings = { ...this.settings, [field.key]: value };
@@ -67,29 +66,6 @@ export class ImportSettingsPane {
         },
       });
     }
-  }
-}
-
-/** One declared row, in the shape the inspector's binder already speaks. */
-function specFor(field: Exclude<ImportField, { type: 'group' } | { type: 'action' }>): BoundSpec {
-  const base = { path: [field.key], label: field.label };
-
-  switch (field.type) {
-    case 'number':
-      // Tweakpane infers the widget from the value, and narrows it with these.
-      return { ...base, params: { min: field.min, max: field.max, step: field.step } };
-    case 'enum':
-      // Tweakpane wants label -> value, which is the reverse of how a format
-      // declares its options.
-      return {
-        ...base,
-        params: {
-          options: Object.fromEntries(field.options.map((o) => [o.label, o.value])),
-        },
-      };
-    case 'toggle':
-      // No params at all: a boolean is already a checkbox.
-      return base;
   }
 }
 

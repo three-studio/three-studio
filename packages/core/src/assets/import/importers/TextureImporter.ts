@@ -1,6 +1,6 @@
 import type { AssetKind, TextureEncoding, TextureSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 /** Formats whose extension already says they store light rather than pixels. */
 const HDR_EXTENSIONS = new Set(['hdr', 'exr']);
@@ -36,7 +36,7 @@ export class TextureImporter extends AssetImporter<TextureSettings> {
     };
   }
 
-  override fields(settings: TextureSettings): readonly ImportField[] {
+  override fields(settings: TextureSettings): readonly FieldRow[] {
     return [
       field.group('Texture', [
         field.enum('colorSpace', 'Colour space', [

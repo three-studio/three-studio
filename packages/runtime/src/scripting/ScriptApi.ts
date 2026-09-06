@@ -1,22 +1,19 @@
-import type { EntityDoc, Vec3 } from '@three-studio/core';
+import type { EntityDoc, FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { BehaviourContext } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
 import type { AudioApi } from './audioApi';
 import type { SceneApi } from '../behaviour/Behaviour';
 
-/** Declared shape of one editable property. Drives the inspector. */
-export type ScriptPropertyDef =
-  | { type: 'number'; default?: number; min?: number; max?: number; step?: number; label?: string }
-  | { type: 'boolean'; default?: boolean; label?: string }
-  | { type: 'string'; default?: string; label?: string }
-  | { type: 'color'; default?: string; label?: string }
-  | { type: 'vec3'; default?: Vec3; label?: string }
-  | { type: 'enum'; options: readonly string[]; default?: string; label?: string }
-  /** An entity picked in the scene; the script receives a live handle. */
-  | { type: 'entity'; label?: string }
-  /** An asset picked in the project; the script receives its id. */
-  | { type: 'asset'; kind?: string; label?: string };
+/**
+ * Declared shape of one editable property. Drives the inspector.
+ *
+ * The name is the contract, not the shape: user scripts and the generated
+ * `.d.ts` say `ScriptPropertyDef`, so it stays — but the eight variants moved
+ * to `core` as `FieldDef`, where an importer declares its rows in the same
+ * words and one adapter in the editor binds both. See `core/src/fields.ts`.
+ */
+export type ScriptPropertyDef = FieldDef;
 
 export type ScriptProperties = Record<string, ScriptPropertyDef>;
 

@@ -158,7 +158,7 @@ declare module '@three-studio/runtime' {
     | { type: 'string'; default?: string; label?: string }
     | { type: 'color'; default?: string; label?: string }
     | { type: 'vec3'; default?: [number, number, number]; label?: string }
-    | { type: 'enum'; options: readonly string[]; default?: string; label?: string }
+    | { type: 'enum'; options: readonly (string | { value: string; label: string })[]; default?: string; label?: string }
     | { type: 'entity'; label?: string }
     | { type: 'asset'; kind?: string; label?: string };
 
