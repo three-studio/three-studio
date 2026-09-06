@@ -1,10 +1,8 @@
 import {
-  capabilitiesOf,
   componentsOf,
   findComponentById,
   type ComponentDoc,
   type ComponentType,
-  type EntityCapability,
   type EntityDoc,
   type SceneDoc,
 } from '@three-studio/core';
@@ -15,23 +13,21 @@ import { expandedScene } from '../state/expansion';
  * What the Inspector edits, whether that is one entity or forty.
  *
  * Godot's `MultiNodeEdit` and Unity's `serializedObject`: an object that looks
- * like a single thing and quietly fans each read and write out to however many
- * are behind it. The panel asks for a value and is told whether the targets
- * agree; it never learns how many there are.
+ * like a single thing and quietly fans out to however many are behind it. The
+ * panel asks it for components and never learns how many entities there are,
+ * which is what keeps multi-object editing from being a rewrite — the
+ * declarative layer and the Tweakpane plumbing do not change at all.
  *
- * That is what keeps multi-object editing from being a rewrite. The declarative
- * layer — `COMPONENT_SCHEMAS`, the field specs — does not change at all, and
- * neither does the Tweakpane plumbing. Phase 4 ships this interface and
- * `SingleTarget`; `MultiTarget` is phase 8, and it fits behind the same shape.
+ * One method, and it was four. `read` and `write` at this level had no caller:
+ * a name, a visibility and a transform are per-entity, so the panel calls
+ * `renameEntity`, `setEntityVisible` and `setTransform` by name and both
+ * implementations of `write` here were documented no-ops waiting for a phase
+ * that has since arrived. `can` was a second copy of `Selection.can`, which is
+ * the one everything actually asks.
  */
 export interface EntityTarget {
-  /** Entity-level values: `['name']`, `['visible']`, `['transform','position']`. */
-  read(path: readonly string[]): Reading;
-  write(path: readonly string[], value: unknown, options?: WriteOptions): void;
   /** One per component the panel should draw, in the order it should draw them. */
   components(): readonly ComponentTarget[];
-  /** True only if every entity behind this target can. See `Selection.can`. */
-  can(capability: EntityCapability): boolean;
 }
 
 /**
@@ -50,15 +46,21 @@ export interface ComponentTarget {
    * entity's; for many, the first, whose shape decides which fields exist.
    */
   readonly representative: ComponentDoc;
-  read(path: readonly string[]): Reading;
+  /**
+   * The value the panel shows: for a single target the entity's own, for many
+   * the first one's.
+   *
+   * It used to be a `{ value, mixed }`, with `mixed` true when the targets
+   * disagreed — the dash Unity and Unreal both show. Nothing ever read it: the
+   * panel took `.value` and dropped the rest, so the dash was specified and
+   * never drawn. Drawing it is a feature to write rather than a field to leave
+   * waiting, and not a small one — Tweakpane fixes a row's label when the row
+   * is bound, so a dash that comes and goes with an edit needs somewhere to
+   * live that a refresh can reach.
+   */
+  read(path: readonly string[]): unknown;
   write(path: readonly string[], value: unknown, options?: WriteOptions): void;
   remove(): void;
-}
-
-export interface Reading {
-  value: unknown;
-  /** True when the targets disagree — the "—" Unity and Unreal both show. */
-  mixed: boolean;
 }
 
 export interface WriteOptions {
@@ -76,7 +78,7 @@ export function readPath(source: unknown, path: readonly string[]): unknown {
 }
 
 /**
- * One entity, which is every case until phase 8.
+ * One entity, which is every case but a multiple selection.
  *
  * Reads go through the **expanded** scene rather than the document: a prefab
  * instance's contents are drawn and selectable, and reading from the document
@@ -89,25 +91,11 @@ export class SingleTarget implements EntityTarget {
     return expandedScene().scene.entities[this.entityId];
   }
 
-  read(path: readonly string[]): Reading {
-    return { value: readPath(this.entity, path), mixed: false };
-  }
-
-  write(): void {
-    // Entity-level writes go through their own named commands — `renameEntity`,
-    // `setEntityVisible`, `setTransform` — which the panel already calls. Phase
-    // 8 gives this a body when a multi-target needs one door for all of them.
-  }
-
   components(): readonly ComponentTarget[] {
     if (!this.entity) return [];
     return componentsOf(expandedScene().scene, this.entityId).map(
       (component) => new SingleComponentTarget(this.entityId, component.id, component),
     );
-  }
-
-  can(capability: EntityCapability): boolean {
-    return capabilitiesOf(expandedScene().scene, this.entityId).has(capability);
   }
 }
 
@@ -115,9 +103,9 @@ export class SingleTarget implements EntityTarget {
  * Several entities, presented as one.
  *
  * Godot's `MultiNodeEdit` and Unity's `serializedObject` with multiple targets.
- * `read` compares the value across every entity and says whether they agree;
- * `write` writes all of them in one transaction, so editing a field is one undo
- * step however many objects are behind it.
+ * It pairs the components the selection has in common; each of those reads the
+ * first entity's value and writes all of them in one transaction, so editing a
+ * field is one undo step however many objects are behind it.
  *
  * `buildInspector` does not know this class exists — it only ever saw
  * `EntityTarget`, which is why phase 4 built that interface before there was
@@ -131,15 +119,6 @@ export class MultiTarget implements EntityTarget {
     return this.entityIds
       .map((id) => scene.entities[id])
       .filter((entity): entity is EntityDoc => entity !== undefined);
-  }
-
-  read(path: readonly string[]): Reading {
-    return compare(this.entities.map((entity) => readPath(entity, path)));
-  }
-
-  write(): void {
-    // Same as `SingleTarget`: entity-level writes go through their own named
-    // commands, which the panel calls directly.
   }
 
   /**
@@ -181,14 +160,6 @@ export class MultiTarget implements EntityTarget {
 
     return shared;
   }
-
-  can(capability: EntityCapability): boolean {
-    const entities = this.entities;
-    if (entities.length === 0) return false;
-    // An intersection, like `Selection.can`: one member that cannot stops all.
-    const scene = expandedScene().scene;
-    return this.entityIds.every((id) => capabilitiesOf(scene, id).has(capability));
-  }
 }
 
 class MultiComponentTarget implements ComponentTarget {
@@ -212,8 +183,9 @@ class MultiComponentTarget implements ComponentTarget {
     return out;
   }
 
-  read(path: readonly string[]): Reading {
-    return compare(this.each().map(({ component }) => readPath(component, path)));
+  /** The first one's, re-resolved: the panel holds this object across frames. */
+  read(path: readonly string[]): unknown {
+    return readPath(this.each()[0]?.component, path);
   }
 
   write(path: readonly string[], value: unknown, options?: WriteOptions): void {
@@ -241,22 +213,6 @@ function nthOfType(
   return Object.values(scene.components[type][entityId] ?? {})[nth] as ComponentDoc | undefined;
 }
 
-/**
- * One reading from many values.
- *
- * `mixed` is what the panel shows a dash for. Compared by JSON rather than by
- * identity, because a colour is an object and two equal colours are two objects —
- * comparing references would report every field as mixed.
- */
-function compare(values: readonly unknown[]): Reading {
-  const first = values[0];
-  if (values.length <= 1) return { value: first, mixed: false };
-
-  const encoded = JSON.stringify(first);
-  const mixed = values.some((value) => JSON.stringify(value) !== encoded);
-  return { value: first, mixed };
-}
-
 class SingleComponentTarget implements ComponentTarget {
   constructor(
     private readonly entityId: string,
@@ -273,8 +229,8 @@ class SingleComponentTarget implements ComponentTarget {
     return findComponentById(expandedScene().scene, this.entityId, this.componentId);
   }
 
-  read(path: readonly string[]): Reading {
-    return { value: readPath(this.live, path), mixed: false };
+  read(path: readonly string[]): unknown {
+    return readPath(this.live, path);
   }
 
   write(path: readonly string[], value: unknown, options?: WriteOptions): void {

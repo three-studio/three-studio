@@ -292,10 +292,10 @@ export class InspectorBinding {
     this.binder.bind(folder, spec, {
       read: () => {
         if (multiple) {
-          // The value of the first, with the dash left to the label: Tweakpane
-          // has no notion of an undefined-but-present value, and handing it one
-          // is what makes it throw "No matching controller".
-          return target.read(spec.path).value;
+          // The first one's value. Tweakpane has no notion of an
+          // undefined-but-present value, and handing it one is what makes it
+          // throw "No matching controller", so there is nothing else to show.
+          return target.read(spec.path);
         }
         const component = currentComponent(entityId, componentId);
         return readPath(component && effectiveComponent(component), spec.path);
