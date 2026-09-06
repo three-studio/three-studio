@@ -1,9 +1,9 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-062c — les gestes de prefab sont des commandes
-**Tâche courante** : **T-062d** — les gestes de scène entrent dans le registre
-**Faites** : T-001 → T-061, **T-062a → T-062c**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
+**Dernier commit** : T-062d — la frontière entre un geste et une mutation paramétrée
+**Tâche courante** : **T-062e** — les scènes ciblées, les modèles, l'export
+**Faites** : T-001 → T-061, **T-062a → T-062d**. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 9 et 10 terminés.** Lot 1 : les neuf
 tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union » n'est pas cochée —
 voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067 → T-070).
 
@@ -15,6 +15,42 @@ voir `RESTES.md`. Restent le **lot 8** (T-062 → T-066) et le **lot 11** (T-067
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
 ## Notes de reprise
+
+**T-062d — ⚠️ la fiche annonçait cinq gestes ; un seul en était un.** Elle avait été écrite en listant
+les *imports*, sans lire les signatures. Vérifié : `addEntity(template)` prend le template construit
+au drop, `renameEntity(id, name)` le nom saisi, `reparentSelection(selection, parent, index)` la cible
+d'un glisser-déposer, `addComponentWithDependencies(id, type)` le type choisi dans un menu. Fiche
+corrigée sur place. **Une liste d'imports n'est pas un inventaire de gestes.**
+
+**La frontière, corrigée et écrite en tête de `sceneCommands.ts`.** « Ce qu'un auteur peut demander
+sans argument » était approximatif — `deleteAsset` prend une cible et est une commande. Le test est
+**quel genre** d'argument :
+
+- une **cible** (quelle entité, quel asset) : le contexte peut la porter, donc un menu, une touche ou
+  une palette peut la fournir → commande ;
+- une **valeur** (le nom tapé, le point du drop, le type choisi, le parent et l'index d'un glisser) :
+  connue du seul appelant, rien d'autre ne pourrait la dispatcher → fonction, et une entrée de
+  registre serait une enveloppe autour d'un seul site d'appel.
+
+Écrite là plutôt que dans le commit : c'est le fichier où quelqu'un cherchera « pourquoi ceci n'est
+pas dans le registre ».
+
+**`toggleVisibility` entre, mono-entité.** Masquer toute une sélection demanderait **un seul**
+`mutate` sur l'ensemble — boucler `setEntityVisible` écrirait une entrée d'undo par objet — et aucun
+appelant ne le demande. Vérifié dans l'application : le bouton œil bascule et laisse une entrée,
+« Hide entity ».
+
+**⚠️ `setEntityLocked` n'a aucun appelant dans tout le dépôt, et aucun `.tsx` ne mentionne `locked`.**
+Rien dans l'interface ne permet de verrouiller une entité — alors que le verrou **fonctionne**
+partout ailleurs : `capabilitiesOf` refuse déplacement, suppression, reparentage et groupement à une
+entité verrouillée, et `Selection.can` le lit. C'est l'inverse de `EntityDoc.chunk` (T-059) : un champ
+que tout le monde lit et que personne n'écrit. **Non coupé** : la question « le verrou est-il une
+fonctionnalité » n'appartient pas à la couche de commandes, et le couper ferait de `locked` un champ
+non écrivable — donc un changement de format. Inscrit dans `RESTES.md`. La capacité `toggleLock`
+existe déjà dans `core/scene/capabilities.ts` et n'est exercée par rien non plus.
+
+**Une famille qui grossit ne casse pas le test de comptage** — seule une famille *nouvelle* le fait.
+`toggleVisibility` est allé dans `EDIT_COMMANDS`, donc le compte a suivi tout seul.
 
 **T-062c — l'exclusion écrite dans `registry.ts` était fausse, et la vérifier était la tâche.** Elle
 disait que les entrées prefab étaient « decided in exactly one place ». Quatre gestes sont décidés
@@ -2267,7 +2303,7 @@ choisi par bénéfice visible :
 | 5 | T-047 → T-051 | Les contrats de frontière | **5/5 ✅** |
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
-| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062c faits ; T-062 scindé en 6 tranches |
+| 8 | T-062 → T-066 | La couche de commandes | T-062a → T-062d faits ; T-062 scindé en 6 tranches |
 | 11 | T-067 → T-070 | La mémoire du projet | 0/4 |
 
 **70 tâches.** Une par commit, une MR à la fin.

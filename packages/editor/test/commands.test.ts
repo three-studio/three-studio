@@ -283,3 +283,37 @@ describe('the two prefab menus ask one question', () => {
     expect(commandById('createPrefab').can()).toBe(true);
   });
 });
+
+describe('hiding is a target and nothing else, which is what makes it a command', () => {
+  it('names what it would do, and does it', async () => {
+    const { commandById, contextFor } = await import('../src/commands/registry');
+
+    // Nothing selected and no context: a menu is built before anyone has
+    // clicked, and `can` has to answer rather than throw. Asked before anything
+    // is added, because `addEntity` selects what it creates.
+    expect(commandById('toggleVisibility').can()).toBe(false);
+
+    const id = addEntity(createMeshEntity('box'));
+    const ctx = contextFor([id]);
+    expect(commandById('toggleVisibility').can(ctx)).toBe(true);
+    expect(commandById('toggleVisibility').label(ctx)).toBe('Hide');
+
+    commandById('toggleVisibility').run(ctx);
+    expect(doc().scene.entities[id]?.visible).toBe(false);
+    // The label follows the state, the way `undo` names what it would take back.
+    expect(commandById('toggleVisibility').label(contextFor([id]))).toBe('Show');
+
+    commandById('toggleVisibility').run(contextFor([id]));
+    expect(doc().scene.entities[id]?.visible).toBe(true);
+  });
+
+  it('refuses a selection of several, because the gesture is one row', async () => {
+    const { commandById, contextFor } = await import('../src/commands/registry');
+    const first = addEntity(createMeshEntity('box'));
+    const second = addEntity(createMeshEntity('sphere'));
+
+    // Hiding a whole selection would need one `mutate` over all of it; looping
+    // would write an undo entry per object. No caller asks for it yet.
+    expect(commandById('toggleVisibility').can(contextFor([first, second]))).toBe(false);
+  });
+});

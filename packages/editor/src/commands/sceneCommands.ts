@@ -40,6 +40,28 @@ import {
  * They all funnel through `documentStore.mutate`, which records immer patches
  * and their inverses — so undo/redo is automatic and no operation has to write
  * its own inverse.
+ *
+ * **Almost nothing here is a command, and the line is not where it looks.**
+ * `commands/registry.ts` holds what a person can ask for by name; this file
+ * holds what the editor does when they ask. The two are not the same set, and
+ * the test is not "does it take arguments" — `deleteAsset` takes a target and is
+ * a command. It is **what kind** of argument:
+ *
+ * - A **target** — which entity, which asset — is something the context can
+ *   carry, so a menu, a key or a palette can supply it. That is a command.
+ * - A **value** — the name that was typed, the point a drop landed on, the
+ *   component type picked from a menu, the parent and index a drag ended on — is
+ *   known only to the caller. Nothing but that caller could dispatch it, so a
+ *   registry entry would be a wrapper around one call site with no second
+ *   caller to unify.
+ *
+ * By that line: `addEntity`, `renameEntity`, `reparentSelection` and
+ * `addComponentWithDependencies` stay functions, as does everything the gizmo
+ * and the Tweakpane Inspector drive — `setTransform`, `transformSelection`,
+ * `setComponentNestedField`, `setEnvironmentField`, `setSkyField`,
+ * `setLinkedMaterialField`, several of them sixty times a second during a drag.
+ * `setEntityVisible` is the exception, because "hide it" needs a target and
+ * nothing else, and it is behind `toggleVisibility` in `editCommands.ts`.
  */
 
 /*

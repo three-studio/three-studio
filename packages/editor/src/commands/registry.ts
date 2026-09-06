@@ -27,9 +27,13 @@ export type { Command, EditorContext } from './command';
  * because `COMPONENT_TYPES` is a canonical union it can check against. Commands
  * have no such union — which is precisely why theirs has to come from the table.
  *
- * **What is not here**, and deliberately: opening a panel and changing the
- * layout. Neither is a gesture on the document and neither has a `can()` to
- * state.
+ * **What is not here**, and deliberately. Opening a panel and changing the
+ * layout: neither is a gesture on the document and neither has a `can()` to
+ * state. And every mutation whose argument is a **value** rather than a target —
+ * the name that was typed, the point a drop landed on, the component type picked
+ * from a menu — because only the caller that produced the value could dispatch
+ * it, so an entry here would be a wrapper around one call site. The line is
+ * drawn at the top of `sceneCommands.ts`, where someone looking for it will be.
  */
 export const COMMANDS = {
   ...EDIT_COMMANDS,

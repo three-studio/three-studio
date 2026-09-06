@@ -1,12 +1,13 @@
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { useProjectStore } from '../state/projectStore';
-import { defineCommand } from './command';
+import { defineCommand, type EditorContext } from './command';
 import {
   deleteSelection,
   duplicateSelection,
   groupSelection,
   redo,
+  setEntityVisible,
   undo,
 } from './sceneCommands';
 
@@ -29,6 +30,11 @@ import {
  */
 
 const documentStore = () => useDocumentStore.getState();
+
+/** Whether the one entity a context names is currently visible. */
+function visibleIn(ctx: EditorContext): boolean {
+  return ctx.selection.entities()[0]?.visible ?? true;
+}
 
 export const EDIT_COMMANDS = {
   undo: defineCommand({
@@ -80,6 +86,27 @@ export const EDIT_COMMANDS = {
     label: (ctx) => (ctx.selection.isMultiple ? `Delete ${ctx.selection.size} Objects` : 'Delete'),
     can: (ctx) => ctx.selection.can('delete'),
     run: (ctx) => deleteSelection(ctx.selection),
+  }),
+
+  /**
+   * Hide or show what the context names.
+   *
+   * One entity, because that is the gesture that exists: the hierarchy's eye
+   * button acts on its own row. Hiding a whole selection would need a single
+   * `mutate` over all of it — looping `setEntityVisible` would write one undo
+   * entry per object — and there is no caller asking for it yet.
+   *
+   * A capability rather than a bare existence check, even though `toggleVisible`
+   * is denied to nothing today: the answer belongs to `capabilitiesOf`, and
+   * asking it here is what keeps a future denial from having to find this line.
+   */
+  toggleVisibility: defineCommand({
+    label: (ctx) => (visibleIn(ctx) ? 'Hide' : 'Show'),
+    can: (ctx) => ctx.selection.isSingle && ctx.selection.can('toggleVisible'),
+    run: (ctx) => {
+      const id = ctx.selection.primary;
+      if (id !== null) setEntityVisible(id, !visibleIn(ctx));
+    },
   }),
 
   group: defineCommand({

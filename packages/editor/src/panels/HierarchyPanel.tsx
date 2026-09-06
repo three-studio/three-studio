@@ -36,7 +36,6 @@ import { commandById, contextFor, contextForAsset, type CommandId } from '../com
 import {
   renameEntity,
   reparentSelection,
-  setEntityVisible,
 } from '../commands/sceneCommands';
 import { hasModifier, isMac, modKey } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
@@ -495,7 +494,10 @@ export function HierarchyPanel() {
                 title={entity.visible ? 'Hide' : 'Show'}
                 onClick={(event) => {
                   event.stopPropagation();
-                  setEntityVisible(entity.id, !entity.visible);
+                  // Through the command, like the delete button below it. The
+                  // row's own entity, not the selection: this eye belongs to
+                  // this line.
+                  commandById('toggleVisibility').run(contextFor([entity.id]));
                 }}
                 className={`shrink-0 ${entity.visible ? 'opacity-0 group-hover:opacity-60' : 'opacity-60'} hover:opacity-100`}
               >
