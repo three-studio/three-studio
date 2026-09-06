@@ -1,93 +1,59 @@
-import { hasImagePreview, type AssetEntry, type AssetKind } from '@three-studio/core';
 import {
   ArrowDownAZ,
   ArrowUpAZ,
-  Box,
-  Boxes,
-  ChevronRight,
-  FileCode,
   FilePlus2,
-  FolderOpen,
   FolderPlus,
-  Folder,
-  Image,
   LayoutGrid,
   List,
-  Palette,
-  Pencil,
-  Play,
   Plus,
   Search,
-  Sparkles,
-  Trash2,
   Upload,
   Volume2,
   X,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import {
-  childFolders,
-  filterAndSortAssets,
-  useAssetStore,
-  type AssetSortKey,
-} from '../state/assetStore';
+import { useEffect, useMemo, useState, type DragEvent } from 'react';
+import { childFolders, filterAndSortAssets, useAssetStore } from '../state/assetStore';
 import { askForText } from '../state/dialogStore';
-import { createFolder, deleteAsset, deleteFolder, renameFolder } from '../commands/assetCommands';
-import { usePrefabModeStore } from '../state/prefabModeStore';
+import { createFolder } from '../commands/assetCommands';
 import { useScriptStore } from '../state/scriptStore';
-import { ASSET_PATH_MIME, setAssetDragPayload } from '../assets/assetDrag';
-import { clipPeaks } from '../audio/peaks';
 import { audioPreview } from '../audio/preview';
-import { drawPeaks } from '../audio/waveform';
 import { PanelToolbar } from './PanelShell';
 import { browseAndImport, openImportDialog } from '../import/importStore';
+import { AssetList } from './project/AssetList';
+import { Breadcrumbs } from './project/Breadcrumbs';
+import { KIND_FILTERS, SORT_LABELS } from './project/kinds';
+import { AssetTile, FolderTile } from './project/tiles';
 
 
 
-const KIND_ICON: Record<AssetKind, LucideIcon> = {
-  model: Box,
-  texture: Image,
-  material: Palette,
-  prefab: Boxes,
-  shader: Sparkles,
-  audio: Volume2,
-  script: FileCode,
-};
-
-/** Explicit labels: naive pluralisation gives "Audios". */
-const KIND_FILTERS: readonly { value: AssetKind | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'model', label: 'Models' },
-  { value: 'texture', label: 'Textures' },
-  { value: 'material', label: 'Materials' },
-  { value: 'shader', label: 'Shaders' },
-  { value: 'audio', label: 'Audio' },
-  { value: 'script', label: 'Scripts' },
-];
-
-const SORT_LABELS: Record<AssetSortKey, string> = {
-  name: 'Name',
-  importedAt: 'Date',
-  sizeBytes: 'Size',
-  kind: 'Type',
-};
-
+/*
+ * One selector per field, and it used to be `useAssetStore()` — the whole
+ * store, the last such subscription in the repo. Every field woke this panel
+ * and its grid: `revision`, `loading`, and the material and prefab tables,
+ * none of which it draws. The two panels beside it carry comments about the
+ * re-render storms they have already paid for; this one had not paid yet.
+ *
+ * Actions are selected rather than read through `getState()` where they are
+ * used in the markup: zustand keeps their identity, so selecting one adds no
+ * wake-up and reads as what it is.
+ */
 export function ProjectPanel() {
-  const store = useAssetStore();
-  const {
-    manifest,
-    query,
-    kindFilter,
-    folder,
-    sortKey,
-    sortAscending,
-    viewMode,
-    tileSize,
-    error,
-    revealed,
-    loading,
-  } = store;
+  const manifest = useAssetStore((s) => s.manifest);
+  const query = useAssetStore((s) => s.query);
+  const kindFilter = useAssetStore((s) => s.kindFilter);
+  const folder = useAssetStore((s) => s.folder);
+  const sortKey = useAssetStore((s) => s.sortKey);
+  const sortAscending = useAssetStore((s) => s.sortAscending);
+  const viewMode = useAssetStore((s) => s.viewMode);
+  const tileSize = useAssetStore((s) => s.tileSize);
+  const error = useAssetStore((s) => s.error);
+  const revealed = useAssetStore((s) => s.revealed);
+  const loading = useAssetStore((s) => s.loading);
+
+  const setQuery = useAssetStore((s) => s.setQuery);
+  const setKindFilter = useAssetStore((s) => s.setKindFilter);
+  const setSort = useAssetStore((s) => s.setSort);
+  const setViewMode = useAssetStore((s) => s.setViewMode);
 
   const [dropping, setDropping] = useState(false);
   // Seeded from the audition itself, which is the source of truth: the value
@@ -96,9 +62,7 @@ export function ProjectPanel() {
   const [previewVolume, setPreviewVolume] = useState(() => audioPreview.volume);
 
   useEffect(() => {
-    void store.refresh();
-    // Refresh is stable; re-running on every store change would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void useAssetStore.getState().refresh();
   }, []);
 
   const assets = useMemo(
@@ -170,7 +134,7 @@ export function ProjectPanel() {
               if (!name) return;
               void window.studio.scripts
                 .create(name)
-                .then(() => store.refresh())
+                .then(() => useAssetStore.getState().refresh())
                 .then(() => useScriptStore.getState().build())
                 .catch((cause: unknown) => {
                   console.error('[scripts] could not create the script:', cause);
@@ -186,12 +150,12 @@ export function ProjectPanel() {
           <Search size={11} className="shrink-0 text-ink-dim" />
           <input
             value={query}
-            onChange={(event) => store.setQuery(event.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search   t:texture  f:props"
             className="min-w-0 flex-1 bg-transparent py-0.5 text-2xs text-ink outline-none placeholder:text-ink-dim"
           />
           {searching && (
-            <button type="button" onClick={() => store.setQuery('')} className="text-ink-dim hover:text-ink">
+            <button type="button" onClick={() => setQuery('')} className="text-ink-dim hover:text-ink">
               <X size={11} />
             </button>
           )}
@@ -200,7 +164,7 @@ export function ProjectPanel() {
         <button
           type="button"
           title={`Sort by ${SORT_LABELS[sortKey]}`}
-          onClick={() => store.setSort(sortKey)}
+          onClick={() => setSort(sortKey)}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
           {sortAscending ? <ArrowDownAZ size={12} /> : <ArrowUpAZ size={12} />}
@@ -238,7 +202,7 @@ export function ProjectPanel() {
               key={mode}
               type="button"
               title={`${mode} view`}
-              onClick={() => store.setViewMode(mode)}
+              onClick={() => setViewMode(mode)}
               className={`flex h-5 w-5 items-center justify-center rounded-sm ${
                 viewMode === mode ? 'bg-accent-dim text-ink' : 'text-ink-muted hover:text-ink'
               }`}
@@ -254,7 +218,7 @@ export function ProjectPanel() {
           <button
             key={filter.value}
             type="button"
-            onClick={() => store.setKindFilter(filter.value)}
+            onClick={() => setKindFilter(filter.value)}
             className={`rounded-sm px-1.5 py-0.5 text-2xs ${
               kindFilter === filter.value ? 'bg-accent-dim text-ink' : 'text-ink-muted hover:text-ink'
             }`}
@@ -276,7 +240,7 @@ export function ProjectPanel() {
         </div>
       )}
 
-      <Breadcrumbs folder={folder} searching={searching} onNavigate={store.setFolder} />
+      <Breadcrumbs folder={folder} searching={searching} />
 
       <div className="relative min-h-0 flex-1 overflow-auto p-2">
         {folders.length === 0 && assets.length === 0 ? (
@@ -293,20 +257,10 @@ export function ProjectPanel() {
           >
             {!searching &&
               folders.map((path) => (
-                <FolderTile
-                  key={path}
-                  path={path}
-                  onOpen={() => store.setFolder(path)}
-                  onDropAsset={(assetPath) => void store.move(assetPath, path)}
-                />
+                <FolderTile key={path} path={path} />
               ))}
             {assets.map((asset) => (
-              <AssetTile
-                key={asset.id}
-                asset={asset}
-                revealed={asset.id === revealed}
-                onRemove={() => void deleteAsset(asset)}
-              />
+              <AssetTile key={asset.id} asset={asset} revealed={asset.id === revealed} />
             ))}
           </div>
         ) : (
@@ -314,13 +268,7 @@ export function ProjectPanel() {
             assets={assets}
             folders={searching ? [] : folders}
             sortKey={sortKey}
-            onSort={store.setSort}
-            onOpenFolder={store.setFolder}
             revealed={revealed}
-            onRemove={(path) => {
-              const asset = assets.find((candidate) => candidate.path === path);
-              if (asset) void deleteAsset(asset);
-            }}
           />
         )}
 
@@ -330,412 +278,4 @@ export function ProjectPanel() {
       </div>
     </div>
   );
-}
-
-function Breadcrumbs({
-  folder,
-  searching,
-  onNavigate,
-}: {
-  folder: string;
-  searching: boolean;
-  onNavigate: (folder: string) => void;
-}) {
-  const segments = folder === '' ? [] : folder.split('/');
-
-  return (
-    <div className="flex items-center gap-0.5 border-b border-line px-2 py-1 text-2xs text-ink-muted">
-      <button type="button" onClick={() => onNavigate('')} className="hover:text-ink">
-        Assets
-      </button>
-      {segments.map((segment, index) => (
-        <span key={segment} className="flex items-center gap-0.5">
-          <ChevronRight size={10} className="text-ink-dim" />
-          <button
-            type="button"
-            onClick={() => onNavigate(segments.slice(0, index + 1).join('/'))}
-            className={index === segments.length - 1 ? 'text-ink' : 'hover:text-ink'}
-          >
-            {segment}
-          </button>
-        </span>
-      ))}
-      {searching && <span className="ml-2 text-ink-dim">— searching the whole project</span>}
-    </div>
-  );
-}
-
-function FolderTile({
-  path,
-  onOpen,
-  onDropAsset,
-}: {
-  path: string;
-  onOpen: () => void;
-  onDropAsset: (assetPath: string) => void;
-}) {
-  const [over, setOver] = useState(false);
-  const name = path.split('/').pop() ?? path;
-
-  // A `div` with a `button` inside rather than one big button: the rename and
-  // delete actions are buttons too, and a button inside a button is not markup
-  // a browser agrees to lay out.
-  return (
-    <div
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes(ASSET_PATH_MIME)) return;
-        event.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(event) => {
-        event.preventDefault();
-        setOver(false);
-        const assetPath = event.dataTransfer.getData(ASSET_PATH_MIME);
-        if (assetPath) onDropAsset(assetPath);
-      }}
-      className={`group relative aspect-square rounded-sm border bg-surface-2 ${
-        over ? 'border-accent bg-accent/10' : 'border-line-soft/60 hover:border-accent/60'
-      }`}
-    >
-      <button
-        type="button"
-        onDoubleClick={onOpen}
-        onClick={onOpen}
-        className="flex h-full w-full flex-col items-center justify-center gap-1.5 p-1"
-      >
-        <Folder size={22} strokeWidth={1.25} className="text-warn" />
-        <span className="w-full truncate px-1 text-center text-2xs text-ink">{name}</span>
-      </button>
-
-      <button
-        type="button"
-        title="Delete folder"
-        onClick={() => void deleteFolder(path)}
-        className="absolute right-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
-      >
-        <Trash2 size={11} />
-      </button>
-      <button
-        type="button"
-        title="Rename folder"
-        onClick={() => void renameFolder(path)}
-        className="absolute left-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
-      >
-        <Pencil size={11} />
-      </button>
-    </div>
-  );
-}
-
-/**
- * A clip's shape on its tile, measured only once the tile is actually on screen.
- *
- * On screen, and not merely mounted: the grid is not virtualised, so opening a
- * folder of two hundred sounds mounts two hundred tiles in one go, and decoding
- * is the expensive half of this — the very cost `AudioClipCache` keeps a byte
- * budget for. An `IntersectionObserver` reduces that to the handful somebody is
- * looking at, and `ClipPeaks` keeps the answer so scrolling back is free.
- *
- * The canvas is laid out from the start even while blank, because an element
- * with no box never intersects anything and would wait for a decode that its own
- * hiding had prevented. The icon sits over it until there are peaks, and stays
- * for good when there are none: a file this browser cannot decode is not a
- * broken tile.
- */
-function ClipWaveform({ assetId, Icon }: { assetId: string; Icon: LucideIcon }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const peaks = useRef<Float32Array | null>(null);
-  const [drawn, setDrawn] = useState(false);
-
-  useEffect(() => {
-    const element = canvas.current;
-    if (element === null) return;
-
-    const paint = () => {
-      if (peaks.current === null) return;
-      // Height from the box rather than the attribute: the bitmap then matches
-      // the CSS size exactly, instead of being scaled into it.
-      drawPeaks(element, peaks.current, { height: Math.max(1, element.clientHeight) });
-    };
-
-    let cancelled = false;
-    const onScreen = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      onScreen.disconnect();
-      void clipPeaks.peaks(assetId).then((measured) => {
-        if (cancelled || measured === null) return;
-        peaks.current = measured;
-        setDrawn(true);
-        paint();
-      });
-    });
-    onScreen.observe(element);
-
-    // A canvas is sized in CSS over a pixel buffer, so a grid that reflows leaves
-    // the waveform drawn at the old width — stretched or cut. The import dialog
-    // watches its panel for the same reason.
-    const resized = new ResizeObserver(paint);
-    resized.observe(element);
-
-    return () => {
-      cancelled = true;
-      onScreen.disconnect();
-      resized.disconnect();
-    };
-  }, [assetId]);
-
-  return (
-    <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
-      <canvas ref={canvas} className="h-full w-full" />
-      {!drawn && <Icon size={22} strokeWidth={1.25} className="absolute text-ink-muted" />}
-    </div>
-  );
-}
-
-function AssetTile({
-  asset,
-  revealed,
-  onRemove,
-}: {
-  asset: AssetEntry;
-  revealed: boolean;
-  onRemove: () => void;
-}) {
-  const clearRevealed = useAssetStore((s) => s.clearRevealed);
-  // Scrolled to and flashed, then forgotten: a highlight that stayed would
-  // still be there next time the panel opened, meaning nothing.
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!revealed) return;
-    ref.current?.scrollIntoView({ block: 'nearest' });
-    const timer = setTimeout(clearRevealed, 1600);
-    return () => clearTimeout(timer);
-  }, [revealed, clearRevealed]);
-
-  const Icon = KIND_ICON[asset.kind];
-  // Textures the browser can decode preview themselves through the asset
-  // protocol; other kinds need a rendered thumbnail, which is a later
-  // milestone. `hasImagePreview` rather than `kind === 'texture'` because an
-  // `.hdr` is a texture an `<img>` cannot open, and it drew a broken tile.
-  const previewUrl = hasImagePreview(asset)
-    ? `studio-asset://project/${asset.path.split('/').map(encodeURIComponent).join('/')}`
-    : null;
-
-  return (
-    <div
-      ref={ref}
-      draggable
-      onDragStart={(event) => setAssetDragPayload(event.dataTransfer, asset)}
-      onDoubleClick={() => {
-        // Unity opens a prefab on double-click; anything else has no second
-        // action worth guessing at.
-        if (asset.kind === 'prefab') void usePrefabModeStore.getState().open(asset.id);
-      }}
-      title={`${asset.path}\n${formatBytes(asset.sizeBytes)} · imported ${new Date(asset.importedAt).toLocaleDateString()}`}
-      className={`group relative flex aspect-square flex-col items-center justify-center gap-1.5 overflow-hidden rounded-sm border bg-surface-2 p-1 hover:border-accent/60 ${
-        revealed ? 'border-accent ring-1 ring-accent' : 'border-line-soft/60'
-      }`}
-    >
-      {previewUrl ? (
-        <img
-          src={previewUrl}
-          alt=""
-          className="min-h-0 flex-1 object-contain"
-          style={{ imageRendering: 'auto' }}
-        />
-      ) : asset.kind === 'audio' ? (
-        <ClipWaveform assetId={asset.id} Icon={Icon} />
-      ) : (
-        <Icon size={22} strokeWidth={1.25} className="text-ink-muted" />
-      )}
-      <span className="w-full truncate px-1 text-center text-2xs text-ink">{asset.name}</span>
-      {/*
-        What the file turned out to be, read when the import dialog decoded it.
-        Absent for a clip dropped into `assets/` from outside the editor, and
-        then the line is simply not drawn — better than a confident guess.
-      */}
-      {audioLine(asset) !== null && (
-        <span className="w-full truncate px-1 text-center text-2xs text-ink-dim">
-          {audioLine(asset)}
-        </span>
-      )}
-
-      {asset.kind === 'audio' && (
-        <button
-          type="button"
-          title="Audition this clip"
-          // On a button and not on the tile itself: a panel that plays whatever
-          // the pointer passes over is unbearable within three minutes, and a
-          // panel that plays on selection makes arrow-key browsing a cacophony.
-          onClick={(event) => {
-            event.stopPropagation();
-            if (audioPreview.assetId === asset.id) audioPreview.stop();
-            else audioPreview.playClip(asset.id);
-          }}
-          className="absolute bottom-0.5 right-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-accent group-hover:opacity-100"
-        >
-          <Play size={11} />
-        </button>
-      )}
-
-      <button
-        type="button"
-        title="Delete asset"
-        onClick={onRemove}
-        className="absolute right-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
-      >
-        <Trash2 size={11} />
-      </button>
-      <button
-        type="button"
-        title="Reveal in file manager"
-        onClick={() => void window.studio.assets.revealInFileManager(asset.path)}
-        className="absolute left-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
-      >
-        {/* Same icon as the list row: one action, one look, wherever it appears. */}
-        <FolderOpen size={11} />
-      </button>
-    </div>
-  );
-}
-
-function AssetList({
-  assets,
-  folders,
-  sortKey,
-  onSort,
-  onOpenFolder,
-  revealed,
-  onRemove,
-}: {
-  assets: AssetEntry[];
-  folders: string[];
-  sortKey: AssetSortKey;
-  onSort: (key: AssetSortKey) => void;
-  onOpenFolder: (folder: string) => void;
-  revealed: string | null;
-  onRemove: (assetPath: string) => void;
-}) {
-  const columns: readonly { key: AssetSortKey; label: string; className: string }[] = [
-    { key: 'name', label: 'Name', className: 'flex-1' },
-    { key: 'kind', label: 'Type', className: 'w-16' },
-    { key: 'sizeBytes', label: 'Size', className: 'w-16 text-right' },
-    { key: 'importedAt', label: 'Imported', className: 'w-20 text-right' },
-  ];
-
-  return (
-    <div className="text-2xs">
-      <div className="flex gap-2 border-b border-line px-2 py-1 text-ink-dim">
-        {columns.map((column) => (
-          <button
-            key={column.key}
-            type="button"
-            onClick={() => onSort(column.key)}
-            className={`${column.className} text-left hover:text-ink ${sortKey === column.key ? 'text-ink' : ''}`}
-          >
-            {column.label}
-          </button>
-        ))}
-        {/* Reserves the row-action gutter so the columns line up with the rows. */}
-        <span className="w-10" />
-      </div>
-
-      {folders.map((path) => (
-        <div key={path} className="group flex items-center gap-2 px-2 py-1 hover:bg-surface-2">
-          <button
-            type="button"
-            onClick={() => onOpenFolder(path)}
-            className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          >
-            <Folder size={12} className="shrink-0 text-warn" />
-            <span className="min-w-0 flex-1 truncate text-ink">{path.split('/').pop()}</span>
-          </button>
-          <button
-            type="button"
-            title="Rename folder"
-            onClick={() => void renameFolder(path)}
-            className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
-          >
-            <Pencil size={11} />
-          </button>
-          <button
-            type="button"
-            title="Delete folder"
-            onClick={() => void deleteFolder(path)}
-            className="w-5 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
-          >
-            <Trash2 size={11} />
-          </button>
-        </div>
-      ))}
-
-      {assets.map((asset) => {
-        const Icon = KIND_ICON[asset.kind];
-        return (
-          <div
-            key={asset.id}
-            draggable
-            onDragStart={(event) => setAssetDragPayload(event.dataTransfer, asset)}
-            ref={(element) => {
-              if (asset.id === revealed) element?.scrollIntoView({ block: 'nearest' });
-            }}
-            className={`group flex items-center gap-2 px-2 py-1 hover:bg-surface-2 ${
-              asset.id === revealed ? 'bg-accent-dim' : ''
-            }`}
-          >
-            <Icon size={12} className="shrink-0 text-ink-muted" />
-            <span className="min-w-0 flex-1 truncate text-ink">{asset.name}</span>
-            <span className="w-16 capitalize text-ink-dim">{asset.kind}</span>
-            <span className="w-16 text-right text-ink-dim">{formatBytes(asset.sizeBytes)}</span>
-            <span className="w-20 text-right text-ink-dim">
-              {new Date(asset.importedAt).toLocaleDateString()}
-            </span>
-            <button
-              type="button"
-              title="Reveal in file manager"
-              onClick={() => void window.studio.assets.revealInFileManager(asset.path)}
-              className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
-            >
-              <FolderOpen size={11} />
-            </button>
-            <button
-              type="button"
-              title="Delete asset"
-              onClick={() => onRemove(asset.path)}
-              className="w-5 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
-            >
-              <Trash2 size={11} />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-/**
- * A clip's length, channels and rate, when the sidecar knows them.
- *
- * `null` rather than a placeholder: a file adopted by the scan never went
- * through the dialog that decodes it, and there is no `decodeAudioData` under
- * Node for the main process to fill the gap with (ADR-6). Saying nothing is the
- * honest answer, and the numbers appear the day the file is imported properly.
- */
-function audioLine(asset: AssetEntry): string | null {
-  const settings = asset.settings;
-  if (settings.kind !== 'audio' || settings.seconds === undefined) return null;
-  const seconds = Math.max(0, settings.seconds);
-  const minutes = Math.floor(seconds / 60);
-  const rest = Math.floor(seconds % 60);
-  const parts = [`${minutes}:${String(rest).padStart(2, '0')}`];
-  if (settings.channels !== undefined) parts.push(settings.channels === 1 ? 'mono' : 'stereo');
-  if (settings.sampleRate !== undefined) parts.push(`${Math.round(settings.sampleRate / 1000)} kHz`);
-  return parts.join(' · ');
 }
