@@ -1,0 +1,33 @@
+# Ce qui a été laissé de côté
+
+Une ligne par chose qu'une tâche **aurait pu faire et n'a pas faite**, avec où se trouve le
+raisonnement et ce qui la rouvrirait. C'est la réponse à « qu'est-ce qui n'a pas été fait », sans
+relire soixante-dix fiches et deux mille lignes de notes.
+
+**Ce qui n'entre pas ici** : les décisions tranchées et expliquées sur place. `claimAssetMeta` finit
+par un `link` et non un `rename` parce que remplacer est exactement ce qu'il ne doit pas faire —
+c'est une réponse, pas un reste. `saveScene` n'est pas validé parce que la scène est le document du
+renderer — une réponse aussi. Le critère : **une ligne n'entre ici que si elle a un « à rouvrir
+quand » plausible.**
+
+**Ce qui n'entre pas non plus** : les tâches encore à faire. Elles sont dans le tableau de `STATE.md`.
+
+Une ligne se **supprime** quand elle est traitée ; le commit qui la traite le dit. Ce qui reste dans
+ce fichier à la fin du chantier est la réponse.
+
+| Tâche | Laissé de côté | Raisonnement | À rouvrir quand |
+|---|---|---|---|
+| T-006 | Le job CI n'a jamais tourné sur un runner : `xvfb-run` présent, Electron trouvant ses bibliothèques, « le job passe sur une PR » | `STATE.md` § *Ce que T-006 n'a pas pu vérifier* | À la première PR poussée. Si le job échoue, regarder ces trois-là d'abord |
+| T-031 | Le lot 1 n'est pas déclaré terminé : un type de composant neuf coûte encore 10 fichiers partagés et 29 lignes | `STATE.md` § *T-031 — la mesure* | Trois résidus y sont nommés et pesés : les trois listes d'enregistrement, `core/src/index.ts` comme porte du paquet, `ComponentIcon`. À trancher, pas à supposer |
+| T-039 | `COMPONENT_TYPES` n'a pas de record total qui le dérive — il n'a pas de libellés, donc il n'entrait pas dans la tâche | `STATE.md` § *Le même trou reste ouvert* | Quand quelqu'un ajoute un type. `emptyComponentTables` en construit un `Record` total avec un `{} as`, et les deux invariants de l'Inspector l'itèrent : un type absent serait sauté sans bruit |
+| T-047 | Les annotations de types que chacun des 44 handlers porte encore | `STATE.md` § *T-047 — ce qui n'a pas été fait* | Cosmétique : elles sont désormais **vérifiées** contre le pont, donc elles ne peuvent plus diverger. Se ferait au régex |
+| T-048 / T-052 | Le **câblage** de `conformSettingsPatch`, `conformMaterial` et `conformLayoutPreferences` n'est pas testé : les gardes le sont, leur appel depuis `ipc.ts` ne l'est pas | fiches T-048 et T-052 | T-052 devait le couvrir et ne l'a pas fait — il a sorti l'état de session, le profil de build et le commit d'import, pas la table de handlers elle-même. Demande de piloter `registerIpcHandlers` sans Electron |
+| T-051 | Le `.jpg`/`.jpeg` de `sniffTextureEncoding` reste son propre énoncé | fiche T-051 § *Non touché* | Si un second appelant demande « lesquels sont des JPEG ». Aujourd'hui une constante partagée serait un export à un seul appelant |
+| T-052 | `announce()` — la diffusion aux autres fenêtres — reste dans `ipc.ts`, non testée | fiche T-052 | C'est la moitié Electron du fichier. Demande la même chose que la ligne T-048 ci-dessus |
+| T-053 | Deux comportements de fenêtre que le harnais ne peut pas voir : la fenêtre construite **après** un changement de projet réussi, et le retour au launcher à la fermeture du dernier éditeur | fiche T-053 | Le harnais meurt avec la fenêtre qu'il pilote, et c'est la seule pilotable. Demande un second point de pilotage, ou un test qui ne passe pas par le renderer |
+| T-055 | **L'environnement DOM n'a pas été ajouté** — jsdom, happy-dom, `@testing-library` : rien | fiche T-055 § *L'environnement DOM n'a pas été ajouté* | Les trois décisions qui le justifiaient sont sorties des `.tsx`. À rouvrir le jour où un panneau porte une décision qu'on ne peut pas extraire |
+| T-055 | Deux décisions encore dans un `.tsx` : « le quart supérieur d'une ligne veut dire *entre deux lignes* » et la sélection par plage de `onRowClick` | fiche T-055 | S'extraient comme le windowing l'a été, et aucune ne demande de DOM |
+| T-056 | Le culling par instance n'est pas rendu aux scènes dont les ombres sont éteintes, où il est pourtant **correct** (3120/3600 dessinés) | `MeshBatcher.createBatch`, et fiche T-056 | Gain mesuré **nul** : 8,4 ms des deux côtés, le vsync 120 Hz. Le prendre coûterait un couplage du batcher à l'état d'ombre du *renderer*. À rouvrir sur un champ qui rate le vsync culling éteint |
+| T-057 | **L'abonnement explicite à l'expansion n'a pas été posé** : quatre lectures de `expandedScene()` restent pendant un rendu (`HierarchyPanel:159`, `InspectorPanel:42,75`, `MenuBar:62`) | fiche T-057 § *Pourquoi l'abonnement n'a pas été posé* | Un abonnement large re-rend à chaque frame d'un drag ; les trois composants s'abonnent à plus étroit, chacun avec sa régression mesurée au point d'appel (422 ms/nudge, Inspector rafraîchi 60 fois/s, barre de menu idem). À rouvrir si React gagne un moyen d'exprimer « abonne-moi à la *structure* de l'expansion » |
+| T-058 | Rien n'a été remonté chez three. La garde `FBXLoader` est recevable en amont — sur `dev` l'appelant **et** `parseNormals` sont sans garde, et aucune issue ne le décrit — mais poster publie sous le compte GitHub de l'auteur | fiche T-058 § *La remontée amont* | **Décision de l'auteur : ne rien poster.** À rouvrir s'il change d'avis, ou si un passage de version fait échouer l'application du patch |
+| T-060 | La vue *Scene* continue de dessiner pendant Play : l'onglet inactif est garé hors écran à taille pleine, pas replié | `PERF-BASELINE.md` § *La vue Scene continue de dessiner pendant Play* | Mesuré : 20,1 ms contre 10,8 ms pour le jeu seul, 18 016 appels contre 9 006. T-060 mesure et ne corrige pas. Le correctif est côté `Presentation.visible`, qui croit `host.clientWidth` — dockview ne replie pas un onglet inactif |
