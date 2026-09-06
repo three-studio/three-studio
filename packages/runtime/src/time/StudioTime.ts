@@ -27,6 +27,17 @@ import { deltaTime, time } from 'three/tsl';
  * rather than importing {@link studioTime}. The singleton exists because three's
  * nodes are singletons — there can be exactly one authoritative clock per
  * document — but nothing downstream should have to know that.
+ *
+ * **Re-checked against three's `dev` branch on 2026-09-06, and both halves still
+ * hold.** `Node.onUpdate` is `this.update = callback.bind( this )` — one slot,
+ * assigned, not a list — and `nodes/utils/Timer.js` still exports `time` and
+ * `deltaTime` as module-level `uniform( 0 ).setGroup( renderGroup )` singletons
+ * reading `frame.time` / `frame.deltaTime`. So this remains a re-pointing of a
+ * global rather than a subscription, and it stays the cheapest honest way to put
+ * one clock behind every node material.
+ *
+ * What would end it is `onUpdate` gaining a listener list, or the timer nodes
+ * becoming per-renderer: either would let a clock be added rather than swapped.
  */
 export class StudioTime {
   private seconds = 0;
