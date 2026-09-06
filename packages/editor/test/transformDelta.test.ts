@@ -2,7 +2,7 @@ import { createEntity, createTransform, type EntityTemplate } from '@three-studi
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { close, sceneWith } from '../../core/test/fixtures';
-import { localTransformAfterDelta, worldPosition } from '../src/commands/transformSpace';
+import { localTransformAfterDelta, worldMatrix, worldPosition } from '../src/commands/transformSpace';
 
 /*
  * The multi-object gizmo drives a synthetic pivot, so there is no bound object to
@@ -20,6 +20,22 @@ function rotateAbout(pivot: Vector3, radians: number): Matrix4 {
   );
   return translate(pivot.x, pivot.y, pivot.z)
     .multiply(spin)
+    .multiply(translate(-pivot.x, -pivot.y, -pivot.z));
+}
+
+/**
+ * A scale about a pivot that carries an orientation, which is what the gizmo
+ * now produces: `T · R · S · R⁻¹ · T⁻¹`.
+ *
+ * With `basis` at identity this is the world-axis scale the gizmo used to send,
+ * and the test below is the difference between the two.
+ */
+function scaleAbout(pivot: Vector3, basis: Quaternion, factors: Vector3): Matrix4 {
+  const rotation = new Matrix4().makeRotationFromQuaternion(basis);
+  return translate(pivot.x, pivot.y, pivot.z)
+    .multiply(rotation)
+    .multiply(new Matrix4().makeScale(factors.x, factors.y, factors.z))
+    .multiply(rotation.clone().invert())
     .multiply(translate(-pivot.x, -pivot.y, -pivot.z));
 }
 
@@ -79,6 +95,67 @@ describe('moving an entity by a world delta', () => {
       const after = localTransformAfterDelta(scene, cube.entity.id, delta);
       close(after.position, [before[0], before[1] + 3, before[2]]);
     }
+  });
+
+  it('scales a turned object along its own axes, not the world’s', () => {
+    // A quarter turn about Y, so the object's own +X points at world -Z.
+    const cube = createEntity('Cube');
+    cube.entity.transform = { position: [0, 0, 0], rotation: [0, Math.PI / 2, 0], scale: [1, 1, 1] };
+    const scene = sceneWith([cube]);
+    const basis = new Quaternion().setFromEuler(new Euler(0, Math.PI / 2, 0));
+
+    // Doubling along the object's own X is what dragging its red handle means.
+    const scaled = localTransformAfterDelta(
+      scene,
+      cube.entity.id,
+      scaleAbout(new Vector3(0, 0, 0), basis, new Vector3(2, 1, 1)),
+    );
+    close(scaled.scale, [2, 1, 1]);
+    close(scaled.rotation, [0, Math.PI / 2, 0]);
+
+    // What the gizmo sent before the pivot had an orientation: the same drag,
+    // about the *world* X. At a quarter turn the axes still line up, so the
+    // result is representable — and wrong: it is the object's Z that doubles.
+    const worldAxis = localTransformAfterDelta(
+      scene,
+      cube.entity.id,
+      scaleAbout(new Vector3(0, 0, 0), new Quaternion(), new Vector3(2, 1, 1)),
+    );
+    expect(worldAxis.scale[0]).toBeCloseTo(1, 5);
+    expect(worldAxis.scale[2]).toBeCloseTo(2, 5);
+  });
+
+  it('cannot even express a world-axis scale on an object turned off the axes', () => {
+    // An eighth of a turn, where the axes no longer line up at all. A non-uniform
+    // scale about the world axes then leaves a matrix with shear in it, and
+    // position/rotation/scale has nowhere to put shear — `decompose` drops it
+    // without a word, so the object silently ends up a shape nobody asked for.
+    const cube = createEntity('Cube');
+    cube.entity.transform = { position: [0, 0, 0], rotation: [0, Math.PI / 4, 0], scale: [1, 1, 1] };
+    const scene = sceneWith([cube]);
+
+    const delta = scaleAbout(new Vector3(0, 0, 0), new Quaternion(), new Vector3(2, 1, 1));
+    const pose = localTransformAfterDelta(scene, cube.entity.id, delta);
+
+    const asked = delta.clone().multiply(worldMatrix(scene, cube.entity.id));
+    const got = new Matrix4().compose(
+      new Vector3().fromArray(pose.position),
+      new Quaternion().setFromEuler(new Euler().fromArray(pose.rotation)),
+      new Vector3().fromArray(pose.scale),
+    );
+    expect(got.elements.map((n) => Number(n.toFixed(4)))).not.toEqual(
+      asked.elements.map((n) => Number(n.toFixed(4))),
+    );
+
+    // Through an oriented pivot there is no shear to lose, and it round-trips.
+    const basis = new Quaternion().setFromEuler(new Euler(0, Math.PI / 4, 0));
+    const clean = localTransformAfterDelta(
+      scene,
+      cube.entity.id,
+      scaleAbout(new Vector3(0, 0, 0), basis, new Vector3(2, 1, 1)),
+    );
+    close(clean.scale, [2, 1, 1]);
+    close(clean.rotation, [0, Math.PI / 4, 0]);
   });
 
   it('leaves an entity alone when the delta is the identity', () => {
