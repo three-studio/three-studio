@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -28,6 +28,7 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { readAssetMeta, readMaterialAssets, scanAssets } from '../src/main/assets';
+import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/buildFiles';
 import { exportBuild } from '../src/main/exportWeb';
 
 /*
@@ -717,5 +718,129 @@ describe('models that come with other files', () => {
     // A silent half-export is the thing to avoid: the build runs and the model
     // is simply not there.
     expect(result.warnings.join(' ')).toMatch(/Gone\.bin/);
+  });
+});
+
+/*
+ * Nothing said what a build contained. A CI job publishing one could not tell a
+ * complete folder from a half-copied one, and nobody could tell a published
+ * folder from a published folder with one file swapped.
+ */
+describe('the list of what an export wrote', () => {
+  const listOf = async (outputDir: string): Promise<BuildFileList> =>
+    JSON.parse(await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8')) as BuildFileList;
+
+  it('names the player, the scenes, the assets and the manifest itself', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-files');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8'));
+    const listed = (await listOf(outputDir)).files;
+    const paths = listed.map((file) => file.path);
+
+    // The player arrives by copying a directory, so the exporter never names
+    // its files one by one — which is why the list is a walk of the folder.
+    expect(paths).toContain('index.html');
+    expect(paths).toContain('_studio/player.js');
+    expect(paths).toContain(buildScenePath(build.scenes[0]!));
+    expect(paths).toContain(`assets/${build.assets!['tex-used']!}`);
+    // Itself included, and that is what a file of its own buys: a manifest
+    // cannot carry its own digest, so `build.json` could not be checked while
+    // this list lived inside it.
+    expect(paths).toContain('build.json');
+    // Everything but the list, which is the one file that cannot describe
+    // itself.
+    expect(paths).not.toContain(BUILD_FILES_NAME);
+
+    for (const file of listed) {
+      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(file.bytes).toBeGreaterThan(0);
+    }
+    // Sorted, so re-exporting an unchanged project writes the same bytes.
+    expect(paths).toEqual([...paths].sort());
+
+    expect(await verifyBuild(outputDir)).toEqual({
+      ok: true,
+      missing: [],
+      changed: [],
+      unexpected: [],
+    });
+  });
+
+  it('fails when a byte of the player changes after the export', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-tampered');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const page = join(outputDir, 'index.html');
+    await writeFile(page, `${await readFile(page, 'utf8')}<!-- -->`, 'utf8');
+
+    const verified = await verifyBuild(outputDir);
+    expect(verified.ok).toBe(false);
+    expect(verified.changed).toEqual(['index.html']);
+  });
+
+  it('fails when the manifest itself is edited', async () => {
+    // The reason the list is a file of its own rather than a field of
+    // `build.json`: nothing can hash a document that holds its own hash, so a
+    // manifest carrying the list could never be checked.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-manifest-edit');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const manifest = join(outputDir, 'build.json');
+    const build = manifestOf(await readFile(manifest, 'utf8'));
+    await writeFile(manifest, JSON.stringify({ ...build, title: 'Something Else' }), 'utf8');
+
+    expect((await verifyBuild(outputDir)).changed).toEqual(['build.json']);
+  });
+
+  it('names what has gone missing and what has appeared', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-moved');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    await rm(join(outputDir, '_studio', 'player.js'));
+    await writeFile(join(outputDir, 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
+
+    const verified = await verifyBuild(outputDir);
+    expect(verified.missing).toEqual(['_studio/player.js']);
+    // Neither missing nor altered, and reported anyway: a file that appeared
+    // after the export is what an injected one looks like.
+    expect(verified.unexpected).toEqual(['analytics.js']);
+  });
+
+  it('takes back a scene it no longer ships, so the list describes this export', async () => {
+    /*
+     * The counterpart of emptying `assets/`, and the reason it is here rather
+     * than with the scene layout that introduced it: a walk of the folder
+     * cannot tell what this export wrote from what the last one left, so
+     * anything stale would be listed — and verification would then bless a
+     * folder holding two exports at once.
+     */
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-stale');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    // What a scene deleted or renamed in the project leaves behind.
+    await writeFile(join(outputDir, 'scenes', 'a-scene-since-deleted.json'), '{}', 'utf8');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(await readdir(join(outputDir, 'scenes'))).not.toContain('a-scene-since-deleted.json');
+    expect((await verifyBuild(outputDir)).ok).toBe(true);
+  });
+
+  it('refuses to verify a folder that carries no list', async () => {
+    // "This cannot be verified" is a different answer from "this does not
+    // verify", and collapsing the two would report an ordinary folder as a
+    // tampered build.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-nolist');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await rm(join(outputDir, BUILD_FILES_NAME));
+
+    await expect(verifyBuild(outputDir)).rejects.toThrow(/nothing to check it against/);
   });
 });

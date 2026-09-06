@@ -30,6 +30,7 @@ import {
   readPrefabAssets,
   scanAssets,
 } from './assets';
+import { writeBuildFiles } from './buildFiles';
 import { resolveInside } from './paths';
 import { discoverScenes, readProject } from './project';
 import { buildScripts } from './scripts';
@@ -271,6 +272,11 @@ export async function exportBuild(
    * the project's own paths. A build is not a thing to hand-edit, so the id
    * wins and the path is derived from it.
    */
+  // Emptied first, for the reason `assets/` is: a scene deleted from the
+  // project, or renamed, leaves its old id behind for ever otherwise — and the
+  // list written at the end would record it as part of this build.
+  await rm(join(outputDir, 'scenes'), { recursive: true, force: true });
+
   const shipped: string[] = [];
   // An alias, not an address: a script may name a level, and the name is what
   // an author reads in the editor. Nothing is found by it — see `sceneNames`.
@@ -332,6 +338,12 @@ export async function exportBuild(
     scripts: scriptFile,
   };
   await writeFile(join(outputDir, 'build.json'), JSON.stringify(build, null, 2), 'utf8');
+
+  // --- what was written -----------------------------------------------------
+  // Last, and after `build.json`, so the list covers everything including the
+  // manifest itself. See `buildFiles.ts` for why it is not part of it.
+  report(0.97, 'Listing what was written');
+  await writeBuildFiles(outputDir);
 
   report(1, 'Done');
   return {
