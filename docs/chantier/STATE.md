@@ -1,11 +1,12 @@
 # État du chantier
 
 **Branche** : `refactor/architecture`
-**Dernier commit** : T-069 — ce que la tranche verticale rend possible, et pourquoi on ne le construit pas
-**Tâche courante** : **T-070** — `ARCHITECTURE.md` remis d'accord avec le code (**la dernière**)
-**Faites** : T-001 → T-069. **Lots 0, 2, 3a, 3b, 4, 5, 6, 7, 8, 9 et 10
-terminés.** Lot 1 : les neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne
-d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 → T-070).
+**Dernier commit** : T-070 — le document d'architecture décrit à nouveau l'architecture
+**Tâche courante** : **aucune. Le chantier est terminé.**
+**Faites** : T-001 → T-070, les soixante-dix. **Tous les lots sont terminés.** Le lot 1 garde une
+réserve : ses neuf tâches sont faites, mais la case « aucun fichier partagé hors la ligne d'union »
+n'est pas cochée — voir `RESTES.md`, et l'ADR `0018` qui montre que c'est la même ligne qui bloque
+l'extensibilité tierce.
 
 > **Ce qui a été laissé de côté est dans `RESTES.md`** — une ligne par chose qu'une tâche aurait pu
 > faire et n'a pas faite, avec ce qui la rouvrirait. Les notes ci-dessous sont chronologiques ; ce
@@ -14,7 +15,39 @@ d'union » n'est pas cochée — voir `RESTES.md`. Reste le **lot 11** (T-067 �
 > ⚠️ **Une seule chose reste ouverte sur T-006** : le job CI n'a jamais tourné sur un runner. Voir
 > « Ce que T-006 n'a pas pu vérifier » plus bas. À regarder à la première PR poussée.
 
+## Le chantier est terminé
+
+**Soixante-dix tâches, onze lots, tous verts à chaque commit.** Ce qui reste à faire est dans
+`RESTES.md` — une ligne par chose qu'une tâche aurait pu faire et n'a pas faite, avec ce qui la
+rouvrirait. C'est la réponse à « qu'est-ce qui n'a pas été fait », et il n'y a pas besoin de relire
+ces notes pour l'obtenir.
+
+**Deux mesures existent maintenant et n'existaient pas** : `PERF-BASELINE.md` (rendu et scan d'assets,
+avec la machine et la version de three) et les deux registres — `docs/adr/` et `docs/bugs.md` — dont
+un test refuse qu'une citation pointe dans le vide.
+
+**Ce qui reste ouvert et qui compte le plus**, d'après `RESTES.md` : le job CI n'a jamais tourné sur un
+runner (T-006), le lot 1 n'est pas déclarable terminé tant que les trois listes d'enregistrement sont
+là (T-031 — et T-069 montre que c'est aussi la condition de l'extensibilité tierce), la vue *Scene*
+dessine pendant Play (T-060), et `B15` est le seul bug du registre encore ouvert.
+
 ## Notes de reprise
+
+**T-070 — le document divergeait sur *sept* points, pas six.** Le septième n'était pas annoncé :
+« `project.json` names its scenes by `SceneEntry.id` » — le lot 9 a supprimé la liste, et
+`scenes/**/*.scene.json` *est* la liste. Le paragraphe disait vrai sur les ids et faux sur l'endroit,
+ce qui est la forme de divergence la plus difficile à voir.
+
+**Chaque divergence a été vérifiée sur pièces avant d'être réécrite**, pas reprise de la fiche : les
+trois `tsconfig.build.json` existent, `windows.ts` tient bien un `Editor[]`, rapier est épinglé à
+`0.20.0`, le web-template à `0.2.0`, `apps/*/test/**` est dans le tsconfig, et
+`packages/runtime/test/package-boundary.test.ts` **n'existe plus** — c'est `test/architecture.test.ts`
+depuis T-002. Une fiche décrit ce que l'audit a vu ; la dernière tâche du chantier est le pire endroit
+où l'oublier.
+
+**Ce que le document ne disait nulle part et qui est de l'architecture** : la couche de commandes. Elle
+n'existait pas quand il a été écrit. Une section *Gestures* la décrit, avec la raison — quatre copies
+d'une même décision qui avaient déjà divergé — plutôt que la mécanique.
 
 **T-069 — ⚠️ le chargement de code tiers n'est pas à inventer : il tourne déjà, pour les scripts de
 jeu.** C'est la trouvaille de l'écriture, et elle change ce que l'ADR pouvait dire. `esbuild` est une
@@ -2544,6 +2577,6 @@ choisi par bénéfice visible :
 | 6 | T-052 → T-055 | Les couches sans tests | **4/4 ✅** |
 | 7 | T-056 → T-061 | Le moteur et la performance | **6/6 ✅** |
 | 8 | T-062 → T-066 | La couche de commandes | **5/5 ✅** (T-062 scindé en 6 tranches) |
-| 11 | T-067 → T-070 | La mémoire du projet | 3/4 |
+| 11 | T-067 → T-070 | La mémoire du projet | **4/4 ✅** |
 
-**70 tâches.** Une par commit, une MR à la fin.
+**70 tâches, toutes faites.** Une par commit, une MR à la fin.
