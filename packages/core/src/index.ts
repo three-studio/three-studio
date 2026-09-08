@@ -136,11 +136,12 @@ export {
   collectSceneAssets,
   environmentAssets,
   findAssetUsage,
+  findBrokenReferences,
   findPrefabInstances,
   isUsed,
   totalUses,
 } from './assets/references';
-export type { AssetUsage } from './assets/references';
+export type { AssetUsage, BrokenReference } from './assets/references';
 export type {
   BuildProfile,
   BuildProfiles,

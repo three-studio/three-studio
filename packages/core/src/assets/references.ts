@@ -132,6 +132,64 @@ function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> 
   }
 }
 
+/** An id a document names that nothing in the project answers to. */
+export interface BrokenReference {
+  /** The entity whose component names it; `null` for the scene's environment. */
+  entityId: string | null;
+  assetId: string;
+}
+
+/**
+ * Every asset a scene names that is not in the project.
+ *
+ * The third direction over the walk `findAssetUsage` and `collectSceneAssets`
+ * already share, and it has to be the same walk for the same reason they do: a
+ * slot one of them reads and this one does not is a reference that breaks in
+ * silence.
+ *
+ * **This is an ordinary state, not a fault.** Deleting an asset that something
+ * uses is allowed — the dialog says how many things will keep the reference —
+ * and a scene saved before the delete keeps it too. What is not allowed is for
+ * the author to have no way of seeing it: an entity that draws nothing looks
+ * exactly like an entity that is not there.
+ *
+ * `known` is every id the project holds, materials and prefabs included, since
+ * those are assets like any other. Give it the **expanded** scene to reach what
+ * prefab instances place — those entities carry `owner/local` ids, which is
+ * what the hierarchy shows and therefore what it can mark.
+ */
+export function findBrokenReferences(
+  scene: SceneDoc,
+  known: ReadonlySet<string>,
+): BrokenReference[] {
+  const broken: BrokenReference[] = [];
+  const seen = new Set<string>();
+
+  const note = (entityId: string | null, assetId: string | null): void => {
+    // `''` is a slot the author has not filled, which is not the same thing as
+    // one pointing at something gone: an empty Texture field is how a material
+    // says it has no normal map.
+    if (assetId === null || assetId === '' || known.has(assetId)) return;
+
+    // One entity can name the same missing id from several slots — a material
+    // reusing one texture — and that is one broken reference, not four.
+    const key = `${entityId ?? ''}\u0000${assetId}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    broken.push({ entityId, assetId });
+  };
+
+  for (const [entityId, component] of eachComponent(scene)) {
+    for (const assetId of componentNames(component)) note(entityId, assetId);
+  }
+
+  // Not a component, so the walk cannot reach it — the same blind spot that
+  // once shipped a build with no sky.
+  for (const assetId of environmentAssets(scene.environment)) note(null, assetId);
+
+  return broken;
+}
+
 /**
  * Every asset a scene needs before it can be shown.
  *
