@@ -3,8 +3,10 @@ import {
   Box,
   ChevronDown,
   Globe,
+  ListTree,
   type LucideIcon,
   Magnet,
+  Move3d,
   MousePointer2,
   Move,
   Pause,
@@ -17,10 +19,15 @@ import {
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { commandById } from '../commands/registry';
-import { useEditorStore, type TransformMode } from '../state/editorStore';
+import {
+  TRANSFORM_SPACES,
+  useEditorStore,
+  type TransformMode,
+  type TransformSpace,
+} from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { MenuTrigger } from '../ui/Menu';
-import { ToolButton, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
+import { ToolButton, ToolSplitToggle, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
 import { buildLayoutMenu } from './layoutMenu';
 
 interface TransformTool {
@@ -36,6 +43,33 @@ const TRANSFORM_TOOLS: readonly TransformTool[] = [
   { mode: 'rotate', icon: RotateCw, label: 'Rotate', key: 'E' },
   { mode: 'scale', icon: Scale3d, label: 'Scale', key: 'R' },
 ];
+
+/**
+ * What each handle space is called, drawn as, and does.
+ *
+ * "Auto" is the author's word for `parent`, and `parent` is what it computes:
+ * the parent's axes, which are the world's at the root because a root entity's
+ * parent carries no transform. Blender ships the same orientation and calls it
+ * Parent; the hint is here so the button does not have to be believed on
+ * faith.
+ */
+const SPACE_LABELS: Record<TransformSpace, string> = {
+  world: 'Global',
+  local: 'Local',
+  parent: 'Auto',
+};
+
+const SPACE_ICONS: Record<TransformSpace, LucideIcon> = {
+  world: Globe,
+  local: Move3d,
+  parent: ListTree,
+};
+
+const SPACE_HINTS: Record<TransformSpace, string> = {
+  world: 'handles on the world axes',
+  local: "handles on the object's own axes",
+  parent: "handles on the parent's axes, the world's at the root",
+};
 
 interface ToolbarProps {
   onResetLayout: () => void;
@@ -57,7 +91,8 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
   const playState = useEditorStore((s) => s.playState);
 
   const setTransformMode = useEditorStore((s) => s.setTransformMode);
-  const toggleTransformSpace = useEditorStore((s) => s.toggleTransformSpace);
+  const cycleTransformSpace = useEditorStore((s) => s.cycleTransformSpace);
+  const setTransformSpace = useEditorStore((s) => s.setTransformSpace);
   const togglePivotMode = useEditorStore((s) => s.togglePivotMode);
   const toggleSnap = useEditorStore((s) => s.toggleSnap);
   const toggleGizmos = useEditorStore((s) => s.toggleGizmos);
@@ -66,6 +101,11 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
 
   const animated = useViewportStore((s) => s.animated);
   const toggleAnimated = useViewportStore((s) => s.toggleAnimated);
+
+  // Scale is oriented to the object whatever the button says, so in that mode
+  // the button says the truth rather than the store's value.
+  const scaleForcesLocal = transformMode === 'scale';
+  const shownSpace: TransformSpace = scaleForcesLocal ? 'local' : transformSpace;
 
   const isStopped = playState === 'stopped';
   const transport = commandById(isStopped ? 'play' : 'stop');
@@ -89,12 +129,32 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
         <ToolToggle
           label={pivotMode === 'center' ? 'Center' : 'Pivot'}
           icon={Box}
+          active={pivotMode === 'center'}
           onClick={togglePivotMode}
         />
-        <ToolToggle
-          label={transformSpace === 'world' ? 'Global' : 'Local'}
-          icon={Globe}
-          onClick={toggleTransformSpace}
+        {/*
+          Scale has no Global, so the button stops offering one. Three forces
+          local space for scale internally, because a non-uniform scale along a
+          world axis on a rotated object is a shear and position/rotation/scale
+          has nowhere to put shear — `GizmoController` argues it at length and
+          `pivotPose` is where it is enforced. A button announcing "Global"
+          while the gizmo does the opposite is the interface lying; Unity and
+          Unreal grey theirs out for the same reason.
+        */}
+        <ToolSplitToggle
+          label={SPACE_LABELS[shownSpace]}
+          hint={SPACE_HINTS[shownSpace]}
+          icon={SPACE_ICONS[shownSpace]}
+          shortcut="X"
+          active={shownSpace !== 'world'}
+          disabled={scaleForcesLocal}
+          onCycle={cycleTransformSpace}
+          items={TRANSFORM_SPACES.map((space) => ({
+            label: SPACE_LABELS[space],
+            icon: SPACE_ICONS[space],
+            checked: space === shownSpace,
+            onSelect: () => setTransformSpace(space),
+          }))}
         />
         <ToolButton icon={Magnet} label="Snap to grid" active={snapEnabled} onClick={toggleSnap} />
         <ToolButton

@@ -1,10 +1,12 @@
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronRight, Trash2, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useOverlay } from '../state/overlayStore';
 
 export interface MenuItem {
   label: string;
+  /** Drawn before the label, for lists where the rows also appear as buttons. */
+  icon?: LucideIcon;
   shortcut?: string;
   disabled?: boolean;
   checked?: boolean;
@@ -82,6 +84,7 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
               className="flex min-w-0 flex-1 items-center gap-3 px-3 py-1 text-left text-ink enabled:hover:bg-accent-dim disabled:text-ink-dim"
             >
               <span className="w-3 text-2xs text-ink-muted">{item.checked ? '✓' : ''}</span>
+              {item.icon && <item.icon size={13} strokeWidth={1.75} className="shrink-0 text-ink-muted" />}
               <span className="flex-1 truncate whitespace-nowrap">{item.label}</span>
               {item.shortcut && (
                 <span className="whitespace-nowrap text-2xs text-ink-dim">{item.shortcut}</span>

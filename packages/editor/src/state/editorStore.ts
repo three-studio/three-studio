@@ -2,7 +2,28 @@ import { create } from 'zustand';
 
 /** What the gizmo does with the current selection. Mirrors Unity's Q/W/E/R. */
 export type TransformMode = 'select' | 'translate' | 'rotate' | 'scale';
-export type TransformSpace = 'world' | 'local';
+/**
+ * Which axes the gizmo's handles point along.
+ *
+ * It never decides where a transform is **stored** — that is relative to the
+ * parent in all three, always, because that is the only thing an `Object3D`
+ * holds. The space picks the frame you grab, not the frame you save in.
+ *
+ * `parent` is Blender's orientation of the same name, and it is the one that
+ * needs no code of its own at the root: `SceneBinder` hangs a root entity from
+ * a `Group` carrying no transform, so "the parent's axes" and "the world's
+ * axes" are the same quaternion there.
+ */
+export type TransformSpace = 'world' | 'local' | 'parent';
+
+/**
+ * The order the button, the `X` key and the menu all walk.
+ *
+ * One list rather than a cycle written here and an order written in the
+ * toolbar: the two would drift, and the drift would show up as a menu whose
+ * rows are not the order the key visits them in.
+ */
+export const TRANSFORM_SPACES: readonly TransformSpace[] = ['world', 'local', 'parent'];
 /** Whether the gizmo sits on the bounds centre or on the object's origin. */
 export type PivotMode = 'center' | 'pivot';
 export type PlayState = 'stopped' | 'playing' | 'paused';
@@ -55,7 +76,9 @@ interface EditorState {
   paletteOpen: boolean;
 
   setTransformMode: (mode: TransformMode) => void;
-  toggleTransformSpace: () => void;
+  /** Steps to the next space in `TRANSFORM_SPACES`, wrapping. */
+  cycleTransformSpace: () => void;
+  setTransformSpace: (space: TransformSpace) => void;
   togglePivotMode: () => void;
   toggleSnap: () => void;
   toggleGizmos: () => void;
@@ -94,8 +117,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
   closePalette: () => set({ paletteOpen: false }),
 
   setTransformMode: (transformMode) => set({ transformMode }),
-  toggleTransformSpace: () =>
-    set((s) => ({ transformSpace: s.transformSpace === 'world' ? 'local' : 'world' })),
+  cycleTransformSpace: () =>
+    set((s) => {
+      const next = (TRANSFORM_SPACES.indexOf(s.transformSpace) + 1) % TRANSFORM_SPACES.length;
+      return { transformSpace: TRANSFORM_SPACES[next] ?? 'world' };
+    }),
+  setTransformSpace: (transformSpace) => set({ transformSpace }),
   togglePivotMode: () => set((s) => ({ pivotMode: s.pivotMode === 'center' ? 'pivot' : 'center' })),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   toggleGizmos: () => set((s) => ({ showGizmos: !s.showGizmos })),

@@ -23,6 +23,24 @@ function turned(): Object3D {
   return object;
 }
 
+/**
+ * A child turned about X, under a parent turned about Y.
+ *
+ * Both turns are needed: with an unturned child, Local and Parent agree and the
+ * test would pass on either answer.
+ */
+function nested(): { parent: Object3D; child: Object3D } {
+  const parent = new Object3D();
+  parent.quaternion.setFromEuler(new Euler(0, Math.PI / 2, 0));
+
+  const child = new Object3D();
+  child.quaternion.setFromEuler(new Euler(Math.PI / 4, 0, 0));
+
+  parent.add(child);
+  parent.updateMatrixWorld(true);
+  return { parent, child };
+}
+
 const angles = (q: Quaternion): number[] => {
   const euler = new Euler().setFromQuaternion(q);
   return [euler.x, euler.y, euler.z].map((value) => Number(value.toFixed(6)));
@@ -52,11 +70,42 @@ describe('which way the handles point', () => {
     expect(angles(quaternion)).toEqual([0, 0, 0]);
   });
 
+  it('takes the parent’s orientation in Auto, not the object’s own', () => {
+    const { parent, child } = nested();
+    const { quaternion } = pivotPose({
+      mode: 'rotate',
+      space: 'parent',
+      pivotMode: 'pivot',
+      bounds: null,
+      primary: child,
+    });
+    expect(angles(quaternion)).toEqual(angles(parent.getWorldQuaternion(new Quaternion())));
+    expect(angles(quaternion)).not.toEqual(angles(child.getWorldQuaternion(new Quaternion())));
+  });
+
+  it('degenerates to the world axes in Auto at the root, with no branch for it', () => {
+    // The real graph: `SceneBinder` hangs a root entity from a `Group` it never
+    // gives a transform to, so reading the parent there yields the identity.
+    const root = new Object3D();
+    const primary = turned();
+    root.add(primary);
+    root.updateMatrixWorld(true);
+
+    const { quaternion } = pivotPose({
+      mode: 'rotate',
+      space: 'parent',
+      pivotMode: 'pivot',
+      bounds: null,
+      primary,
+    });
+    expect(angles(quaternion)).toEqual([0, 0, 0]);
+  });
+
   it('orients scale to the object whatever the button says', () => {
     // Not a preference: three forces local space for scale, and a scale about
     // world axes applied to a rotated object is a shear that `decompose` drops.
     const primary = turned();
-    for (const space of ['world', 'local'] as const) {
+    for (const space of ['world', 'local', 'parent'] as const) {
       const { quaternion } = pivotPose({
         mode: 'scale',
         space,

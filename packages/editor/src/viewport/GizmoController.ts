@@ -40,6 +40,11 @@ const SCALE_SNAP = 0.1;
  * preference — three forces `space = 'local'` for scale internally
  * (`TransformControls.js:1585`), and the paragraph above is what the other
  * answer means. Unity draws the same line.
+ *
+ * `parent` came later and is the cheapest of the three, because the scene graph
+ * already answers it: a root entity hangs from `SceneBinder.root`, a `Group`
+ * that is never given a transform, so reading the parent's world quaternion
+ * yields the identity there — Global, without a branch saying so.
  */
 export function pivotPose(options: {
   mode: TransformMode;
@@ -57,13 +62,17 @@ export function pivotPose(options: {
       ? bounds.getCenter(new Vector3())
       : (primary?.getWorldPosition(new Vector3()) ?? new Vector3());
 
-  // The centre of a group is still turned about the active object's axes, as
-  // in Unity: the group has no orientation of its own to offer.
-  const oriented = mode === 'scale' || space === 'local';
-  const quaternion =
-    oriented && primary !== undefined
-      ? primary.getWorldQuaternion(new Quaternion())
-      : new Quaternion();
+  // Which object lends its axes — and `undefined` for Global, which lends the
+  // world's. The centre of a group is still turned about the active object's
+  // axes, as in Unity: the group has no orientation of its own to offer.
+  const frame =
+    mode === 'scale' || space === 'local'
+      ? primary
+      : space === 'parent'
+        ? (primary?.parent ?? undefined)
+        : undefined;
+
+  const quaternion = frame?.getWorldQuaternion(new Quaternion()) ?? new Quaternion();
 
   return { position, quaternion };
 }
@@ -156,9 +165,22 @@ export class GizmoController {
     this.targets = selection;
 
     const { transformSpace, pivotMode, snapEnabled } = useEditorStore.getState();
-    // Rotation follows the Global/Local button, as in Unity. Scale never does —
+    // Rotation follows the handle-space button, as in Unity. Scale never does —
     // see `pivotPose`, which is where that is argued.
     const space = mode === 'scale' ? 'local' : transformSpace;
+
+    /*
+     * `TransformControls` knows two spaces, and two are enough for our three.
+     *
+     * The gizmo drives a synthetic pivot, and **the pivot is the frame**:
+     * whatever quaternion `pivotPose` put on it, saying `'local'` to three
+     * points the handles along the pivot's own axes and turns about them. So
+     * Local and Parent are the same instruction to three and differ only in
+     * what the pivot was given. Global is the one that asks for something the
+     * pivot cannot carry — the world's axes whatever the pivot's — and that is
+     * exactly what `'world'` means to three.
+     */
+    const controlsSpace = space === 'world' ? 'world' : 'local';
 
     // Not while dragging: the pivot is being driven, and re-placing it under the
     // pointer would fight the gesture.
@@ -193,7 +215,7 @@ export class GizmoController {
     // `update` runs every frame, and each of these setters fires a change event
     // that makes TransformControls rebuild its gizmo. Only touch what moved.
     if (this.controls.mode !== mode) this.controls.setMode(mode);
-    if (this.controls.space !== space) this.controls.setSpace(space);
+    if (this.controls.space !== controlsSpace) this.controls.setSpace(controlsSpace);
     if (this.snapEnabled !== snapEnabled) {
       this.snapEnabled = snapEnabled;
       this.controls.setTranslationSnap(snapEnabled ? TRANSLATE_SNAP : null);

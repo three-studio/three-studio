@@ -106,6 +106,26 @@ export function useShortcuts(): void {
         return;
       }
 
+      /*
+       * The handle space, on Unity's key and matched the same way the tool keys
+       * are — by position, so it stays under the same finger on AZERTY. It is
+       * not in `DEFAULT_BINDINGS` for the reason given there: it names no
+       * target, so it is not a command, and neither are Q/W/E/R.
+       *
+       * It steps rather than toggles, because there are three now — the order
+       * is `TRANSFORM_SPACES`, which the toolbar menu lists in the same order
+       * from the same array.
+       *
+       * Silent in Scale, where the toolbar button is greyed: three forces
+       * local space for scale, so a Global the gizmo would ignore is not a
+       * state to let someone into. Flipping it invisibly here would surface
+       * two tools later, which is worse than a key that does nothing.
+       */
+      if (event.code === 'KeyX') {
+        if (!event.repeat && store.transformMode !== 'scale') store.cycleTransformSpace();
+        return;
+      }
+
       if (event.key === 'Escape') store.clearSelection();
     }
 

@@ -25,9 +25,10 @@ import { hasModifier, isMac, modKey, shiftKey } from '../platform';
  * matching on `event.code` shipped a bug where Cmd+Z did nothing on AZERTY,
  * because the key labelled Z reports `KeyW`. Users press the key they can read.
  *
- * The tool keys are the deliberate exception and are not in this table at all —
- * they match on position, so Q/W/E/R stay under the same fingers on every
- * layout, which is what Unity and Blender do. They are also not commands.
+ * The viewport keys are the deliberate exception and are not in this table at
+ * all — Q/W/E/R for the tools and X for Global/Local match on position, so they
+ * stay under the same fingers on every layout, which is what Unity and Blender
+ * do. They are also not commands: none of them names a target.
  */
 export type ShortcutBinding = string;
 
