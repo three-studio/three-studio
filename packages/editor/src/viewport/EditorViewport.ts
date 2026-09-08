@@ -193,7 +193,7 @@ export class EditorViewport {
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
     // to, and an object outside the graph never gets one.
-    projection.transformGizmo.add(this.gizmo.helper, this.gizmo.pivotObject);
+    projection.transformGizmo.add(this.gizmo.helper, this.gizmo.pivotObject, this.gizmo.readoutObject);
 
     // Last, after the camera's listeners and the gizmo's; see `InputSubjects`.
     this.input.installSelection();

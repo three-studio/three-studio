@@ -1,6 +1,7 @@
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
-import { Box3, Matrix4, Object3D, Quaternion, Vector3, type Camera } from 'three/webgpu';
+import { Box3, Matrix4, Object3D, Quaternion, Vector3, type PerspectiveCamera } from 'three/webgpu';
 import { transformSelection } from '../commands/sceneCommands';
+import { gestureAxis, gizmoUnit, RotationReadout } from './RotationReadout';
 import type { Selection } from '../state/selection';
 import {
   useEditorStore,
@@ -8,6 +9,25 @@ import {
   type TransformMode,
   type TransformSpace,
 } from '../state/editorStore';
+
+/**
+ * What `TransformControls` publishes at runtime that `@types/three` leaves out.
+ *
+ * None of these is private. Three defines them with the very same
+ * `defineProperty` helper as `axis` and `dragging`, and mirrors each one onto
+ * its own gizmo and plane — which is how those two draw anything at all. Only
+ * the type declarations stop at the handful a caller was expected to want.
+ *
+ * One cast, in one place, so the day the declarations catch up there is a
+ * single line to delete rather than five scattered ones.
+ */
+interface RotationGestureSource {
+  readonly rotationAxis: Vector3;
+  readonly rotationAngle: number;
+  readonly pointStart: Vector3;
+  readonly worldPositionStart: Vector3;
+  readonly worldQuaternionStart: Quaternion;
+}
 
 const TRANSLATE_SNAP = 0.5;
 const ROTATE_SNAP = Math.PI / 12; // 15 degrees
@@ -95,6 +115,11 @@ export function pivotPose(options: {
  */
 export class GizmoController {
   private readonly controls: TransformControls;
+  private readonly camera: PerspectiveCamera;
+  /** The swept sector and the angle, which three draws neither of. */
+  private readonly readout = new RotationReadout();
+  /** Reused so a frame of dragging allocates nothing. */
+  private readonly cameraPosition = new Vector3();
   /** What the gizmo is actually attached to. Never in the document. */
   private readonly pivot = new Object3D();
   /** The pivot's pose at the last push, so a change becomes a delta. */
@@ -104,7 +129,8 @@ export class GizmoController {
   private snapEnabled = false;
   private attached = false;
 
-  constructor(camera: Camera, dom: HTMLElement) {
+  constructor(camera: PerspectiveCamera, dom: HTMLElement) {
+    this.camera = camera;
     this.controls = new TransformControls(camera, dom);
     this.controls.size = 0.85;
     this.pivot.matrixAutoUpdate = true;
@@ -125,6 +151,11 @@ export class GizmoController {
   /** The pivot has to be in the scene graph for the gizmo to track it. */
   get pivotObject(): Object3D {
     return this.pivot;
+  }
+
+  /** The rotation readout, for the viewport to hang beside the handles. */
+  get readoutObject(): Object3D {
+    return this.readout.root;
   }
 
   /** True while the pointer is on a handle, so picking must stand down. */
@@ -159,6 +190,7 @@ export class GizmoController {
       }
       this.targets = null;
       this.helper.visible = false;
+      this.readout.hide();
       return;
     }
 
@@ -222,11 +254,57 @@ export class GizmoController {
       this.controls.setRotationSnap(snapEnabled ? ROTATE_SNAP : null);
       this.controls.setScaleSnap(snapEnabled ? SCALE_SNAP : null);
     }
+
+    this.updateReadout(mode);
   }
 
   dispose(): void {
+    this.readout.dispose();
     this.controls.detach();
     this.controls.dispose();
+  }
+
+  /**
+   * Describes the rotation in progress, or takes the description away.
+   *
+   * Only during a rotate drag. Outside one there is no gesture to draw, and
+   * `rotationAngle` still holds whatever the last one ended on — so the test
+   * has to be `dragging`, not "is the angle non-zero".
+   */
+  private updateReadout(mode: TransformMode): void {
+    const { axis, dragging, size, space } = this.controls;
+    const source = this.controls as unknown as RotationGestureSource;
+
+    // A gesture that has not swept anything yet: a zero-width sector is a stray
+    // line across the ring, and the number would sit at 0° for as long as the
+    // pointer rests on the handle without moving.
+    if (mode !== 'rotate' || !dragging || axis === null || source.rotationAngle === 0) {
+      this.readout.hide();
+      return;
+    }
+
+    this.camera.getWorldPosition(this.cameraPosition);
+
+    this.readout.show({
+      centre: source.worldPositionStart,
+      // `space` is three's, not ours: Local and Parent are both `'local'` to it,
+      // and both leave the axis in the pivot's frame. See `gestureAxis`.
+      axis: gestureAxis({
+        handle: axis,
+        space,
+        rotationAxis: source.rotationAxis,
+        frame: source.worldQuaternionStart,
+      }),
+      grab: source.pointStart,
+      angle: source.rotationAngle,
+      handle: axis,
+      unit: gizmoUnit({
+        distance: this.cameraPosition.distanceTo(source.worldPositionStart),
+        fovDegrees: this.camera.fov,
+        zoom: this.camera.zoom,
+        size,
+      }),
+    });
   }
 
   /**
