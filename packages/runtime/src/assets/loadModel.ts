@@ -9,6 +9,7 @@ import {
   Group,
   LoaderUtils,
   LoadingManager,
+  TextureLoader,
   type AnimationClip,
   type Object3D,
 } from 'three/webgpu';
@@ -27,6 +28,79 @@ export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.mod
 export function extensionOf(url: string): string {
   const path = url.split(/[?#]/)[0] ?? url;
   return path.slice(path.lastIndexOf('.') + 1).toLowerCase();
+}
+
+/**
+ * The subset of the glTF document this file reads. Written out rather than
+ * imported: `GLTFLoader` ships no types for its parser, and what is needed here
+ * is two fields.
+ */
+interface GltfDocument {
+  textures?: { source?: number }[];
+  images?: { bufferView?: number; uri?: string }[];
+}
+
+/**
+ * Which image a texture draws, when that image is **embedded** in the file.
+ *
+ * `null` for everything else — a texture that names no source, or one whose
+ * image has a `uri` and is therefore fetched from its own URL. Separated from
+ * the plugin below because it is the whole of the decision, and a decision
+ * inside a loader callback is one nothing can run.
+ */
+export function embeddedImageSource(json: GltfDocument, textureIndex: number): number | null {
+  const sourceIndex = json.textures?.[textureIndex]?.source;
+  if (sourceIndex === undefined) return null;
+
+  const image = json.images?.[sourceIndex];
+  return image !== undefined && image.bufferView !== undefined ? sourceIndex : null;
+}
+
+/**
+ * Decodes a glTF's embedded images through an `<img>` instead of through `fetch`.
+ *
+ * `ImageBitmapLoader` — which `GLTFLoader` picks whenever `createImageBitmap`
+ * exists, so always here — loads an image by wrapping its bytes in a Blob,
+ * making an object URL for it, and calling `fetch()` on that URL. **Chromium
+ * refuses that fetch for a large blob**: `TypeError: Failed to fetch`, with
+ * nothing else to go on. three catches it, prints `Couldn't load texture
+ * <blob url>` and resolves to `null`, so the model arrives fully built, fully
+ * lit, and completely grey — which reads as a broken exporter rather than as a
+ * failed download.
+ *
+ * Measured in this app, on a 166 MB museum scan whose two JPEGs are 42 MB and
+ * 38 MB. The ceiling is on the **blob**, not on the image: a 24 MiB blob
+ * fetches and a 28 MiB one does not, while that same 8192x8192 JPEG decodes at
+ * full size through `createImageBitmap`, and loads at full size through an
+ * `<img>`, in the same renderer moments apart.
+ *
+ * So the embedded ones come in through `TextureLoader`, which is an `<img>` and
+ * has no such ceiling. What that costs is the decode moving onto the main
+ * thread, which is a hitch while a model loads — set against a texture that
+ * otherwise never arrives at all.
+ *
+ * Only `bufferView` images, because they are the only ones that become blobs;
+ * an image with a `uri` is fetched from `studio-asset://` by URL and never comes
+ * near this. And registered *after* three's own texture extensions, which are
+ * registered in its constructor and therefore run first: a texture declaring
+ * KTX2, WebP or AVIF is claimed by them, and this only ever sees what is left.
+ */
+function withoutBlobFetch(loader: GLTFLoader, manager: LoadingManager): GLTFLoader {
+  const textureLoader = new TextureLoader(manager);
+
+  loader.register((parser) => ({
+    name: 'STUDIO_embedded_images_without_fetch',
+    loadTexture(textureIndex: number) {
+      const sourceIndex = embeddedImageSource(parser.json as GltfDocument, textureIndex);
+      if (sourceIndex === null) return null;
+
+      // three's own path from here: the samplers, the colour space and the
+      // `associations` map are its work, and only the decode changes.
+      return parser.loadTextureImage(textureIndex, sourceIndex, textureLoader);
+    },
+  }));
+
+  return loader;
 }
 
 export interface LoadedModel {
@@ -71,9 +145,10 @@ export async function loadModelFromUrl(
   switch (extensionOf(url)) {
     case 'glb':
     case 'gltf': {
-      const gltf = await new GLTFLoader(manager)
-        .setMeshoptDecoder(MeshoptDecoder)
-        .loadAsync(url);
+      const gltf = await withoutBlobFetch(
+        new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder),
+        manager,
+      ).loadAsync(url);
       return { object: gltf.scene, animations: gltf.animations };
     }
 
