@@ -4,6 +4,7 @@ import { ComponentSystem, type SystemContext, type SystemHandle } from '../../sy
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import { buildMaterial } from '../../systems/material';
 import { SharedMaterial } from '../../systems/ResourceArena';
+import { createMissingModel } from './missingModel';
 
 export interface ModelHandle extends SystemHandle {
   assetId: string;
@@ -214,6 +215,17 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   private load(entityId: string, handle: ModelHandle, ctx: SystemContext): void {
     if (handle.assetId === '') return;
 
+    // Asked before loading, because it is not a failure. A scene that names a
+    // deleted asset is ordinary — the delete dialog says the reference will be
+    // kept — and it used to reach here, throw `Unknown model asset`, and be
+    // reported as a stack trace against an entity that then drew nothing.
+    // Nothing is the one thing that cannot be fixed: it is invisible and it
+    // cannot be clicked. See `missingModel.ts`.
+    if (!ctx.models.knows(handle.assetId)) {
+      this.place(entityId, handle, ctx, createMissingModel());
+      return;
+    }
+
     const pending = this.fetch(handle, ctx)
       .then((object) => {
         if (object === null) {
@@ -225,17 +237,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
           return;
         }
 
-        object.userData[ENTITY_ID_KEY] = entityId;
-        object.traverse((child) => {
-          child.userData[ENTITY_ID_KEY] = entityId;
-        });
-
-        // Refused by the reconciler when this handle is no longer the one
-        // mounted there. Kept only once it is accepted, or the handle would
-        // hold an object nothing ever drew and `unmount` would have to know it.
-        if (!ctx.attach(entityId, handle, object)) return;
-        handle.objects.push(object);
-        this.dress(handle, ctx);
+        this.place(entityId, handle, ctx, object);
       })
       .catch((error: unknown) => {
         console.error(`[scene] failed to load model ${handle.assetId}:`, error);
@@ -245,6 +247,29 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       });
 
     this.pending.add(pending);
+  }
+
+  /**
+   * Hands an arrival to the reconciler and dresses it.
+   *
+   * Refused when this handle is no longer the one mounted there, and kept only
+   * once it is accepted — otherwise the handle would hold an object nothing ever
+   * drew, and `unmount` would have to know about it.
+   */
+  private place(
+    entityId: string,
+    handle: ModelHandle,
+    ctx: SystemContext,
+    object: Object3D,
+  ): void {
+    object.userData[ENTITY_ID_KEY] = entityId;
+    object.traverse((child) => {
+      child.userData[ENTITY_ID_KEY] = entityId;
+    });
+
+    if (!ctx.attach(entityId, handle, object)) return;
+    handle.objects.push(object);
+    this.dress(handle, ctx);
   }
 
   /** The whole file, or the single node this handle names. */

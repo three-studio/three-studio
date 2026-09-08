@@ -97,6 +97,18 @@ export class ModelCache {
   }
 
   /**
+   * Whether this asset can be loaded at all.
+   *
+   * `AssetResolver.url` already documents its `null` as "a scene referencing a
+   * deleted file", which is an ordinary state and not a failure — so it is worth
+   * asking before loading rather than finding out by catching. `ModelSystem`
+   * asks, and draws a placeholder instead of nothing.
+   */
+  knows(assetId: string): boolean {
+    return assetId !== '' && this.resolver.url(assetId) !== null;
+  }
+
+  /**
    * Resolves to a fresh clone, because two entities pointing at the same model
    * must be independently transformable. Geometry and materials stay shared.
    */
@@ -158,6 +170,9 @@ export class ModelCache {
     if (cached) return cached;
 
     const url = this.resolver.url(assetId);
+    // A guard now rather than the path a deleted asset takes: callers ask
+    // `knows` first, and this is left for the asset that goes away between that
+    // question and this answer.
     if (url === null) throw new Error(`Unknown model asset: ${assetId}`);
 
     const pending = loadModelFromUrl(url, this.manager).then((loaded) =>

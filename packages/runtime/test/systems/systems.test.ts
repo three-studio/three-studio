@@ -11,6 +11,7 @@ import {
   ProjectorLight,
   RectAreaLight,
   Texture,
+  type Object3D,
 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { ModelCache } from '../../src/assets/ModelCache';
@@ -445,7 +446,7 @@ describe('the camera system', () => {
  * `loadModel` clones the whole tree and an unpacked file would clone itself
  * once per part.
  */
-function stubCache(): { models: ModelCache; asked: string[] } {
+function stubCache(knows = true): { models: ModelCache; asked: string[] } {
   const asked: string[] = [];
   const node = () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshBasicNodeMaterial());
@@ -453,6 +454,10 @@ function stubCache(): { models: ModelCache; asked: string[] } {
     return mesh;
   };
   const models = {
+    // A cache that holds the file, which is what these tests are about. `false`
+    // is the scene naming an asset that has been deleted, and the system then
+    // draws a placeholder without asking for anything.
+    knows: () => knows,
     loadModel: (assetId: string) => {
       asked.push(`whole:${assetId}`);
       const group = new Group();
@@ -499,6 +504,43 @@ describe('the model system', () => {
     await system.whenLoaded();
 
     expect(asked).toEqual(['whole:chair']);
+  });
+
+  it('draws a placeholder for an asset the project no longer holds', () => {
+    const { ctx } = context();
+    const { models, asked } = stubCache(false);
+    const system = new ModelSystem();
+    const attached: Object3D[] = [];
+
+    const handle = system.mount('chair', modelComponent(), {
+      ...ctx,
+      models,
+      attach: (_entityId, _handle, object: Object3D) => {
+        attached.push(object);
+        return true;
+      },
+    });
+
+    // Nothing was asked for: an id nothing answers to is not a load that failed,
+    // it is a load there is no point starting.
+    expect(asked).toEqual([]);
+    // And something is drawn. Nothing at all is the one outcome that cannot be
+    // fixed — an entity drawing nothing is indistinguishable from one that is
+    // not there, so it can be neither found nor clicked.
+    expect(handle.objects).toHaveLength(1);
+    expect(attached).toHaveLength(1);
+  });
+
+  it('gives the placeholder the entity id, so it can be clicked and repaired', () => {
+    const { ctx } = context();
+    const { models } = stubCache(false);
+    const system = new ModelSystem();
+
+    const handle = system.mount('chair', modelComponent(), { ...ctx, models });
+
+    // The whole point of drawing a box: the picker reads this off whatever the
+    // ray hit, so selecting it puts the broken component in the Inspector.
+    expect(handle.objects[0]?.userData[ENTITY_ID_KEY]).toBe('chair');
   });
 
   it('remounts for a different node, and not for a shadow flag', () => {
