@@ -222,7 +222,25 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     // Nothing is the one thing that cannot be fixed: it is invisible and it
     // cannot be clicked. See `missingModel.ts`.
     if (!ctx.models.knows(handle.assetId)) {
-      this.place(entityId, handle, ctx, createMissingModel());
+      const placeholder = createMissingModel();
+      // Deferred, and that is not a stylistic choice. `mount` has not returned
+      // this handle yet, so the reconciler does not know it is the one mounted
+      // on this entity — and `attach` refuses a handle it does not recognise,
+      // which is the guard that stops a late arrival from being drawn under an
+      // entity that has since been rebuilt. Placing synchronously walked
+      // straight into it: the box was built, refused, and never appeared.
+      //
+      // In `pending` like a real load, so `whenLoaded()` still describes a
+      // settled scene — which is what the export and the headless harness wait
+      // on before they believe what they see.
+      const pending = Promise.resolve()
+        .then(() => {
+          this.place(entityId, handle, ctx, placeholder);
+        })
+        .finally(() => {
+          this.pending.delete(pending);
+        });
+      this.pending.add(pending);
       return;
     }
 

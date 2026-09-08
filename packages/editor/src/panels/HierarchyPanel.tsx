@@ -2,6 +2,7 @@ import {
   COMPONENT_TYPES,
   capabilitiesOf,
   componentDefinition,
+  findBrokenReferences,
   findComponent,
   hasComponent,
   splitInstancedId,
@@ -40,6 +41,7 @@ import {
 import { hasModifier } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
 import { shortcutHint } from '../shell/shortcutBindings';
+import { knownAssetIds } from '../state/brokenReport';
 import { expandedScene } from '../state/expansion';
 import { isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
 import { buildRows, type Row } from './hierarchyRows';
@@ -142,6 +144,9 @@ export function HierarchyPanel() {
   // Subscribed to, not just read: editing a prefab asset changes what this tree
   // shows without changing a single entity in the document.
   const prefabs = useAssetStore((s) => s.prefabs);
+  // Likewise for what the project holds: deleting an asset breaks the rows that
+  // name it, and nothing about the document changes when it goes.
+  const assetRevision = useAssetStore((s) => s.revision);
   const selection = useEditorStore((s) => s.selection);
   const setSelection = useEditorStore((s) => s.setSelection);
   // One value for the whole render, memoised on `(ids, scene)`: `has()` is asked
@@ -165,6 +170,30 @@ export function HierarchyPanel() {
     () => buildRows(expandedScene(), collapsed, filter),
     [structureRevision, prefabs, collapsed, filter],
   );
+
+  /*
+   * The rows whose components name an asset the project does not have.
+   *
+   * One walk for the whole tree rather than one question per row, which is the
+   * same reason `selected` is built once above: this is asked for every row of
+   * a list that can be four thousand long.
+   *
+   * `revision` rather than the manifest itself, because the manifest is
+   * replaced on every mutation and this only has to move when what the project
+   * *holds* changes.
+   */
+  const brokenBy = useMemo(() => {
+    const byEntity = new Map<string, string[]>();
+    for (const { entityId, assetId } of findBrokenReferences(expandedScene().scene, knownAssetIds())) {
+      // The environment is not a row. It is reported at load and shown in the
+      // Inspector; there is nothing here to mark.
+      if (entityId === null) continue;
+      const named = byEntity.get(entityId);
+      if (named) named.push(assetId);
+      else byEntity.set(entityId, [assetId]);
+    }
+    return byEntity;
+  }, [structureRevision, prefabs, assetRevision]);
 
   /* Only the rows that fit are rendered; the arithmetic is `rowWindow`. */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -370,10 +399,11 @@ export function HierarchyPanel() {
           // Reparenting an entity a prefab produced would have to move it in the
           // asset, which is not what dropping it here means.
           const draggable = instance === null && renaming !== entity.id;
-          // An instance pointing at a prefab that is not in the project draws
-          // nothing at all. Silence there reads as "my prefab is empty".
-          const missing = findComponent(expanded, entity.id, 'prefabInstance');
-          const broken = missing !== undefined && prefabs[missing.assetId] === undefined;
+          // A row naming anything the project does not have — a prefab, a model,
+          // a texture in a material slot. It used to be prefabs only, and the
+          // reason applies to all of them: an entity that draws nothing reads as
+          // an entity that is empty.
+          const missing = brokenBy.get(entity.id);
 
           return (
             <div
@@ -466,9 +496,11 @@ export function HierarchyPanel() {
                 />
               ) : (
                 <span
-                  title={broken ? 'This prefab is not in the project.' : undefined}
+                  title={
+                    missing ? `Not in this project: ${missing.join(', ')}` : undefined
+                  }
                   className={`min-w-0 flex-1 truncate ${entity.visible ? '' : 'opacity-45'} ${
-                    broken ? 'text-error' : ''
+                    missing ? 'text-error' : ''
                   }`}
                 >
                   {entity.name}

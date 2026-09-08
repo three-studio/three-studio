@@ -506,7 +506,7 @@ describe('the model system', () => {
     expect(asked).toEqual(['whole:chair']);
   });
 
-  it('draws a placeholder for an asset the project no longer holds', () => {
+  it('draws a placeholder for an asset the project no longer holds', async () => {
     const { ctx } = context();
     const { models, asked } = stubCache(false);
     const system = new ModelSystem();
@@ -520,6 +520,10 @@ describe('the model system', () => {
         return true;
       },
     });
+    // Waited for, exactly as a real load is. The placeholder cannot be attached
+    // inside `mount`: the reconciler has not been given this handle yet, and it
+    // refuses one it does not recognise.
+    await system.whenLoaded();
 
     // Nothing was asked for: an id nothing answers to is not a load that failed,
     // it is a load there is no point starting.
@@ -531,12 +535,13 @@ describe('the model system', () => {
     expect(attached).toHaveLength(1);
   });
 
-  it('gives the placeholder the entity id, so it can be clicked and repaired', () => {
+  it('gives the placeholder the entity id, so it can be clicked and repaired', async () => {
     const { ctx } = context();
     const { models } = stubCache(false);
     const system = new ModelSystem();
 
     const handle = system.mount('chair', modelComponent(), { ...ctx, models });
+    await system.whenLoaded();
 
     // The whole point of drawing a box: the picker reads this off whatever the
     // ray hit, so selecting it puts the broken component in the Inspector.

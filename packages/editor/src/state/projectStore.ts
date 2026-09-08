@@ -10,6 +10,7 @@ import {
 import { create } from 'zustand';
 import { peekViewport } from '../viewport/viewportHost';
 import { editorAssetResolver, useAssetStore } from './assetStore';
+import { reportBrokenReferences } from './brokenReport';
 import { useDocumentStore } from './documentStore';
 import { inPrefabMode, usePrefabModeStore } from './prefabModeStore';
 import { useScriptStore } from './scriptStore';
@@ -90,7 +91,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // owned entirely by @three-studio/core, which the web export also uses.
     const scene = deserializeScene(opened.sceneJson);
     useDocumentStore.getState().replaceScene(scene);
-    void useAssetStore.getState().refresh();
+    // Chained rather than fired and forgotten: the report asks what the project
+    // holds, and asking before the manifest lands calls every asset missing.
+    void useAssetStore
+      .getState()
+      .refresh()
+      .then(() => reportBrokenReferences());
     // Compiled on open, not only on Play: the inspector reads a script's
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.
