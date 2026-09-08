@@ -236,6 +236,20 @@ export interface TextureSettings {
    * are where it shows, and where its cost is worth paying.
    */
   anisotropy: number;
+  /**
+   * The longest side this texture is allowed to reach, in pixels.
+   *
+   * Unity's "Max Size", and it exists for the same reason: a source image is
+   * whatever the author was given, and an 8192-square photograph is 268 MB of
+   * RGBA on the GPU for a prop nobody walks up to. The import writes a scaled
+   * copy beside the source and everything loads that; the source is never
+   * touched, so raising this and re-importing gets the detail back.
+   *
+   * A number rather than a dropdown of powers of two, which is what it wants to
+   * be: `FieldOption` is string-valued, and giving the shared field vocabulary
+   * numeric options for one setting is a bigger change than this is worth.
+   */
+  maxSize: number;
 }
 
 /**
@@ -262,6 +276,15 @@ export interface ModelSettingsBase {
   /** Off drops the file's materials for three's default, which is faster to look at. */
   importMaterials: boolean;
   importAnimations: boolean;
+  /**
+   * The longest side an image **inside this file** may reach, in pixels.
+   *
+   * Separate from `TextureSettings.maxSize` because an embedded image is not an
+   * asset: it has no sidecar, no id and no row in the project, so there is
+   * nowhere else to say it. A glTF carrying two 8192-square JPEGs is 166 MB of
+   * download for a scene that will never resolve them.
+   */
+  maxTextureSize: number;
 }
 
 export interface FbxModelSettings extends ModelSettingsBase {

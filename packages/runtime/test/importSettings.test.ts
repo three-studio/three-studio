@@ -36,6 +36,7 @@ const modelBase = {
   generateColliders: false,
   importMaterials: true,
   importAnimations: true,
+  maxTextureSize: 2048,
 } as const;
 
 const fbx = (over: Partial<FbxModelSettings> = {}): FbxModelSettings => ({
@@ -183,6 +184,7 @@ describe('a texture, as it was imported', () => {
     encoding: 'sdr',
     generateMipmaps: true,
     anisotropy: 1,
+    maxSize: 2048,
     ...over,
   });
 

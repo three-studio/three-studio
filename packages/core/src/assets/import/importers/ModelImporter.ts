@@ -25,6 +25,7 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
       generateColliders: false,
       importMaterials: true,
       importAnimations: true,
+      maxTextureSize: 2048,
     };
   }
 
@@ -42,6 +43,10 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
         field.toggle('importMaterials', 'Import materials'),
         field.toggle('importAnimations', 'Import animations'),
         field.toggle('generateColliders', 'Generate colliders'),
+        // Applies to what the file carries inside itself. A model naming its
+        // textures as separate files has none, and each of those is a texture
+        // asset with a `maxSize` of its own.
+        field.number('maxTextureSize', 'Max texture size', { min: 64, max: 16384, step: 64 }),
       ]),
       ...this.formatFields(settings),
     ];
