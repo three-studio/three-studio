@@ -30,7 +30,13 @@ import { createId } from '@three-studio/core';
  * layout that cannot be saved, a cache that cannot be written — say so at their
  * own call site, next to the reason.
  */
-export async function atomicWrite(target: string, contents: string): Promise<void> {
+export async function atomicWrite(
+  target: string,
+  // Bytes as well as text: a scaled image is written the same way and for the
+  // same reason. `writeFile` ignores the encoding for anything that is not a
+  // string, so the one call still serves both.
+  contents: string | Uint8Array,
+): Promise<void> {
   const staging = `${target}.${createId()}.tmp`;
   try {
     await writeFile(staging, contents, 'utf8');

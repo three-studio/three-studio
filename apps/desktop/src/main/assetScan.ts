@@ -22,6 +22,7 @@ import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
 import { FileIndex, stampOf } from './projectIndex';
 import { AssetError, hashFile, toPosix } from './assetFiles';
+import { ensureImported } from './importedAssets';
 
 /*
  * What is in `assets/`, and what each file says about itself.
@@ -106,17 +107,23 @@ export async function scanAssets(projectPath: string): Promise<AssetManifest> {
         if (written) index.put(key, written, meta);
       }
 
+      const relativePath = toPosix(relative(projectPath, full));
       manifest.assets.push({
         id: meta.id,
         name: assetDisplayName(entry.name),
         kind: meta.kind,
-        path: toPosix(relative(projectPath, full)),
+        path: relativePath,
         folder: toPosix(relative(assetsRoot, directory)),
         sizeBytes: info.size,
         modifiedAt: info.mtimeMs,
         importedAt: meta.importedAt,
         hash: meta.hash,
         settings: meta.settings,
+        // Built here, once, and a `stat` on every scan after that. The scan is
+        // the only walk that already holds an asset's id, its hash and its
+        // settings together, so doing it anywhere else would mean reading the
+        // sidecars a second time.
+        importedPath: await ensureImported(projectPath, meta, relativePath, info.size),
       });
     }
   };

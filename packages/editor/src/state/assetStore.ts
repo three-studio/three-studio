@@ -370,7 +370,11 @@ export function childFolders(manifest: AssetManifest, parent: string): string[] 
 export const editorAssetResolver: AssetResolver = {
   url: (assetId) => {
     const entry = useAssetStore.getState().byId(assetId);
-    return entry ? assetUrl(entry.path) : null;
+    // The scaled copy when the import made one. This is the single place the
+    // editor decides that, which is what the resolver interface is for: nothing
+    // downstream — not the cache, not a system, not a material slot — learns
+    // that a source file and the file being loaded are ever different.
+    return entry ? assetUrl(entry.importedPath ?? entry.path) : null;
   },
   // Off the sidecar, where the import worked it out from the file's own bytes.
   // The manifest is a cache of those sidecars, so this costs a map lookup where

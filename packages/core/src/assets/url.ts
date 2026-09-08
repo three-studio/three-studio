@@ -1,3 +1,4 @@
+import { CACHE_DIR } from '../project/schema';
 /*
  * How a file in the project is addressed from a page.
  *
@@ -42,4 +43,28 @@ export function encodePath(path: string): string {
 /** Where the main process serves an asset at `path`, relative to the project. */
 export function assetUrl(path: string): string {
   return `${ASSET_SCHEME}://${ASSET_HOST}/${encodePath(path)}`;
+}
+
+/**
+ * Where the scaled copy of an asset lives, relative to the project root.
+ *
+ * Under `CACHE_DIR`, which the project's own `.gitignore` excludes and which
+ * `projectIndex.ts` already declares disposable — deleting it must never break a
+ * project, only make the next open slower. This is the same bargain.
+ *
+ * **The name carries both things that invalidate it.** The source hash comes
+ * from the sidecar, so editing the file produces a different name; the cap is
+ * written out in full, so raising Max Size does too. Nothing has to notice a
+ * change and clear anything: the old file is simply no longer asked for, and it
+ * goes when the cache does.
+ */
+export function importedAssetPath(
+  assetId: string,
+  hash: string,
+  cap: number,
+  extension: string,
+): string {
+  // Twelve characters of SHA-256. Enough that two versions of one asset cannot
+  // collide, short enough that the path stays readable in a file browser.
+  return `${CACHE_DIR}/imported/${assetId}/${hash.slice(0, 12)}-${cap}${extension}`;
 }

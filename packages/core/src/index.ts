@@ -81,7 +81,7 @@ export type {
 } from './assets/schema';
 
 /* How a file in the project is addressed from a page. */
-export { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath } from './assets/url';
+export { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath, importedAssetPath } from './assets/url';
 
 export {
   ASSET_KIND_INFO,

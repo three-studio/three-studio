@@ -121,6 +121,11 @@ export class ImportPipeline {
       importedAt: meta.importedAt,
       hash: meta.hash,
       settings: meta.settings,
+      // Built by the scan that follows an import, not here: this runs inside a
+      // loop the dialog is waiting on, and decoding an 8192-square photograph
+      // is half a second the author would spend staring at a spinner. It is a
+      // `stat` away from being right, and nothing loads the asset in between.
+      importedPath: null,
     };
   }
 

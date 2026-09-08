@@ -128,6 +128,7 @@ describe('a script property, whichever variant it is', () => {
       modifiedAt: 0,
       importedAt: 0,
       hash: '',
+      importedPath: null,
       settings: { kind: 'audio', loadMode: 'decode', gain: 1, forceMono: false },
     });
     useAssetStore.setState({

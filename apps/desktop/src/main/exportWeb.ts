@@ -254,7 +254,12 @@ export async function exportBuild(
      * Free in every other sense, because the indirection was already there: the
      * player never sees a file name, it reads `assets` in the manifest.
      */
-    const source = resolveInside(projectPath, entry.path);
+    const original = resolveInside(projectPath, entry.path);
+    // The scaled copy is what ships. It is the largest single saving a build
+    // has: a museum scan carrying two 8192-square JPEGs is 166 MB of download
+    // for a player who will never resolve them.
+    const source =
+      entry.importedPath === null ? original : resolveInside(projectPath, entry.importedPath);
     const relativeToAssets = hashedName(toPosix(relative(ASSETS_DIR, entry.path)), await hashFile(source));
     const destination = join(outputDir, 'assets', ...relativeToAssets.split(posix.sep));
     await mkdir(dirname(destination), { recursive: true });
@@ -277,7 +282,10 @@ export async function exportBuild(
      * the reference that names it, and the only way to hash one is to rewrite
      * the model that points at it.
      */
-    for (const companion of await companionsOf(source)) {
+    // Asked of the **original**, never of the copy. A `.gltf` names its buffer
+    // and its images relative to itself, and those siblings sit beside the
+    // source file rather than in the cache.
+    for (const companion of await companionsOf(original)) {
       const target = join(dirname(destination), ...companion.split('/'));
       try {
         await mkdir(dirname(target), { recursive: true });

@@ -419,6 +419,19 @@ export interface AssetEntry {
   importedAt: number;
   hash: string;
   settings: AssetSettings;
+  /**
+   * A scaled copy to load **instead of** `path`, or `null` for "load the
+   * source".
+   *
+   * Derived, and it lives on the entry rather than being worked out by each
+   * consumer because only the main process can see the disk: the editor and an
+   * exported build both turn an asset into a URL, and neither can stat a file.
+   *
+   * `null` is the ordinary answer. Most assets are already small enough, and a
+   * scaled copy that is the same size as its source would double the project on
+   * disk for nothing.
+   */
+  importedPath: string | null;
 }
 
 /**

@@ -31,6 +31,7 @@ function asset(path: string, id = path): AssetEntry {
     modifiedAt: 0,
     importedAt: 0,
     hash: 'h',
+    importedPath: null,
     settings: { kind: 'texture' } as AssetEntry['settings'],
   };
 }

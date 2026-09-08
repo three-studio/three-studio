@@ -1,4 +1,4 @@
-import { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath } from '@three-studio/core';
+import { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath, importedAssetPath } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
 /*
@@ -47,5 +47,23 @@ describe('assetUrl', () => {
     // and a scheme renamed on one side alone is every asset failing to load.
     expect(ASSET_SCHEME).toBe('studio-asset');
     expect(ASSET_HOST).toBe('project');
+  });
+});
+
+describe('where a scaled copy lives', () => {
+  it('is invalidated by the source and by the cap, both written into the name', () => {
+    // Nothing has to notice a change and clear anything: a different source or
+    // a different Max Size is simply a different file, and the old one goes
+    // when the cache does.
+    const one = importedAssetPath('asset-1', 'a'.repeat(64), 2048, '.glb');
+    expect(importedAssetPath('asset-1', 'b'.repeat(64), 2048, '.glb')).not.toBe(one);
+    expect(importedAssetPath('asset-1', 'a'.repeat(64), 4096, '.glb')).not.toBe(one);
+    expect(importedAssetPath('asset-2', 'a'.repeat(64), 2048, '.glb')).not.toBe(one);
+  });
+
+  it('stays under the cache, which the project gitignores and may delete', () => {
+    expect(importedAssetPath('asset-1', 'abcdef0123456789', 2048, '.png')).toBe(
+      '.studio/imported/asset-1/abcdef012345-2048.png',
+    );
   });
 });
