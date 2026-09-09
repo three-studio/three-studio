@@ -31,11 +31,34 @@ import { imageFormatOf, processTexture } from './textureProcessing';
  */
 const WORTH_OPENING_BYTES = 2 * 1024 * 1024;
 
-/** The cap that governs an asset, or `null` for a kind this does not process. */
-function capFor(meta: AssetMeta): number | null {
-  if (meta.settings.kind === 'texture') return meta.settings.maxSize;
-  if (meta.settings.kind === 'model') return meta.settings.maxTextureSize;
+/** The answers that govern how a copy is built. */
+interface Recipe {
+  /** The longest side an image inside this asset may reach, in pixels. */
+  cap: number;
+  /** Whether its geometry may be made smaller where the loss has been measured. */
+  compressGeometry: boolean;
+}
+
+/** What governs an asset, or `null` for a kind this does not process. */
+function recipeFor(meta: AssetMeta): Recipe | null {
+  const { settings } = meta;
+  if (settings.kind === 'texture') return { cap: settings.maxSize, compressGeometry: false };
+  if (settings.kind === 'model') {
+    return { cap: settings.maxTextureSize, compressGeometry: settings.compressGeometry };
+  }
   return null;
+}
+
+/**
+ * The part of a copy's name that says which answers produced it.
+ *
+ * Spelled out rather than hashed, so a cache directory can be read by eye: the
+ * question "why is this file here twice" is answered by looking at it. A
+ * texture has no geometry, so its variant is only ever its cap — which keeps
+ * the name it would have had anyway.
+ */
+function variantOf({ cap, compressGeometry }: Recipe): string {
+  return compressGeometry ? `${cap}-c` : `${cap}`;
 }
 
 /**
@@ -78,11 +101,11 @@ export async function ensureImported(
   relativePath: string,
   sizeBytes: number,
 ): Promise<string | null> {
-  const cap = capFor(meta);
-  if (cap === null || sizeBytes < WORTH_OPENING_BYTES) return null;
+  const recipe = recipeFor(meta);
+  if (recipe === null || sizeBytes < WORTH_OPENING_BYTES) return null;
 
   const extension = extname(relativePath).toLowerCase();
-  const target = importedAssetPath(meta.id, meta.hash, cap, extension);
+  const target = importedAssetPath(meta.id, meta.hash, variantOf(recipe), extension);
   const absolute = join(projectPath, target);
 
   if (await exists(absolute)) return target;
@@ -90,7 +113,10 @@ export async function ensureImported(
 
   try {
     const bytes = await readFile(join(projectPath, relativePath));
-    const built = meta.settings.kind === 'model' ? rebuildModel(bytes, cap) : rebuildTexture(bytes, extension, cap);
+    const built =
+      meta.settings.kind === 'model'
+        ? rebuildModel(bytes, recipe)
+        : rebuildTexture(bytes, extension, recipe.cap);
 
     await mkdir(dirname(absolute), { recursive: true });
     if (built === null) {
@@ -120,16 +146,19 @@ function rebuildTexture(bytes: Buffer, extension: string, cap: number): Buffer |
  * covered, by the branch above. FBX and OBJ embed images in formats this cannot
  * take apart without a parser for each.
  *
- * The cap is the only thing passed in, and the geometry work needs nothing: an
- * index that fits in two bytes fits in two bytes whatever the author chose.
+ * Both halves of the recipe reach the container: the cap governs the images it
+ * carries, and the compression answer governs its geometry.
  */
-function rebuildModel(bytes: Buffer, cap: number): Buffer | null {
+function rebuildModel(bytes: Buffer, { cap, compressGeometry }: Recipe): Buffer | null {
   const read = readGlb(bytes);
   if (read === null) return null;
 
-  const rewritten = rewriteGlb(read, (imageBytes, mimeType) => {
-    const format = imageFormatOf(mimeType);
-    return format === null ? null : processTexture(imageBytes, format, cap);
+  const rewritten = rewriteGlb(read, {
+    scaleImage: (imageBytes, mimeType) => {
+      const format = imageFormatOf(mimeType);
+      return format === null ? null : processTexture(imageBytes, format, cap);
+    },
+    quantizeNormals: compressGeometry,
   });
   return rewritten === null ? null : writeGlb(rewritten);
 }

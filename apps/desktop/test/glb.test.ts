@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { readGlb, rewriteGlb, writeGlb, type GlbContents, type GltfJson } from '../src/main/glb';
+import {
+  readGlb,
+  rewriteGlb,
+  writeGlb,
+  type GlbContents,
+  type GltfJson,
+  type RewriteOptions,
+} from '../src/main/glb';
 
 /*
  * The GLB container, taken apart and put back together.
@@ -63,6 +70,11 @@ function sample(over: Partial<GltfJson> = {}): { json: GltfJson; bin: Buffer } {
   return { json, bin };
 }
 
+/** Options with the lossy half off, which is what all of these want but one. */
+const options = (
+  scaleImage: (bytes: Buffer, mimeType: string) => Buffer | null = () => null,
+): RewriteOptions => ({ scaleImage, quantizeNormals: false });
+
 /** Stands in for the scaler: shorter bytes, so every offset after it moves. */
 const shrink = (bytes: Buffer, mimeType: string): Buffer | null =>
   mimeType === 'image/jpeg' ? Buffer.from('SM') : null;
@@ -102,7 +114,7 @@ describe('reading and writing the container', () => {
 
 describe('replacing the images inside', () => {
   it('moves every view that follows a replaced one, and keeps the rest byte for byte', () => {
-    const rewritten = rewriteGlb(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), options(shrink));
     const views = rewritten?.json.bufferViews ?? [];
     const bin = rewritten?.bin ?? Buffer.alloc(0);
 
@@ -118,7 +130,7 @@ describe('replacing the images inside', () => {
   });
 
   it('keeps every view on a four-byte boundary, which accessors depend on', () => {
-    const rewritten = rewriteGlb(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), options(shrink));
 
     for (const view of rewritten?.json.bufferViews ?? []) {
       expect(view.byteOffset! % 4).toBe(0);
@@ -126,7 +138,7 @@ describe('replacing the images inside', () => {
   });
 
   it('restates the buffer length, which no longer matches the source', () => {
-    const rewritten = rewriteGlb(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), options(shrink));
 
     expect(rewritten?.json.buffers?.[0]?.byteLength).toBe(rewritten?.bin.length);
     expect(rewritten?.bin.length).toBeLessThan(sample().bin.length);
@@ -134,7 +146,7 @@ describe('replacing the images inside', () => {
 
   it('leaves the accessors and the images alone, since they address by index', () => {
     const before = sample().json;
-    const rewritten = rewriteGlb(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), options(shrink));
 
     expect(rewritten?.json.accessors).toEqual(before.accessors);
     expect(rewritten?.json.images).toEqual(before.images);
@@ -143,8 +155,8 @@ describe('replacing the images inside', () => {
   it('says nothing changed when no image was worth scaling', () => {
     // `null` is "serve the source". Writing an identical copy would double the
     // largest files in the project on disk for no gain at all.
-    expect(rewriteGlb(sample(), () => null)).toBeNull();
-    expect(rewriteGlb({ json: { buffers: [{ byteLength: 0 }] }, bin: Buffer.alloc(0) }, shrink))
+    expect(rewriteGlb(sample(), options())).toBeNull();
+    expect(rewriteGlb({ json: { buffers: [{ byteLength: 0 }] }, bin: Buffer.alloc(0) }, options(shrink)))
       .toBeNull();
   });
 
@@ -154,12 +166,12 @@ describe('replacing the images inside', () => {
     // own offsets leaves it pointing at the wrong bytes — and the geometry
     // decodes into noise with nothing in the file to say why.
     const { json, bin } = sample({ extensionsUsed: ['EXT_meshopt_compression'] });
-    expect(rewriteGlb({ json, bin }, shrink)).toBeNull();
+    expect(rewriteGlb({ json, bin }, options(shrink))).toBeNull();
   });
 
   it('refuses a file whose bytes are not all in it', () => {
     const external = sample({ buffers: [{ byteLength: 10, uri: 'scene.bin' }] });
-    expect(rewriteGlb(external, shrink)).toBeNull();
+    expect(rewriteGlb(external, options(shrink))).toBeNull();
   });
 });
 
@@ -231,7 +243,7 @@ function indicesOf(contents: GlbContents, at: number): number[] {
 
 describe('narrowing the indices', () => {
   it('halves the ones that fit and leaves the ones that do not', () => {
-    const rewritten = rewriteGlb(indexed(), () => null);
+    const rewritten = rewriteGlb(indexed(), options());
 
     expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_SHORT);
     // One value at 65536 is enough. Narrowing it would wrap it to 0 — a
@@ -241,7 +253,7 @@ describe('narrowing the indices', () => {
   });
 
   it('still reads back the same numbers, both of them', () => {
-    const rewritten = rewriteGlb(indexed(), () => null);
+    const rewritten = rewriteGlb(indexed(), options());
 
     expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
     // The one that moved: it sat after an accessor that halved, so its offset
@@ -252,7 +264,7 @@ describe('narrowing the indices', () => {
 
   it('restates the view and the buffer, which are both shorter now', () => {
     const source = indexed();
-    const rewritten = rewriteGlb(source, () => null);
+    const rewritten = rewriteGlb(source, options());
 
     expect(rewritten?.json.bufferViews?.[0]?.byteLength).toBe(
       NARROW.length * 2 + WIDE.length * 4,
@@ -262,7 +274,7 @@ describe('narrowing the indices', () => {
   });
 
   it('keeps every view on a four-byte boundary, and every accessor inside one', () => {
-    const rewritten = rewriteGlb(indexed(), () => null);
+    const rewritten = rewriteGlb(indexed(), options());
 
     for (const view of rewritten?.json.bufferViews ?? []) expect(view.byteOffset! % 4).toBe(0);
     for (const accessor of rewritten?.json.accessors ?? []) {
@@ -272,14 +284,14 @@ describe('narrowing the indices', () => {
 
   it('narrows an accessor two primitives share, once', () => {
     const shared = indexed({ meshes: [{ primitives: [{ indices: 0 }, { indices: 0 }] }] });
-    const rewritten = rewriteGlb(shared, () => null);
+    const rewritten = rewriteGlb(shared, options());
 
     expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_SHORT);
     expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
   });
 
   it('scales the images in the same pass', () => {
-    const rewritten = rewriteGlb(indexed(), () => Buffer.from('SM'));
+    const rewritten = rewriteGlb(indexed(), options(() => Buffer.from('SM')));
     const views = rewritten?.json.bufferViews ?? [];
 
     expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
@@ -295,7 +307,7 @@ describe('narrowing the indices', () => {
     // Accessor 1 holds 65536, so there is nothing to narrow and no image to
     // scale: writing an identical copy of a large model would be the one thing
     // worse than leaving it alone.
-    expect(rewriteGlb(already, () => null)).toBeNull();
+    expect(rewriteGlb(already, options())).toBeNull();
   });
 });
 
@@ -331,7 +343,7 @@ describe('the views it will not repack', () => {
     // image is a *different length*, so the accessor's offset would land in the
     // middle of a JPEG. Neither half happens — while the other image, on a view
     // of its own, is scaled as usual.
-    const rewritten = rewriteGlb(indexed(bothViews), () => Buffer.from('SM'));
+    const rewritten = rewriteGlb(indexed(bothViews), options(() => Buffer.from('SM')));
     const views = rewritten?.json.bufferViews ?? [];
 
     untouched(rewritten);
@@ -340,20 +352,35 @@ describe('the views it will not repack', () => {
       .toEqual(Buffer.from('SM'));
   });
 
-  it('leaves an interleaved view alone', () => {
+  it('leaves a genuinely interleaved view alone', () => {
     // Accessors take turns inside one stride there; laying them out end to end
-    // would be a different file.
+    // would be a different file. Eight and not four: a stride of *exactly* one
+    // element is what the spec asks for whenever two accessors share a view,
+    // the data under it is already contiguous, and refusing that one would
+    // refuse the ordinary shape every exporter writes.
     const interleaved = indexed();
-    interleaved.json.bufferViews![0]!.byteStride = 4;
+    interleaved.json.bufferViews![0]!.byteStride = 8;
 
-    untouched(rewriteGlb(interleaved, () => Buffer.from('SM')));
+    untouched(rewriteGlb(interleaved, options(() => Buffer.from('SM'))));
+  });
+
+  it('repacks a view whose stride is exactly one element', () => {
+    const decorative = indexed();
+    decorative.json.bufferViews![0]!.byteStride = 4;
+    const rewritten = rewriteGlb(decorative, options());
+
+    expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_SHORT);
+    expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
+    // And the stride goes: indices are tightly packed, and the spec says a view
+    // used for them must not declare one.
+    expect(rewritten?.json.bufferViews?.[0]?.byteStride).toBeUndefined();
   });
 
   it('leaves a view carrying its own extension alone', () => {
     const extended = indexed();
     extended.json.bufferViews![0]!.extensions = { EXT_something: {} };
 
-    untouched(rewriteGlb(extended, () => Buffer.from('SM')));
+    untouched(rewriteGlb(extended, options(() => Buffer.from('SM'))));
   });
 
   it('repacks nothing at all once one accessor is sparse', () => {
@@ -364,6 +391,170 @@ describe('the views it will not repack', () => {
     const sparse = indexed();
     sparse.json.accessors![1]!.sparse = { count: 1 };
 
-    untouched(rewriteGlb(sparse, () => Buffer.from('SM')));
+    untouched(rewriteGlb(sparse, options(() => Buffer.from('SM'))));
+  });
+});
+
+/*
+ * Quantising the normals.
+ *
+ * The first loss this file takes, and the first thing an author can turn off.
+ * A signed byte stores a direction to about half a degree — invisible on a
+ * scanned surface, and the reason the switch exists for the one where it is
+ * not.
+ *
+ * What makes it more than a component-type change: a normal of four bytes can
+ * no longer share a view with a position of twelve, because glTF allows one
+ * stride per view. So the view splits, and the tests below are mostly about
+ * everything else still addressing what it addressed.
+ */
+
+const BYTE = 5120;
+const FLOAT = 5126;
+const quantising: RewriteOptions = { scaleImage: () => null, quantizeNormals: true };
+
+/** A position and a normal per vertex, sharing one view the way exporters write it. */
+function meshed(normals: readonly (readonly [number, number, number])[]): GlbContents {
+  const positions = Buffer.alloc(normals.length * 12);
+  normals.forEach((_, at) => {
+    positions.writeFloatLE(at, at * 12);
+    positions.writeFloatLE(at * 2, at * 12 + 4);
+    positions.writeFloatLE(at * 3, at * 12 + 8);
+  });
+  const directions = Buffer.alloc(normals.length * 12);
+  normals.forEach(([x, y, z], at) => {
+    directions.writeFloatLE(x, at * 12);
+    directions.writeFloatLE(y, at * 12 + 4);
+    directions.writeFloatLE(z, at * 12 + 8);
+  });
+  const bin = Buffer.concat([positions, directions]);
+
+  const json: GltfJson = {
+    asset: { version: '2.0' },
+    buffers: [{ byteLength: bin.length }],
+    // One view, one stride, two accessors laid end to end — the shape the
+    // reference model actually has.
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: bin.length, byteStride: 12 }],
+    accessors: [
+      {
+        bufferView: 0,
+        byteOffset: 0,
+        componentType: FLOAT,
+        count: normals.length,
+        type: 'VEC3',
+        min: [0, 0, 0],
+        max: [normals.length, normals.length * 2, normals.length * 3],
+      },
+      { bufferView: 0, byteOffset: positions.length, componentType: FLOAT, count: normals.length, type: 'VEC3' },
+    ],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1 } }] }],
+  };
+  return { json, bin };
+}
+
+const UNIT: readonly (readonly [number, number, number])[] = [
+  [1, 0, 0],
+  [0, -1, 0],
+  [0, 0, 1],
+  [0.5773502691896258, 0.5773502691896258, 0.5773502691896258],
+];
+
+/** What an accessor's components read back as, denormalised the way a loader does. */
+function vectorsOf(contents: GlbContents, at: number): number[][] {
+  const accessor = contents.json.accessors?.[at];
+  const view = contents.json.bufferViews?.[accessor?.bufferView ?? -1];
+  if (!accessor || !view) return [];
+
+  const size = accessor.componentType === BYTE ? 1 : 4;
+  const step = view.byteStride ?? size * 3;
+  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  return Array.from({ length: accessor.count }, (_, index) =>
+    [0, 1, 2].map((component) => {
+      const from = start + index * step + component * size;
+      if (accessor.componentType !== BYTE) return contents.bin.readFloatLE(from);
+      return Math.max(contents.bin.readInt8(from) / 127, -1);
+    }),
+  );
+}
+
+describe('quantising the normals', () => {
+  it('stores a direction in a byte, to about half a degree', () => {
+    const rewritten = rewriteGlb(meshed(UNIT), quantising);
+
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(BYTE);
+    expect(rewritten?.json.accessors?.[1]?.normalized).toBe(true);
+    for (const [index, read] of vectorsOf(rewritten!, 1).entries()) {
+      read.forEach((value, component) => expect(value).toBeCloseTo(UNIT[index]![component]!, 2));
+    }
+  });
+
+  it('gives the normals a view of their own, appended so no index moves', () => {
+    const rewritten = rewriteGlb(meshed(UNIT), quantising);
+    const views = rewritten?.json.bufferViews ?? [];
+
+    // Four bytes a normal, three of them used: a stride has to be a multiple of
+    // four, so the pad byte is the format's price and not a mistake.
+    expect(views).toHaveLength(2);
+    expect(rewritten?.json.accessors?.[1]?.bufferView).toBe(1);
+    expect(views[1]?.byteStride).toBe(4);
+    expect(views[1]?.byteLength).toBe(UNIT.length * 4);
+
+    // The positions kept the view they were in, and the stride that goes with
+    // them. Anything naming view 0 still means what it meant.
+    expect(rewritten?.json.accessors?.[0]?.bufferView).toBe(0);
+    expect(views[0]?.byteStride).toBe(12);
+  });
+
+  it('leaves the positions reading exactly as they did', () => {
+    const source = meshed(UNIT);
+    const rewritten = rewriteGlb(source, quantising);
+
+    expect(vectorsOf(rewritten!, 0)).toEqual(vectorsOf(source, 0));
+  });
+
+  it('declares the extension as required, not merely used', () => {
+    // A reader that does not know it cannot make sense of a byte where it
+    // expects a float, so `extensionsUsed` alone would be a lie of omission.
+    const rewritten = rewriteGlb(meshed(UNIT), quantising);
+
+    expect(rewritten?.json.extensionsUsed).toContain('KHR_mesh_quantization');
+    expect(rewritten?.json.extensionsRequired).toContain('KHR_mesh_quantization');
+  });
+
+  it('restates min and max in the units it stored, where the file had them', () => {
+    const source = meshed(UNIT);
+    source.json.accessors![1]!.min = [-1, -1, -1];
+    source.json.accessors![1]!.max = [1, 1, 1];
+    const rewritten = rewriteGlb(source, quantising);
+
+    // Integers, because that is what the accessor now holds, and three reads
+    // these to build a bounding box.
+    expect(rewritten?.json.accessors?.[1]?.min).toEqual([0, -127, 0]);
+    expect(rewritten?.json.accessors?.[1]?.max).toEqual([127, 73, 127]);
+    // The position accessor's own bounds are untouched.
+    expect(rewritten?.json.accessors?.[0]?.min).toEqual([0, 0, 0]);
+  });
+
+  it('adds no bounds to an accessor that carried none', () => {
+    const rewritten = rewriteGlb(meshed(UNIT), quantising);
+
+    expect(rewritten?.json.accessors?.[1]?.min).toBeUndefined();
+  });
+
+  it('refuses a normal that is not a unit vector', () => {
+    // A signed byte is read back as `value / 127`, so a normal 1.4 long comes
+    // back at 1.0 and the surface is lit differently. Nothing downstream would
+    // report it — the model would simply look a little wrong.
+    const stretched = meshed([...UNIT.slice(0, 3), [1.4, 0, 0]]);
+
+    expect(rewriteGlb(stretched, quantising)).toBeNull();
+  });
+
+  it('refuses a normal of no length at all', () => {
+    expect(rewriteGlb(meshed([...UNIT.slice(0, 3), [0, 0, 0]]), quantising)).toBeNull();
+  });
+
+  it('does nothing when the author turned it off', () => {
+    expect(rewriteGlb(meshed(UNIT), { scaleImage: () => null, quantizeNormals: false })).toBeNull();
   });
 });

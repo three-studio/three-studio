@@ -37,6 +37,7 @@ const modelBase = {
   importMaterials: true,
   importAnimations: true,
   maxTextureSize: 2048,
+  compressGeometry: true,
 } as const;
 
 const fbx = (over: Partial<FbxModelSettings> = {}): FbxModelSettings => ({

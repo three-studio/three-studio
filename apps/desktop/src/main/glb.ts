@@ -13,10 +13,13 @@
  *   because that is its default spends four bytes on a triangle corner that two
  *   describe exactly. Measured on the photogrammetry scan this was written for:
  *   22.68 MB of indices whose largest value was 65533.
+ * - **the width of its normals**. A unit vector in three floats is twelve bytes
+ *   spent on a direction that a byte per axis describes to half a degree. On
+ *   the same scan: 22.47 MB that become 7.49.
  *
- * Both end in the same place — a blob rebuilt view by view — so both happen in
- * one pass. Two passes would mean rebuilding eighty megabytes twice for one
- * file.
+ * All three end in the same place — a blob rebuilt view by view — so all three
+ * happen in one pass. Two passes would mean rebuilding eighty megabytes twice
+ * for one file.
  *
  * The source is never touched. The copy goes in the project's cache, which is
  * declared disposable — the same arrangement as the scene index, and for the
@@ -33,9 +36,21 @@ const BIN_CHUNK = 0x004e4942; // 'BIN\0'
 const HEADER_BYTES = 12;
 const CHUNK_HEADER_BYTES = 8;
 
-const UNSIGNED_INT = 5125;
+const BYTE = 5120;
 const UNSIGNED_SHORT = 5123;
+const UNSIGNED_INT = 5125;
+const FLOAT = 5126;
 const MAX_UNSIGNED_SHORT = 65535;
+
+/** What a byte-sized normal needs the file to declare. */
+const QUANTIZATION = 'KHR_mesh_quantization';
+
+/**
+ * How far a normal's squared length may stray from one before this leaves it
+ * alone. Float32 rounding moves it by about 1e-7; this is four orders of
+ * magnitude of room, and still catches a normal nobody normalised.
+ */
+const UNIT_TOLERANCE = 0.01;
 
 /** As much of an accessor as this file has to understand. */
 export interface GltfAccessor {
@@ -44,6 +59,9 @@ export interface GltfAccessor {
   componentType: number;
   count: number;
   type: string;
+  normalized?: boolean;
+  min?: number[];
+  max?: number[];
   /**
    * Declared only to be recognised. A sparse accessor keeps its indices and its
    * values in *other* views, addressed from here — so repacking any view could
@@ -64,9 +82,16 @@ export interface GltfJson {
     extensions?: Record<string, unknown>;
   }[];
   accessors?: GltfAccessor[];
-  meshes?: { primitives?: { indices?: number }[] }[];
+  meshes?: {
+    primitives?: {
+      indices?: number;
+      attributes?: Record<string, number>;
+      targets?: Record<string, number>[];
+    }[];
+  }[];
   images?: { bufferView?: number; mimeType?: string; uri?: string }[];
   extensionsUsed?: string[];
+  extensionsRequired?: string[];
   [key: string]: unknown;
 }
 
@@ -217,27 +242,53 @@ function elementBytes(accessor: GltfAccessor): number | null {
 }
 
 /**
- * A copy of the file with its embedded images scaled and its indices narrowed
- * to the width they need.
+ * What an accessor is *for*, which decides how its bytes may be laid out.
  *
- * `null` when nothing changed — no image worth scaling, no index worth
- * narrowing, or a file that cannot be rebuilt — and the caller then serves the
- * source, which is the point of answering rather than throwing.
+ * glTF asks opposite things of the two: a view of vertex attributes shared by
+ * several accessors **must** declare a `byteStride`, and a view of indices —
+ * or of anything that is neither — **must not**.
+ */
+type Role = 'attribute' | 'index' | 'other';
+
+export interface RewriteOptions {
+  /** A smaller copy of one embedded image, or `null` to leave it as it is. */
+  scaleImage(bytes: Buffer, mimeType: string): Buffer | null;
+  /**
+   * Whether a normal may be stored in a byte rather than a float.
+   *
+   * The author's answer, carried down from the sidecar, because this one is
+   * lossy: a byte describes a direction to about half a degree, which is
+   * invisible on a scanned surface and can band on a large smooth one.
+   */
+  quantizeNormals: boolean;
+}
+
+/**
+ * A copy of the file with its embedded images scaled, its indices narrowed to
+ * the width they need, and its normals quantised if the author allows it.
+ *
+ * `null` when nothing changed — or when the file cannot be rebuilt at all — and
+ * the caller then serves the source, which is the point of answering rather
+ * than throwing.
  *
  * Every view is copied into a fresh blob in order, so the offsets are recomputed
- * rather than patched. Views that overlap in the source stop overlapping, which
- * can make the file slightly larger; that is the correct trade against tracking
- * which bytes are shared by what, and it is nothing beside the images.
+ * rather than patched. Accessors that overlap in the source stop overlapping,
+ * which can make the file slightly larger; that is the correct trade against
+ * tracking which bytes are shared by what, and it is nothing beside the images.
  *
  * **Each view is decided on its own**, and a view this cannot account for is
  * copied across untouched rather than making the whole file refuse. There is no
  * middle state: a view is either replaced by a scaled image, repacked from the
  * accessors that address it, or carried over byte for byte.
+ *
+ * **A repacked view may become several, and the extra ones are appended.** A
+ * normal that shrank from twelve bytes to four can no longer share a stride
+ * with the position beside it, and glTF allows one stride per view. Appending
+ * rather than inserting is what keeps every view index that already existed
+ * pointing at what it pointed at — including from places this file does not
+ * read, such as a Draco extension naming its own view by number.
  */
-export function rewriteGlb(
-  contents: GlbContents,
-  scaleImage: (bytes: Buffer, mimeType: string) => Buffer | null,
-): GlbContents | null {
+export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbContents | null {
   const { json, bin } = contents;
   if (!canRebuild(json)) return null;
 
@@ -253,7 +304,7 @@ export function rewriteGlb(
   }
 
   // Scaled first, because a view an image addresses is one nothing else may
-  // touch — and that has to be known before any index is considered.
+  // touch — and that has to be known before any accessor is considered.
   const imageViews = new Set<number>();
   const scaled = new Map<number, Buffer>();
   for (const image of json.images ?? []) {
@@ -271,20 +322,32 @@ export function rewriteGlb(
     const view = views[index];
     if (view === undefined) continue;
     const at = view.byteOffset ?? 0;
-    const bytes = scaleImage(bin.subarray(at, at + view.byteLength), image.mimeType ?? '');
+    const bytes = options.scaleImage(bin.subarray(at, at + view.byteLength), image.mimeType ?? '');
     if (bytes !== null) scaled.set(index, bytes);
   }
 
   const hasSparse = accessors.some((accessor) => accessor.sparse !== undefined);
 
+  const roles = new Map<number, Role>();
+  for (const mesh of json.meshes ?? []) {
+    for (const primitive of mesh.primitives ?? []) {
+      if (primitive.indices !== undefined) roles.set(primitive.indices, 'index');
+      for (const at of Object.values(primitive.attributes ?? {})) roles.set(at, 'attribute');
+      for (const target of primitive.targets ?? []) {
+        for (const at of Object.values(target)) roles.set(at, 'attribute');
+      }
+    }
+  }
+  const roleOf = (at: number): Role => roles.get(at) ?? 'other';
+
   /**
    * Whether a view's accessors can be laid out again from scratch.
    *
-   * Repacking is what narrowing an index costs: making one accessor shorter
-   * moves every accessor after it inside the same view, so the view has to be
-   * rebuilt from all of them and each one's `byteOffset` written again.
+   * Repacking is what changing a component type costs: making one accessor
+   * shorter moves every accessor after it inside the same view, so the view has
+   * to be rebuilt from all of them and each one's `byteOffset` written again.
    *
-   * The four refusals, and what each would corrupt:
+   * The refusals, and what each would corrupt:
    *
    * - **a sparse accessor anywhere in the document.** Its indices and values
    *   live in other views at offsets it holds itself, and this does not follow
@@ -294,22 +357,38 @@ export function rewriteGlb(
    * - **a view an image also addresses.** Such a view is carried over untouched
    *   on both counts — the image is not scaled either, for the reason given
    *   where the images are collected.
-   * - **an interleaved view** (`byteStride`). Its accessors take turns inside
-   *   one stride; laying them out end to end would be a different file.
    * - **a view carrying its own extension**, for the reason `canRebuild`
    *   already gives about `EXT_meshopt_compression`.
+   * - **a genuinely interleaved view.** A `byteStride` wider than one element
+   *   means the accessors take turns inside it, and laying them out end to end
+   *   would be a different file. A stride that is *exactly* one element is
+   *   decorative — the spec asks for it whenever two accessors share a view —
+   *   and the data under it is already contiguous, so that one is allowed.
    */
   const repackable = (index: number): boolean => {
     if (hasSparse || imageViews.has(index)) return false;
 
     const view = views[index];
-    if (view === undefined) return false;
-    if (view.byteStride !== undefined || view.extensions !== undefined) return false;
+    if (view === undefined || view.extensions !== undefined) return false;
 
     return (byView.get(index) ?? []).every((at) => {
       const accessor = accessors[at];
-      return accessor !== undefined && elementBytes(accessor) !== null;
+      if (accessor === undefined) return false;
+      const size = elementBytes(accessor);
+      return size !== null && (view.byteStride === undefined || view.byteStride === size);
     });
+  };
+
+  /** Where an accessor's own bytes start, and whether they are all there. */
+  const spanOf = (accessor: GltfAccessor): number | null => {
+    const view = views[accessor.bufferView ?? -1];
+    const size = elementBytes(accessor);
+    if (view === undefined || size === null) return null;
+
+    const from = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+    const end = from + accessor.count * size;
+    if (end > (view.byteOffset ?? 0) + view.byteLength || end > bin.length) return null;
+    return from;
   };
 
   /**
@@ -321,111 +400,252 @@ export function rewriteGlb(
    * pointing at the wrong vertices, and nothing anywhere would say so.
    */
   const fitsInShort = (accessor: GltfAccessor): boolean => {
-    const view = views[accessor.bufferView ?? -1];
-    if (view === undefined) return false;
+    const from = spanOf(accessor);
+    if (from === null) return false;
 
-    const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
-    const end = start + accessor.count * 4;
-    if (end > (view.byteOffset ?? 0) + view.byteLength || end > bin.length) return false;
-
-    for (let at = start; at < end; at += 4) {
+    for (let at = from; at < from + accessor.count * 4; at += 4) {
       if (bin.readUInt32LE(at) > MAX_UNSIGNED_SHORT) return false;
     }
     return true;
   };
 
+  /**
+   * Whether every normal an accessor holds is a unit vector.
+   *
+   * A signed byte stores a direction, not a length: the format reads it back as
+   * `value / 127`, so a normal that arrived 1.4 long comes back at 1.0 and the
+   * surface is lit differently. Exporters that write unnormalised normals are
+   * rare and they exist, and nothing downstream would report the change — the
+   * model would simply look a little wrong.
+   */
+  const allUnitLength = (accessor: GltfAccessor): boolean => {
+    const from = spanOf(accessor);
+    if (from === null) return false;
+
+    for (let at = from; at < from + accessor.count * 12; at += 12) {
+      const x = bin.readFloatLE(at);
+      const y = bin.readFloatLE(at + 4);
+      const z = bin.readFloatLE(at + 8);
+      if (Math.abs(x * x + y * y + z * z - 1) > UNIT_TOLERANCE) return false;
+    }
+    return true;
+  };
+
   const narrowed = new Set<number>();
+  const quantized = new Set<number>();
   for (const mesh of json.meshes ?? []) {
     for (const primitive of mesh.primitives ?? []) {
-      // An accessor may be the index buffer of several primitives; it is
-      // narrowed once, and the second visit has nothing to add.
-      const index = primitive.indices;
-      if (index === undefined || narrowed.has(index)) continue;
+      // An accessor may serve several primitives; it is converted once, and the
+      // second visit has nothing to add.
+      const indices = primitive.indices;
+      const accessor = indices === undefined ? undefined : accessors[indices];
+      if (
+        indices !== undefined &&
+        accessor?.bufferView !== undefined &&
+        !narrowed.has(indices) &&
+        accessor.componentType === UNSIGNED_INT &&
+        accessor.type === 'SCALAR' &&
+        repackable(accessor.bufferView) &&
+        fitsInShort(accessor)
+      ) {
+        narrowed.add(indices);
+      }
 
-      const accessor = accessors[index];
-      if (accessor === undefined || accessor.bufferView === undefined) continue;
-      if (accessor.componentType !== UNSIGNED_INT || accessor.type !== 'SCALAR') continue;
-      if (!repackable(accessor.bufferView) || !fitsInShort(accessor)) continue;
-
-      narrowed.add(index);
+      const normal = primitive.attributes?.NORMAL;
+      const normals = normal === undefined ? undefined : accessors[normal];
+      if (
+        options.quantizeNormals &&
+        normal !== undefined &&
+        normals?.bufferView !== undefined &&
+        !quantized.has(normal) &&
+        normals.componentType === FLOAT &&
+        normals.type === 'VEC3' &&
+        repackable(normals.bufferView) &&
+        allUnitLength(normals)
+      ) {
+        quantized.add(normal);
+      }
     }
   }
 
-  if (scaled.size === 0 && narrowed.size === 0) return null;
+  if (scaled.size === 0 && narrowed.size === 0 && quantized.size === 0) return null;
 
   const repacked = new Set<number>();
-  for (const index of narrowed) repacked.add(accessors[index]?.bufferView ?? -1);
+  for (const at of [...narrowed, ...quantized]) {
+    const view = accessors[at]?.bufferView;
+    if (view !== undefined) repacked.add(view);
+  }
 
-  const placed = [...accessors];
-
-  /** What a view will hold, and where its accessors sit inside it. */
-  const contentsOf = (index: number): Buffer => {
-    const image = scaled.get(index);
-    if (image !== undefined) return image;
-
-    const view = views[index];
-    if (view === undefined) return Buffer.alloc(0);
-    const start = view.byteOffset ?? 0;
-    if (!repacked.has(index)) return bin.subarray(start, start + view.byteLength);
-
-    // In the order they sat in the source, so a file that laid its accessors
-    // out deliberately comes back laid out the same way.
-    const inside = [...(byView.get(index) ?? [])].sort((left, right) => {
-      const gap = (accessors[left]?.byteOffset ?? 0) - (accessors[right]?.byteOffset ?? 0);
-      return gap !== 0 ? gap : left - right;
-    });
-
-    const parts: Buffer[] = [];
-    let offset = 0;
-    for (const at of inside) {
-      const accessor = accessors[at];
-      const size = accessor === undefined ? null : elementBytes(accessor);
-      if (accessor === undefined || size === null) continue;
-
-      // Four rather than the component size, which is all the spec asks: every
-      // size in play divides four, and a view always starts on four, so one
-      // rule covers both halves of "an accessor's offset into the buffer is a
-      // multiple of its component size".
-      const padding = aligned(offset) - offset;
-      if (padding > 0) {
-        parts.push(Buffer.alloc(padding));
-        offset += padding;
-      }
-
-      const from = start + (accessor.byteOffset ?? 0);
-      const narrow = narrowed.has(at);
-      const bytes = narrow
-        ? asUnsignedShort(bin, from, accessor.count)
-        : bin.subarray(from, from + size * accessor.count);
-
-      placed[at] = {
-        ...accessor,
-        byteOffset: offset,
-        // `min` and `max` ride along in the spread and stay right: the numbers
-        // an index holds do not change, only how many bytes each one takes.
-        ...(narrow ? { componentType: UNSIGNED_SHORT } : {}),
-      };
-      parts.push(bytes);
-      offset += bytes.length;
-    }
-    return Buffer.concat(parts);
+  /** An accessor as it will be written, which is what decides how wide it is. */
+  const after = (at: number): GltfAccessor => {
+    const accessor = accessors[at] as GltfAccessor;
+    if (narrowed.has(at)) return { ...accessor, componentType: UNSIGNED_SHORT };
+    if (quantized.has(at)) return { ...accessor, componentType: BYTE, normalized: true };
+    return accessor;
   };
 
-  const parts: Buffer[] = [];
-  let offset = 0;
-  const rebuilt = views.map((view, index) => {
-    const bytes = contentsOf(index);
+  /** Recomputed `min`/`max`, which the spec wants in the units it finds. */
+  const bounds = new Map<number, { min: number[]; max: number[] }>();
 
+  const contentsOfAccessor = (at: number, viewStart: number, step: number): Buffer => {
+    const accessor = accessors[at] as GltfAccessor;
+    const from = viewStart + (accessor.byteOffset ?? 0);
+    const out = Buffer.alloc(accessor.count * step);
+
+    if (quantized.has(at)) {
+      const min = [127, 127, 127];
+      const max = [-127, -127, -127];
+      for (let k = 0; k < accessor.count; k++) {
+        for (let component = 0; component < 3; component++) {
+          const unit = bin.readFloatLE(from + k * 12 + component * 4);
+          // Clamped at -127 and not -128: the format reads a signed byte back as
+          // `max(value / 127, -1)`, so -128 and -127 are the same direction and
+          // only one of them round-trips.
+          const value = Math.max(-127, Math.min(127, Math.round(unit * 127)));
+          out.writeInt8(value, k * step + component);
+          min[component] = Math.min(min[component] as number, value);
+          max[component] = Math.max(max[component] as number, value);
+        }
+      }
+      bounds.set(at, { min, max });
+      return out;
+    }
+
+    if (narrowed.has(at)) {
+      for (let k = 0; k < accessor.count; k++) {
+        out.writeUInt16LE(bin.readUInt32LE(from + k * 4), k * step);
+      }
+      return out;
+    }
+
+    // Unchanged, and usually unmoved as well: one copy rather than one per
+    // element, which is two million of them on a scan of this size.
+    const size = elementBytes(accessor) as number;
+    if (step === size) return bin.subarray(from, from + size * accessor.count);
+    for (let k = 0; k < accessor.count; k++) {
+      bin.copy(out, k * step, from + k * size, from + (k + 1) * size);
+    }
+    return out;
+  };
+
+  interface Piece {
+    origin: number;
+    bytes: Buffer;
+    byteStride?: number;
+    accessors: { at: number; byteOffset: number }[];
+  }
+
+  /** What one repacked view becomes: one piece per role and element width. */
+  const groupsOf = (index: number): Piece[] => {
+    const view = views[index] as NonNullable<GltfJson['bufferViews']>[number];
+    const start = view.byteOffset ?? 0;
+
+    const groups = new Map<string, { byteStride?: number; members: number[] }>();
+    for (const at of [...(byView.get(index) ?? [])].sort((left, right) => {
+      const gap = (accessors[left]?.byteOffset ?? 0) - (accessors[right]?.byteOffset ?? 0);
+      return gap !== 0 ? gap : left - right;
+    })) {
+      const role = roleOf(at);
+      const size = elementBytes(after(at)) as number;
+
+      // **Only vertex attributes split.** A view of attributes declares one
+      // stride for all of them, so a normal that shrank from twelve bytes to
+      // four can no longer share the view its position sits in. Indices and
+      // everything else are tightly packed and carry no stride at all, and
+      // component types of different widths sit side by side there quite
+      // happily — splitting those would be views bought for nothing.
+      const key = role === 'attribute' ? `attribute:${size}` : role;
+      const found = groups.get(key);
+      if (found) found.members.push(at);
+      // A stride has to be a multiple of four — WebGPU rejects anything else —
+      // so three bytes of normal ride in four.
+      else groups.set(key, { byteStride: role === 'attribute' ? aligned(size) : undefined, members: [at] });
+    }
+
+    return [...groups.values()].map(({ byteStride, members }) => {
+      const parts: Buffer[] = [];
+      const placedInside: { at: number; byteOffset: number }[] = [];
+      let offset = 0;
+      for (const at of members) {
+        const padding = aligned(offset) - offset;
+        if (padding > 0) {
+          parts.push(Buffer.alloc(padding));
+          offset += padding;
+        }
+        const bytes = contentsOfAccessor(at, start, byteStride ?? (elementBytes(after(at)) as number));
+        placedInside.push({ at, byteOffset: offset });
+        parts.push(bytes);
+        offset += bytes.length;
+      }
+      return { origin: index, bytes: Buffer.concat(parts), byteStride, accessors: placedInside };
+    });
+  };
+
+  const pieces: Piece[] = [];
+  for (const [index, view] of views.entries()) {
+    if (repacked.has(index)) {
+      pieces.push(...groupsOf(index));
+      continue;
+    }
+    const at = view.byteOffset ?? 0;
+    pieces.push({
+      origin: index,
+      bytes: scaled.get(index) ?? bin.subarray(at, at + view.byteLength),
+      byteStride: view.byteStride,
+      accessors: [],
+    });
+  }
+
+  const placed = [...accessors];
+  const rebuilt: NonNullable<GltfJson['bufferViews']> = [];
+  const parts: Buffer[] = [];
+  const claimed = new Set<number>();
+  let offset = 0;
+  let appended = views.length;
+
+  for (const piece of pieces) {
     const padding = aligned(offset) - offset;
     if (padding > 0) {
       parts.push(Buffer.alloc(padding));
       offset += padding;
     }
-    parts.push(bytes);
-    const placedView = { ...view, byteOffset: offset, byteLength: bytes.length };
-    offset += bytes.length;
-    return placedView;
-  });
+    parts.push(piece.bytes);
+
+    // The first piece keeps the view's own index; the rest go on the end.
+    let index: number;
+    if (claimed.has(piece.origin)) index = appended++;
+    else {
+      claimed.add(piece.origin);
+      index = piece.origin;
+    }
+
+    const { byteStride: _replaced, ...rest } = views[piece.origin] as NonNullable<
+      GltfJson['bufferViews']
+    >[number];
+    rebuilt[index] = {
+      ...rest,
+      ...(piece.byteStride === undefined ? {} : { byteStride: piece.byteStride }),
+      byteOffset: offset,
+      byteLength: piece.bytes.length,
+    };
+
+    for (const { at, byteOffset } of piece.accessors) {
+      const recomputed = bounds.get(at);
+      placed[at] = {
+        ...after(at),
+        bufferView: index,
+        byteOffset,
+        // Only where the file had them. Adding bounds an accessor never carried
+        // would be answering a question nobody asked.
+        ...(recomputed !== undefined && accessors[at]?.min !== undefined ? recomputed : {}),
+      };
+    }
+    offset += piece.bytes.length;
+  }
+
+  /** Declared once, whether or not the document already named it. */
+  const naming = (list: string[] | undefined): string[] =>
+    (list ?? []).includes(QUANTIZATION) ? (list as string[]) : [...(list ?? []), QUANTIZATION];
 
   return {
     json: {
@@ -433,18 +653,18 @@ export function rewriteGlb(
       // Only when the document had one: the spec has no empty arrays, and
       // adding a field a file did not carry is a change nobody asked for.
       ...(json.accessors === undefined ? {} : { accessors: placed }),
+      ...(quantized.size === 0
+        ? {}
+        : {
+            // `extensionsRequired` and not only `extensionsUsed`: a reader that
+            // does not know the extension cannot make sense of a byte where it
+            // expects a float, and the spec says so in as many words.
+            extensionsUsed: naming(json.extensionsUsed),
+            extensionsRequired: naming(json.extensionsRequired),
+          }),
       bufferViews: rebuilt,
       buffers: [{ ...(json.buffers?.[0] ?? { byteLength: 0 }), byteLength: offset }],
     },
     bin: Buffer.concat(parts),
   };
-}
-
-/** The same numbers, two bytes each instead of four. */
-function asUnsignedShort(bin: Buffer, from: number, count: number): Buffer {
-  const out = Buffer.alloc(count * 2);
-  for (let at = 0; at < count; at++) {
-    out.writeUInt16LE(bin.readUInt32LE(from + at * 4), at * 2);
-  }
-  return out;
 }

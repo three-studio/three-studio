@@ -26,6 +26,7 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
       importMaterials: true,
       importAnimations: true,
       maxTextureSize: 2048,
+      compressGeometry: true,
     };
   }
 
@@ -47,6 +48,10 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
         // textures as separate files has none, and each of those is a texture
         // asset with a `maxSize` of its own.
         field.number('maxTextureSize', 'Max texture size', { min: 64, max: 16384, step: 64 }),
+        // Beside the texture cap because it is the same kind of question — how
+        // much of this file is worth keeping — asked once by someone looking at
+        // it, with the answer visible in the viewport straight away.
+        field.toggle('compressGeometry', 'Compress geometry'),
       ]),
       ...this.formatFields(settings),
     ];

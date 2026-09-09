@@ -33,6 +33,7 @@ const model = (id: string, fileName = `${id}.fbx`): StagedFile => ({
     importMaterials: true,
     importAnimations: true,
     maxTextureSize: 2048,
+    compressGeometry: true,
     collisionMeshes: 'ignore',
   },
   conflict: null,

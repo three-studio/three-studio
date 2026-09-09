@@ -61,7 +61,7 @@ export function assetUrl(path: string): string {
  * This is Unity's import version under another name, and it works the same way:
  * old copies are simply no longer asked for, and they go when the cache does.
  */
-export const IMPORT_PIPELINE_VERSION = 2;
+export const IMPORT_PIPELINE_VERSION = 3;
 
 /**
  * Where the scaled copy of an asset lives, relative to the project root.
@@ -71,20 +71,25 @@ export const IMPORT_PIPELINE_VERSION = 2;
  * project, only make the next open slower. This is the same bargain.
  *
  * **The name carries everything that invalidates it.** The source hash comes
- * from the sidecar, so editing the file produces a different name; the cap is
- * written out in full, so raising Max Size does too; and the pipeline version
- * covers the case neither of them can see, where the file and the settings are
- * the same and the code that reads them is not. Nothing has to notice a change
- * and clear anything.
+ * from the sidecar, so editing the file produces a different name; the variant
+ * spells out the answers that produced this copy, so changing one of them does
+ * too; and the pipeline version covers the case neither of them can see, where
+ * the file and the answers are the same and the code that read them is not.
+ * Nothing has to notice a change and clear anything.
+ *
+ * `variant` is a string and not the settings themselves, because what belongs
+ * in a name is *which answers*, and only the caller reading the sidecar knows
+ * which ones matter for a kind. A texture's is its cap; a model's is its cap
+ * and whether its geometry was compressed.
  */
 export function importedAssetPath(
   assetId: string,
   hash: string,
-  cap: number,
+  variant: string,
   extension: string,
 ): string {
   // Twelve characters of SHA-256. Enough that two versions of one asset cannot
   // collide, short enough that the path stays readable in a file browser.
-  const name = `${hash.slice(0, 12)}-${cap}-v${IMPORT_PIPELINE_VERSION}`;
+  const name = `${hash.slice(0, 12)}-${variant}-v${IMPORT_PIPELINE_VERSION}`;
   return `${CACHE_DIR}/imported/${assetId}/${name}${extension}`;
 }

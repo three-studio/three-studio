@@ -285,6 +285,20 @@ export interface ModelSettingsBase {
    * download for a scene that will never resolve them.
    */
   maxTextureSize: number;
+  /**
+   * Whether the geometry may be made smaller where the loss has been measured.
+   *
+   * On, because the loss is one nobody has ever reported seeing and the gain is
+   * more than a third of a scanned model — the same bargain `maxTextureSize`
+   * makes, and for the same reason: the author's file on disk is untouched, and
+   * what this governs is a derived copy that can be thrown away.
+   *
+   * What it costs today: a normal is stored in a byte per axis rather than a
+   * float, which describes a direction to about half a degree. Invisible on a
+   * scanned surface; it can band on a large, smooth, softly lit one, and this
+   * is the switch to turn off when it does.
+   */
+  compressGeometry: boolean;
 }
 
 export interface FbxModelSettings extends ModelSettingsBase {
