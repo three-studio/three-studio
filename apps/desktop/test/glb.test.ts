@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readGlb, rewriteEmbeddedImages, writeGlb, type GltfJson } from '../src/main/glb';
+import { readGlb, rewriteGlb, writeGlb, type GlbContents, type GltfJson } from '../src/main/glb';
 
 /*
  * The GLB container, taken apart and put back together.
@@ -102,7 +102,7 @@ describe('reading and writing the container', () => {
 
 describe('replacing the images inside', () => {
   it('moves every view that follows a replaced one, and keeps the rest byte for byte', () => {
-    const rewritten = rewriteEmbeddedImages(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), shrink);
     const views = rewritten?.json.bufferViews ?? [];
     const bin = rewritten?.bin ?? Buffer.alloc(0);
 
@@ -118,7 +118,7 @@ describe('replacing the images inside', () => {
   });
 
   it('keeps every view on a four-byte boundary, which accessors depend on', () => {
-    const rewritten = rewriteEmbeddedImages(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), shrink);
 
     for (const view of rewritten?.json.bufferViews ?? []) {
       expect(view.byteOffset! % 4).toBe(0);
@@ -126,7 +126,7 @@ describe('replacing the images inside', () => {
   });
 
   it('restates the buffer length, which no longer matches the source', () => {
-    const rewritten = rewriteEmbeddedImages(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), shrink);
 
     expect(rewritten?.json.buffers?.[0]?.byteLength).toBe(rewritten?.bin.length);
     expect(rewritten?.bin.length).toBeLessThan(sample().bin.length);
@@ -134,7 +134,7 @@ describe('replacing the images inside', () => {
 
   it('leaves the accessors and the images alone, since they address by index', () => {
     const before = sample().json;
-    const rewritten = rewriteEmbeddedImages(sample(), shrink);
+    const rewritten = rewriteGlb(sample(), shrink);
 
     expect(rewritten?.json.accessors).toEqual(before.accessors);
     expect(rewritten?.json.images).toEqual(before.images);
@@ -143,8 +143,8 @@ describe('replacing the images inside', () => {
   it('says nothing changed when no image was worth scaling', () => {
     // `null` is "serve the source". Writing an identical copy would double the
     // largest files in the project on disk for no gain at all.
-    expect(rewriteEmbeddedImages(sample(), () => null)).toBeNull();
-    expect(rewriteEmbeddedImages({ json: { buffers: [{ byteLength: 0 }] }, bin: Buffer.alloc(0) }, shrink))
+    expect(rewriteGlb(sample(), () => null)).toBeNull();
+    expect(rewriteGlb({ json: { buffers: [{ byteLength: 0 }] }, bin: Buffer.alloc(0) }, shrink))
       .toBeNull();
   });
 
@@ -154,11 +154,216 @@ describe('replacing the images inside', () => {
     // own offsets leaves it pointing at the wrong bytes — and the geometry
     // decodes into noise with nothing in the file to say why.
     const { json, bin } = sample({ extensionsUsed: ['EXT_meshopt_compression'] });
-    expect(rewriteEmbeddedImages({ json, bin }, shrink)).toBeNull();
+    expect(rewriteGlb({ json, bin }, shrink)).toBeNull();
   });
 
   it('refuses a file whose bytes are not all in it', () => {
     const external = sample({ buffers: [{ byteLength: 10, uri: 'scene.bin' }] });
-    expect(rewriteEmbeddedImages(external, shrink)).toBeNull();
+    expect(rewriteGlb(external, shrink)).toBeNull();
+  });
+});
+
+/*
+ * Narrowing the indices.
+ *
+ * The bytes an accessor addresses move when an accessor *before it in the same
+ * view* gets shorter, which is the whole difference between this and replacing
+ * an image: a view is no longer a span to copy, it is a list of accessors to
+ * lay out again. Every test below reads its numbers back through the document
+ * — component type, view offset, accessor offset — because that is the only
+ * thing that catches an offset which is wrong but plausible.
+ */
+
+const UNSIGNED_INT = 5125;
+const UNSIGNED_SHORT = 5123;
+
+function uint32(values: readonly number[]): Buffer {
+  const out = Buffer.alloc(values.length * 4);
+  values.forEach((value, at) => out.writeUInt32LE(value, at * 4));
+  return out;
+}
+
+/** Two index accessors sharing one view, then an image. */
+const NARROW = [0, 1, 2, 65535, 4, 5] as const;
+const WIDE = [6, 7, 65536] as const;
+
+function indexed(over: Partial<GltfJson> = {}): GlbContents {
+  const narrow = uint32(NARROW);
+  const wide = uint32(WIDE);
+  const bin = Buffer.concat([narrow, wide, FIRST]);
+
+  const json: GltfJson = {
+    asset: { version: '2.0' },
+    buffers: [{ byteLength: bin.length }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: narrow.length + wide.length },
+      { buffer: 0, byteOffset: narrow.length + wide.length, byteLength: FIRST.length },
+    ],
+    accessors: [
+      { bufferView: 0, byteOffset: 0, componentType: UNSIGNED_INT, count: NARROW.length, type: 'SCALAR' },
+      {
+        bufferView: 0,
+        byteOffset: narrow.length,
+        componentType: UNSIGNED_INT,
+        count: WIDE.length,
+        type: 'SCALAR',
+      },
+    ],
+    meshes: [{ primitives: [{ indices: 0 }, { indices: 1 }] }],
+    images: [{ bufferView: 1, mimeType: 'image/png' }],
+    ...over,
+  };
+  return { json, bin };
+}
+
+/** The numbers an accessor holds, found the way a loader would find them. */
+function indicesOf(contents: GlbContents, at: number): number[] {
+  const accessor = contents.json.accessors?.[at];
+  const view = contents.json.bufferViews?.[accessor?.bufferView ?? -1];
+  if (!accessor || !view) return [];
+
+  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  const wide = accessor.componentType === UNSIGNED_INT;
+  return Array.from({ length: accessor.count }, (_, index) =>
+    wide ? contents.bin.readUInt32LE(start + index * 4) : contents.bin.readUInt16LE(start + index * 2),
+  );
+}
+
+describe('narrowing the indices', () => {
+  it('halves the ones that fit and leaves the ones that do not', () => {
+    const rewritten = rewriteGlb(indexed(), () => null);
+
+    expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_SHORT);
+    // One value at 65536 is enough. Narrowing it would wrap it to 0 — a
+    // triangle quietly pointing at the wrong vertex, which is the failure this
+    // whole file is careful about.
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(UNSIGNED_INT);
+  });
+
+  it('still reads back the same numbers, both of them', () => {
+    const rewritten = rewriteGlb(indexed(), () => null);
+
+    expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
+    // The one that moved: it sat after an accessor that halved, so its offset
+    // inside the view is not the one it arrived with.
+    expect(indicesOf(rewritten!, 1)).toEqual([...WIDE]);
+    expect(rewritten?.json.accessors?.[1]?.byteOffset).not.toBe(indexed().json.accessors?.[1]?.byteOffset);
+  });
+
+  it('restates the view and the buffer, which are both shorter now', () => {
+    const source = indexed();
+    const rewritten = rewriteGlb(source, () => null);
+
+    expect(rewritten?.json.bufferViews?.[0]?.byteLength).toBe(
+      NARROW.length * 2 + WIDE.length * 4,
+    );
+    expect(rewritten?.json.buffers?.[0]?.byteLength).toBe(rewritten?.bin.length);
+    expect(rewritten?.bin.length).toBeLessThan(source.bin.length);
+  });
+
+  it('keeps every view on a four-byte boundary, and every accessor inside one', () => {
+    const rewritten = rewriteGlb(indexed(), () => null);
+
+    for (const view of rewritten?.json.bufferViews ?? []) expect(view.byteOffset! % 4).toBe(0);
+    for (const accessor of rewritten?.json.accessors ?? []) {
+      expect((accessor.byteOffset ?? 0) % 4).toBe(0);
+    }
+  });
+
+  it('narrows an accessor two primitives share, once', () => {
+    const shared = indexed({ meshes: [{ primitives: [{ indices: 0 }, { indices: 0 }] }] });
+    const rewritten = rewriteGlb(shared, () => null);
+
+    expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_SHORT);
+    expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
+  });
+
+  it('scales the images in the same pass', () => {
+    const rewritten = rewriteGlb(indexed(), () => Buffer.from('SM'));
+    const views = rewritten?.json.bufferViews ?? [];
+
+    expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
+    expect(rewritten?.bin.subarray(views[1]!.byteOffset!, views[1]!.byteOffset! + 2))
+      .toEqual(Buffer.from('SM'));
+  });
+
+  it('says nothing changed when every index already fits its width', () => {
+    const already = indexed({
+      meshes: [{ primitives: [{ indices: 1 }] }],
+      images: [],
+    });
+    // Accessor 1 holds 65536, so there is nothing to narrow and no image to
+    // scale: writing an identical copy of a large model would be the one thing
+    // worse than leaving it alone.
+    expect(rewriteGlb(already, () => null)).toBeNull();
+  });
+});
+
+describe('the views it will not repack', () => {
+  /*
+   * Each of these leaves the file readable rather than refusing it: the view is
+   * carried over byte for byte, the rest of the document is still rebuilt, and
+   * an index that could not be narrowed is only an index that stayed wide.
+   *
+   * So each one scales an image, to make the rewrite actually happen. A test
+   * that only asserted `null` would pass just as well against a version that
+   * refused the whole file, which is a different behaviour.
+   */
+
+  const bothViews: Partial<GltfJson> = {
+    images: [
+      { bufferView: 0, mimeType: 'image/png' },
+      { bufferView: 1, mimeType: 'image/png' },
+    ],
+  };
+
+  /** Asserts the index accessors came through exactly as they arrived. */
+  function untouched(rewritten: GlbContents | null): void {
+    expect(rewritten).not.toBeNull();
+    expect(rewritten?.json.accessors?.[0]?.componentType).toBe(UNSIGNED_INT);
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(UNSIGNED_INT);
+    expect(indicesOf(rewritten!, 0)).toEqual([...NARROW]);
+    expect(indicesOf(rewritten!, 1)).toEqual([...WIDE]);
+  }
+
+  it('leaves a view an image also addresses, and does not scale that image either', () => {
+    // The dangerous overlap, and repacking is not the half that bites: a scaled
+    // image is a *different length*, so the accessor's offset would land in the
+    // middle of a JPEG. Neither half happens — while the other image, on a view
+    // of its own, is scaled as usual.
+    const rewritten = rewriteGlb(indexed(bothViews), () => Buffer.from('SM'));
+    const views = rewritten?.json.bufferViews ?? [];
+
+    untouched(rewritten);
+    expect(views[0]?.byteLength).toBe(indexed().json.bufferViews?.[0]?.byteLength);
+    expect(rewritten?.bin.subarray(views[1]!.byteOffset!, views[1]!.byteOffset! + 2))
+      .toEqual(Buffer.from('SM'));
+  });
+
+  it('leaves an interleaved view alone', () => {
+    // Accessors take turns inside one stride there; laying them out end to end
+    // would be a different file.
+    const interleaved = indexed();
+    interleaved.json.bufferViews![0]!.byteStride = 4;
+
+    untouched(rewriteGlb(interleaved, () => Buffer.from('SM')));
+  });
+
+  it('leaves a view carrying its own extension alone', () => {
+    const extended = indexed();
+    extended.json.bufferViews![0]!.extensions = { EXT_something: {} };
+
+    untouched(rewriteGlb(extended, () => Buffer.from('SM')));
+  });
+
+  it('repacks nothing at all once one accessor is sparse', () => {
+    // A sparse accessor keeps its indices and its values in other views, at
+    // offsets it holds itself and this does not follow. One is enough to stop
+    // every repack in the file — they are unheard of in models, so the blunt
+    // answer costs nothing and a subtle one could move bytes it points at.
+    const sparse = indexed();
+    sparse.json.accessors![1]!.sparse = { count: 1 };
+
+    untouched(rewriteGlb(sparse, () => Buffer.from('SM')));
   });
 });

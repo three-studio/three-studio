@@ -62,8 +62,11 @@ describe('where a scaled copy lives', () => {
   });
 
   it('stays under the cache, which the project gitignores and may delete', () => {
+    // The version is in the name on purpose, so this expectation has to be
+    // updated by hand when the pipeline changes what it produces. That is the
+    // point: bumping it is a decision, and one that has to be visible.
     expect(importedAssetPath('asset-1', 'abcdef0123456789', 2048, '.png')).toBe(
-      '.studio/imported/asset-1/abcdef012345-2048.png',
+      '.studio/imported/asset-1/abcdef012345-2048-v2.png',
     );
   });
 });

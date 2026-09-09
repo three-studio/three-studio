@@ -46,17 +46,36 @@ export function assetUrl(path: string): string {
 }
 
 /**
+ * How the scaled copy of an asset is built, as a number that goes in its name.
+ *
+ * The third thing that invalidates a derived file, beside the source and the
+ * settings: **the code that derived it.** Without this, teaching the importer a
+ * new trick would change nothing for any project already scanned — every asset
+ * would keep the copy it has, and an asset that had nothing to do last time
+ * would keep the marker that says so. The improvement would ship and be
+ * invisible, which is the worst of the three outcomes.
+ *
+ * Bump it whenever the bytes this pipeline produces from the same inputs
+ * change. `1` is the generation that carried no stamp at all.
+ *
+ * This is Unity's import version under another name, and it works the same way:
+ * old copies are simply no longer asked for, and they go when the cache does.
+ */
+export const IMPORT_PIPELINE_VERSION = 2;
+
+/**
  * Where the scaled copy of an asset lives, relative to the project root.
  *
  * Under `CACHE_DIR`, which the project's own `.gitignore` excludes and which
  * `projectIndex.ts` already declares disposable — deleting it must never break a
  * project, only make the next open slower. This is the same bargain.
  *
- * **The name carries both things that invalidate it.** The source hash comes
+ * **The name carries everything that invalidates it.** The source hash comes
  * from the sidecar, so editing the file produces a different name; the cap is
- * written out in full, so raising Max Size does too. Nothing has to notice a
- * change and clear anything: the old file is simply no longer asked for, and it
- * goes when the cache does.
+ * written out in full, so raising Max Size does too; and the pipeline version
+ * covers the case neither of them can see, where the file and the settings are
+ * the same and the code that reads them is not. Nothing has to notice a change
+ * and clear anything.
  */
 export function importedAssetPath(
   assetId: string,
@@ -66,5 +85,6 @@ export function importedAssetPath(
 ): string {
   // Twelve characters of SHA-256. Enough that two versions of one asset cannot
   // collide, short enough that the path stays readable in a file browser.
-  return `${CACHE_DIR}/imported/${assetId}/${hash.slice(0, 12)}-${cap}${extension}`;
+  const name = `${hash.slice(0, 12)}-${cap}-v${IMPORT_PIPELINE_VERSION}`;
+  return `${CACHE_DIR}/imported/${assetId}/${name}${extension}`;
 }

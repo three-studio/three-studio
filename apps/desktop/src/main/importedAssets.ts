@@ -2,7 +2,7 @@ import { readFile, mkdir, stat } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { importedAssetPath, type AssetMeta } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
-import { readGlb, rewriteEmbeddedImages, writeGlb } from './glb';
+import { readGlb, rewriteGlb, writeGlb } from './glb';
 import { imageFormatOf, processTexture } from './textureProcessing';
 
 /*
@@ -11,8 +11,9 @@ import { imageFormatOf, processTexture } from './textureProcessing';
  *
  * This is what Unity's `Library/` and Unreal's DDC are: the source file stays
  * exactly as the author left it, and nothing at run time ever opens it. What
- * gets loaded is a derived artifact, keyed by the source and by the settings
- * that produced it, in a directory that can be deleted at any moment.
+ * gets loaded is a derived artifact, keyed by the source, by the settings that
+ * produced it and by the version of the code that produced it, in a directory
+ * that can be deleted at any moment.
  *
  * Built during the scan rather than at the end of the import dialog, which is
  * one place instead of three: it then also covers assets that were imported
@@ -43,7 +44,9 @@ function capFor(meta: AssetMeta): number | null {
  * Without it, an image under the cap is opened, decoded and thrown away on
  * every single scan — which is the cost this whole file exists to remove, paid
  * for ever instead of once. Keyed by the same name, so it is invalidated by the
- * same two things.
+ * same things — the pipeline version among them, which is what lets a file that
+ * had nothing to do last time be looked at again once the code has learnt
+ * something new.
  */
 const NOTHING_TO_DO = '.none';
 
@@ -116,12 +119,15 @@ function rebuildTexture(bytes: Buffer, extension: string, cap: number): Buffer |
  * texture asset with a sidecar and a `maxSize` of its own — so it is already
  * covered, by the branch above. FBX and OBJ embed images in formats this cannot
  * take apart without a parser for each.
+ *
+ * The cap is the only thing passed in, and the geometry work needs nothing: an
+ * index that fits in two bytes fits in two bytes whatever the author chose.
  */
 function rebuildModel(bytes: Buffer, cap: number): Buffer | null {
   const read = readGlb(bytes);
   if (read === null) return null;
 
-  const rewritten = rewriteEmbeddedImages(read, (imageBytes, mimeType) => {
+  const rewritten = rewriteGlb(read, (imageBytes, mimeType) => {
     const format = imageFormatOf(mimeType);
     return format === null ? null : processTexture(imageBytes, format, cap);
   });
