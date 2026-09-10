@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { MeshoptDecoder } from 'meshoptimizer/decoder';
+import { MeshoptEncoder } from 'meshoptimizer/encoder';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   readGlb,
   rewriteGlb,
   writeGlb,
   type GlbContents,
+  type EncodeMode,
   type GltfJson,
   type RewriteOptions,
 } from '../src/main/glb';
@@ -73,7 +76,7 @@ function sample(over: Partial<GltfJson> = {}): { json: GltfJson; bin: Buffer } {
 /** Options with the lossy half off, which is what all of these want but one. */
 const options = (
   scaleImage: (bytes: Buffer, mimeType: string) => Buffer | null = () => null,
-): RewriteOptions => ({ scaleImage, quantizeNormals: false });
+): RewriteOptions => ({ scaleImage, quantizeNormals: false, encodeGeometry: null });
 
 /** Stands in for the scaler: shorter bytes, so every offset after it moves. */
 const shrink = (bytes: Buffer, mimeType: string): Buffer | null =>
@@ -411,7 +414,11 @@ describe('the views it will not repack', () => {
 
 const BYTE = 5120;
 const FLOAT = 5126;
-const quantising: RewriteOptions = { scaleImage: () => null, quantizeNormals: true };
+const quantising: RewriteOptions = {
+  scaleImage: () => null,
+  quantizeNormals: true,
+  encodeGeometry: null,
+};
 
 /** A position and a normal per vertex, sharing one view the way exporters write it. */
 function meshed(normals: readonly (readonly [number, number, number])[]): GlbContents {
@@ -555,6 +562,269 @@ describe('quantising the normals', () => {
   });
 
   it('does nothing when the author turned it off', () => {
-    expect(rewriteGlb(meshed(UNIT), { scaleImage: () => null, quantizeNormals: false })).toBeNull();
+    expect(rewriteGlb(meshed(UNIT), { scaleImage: () => null, quantizeNormals: false, encodeGeometry: null })).toBeNull();
+  });
+});
+
+/*
+ * Compressing the geometry.
+ *
+ * Lossless, unlike the two before it: what the decoder hands back is what went
+ * in, byte for byte. What is new here is *where the bytes are*. A compressed
+ * view goes on describing what comes out of the decoder — its length, its
+ * stride, the accessors inside it — while pointing at a second buffer that
+ * holds nothing at all, and its extension names the real, compressed bytes back
+ * in the blob. Two address spaces in one file, and most of these tests are
+ * about keeping them apart.
+ */
+
+/** Stands in for the encoder: short, and it says what it was asked for. */
+const calls: string[] = [];
+const fakeEncoder = (source: Buffer, count: number, size: number, mode: EncodeMode): Buffer => {
+  calls.push(`${mode} count=${count} size=${size} in=${source.length}`);
+  return Buffer.from('Z');
+};
+
+const compressing = (
+  encodeGeometry: RewriteOptions['encodeGeometry'] = fakeEncoder,
+): RewriteOptions => ({ scaleImage: () => null, quantizeNormals: false, encodeGeometry });
+
+/** Indices in one view, positions in another — the shape a primitive has. */
+function compressible(indices: readonly number[] = [0, 1, 2, 2, 1, 3]): GlbContents {
+  const index = Buffer.alloc(indices.length * 4);
+  indices.forEach((value, at) => index.writeUInt32LE(value, at * 4));
+  const vertices = Math.max(...indices) + 1;
+  const positions = Buffer.alloc(vertices * 12);
+  for (let at = 0; at < vertices * 3; at++) positions.writeFloatLE(at, at * 4);
+  const bin = Buffer.concat([index, positions]);
+
+  return {
+    bin,
+    json: {
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: bin.length }],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: index.length },
+        { buffer: 0, byteOffset: index.length, byteLength: positions.length, byteStride: 12 },
+      ],
+      accessors: [
+        { bufferView: 0, byteOffset: 0, componentType: 5125, count: indices.length, type: 'SCALAR' },
+        { bufferView: 1, byteOffset: 0, componentType: FLOAT, count: vertices, type: 'VEC3' },
+      ],
+      meshes: [{ primitives: [{ indices: 0, attributes: { POSITION: 1 } }] }],
+    },
+  };
+}
+
+const meshopt = (view: NonNullable<GltfJson['bufferViews']>[number] | undefined) =>
+  view?.extensions?.['EXT_meshopt_compression'] as
+    | { buffer: number; byteOffset: number; byteLength: number; count: number; byteStride: number; mode: string }
+    | undefined;
+
+describe('compressing the geometry', () => {
+  beforeEach(() => {
+    calls.length = 0;
+  });
+
+  it('asks for triangles on the indices and attributes on everything else', () => {
+    rewriteGlb(compressible(), compressing());
+
+    // Six indices narrowed to two bytes each, and four positions of twelve.
+    expect(calls).toEqual([
+      'TRIANGLES count=6 size=2 in=12',
+      'ATTRIBUTES count=4 size=12 in=48',
+    ]);
+  });
+
+  it('leaves the view describing what comes out, not what is stored', () => {
+    const rewritten = rewriteGlb(compressible(), compressing());
+    const view = rewritten?.json.bufferViews?.[0];
+
+    // The length and the offset are the decoder's output, in the buffer that
+    // holds nothing. A loader reads accessors against those, and would find
+    // rubbish if they described the compressed bytes instead.
+    expect(view?.buffer).toBe(1);
+    expect(view?.byteLength).toBe(12);
+    expect(meshopt(view)).toEqual({
+      buffer: 0,
+      byteOffset: 0,
+      byteLength: 1,
+      count: 6,
+      byteStride: 2,
+      mode: 'TRIANGLES',
+    });
+  });
+
+  it('declares a fallback buffer, which is a length and nothing else', () => {
+    const rewritten = rewriteGlb(compressible(), compressing());
+
+    expect(rewritten?.json.buffers?.[1]).toEqual({
+      byteLength: 60,
+      extensions: { EXT_meshopt_compression: { fallback: true } },
+    });
+    // The blob itself now holds only what is really there.
+    expect(rewritten?.json.buffers?.[0]?.byteLength).toBe(rewritten?.bin.length);
+  });
+
+  it('declares the extension as required', () => {
+    const rewritten = rewriteGlb(compressible(), compressing());
+
+    expect(rewritten?.json.extensionsRequired).toContain('EXT_meshopt_compression');
+    expect(rewritten?.json.extensionsUsed).toContain('EXT_meshopt_compression');
+  });
+
+  it('compresses a view nothing else was going to touch', () => {
+    // The point of laying every view out again: the texture coordinates of the
+    // reference model are rewritten by nothing at all, and are 14.98 MB.
+    const rewritten = rewriteGlb(meshed(UNIT), compressing());
+
+    expect(calls).toEqual(['ATTRIBUTES count=8 size=12 in=96']);
+    expect(meshopt(rewritten?.json.bufferViews?.[0])?.mode).toBe('ATTRIBUTES');
+  });
+
+  it('stores a stream the encoder made no smaller', () => {
+    // A view is never made bigger by being compressed.
+    const rewritten = rewriteGlb(compressible(), compressing(() => Buffer.alloc(4096)));
+
+    expect(meshopt(rewritten?.json.bufferViews?.[0])).toBeUndefined();
+    expect(rewritten?.json.buffers).toHaveLength(1);
+    expect(rewritten?.json.extensionsRequired ?? []).not.toContain('EXT_meshopt_compression');
+  });
+
+  it('leaves an index count that is not whole triangles', () => {
+    // Four indices is a line list wearing the wrong name, and the triangle
+    // codec would be describing it as something it is not.
+    rewriteGlb(compressible([0, 1, 2, 3]), compressing());
+
+    expect(calls).toEqual(['ATTRIBUTES count=4 size=12 in=48']);
+  });
+
+  it('leaves no gap between two runs of the same width', () => {
+    /*
+     * Nine indices then three, both whole triangles, both in one view. Nine of
+     * two bytes is eighteen, which four does not divide — so padding the next
+     * accessor out to four would put a two-byte hole in the middle, and a
+     * stream with a hole in it is one where `count * size` is no longer the
+     * length. The encoder would be told a smaller count and would describe the
+     * wrong bytes.
+     *
+     * The reference model does this 44 times over: T-002's own layout left 46
+     * bytes of padding across its index accessors.
+     */
+    const runs = [0, 1, 2, 2, 1, 3, 3, 1, 0, 1, 2, 3];
+    const index = Buffer.alloc(runs.length * 4);
+    runs.forEach((value, at) => index.writeUInt32LE(value, at * 4));
+    const positions = Buffer.alloc(4 * 12);
+    for (let at = 0; at < 12; at++) positions.writeFloatLE(at, at * 4);
+    const bin = Buffer.concat([index, positions]);
+
+    rewriteGlb(
+      {
+        bin,
+        json: {
+          asset: { version: '2.0' },
+          buffers: [{ byteLength: bin.length }],
+          bufferViews: [
+            { buffer: 0, byteOffset: 0, byteLength: index.length },
+            { buffer: 0, byteOffset: index.length, byteLength: positions.length, byteStride: 12 },
+          ],
+          accessors: [
+            { bufferView: 0, byteOffset: 0, componentType: UNSIGNED_INT, count: 9, type: 'SCALAR' },
+            { bufferView: 0, byteOffset: 36, componentType: UNSIGNED_INT, count: 3, type: 'SCALAR' },
+            { bufferView: 1, byteOffset: 0, componentType: FLOAT, count: 4, type: 'VEC3' },
+          ],
+          meshes: [
+            {
+              primitives: [
+                { indices: 0, attributes: { POSITION: 2 } },
+                { indices: 1, attributes: { POSITION: 2 } },
+              ],
+            },
+          ],
+        },
+      },
+      compressing(),
+    );
+
+    // Twelve indices, twenty-four bytes: no hole anywhere in them.
+    expect(calls).toContain('TRIANGLES count=12 size=2 in=24');
+  });
+
+  it('leaves the images alone', () => {
+    const rewritten = rewriteGlb(indexed(), compressing());
+    const image = rewritten?.json.bufferViews?.[1];
+
+    expect(meshopt(image)).toBeUndefined();
+    expect(image?.buffer).toBe(0);
+  });
+});
+
+describe('what the real decoder gives back', () => {
+  /*
+   * The test that proves the declaration and not just the plumbing. `count`,
+   * `byteStride` and `mode` are what the decoder is handed; get any of them
+   * wrong and it returns the wrong number of the wrong things, with nothing in
+   * the file to say so.
+   *
+   * Vertex data comes back byte for byte. Triangles do not, quite: the codec
+   * starts each one at whichever corner codes smallest, so the comparison has
+   * to be made on triangles rather than on bytes. It is a rotation and never a
+   * mirror — counted over the reference scan's 1,982,017 triangles — so the
+   * winding, and everything that depends on it, is unchanged.
+   */
+
+  /** A triangle written from its smallest corner: a rotation matches, a mirror does not. */
+  function triangles(bytes: Buffer): string[] {
+    const out: string[] = [];
+    for (let at = 0; at + 6 <= bytes.length; at += 6) {
+      const corners = [0, 2, 4].map((c) => bytes.readUInt16LE(at + c));
+      const first = corners.indexOf(Math.min(...corners));
+      out.push([0, 1, 2].map((step) => corners[(first + step) % 3]).join(','));
+    }
+    return out;
+  }
+  beforeAll(async () => {
+    await MeshoptEncoder.ready;
+    await MeshoptDecoder.ready;
+  });
+
+  const real = (source: Buffer, count: number, size: number, mode: EncodeMode): Buffer =>
+    Buffer.from(MeshoptEncoder.encodeGltfBuffer(new Uint8Array(source), count, size, mode));
+
+  /**
+   * A strip of triangles, big enough that compressing it is worth doing.
+   *
+   * Twelve bytes of indices do not compress — a codec has a header, and the
+   * guard against a view coming out larger correctly refuses them. Which is
+   * itself the reason this fixture exists rather than the small one.
+   */
+  const strip = Array.from({ length: 900 }, (_, at) => at % 3 === 2 ? (at % 400) + 1 : at % 400);
+
+  it('hands back exactly what was stored, view by view', () => {
+    const plain = rewriteGlb(compressible(strip), compressing(null));
+    const packed = rewriteGlb(compressible(strip), compressing(real));
+
+    for (const [index, view] of (packed?.json.bufferViews ?? []).entries()) {
+      const extension = meshopt(view);
+      expect(extension).toBeDefined();
+
+      const decoded = new Uint8Array(extension!.count * extension!.byteStride);
+      MeshoptDecoder.decodeGltfBuffer(
+        decoded,
+        extension!.count,
+        extension!.byteStride,
+        new Uint8Array(
+          packed!.bin.subarray(extension!.byteOffset, extension!.byteOffset + extension!.byteLength),
+        ),
+        extension!.mode,
+      );
+
+      const before = plain!.json.bufferViews![index]!;
+      const want = plain!.bin.subarray(before.byteOffset!, before.byteOffset! + before.byteLength);
+      expect(decoded.length).toBe(view.byteLength);
+
+      if (extension!.mode === 'TRIANGLES') expect(triangles(Buffer.from(decoded))).toEqual(triangles(want));
+      else expect(Buffer.from(decoded)).toEqual(want);
+    }
   });
 });

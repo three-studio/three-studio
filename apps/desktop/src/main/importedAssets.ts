@@ -3,6 +3,7 @@ import { dirname, extname, join } from 'node:path';
 import { importedAssetPath, type AssetMeta } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
 import { readGlb, rewriteGlb, writeGlb } from './glb';
+import { encodeGeometry, geometryEncoderReady } from './meshopt';
 import { imageFormatOf, processTexture } from './textureProcessing';
 
 /*
@@ -113,6 +114,9 @@ export async function ensureImported(
 
   try {
     const bytes = await readFile(join(projectPath, relativePath));
+    // The encoder carries a WASM module it compiles once. Awaited here because
+    // `rewriteGlb` is a pure function over bytes and is worth keeping that way.
+    if (recipe.compressGeometry) await geometryEncoderReady();
     const built =
       meta.settings.kind === 'model'
         ? rebuildModel(bytes, recipe)
@@ -159,6 +163,7 @@ function rebuildModel(bytes: Buffer, { cap, compressGeometry }: Recipe): Buffer 
       return format === null ? null : processTexture(imageBytes, format, cap);
     },
     quantizeNormals: compressGeometry,
+    encodeGeometry: compressGeometry ? encodeGeometry : null,
   });
   return rewritten === null ? null : writeGlb(rewritten);
 }

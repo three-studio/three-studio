@@ -45,6 +45,31 @@ const MAX_UNSIGNED_SHORT = 65535;
 /** What a byte-sized normal needs the file to declare. */
 const QUANTIZATION = 'KHR_mesh_quantization';
 
+/** What a compressed stream needs the file to declare. */
+const MESHOPT = 'EXT_meshopt_compression';
+
+/**
+ * What the encoder will not take, and what would be wrong to hand it.
+ *
+ * A stream of attributes is addressed four bytes at a time and the codec holds
+ * a window per byte lane, so the stride has to divide into four and stay small.
+ * A stream of triangles is three indices at a time, of two bytes or four — a
+ * count that is not a multiple of three is a line or a point list, which this
+ * leaves alone rather than encoding as something it is not.
+ */
+const MAX_ATTRIBUTE_STRIDE = 256;
+
+/**
+ * Where a compressed view says its decompressed bytes live.
+ *
+ * Nowhere, is the answer. The extension defines a *fallback buffer* — one with
+ * a length and no contents — so that a view can go on describing what comes out
+ * of the decoder while its real bytes sit compressed in the blob. A source is
+ * only ever rebuilt when it has exactly one buffer, so the second index is
+ * always free.
+ */
+const FALLBACK_BUFFER = 1;
+
 /**
  * How far a normal's squared length may stray from one before this leaves it
  * alone. Float32 rounding moves it by about 1e-7; this is four orders of
@@ -73,7 +98,7 @@ export interface GltfAccessor {
 
 /** As much of the glTF document as this file has to understand. */
 export interface GltfJson {
-  buffers?: { byteLength: number; uri?: string }[];
+  buffers?: { byteLength: number; uri?: string; extensions?: Record<string, unknown> }[];
   bufferViews?: {
     buffer: number;
     byteOffset?: number;
@@ -250,6 +275,9 @@ function elementBytes(accessor: GltfAccessor): number | null {
  */
 type Role = 'attribute' | 'index' | 'other';
 
+/** How a stream of vertices or indices is read back, which the file declares. */
+export type EncodeMode = 'ATTRIBUTES' | 'TRIANGLES';
+
 export interface RewriteOptions {
   /** A smaller copy of one embedded image, or `null` to leave it as it is. */
   scaleImage(bytes: Buffer, mimeType: string): Buffer | null;
@@ -257,10 +285,22 @@ export interface RewriteOptions {
    * Whether a normal may be stored in a byte rather than a float.
    *
    * The author's answer, carried down from the sidecar, because this one is
-   * lossy: a byte describes a direction to about half a degree, which is
-   * invisible on a scanned surface and can band on a large smooth one.
+   * lossy: a byte describes a direction to under four tenths of a degree,
+   * which is invisible on a scanned surface and can band on a large smooth one.
    */
   quantizeNormals: boolean;
+  /**
+   * Compresses one stream of geometry, or `null` to store it as it is.
+   *
+   * Injected the same way the image scaler is, and for the same reason: the
+   * encoder is a dependency with a WASM module inside it, and the container
+   * work is worth testing without one. `count` elements of `size` bytes go in;
+   * whatever comes back is what the file will carry, and the decoder named in
+   * `EXT_meshopt_compression` is what turns it back. Byte for byte, except
+   * under `TRIANGLES`, where a triangle may come back started at a different
+   * corner — the same triangle, wound the same way.
+   */
+  encodeGeometry: ((source: Buffer, count: number, size: number, mode: EncodeMode) => Buffer) | null;
 }
 
 /**
@@ -468,12 +508,22 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     }
   }
 
-  if (scaled.size === 0 && narrowed.size === 0 && quantized.size === 0) return null;
-
   const repacked = new Set<number>();
   for (const at of [...narrowed, ...quantized]) {
     const view = accessors[at]?.bufferView;
     if (view !== undefined) repacked.add(view);
+  }
+  // With an encoder, every view of accessors is laid out again even when none
+  // of its own bytes changed. Compression needs each view to be one stream of
+  // one width, and that is exactly what laying it out again produces — so the
+  // texture coordinates, which nothing in this file rewrites, still get their
+  // 14.98 MB taken down to 9.54.
+  if (options.encodeGeometry !== null) {
+    for (const index of byView.keys()) if (repackable(index)) repacked.add(index);
+  }
+
+  if (scaled.size === 0 && narrowed.size === 0 && quantized.size === 0 && repacked.size === 0) {
+    return null;
   }
 
   /** An accessor as it will be written, which is what decides how wide it is. */
@@ -533,6 +583,8 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     bytes: Buffer;
     byteStride?: number;
     accessors: { at: number; byteOffset: number }[];
+    /** How the encoder would read this piece, when it is one clean stream. */
+    stream?: { size: number; mode: EncodeMode };
   }
 
   /** What one repacked view becomes: one piece per role and element width. */
@@ -540,7 +592,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     const view = views[index] as NonNullable<GltfJson['bufferViews']>[number];
     const start = view.byteOffset ?? 0;
 
-    const groups = new Map<string, { byteStride?: number; members: number[] }>();
+    const groups = new Map<string, { role: Role; byteStride?: number; members: number[] }>();
     for (const at of [...(byView.get(index) ?? [])].sort((left, right) => {
       const gap = (accessors[left]?.byteOffset ?? 0) - (accessors[right]?.byteOffset ?? 0);
       return gap !== 0 ? gap : left - right;
@@ -559,25 +611,47 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
       if (found) found.members.push(at);
       // A stride has to be a multiple of four — WebGPU rejects anything else —
       // so three bytes of normal ride in four.
-      else groups.set(key, { byteStride: role === 'attribute' ? aligned(size) : undefined, members: [at] });
+      else {
+        groups.set(key, {
+          role,
+          byteStride: role === 'attribute' ? aligned(size) : undefined,
+          members: [at],
+        });
+      }
     }
 
-    return [...groups.values()].map(({ byteStride, members }) => {
+    return [...groups.values()].map(({ role, byteStride, members }) => {
       const parts: Buffer[] = [];
       const placedInside: { at: number; byteOffset: number }[] = [];
       let offset = 0;
+      let uniform = true;
       for (const at of members) {
-        const padding = aligned(offset) - offset;
+        const step = byteStride ?? (elementBytes(after(at)) as number);
+        // To the element and not to four, so a run of one width leaves no gap at
+        // all: a stream the encoder can take is one where `count * size` is the
+        // whole length, and a padding byte in the middle would end that. Where
+        // the width does change, the gap is what keeps the next accessor's
+        // offset a multiple of its own component size.
+        const padding = (step - (offset % step)) % step;
         if (padding > 0) {
           parts.push(Buffer.alloc(padding));
           offset += padding;
+          uniform = false;
         }
-        const bytes = contentsOfAccessor(at, start, byteStride ?? (elementBytes(after(at)) as number));
+        const bytes = contentsOfAccessor(at, start, step);
         placedInside.push({ at, byteOffset: offset });
         parts.push(bytes);
         offset += bytes.length;
+        if (step !== (byteStride ?? (elementBytes(after(members[0] as number)) as number))) uniform = false;
       }
-      return { origin: index, bytes: Buffer.concat(parts), byteStride, accessors: placedInside };
+      const size = byteStride ?? (elementBytes(after(members[0] as number)) as number);
+      return {
+        origin: index,
+        bytes: Buffer.concat(parts),
+        byteStride,
+        accessors: placedInside,
+        stream: uniform ? { size, mode: role === 'index' ? 'TRIANGLES' : 'ATTRIBUTES' } : undefined,
+      };
     });
   };
 
@@ -596,20 +670,59 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     });
   }
 
+  /**
+   * The compressed form of a piece, or `null` to store it as it stands.
+   *
+   * The refusals are the encoder's own contract, and each of them is a stream
+   * this would be describing wrongly rather than one it could not squeeze: a
+   * width that four does not divide, or that a byte lane cannot address; a
+   * triangle list whose count is not a multiple of three, which is a line or a
+   * point list wearing the wrong name; and a piece with a gap in it, where
+   * `count * size` is no longer the whole length.
+   *
+   * And an encoding that came out no smaller than what it encodes is dropped:
+   * a view is never made bigger by being compressed.
+   */
+  const compressedOf = (piece: Piece): Buffer | null => {
+    const encode = options.encodeGeometry;
+    if (encode === null || piece.stream === undefined) return null;
+
+    const { size, mode } = piece.stream;
+    if (piece.bytes.length === 0 || piece.bytes.length % size !== 0) return null;
+    const count = piece.bytes.length / size;
+
+    if (mode === 'TRIANGLES') {
+      if ((size !== 2 && size !== 4) || count % 3 !== 0) return null;
+    } else if (size % 4 !== 0 || size > MAX_ATTRIBUTE_STRIDE) return null;
+
+    const encoded = encode(piece.bytes, count, size, mode);
+    return encoded.length < piece.bytes.length ? encoded : null;
+  };
+
   const placed = [...accessors];
   const rebuilt: NonNullable<GltfJson['bufferViews']> = [];
   const parts: Buffer[] = [];
   const claimed = new Set<number>();
   let offset = 0;
   let appended = views.length;
+  // A compressed view's bytes are not where the view says they are. The view
+  // describes what comes *out* of the decoder, in a second buffer that holds
+  // nothing — the fallback the extension defines for exactly this — while the
+  // extension names the compressed bytes back in the blob. Two address spaces,
+  // counted side by side.
+  let fallback = 0;
+  let compressed = 0;
 
   for (const piece of pieces) {
+    const encoded = compressedOf(piece);
+    const stored = encoded ?? piece.bytes;
+
     const padding = aligned(offset) - offset;
     if (padding > 0) {
       parts.push(Buffer.alloc(padding));
       offset += padding;
     }
-    parts.push(piece.bytes);
+    parts.push(stored);
 
     // The first piece keeps the view's own index; the rest go on the end.
     let index: number;
@@ -622,12 +735,34 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     const { byteStride: _replaced, ...rest } = views[piece.origin] as NonNullable<
       GltfJson['bufferViews']
     >[number];
-    rebuilt[index] = {
+    const base = {
       ...rest,
       ...(piece.byteStride === undefined ? {} : { byteStride: piece.byteStride }),
-      byteOffset: offset,
       byteLength: piece.bytes.length,
     };
+
+    if (encoded === null) {
+      rebuilt[index] = { ...base, byteOffset: offset };
+    } else {
+      compressed++;
+      fallback = aligned(fallback);
+      rebuilt[index] = {
+        ...base,
+        buffer: FALLBACK_BUFFER,
+        byteOffset: fallback,
+        extensions: {
+          [MESHOPT]: {
+            buffer: 0,
+            byteOffset: offset,
+            byteLength: encoded.length,
+            count: piece.bytes.length / (piece.stream as { size: number }).size,
+            byteStride: (piece.stream as { size: number }).size,
+            mode: (piece.stream as { mode: EncodeMode }).mode,
+          },
+        },
+      };
+      fallback += piece.bytes.length;
+    }
 
     for (const { at, byteOffset } of piece.accessors) {
       const recomputed = bounds.get(at);
@@ -640,12 +775,30 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
         ...(recomputed !== undefined && accessors[at]?.min !== undefined ? recomputed : {}),
       };
     }
-    offset += piece.bytes.length;
+    offset += stored.length;
   }
 
-  /** Declared once, whether or not the document already named it. */
-  const naming = (list: string[] | undefined): string[] =>
-    (list ?? []).includes(QUANTIZATION) ? (list as string[]) : [...(list ?? []), QUANTIZATION];
+  // Everything was laid out again and nothing came out smaller: the copy would
+  // be the source with different offsets in it, which is not worth a file.
+  if (scaled.size === 0 && narrowed.size === 0 && quantized.size === 0 && compressed === 0) {
+    return null;
+  }
+
+  /** Named once, whether or not the document already named it. */
+  const naming = (list: string[] | undefined, ...names: string[]): string[] => {
+    const out = [...(list ?? [])];
+    for (const name of names) if (!out.includes(name)) out.push(name);
+    return out;
+  };
+
+  // `extensionsRequired` and not only `extensionsUsed`, for both of them: a
+  // reader that does not know these cannot make sense of a byte where it
+  // expects a float, or of a view whose bytes are not where it says. The spec
+  // says so in as many words, and three throws rather than guessing.
+  const needed = [
+    ...(quantized.size === 0 ? [] : [QUANTIZATION]),
+    ...(compressed === 0 ? [] : [MESHOPT]),
+  ];
 
   return {
     json: {
@@ -653,17 +806,19 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
       // Only when the document had one: the spec has no empty arrays, and
       // adding a field a file did not carry is a change nobody asked for.
       ...(json.accessors === undefined ? {} : { accessors: placed }),
-      ...(quantized.size === 0
+      ...(needed.length === 0
         ? {}
         : {
-            // `extensionsRequired` and not only `extensionsUsed`: a reader that
-            // does not know the extension cannot make sense of a byte where it
-            // expects a float, and the spec says so in as many words.
-            extensionsUsed: naming(json.extensionsUsed),
-            extensionsRequired: naming(json.extensionsRequired),
+            extensionsUsed: naming(json.extensionsUsed, ...needed),
+            extensionsRequired: naming(json.extensionsRequired, ...needed),
           }),
       bufferViews: rebuilt,
-      buffers: [{ ...(json.buffers?.[0] ?? { byteLength: 0 }), byteLength: offset }],
+      buffers: [
+        { ...(json.buffers?.[0] ?? { byteLength: 0 }), byteLength: offset },
+        ...(compressed === 0
+          ? []
+          : [{ byteLength: fallback, extensions: { [MESHOPT]: { fallback: true } } }]),
+      ],
     },
     bin: Buffer.concat(parts),
   };
