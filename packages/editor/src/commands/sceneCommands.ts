@@ -21,6 +21,7 @@ import {
 import type { Matrix4 } from 'three/webgpu';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
+import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { notify } from '../state/toastStore';
@@ -279,9 +280,26 @@ export function transformSelection(
   const targets = selection.transformable();
   if (targets.length === 0) return;
 
-  const scene = useDocumentStore.getState().scene;
-  // Computed against the document as it stands *before* the mutation: reading it
-  // inside the recipe would compound each target's own move into the next one's.
+  /*
+   * The **expanded** scene, not the document, and the difference is the whole of
+   * a prefab's contents.
+   *
+   * `transformable()` keeps what a prefab produced, on purpose — writing an
+   * override is exactly what an instance is for, which is why `translate` is not
+   * in `PRODUCED_DENIES`. But the document has never heard of those ids, and
+   * `worldMatrix` answers the identity for an id it cannot find. `delta ×
+   * identity` is the delta, so what went into the override was the raw gesture
+   * dressed as a local transform: the child did not move *by* the drag, it
+   * jumped *to* it, on the first frame of the first one.
+   *
+   * The expansion is free here. It is memoised on the scene and the prefab
+   * table, and this reads it before the mutation — so it hands back the object
+   * the viewport already built for this frame.
+   *
+   * Read before the mutation whichever scene it is: reading it inside the recipe
+   * would compound each target's own move into the next one's.
+   */
+  const scene = expandedScene().scene;
   const poses = new Map(targets.map((id) => [id, localTransformAfterDelta(scene, id, delta)]));
 
   mutate(
