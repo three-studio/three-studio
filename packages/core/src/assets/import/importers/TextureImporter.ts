@@ -1,6 +1,6 @@
 import type { AssetKind, TextureEncoding, TextureSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 /** Formats whose extension already says they store light rather than pixels. */
 const HDR_EXTENSIONS = new Set(['hdr', 'exr']);
@@ -33,10 +33,14 @@ export class TextureImporter extends AssetImporter<TextureSettings> {
       encoding,
       generateMipmaps: true,
       anisotropy: 1,
+      // 2048 is Unity's default for the same setting, and the same trade: a
+      // wall or a floor at arm's length wants more, and everything else does
+      // not notice.
+      maxSize: 2048,
     };
   }
 
-  override fields(settings: TextureSettings): readonly ImportField[] {
+  override fields(settings: TextureSettings): readonly FieldRow[] {
     return [
       field.group('Texture', [
         field.enum('colorSpace', 'Colour space', [
@@ -49,6 +53,7 @@ export class TextureImporter extends AssetImporter<TextureSettings> {
           { value: 'mirror', label: 'Mirror' },
         ]),
         field.toggle('flipY', 'Flip Y'),
+        field.number('maxSize', 'Max size', { min: 64, max: 16384, step: 64 }),
         field.toggle('generateMipmaps', 'Generate mipmaps'),
         // Pointless without mipmaps — it is a choice about how they are
         // sampled — so the row goes away rather than sitting there inert.

@@ -1,23 +1,20 @@
 import { useMemo, useState } from 'react';
-import { commandById, type CommandId } from '../commands/registry';
 import {
-  deleteCurrentScene,
-  duplicateCurrentScene,
-  newScene,
-  openScene,
-  openSceneInNewWindow,
-  renameCurrentSceneWithPrompt,
-  saveSceneAs,
-  sceneList,
-} from '../commands/sceneFiles';
-import { isMac, modKey, shiftKey } from '../platform';
+  commandById,
+  contextForScene,
+  type CommandId,
+  type EditorContext,
+} from '../commands/registry';
+import { sceneList } from '../commands/sceneFiles';
+import { isMac, modKey } from '../platform';
 import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
-import { MenuTrigger, type MenuEntry } from '../ui/Menu';
+import { MenuTrigger, type MenuEntry, type MenuItem } from '../ui/Menu';
 import { buildAddMenu } from './addMenu';
+import { shortcutHint } from './shortcutBindings';
 import { PackageDialog } from './PackageDialog';
 import { openPanelIds, togglePanel } from './dockApi';
 import { ProjectSettingsDialog } from './ProjectSettingsDialog';
@@ -70,40 +67,44 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
    * would re-render the bar once per frame of a gizmo drag, which phase 7
    * removed.
    */
-  const entryFor = (id: CommandId, shortcut?: string): MenuEntry => {
+  const entryFor = (id: CommandId, target?: EditorContext): MenuItem => {
     const command = commandById(id);
-    const ctx = { selection: current };
+    const ctx = target ?? { selection: current };
     return {
-      label: command?.label(ctx) ?? id,
-      shortcut,
-      disabled: !command?.can(ctx),
-      onSelect: () => command?.run(ctx),
+      label: command.label(ctx),
+      // The table's, not typed in here. `${modKey}Z` used to be written once in
+      // this file and once in the hierarchy, beside a third spelling in
+      // `useShortcuts` that actually decided.
+      shortcut: shortcutHint(id),
+      disabled: !command.can(ctx),
+      onSelect: () => command.run(ctx),
     };
   };
 
-  // The scene list is read when the menu opens rather than subscribed to: it
-  // changes only through the entries below, and each of those either reloads
-  // the window or writes the project back through the store.
-  const project = useProjectStore((s) => s.project);
+  // Subscribed to the list rather than to the project: the two used to be one
+  // object, and the list is now replaced on its own whenever a scene appears or
+  // goes — including when another window is what made it happen.
+  const storeScenes = useProjectStore((s) => s.scenes);
   const sceneId = useProjectStore((s) => s.sceneId);
-  const scenes = useMemo(() => sceneList(), [project]);
+  const scenes = useMemo(() => sceneList(), [storeScenes]);
   const sceneMenu: readonly MenuEntry[] = [
+    // One gesture pointed at each scene in turn. The `shadowedBy` rule — two
+    // files claiming one id, where opening this one would open the other — is
+    // the command's now, and the submenu below reads the same one.
     ...scenes.map((scene) => ({
-      label: scene.name,
+      ...entryFor('openScene', contextForScene(scene.id)),
       checked: scene.id === sceneId,
-      onSelect: () => void openScene(scene.id),
     })),
     null,
-    { label: 'New Scene…', onSelect: () => void newScene() },
-    { label: 'Duplicate Scene…', onSelect: () => void duplicateCurrentScene() },
-    { label: 'Rename Scene…', onSelect: () => void renameCurrentSceneWithPrompt() },
-    {
-      label: 'Delete Scene',
-      // The registry refuses it anyway; saying so before the click is kinder
-      // than an error toast after it.
-      disabled: scenes.length <= 1,
-      onSelect: () => void deleteCurrentScene(),
-    },
+    // Four entries that used to write their own guards here, or none at all:
+    // Duplicate and Rename had no `disabled` while both gestures open with
+    // `if (sceneId === null) return`, and Delete carried the last-scene rule in
+    // the menu rather than in the gesture. Each one is now the command's own
+    // label and the command's own verdict.
+    entryFor('newScene'),
+    entryFor('duplicateScene'),
+    entryFor('renameScene'),
+    entryFor('deleteScene'),
     // Every window holds one scene, so a second scene means a second window.
     // Left out entirely with one scene rather than shown disabled: a disabled
     // row that opens an empty submenu on hover is worse than no row.
@@ -112,12 +113,14 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
           null,
           {
             label: 'Open in New Window',
+            // Filtered on the command rather than on a `.filter` writing the
+            // same two conditions in its own words — which is where they were,
+            // beside a `disabled` that said only half of them.
             submenu: scenes
-              .filter((scene) => scene.id !== sceneId)
-              .map((scene) => ({
-                label: scene.name,
-                onSelect: () => void openSceneInNewWindow(scene.id),
-              })),
+              .filter((scene) =>
+                commandById('openSceneInNewWindow').can(contextForScene(scene.id)),
+              )
+              .map((scene) => entryFor('openSceneInNewWindow', contextForScene(scene.id))),
           },
         ] satisfies readonly MenuEntry[])
       : []),
@@ -146,29 +149,28 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
         onSelect: () => window.close(),
       },
       null,
-      {
-        label: 'New Scene…',
-        onSelect: () => void newScene(),
-      },
+      entryFor('newScene'),
       null,
-      entryFor('save', `${modKey}S`),
+      entryFor('save'),
       // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
       // both, and this project has no Save All to be confused with yet.
-      { label: 'Save Scene As…', onSelect: () => void saveSceneAs() },
+      entryFor('saveSceneAs'),
       null,
       { label: 'Package…', onSelect: () => setPackageOpen(true) },
     ],
     Edit: [
       // Every entry below is the command's own label, its own verdict and its
       // own body. Greying an entry and refusing a key are the same line now.
-      entryFor('undo', `${modKey}Z`),
-      entryFor('redo', `${modKey}${shiftKey}Z`),
+      entryFor('openCommandPalette'),
       null,
-      entryFor('duplicate', `${modKey}D`),
-      entryFor('delete', isMac ? '⌫' : 'Del'),
+      entryFor('undo'),
+      entryFor('redo'),
+      null,
+      entryFor('duplicate'),
+      entryFor('delete'),
       // Group had no menu entry at all: it existed as Cmd+G and nowhere a user
       // could discover it.
-      entryFor('group', `${modKey}G`),
+      entryFor('group'),
       null,
       // Under Edit, where both Unity and Unreal put it.
       { label: 'Project Settings…', onSelect: () => setSettingsOpen(true) },

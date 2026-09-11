@@ -5,11 +5,19 @@
  * registers nothing — the type then goes missing with no error at all. This file
  * is the single place that has to be complete, and `registry.test.ts` counts what
  * arrives against `COMPONENT_TYPES`.
+ *
+ * **That check starts from the list and looks for the code.** The throw below and
+ * that test both do, and neither can see the other direction: a folder on disk
+ * that nobody listed registers nothing, throws nothing, and fails nothing — the
+ * type simply does not exist, and the author who wrote nine files finds out by
+ * noticing their component is missing from a menu. `test/componentRegistration.test.ts`
+ * starts from the folders instead, and is the only thing that catches it.
  */
 import { COMPONENT_TYPES } from '../scene/components';
-import { createCollider } from '../scene/defaults';
-import type { ComponentDoc, ComponentOfType, ComponentType, MeshComponent } from '../scene/schema';
-import { componentDefinition } from './registry';
+import { createColliderFor } from './collider/defaults';
+import type { EntityTemplate } from '../scene/entity';
+import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/schema';
+import { componentDefinition, componentIsPlaceable } from './registry';
 
 import './mesh';
 import './model';
@@ -23,6 +31,7 @@ import './script';
 import './prefabInstance';
 import './playerController';
 import './water';
+import './particleEmitter';
 
 /*
  * Checked here, once, rather than trusted.
@@ -41,10 +50,29 @@ if (unregistered.length > 0) {
   throw new Error(`Component types declared but never registered: ${unregistered.join(', ')}.`);
 }
 
+/**
+ * Whether a template's transform describes a place in the world.
+ *
+ * Here rather than in `scene/defaults.ts`, where it used to name `'light'` and
+ * carry that type's table of kinds: the answer is now the types' own, and this
+ * is the module that asks the registry a question on behalf of a whole thing.
+ *
+ * An empty carries no components and is still a place: it exists to hold
+ * whatever gets dragged under it, so it belongs where the author is looking.
+ * Beyond that one component that means to be somewhere is enough — a light on a
+ * lamp post is on the lamp post even if the lamp is ambient.
+ */
+export function isPlaceable(template: EntityTemplate): boolean {
+  if (template.components.length === 0) return true;
+  return template.components.some(componentIsPlaceable);
+}
+
 export {
+  addableTypes,
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  componentIsPlaceable,
   defineComponent,
   fillComponent,
   typesWithoutRuntime,
@@ -77,14 +105,12 @@ export function createComponent<T extends ComponentType>(type: T): ComponentOfTy
  * Like `createComponent`, but shapes the defaults from what the entity already
  * has — a collider added to a capsule mesh comes out as a matching capsule.
  *
- * A collider whose size has nothing to do with the object it belongs to is the
- * kind of thing an author only notices once the physics behaves oddly, so the
- * guess is worth making.
- *
  * Not a facet of the registry: it reads a *sibling* component, which is a fact
  * about the entity rather than about the type. Only `collider` has ever wanted
- * it, and a `createFor(entity)` on all eleven definitions would be ten copies of
- * `create()` to serve one.
+ * it, and a `createFor(entity)` on all twelve definitions would be eleven
+ * copies of `create()` to serve one. So one type asks for it and one type
+ * carries it: the guess itself lives in `collider/defaults.ts`, with the rest
+ * of what a collider knows about itself.
  *
  * Takes the siblings rather than the entity: an entity no longer holds them,
  * and handing over the document would put a scene-wide argument on a function
@@ -95,62 +121,5 @@ export function createComponentForEntity<T extends ComponentType>(
   siblings: readonly ComponentDoc[],
 ): ComponentOfType<T> {
   if (type !== 'collider') return createComponent(type);
-
-  const mesh = siblings.find((c): c is MeshComponent => c.type === 'mesh');
-  const collider = createCollider();
-
-  if (!mesh) {
-    // A model's real shape is only known once it has loaded, so fall back to
-    // the mesh it renders rather than an arbitrary box.
-    const hasModel = siblings.some((c) => c.type === 'model');
-    if (hasModel) collider.shape = 'trimesh';
-    return collider as ComponentOfType<T>;
-  }
-
-  const geometry = mesh.geometry;
-  switch (geometry.kind) {
-    case 'box':
-      collider.shape = 'box';
-      collider.size = [geometry.width / 2, geometry.height / 2, geometry.depth / 2];
-      break;
-    case 'sphere':
-      collider.shape = 'sphere';
-      collider.radius = geometry.radius;
-      break;
-    case 'capsule':
-      collider.shape = 'capsule';
-      collider.radius = geometry.radius;
-      collider.halfHeight = geometry.height / 2;
-      break;
-    case 'cylinder':
-      collider.shape = 'capsule';
-      collider.radius = Math.max(geometry.radiusTop, geometry.radiusBottom);
-      collider.halfHeight = geometry.height / 2;
-      break;
-    case 'plane':
-    case 'circle':
-    case 'ring':
-      // These have no volume. A thin box would be the obvious alternative, but
-      // a slab thinner than the character controller's snap-to-ground distance
-      // gets snapped straight through. The triangle mesh is the honest shape,
-      // and its one hazard — catching on the diagonal where the two coplanar
-      // triangles meet — is handled by Rapier's FIX_INTERNAL_EDGES.
-      collider.shape = 'trimesh';
-      break;
-    case 'torus':
-    case 'torusKnot':
-      // Concave: a convex hull would fill the hole, which is the whole point of
-      // the shape.
-      collider.shape = 'trimesh';
-      break;
-    case 'tetrahedron':
-    case 'octahedron':
-    case 'dodecahedron':
-    case 'icosahedron':
-      // Convex by construction, and a hull is far cheaper than a triangle mesh.
-      collider.shape = 'convexHull';
-      break;
-  }
-
-  return collider as ComponentOfType<T>;
+  return createColliderFor(siblings) as ComponentOfType<T>;
 }

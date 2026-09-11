@@ -21,6 +21,7 @@ import {
 import type { Matrix4 } from 'three/webgpu';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
+import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { notify } from '../state/toastStore';
@@ -40,12 +41,34 @@ import {
  * They all funnel through `documentStore.mutate`, which records immer patches
  * and their inverses — so undo/redo is automatic and no operation has to write
  * its own inverse.
+ *
+ * **Almost nothing here is a command, and the line is not where it looks.**
+ * `commands/registry.ts` holds what a person can ask for by name; this file
+ * holds what the editor does when they ask. The two are not the same set, and
+ * the test is not "does it take arguments" — `deleteAsset` takes a target and is
+ * a command. It is **what kind** of argument:
+ *
+ * - A **target** — which entity, which asset — is something the context can
+ *   carry, so a menu, a key or a palette can supply it. That is a command.
+ * - A **value** — the name that was typed, the point a drop landed on, the
+ *   component type picked from a menu, the parent and index a drag ended on — is
+ *   known only to the caller. Nothing but that caller could dispatch it, so a
+ *   registry entry would be a wrapper around one call site with no second
+ *   caller to unify.
+ *
+ * By that line: `addEntity`, `renameEntity`, `reparentSelection` and
+ * `addComponentWithDependencies` stay functions, as does everything the gizmo
+ * and the Tweakpane Inspector drive — `setTransform`, `transformSelection`,
+ * `setComponentNestedField`, `setEnvironmentField`, `setSkyField`,
+ * `setLinkedMaterialField`, several of them sixty times a second during a drag.
+ * `setEntityVisible` is the exception, because "hide it" needs a target and
+ * nothing else, and it is behind `toggleVisibility` in `editCommands.ts`.
  */
 
 /*
  * One door, carrying everything. It used to take a bare `coalesceKey` and drop
  * `external` on the floor — two ways in, one of which lost information, which is
- * the first of ADR-4's nine invariants.
+ * the first thing the undo invariants forbid.
  */
 const mutate = (
   label: string,
@@ -64,7 +87,7 @@ export function addEntity(template: EntityTemplate, parentId: string | null = nu
     },
     // Inside the transaction, so undo takes it back with the entity. Set after
     // `mutate`, it was in no entry at all, and undo left the gizmo pointing at
-    // something deleted — B2.
+    // something deleted.
     { select: [entity.id] },
   );
   return entity.id;
@@ -164,7 +187,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
   mutate('Reparent entity', (draft) => {
     // Every guard lives in `reparentInScene`, and the move is atomic: a parent
     // the document does not hold — a hierarchy row a prefab produced, which is
-    // B1 — leaves the entity exactly where it was rather than in no list at all.
+    // the defect — leaves the entity exactly where it was rather than in no list at all.
     if (!reparentInScene(draft, id, parentId, index)) return;
     const entity = draft.entities[id];
     if (entity) entity.transform = transform;
@@ -257,9 +280,26 @@ export function transformSelection(
   const targets = selection.transformable();
   if (targets.length === 0) return;
 
-  const scene = useDocumentStore.getState().scene;
-  // Computed against the document as it stands *before* the mutation: reading it
-  // inside the recipe would compound each target's own move into the next one's.
+  /*
+   * The **expanded** scene, not the document, and the difference is the whole of
+   * a prefab's contents.
+   *
+   * `transformable()` keeps what a prefab produced, on purpose — writing an
+   * override is exactly what an instance is for, which is why `translate` is not
+   * in `PRODUCED_DENIES`. But the document has never heard of those ids, and
+   * `worldMatrix` answers the identity for an id it cannot find. `delta ×
+   * identity` is the delta, so what went into the override was the raw gesture
+   * dressed as a local transform: the child did not move *by* the drag, it
+   * jumped *to* it, on the first frame of the first one.
+   *
+   * The expansion is free here. It is memoised on the scene and the prefab
+   * table, and this reads it before the mutation — so it hands back the object
+   * the viewport already built for this frame.
+   *
+   * Read before the mutation whichever scene it is: reading it inside the recipe
+   * would compound each target's own move into the next one's.
+   */
+  const scene = expandedScene().scene;
   const poses = new Map(targets.map((id) => [id, localTransformAfterDelta(scene, id, delta)]));
 
   mutate(
@@ -519,27 +559,23 @@ export function setComponentNestedField(
   );
 }
 
-/**
- * Whether a control handed back something of the shape the document holds.
+/*
+ * The two setters below take `unknown` and write it, and the cast each of them
+ * needs is the whole of what used to be `sameShape` — a per-keystroke
+ * `typeof` comparison against the value already in the document.
  *
- * Tweakpane types every binding as `unknown`, and the Inspector schema pairing
- * a field with a control that fits it is a promise the compiler cannot check.
- * Checking it here can be, and this is the same defence the format migration
- * makes at the other boundary: a value of the wrong shape is refused rather
- * than written, where it would reach the binder as something three cannot use.
+ * It was there because "the Inspector schema pairing a field with a control
+ * that fits it is a promise the compiler cannot check". Most of that promise is
+ * checked now, once, in `inspectorSchema.test.ts`: every declared control is
+ * held against the value the document actually keeps at its path, and a
+ * dropdown's choices come from the union they show rather than from a literal
+ * beside it. What a guard on every drag was standing in for, a test states.
  *
- * A predicate rather than a cast, so refusing is the compiler's business too —
- * the assignment below does not typecheck without it.
+ * The entity panes never had the guard at all — `setComponentNestedField`
+ * writes through `Record<string, unknown>` and needs no cast — so this was one
+ * pane's belt, not a boundary. The boundary that does matter, a file written by
+ * an older version, is the format migration's, and that has not moved.
  */
-function sameShape<T>(current: T, value: unknown): value is T {
-  // The nullable fields are the asset slots, whose control round-trips the
-  // empty choice through `''` and back to `null`. So either side being null
-  // means the pair is a slot, and the other side must be a slot's two values.
-  if (current === null || value === null) {
-    return value === null || typeof value === 'string';
-  }
-  return typeof value === typeof current;
-}
 
 export function setEnvironmentField<K extends keyof SceneDoc['environment']>(
   field: K,
@@ -549,7 +585,7 @@ export function setEnvironmentField<K extends keyof SceneDoc['environment']>(
   mutate(
     'Edit environment',
     (scene) => {
-      if (sameShape(scene.environment[field], value)) scene.environment[field] = value;
+      scene.environment[field] = value as SceneDoc['environment'][K];
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
@@ -570,17 +606,19 @@ export function setSkyField<K extends keyof SceneDoc['environment']['sky']>(
   mutate(
     'Edit sky',
     (scene) => {
-      if (sameShape(scene.environment.sky[field], value)) scene.environment.sky[field] = value;
+      scene.environment.sky[field] = value as SceneDoc['environment']['sky'][K];
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
 }
 
 /**
- * The name inside the document, which is not the file it is saved as.
+ * The name inside the document, which is a copy of the file's.
  *
- * The title bar reads the path today, so this only shows up in the Inspector
- * until the scene registry lands and the two are reconciled.
+ * `renameCurrentScene` moves the file and then calls this, so the two agree.
+ * The document keeps its own copy because a build falls back to it for the
+ * window title, and because a scene should say what it is called when it is
+ * read on its own — this is the only writer that is not a file operation.
  */
 export function setSceneName(name: string): void {
   mutate('Rename scene', (scene) => {

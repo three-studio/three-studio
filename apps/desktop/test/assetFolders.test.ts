@@ -8,8 +8,8 @@ import {
   removeAsset,
   removeAssetFolder,
   renameAssetFolder,
-  scanAssets,
-} from '../src/main/assets';
+} from '../src/main/assetMutations';
+import { scanAssets } from '../src/main/assetScan';
 
 /*
  * Folders are the one part of `assets/` the author edits directly, and the two
@@ -42,9 +42,11 @@ async function exists(path: string): Promise<boolean> {
 describe('createAssetFolder', () => {
   it('creates nested folders in one call', async () => {
     const root = await project();
-    const created = await createAssetFolder(root, 'models/props/crates');
+    const change = await createAssetFolder(root, 'models/props/crates');
 
-    expect(created).toBe('models/props/crates');
+    // The deepest is the one that was asked for; the shallower ones are the
+    // parents `mkdir -p` made on the way, and the manifest needs all three.
+    expect(change.addedFolders).toEqual(['models', 'models/props', 'models/props/crates']);
     expect(await exists(join(root, ASSETS_DIR, 'models/props/crates'))).toBe(true);
   });
 
@@ -52,7 +54,7 @@ describe('createAssetFolder', () => {
     const root = await project();
     await createAssetFolder(root, 'New Folder');
 
-    expect(await createAssetFolder(root, 'New Folder')).toBe('New Folder-1');
+    expect((await createAssetFolder(root, 'New Folder')).addedFolders).toEqual(['New Folder-1']);
   });
 
   it('refuses a name that is only whitespace', async () => {
@@ -73,7 +75,21 @@ describe('renameAssetFolder', () => {
     await writeAsset(root, 'models/props', 'crate.glb');
     const before = await scanAssets(root);
 
-    expect(await renameAssetFolder(root, 'models', 'meshes')).toBe('meshes');
+    const change = await renameAssetFolder(root, 'models', 'meshes');
+    expect(change.addedFolders[0]).toBe('meshes');
+
+    // What the renderer applies instead of rescanning: every asset under the
+    // folder, listed before the rename while the paths were still the ones the
+    // manifest holds.
+    expect(change.moved.map((move) => move.from).sort()).toEqual([
+      'assets/models/props/crate.glb',
+      'assets/models/tree.glb',
+    ]);
+    expect(change.moved.map((move) => move.to).sort()).toEqual([
+      'assets/meshes/props/crate.glb',
+      'assets/meshes/tree.glb',
+    ]);
+    expect([...change.removedFolders].sort()).toEqual(['models', 'models/props']);
 
     const after = await scanAssets(root);
     // The whole point: an id lives in the sidecar beside its file, so moving
@@ -89,7 +105,8 @@ describe('renameAssetFolder', () => {
     const root = await project();
     await createAssetFolder(root, 'models/props');
 
-    expect(await renameAssetFolder(root, 'models/props', 'furniture')).toBe('models/furniture');
+    const change = await renameAssetFolder(root, 'models/props', 'furniture');
+    expect(change.addedFolders[0]).toBe('models/furniture');
   });
 
   it('refuses to rename the assets folder itself', async () => {
@@ -111,7 +128,7 @@ describe('renameAssetFolder', () => {
 
     // On a case-insensitive volume the destination "already exists" — it is the
     // source. Refusing here would make `props` -> `Props` impossible on macOS.
-    expect(await renameAssetFolder(root, 'props', 'Props')).toBe('Props');
+    expect((await renameAssetFolder(root, 'props', 'Props')).addedFolders[0]).toBe('Props');
     expect(await readdir(join(root, ASSETS_DIR))).toEqual(['Props']);
   });
 
@@ -119,14 +136,18 @@ describe('renameAssetFolder', () => {
     const root = await project();
     await createAssetFolder(root, 'models');
 
-    expect(await renameAssetFolder(root, 'models', 'a/b')).toBe('a-b');
+    expect((await renameAssetFolder(root, 'models', 'a/b')).addedFolders[0]).toBe('a-b');
   });
 
   it('is a no-op when the name does not change', async () => {
     const root = await project();
     await createAssetFolder(root, 'models');
 
-    expect(await renameAssetFolder(root, 'models', 'models')).toBe('models');
+    // An empty change, not a change that renames a folder onto itself: nothing
+    // moved, so the manifest has nothing to follow.
+    const change = await renameAssetFolder(root, 'models', 'models');
+    expect(change.addedFolders).toEqual([]);
+    expect(change.removedFolders).toEqual([]);
     expect(await exists(join(root, ASSETS_DIR, 'models'))).toBe(true);
   });
 });
@@ -171,7 +192,7 @@ describe('deleting an asset', () => {
     await writeAsset(root, 'models/props', 'crate.glb');
     const [asset] = (await scanAssets(root)).assets;
 
-    await removeAsset(root, asset.path);
+    await removeAsset(root, asset!.path);
 
     // `pruneEmptyFolders` used to call `rm` without `recursive`, which throws
     // `EISDIR` on a directory — straight into its own catch, so it silently

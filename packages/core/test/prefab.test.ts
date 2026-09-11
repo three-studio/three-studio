@@ -115,7 +115,7 @@ describe('prefab expansion', () => {
 
     // By id, so this lands on the rigidbody however the prefab is reordered
     // later. Keyed by position, inserting anything before it moved the override
-    // onto the mesh — which is B10.
+    // onto the mesh.
     const parts = componentsOf(scene, built.id);
     expect(parts.find((c) => c.id === body!.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
     expect(parts.find((c) => c.id === mesh!.id)?.type).toBe('mesh');

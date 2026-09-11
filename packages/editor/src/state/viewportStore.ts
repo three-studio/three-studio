@@ -17,6 +17,17 @@ interface ViewportState extends ViewportStats {
   playWarnings: readonly string[];
   setPlayWarnings: (warnings: readonly string[]) => void;
   /**
+   * Whether the Scene view is lighting the scene itself, because the document
+   * names no light of its own.
+   *
+   * Said out loud rather than left to be found out. The pair `EditorViewport`
+   * adds is editor-only, so the scene that looks lit here is black in Play and
+   * in a build — a difference that is stated is not a divergence, and the same
+   * difference discovered is what the complaint was about.
+   */
+  fallbackLighting: boolean;
+  setFallbackLighting: (on: boolean) => void;
+  /**
    * Whether time runs in the viewport while nothing is playing.
    *
    * Unreal's **Realtime**, Unity's **Effects ▸ Always Refresh**. Off by default,
@@ -45,9 +56,11 @@ export const useViewportStore = create<ViewportState>()((set) => ({
   triangles: 0,
   flySpeed: 10,
   playWarnings: [],
+  fallbackLighting: false,
   animated: false,
 
   setPlayWarnings: (playWarnings) => set({ playWarnings }),
+  setFallbackLighting: (fallbackLighting) => set({ fallbackLighting }),
   setBackend: (backend) => set({ backend }),
   setError: (error) => set({ error }),
   setStats: (stats) => set(stats),

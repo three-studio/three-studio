@@ -27,7 +27,8 @@
     "@three-studio/core": "*",
     "@three-studio/editor": "*",
     "@three-studio/runtime": "*",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "meshoptimizer": "1.1.1"
   },
   "//dependencies": "esbuild is a runtime dependency, not a build tool here: the app compiles user scripts while it runs. Being a dependency keeps electron-vite from bundling it, which matters because its JS API locates a native binary by a path relative to its own package.",
   "devDependencies": {

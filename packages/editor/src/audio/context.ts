@@ -1,7 +1,7 @@
 /**
  * The one audio context the editor owns.
  *
- * One, and not one per thing that wants to make a sound (ADR-4). A browser caps
+ * One, and not one per thing that wants to make a sound. A browser caps
  * how many contexts a page may have — Chrome around six — and, far worse, each
  * one has to be started by its own user gesture. Two contexts means two chances
  * to be silent for a reason nothing reports.

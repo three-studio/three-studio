@@ -89,7 +89,7 @@ export class SharedMaterial implements Disposable {
  * so "who frees this, and when" had to be reassembled from four places every
  * time it mattered — and it mattered for two of the twelve bugs.
  *
- * **The queue is paced on the frame, never on the sync.** That is B6, and the
+ * **The queue is paced on the frame, never on the sync.** That is the cadence, and the
  * comment it replaced claimed the queue was "a frame old now" — true only if
  * syncs come one per frame, which two paths break in opposite directions.
  * `assetStore.refresh()` fires `onMaterialsChanged` then `onPrefabsChanged` back
@@ -125,7 +125,7 @@ export class ResourceArena {
    * Swaps the material an asset id resolves to.
    *
    * Called from exactly one place — the pass that reconciles the material
-   * library — and that is the whole of B5. Each mesh used to decide this for
+   * library — and that is the whole of it. Each mesh used to decide this for
    * itself against its own stale `previous`: for N meshes on one asset, N of
    * them took the "the definition changed" branch, and each `replace` frees
    * whatever the key currently holds. Mesh 1 built M2 and retired M1, mesh 2

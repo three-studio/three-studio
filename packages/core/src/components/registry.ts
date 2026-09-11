@@ -32,6 +32,7 @@ export type ComponentIcon =
   | 'lightbulb'
   | 'move'
   | 'shapes'
+  | 'sparkles'
   | 'volume'
   | 'waves'
   | 'weight';
@@ -41,14 +42,25 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   /** A blank one, for "Add Component" and for filling a stored one's gaps. */
   create: () => ComponentOfType<T>;
   /**
-   * A stored component with everything it lacks filled in.
+   * A stored component with everything it lacks filled in — declared **only by
+   * the types the default is wrong for**.
    *
-   * Per type rather than one general rule, because the general rule only works
-   * for the flat ones: `mesh` owns a material and a geometry that have to be
-   * merged a level deeper, and a shallow spread would leave a scene written
-   * before texture slots existed with `undefined` where three expects a value.
+   * The default is `{ ...create(), ...stored }`, and it was written out nine
+   * times identically before it was written once. Leaving it out is not a hole
+   * in the definition: the default asks for nothing this table does not
+   * already hold, since it fills from the type's own `create()`. That is also
+   * what keeps it inside the persisted-format rule — a missing field is filled
+   * from the factory for its type, never from a second list.
+   *
+   * What the default cannot do is reach a level deeper, and a **nested object**
+   * is exactly what the three overrides have: `mesh` (its material and its
+   * geometry), `water` (its geometry), `light` (its shadow settings, and a
+   * `kind` that decides which defaults to merge against at all). A scene
+   * written before a sub-object gained a field comes back with `undefined`
+   * inside it otherwise — the bug that shipped twice on this project. Each of
+   * the three says so in its own module.
    */
-  fill: (stored: ComponentOfType<T>) => ComponentOfType<T>;
+  fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
   /** Asset ids this component points at. Empty for most types. */
   assets: (component: ComponentOfType<T>) => readonly (string | null)[];
   readonly icon: ComponentIcon;
@@ -63,6 +75,36 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * than a discovery.
    */
   readonly runtime: boolean;
+  /**
+   * Whether this component's position in the world means anything.
+   *
+   * A function of the component and not a flag on the type, because the one
+   * type that answers `no` answers it by its `kind`: three applies an ambient
+   * and a hemisphere light to the whole scene wherever the object stands.
+   * Placing one where the author is looking puts a number in the inspector
+   * that does nothing, which reads as a bug the first time somebody drags it
+   * and the scene does not change.
+   *
+   * Asked of every type rather than assumed, for the reason `runtime` and
+   * `addable` are asked: a new type answers in its own module, where the
+   * compiler insists, rather than in a table somewhere else that nothing
+   * checks. Eleven of the twelve answer `() => true`, the same way seven of
+   * them answer `assets: () => []`.
+   */
+  placeable: (component: ComponentOfType<T>) => boolean;
+  /**
+   * Whether a user can attach one by hand, from "Add Component".
+   *
+   * `false` is for the types that arrive with something else and would mean
+   * nothing alone: `model` comes from dropping a file, `prefabInstance` from
+   * placing a prefab, and neither is anything without the asset id the drop
+   * supplies. An empty one added from a menu would point at nothing.
+   *
+   * Here rather than in the editor because the menu was a hand-kept list of ten
+   * types, and a list is a thing to forget: a new type left out of it is simply
+   * unaddable, with no error anywhere and nothing on screen to say why.
+   */
+  readonly addable: boolean;
 }
 
 const definitions = new Map<ComponentType, ComponentDefinition>();
@@ -106,6 +148,19 @@ export function typesWithoutRuntime(): readonly ComponentType[] {
     .map((definition) => definition.type);
 }
 
+/**
+ * Types a user can attach by hand, in registration order.
+ *
+ * Derived for the same reason `typesWithoutRuntime` is: a new type answers the
+ * question in its own module, where the compiler insists on an answer, rather
+ * than in a list somewhere else that nothing checks.
+ */
+export function addableTypes(): readonly ComponentType[] {
+  return componentDefinitions()
+    .filter((definition) => definition.addable)
+    .map((definition) => definition.type);
+}
+
 /** Asset ids a component points at, whatever its type. */
 export function componentAssets(component: ComponentDoc): readonly (string | null)[] {
   const definition = componentDefinition(component.type);
@@ -115,13 +170,33 @@ export function componentAssets(component: ComponentDoc): readonly (string | nul
 }
 
 /**
+ * Whether a component's position in the world means anything.
+ *
+ * An unknown type — a plugin's, or a newer editor's — is placed. It is the
+ * answer eleven of the twelve types here give, and a position that turns out
+ * to mean nothing is cosmetic where dropping a new object at the world origin,
+ * out of sight of the author who just added it, is not.
+ */
+export function componentIsPlaceable(component: ComponentDoc): boolean {
+  const definition = componentDefinition(component.type);
+  return definition ? definition.placeable(component as never) : true;
+}
+
+/**
  * A stored component with everything added since it was written filled in.
  *
  * An unknown type comes back **exactly as found**. Filling it against a type we
  * do not have would invent a shape, and the next save would write that invention
  * over the author's data. A field is deprecated, never lost.
+ *
+ * A type that declared no `fill` gets the default: its own factory underneath
+ * what was stored, so nothing the author wrote is overwritten and nothing added
+ * since is left `undefined`. See `ComponentDefinition.fill` for the three that
+ * need more than that.
  */
 export function fillComponent(stored: ComponentDoc): ComponentDoc {
   const definition = componentDefinition(stored.type);
-  return definition ? definition.fill(stored as never) : stored;
+  if (!definition) return stored;
+  if (definition.fill) return definition.fill(stored as never);
+  return { ...definition.create(), ...stored };
 }

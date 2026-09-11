@@ -1,7 +1,7 @@
 import { isTslMaterial, type AssetKind, type MaterialSettings } from '../../schema';
 import type { PrefabSettings, ScriptSettings, ShaderSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 /**
  * The formats the editor writes itself, plus the two source kinds.
@@ -67,7 +67,7 @@ export class ShaderImporter extends AssetImporter<ShaderSettings> {
     return { kind: 'shader', stage: 'render' };
   }
 
-  override fields(): readonly ImportField[] {
+  override fields(): readonly FieldRow[] {
     return [
       field.group('Shader', [
         field.enum('stage', 'Stage', [

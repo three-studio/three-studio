@@ -13,6 +13,11 @@ apps/desktop/out/
 # Prebuilt web player. Produced by `npm run build:web`; the exporter copies it.
 apps/web-template/dist/
 
+# Working notes, plans and decision records. Local by design, never versioned:
+# a citation from the code to a document in here would resolve for nobody else,
+# so the reasoning goes in the comment beside the code instead.
+docs/
+
 # Local Claude Code settings (may contain machine paths).
 .claude/settings.local.json
 

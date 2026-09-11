@@ -12,14 +12,25 @@
  * and `isStopped` — and a star re-export would silently drop one side of each.
  */
 
-export const RUNTIME_VERSION = '0.2.0';
+import { ENGINE_VERSION } from '@three-studio/core';
+
+/**
+ * The same number as the editor's, because they ship together.
+ *
+ * It was a second copy of the string, which is a third if the `package.json`
+ * beside it counts — and a version that can disagree with itself answers no
+ * question anyone asks it. Nothing in this repository reads it; it is here for
+ * a consumer of the published package, which is why it is still exported.
+ */
+export const RUNTIME_VERSION = ENGINE_VERSION;
 
 /* The engine loop and the scene it drives. */
 export { Engine, isPerspective } from './Engine';
 export type { EngineOptions } from './Engine';
 export { SceneHost } from './SceneHost';
 export type { SceneHostOptions, SceneLoad, SceneSource } from './SceneHost';
-export { ENTITY_ID_KEY, SceneBinder, isVisibleInHierarchy } from './SceneBinder';
+export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';
+export type { SceneBinderOptions } from './SceneBinder';
 export { MeshBatcher } from './MeshBatcher';
 export { Reconciler } from './Reconciler';
 export type { EntityView } from './Reconciler';
@@ -72,7 +83,12 @@ export type { PhysicsBody } from './physics/PhysicsWorld';
 
 /* Scripting: the base class user scripts extend, and the registry the host compiles into. */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';
-export type { EntityHandle, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
+export type {
+  BehaviourMember,
+  EntityHandle,
+  ScriptProperties,
+  ScriptPropertyDef,
+} from './scripting/ScriptApi';
 export { clearScripts, registerScript, scriptClassFor } from './scripting/ScriptHost';
 export type { ScriptClass } from './scripting/ScriptHost';
 

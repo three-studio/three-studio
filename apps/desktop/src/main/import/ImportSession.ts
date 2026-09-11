@@ -10,7 +10,8 @@ import {
   type ImportSessionState,
   type StagedFile,
 } from '@three-studio/core';
-import { companionsOf, hashFile, scanAssets, settingsFor } from '../assets';
+import { AssetError, hashFile } from '../assetFiles';
+import { companionsOf, scanAssets, settingsFor } from '../assetScan';
 import { ImportPipeline } from './ImportPipeline';
 import { expandSources } from './sources';
 
@@ -199,6 +200,29 @@ class ImportSessionStore {
 
   get(sessionId: string): ImportSession | undefined {
     return this.open.get(sessionId);
+  }
+
+  /**
+   * Runs the import a session was staged for, and spends the session.
+   *
+   * Committed or thrown, the session is over: its sources were staged against
+   * a project state this very call has just changed, so a second commit would
+   * be deciding collisions against a manifest that is one import out of date.
+   * The `finally` is what makes that true of the failure path too — which is
+   * the path where a session left open is a set of file handles and a preview
+   * scheme still serving files the author walked away from.
+   *
+   * The refusal is the ordinary case of a dialog left open across a project
+   * close, not an exceptional one.
+   */
+  async commit(sessionId: string, plan: readonly ImportPlanItem[]): Promise<AssetImportResult> {
+    const session = this.open.get(sessionId);
+    if (session === undefined) throw new AssetError('That import is no longer open.');
+    try {
+      return await session.commit(plan);
+    } finally {
+      this.close(sessionId);
+    }
   }
 
   /** Ends the session whether it was committed or abandoned. */

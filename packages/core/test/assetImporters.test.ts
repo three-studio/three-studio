@@ -10,7 +10,7 @@ import {
   parseImportPreviewUrl,
 } from '../src/assets/import';
 import type { TextReader } from '../src/assets/import';
-import type { ImportGroup } from '../src/assets/import';
+import type { FieldGroup } from '../src/fields';
 import type { StagedFile } from '../src/assets/import';
 import type {
   FbxModelSettings,
@@ -24,7 +24,7 @@ const reading = (files: Record<string, string>): TextReader => {
 };
 
 const groupLabels = (fields: readonly { type: string }[]): string[] =>
-  fields.filter((f): f is ImportGroup => f.type === 'group').map((group) => group.label);
+  fields.filter((f): f is FieldGroup => f.type === 'group').map((group) => group.label);
 
 describe('the importer registry', () => {
   it('picks an importer per format, not per kind', () => {
@@ -139,7 +139,7 @@ describe('declared fields', () => {
     const texture = importerForFile('brick.png')!;
     const base = texture.defaultSettings('brick.png') as TextureSettings;
 
-    const withMipmaps = texture.fields(base) as readonly ImportGroup[];
+    const withMipmaps = texture.fields(base) as readonly FieldGroup[];
     expect(JSON.stringify(withMipmaps)).toContain('anisotropy');
 
     const without = texture.fields({ ...base, generateMipmaps: false });

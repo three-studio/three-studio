@@ -4,6 +4,7 @@ import {
   hasComponent,
   type MaterialDef,
   type PhysicsSettings,
+  type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
 import {
@@ -14,7 +15,7 @@ import {
   type Object3D,
   type Renderer,
 } from 'three/webgpu';
-import { SceneBinder } from './SceneBinder';
+import { SceneBinder, bindScene } from './SceneBinder';
 import type { AssetResolver } from './assets/AssetResolver';
 import { AudioEngine } from './audio/AudioEngine';
 import type { AudioClipCache } from './audio/AudioClipCache';
@@ -56,7 +57,7 @@ export interface EngineOptions {
    * The audio context this engine mixes into.
    *
    * Passed in rather than created, because it is shared: the editor's preview
-   * uses the same one through its own root (ADR-4), a browser caps how many a
+   * uses the same one through its own root, a browser caps how many a
    * page may have, and each one needs its own user gesture before it makes a
    * sound. Omitting it is a game with no audio, which is what a test wants and
    * what a browser without Web Audio gets.
@@ -80,8 +81,17 @@ export interface EngineOptions {
    */
   renderer?: Renderer | null;
   enablePhysics?: boolean;
-  /** Draws meshes that share a geometry and material in one call. On by default. */
-  batching?: boolean;
+  /**
+   * The project's rendering settings.
+   *
+   * Required, and that is the point of it: it used to be absent entirely, so an
+   * engine answered `shadowMapSize` with the binder's own 2048 whatever the
+   * project said, and answered `batching` with a default of its own that
+   * happened to match the editor's. Being required means the three modes — the
+   * Scene view, Play, and an exported build — cannot each quietly answer this
+   * for themselves; `npm run typecheck` names any that tries.
+   */
+  rendering: RenderingSettings;
   /**
    * Lets scripts move to another scene. Supplied by whatever is hosting this
    * engine; an engine built on its own does not have a next scene to go to.
@@ -97,6 +107,34 @@ export interface EngineOptions {
  * `engine.scene` through `engine.activeCamera`. That is what lets the editor
  * play a scene inside its own viewport while an exported build runs the exact
  * same code from a bare `requestAnimationFrame`.
+ *
+ * **Where post-processing would enter, and why nothing in here moves for it.**
+ * There is no composer anywhere in this runtime, and no seam waiting to receive
+ * one — the seam is the paragraph above. three's `RenderPipeline` is built out
+ * of `pass(scene, camera)`, which is exactly the pair this class already hands
+ * out, so a host trades its one `renderer.render(engine.scene,
+ * engine.activeCamera)` for `pipeline.render()` and the engine never learns
+ * that anything changed. There are two such lines in the whole product:
+ * `EditorViewport.draw` and the player's loop in `apps/web-template/src/main.ts`.
+ * Neither the renderer nor the frame was ever the engine's, so neither has to
+ * be taken back to compose one.
+ *
+ * That is checked rather than assumed. `LauncherScene` already runs a
+ * `RenderPipeline` — `pass()` plus `bloom()` — on a renderer straight out of
+ * `createRenderer`, so nothing that factory configures stands in the way, and
+ * the imports are ones this repo already bundles.
+ *
+ * The one thing to know before writing it: `RenderPipeline.render()` assigns
+ * `NoToneMapping` to the renderer before drawing its quad, which reads exactly
+ * like the project's tone mapping and exposure being dropped on the floor. They
+ * are not. `_update()` rebuilds the output node as `renderOutput(node,
+ * renderer.toneMapping, renderer.outputColorSpace)` whenever either moves, and
+ * the exposure inside it is a `rendererReference` — so ACES and
+ * `rendering.exposure` still arrive. What would drop them is composing with
+ * `outputColorTransform = false` and no `renderOutput()` of one's own, and it
+ * would drop them in an exported build while the Scene view carried on looking
+ * right: the same shape of divergence that `EngineOptions.rendering` was made
+ * required to end.
  */
 export class Engine {
   readonly scene = new Scene();
@@ -128,22 +166,19 @@ export class Engine {
   private listenerOwners = 0;
 
   private constructor(options: EngineOptions, physics: PhysicsWorld | null) {
-    this.binder = new SceneBinder(options.resolver);
+    // The renderer is handed over rather than owned: this engine still neither
+    // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
+    // the one thing the binder cannot do as a transform over data, and it needs
+    // the device the host already has. The order of the rest is `bindScene`'s,
+    // where it is written down.
+    this.binder = bindScene(this.scene, options.scene, {
+      resolver: options.resolver,
+      rendering: options.rendering,
+      materials: options.materials,
+      renderer: options.renderer,
+    });
     this.input = new Input(options.domElement);
     this.physics = physics;
-
-    // On for a running game, off in the editor: a batch is one object, so the
-    // gizmo and the outline would have nothing per entity to attach to.
-    this.binder.batching = options.batching ?? true;
-    if (options.materials) this.binder.setMaterialLibrary(options.materials);
-    this.scene.add(this.binder.root);
-    this.binder.sync(options.scene);
-    // Handed over rather than owned: this engine still neither draws nor holds
-    // a frame loop. Capturing an analytic sky into a cubemap is the one thing
-    // the binder cannot do as a transform over data, and it needs the device
-    // the host already has.
-    this.binder.renderer = options.renderer ?? null;
-    this.binder.syncEnvironment(this.scene, options.scene);
 
     this.audio =
       options.audioContext === undefined
@@ -237,6 +272,22 @@ export class Engine {
     }
   }
 
+  /**
+   * A scene with no light at all renders black, and nothing else says so.
+   *
+   * Silent at runtime like the rest of these, and worse than silent: the Scene
+   * view lights such a scene with a default pair of its own, so the author has
+   * already seen it lit. What is named here is therefore the difference, not
+   * the absence — the same condition that switches the editor's pair on, said
+   * from the side that does not have it. See `viewport/editorProjection`.
+   */
+  private checkLighting(scene: SceneDoc): void {
+    if (entitiesWith(scene, 'light').length > 0) return;
+    this.warnings.push(
+      'This scene has no lights, so it renders black. The Scene view shows a default light that a build will not have.',
+    );
+  }
+
   static async create(options: EngineOptions): Promise<Engine> {
     const physics =
       options.enablePhysics === false ? null : await PhysicsWorld.create(options.physicsSettings);
@@ -256,6 +307,7 @@ export class Engine {
     engine.pickCamera(options.scene);
     engine.checkPhysicsSetup(options.scene);
     engine.checkAudioSetup(options.scene);
+    engine.checkLighting(options.scene);
 
     return engine;
   }
@@ -324,7 +376,7 @@ export class Engine {
    * The count is also what decides the fallback: with no `audioListener`
    * anywhere the engine places the ear on whatever camera the game is rendered
    * through, which is right far more often than it is wrong and is very much
-   * better than a silent scene (ADR-9). With several, the first behaviour to
+   * better than a silent scene. With several, the first behaviour to
    * write each frame wins, and saying so is the whole value of the warning —
    * two ears is a bug that sounds like a mixing problem.
    */

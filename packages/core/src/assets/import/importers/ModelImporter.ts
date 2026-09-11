@@ -1,6 +1,6 @@
 import type { AssetKind, ModelSettings, ModelSettingsBase } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 /** The action key the dialog answers with the model's bounding box. */
 export const FIT_TO_METRE = 'fitToMetre';
@@ -25,10 +25,12 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
       generateColliders: false,
       importMaterials: true,
       importAnimations: true,
+      maxTextureSize: 2048,
+      compressGeometry: true,
     };
   }
 
-  override fields(settings: S): readonly ImportField[] {
+  override fields(settings: S): readonly FieldRow[] {
     return [
       field.group('Model', [
         field.number('scale', 'Scale', { min: 0.000001, step: 0.01 }),
@@ -42,13 +44,21 @@ export abstract class ModelImporter<S extends ModelSettings = ModelSettings> ext
         field.toggle('importMaterials', 'Import materials'),
         field.toggle('importAnimations', 'Import animations'),
         field.toggle('generateColliders', 'Generate colliders'),
+        // Applies to what the file carries inside itself. A model naming its
+        // textures as separate files has none, and each of those is a texture
+        // asset with a `maxSize` of its own.
+        field.number('maxTextureSize', 'Max texture size', { min: 64, max: 16384, step: 64 }),
+        // Beside the texture cap because it is the same kind of question — how
+        // much of this file is worth keeping — asked once by someone looking at
+        // it, with the answer visible in the viewport straight away.
+        field.toggle('compressGeometry', 'Compress geometry'),
       ]),
       ...this.formatFields(settings),
     ];
   }
 
   /** Rows below the trunk. Empty is a fair answer — most formats decide little. */
-  protected formatFields(_settings: S): readonly ImportField[] {
+  protected formatFields(_settings: S): readonly FieldRow[] {
     return [];
   }
 }

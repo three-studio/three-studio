@@ -1,13 +1,22 @@
-import { createEmptyScene, createEntity, createMeshEntity, createTransform } from '@three-studio/core';
+import {
+  createEmptyScene,
+  createEntity,
+  createMeshEntity,
+  createPrefabInstance,
+  createTransform,
+  instancedId,
+} from '@three-studio/core';
 import { Matrix4 } from 'three/webgpu';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { close } from '../../core/test/fixtures';
+import { close, prefabWith } from '../../core/test/fixtures';
 import {
   addEntity,
   reparentSelection,
   setTransform,
   transformSelection,
 } from '../src/commands/sceneCommands';
+import { worldPosition } from '../src/commands/transformSpace';
+import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { expandedScene } from '../src/state/expansion';
@@ -26,6 +35,9 @@ const at = (id: string) => doc().scene.entities[id]?.transform.position ?? [];
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
   useEditorStore.getState().clearSelection();
+  // The expansion is memoised on the prefab table as well as the scene, so a
+  // file that leaves one behind hands it to the next test.
+  useAssetStore.setState({ prefabs: {} });
 });
 
 function three() {
@@ -172,6 +184,68 @@ describe("a selection mixing the document and a prefab's contents", () => {
     reparentSelection(sel([`${host.entity.id}/inner`]), target.entity.id);
     // Nothing to do, and nothing thrown: the next expansion would undo it anyway.
     expect(doc().scene.entities[target.entity.id]?.children).toEqual([]);
+  });
+});
+
+describe("moving an entity a prefab produced", () => {
+  /*
+   * The gizmo may drive an id the document has never heard of — `transformable()`
+   * keeps what a prefab produced on purpose, because writing an override is
+   * exactly what an instance is for.
+   *
+   * What it cost when the pose was computed against the raw document:
+   * `worldMatrix` answers the identity for an id it cannot find, so `delta ×
+   * world` collapsed to the delta itself, and the delta went into the override
+   * as if it were a local transform. The child did not move by the gesture, it
+   * jumped to it — on the first frame of the first drag.
+   */
+  function tree() {
+    const branch = createMeshEntity('box');
+    branch.entity.name = 'Branch';
+    branch.entity.transform = { ...createTransform(), position: [0, 2, 0] };
+
+    const trunk = createMeshEntity('cylinder');
+    trunk.entity.name = 'Trunk';
+    trunk.entity.transform = { ...createTransform(), position: [0, 1, 0] };
+    trunk.entity.children = [branch.entity.id];
+    branch.entity.parent = trunk.entity.id;
+
+    return { branch, prefab: prefabWith('Tree', [trunk, branch], trunk.entity.id) };
+  }
+
+  it('moves it by the delta rather than to it', () => {
+    const { branch, prefab } = tree();
+    useAssetStore.setState({ prefabs: { tree: prefab } });
+
+    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    host.entity.transform = { ...createTransform(), position: [10, 0, 0] };
+    addEntity(host);
+
+    const produced = instancedId(host.entity.id, branch.entity.id);
+    // Where the branch stands before anything is dragged: the instance at x=10,
+    // the trunk a metre up, the branch two above that.
+    close(worldPosition(expandedScene().scene, produced), [10, 3, 0]);
+
+    transformSelection(sel([produced]), new Matrix4().makeTranslation(0, 0, 5));
+
+    close(worldPosition(expandedScene().scene, produced), [10, 3, 5]);
+  });
+
+  it('records the move as an override on the instance, not on the asset', () => {
+    const { branch, prefab } = tree();
+    useAssetStore.setState({ prefabs: { tree: prefab } });
+
+    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    addEntity(host);
+
+    transformSelection(
+      sel([instancedId(host.entity.id, branch.entity.id)]),
+      new Matrix4().makeTranslation(0, 0, 5),
+    );
+
+    // An override that reached back into the asset would move every other
+    // placement of the same prefab.
+    close(prefab.entities[branch.entity.id]!.transform.position, [0, 2, 0]);
   });
 });
 

@@ -4,531 +4,89 @@
  * round — which is what makes undo, save/load, play-mode snapshots and the web
  * export fall out for free.
  *
+ * What is declared here is the document: the union of every component type,
+ * the entity, the tables the two are stored in, and the environment around
+ * them. What a *particular* component is lives in `components/<type>/schema.ts`
+ * and arrives below — a slice cannot import this file, because this file
+ * imports every slice, so the shared vocabulary they are written in sits lower
+ * again, in `primitives.ts`, `geometry.ts` and `material.ts`.
+ *
+ * All of it is re-exported, so that everything which reads a scene goes on
+ * importing from one place and none of the twelve moves cost a single call
+ * site. This is the door; the files behind it are an arrangement, not an API.
+ *
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
-export type Vec2 = [number, number];
-export type Vec3 = [number, number, number];
-/** `#rrggbb`. */
-export type Hex = string;
+import type { AudioListenerComponent } from '../components/audioListener/schema';
+import type { AudioSourceComponent } from '../components/audioSource/schema';
+import type { CameraComponent } from '../components/camera/schema';
+import type { ColliderComponent } from '../components/collider/schema';
+import type { LightComponent } from '../components/light/schema';
+import type { MeshComponent } from '../components/mesh/schema';
+import type { ModelComponent } from '../components/model/schema';
+import type { ParticleEmitterComponent } from '../components/particleEmitter/schema';
+import type { PlayerControllerComponent } from '../components/playerController/schema';
+import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
+import type { RigidBodyComponent } from '../components/rigidbody/schema';
+import type { ScriptComponent } from '../components/script/schema';
+import type { WaterComponent } from '../components/water/schema';
+import type { Hex, Transform, Vec3 } from './primitives';
 
-export interface Transform {
-  position: Vec3;
-  /** Euler XYZ in radians. Degrees are a presentation concern of the inspector. */
-  rotation: Vec3;
-  scale: Vec3;
-}
+// --- the shared vocabulary --------------------------------------------------
 
-// --- geometry ---------------------------------------------------------------
+export type { GeometryDef, GeometryKind } from './geometry';
+export type { MaterialDef, MaterialSide, TextureWrap } from './material';
+export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
+export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
-/**
- * One entry per three.js geometry class, rather than a generic "polyhedron"
- * with a shape field: the kind is what the binder switches on, what names the
- * entity and what the collider guess reads, so keeping it 1:1 with three means
- * none of those three tables needs a second lookup.
+/*
+ * One slice per component type — and beside each union, a label for each of its
+ * members. A `*_LABELS` is a **total** `Record`, so a member added to the union
+ * above it does not compile until it has a name; `optionsFrom` turns one into
+ * the choices a control offers, in the order the record is written. The editor
+ * imports these rather than re-listing them, which is what it used to do, in a
+ * Tweakpane literal, unchecked. `GEOMETRY_LABELS` has always been this shape.
  */
-export type GeometryDef =
-  | {
-      kind: 'box';
-      width: number;
-      height: number;
-      depth: number;
-      /** Subdivisions. Only matter under a displacement map, which moves vertices. */
-      widthSegments: number;
-      heightSegments: number;
-      depthSegments: number;
-    }
-  | { kind: 'sphere'; radius: number; widthSegments: number; heightSegments: number }
-  | { kind: 'plane'; width: number; height: number; widthSegments: number; heightSegments: number }
-  | { kind: 'capsule'; radius: number; height: number; capSegments: number; radialSegments: number }
-  | {
-      kind: 'cylinder';
-      radiusTop: number;
-      radiusBottom: number;
-      height: number;
-      radialSegments: number;
-    }
-  | { kind: 'circle'; radius: number; segments: number }
-  | { kind: 'ring'; innerRadius: number; outerRadius: number; thetaSegments: number }
-  | { kind: 'torus'; radius: number; tube: number; radialSegments: number; tubularSegments: number }
-  | {
-      kind: 'torusKnot';
-      radius: number;
-      tube: number;
-      tubularSegments: number;
-      radialSegments: number;
-      /** Winding counts. Coprime integers; anything else fails to close the knot. */
-      p: number;
-      q: number;
-    }
-  // The four solids take the same two arguments in three, so they share a shape
-  // here too. `detail` subdivides towards a sphere.
-  | { kind: 'tetrahedron'; radius: number; detail: number }
-  | { kind: 'octahedron'; radius: number; detail: number }
-  | { kind: 'dodecahedron'; radius: number; detail: number }
-  | { kind: 'icosahedron'; radius: number; detail: number };
 
-export type GeometryKind = GeometryDef['kind'];
+export type { AudioListenerComponent } from '../components/audioListener/schema';
+export type {
+  AudioBus,
+  AudioSourceComponent,
+  DistanceModel,
+} from '../components/audioSource/schema';
+export {
+  AUDIO_BUSES,
+  AUDIO_BUS_LABELS,
+  DISTANCE_MODEL_LABELS,
+} from '../components/audioSource/schema';
+export type { CameraComponent, CameraProjection } from '../components/camera/schema';
+export { CAMERA_PROJECTION_LABELS } from '../components/camera/schema';
+export type { ColliderComponent, ColliderShape } from '../components/collider/schema';
+export { COLLIDER_SHAPE_LABELS } from '../components/collider/schema';
+export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
+export type { MeshComponent } from '../components/mesh/schema';
+export type { ModelComponent } from '../components/model/schema';
+export type {
+  EmitterShape,
+  ParticleEmitterComponent,
+} from '../components/particleEmitter/schema';
+export { EMITTER_SHAPE_LABELS } from '../components/particleEmitter/schema';
+export type {
+  PlayerControllerComponent,
+  PlayerControllerMode,
+} from '../components/playerController/schema';
+export { PLAYER_CONTROLLER_MODE_LABELS } from '../components/playerController/schema';
+export type {
+  PrefabInstanceComponent,
+  PrefabOverride,
+} from '../components/prefabInstance/schema';
+export type { BodyType, RigidBodyComponent } from '../components/rigidbody/schema';
+export { BODY_TYPE_LABELS } from '../components/rigidbody/schema';
+export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
+export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 
-// --- material ---------------------------------------------------------------
-
-/**
- * How a texture repeats past the 0..1 UV range. Named after three's constants;
- * `mirror` is what stops a tiled ground from showing a hard seam.
- */
-export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
-
-/** Which faces are drawn. Named because two component types now take it. */
-export type MaterialSide = 'front' | 'back' | 'double';
-
-export interface MaterialDef {
-  color: Hex;
-  roughness: number;
-  metalness: number;
-  emissive: Hex;
-  emissiveIntensity: number;
-  opacity: number;
-  transparent: boolean;
-  wireframe: boolean;
-  side: MaterialSide;
-
-  /*
-   * Texture slots. All asset ids, resolved through the asset registry.
-   *
-   * Colour and emissive are authored in sRGB; the rest carry data (directions,
-   * roughness, coverage) and must stay linear, or the values the shader reads
-   * are not the values the artist painted.
-   */
-  /** Base colour. sRGB. */
-  colorMap: string | null;
-  /** Tangent-space normals. Linear. */
-  normalMap: string | null;
-  normalScale: number;
-  /**
-   * Height in the red channel, converted to a normal perturbation. Linear.
-   *
-   * An alternative to `normalMap`, not a companion: three takes the normal map
-   * when both are set and never mixes them. Cheaper to author — a grey-scale
-   * height map rather than a baked tangent-space normal — and it is also what
-   * a displacement map usually looks like, so the same file often serves both.
-   */
-  bumpMap: string | null;
-  bumpScale: number;
-  /** Read from the green channel, as in glTF. Linear. */
-  roughnessMap: string | null;
-  /** Read from the blue channel, as in glTF. Linear. */
-  metalnessMap: string | null;
-  /** sRGB. */
-  emissiveMap: string | null;
-  /** Ambient occlusion, read from red. Linear. */
-  aoMap: string | null;
-  aoIntensity: number;
-  /** Opacity from the red channel; needs `transparent`. Linear. */
-  alphaMap: string | null;
-  /**
-   * Real geometry displacement: each vertex moves along its normal by the red
-   * channel. Linear.
-   *
-   * Per *vertex*, not per pixel, so it only shows on a subdivided mesh — which
-   * is why the box and plane primitives expose segment counts. A normal map
-   * fakes the lighting of detail without moving anything and costs nothing;
-   * displacement changes the silhouette and the shadow.
-   */
-  displacementMap: string | null;
-  displacementScale: number;
-  /** Shifts the whole surface, so a mid-grey map can push in as well as out. */
-  displacementBias: number;
-
-  /*
-   * UV transform, applied to every slot of this material. It lives on the
-   * three `Texture`, not the material, which is why the binder clones the
-   * cached texture per material rather than sharing one instance.
-   */
-  tiling: Vec2;
-  offset: Vec2;
-  wrap: TextureWrap;
-}
-
-// --- components -------------------------------------------------------------
-
-export interface MeshComponent extends ComponentBase {
-  type: 'mesh';
-  geometry: GeometryDef;
-  /**
-   * The embedded material, used while `materialId` is null.
-   *
-   * Godot's model rather than Unity's: a material starts embedded, and only
-   * becomes a shared asset when the author asks for one. Unity and Unreal are
-   * asset-first — a new object gets a read-only default and any change forces
-   * you to create an asset — which buys consistency at the price of a file per
-   * tinted cube.
-   */
-  material: MaterialDef;
-  /**
-   * Asset id of a shared material. When set it wins over `material`, and the
-   * embedded value is left untouched so detaching can fall back to it.
-   */
-  materialId: string | null;
-  castShadow: boolean;
-  receiveShadow: boolean;
-}
-
-/** An imported glTF. References an asset id so instancing stays possible later. */
-export interface ModelComponent extends ComponentBase {
-  type: 'model';
-  assetId: string;
-  /**
-   * Which node of the file this draws. `''` draws the whole thing.
-   *
-   * A path of child indices from the loaded root — `'2.0.1'` — which is what
-   * lets `unpackModel` turn one imported file into one entity per node, each
-   * selectable, transformable and given a material of its own. Unity's leaf
-   * carries a `MeshFilter` pointing at a sub-asset of the model file; this is
-   * the same arrangement with the same reason behind it.
-   *
-   * Indices rather than the name, because a name is unique in neither glTF nor
-   * FBX and `clone(true)` preserves child order. The path is relative to the
-   * tree **as the import settings dress it**, which both the unpack and the
-   * runtime see because both go through `ModelCache` — but changing those
-   * settings afterwards can move a node, which is what `nodeName` is for.
-   */
-  nodePath: string;
-  /** The name of the node at `nodePath`, to fall back on when the tree moved. */
-  nodeName: string;
-  /**
-   * Asset id of a shared material drawn in place of the file's own.
-   *
-   * `null` keeps what the file shipped with, which is what every model did
-   * before this existed. Whole-file or per-node alike: an unpacked part is one
-   * node, so setting it there is "this part's material" — the one thing an
-   * imported model had no way at all to express.
-   */
-  materialId: string | null;
-  castShadow: boolean;
-  receiveShadow: boolean;
-}
-
-export type LightKind =
-  | 'ambient'
-  | 'hemisphere'
-  | 'directional'
-  | 'point'
-  | 'spot'
-  | 'rectArea'
-  | 'projector';
-
-/**
- * What three carries on `light.shadow`, for the kinds that cast one.
- *
- * A sub-object rather than eight more fields on the light, for the reason
- * `MeshComponent.material` is one: they are read and written together, and the
- * migration merges them a level deeper in one place instead of eight.
- *
- * Every default is three's own, so filling this into a scene written before it
- * existed changes nothing on screen — which is the only way to add a field to a
- * persisted format without auditing every project that has one.
- */
-export interface ShadowSettings {
-  bias: number;
-  normalBias: number;
-  radius: number;
-  blurSamples: number;
-  near: number;
-  far: number;
-  /** Directional only: half-extent of the orthographic shadow camera. */
-  orthoSize: number;
-  /** Spot and projector only. */
-  focus: number;
-}
-
-export interface LightComponent extends ComponentBase {
-  type: 'light';
-  kind: LightKind;
-  color: Hex;
-  intensity: number;
-  /** Hemisphere only. */
-  groundColor: Hex;
-  /** Point, spot and projector only. `0` means no falloff limit. */
-  distance: number;
-  decay: number;
-  /** Spot and projector only, radians. */
-  angle: number;
-  penumbra: number;
-  /** Rect area only, metres. The rectangle emits from its local -Z face. */
-  width: number;
-  height: number;
-  /** Projector only: the texture it throws. */
-  mapId: string | null;
-  /** Projector only. `0` means take the aspect from the texture. */
-  aspect: number;
-  castShadow: boolean;
-  shadow: ShadowSettings;
-}
-
-/**
- * Where a water surface takes its sun from.
- *
- * `'sky'` is the scene's own analytic sun — the one `SkySettings` already
- * describes — and is the default, because a scene that has a sky has exactly one
- * place the light should come from. `'custom'` is the two fields below. Anything
- * else is a light entity's id, and a light that goes away falls back to the sky
- * rather than leaving the water lit from nowhere.
- *
- * One field and one control rather than a mode plus a reference, because they
- * are one question — *which* sun — and splitting it would let the document hold
- * a mode and an id that disagree.
- */
-export type WaterSunSource = string;
-
-/**
- * A flat reflective water surface.
- *
- * Deliberately not a `mesh` with a material: the reflection is a second render
- * of the scene from a mirrored camera, which no `MaterialDef` can describe, and
- * the geometry is a plane because a reflector mirrors about one flat plane.
- *
- * It is the `WaterMesh` addon's parameter list, minus what only its WebGL twin
- * has. `textureWidth`/`textureHeight` are `resolutionScale` here;
- * `clipBias` and `eye` are internals; `time` belongs to the one clock and not to
- * a component.
- */
-export interface WaterComponent extends ComponentBase {
-  type: 'water';
-  /** Plane only — see the note above. */
-  geometry: Extract<GeometryDef, { kind: 'plane' }>;
-  /** The normal map the ripples are read from. A built-in one is used until set. */
-  normalMapId: string | null;
-  waterColor: Hex;
-  sunSource: WaterSunSource;
-  /** Used when `sunSource` is `'custom'`. Points from the surface at the sun. */
-  sunDirection: Vec3;
-  /** Used when `sunSource` is `'custom'`. */
-  sunColor: Hex;
-  /** Opacity of the whole surface. */
-  alpha: number;
-  /** Spatial frequency of the ripples. Larger is finer. */
-  size: number;
-  /**
-   * How fast the water runs. `0` holds it still.
-   *
-   * Per surface, on top of the scene's timescale: a millpond and a torrent can
-   * sit in one scene, and Pause still stops both.
-   */
-  speed: number;
-  /** Which way it runs, in radians. `0` is the addon's own look. */
-  direction: number;
-  /**
-   * How sharp the waves read. Low is a swell, high is a chop.
-   *
-   * It scales the horizontal components of the wave normal; `1.5` is the value
-   * three's `WaterMesh` hard-codes.
-   */
-  choppiness: number;
-  /** How far the reflection is pushed around by those ripples. */
-  distortionScale: number;
-  /**
-   * Reflection resolution, as a fraction of the viewport.
-   *
-   * The one knob that cannot be written in place: `WaterMesh` hands it to its
-   * reflector while building the shader, so changing it rebuilds the surface.
-   */
-  resolutionScale: number;
-  side: MaterialSide;
-  fog: boolean;
-}
-
-export type CameraProjection = 'perspective' | 'orthographic';
-
-export interface CameraComponent extends ComponentBase {
-  type: 'camera';
-  projection: CameraProjection;
-  fov: number;
-  near: number;
-  far: number;
-  /** Orthographic vertical extent. */
-  frustumSize: number;
-  /** The camera play mode renders through when no player controller is active. */
-  isMain: boolean;
-}
-
-export interface RigidBodyComponent extends ComponentBase {
-  type: 'rigidbody';
-  bodyType: 'fixed' | 'dynamic' | 'kinematicPosition';
-  mass: number;
-  linearDamping: number;
-  angularDamping: number;
-  gravityScale: number;
-  /** Continuous collision detection: costly, needed for fast small bodies. */
-  ccd: boolean;
-}
-
-export interface ColliderComponent extends ComponentBase {
-  type: 'collider';
-  shape: 'box' | 'sphere' | 'capsule' | 'trimesh' | 'convexHull';
-  /** Box half-extents. */
-  size: Vec3;
-  radius: number;
-  halfHeight: number;
-  friction: number;
-  restitution: number;
-  /** Sensors report overlaps without resolving them. */
-  isSensor: boolean;
-}
-
-export type ScriptPropValue = number | string | boolean | Vec3;
-
-/**
- * Mixer buses, borrowed from Unreal's sound classes: a shallow, fixed set is
- * enough to duck music under dialogue or mute effects, and it keeps every
- * source's routing to a single enum rather than a graph the author must build.
- */
-export type AudioBus = 'master' | 'music' | 'sfx' | 'ui' | 'ambience';
-
-/**
- * The same set, as a value, because the mixer has to build one gain node per bus
- * and a type cannot be iterated.
- *
- * `satisfies` rather than a plain annotation, so adding a bus to the union
- * without adding it here is a compile error rather than a bus nothing routes to
- * — the same guard `COMPONENT_TYPES` uses.
- */
-export const AUDIO_BUSES = [
-  'master',
-  'music',
-  'sfx',
-  'ui',
-  'ambience',
-] as const satisfies readonly AudioBus[];
-
-export interface AudioSourceComponent extends ComponentBase {
-  type: 'audioSource';
-  assetId: string;
-  /**
-   * `0` is fully 2D (music, UI), `1` fully positional. Unity's model — a single
-   * dial is far easier to reason about than two separate node paths, and it
-   * lets a sound be pulled toward the listener without losing its position.
-   */
-  spatialBlend: number;
-  volume: number;
-  /** Playback rate; also shifts pitch, as in every engine's simple mode. */
-  pitch: number;
-  loop: boolean;
-  playOnStart: boolean;
-  bus: AudioBus;
-
-  /** Web Audio `PannerNode` falloff, used when `spatialBlend > 0`. */
-  distanceModel: 'linear' | 'inverse' | 'exponential';
-  /** Distance at which the sound is at full volume. */
-  refDistance: number;
-  maxDistance: number;
-  rolloffFactor: number;
-
-  /** Directional cone; `360` inner angle means omnidirectional. */
-  coneInnerAngle: number;
-  coneOuterAngle: number;
-  coneOuterGain: number;
-
-  /** Silences the source without losing the volume it was set to. */
-  mute: boolean;
-  /**
-   * Cents, composed with `pitch`: rate = pitch × 2^(detune / 1200).
-   *
-   * Both are exposed because Web Audio exposes both, and they are not the same
-   * control to use: `pitch` is what a designer reaches for, `detune` is what a
-   * random variation writes into, in a unit where ±100 is a semitone.
-   */
-  detune: number;
-  /** Second of the buffer the first pass starts at. A loop restarts at zero. */
-  startOffset: number;
-  /** Seconds to wait before the first sample. */
-  delay: number;
-  fadeIn: number;
-  /** Applied when the source is stopped; an unlooped one still ends on its own. */
-  fadeOut: number;
-  /**
-   * `0` is the highest, as in Unity.
-   *
-   * Does nothing until the voice ceiling is reached, and then decides everything:
-   * the largest number is taken first, and among equals the oldest.
-   */
-  priority: number;
-}
-
-/**
- * The ears. Exactly one should be active — normally on the play camera or the
- * player — and the runtime warns when a scene has none or several.
- */
-export interface AudioListenerComponent extends ComponentBase {
-  type: 'audioListener';
-  masterVolume: number;
-}
-
-/**
- * An instance of a prefab asset, held by reference.
- *
- * The scene stores one entity and this component, not a copy of the prefab's
- * contents. Unity serialises the same thing — a `PrefabInstance` plus a list of
- * modifications — and Godot's instanced scenes work the same way. The
- * alternative, writing the whole sub-tree into the scene, is what makes a
- * thousand trees a thousand copies: the file stops being reviewable, loading
- * stops being cheap, and nothing can tell two instances apart well enough to
- * batch them.
- */
-export interface PrefabInstanceComponent extends ComponentBase {
-  type: 'prefabInstance';
-  assetId: string;
-  /**
-   * Per-entity changes, keyed by the id the entity has *inside* the prefab.
-   *
-   * Unity calls these `m_Modifications`. They are what makes an instance worth
-   * having: the prefab says what a tree is, the override says this one is
-   * shorter.
-   */
-  overrides: Record<string, PrefabOverride>;
-}
-
-export interface PrefabOverride {
-  name?: string;
-  visible?: boolean;
-  transform?: Partial<Transform>;
-  /** By component id inside the prefab entity, then by property name. */
-  components?: Record<string, Record<string, unknown>>;
-}
-
-/**
- * What every component carries, whatever its type.
- *
- * The id is what a prefab override names and what the binder keys its builds
- * on. Before it, both used the component's **position** in the array: adding a
- * component to a prefab slid every override of every instance onto the wrong
- * one (B10), and removing one paired a cube's build with a sphere's component.
- *
- * Opaque. The migration happens to mint `<entityId>:<index>` — see
- * `serialization.ts` for why that particular shape — and nothing may read it
- * back out. An id that can be parsed into a position is a position again.
- */
-export interface ComponentBase {
-  id: string;
-}
-
-export interface ScriptComponent extends ComponentBase {
-  type: 'script';
-  assetId: string;
-  props: Record<string, ScriptPropValue>;
-}
-
-export interface PlayerControllerComponent extends ComponentBase {
-  type: 'playerController';
-  mode: 'fps' | 'tps' | 'fly';
-  moveSpeed: number;
-  sprintMultiplier: number;
-  jumpHeight: number;
-  mouseSensitivity: number;
-  /** Camera height above the entity origin in FPS mode. */
-  eyeHeight: number;
-  /** Camera distance behind the character in TPS mode. */
-  cameraDistance: number;
-}
+// --- the document -----------------------------------------------------------
 
 export type ComponentDoc =
   | MeshComponent
@@ -542,7 +100,8 @@ export type ComponentDoc =
   | ScriptComponent
   | PrefabInstanceComponent
   | PlayerControllerComponent
-  | WaterComponent;
+  | WaterComponent
+  | ParticleEmitterComponent;
 
 export type ComponentType = ComponentDoc['type'];
 
@@ -561,12 +120,6 @@ export interface EntityDoc {
   visible: boolean;
   /** Excluded from picking and locked against gizmo edits. */
   locked: boolean;
-  /**
-   * Streaming cell. Unused by the MVP, which loads whole scenes, but present
-   * from the start so open-world streaming is a load-time filter rather than a
-   * schema migration.
-   */
-  chunk?: string;
 }
 
 /**
@@ -574,16 +127,16 @@ export interface EntityDoc {
  *
  * `EntityDoc.components` was an array, and an array answers none of the
  * questions asked of it: "every light" was a walk of the whole entity table, an
- * override named a component by its *position* (B10), and touching one field
+ * override named a component by its *position*, and touching one field
  * changed the identity of the array, so the binder rebuilt every non-mesh
- * component of the entity (B9).
+ * component of the entity.
  *
  * Each level earns its place. **Type first** — `Object.keys(components.light)`
  * is the query that motivated the phase. **Entity second** — deleting, cloning
  * or instancing an entity moves one key per type rather than one per component.
  * **Component id last** — the identity phase 3 established, which is what a
  * prefab override names; keying by a slot index would be a position again, and
- * would reopen B10 for any entity carrying two components of one type (ADR-16).
+ * would reopen the override defect for any entity carrying two components of one type.
  *
  * One shape for all eleven types, singletons included. "One mesh per entity" is
  * a rule the commands keep, exactly as it was when the array kept none.
@@ -650,6 +203,32 @@ export interface SkySettings {
   cloudSpeed: number;
 }
 
+/** A flat colour, an equirectangular texture, or the analytic sky. */
+export type BackgroundMode = 'color' | 'texture' | 'sky';
+
+export const BACKGROUND_MODE_LABELS: Record<BackgroundMode, string> = {
+  color: 'Colour',
+  texture: 'Texture',
+  sky: 'Sky',
+};
+
+/** Where image-based lighting comes from. */
+export type EnvironmentMode = 'none' | 'background' | 'texture';
+
+export const ENVIRONMENT_MODE_LABELS: Record<EnvironmentMode, string> = {
+  none: 'None',
+  background: 'Background',
+  texture: 'Texture',
+};
+
+/** Linear fog ramps between two distances; exponential has no far edge. */
+export type FogMode = 'linear' | 'exponential';
+
+export const FOG_MODE_LABELS: Record<FogMode, string> = {
+  linear: 'Linear',
+  exponential: 'Exponential',
+};
+
 export interface EnvironmentDef {
   /**
    * A flat colour, an equirectangular texture, or the analytic sky.
@@ -658,7 +237,7 @@ export interface EnvironmentDef {
    * not lose the colour — and the same is true of `backgroundTexture` and
    * `sky`. Nothing here is cleared by choosing something else.
    */
-  backgroundMode: 'color' | 'texture' | 'sky';
+  backgroundMode: BackgroundMode;
   background: Hex;
   /** Asset id of an equirectangular image — HDR, EXR or PNG. */
   backgroundTexture: string | null;
@@ -683,7 +262,7 @@ export interface EnvironmentDef {
    * paired with a large one for the sky: the prefiltering throws away that
    * resolution anyway, so only the background ever needs it.
    */
-  environmentMode: 'none' | 'background' | 'texture';
+  environmentMode: EnvironmentMode;
   environmentTexture: string | null;
   environmentIntensity: number;
 
@@ -706,7 +285,7 @@ export interface EnvironmentDef {
    * exponential has no far edge, which is what makes a horizon rather than a
    * wall. `fogNear`/`fogFar` serve the first, `fogDensity` the second.
    */
-  fogMode: 'linear' | 'exponential';
+  fogMode: FogMode;
   fogNear: number;
   fogFar: number;
   fogDensity: number;

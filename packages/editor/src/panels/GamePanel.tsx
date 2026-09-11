@@ -1,6 +1,7 @@
 import { Gamepad2, MousePointerClick, TriangleAlert } from 'lucide-react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef } from 'react';
-import { startPlay } from '../commands/playCommands';
+import { commandById } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
@@ -8,10 +9,23 @@ import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 /**
  * Where the running game is shown.
  *
- * It borrows the same canvas as the Scene panel — the two are never visible at
- * once, and a second WebGPU device for an idle view would be wasteful.
+ * Its own canvas, but not its own renderer: a second `WebGPURenderer` in the
+ * same document would destroy this one's output target every frame. The one
+ * renderer draws both views and each panel is handed a copy of its own — see
+ * `Presentation` — which is what lets this be read next to the Scene view
+ * instead of in place of it.
  */
-export function GamePanel() {
+export function GamePanel(props: IDockviewPanelProps) {
+  // What the box cannot say: dockview parks an inactive tab at full size, so a
+  // hidden panel goes on being drawn unless something tells the viewport. The
+  // dock is the only thing that knows, and it publishes it here.
+  useEffect(() => {
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setGameOnScreen(onScreen));
+    push(props.api.isVisible);
+    const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
+    return () => sub.dispose();
+  }, [props.api]);
+
   const hostRef = useRef<HTMLDivElement>(null);
   const playState = useEditorStore((s) => s.playState);
   const warnings = useViewportStore((s) => s.playWarnings);
@@ -23,13 +37,14 @@ export function GamePanel() {
 
     void acquireViewport().then((viewport) => {
       if (cancelled || !hostRef.current) return;
-      viewport.attach(hostRef.current);
+      viewport.attachGame(hostRef.current);
     });
 
     return () => {
       cancelled = true;
-      // Hand the canvas back so the Scene panel can claim it again.
-      peekViewport()?.detach();
+      // The canvas outlives this component; hand it back rather than leaving it
+      // parented to a container React is about to drop.
+      peekViewport()?.detachGame();
     };
   }, [isRunning]);
 
@@ -40,7 +55,7 @@ export function GamePanel() {
         <p className="text-ink-muted">Not playing</p>
         <button
           type="button"
-          onClick={startPlay}
+          onClick={() => commandById('play').run()}
           className="rounded-sm bg-accent px-3 py-1.5 text-2xs font-medium text-white hover:bg-accent/85"
         >
           Play

@@ -1,10 +1,13 @@
-import { componentsOfType, type ComponentType, type SceneDoc } from '@three-studio/core';
+import {
+  COMPONENT_TYPES,
+  componentsOfType,
+  type ComponentType,
+  type SceneDoc,
+} from '@three-studio/core';
+import { OVERLAYS } from '../../components/overlays';
 import type { SceneBinder } from '@three-studio/runtime';
 import { Group, type Object3D } from 'three/webgpu';
 import type { ComponentHelper, HelperHandle } from './ComponentHelper';
-import { AudioShape } from './helpers/AudioShape';
-import { CameraFrustum } from './helpers/CameraFrustum';
-import { LightShape } from './helpers/LightShape';
 
 /** One mounted annotation, and what it was built against. */
 interface Mounted {
@@ -39,16 +42,19 @@ export class SelectionHelpers {
   readonly root = new Group();
 
   /**
-   * The table, with its parameters named rather than inferred: left to itself
-   * `new Map` takes the shape of its first entry and then refuses the second.
-   * No cast is needed to widen the values — `mount` is a method, so TypeScript
-   * keeps its parameter bivariant. See `ComponentHelper`.
+   * The three types that annotate anything, out of the twelve that answer.
+   *
+   * Built from the declarations rather than listed here: a type that gains a
+   * helper says so in its own folder, and this file does not change. No cast is
+   * needed to widen the values — `mount` is a method, so TypeScript keeps its
+   * parameter bivariant. See `ComponentHelper`.
    */
-  private readonly helpers = new Map<ComponentType, ComponentHelper>([
-    ['camera', new CameraFrustum()],
-    ['light', new LightShape()],
-    ['audioSource', new AudioShape()],
-  ]);
+  private readonly helpers = new Map<ComponentType, ComponentHelper>(
+    COMPONENT_TYPES.flatMap((type) => {
+      const helper = OVERLAYS[type].helper;
+      return helper === null ? [] : [[type, helper] as const];
+    }),
+  );
   private readonly mounted = new Map<Key, Mounted>();
 
   constructor(private readonly binder: SceneBinder) {

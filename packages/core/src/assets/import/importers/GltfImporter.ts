@@ -1,7 +1,7 @@
 import type { GltfModelSettings } from '../../schema';
 import type { TextReader } from '../AssetImporter';
 import { CompanionSet } from '../companions';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 import { ModelImporter } from './ModelImporter';
 
 /**
@@ -28,7 +28,7 @@ export class GltfImporter extends ModelImporter<GltfModelSettings> {
     };
   }
 
-  protected override formatFields(): readonly ImportField[] {
+  protected override formatFields(): readonly FieldRow[] {
     return [
       field.group('glTF', [
         field.toggle('importCameras', 'Import cameras'),

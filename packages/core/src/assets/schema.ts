@@ -1,3 +1,5 @@
+import type { PrefabDoc } from '../scene/prefab';
+import { ASSETS_DIR, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
   | 'model'
@@ -30,8 +32,150 @@ export const MATERIAL_ASSET_VERSION = 1;
  * ships at its file's own scale and the build does not look like the editor.
  * Additive again, and `textureEncodings` stays: it is subsumed by this but a
  * player from before format 3 reads only that one.
+ *
+ * 4 — `build.json` carries the asset table, the materials and the prefabs that
+ * were `assets.json`, `materials.json` and `prefabs.json` beside it. Six
+ * requests before the first frame become three, and the three that go were
+ * small, always needed, and always fetched. The files are no longer written;
+ * the player falls back to them when the fields are absent, which is what makes
+ * this additive from its side too.
+ *
+ * 5 — every scene is `scenes/<sceneId>.json`, and `scenes` lists ids rather
+ * than files. **The first that is not additive**, and the one that shows why
+ * the number is the mechanism and a per-field default is not: a moved file has
+ * nothing to fall back to and nothing left where it was. The entry scene used
+ * to be renamed to `scene.json` at the root while the rest went into `scenes/`,
+ * and that asymmetry is what `sceneMap` — keyed by name *and* by id — existed
+ * to undo.
  */
-export const BUILD_FORMAT_VERSION = 3;
+export const BUILD_FORMAT_VERSION = 5;
+
+/**
+ * Where a scene lives in a build, from its id alone.
+ *
+ * Derived on both sides rather than listed anywhere: the exporter writes here
+ * and the player fetches here, and a path written twice is a path that can
+ * disagree with itself. That is the whole of what replaced `sceneMap`.
+ *
+ * The id is normally `createId()`'s alphabet and needs no escaping, but a scene
+ * file that carries no id of its own falls back to **its project path** — see
+ * `discoverScenes` — so the result can contain slashes and spaces. The exporter
+ * makes the directories and the player encodes the URL; neither assumes a flat
+ * name.
+ */
+export function buildScenePath(sceneId: string): string {
+  return `scenes/${sceneId}.json`;
+}
+
+/**
+ * `build.json` — everything the player needs before the first frame except the
+ * entry scene and the compiled scripts.
+ *
+ * Declared here rather than at either end, for the reason `ScriptBuildResult`
+ * is declared in `bridge.ts`: it crosses a boundary neither side can import
+ * across. The exporter writes it from the main process and the player reads it
+ * in a browser, and it used to be stated three times — written from an
+ * unannotated literal, read back through an interface kept by hand, and
+ * restated in part a third time for the entry scene. That is exactly how the
+ * script build result lost a field on one side.
+ *
+ * **An optional field is one an older build may not have**, never one the
+ * exporter may skip. Each says which format added it, and the player says what
+ * it does without it.
+ */
+export interface BuildManifest {
+  /** Absent on a build written before builds were versioned. */
+  formatVersion?: number;
+  title: string;
+  /**
+   * Kept for a build written before `rendering` existed, and only for that.
+   * Everything reads `rendering` now — see the fallback where it is read.
+   */
+  forceWebGL: boolean;
+  /**
+   * The project's rendering settings, whole.
+   *
+   * Absent on a build written before this field, and then filled from the
+   * factory with `forceWebGL` taken from the field above — which is exactly
+   * what those builds were exported against, since it was the only one of the
+   * six the player ever read. The other five were thrown away: a project
+   * asking for 4096 shadow maps, no antialiasing or a different exposure got
+   * the defaults, and it went unnoticed because the defaults happened to agree.
+   */
+  rendering?: RenderingSettings;
+  /**
+   * Every scene in the build **by id**, entry point first; the rest ship for a
+   * script to load later.
+   *
+   * Files, until format 5. What the id buys is that the path is `buildScenePath`
+   * of it rather than something to look up — the end
+   * of the chain: a reference is an id, never a name and never a path.
+   */
+  scenes: string[];
+  /**
+   * Scene name → id. An alias table, and deliberately not a second address.
+   *
+   * A script may name a level rather than hold its id, and a name is what an
+   * author reads in the editor. Nothing is *found* by name: this resolves to an
+   * id first, and the id is what says where the file is. Absent on a build
+   * written before format 5.
+   */
+  sceneNames?: Record<string, string>;
+  /**
+   * Id of the scene shown while another loads, if the project has one.
+   *
+   * The id the project settings already hold, passed through. It was resolved
+   * back into a name until format 5, on the grounds that the manifest should be
+   * legible — which is a reason to print a build, not to address one.
+   */
+  loadingScene?: string | null;
+  /**
+   * Asset id → path under `assets/`, so nothing in a scene is a file name.
+   *
+   * Format 4. Before it this was `assets.json` beside the player.
+   */
+  assets?: Record<string, string>;
+  /**
+   * The shared materials a shipped scene links to, by asset id.
+   *
+   * Format 4; `materials.json` before it. Only the ones something references —
+   * an unused material asset is no more part of a build than an unused texture.
+   */
+  materials?: Record<string, MaterialDef>;
+  /**
+   * The prefabs a shipped scene instances, by asset id, expanded before the
+   * engine sees the scene.
+   *
+   * Format 4; `prefabs.json` before it.
+   */
+  prefabs?: Record<string, PrefabDoc>;
+  /**
+   * Images whose file name does not say how they store light.
+   *
+   * Ultra HDR and nothing else today: it is a `.jpg`, and without this the
+   * player decodes it as an ordinary photograph — perfectly, and with every
+   * stop above white gone. Absent on a build that had none, and on one written
+   * before this field existed.
+   */
+  textureEncodings?: Record<string, TextureEncoding>;
+  /**
+   * What each asset was imported with.
+   *
+   * Absent on a build written before this field existed, and then every asset
+   * falls back to its format's defaults — which is what those builds were
+   * exported against anyway.
+   */
+  assetSettings?: Record<string, AssetSettings>;
+  /**
+   * The compiled behaviour bundle, or `null` when the project has none.
+   *
+   * Named here rather than probed for. A static server that answers 404s with
+   * its index page — which many do — returns 200 and HTML for a file that is
+   * not there, so asking the server whether the bundle exists is not a question
+   * that can be answered reliably.
+   */
+  scripts: string | null;
+}
 
 /**
  * On-disk shape of a preset material, `assets/materials/<name>.material.json`.
@@ -92,6 +236,20 @@ export interface TextureSettings {
    * are where it shows, and where its cost is worth paying.
    */
   anisotropy: number;
+  /**
+   * The longest side this texture is allowed to reach, in pixels.
+   *
+   * Unity's "Max Size", and it exists for the same reason: a source image is
+   * whatever the author was given, and an 8192-square photograph is 268 MB of
+   * RGBA on the GPU for a prop nobody walks up to. The import writes a scaled
+   * copy beside the source and everything loads that; the source is never
+   * touched, so raising this and re-importing gets the detail back.
+   *
+   * A number rather than a dropdown of powers of two, which is what it wants to
+   * be: `FieldOption` is string-valued, and giving the shared field vocabulary
+   * numeric options for one setting is a bigger change than this is worth.
+   */
+  maxSize: number;
 }
 
 /**
@@ -118,6 +276,29 @@ export interface ModelSettingsBase {
   /** Off drops the file's materials for three's default, which is faster to look at. */
   importMaterials: boolean;
   importAnimations: boolean;
+  /**
+   * The longest side an image **inside this file** may reach, in pixels.
+   *
+   * Separate from `TextureSettings.maxSize` because an embedded image is not an
+   * asset: it has no sidecar, no id and no row in the project, so there is
+   * nowhere else to say it. A glTF carrying two 8192-square JPEGs is 166 MB of
+   * download for a scene that will never resolve them.
+   */
+  maxTextureSize: number;
+  /**
+   * Whether the geometry may be made smaller where the loss has been measured.
+   *
+   * On, because the loss is one nobody has ever reported seeing and the gain is
+   * more than a third of a scanned model — the same bargain `maxTextureSize`
+   * makes, and for the same reason: the author's file on disk is untouched, and
+   * what this governs is a derived copy that can be thrown away.
+   *
+   * What it costs today: a normal is stored in a byte per axis rather than a
+   * float, which describes a direction to about half a degree. Invisible on a
+   * scanned surface; it can band on a large, smooth, softly lit one, and this
+   * is the switch to turn off when it does.
+   */
+  compressGeometry: boolean;
 }
 
 export interface FbxModelSettings extends ModelSettingsBase {
@@ -197,7 +378,7 @@ export interface AudioSettings {
    * and a file this browser cannot decode has no facts to report. The browser is
    * the only thing here that can read them — there is no `decodeAudioData` under
    * Node — so the main process cannot fill them in, and asking it to would mean
-   * a header parser per format for three numbers of display. See ADR-6.
+   * a header parser per format for three numbers of display.
    */
   /** Length in seconds, at the file's own rate. */
   seconds?: number;
@@ -252,6 +433,19 @@ export interface AssetEntry {
   importedAt: number;
   hash: string;
   settings: AssetSettings;
+  /**
+   * A scaled copy to load **instead of** `path`, or `null` for "load the
+   * source".
+   *
+   * Derived, and it lives on the entry rather than being worked out by each
+   * consumer because only the main process can see the disk: the editor and an
+   * exported build both turn an asset into a URL, and neither can stat a file.
+   *
+   * `null` is the ordinary answer. Most assets are already small enough, and a
+   * scaled copy that is the same size as its source would double the project on
+   * disk for nothing.
+   */
+  importedPath: string | null;
 }
 
 /**
@@ -266,6 +460,77 @@ export interface AssetManifest {
 }
 
 export const ASSET_MANIFEST_VERSION = 1;
+
+/**
+ * What one mutation did to the asset tree, so the manifest can follow without
+ * being rebuilt.
+ *
+ * The manifest used to be re-derived by a full scan after every mutation — from
+ * fourteen call sites — and that cost 196 ms on a project of three thousand
+ * assets: 130 ms of walking and stat-ing, plus a 1.2 MB manifest crossing the
+ * process boundary. For a rename that touched one file.
+ *
+ * **The main process is the only side that can describe the change**, which is
+ * why it says it rather than the renderer working it out. Deleting a model takes
+ * the companion files named *inside* it; moving one carries them along and then
+ * prunes whatever folders it emptied. A renderer that tried to predict either
+ * would be a second copy of rules that live on disk.
+ *
+ * Asset paths are relative to the project root, folders to `assets/` — the same
+ * two frames `AssetEntry.path` and `AssetEntry.folder` use, so applying a change
+ * is a substitution and never a recomputation.
+ */
+export interface AssetChange {
+  /** Files that moved and kept their identity: the sidecar travels with them. */
+  moved: readonly { from: string; to: string }[];
+  /** Files that are gone, companions included. */
+  removed: readonly string[];
+  addedFolders: readonly string[];
+  removedFolders: readonly string[];
+}
+
+export function emptyAssetChange(): AssetChange {
+  return { moved: [], removed: [], addedFolders: [], removedFolders: [] };
+}
+
+/**
+ * The manifest as it stands after a change, without touching the disk.
+ *
+ * Order is preserved — the scan returns assets in walk order and the panel sorts
+ * for itself, so a moved entry stays where it was rather than jumping to the end
+ * of the list under the reader's cursor.
+ *
+ * A `from` naming an asset the manifest does not hold is ignored rather than
+ * inserted: the manifest is a cache of the disk, and inventing an entry out of a
+ * path would be inventing an id, a hash and a size with it.
+ */
+export function applyAssetChange(manifest: AssetManifest, change: AssetChange): AssetManifest {
+  const gone = new Set(change.removed);
+  const destination = new Map(change.moved.map((move) => [move.from, move.to]));
+
+  const assets = manifest.assets
+    .filter((asset) => !gone.has(asset.path))
+    .map((asset) => {
+      const to = destination.get(asset.path);
+      if (to === undefined) return asset;
+      return { ...asset, path: to, folder: folderOf(to) };
+    });
+
+  const removedFolders = new Set(change.removedFolders);
+  const folders = [
+    ...manifest.folders.filter((folder) => !removedFolders.has(folder)),
+    ...change.addedFolders.filter((folder) => !manifest.folders.includes(folder)),
+  ].sort();
+
+  return { ...manifest, assets, folders };
+}
+
+/** The `folder` an asset at this project-relative path belongs to. */
+function folderOf(path: string): string {
+  const inside = path.startsWith(`${ASSETS_DIR}/`) ? path.slice(ASSETS_DIR.length + 1) : path;
+  const cut = inside.lastIndexOf('/');
+  return cut === -1 ? '' : inside.slice(0, cut);
+}
 
 /**
  * Outcome of an import.
@@ -303,8 +568,14 @@ export function isTslMaterial(fileName: string): boolean {
  * An allow list rather than a deny list: a format added to `ASSET_KIND_INFO`
  * because some loader handles it is not thereby something an `<img>` handles,
  * and the failure of guessing the other way round is silent.
+ *
+ * It listed `gif` and `avif` too, and both were unreachable: nothing imports
+ * either, so no asset ever has that extension *and* the `texture` kind this
+ * checks first. An allow list may be smaller than what the browser can decode;
+ * it may not name things the project cannot contain, or it stops saying which
+ * of the two it is.
  */
-const PREVIEWABLE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'avif'];
+const PREVIEWABLE_EXTENSIONS: readonly string[] = ['png', 'jpg', 'jpeg', 'webp'];
 
 export function hasImagePreview(asset: { kind: AssetKind; path: string }): boolean {
   if (asset.kind !== 'texture') return false;

@@ -11,17 +11,18 @@ import {
   ProjectorLight,
   RectAreaLight,
   Texture,
+  type Object3D,
 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { ModelCache } from '../../src/assets/ModelCache';
-import { CameraSystem } from '../../src/systems/CameraSystem';
+import { CameraSystem } from '../../src/components/camera/CameraSystem';
 import type { SystemContext } from '../../src/systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../src/systems/identity';
-import { LightSystem } from '../../src/systems/LightSystem';
-import { MeshSystem } from '../../src/systems/MeshSystem';
-import { ModelSystem } from '../../src/systems/ModelSystem';
+import { LightSystem } from '../../src/components/light/LightSystem';
+import { MeshSystem } from '../../src/components/mesh/MeshSystem';
+import { ModelSystem } from '../../src/components/model/ModelSystem';
 import { ResourceArena } from '../../src/systems/ResourceArena';
-import { WaterSystem } from '../../src/systems/WaterSystem';
+import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
 
 /*
@@ -249,7 +250,7 @@ describe('the light system', () => {
 
     const patched = system.patch(handle, component, { ...component, intensity: 9 }, ctx);
 
-    // B9: a directional light owns a shadow map of `shadowMapSize` squared and
+    // A directional light owns a shadow map of `shadowMapSize` squared and
     // only `dispose()` frees it. Rebuilding on every edit allocated one per
     // frame of a slider drag and abandoned the last.
     expect(patched).not.toBe('remount');
@@ -373,7 +374,7 @@ describe('the light system', () => {
     const patched = system.patch(handle, component, { ...component, mapId: 'gobo-b' }, ctx);
 
     // Not a remount: a light's shadow map costs far more than a texture, and
-    // changing which picture it throws should not cost one. See B9.
+    // changing which picture it throws should not cost one.
     expect(patched).not.toBe('remount');
     expect((handle.light as ProjectorLight).map).not.toBe(first);
     // Retired, not disposed where it stands — a frame already encoding may still
@@ -445,7 +446,7 @@ describe('the camera system', () => {
  * `loadModel` clones the whole tree and an unpacked file would clone itself
  * once per part.
  */
-function stubCache(): { models: ModelCache; asked: string[] } {
+function stubCache(knows = true): { models: ModelCache; asked: string[] } {
   const asked: string[] = [];
   const node = () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshBasicNodeMaterial());
@@ -453,6 +454,10 @@ function stubCache(): { models: ModelCache; asked: string[] } {
     return mesh;
   };
   const models = {
+    // A cache that holds the file, which is what these tests are about. `false`
+    // is the scene naming an asset that has been deleted, and the system then
+    // draws a placeholder without asking for anything.
+    knows: () => knows,
     loadModel: (assetId: string) => {
       asked.push(`whole:${assetId}`);
       const group = new Group();
@@ -499,6 +504,48 @@ describe('the model system', () => {
     await system.whenLoaded();
 
     expect(asked).toEqual(['whole:chair']);
+  });
+
+  it('draws a placeholder for an asset the project no longer holds', async () => {
+    const { ctx } = context();
+    const { models, asked } = stubCache(false);
+    const system = new ModelSystem();
+    const attached: Object3D[] = [];
+
+    const handle = system.mount('chair', modelComponent(), {
+      ...ctx,
+      models,
+      attach: (_entityId, _handle, object: Object3D) => {
+        attached.push(object);
+        return true;
+      },
+    });
+    // Waited for, exactly as a real load is. The placeholder cannot be attached
+    // inside `mount`: the reconciler has not been given this handle yet, and it
+    // refuses one it does not recognise.
+    await system.whenLoaded();
+
+    // Nothing was asked for: an id nothing answers to is not a load that failed,
+    // it is a load there is no point starting.
+    expect(asked).toEqual([]);
+    // And something is drawn. Nothing at all is the one outcome that cannot be
+    // fixed — an entity drawing nothing is indistinguishable from one that is
+    // not there, so it can be neither found nor clicked.
+    expect(handle.objects).toHaveLength(1);
+    expect(attached).toHaveLength(1);
+  });
+
+  it('gives the placeholder the entity id, so it can be clicked and repaired', async () => {
+    const { ctx } = context();
+    const { models } = stubCache(false);
+    const system = new ModelSystem();
+
+    const handle = system.mount('chair', modelComponent(), { ...ctx, models });
+    await system.whenLoaded();
+
+    // The whole point of drawing a box: the picker reads this off whatever the
+    // ray hit, so selecting it puts the broken component in the Inspector.
+    expect(handle.objects[0]?.userData[ENTITY_ID_KEY]).toBe('chair');
   });
 
   it('remounts for a different node, and not for a shadow flag', () => {

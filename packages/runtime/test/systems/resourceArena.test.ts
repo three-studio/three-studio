@@ -6,9 +6,9 @@ import { ResourceArena, SharedMaterial } from '../../src/systems/ResourceArena';
  * The pool, the queue, and the one rule that ties them: **nothing is freed
  * inside a sync**.
  *
- * Two of the twelve bugs were here and neither was a wrong line. B6 was a
+ * Two of the twelve bugs were here and neither was a wrong line. One was a
  * cadence — the queue was drained by whatever ran next rather than by the frame
- * — and B5 was ownership, a `replace` freeing the value another holder had just
+ * — and the other was ownership, a `replace` freeing the value another holder had just
  * adopted. Both are properties of this class, and until phase 11 it was not one.
  */
 
@@ -54,7 +54,7 @@ describe('when things are actually freed', () => {
     arena.geometry('box', () => geometry);
     arena.releaseGeometry('box');
 
-    // B6. `WebGPURenderer.render` returns a promise the loops do not await, so
+    // `WebGPURenderer.render` returns a promise the loops do not await, so
     // a buffer freed here is handed to a pass still being encoded — a crash,
     // not a dropped frame. Two syncs can also land in one microtask, which is
     // what made "a frame old now" false.
@@ -85,7 +85,7 @@ describe('replacing what a key holds', () => {
     arena.material('mat-1', () => first);
     arena.replaceMaterial('mat-1', material());
 
-    // B5's shape: the replaced material is still what some mesh is drawing with
+    // The shape of it: the replaced material is still what some mesh is drawing with
     // this frame. Freeing it here is what handed a destroyed pipeline to a pass
     // in flight; the queue is what makes the swap safe.
     expect(disposed).toBe(0);

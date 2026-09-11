@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
+import { loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { LauncherApp } from './launcher/LauncherApp';
 import { selectDirty, useDocumentStore } from './state/documentStore';
@@ -27,7 +28,7 @@ export function Root() {
 function EditorWindow() {
   const summary = useProjectStore((s) => s.summary);
   const adopt = useProjectStore((s) => s.adopt);
-  const adoptProject = useProjectStore((s) => s.adoptProject);
+  const adoptContents = useProjectStore((s) => s.adoptContents);
   const error = useProjectStore((s) => s.error);
   const setError = useProjectStore((s) => s.setError);
   const dirty = useDocumentStore(selectDirty);
@@ -35,9 +36,16 @@ function EditorWindow() {
 
   // Read once, up front. dockview builds its arrangement synchronously, so
   // waiting until then would show the default layout and swap it a frame later.
+  //
+  // The key bindings ride along: they are read from the same directory at the
+  // same moment, and a menu drawn before them would show the default key beside
+  // a gesture the author has rebound. Failure on either side leaves the
+  // product's own defaults, which is why neither is awaited separately.
   useEffect(() => {
     if (layoutsReady) return;
-    void loadLayoutPreferences().finally(() => setLayoutsReady(true));
+    void Promise.allSettled([loadLayoutPreferences(), loadShortcutBindings()]).finally(() =>
+      setLayoutsReady(true),
+    );
   }, [layoutsReady]);
 
   // The window is created for one project and opens it itself. The launcher
@@ -59,7 +67,7 @@ function EditorWindow() {
 
   // Another window may add, rename or remove a scene at any moment, and this
   // window holds a copy of the project taken when it opened.
-  useEffect(() => window.studio.project.onProjectChanged(adoptProject), [adoptProject]);
+  useEffect(() => window.studio.project.onProjectChanged(adoptContents), [adoptContents]);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.

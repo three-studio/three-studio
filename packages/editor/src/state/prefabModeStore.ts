@@ -29,7 +29,7 @@ interface PrefabFrame {
    *
    * History is deliberately not shared across the boundary — see `open` — but
    * "not shared" was implemented as "destroyed": a double-click on a prefab
-   * threw away an hour of scene undos, which is B4. Set aside and handed back.
+   * threw away an hour of scene undos, and that was the defect. Set aside and handed back.
    */
   history: HistoryStash;
 }

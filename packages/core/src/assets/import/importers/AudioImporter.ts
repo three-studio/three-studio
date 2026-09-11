@@ -1,6 +1,6 @@
 import type { AssetKind, AudioSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
-import { field, type ImportField } from '../ImportField';
+import { field, type FieldRow } from '../../../fields';
 
 export class AudioImporter extends AssetImporter<AudioSettings> {
   readonly id = 'audio';
@@ -14,7 +14,7 @@ export class AudioImporter extends AssetImporter<AudioSettings> {
     return { kind: 'audio', loadMode: 'decode', gain: 1, forceMono: false };
   }
 
-  override fields(): readonly ImportField[] {
+  override fields(): readonly FieldRow[] {
     return [
       field.group('Audio', [
         field.enum('loadMode', 'Load type', [

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { commandById, type CommandId } from '../commands/registry';
+import { commandById } from '../commands/registry';
+import { bindingOf, commandForBinding } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { topOverlay } from '../state/overlayStore';
@@ -19,34 +20,6 @@ const TOOL_KEYS: Record<string, TransformMode> = {
   KeyE: 'rotate',
   KeyR: 'scale',
 };
-
-export type CommandAction = CommandId | null;
-
-/**
- * Resolves a modifier shortcut from the character a key produces.
- *
- * Matching on `event.code` here was a bug: `code` names physical positions on
- * a US layout, so on AZERTY the key labelled Z reports as `KeyW` and Cmd+Z did
- * nothing at all. Users press the key they can read.
- */
-export function commandShortcut(key: string, shiftKey: boolean): CommandAction {
-  switch (key.toLowerCase()) {
-    case 'z':
-      return shiftKey ? 'redo' : 'undo';
-    case 'y':
-      return 'redo';
-    case 'd':
-      return 'duplicate';
-    case 'g':
-      // Ctrl+G groups, everywhere from Unreal to Figma. Shift+G is what
-      // ungroups in Unreal, and is not wired yet.
-      return shiftKey ? null : 'group';
-    case 's':
-      return 'save';
-    default:
-      return null;
-  }
-}
 
 /** What the decision below needs, so it can be taken without a `KeyboardEvent`. */
 export interface ShortcutContext {
@@ -102,17 +75,26 @@ export function useShortcuts(): void {
       }
       const store = useEditorStore.getState();
 
-      if (hasModifier(event)) {
-        const action = commandShortcut(event.key, event.shiftKey);
-        if (action === null) return;
-        event.preventDefault();
+      const binding = bindingOf(event);
+      const action = binding === null ? null : commandForBinding(binding);
+      if (action !== null) {
+        const command = commandById(action);
+        // A modifier binding is the editor's whether or not the command will
+        // act — Cmd+S must not open the browser's save dialog on a clean
+        // document. A bare one is only swallowed when something will happen: a
+        // preventDefault on a refusal makes Backspace feel broken everywhere
+        // else.
+        if (hasModifier(event) || command.can()) event.preventDefault();
 
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        commandById(action)?.run();
+        command.run();
         return;
       }
+      // A modifier chord this table does not name belongs to the browser, not
+      // to the tool keys below: Cmd+R is a reload, not the Rotate tool.
+      if (hasModifier(event)) return;
 
       const tool = TOOL_KEYS[event.code];
       if (tool !== undefined) {
@@ -124,14 +106,23 @@ export function useShortcuts(): void {
         return;
       }
 
-      if (event.key === 'Delete' || event.key === 'Backspace') {
-        const remove = commandById('delete');
-        // The key is only swallowed when something will happen: a preventDefault
-        // on a refusal makes Backspace feel broken everywhere else.
-        if (remove?.can()) {
-          event.preventDefault();
-          remove.run();
-        }
+      /*
+       * The handle space, on Unity's key and matched the same way the tool keys
+       * are — by position, so it stays under the same finger on AZERTY. It is
+       * not in `DEFAULT_BINDINGS` for the reason given there: it names no
+       * target, so it is not a command, and neither are Q/W/E/R.
+       *
+       * It steps rather than toggles, because there are three now — the order
+       * is `TRANSFORM_SPACES`, which the toolbar menu lists in the same order
+       * from the same array.
+       *
+       * Silent in Scale, where the toolbar button is greyed: three forces
+       * local space for scale, so a Global the gizmo would ignore is not a
+       * state to let someone into. Flipping it invisibly here would surface
+       * two tools later, which is worse than a key that does nothing.
+       */
+      if (event.code === 'KeyX') {
+        if (!event.repeat && store.transformMode !== 'scale') store.cycleTransformSpace();
         return;
       }
 

@@ -35,3 +35,28 @@ export interface LayoutPreferences {
 export function emptyLayoutPreferences(): LayoutPreferences {
   return { version: LAYOUT_PREFERENCES_VERSION, working: null, templates: [] };
 }
+
+export const SHORTCUT_PREFERENCES_VERSION = 1;
+
+/**
+ * Key bindings the author changed, laid over the product's defaults.
+ *
+ * Keyed by **binding**, not by command, and that is what lets one command carry
+ * several keys — redo answers to both `Mod+Shift+Z` and `Mod+Y`, and a table the
+ * other way round would have to make a list of it. A `null` value silences a
+ * default without putting anything in its place, which is the only way to free
+ * a key that would otherwise still be taken.
+ *
+ * The command is a `string` here for the same reason `SerializedLayout` is
+ * `unknown`: which gestures exist is the editor's business, and `core` carries
+ * this to disk without needing to know. The editor drops a binding naming a
+ * command it does not have — a file written by a newer build, or by hand.
+ */
+export interface ShortcutPreferences {
+  version: number;
+  bindings: Record<string, string | null>;
+}
+
+export function emptyShortcutPreferences(): ShortcutPreferences {
+  return { version: SHORTCUT_PREFERENCES_VERSION, bindings: {} };
+}

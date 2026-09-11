@@ -1,4 +1,10 @@
-import { createId, hasImagePreview, type AssetEntry, type AssetKind } from '@three-studio/core';
+import {
+  assetUrl,
+  createId,
+  hasImagePreview,
+  type AssetEntry,
+  type AssetKind,
+} from '@three-studio/core';
 import {
   VERSION as CORE_VERSION,
   type BaseInputParams,
@@ -10,8 +16,7 @@ import {
   type ViewProps,
 } from '@tweakpane/core';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
-import { showPanel } from '../shell/dockApi';
-import { browseAndImport } from '../import/importStore';
+import type { AssetSlotParams } from './fields';
 import { useAssetStore } from '../state/assetStore';
 import { useOverlayStore } from '../state/overlayStore';
 
@@ -39,18 +44,29 @@ import { useOverlayStore } from '../state/overlayStore';
  *     └ thumbnail; hover for a larger preview
  */
 
-export interface AssetFieldParams extends BaseInputParams {
-  view: 'asset';
-  assetKind: AssetKind;
-  /**
-   * What the empty value is called, where "None" would be a lie.
-   *
-   * A mesh with no material asset draws its own embedded one; a model with none
-   * draws the materials its file shipped with. Both are a *choice* rather than
-   * an absence, and calling either "None" reads as "this object has no
-   * material", which is the opposite of what is on screen.
-   */
-  emptyLabel?: string;
+/**
+ * The shape a field declares to be claimed by this plugin.
+ *
+ * `AssetSlotParams` is the half a pane writes and lives with the rest of the
+ * field vocabulary; `BaseInputParams` is Tweakpane's own, and this is the one
+ * place the two meet.
+ */
+export type AssetFieldParams = AssetSlotParams & BaseInputParams;
+
+/**
+ * The two things this control does that are not its own business.
+ *
+ * It used to reach for them: `browseAndImport` from the import store and
+ * `showPanel` from the dock. That was the last edge of an import cycle, and it
+ * was the wrong direction besides — a declarative field table does not drive
+ * the import dialog and does not decide which panel is in front. They are
+ * handed in when the plugin is built, by the panel that owns the Inspector.
+ */
+export interface AssetFieldActions {
+  /** Opens the import dialog; resolves with everything that came in. */
+  importAssets: () => Promise<readonly AssetEntry[]>;
+  /** Shows an asset where the author can see it. */
+  reveal: (assetId: string) => void;
 }
 
 /** Empty selection. `null` in the document; a primitive here, as the DOM needs. */
@@ -61,10 +77,6 @@ const PREVIEW_SIZE = 128;
 
 function isAssetFieldParams(params: Record<string, unknown>): params is AssetFieldParams {
   return params['view'] === 'asset' && typeof params['assetKind'] === 'string';
-}
-
-function assetUrl(entry: AssetEntry): string {
-  return `studio-asset://project/${entry.path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 /** lucide paths, inlined because this control is plain DOM rather than React. */
@@ -207,7 +219,7 @@ class AssetPicker {
             'width:18px;height:18px;flex:0 0 auto;border-radius:2px;background:var(--color-surface-0);' +
             'background-size:cover;background-position:center;';
           if (entry && hasImagePreview(entry)) {
-            thumb.style.backgroundImage = `url("${assetUrl(entry)}")`;
+            thumb.style.backgroundImage = `url("${assetUrl(entry.path)}")`;
           }
           row.appendChild(thumb);
         }
@@ -333,7 +345,7 @@ class AssetFieldView implements View {
     // reading as "None" would drop it on the next edit without a word.
     this.name.style.color = !empty && !entry ? '#e0704f' : '';
 
-    const url = entry && hasImagePreview(entry) ? assetUrl(entry) : null;
+    const url = entry && hasImagePreview(entry) ? assetUrl(entry.path) : null;
     this.preview.style.backgroundImage = url === null ? '' : `url("${url}")`;
     this.preview.style.cursor = url === null ? '' : 'zoom-in';
 
@@ -370,6 +382,7 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
 
   constructor(
     document: Document,
+    private readonly actions: AssetFieldActions,
     config: {
       value: Value<string>;
       viewProps: ViewProps;
@@ -389,7 +402,7 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
       });
     });
     this.view.browse.addEventListener('click', () => void this.importAndAssign());
-    this.view.locate.addEventListener('click', () => this.revealInProject());
+    this.view.locate.addEventListener('click', () => this.actions.reveal(this.value.rawValue));
     this.view.clear.addEventListener('click', () => {
       this.value.rawValue = NONE;
     });
@@ -455,32 +468,17 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
    * fill itself — the store refresh it does on the way is already done by then.
    */
   private async importAndAssign(): Promise<void> {
-    const result = await browseAndImport();
-    // Cancelled, or nothing importable was picked.
-    if (result === null) return;
-
-    // The first of what the author chose. Assigning several is a question the
-    // slot cannot answer — it holds one asset.
-    const imported = result.imported.find((asset) => asset.kind === this.kind);
+    // The first of what the author chose, of this slot's kind. Assigning
+    // several is a question the slot cannot answer — it holds one asset.
+    const imported = (await this.actions.importAssets()).find((asset) => asset.kind === this.kind);
     if (imported) this.value.rawValue = imported.id;
-  }
-
-  /** Points the Project panel at the folder holding this asset. */
-  private revealInProject(): void {
-    const entry = useAssetStore.getState().byId(this.value.rawValue);
-    if (!entry) return;
-
-    const store = useAssetStore.getState();
-    store.setFolder(entry.folder);
-    // A leftover search or kind filter would hide the asset we just navigated
-    // to, which reads as the button having done nothing.
-    store.setQuery('');
-    store.setKindFilter('all');
-    showPanel('project');
   }
 }
 
-const assetFieldPlugin: InputBindingPlugin<string, string, AssetFieldParams> = {
+function assetFieldPlugin(
+  actions: AssetFieldActions,
+): InputBindingPlugin<string, string, AssetFieldParams> {
+  return {
   id: 'input-studio-asset',
   type: 'input',
   // Optional in the type, required at runtime: registration compares this
@@ -502,16 +500,16 @@ const assetFieldPlugin: InputBindingPlugin<string, string, AssetFieldParams> = {
   },
 
   controller: (args) =>
-    new AssetFieldController(args.document, {
+    new AssetFieldController(args.document, actions, {
       value: args.value,
       viewProps: args.viewProps,
       kind: args.params.assetKind,
       emptyLabel:
         args.params.emptyLabel ?? (args.params.assetKind === 'material' ? 'Embedded' : 'None'),
     }),
-};
+  };
+}
 
-export const assetFieldBundle: TpPluginBundle = {
-  id: 'studio-asset',
-  plugins: [assetFieldPlugin],
-};
+export function assetFieldBundle(actions: AssetFieldActions): TpPluginBundle {
+  return { id: 'studio-asset', plugins: [assetFieldPlugin(actions)] };
+}

@@ -23,7 +23,7 @@ import { sceneWith } from './fixtures';
  * and `scene.rootOrder` — which is what makes reparenting O(1) and immer patches
  * shallow. Until this module existed the only thing checking that the three
  * agreed was `repairHierarchy`, at load time, so an edit that broke an edge
- * stayed broken until the next open quietly healed it. That is B1.
+ * stayed broken until the next open quietly healed it.
  *
  * Every function refuses rather than corrupts, and returns rather than throws:
  * they run inside immer producers, where an exception leaves the draft
@@ -45,7 +45,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     const scene = sceneWith([cube]);
 
     // The hierarchy shows rows prefab expansion produced, and their ids
-    // (`owner/local`) name nothing in the document. This is B1 exactly: the move
+    // (`owner/local`) name nothing in the document. This is the defect exactly: the move
     // used to leave the cube with a parent that does not exist and in no
     // children list at all — gone from the tree, still drawn in the viewport.
     expect(reparentEntity(scene, cube.entity.id, 'someInstance/root')).toBe(false);
@@ -86,7 +86,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     const scene = sceneWith([parent, child]);
 
     // The point of checking before unlinking: a refusal found halfway through
-    // would leave the entity in no list, which is the very state B1 produces.
+    // would leave the entity in no list, which is the very state to avoid.
     reparentEntity(scene, child.entity.id, 'gone');
     expect(scene.entities[parent.entity.id]?.children).toEqual([child.entity.id]);
     expect(validateHierarchy(scene)).toEqual([]);
@@ -162,7 +162,7 @@ describe('removing a subtree', () => {
     const removed = removeSubtree(scene, parent.entity.id);
 
     // The caller needs the list: the selection is what holds onto ids of
-    // entities that no longer exist, which is B2.
+    // entities that no longer exist.
     expect(removed).toHaveLength(3);
     expect(removed[0]).toBe(parent.entity.id);
     expect(new Set(removed)).toEqual(new Set([parent.entity.id, child.entity.id, grandchild.entity.id]));
@@ -241,7 +241,7 @@ describe('validating a document broken by hand', () => {
     const scene = sceneWith([cube]);
     scene.rootOrder = [];
 
-    // The shape B1 produced, and the reason it was invisible: unreachable from
+    // The shape it produced, and the reason it was invisible: unreachable from
     // `rootOrder`, so the hierarchy does not draw it, while the binder still does.
     expect(validateHierarchy(scene)).toEqual([
       expect.stringContaining('in no children list and not in rootOrder'),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from '../src/scene/water';
-import { createSkySettings, createWater } from '../src/scene/defaults';
+import { createWater } from '../src/components/water/defaults';
+import { createSkySettings } from '../src/scene/defaults';
 import { fillComponent } from '../src/components';
 import type { WaterComponent } from '../src/scene/schema';
 

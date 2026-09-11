@@ -16,7 +16,7 @@ import { editorAudioContext } from './context';
 /**
  * What the audition needs from the window it is running in.
  *
- * Every one of these is a parameter for the reason ADR-7 gives about the context:
+ * Every one of these is a parameter for the same reason as the context:
  * vitest runs under node, where `AudioContext` and `requestAnimationFrame` are
  * types with no values behind them. Without the seam this whole file is
  * unreachable from a test — and it is the file the frame loop lives in, which is
@@ -35,7 +35,7 @@ export interface AudioPreviewOptions {
  * What the editor plays when nothing is running.
  *
  * A second `AudioEngine` on the same context as play mode, kept apart from it by
- * a root gain each (ADR-4). That separation is the whole requirement of the
+ * a root gain each. That separation is the whole requirement of the
  * PRD's §9: stopping the game must not stop an audition, and auditioning a clip
  * must not appear in the game's mix.
  *
@@ -76,7 +76,7 @@ export class AudioPreview {
   /**
    * How loud the editor auditions, and only the editor.
    *
-   * Its own level and not the game's, which is the whole of ADR-4: two engines
+   * Its own level and not the game's, and that is the whole point: two engines
    * on one context, a gain node each, so turning auditions down while working
    * cannot follow the project into play mode or into a build.
    *

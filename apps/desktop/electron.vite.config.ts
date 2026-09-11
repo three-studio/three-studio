@@ -2,39 +2,26 @@ import { resolve } from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import {
+  WORKSPACE_PACKAGES,
+  threeWebgpuAlias,
+  workspaceAliases,
+} from '../../workspace-aliases';
 
-const monorepoRoot = resolve(__dirname, '../..');
-
-/**
- * Workspace packages are consumed as TypeScript *source*. So they must be bundled
- * rather than externalized, and Vite must be allowed to serve files from outside
- * apps/desktop.
- *
- * The build step those packages do have exists only for npm: their `exports` point
- * at a `dist/` that is a publishing artefact, absent on a fresh clone and stale the
- * moment anyone edits a source file. These aliases mirror the `paths` in
- * tsconfig.base.json so Vite resolves the same files the typechecker does.
+/*
+ * The workspace packages are bundled rather than externalized, which is also
+ * why Vite has to be allowed to serve files from outside apps/desktop — hence
+ * this. The mapping itself lives in `workspace-aliases.ts`, next to the reason.
  */
-const workspaceNames = ['core', 'runtime', 'editor'];
-const workspacePackages = workspaceNames.map((name) => `@three-studio/${name}`);
-const workspaceAliases = workspaceNames.flatMap((name) => [
-  {
-    find: new RegExp(`^@three-studio/${name}$`),
-    replacement: resolve(monorepoRoot, `packages/${name}/src/index.ts`),
-  },
-  {
-    find: new RegExp(`^@three-studio/${name}/(.*)$`),
-    replacement: resolve(monorepoRoot, `packages/${name}/src/$1`),
-  },
-]);
+const monorepoRoot = resolve(__dirname, '../..');
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     resolve: { alias: workspaceAliases },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: workspacePackages })],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PACKAGES })],
     resolve: { alias: workspaceAliases },
   },
   renderer: {
@@ -43,11 +30,7 @@ export default defineConfig({
       alias: [
         ...workspaceAliases,
         { find: '@', replacement: resolve(__dirname, 'src/renderer/src') },
-        // three's addons import the bare `three` specifier while our code imports
-        // `three/webgpu`. Without this the bundle would contain two copies of the
-        // library and `instanceof` checks across the boundary would fail.
-        // Anchored so `three/addons/*` still resolves normally.
-        { find: /^three$/, replacement: 'three/webgpu' },
+        threeWebgpuAlias,
       ],
     },
     server: {

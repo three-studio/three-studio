@@ -5,12 +5,14 @@ import {
   createLightEntity,
   createMeshComponent,
   createMeshEntity,
+  createRenderingSettings,
   findComponent,
   putComponent,
   type AudioSourceComponent,
   type EntityTemplate,
   type SceneDoc,
 } from '@three-studio/core';
+import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import {
@@ -53,7 +55,11 @@ function mount(scene: SceneDoc): {
   /** Re-runs a frame: the binder, then the overlay, as the viewport does. */
   frame: (next?: SceneDoc, selection?: readonly string[]) => void;
 } {
-  const binder = new SceneBinder();
+  const binder = new SceneBinder({
+    resolver: NULL_ASSET_RESOLVER,
+    // The viewport's own settings, so these read the binder the editor builds.
+    rendering: createRenderingSettings(),
+  });
   const overlay = new ViewportOverlay(binder);
   const camera = new PerspectiveCamera(60, 1.5, 0.1, 1000);
   camera.position.set(0, 0, 10);
@@ -107,7 +113,7 @@ describe('who gets a marker', () => {
     /*
      * The `Scene` node every new scene opens with is one of these, and a marker
      * on it says "an entity is at the origin" — which the hierarchy says better.
-     * ADR-13 rules out naming that node as a special case, so the rule has to
+     * Naming that node as a special case is ruled out, so the rule has to
      * hold for every bare entity, and it does: a group is scaffolding, and what
      * hangs under it is what gets clicked.
      */
@@ -179,7 +185,7 @@ describe('a marker as a click target', () => {
   it('goes invisible with its entity, so a hidden light cannot be clicked', () => {
     // Three does not inherit `visible` and its raycaster does not test it, so
     // this flag is the whole of what keeps a hidden entity unclickable — the
-    // same rule as B7 in `Picker`.
+    // same rule as in `Picker`.
     const light = createLightEntity('point');
     const scene = sceneWith([light]);
     const { overlay, frame } = mount(scene);

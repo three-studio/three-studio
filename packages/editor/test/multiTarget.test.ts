@@ -20,6 +20,14 @@ import { MultiTarget } from '../src/inspector/target';
  * `buildInspector` does not know this class exists: it only ever saw
  * `EntityTarget`, which is why phase 4 built that interface before there was
  * anything to put behind it.
+ *
+ * Two things this file used to check are gone with what they checked. A reading
+ * was `{ value, mixed }`, and `mixed` was the dash Unity and Unreal show when
+ * the targets disagree — nothing ever drew it, so the tests were the only thing
+ * keeping it alive. And `MultiTarget.can` was a second copy of `Selection.can`
+ * with no caller; the case it covered, a locked member refusing `translate`
+ * while `rename` still passes, is `selection.test.ts`'s, against the copy
+ * everything actually asks.
  */
 
 const doc = () => useDocumentStore.getState();
@@ -39,35 +47,18 @@ function twoCubes() {
 }
 
 describe('reading across several entities', () => {
-  it('reports a value they agree on as settled', () => {
+  it('reads the first entity’s value, from the document rather than a snapshot', () => {
     const [a, b] = twoCubes();
-    const target = new MultiTarget([a.entity.id, b.entity.id]);
-    const mesh = target.components()[0];
+    const mesh = new MultiTarget([a.entity.id, b.entity.id]).components()[0];
+    expect(mesh?.read(['castShadow'])).toBe(true);
 
-    expect(mesh?.read(['castShadow'])).toEqual({ value: true, mixed: false });
-  });
-
-  it('reports a value they disagree on as mixed', () => {
-    const [a, b] = twoCubes();
+    // Re-resolved on every read: the panel holds this object across frames, so
+    // a target that answered from the component it was built with would go on
+    // showing a value the document no longer has.
     doc().mutate('Differ', (draft) => {
-      (componentsOf(draft, b.entity.id)[0] as MeshComponent).castShadow = false;
+      (componentsOf(draft, a.entity.id)[0] as MeshComponent).castShadow = false;
     });
-
-    const mesh = new MultiTarget([a.entity.id, b.entity.id]).components()[0];
-    const reading = mesh?.read(['castShadow']);
-    // The dash Unity and Unreal both show. The value is the first one's, so the
-    // control has something to display.
-    expect(reading?.mixed).toBe(true);
-    expect(reading?.value).toBe(true);
-  });
-
-  it('compares nested values by content, not by reference', () => {
-    const [a, b] = twoCubes();
-    const mesh = new MultiTarget([a.entity.id, b.entity.id]).components()[0];
-
-    // Two equal colours are two objects; comparing references would report every
-    // object-valued field as mixed.
-    expect(mesh?.read(['material', 'color']).mixed).toBe(false);
+    expect(mesh?.read(['castShadow'])).toBe(false);
   });
 });
 
@@ -118,16 +109,5 @@ describe('writing to several entities', () => {
     doc().undo();
     expect(meshOf(a.entity.id).castShadow).toBe(true);
     expect(meshOf(b.entity.id).castShadow).toBe(true);
-  });
-
-  it('refuses a capability as soon as one member cannot', () => {
-    const [a, b] = twoCubes();
-    doc().mutate('Lock one', (draft) => {
-      draft.entities[b.entity.id]!.locked = true;
-    });
-
-    const target = new MultiTarget([a.entity.id, b.entity.id]);
-    expect(target.can('rename')).toBe(true);
-    expect(target.can('translate')).toBe(false);
   });
 });

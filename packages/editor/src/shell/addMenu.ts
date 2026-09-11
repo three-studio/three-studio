@@ -1,19 +1,9 @@
-import {
-  GEOMETRY_LABELS,
-  createAudioListenerEntity,
-  createAudioSourceEntity,
-  createCameraEntity,
-  createEntity,
-  createLightEntity,
-  createMeshEntity,
-  createWaterEntity,
-  type EntityTemplate,
-  type GeometryKind,
-  type LightKind,
-} from '@three-studio/core';
+import { createEntity, type EntityTemplate } from '@three-studio/core';
+import { addMenuGroups } from '../components/menus';
+import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
-import { modKey } from '../platform';
-import { groupCommand } from '../commands/registry';
+import { commandById } from '../commands/registry';
+import { shortcutHint } from './shortcutBindings';
 import type { MenuEntry } from '../ui/Menu';
 
 /*
@@ -25,43 +15,9 @@ import type { MenuEntry } from '../ui/Menu';
  * editor, Unity and Blender all group them this way.
  */
 
-/** Ordered the way an author reaches for them, not the way the union declares them. */
-const MESH_KINDS: readonly (GeometryKind | null)[] = [
-  'box',
-  'sphere',
-  'plane',
-  'capsule',
-  'cylinder',
-  null,
-  'circle',
-  'ring',
-  'torus',
-  'torusKnot',
-  null,
-  'tetrahedron',
-  'octahedron',
-  'dodecahedron',
-  'icosahedron',
-];
-
-/**
- * Shorter than the entity names: the submenu title already says "Light".
- *
- * Ordered by how often one is reached for, not alphabetically — and the two
- * scene-wide kinds sit last because they are the ones that ignore where they
- * are put.
- */
-const LIGHT_LABELS: Record<LightKind, string> = {
-  directional: 'Directional',
-  point: 'Point',
-  spot: 'Spot',
-  rectArea: 'Area',
-  projector: 'Projector',
-  ambient: 'Ambient',
-  hemisphere: 'Hemisphere',
-};
-
-const LIGHT_KINDS = Object.keys(LIGHT_LABELS) as readonly LightKind[];
+/** One thing a slice offers, as a menu entry that places it. */
+const offer = (entry: AddMenuEntry): MenuEntry =>
+  entry === null ? null : { label: entry.label, onSelect: () => addEntityInView(entry.create()) };
 
 /*
  * Where the new object lands is `addEntityInView`'s business, not the menu's.
@@ -84,50 +40,15 @@ export function buildAddMenu(): MenuEntry[] {
       // Through the registry since phase 12. This entry asked
       // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
       // object was refused by the shortcut and grouped by the menu.
-      label: groupCommand.label(),
-      shortcut: `${modKey}G`,
-      disabled: !groupCommand.can(),
-      onSelect: () => groupCommand.run(),
+      label: commandById('group').label(),
+      shortcut: shortcutHint('group'),
+      disabled: !commandById('group').can(),
+      onSelect: () => commandById('group').run(),
     },
     null,
-    {
-      label: 'Mesh',
-      submenu: MESH_KINDS.map((kind) =>
-        kind === null
-          ? null
-          : { label: GEOMETRY_LABELS[kind], onSelect: add(() => createMeshEntity(kind)) },
-      ),
-    },
-    {
-      label: 'Light',
-      submenu: LIGHT_KINDS.map((kind) => ({
-        label: LIGHT_LABELS[kind],
-        onSelect: add(() => createLightEntity(kind)),
-      })),
-    },
-    {
-      label: 'Camera',
-      submenu: [
-        { label: 'Perspective', onSelect: add(() => createCameraEntity('perspective')) },
-        { label: 'Orthographic', onSelect: add(() => createCameraEntity('orthographic')) },
-      ],
-    },
-    {
-      label: 'Audio',
-      submenu: [
-        { label: 'Audio Source', onSelect: add(() => createAudioSourceEntity()) },
-        // Rarely reached for, and worth having: without one the ear rides the
-        // camera, which is right until the camera is not where the player is.
-        { label: 'Audio Listener', onSelect: add(() => createAudioListenerEntity()) },
-      ],
-    },
-    {
-      // A submenu for one entry, on purpose: this is where the things that are
-      // the *scene* rather than an object in it will go — fog and volumes are
-      // the obvious next two — and moving Water in later would move it out from
-      // under whatever muscle memory it had built by then.
-      label: 'Environment',
-      submenu: [{ label: 'Water', onSelect: add(() => createWaterEntity()) }],
-    },
+    ...addMenuGroups().map((group) => ({
+      label: group.label,
+      submenu: group.entries.map(offer),
+    })),
   ];
 }

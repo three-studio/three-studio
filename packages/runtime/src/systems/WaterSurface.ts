@@ -56,6 +56,20 @@ import type { StudioTime } from '../time/StudioTime';
  *    `resolutionScale` can be written afterwards, nothing is added to the scene
  *    graph, and `dispose` can reach the render targets without walking a node
  *    graph to find them.
+ *
+ * **Re-checked against three's `dev` branch on 2026-09-06, and all four still
+ * hold** — line for line, so the next review can diff rather than read:
+ *
+ * | | upstream today |
+ * |---|---|
+ * | speed | `const offset = time;` inside `getNoise` — the global node, nothing to set |
+ * | direction | the four `uv0…uv3` are built from literals; no rotation anywhere |
+ * | choppiness | `noise.xzy.mul( 1.5, 1.0, 1.5 )` — three literals |
+ * | reflector | built inside `material.colorNode = Fn( … )`, which calls `this.add( mirrorSampler.target )` and reads `this.resolutionScale` as a plain number at build time |
+ *
+ * What would end the fork is any of those becoming a uniform or a constructor
+ * option that stays writable. Nothing else here is a disagreement with the
+ * addon: the rest is kept close enough to rebase.
  */
 
 export interface WaterSurfaceOptions {

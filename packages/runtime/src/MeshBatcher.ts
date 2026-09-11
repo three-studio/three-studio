@@ -1,7 +1,7 @@
 import { BatchedMesh, Mesh, type Object3D } from 'three/webgpu';
 import type { Reconciler } from './Reconciler';
 import { resolveEntityId } from './systems/identity';
-import type { MeshHandle } from './systems/MeshSystem';
+import type { BatchableHandle } from './systems/ComponentSystem';
 import type { ResourceArena } from './systems/ResourceArena';
 
 /**
@@ -100,7 +100,7 @@ export class MeshBatcher {
     private readonly shadowCasters: ReadonlySet<string>,
   ) {}
 
-  /** Off by default; the editor and the engine both turn it on. */
+  /** Set once by `SceneBinder` from the project's rendering settings. */
   enabled = false;
   private readonly batches = new Map<string, BatchGroup>();
   /**
@@ -203,8 +203,8 @@ export class MeshBatcher {
     if (!this.dirty) return;
     this.dirty = false;
 
-    const groups = new Map<string, MeshHandle[]>();
-    for (const handle of this.reconciler.meshHandles()) {
+    const groups = new Map<string, BatchableHandle[]>();
+    for (const handle of this.reconciler.batchableHandles()) {
       // Anything hidden is left out rather than given a zero matrix: three's
       // per-instance visibility would need its own bookkeeping, and a batch
       // is regrouped whenever the document changes anyway.
@@ -298,7 +298,7 @@ export class MeshBatcher {
    * @returns Whether the group survives. `false` means the caller must dispose
    *   it and let the create pass build a new one.
    */
-  private refit(group: BatchGroup, members: MeshHandle[]): boolean {
+  private refit(group: BatchGroup, members: BatchableHandle[]): boolean {
     /*
      * The batch draws **one** material object, chosen when it was built, and
      * nothing about the group's key can see that object move.
@@ -325,7 +325,7 @@ export class MeshBatcher {
      * serialised key — so this path is walked for three thousand meshes sixty
      * times a second to conclude that the group is what it was. It has to cost
      * nothing: the difference below allocates a `Set` and an array of N, where
-     * this allocates neither. `meshHandles` yields in map insertion order, so an
+     * this allocates neither. `batchableHandles` yields in map insertion order, so an
      * untouched group always presents itself the same way round.
      */
     if (
@@ -367,7 +367,7 @@ export class MeshBatcher {
     return kept.length > 0;
   }
 
-  private createBatch(key: string, members: MeshHandle[]): void {
+  private createBatch(key: string, members: BatchableHandle[]): void {
     const first = members[0]!;
     const position = first.geometry.getAttribute('position');
     const index = first.geometry.getIndex();
@@ -379,14 +379,48 @@ export class MeshBatcher {
      * triangles against 51K for the same view unbatched, and slower for the
      * trouble. This culls per instance.
      *
-     * **But only when nothing casts a shadow.** A `BatchedMesh` holds one
-     * multi-draw list for the whole frame and rebuilds it in `onBeforeRender`,
-     * i.e. once per camera — so the six faces of a point light's shadow map each
-     * overwrite it, and the last one decides what the *colour* pass draws. With
-     * a point light above four cubes, the list came out empty and all four
-     * vanished; moving the light changed how many came back. That is B15 as
-     * well, where a shadow frustum narrower than the field left 178 of 2000
-     * crates on screen.
+     * **But only when nothing casts a shadow**, and the reason is a collision
+     * inside three rather than anything here.
+     *
+     * A `BatchedMesh` holds **one** multi-draw list and rebuilds it in
+     * `onBeforeRender`, for whichever camera is passed. Under the WebGPU
+     * renderer a shadow map is not a pass of its own that runs before the
+     * frame: `ShadowNode.updateBefore` calls `renderer.render(scene,
+     * shadow.camera)` (`ShadowNode.js:710`) from inside the node update of a
+     * lit material — which happens inside `Renderer.renderObject`, *after* that
+     * object's `onBeforeRender` (`Renderer.js:3558`) and *before* its draw is
+     * encoded. So the batch builds its list for the view camera, the nested
+     * shadow render immediately overwrites it with the light's frustum, and the
+     * colour pass draws that. `BatchedMesh.onBeforeShadow` exists for exactly
+     * this and is called only by `WebGLShadowMap`; the WebGPU path never calls
+     * it. (three 0.185.1.)
+     *
+     * **Measured, because reading it twice was not enough.** 3600 spheres in
+     * one batch, 11M source triangles, one shadow-casting sun, the editor
+     * camera on the whole field — see T-056:
+     *
+     * | | drawn | median | p95 |
+     * |---|---|---|---|
+     * | as shipped | 3600 / 3600 | 11.7 ms | 12.7 ms |
+     * | culling forced on | **30** / 3600 | 8.2 ms | 10.0 ms |
+     *
+     * Thirty. The frame is faster because the scene is gone: thirty is what the
+     * sun's 5-unit ortho box holds. That is the open defect exactly — a shadow frustum
+     * narrower than the field left 178 of 2000 crates on screen — and it is not
+     * a bug that has since been fixed.
+     *
+     * There is no seam to fix it behind: nothing runs between the nested shadow
+     * render and the colour draw. Making the shadow pass reuse the view's list
+     * would cull shadows by the view frustum, so an instance just off screen
+     * would stop casting onto what is on screen. Giving the shadow pass a mesh
+     * of its own doubles the geometry and the walk. Both are worse than the
+     * thing they buy, which brings us to what that is:
+     *
+     * **it buys nothing measurable here.** With shadows switched off — where
+     * the culling *is* correct, 3120 of 3600 drawn — the frame sits at 8.4 ms
+     * either way, which is the 120 Hz vsync. The saving is real and smaller
+     * than the budget. Worth reopening on a field that misses vsync with the
+     * culling off, and not before.
      *
      * So the culling is given up in exactly the scenes that cannot have it. A
      * large static field with no shadow-casting light — the case it was built
@@ -403,7 +437,7 @@ export class MeshBatcher {
     batched.perObjectFrustumCulled = this.shadowCasters.size === 0;
 
     /*
-     * Sorting off, and it is what closes B15 rather than working around it.
+     * Sorting off, and it is what closes the waste rather than working around it.
      *
      * `onBeforeRender` returns early only when visibility, per-instance culling
      * and sorting are *all* off. Sorting is on by default, so the list was

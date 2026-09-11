@@ -1,5 +1,5 @@
 import { ASSET_META_SUFFIX, type AssetKind, type AssetSettings } from '../schema';
-import type { ImportField } from './ImportField';
+import type { FieldRow } from '../../fields';
 
 /**
  * Reads a file sitting next to the one being imported, relative to it.
@@ -73,7 +73,7 @@ export abstract class AssetImporter<S extends AssetSettings = AssetSettings> {
   abstract defaultSettings(fileName: string): S;
 
   /** What the import dialog shows. Empty means "nothing to decide". */
-  fields(_settings: S): readonly ImportField[] {
+  fields(_settings: S): readonly FieldRow[] {
     return [];
   }
 

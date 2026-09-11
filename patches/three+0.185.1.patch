@@ -1,3 +1,7 @@
+Re-checked against three's dev branch on 2026-09-06: still unguarded upstream,
+in the caller *and* in `parseNormals`, which reads `NormalNode.Normals.a`
+directly. No issue on mrdoob/three.js reports it. See T-058.
+
 diff --git a/node_modules/three/examples/jsm/loaders/FBXLoader.js b/node_modules/three/examples/jsm/loaders/FBXLoader.js
 index 7a78f38..ea83a2f 100644
 --- a/node_modules/three/examples/jsm/loaders/FBXLoader.js

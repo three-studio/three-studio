@@ -185,7 +185,7 @@ describe('giving components an identity', () => {
 });
 
 /*
- * B10 itself: the prefab changes shape and the instances follow it correctly.
+ * The defect itself: the prefab changes shape and the instances follow it correctly.
  */
 describe('a prefab that gains a component', () => {
   it('does not slide the overrides of its instances onto other components', () => {

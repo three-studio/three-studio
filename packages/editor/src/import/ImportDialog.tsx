@@ -1,7 +1,7 @@
 import {
   importPreviewUrl,
   type AssetKind,
-  type ImportField,
+  type FieldRow,
   type StagedFile,
 } from '@three-studio/core';
 import {
@@ -382,7 +382,7 @@ function FactsLine({ row }: { row: ImportRow }) {
 }
 
 /** The importer's declared fields, rendered by the inspector's own binder. */
-function Settings({ row, fields }: { row: ImportRow; fields: readonly ImportField[] }) {
+function Settings({ row, fields }: { row: ImportRow; fields: readonly FieldRow[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const paneRef = useRef<ImportSettingsPane | null>(null);
 

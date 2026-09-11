@@ -12,12 +12,12 @@ export interface BusState {
 /**
  * One gain node per bus, all under a root, and the root under the destination.
  *
- * Flat on purpose (ADR-3): `AudioBus` is a fixed enum today, and a graph the
+ * Flat on purpose: `AudioBus` is a fixed enum today, and a graph the
  * author has to build buys nothing until there are effects to route through.
  * `'master'` is a bus like the others — the default for a source with no
  * opinion — and **not** the output node. The output node is `root`, which is
  * what `masterVolume` and the mute act on, and what a second mixer on the same
- * context uses to stay independent of this one (ADR-4).
+ * context uses to stay independent of this one.
  *
  * The final volume of a sound is a **product**: its own volume, the asset's
  * imported gain, its bus, and the root. Nothing here adds.

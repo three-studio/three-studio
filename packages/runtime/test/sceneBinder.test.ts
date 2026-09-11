@@ -4,9 +4,11 @@ import {
   createLightEntity,
   createMaterial,
   createMeshEntity,
+  createRenderingSettings,
   type LightComponent,
   type MaterialDef,
   type MeshComponent,
+  type RenderingSettings,
 } from '@three-studio/core';
 import {
   Color,
@@ -42,8 +44,18 @@ import type { AssetResolver } from '../src/assets/AssetResolver';
 /** Disposed after each test, so a leak in one does not show up in the next. */
 const live: SceneBinder[] = [];
 
-function binderWith(resolver: AssetResolver = { url: () => null }): SceneBinder {
-  const binder = new SceneBinder(resolver);
+/**
+ * @param rendering Batching off by default, which is *not* what a project
+ *   carries — `createRenderingSettings` says on. Every test outside the
+ *   batching blocks asks about the object a mesh component built, and a batched
+ *   mesh is hidden and drawn by something else; turning it on here would change
+ *   what those tests measure rather than what they assert.
+ */
+function binderWith(
+  resolver: AssetResolver = { url: () => null },
+  rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
+): SceneBinder {
+  const binder = new SceneBinder({ resolver, rendering });
   live.push(binder);
   return binder;
 }
@@ -94,7 +106,7 @@ describe('binding a scene', () => {
     // Ten syncs of a document nothing touched, as a drag on another entity
     // produces. The list of an entity's components is now built fresh on every
     // read, so comparing its *identity* would differ every time and rebuild the
-    // whole scene once per frame — B9's leak, through a new door. The elements
+    // whole scene once per frame — the shadow-map leak, through a new door. The elements
     // still carry immer's identity, and that is what the check uses.
     for (let step = 0; step < 10; step++) binder.sync(scene);
 
@@ -116,7 +128,7 @@ describe('binding a scene', () => {
 });
 
 /*
- * B5 — the worst of the twelve. Three meshes named the same material asset, and
+ * The worst of the twelve. Three meshes named the same material asset, and
  * one texture change gave each of them its own copy, each replacement freeing
  * the one the previous mesh had just adopted. Written in the shape it must have
  * once phase 5 lands, not in the shape of the bug.
@@ -148,7 +160,7 @@ describe('a material asset shared by several meshes', () => {
 });
 
 /*
- * B8 — a glTF that lands after its entity was deleted. `attachModel` guards
+ * A glTF that lands after its entity was deleted. `attachModel` guards
  * against an *edit* with a generation counter, but a removed binding keeps its
  * generation, so the guard passes and the model is attached to a container
  * nothing walks any more.
@@ -178,7 +190,7 @@ describe('a model that arrives late', () => {
 });
 
 /*
- * B9 — a light allocates a shadow map render target, `shadowMapSize` squared and
+ * A light allocates a shadow map render target, `shadowMapSize` squared and
  * up to 4096, that only `light.entity.entity.dispose()` frees. Every change to a component
  * array rebuilt the object, so dragging an intensity slider allocated one per
  * frame and abandoned the last.
@@ -260,7 +272,7 @@ describe('editing a light', () => {
 });
 
 /*
- * B6 — the retire queue is a frame-scale idea, and `sync` is neither once per
+ * The retire queue is a frame-scale idea, and `sync` is neither once per
  * frame nor guaranteed to happen.
  */
 describe('when retired objects are freed', () => {
@@ -293,11 +305,12 @@ function cubes(count: number, shadows = false) {
   });
 }
 
-/** Off by default on the binder; the editor turns it on, so these must too. */
+/**
+ * A binder built for a project that batches, which is what the setting defaults
+ * to. It is read at construction and never again — see `SceneBinder.batching`.
+ */
 function batching(resolver: AssetResolver = { url: () => null }): SceneBinder {
-  const binder = binderWith(resolver);
-  binder.batching = true;
-  return binder;
+  return binderWith(resolver, createRenderingSettings());
 }
 
 /**
@@ -543,7 +556,7 @@ describe('what a batch has to notice', () => {
      * `onBeforeRender` returns early only when visibility, per-instance culling
      * and sorting are all off (`BatchedMesh.js:1522`). Sorting is on by default,
      * so it rebuilt the list for every camera — including the six faces of a
-     * point light's shadow map, which is the whole of B15. Front-to-back order
+     * point light's shadow map, which is the whole of it. Front-to-back order
      * buys nothing for the opaque geometry this batches.
      */
     expect(batchOf(binder).sortObjects).toBe(false);
@@ -702,8 +715,8 @@ describe('what a batch has to notice', () => {
     expect(touched).toContain(slotFor(binder, batch, arrival[0]!.entity.id));
   });
 
-  it('takes a batched member out of the raycast, and gives it back', () => {
-    const field = cubes(4);
+  it('takes a batched member out of the raycast, and gives it back when it leaves', () => {
+    const field = cubes(4, true);
     const binder = batching();
     binder.sync(sceneWith(field));
 
@@ -714,29 +727,37 @@ describe('what a batch has to notice', () => {
      * `Picker` sorted by distance and then threw away, on top of the batch's own
      * instances. Twice the work per click, all of it wasted.
      */
-    const member = meshOf(binder, field[0]!.entity.id);
+    const member = meshOf(binder, field[1]!.entity.id);
     expect(member.layers.test(new Layers())).toBe(false);
 
-    binder.batching = false;
-    binder.sync(sceneWith(field));
+    /*
+     * Out through the door the product has: `castShadow` is in the batch key, so
+     * flipping it moves this cube out of the group, and one cube on its own is
+     * under `MIN_BATCH_SIZE`. It draws itself again, so it has to answer clicks
+     * again. Index 1 rather than 0 because the batch draws the material object
+     * of its first member — losing that one disposes the batch instead of
+     * refitting it, which is the case above.
+     */
+    binder.sync(sceneWith(withoutShadows(field, 1)));
+    expect(batchesOf(binder)).toHaveLength(1);
+    expect(member.visible).toBe(true);
     expect(member.layers.test(new Layers())).toBe(true);
   });
 
-  it('batches again after batching is turned off and back on', () => {
-    const scene = sceneWith(cubes(4));
-    const binder = batching();
-    binder.sync(scene);
-    expect(batchesOf(binder)).toHaveLength(1);
+  it('draws every mesh itself when the project has batching off', () => {
+    // The other half of the setting, and the only way it is reachable now: read
+    // at construction, so a binder is either a batching one for its whole life
+    // or is not one.
+    const field = cubes(4);
+    const binder = binderWith();
+    binder.sync(sceneWith(field));
 
-    binder.batching = false;
-    binder.sync(scene);
     expect(batchesOf(binder)).toHaveLength(0);
-
-    // Taking the batches down says nothing about what the groups should hold, so
-    // the regroup that follows has to run rather than trust its last answer.
-    binder.batching = true;
-    binder.sync(scene);
-    expect(batchesOf(binder)).toHaveLength(1);
+    for (const cube of field) {
+      const mesh = meshOf(binder, cube.entity.id);
+      expect(mesh.visible).toBe(true);
+      expect(mesh.layers.test(new Layers())).toBe(true);
+    }
   });
 });
 

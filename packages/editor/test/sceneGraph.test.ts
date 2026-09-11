@@ -13,7 +13,7 @@ beforeEach(() => {
 });
 
 /*
- * B1 through the command rather than through the tree layer, which
+ * The same defect through the command rather than through the tree layer, which
  * `packages/core/test/sceneGraph.test.ts` covers on its own. What is being
  * pinned here is the gesture: the drop the hierarchy panel performs, the undo
  * step it must not cost, and the fact that the command delegates its guards

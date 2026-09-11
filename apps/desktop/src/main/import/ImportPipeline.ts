@@ -5,19 +5,15 @@ import {
   ASSET_META_SUFFIX,
   ASSET_META_VERSION,
   assetDisplayName,
+  conformAssetSettings,
   createId,
   importerForFile,
   type AssetEntry,
   type AssetMeta,
   type ImportPlanItem,
 } from '@three-studio/core';
-import {
-  AssetError,
-  toPosix,
-  uniqueFileName,
-  uniqueFolderName,
-  writeAssetMeta,
-} from '../assets';
+import { AssetError, toPosix, uniqueFileName, uniqueFolderName } from '../assetFiles';
+import { writeAssetMeta } from '../assetScan';
 import { resolveInside } from '../paths';
 import type { StagedSource } from './ImportSession';
 
@@ -86,7 +82,12 @@ export class ImportPipeline {
       kind: importer.kind,
       importedAt: Date.now(),
       hash: source.hash,
-      settings: item.settings,
+      // The plan is whatever the renderer sent, and this is where it becomes
+      // the settings of a real asset. Conformed against the importer that
+      // claimed the *source* — the same one chosen above — so the kind in the
+      // sidecar is the file's rather than the plan's: a `.fbx` whose plan said
+      // `texture` was written as one, and every later read believed it.
+      settings: conformAssetSettings(item.settings, importer.kind, source.fileName),
     };
 
     try {
@@ -120,6 +121,11 @@ export class ImportPipeline {
       importedAt: meta.importedAt,
       hash: meta.hash,
       settings: meta.settings,
+      // Built by the scan that follows an import, not here: this runs inside a
+      // loop the dialog is waiting on, and decoding an 8192-square photograph
+      // is half a second the author would spend staring at a spinner. It is a
+      // `stat` away from being right, and nothing loads the asset in between.
+      importedPath: null,
     };
   }
 

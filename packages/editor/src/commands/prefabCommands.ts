@@ -22,6 +22,7 @@ import {
   type PrefabInstanceComponent,
 } from '@three-studio/core';
 import { useAssetStore } from '../state/assetStore';
+import { defineCommand, type EditorContext } from './command';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { askForText } from '../state/dialogStore';
@@ -409,3 +410,125 @@ export function unpackPrefabInstance(entityId: string): void {
 
   notify({ kind: 'success', title: `Unpacked "${prefab.name}"` });
 }
+
+/*
+ * The prefab gestures, as commands.
+ *
+ * `registry.ts` used to leave these out, on the grounds that they were "decided
+ * in exactly one place, and a registry earns its keep by removing a second".
+ * **That was no longer true when it was checked.** Four of them are decided
+ * twice — once in the hierarchy's context menu and once in the prefab
+ * component's Inspector schema — and the two did not agree:
+ *
+ * - **Apply Overrides** and **Revert Overrides** are greyed by the hierarchy
+ *   when the instance carries no overrides, and were live buttons in the
+ *   Inspector. Pressing them there did nothing at all.
+ * - **Show in Project** is greyed by the hierarchy when the prefab asset is
+ *   missing; the Inspector offered it and swallowed the click.
+ * - **Unpack** and **Select All Instances** had no verdict in the Inspector.
+ *
+ * One `can()` each, and both callers ask it.
+ *
+ * `instantiatePrefab` stays a function: it is called with the point a drop
+ * landed on, which makes it a parameterised mutation rather than something a
+ * person can ask for by name. Same boundary as the rest of the layer.
+ */
+
+/** The one entity this context names, or `undefined` when it names none or several. */
+function only(ctx: EditorContext): string | undefined {
+  return ctx.selection.isSingle ? (ctx.selection.primary ?? undefined) : undefined;
+}
+
+/** The prefab instance this context names, if it names exactly one that is one. */
+function instance(ctx: EditorContext) {
+  const entityId = only(ctx);
+  return entityId === undefined ? null : instanceInfo(entityId);
+}
+
+/** Whether the named instance has anything to apply or revert. */
+function hasOverrides(ctx: EditorContext): boolean {
+  const entityId = only(ctx);
+  return entityId !== undefined && Object.keys(overridesOf(entityId)).length > 0;
+}
+
+export const PREFAB_COMMANDS = {
+  createPrefab: defineCommand({
+    label: () => 'Create Prefab…',
+    // One entity and its children. A prefab of several unrelated roots would
+    // need a wrapper nobody asked for.
+    can: (ctx) => only(ctx) !== undefined,
+    run: async (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) await createPrefabFromEntity(entityId);
+    },
+  }),
+
+  createPrefabVariant: defineCommand({
+    label: () => 'Create Variant…',
+    can: (ctx) => instance(ctx)?.missing === false,
+    run: async (ctx) => {
+      const info = instance(ctx);
+      if (info && !info.missing) await createPrefabVariant(info.assetId);
+    },
+  }),
+
+  selectPrefabInstances: defineCommand({
+    // The count is the question anyone asks before editing a prefab: what
+    // exactly am I about to change. The hierarchy already put it in its label;
+    // saying it here is what gets it into the Inspector's button as well.
+    label: (ctx) => {
+      const info = instance(ctx);
+      return info ? `Select All Instances (${info.siblings.length})` : 'Select All Instances';
+    },
+    can: (ctx) => instance(ctx) !== null,
+    run: (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) selectPrefabInstances(entityId);
+    },
+  }),
+
+  applyPrefabOverrides: defineCommand({
+    label: () => 'Apply Overrides to Prefab',
+    can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
+    run: async (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) await applyInstanceOverrides(entityId);
+    },
+  }),
+
+  revertPrefabOverrides: defineCommand({
+    label: () => 'Revert All Overrides',
+    can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
+    run: (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) revertInstanceOverrides(entityId);
+    },
+  }),
+
+  unpackPrefab: defineCommand({
+    label: () => 'Unpack Prefab',
+    can: (ctx) => instance(ctx) !== null,
+    run: (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) unpackPrefabInstance(entityId);
+    },
+  }),
+
+  /**
+   * Takes one produced entity back to what the prefab says it should be.
+   *
+   * Its id is an *expanded* one — `owner:local` — so `can()` is whether it
+   * splits, which is the same question `run` asks before touching the document.
+   */
+  revertEntityOverride: defineCommand({
+    label: () => 'Revert to Prefab',
+    can: (ctx) => {
+      const entityId = only(ctx);
+      return entityId !== undefined && splitInstancedId(entityId) !== null;
+    },
+    run: (ctx) => {
+      const entityId = only(ctx);
+      if (entityId !== undefined) revertEntityOverride(entityId);
+    },
+  }),
+};

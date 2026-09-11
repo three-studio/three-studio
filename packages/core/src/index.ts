@@ -13,6 +13,7 @@ export type {
   ProjectApi,
   ScriptApi,
   BuildApi,
+  BuildSize,
   ExportProgress,
   ExportResult,
   SceneChange,
@@ -20,6 +21,9 @@ export type {
   StudioBridge,
   WindowRole,
 } from './bridge';
+/* The wiring the two sides of the boundary derive from, rather than repeat. */
+export type { BridgeHandlers, InvokeChannels } from './bridge';
+export { IPC_EVENTS, IPC_INVOKE } from './bridge';
 
 export {
   ASSETS_DIR,
@@ -27,6 +31,7 @@ export {
   DEFAULT_BUILD_PROFILE_ID,
   PROJECT_FILE_NAME,
   SCENES_DIR,
+  SCENE_FILE_SUFFIX,
   basePathProblem,
   createBuildProfiles,
   createPhysicsSettings,
@@ -44,6 +49,9 @@ export {
   ASSET_META_VERSION,
   BUILD_FORMAT_VERSION,
   MATERIAL_ASSET_VERSION,
+  buildScenePath,
+  applyAssetChange,
+  emptyAssetChange,
   emptyManifest,
   hasImagePreview,
   isTslMaterial,
@@ -52,10 +60,12 @@ export type {
   AssetEntry,
   AssetImportResult,
   AssetKind,
+  AssetChange,
   AssetManifest,
   AssetMeta,
   AssetSettings,
   AudioSettings,
+  BuildManifest,
   FbxModelSettings,
   GltfModelSettings,
   MaterialAssetFile,
@@ -70,6 +80,9 @@ export type {
   TextureSettings,
 } from './assets/schema';
 
+/* How a file in the project is addressed from a page. */
+export { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath, importedAssetPath } from './assets/url';
+
 export {
   ASSET_KIND_INFO,
   AssetImporter,
@@ -81,43 +94,61 @@ export {
   assetDisplayName,
   assetKindForFile,
   defaultSettings,
-  field,
   importerForFile,
   importPreviewUrl,
   parseImportPreviewUrl,
   importers,
 } from './assets/import';
 export type {
-  ImportAction,
   ImportConflict,
-  ImportEnum,
-  ImportField,
-  ImportGroup,
-  ImportNumber,
-  ImportOption,
   ImportPlanItem,
   ImportPreviewRequest,
   ImportSessionState,
-  ImportToggle,
   StagedFile,
   TextReader,
 } from './assets/import';
+
+/*
+ * The field vocabulary sits at the root of `core` rather than under the
+ * importers, because it stopped belonging to them: a script declares in it too,
+ * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
+ */
+export { field, fieldOptions, optionsFrom } from './fields';
+/* What the renderer sends, made safe before it reaches the disk. */
+export {
+  conform,
+  conformAssetSettings,
+  conformLayoutPreferences,
+  conformShortcutPreferences,
+  conformMaterial,
+  conformPatch,
+  conformSettingsPatch,
+} from './guards';
+export type {
+  FieldAction,
+  FieldDef,
+  FieldGroup,
+  FieldOption,
+  FieldRow,
+} from './fields';
 
 export {
   collectSceneAssets,
   environmentAssets,
   findAssetUsage,
+  findBrokenReferences,
   findPrefabInstances,
   isUsed,
   totalUses,
 } from './assets/references';
-export type { AssetUsage } from './assets/references';
+export type { AssetUsage, BrokenReference } from './assets/references';
 export type {
   BuildProfile,
   BuildProfiles,
   BuildTargetId,
   OpenProject,
   PhysicsSettings,
+  ProjectContents,
   ProjectFile,
   ProjectSettings,
   SceneEntry,
@@ -148,6 +179,8 @@ export type {
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
+  EmitterShape,
+  ParticleEmitterComponent,
   PlayerControllerComponent,
   RigidBodyComponent,
   SceneDoc,
@@ -166,34 +199,61 @@ export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/
 
 export { AUDIO_BUSES } from './scene/schema';
 
+/*
+ * A label for each member of a closed union, beside the union it names — see
+ * the note in `scene/schema.ts`. Total records, so the compiler is what makes a
+ * member without a name impossible; `optionsFrom` turns one into the choices a
+ * control offers.
+ */
 export {
-  GEOMETRY_LABELS,
-  createAudioListenerEntity,
-  createAudioSource,
-  createAudioSourceEntity,
-  createBoxGeometry,
-  createCameraEntity,
+  AUDIO_BUS_LABELS,
+  BACKGROUND_MODE_LABELS,
+  BODY_TYPE_LABELS,
+  CAMERA_PROJECTION_LABELS,
+  COLLIDER_SHAPE_LABELS,
+  DISTANCE_MODEL_LABELS,
+  EMITTER_SHAPE_LABELS,
+  ENVIRONMENT_MODE_LABELS,
+  FOG_MODE_LABELS,
+  MATERIAL_SIDE_LABELS,
+  PLAYER_CONTROLLER_MODE_LABELS,
+  TEXTURE_WRAP_LABELS,
+} from './scene/schema';
+export type {
+  BackgroundMode,
+  BodyType,
+  ColliderShape,
+  DistanceModel,
+  EnvironmentMode,
+  FogMode,
+  PlayerControllerMode,
+} from './scene/schema';
+
+export {
   createEmptyScene,
-  createEntity,
   createEnvironment,
-  createGeometry,
-  createLightEntity,
-  createMaterial,
-  createMeshComponent,
-  createMeshEntity,
-  createModelEntity,
   createNewScene,
-  createPrefabInstance,
-  createShadowSettings,
   createSkySettings,
   createStarterScene,
-  createTransform,
-  createWater,
-  createWaterEntity,
-  isPlaceable,
-  restingOffsetY,
 } from './scene/defaults';
-export type { EntityTemplate } from './scene/defaults';
+export { createEntity, createTransform } from './scene/entity';
+/* The two shared vocabularies a component is built out of. */
+export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
+export { createMaterial } from './scene/material';
+export type { EntityTemplate } from './scene/entity';
+/* Each slice's own factories, from the slice that owns them. */
+export { createAudioListenerEntity } from './components/audioListener/defaults';
+export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
+export { createCameraEntity } from './components/camera/defaults';
+export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
+export { createModelEntity } from './components/model/defaults';
+export { createPrefabInstance } from './components/prefabInstance/defaults';
+export { createWater, createWaterEntity } from './components/water/defaults';
+export {
+  createParticleEmitter,
+  createParticleEmitterEntity,
+} from './components/particleEmitter/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {
@@ -215,6 +275,7 @@ export {
 export type { ComponentHost } from './scene/components';
 
 export {
+  addableTypes,
   componentAssets,
   componentDefinition,
   componentDefinitions,
@@ -222,11 +283,15 @@ export {
   createComponentForEntity,
   defineComponent,
   fillComponent,
+  isPlaceable,
   typesWithoutRuntime,
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
+export { stableJson } from './json';
+/* One rule for a name that has to become a file. */
+export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 
 export {
   applyPrefabOverride,
@@ -247,12 +312,15 @@ export type { ExpandedScene, PrefabDoc, PrefabLibrary } from './scene/prefab';
 
 export {
   LAYOUT_PREFERENCES_VERSION,
+  SHORTCUT_PREFERENCES_VERSION,
   emptyLayoutPreferences,
+  emptyShortcutPreferences,
 } from './preferences/schema';
 export type {
   LayoutPreferences,
   LayoutTemplateRecord,
   SerializedLayout,
+  ShortcutPreferences,
 } from './preferences/schema';
 
 export { capabilitiesOf } from './scene/capabilities';

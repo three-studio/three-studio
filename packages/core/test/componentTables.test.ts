@@ -24,7 +24,7 @@ import { sceneWith } from './fixtures';
 
 /*
  * Components live in `scene.components`, by type then by entity then by their
- * own id — ADR-16.
+ * own id.
  *
  * Three things are worth pinning here, and only the first is the headline. The
  * query is O(1) rather than a walk of every entity. The identity of a component
@@ -80,8 +80,8 @@ describe('two components of one type on one entity', () => {
     deleteComponent(scene, cube.entity.id, first.id);
 
     // This is why the third level is the id and not a slot: a slot is a
-    // position, and removing the first would slide the second onto it — B10
-    // reduced to a narrower case but intact. See ADR-9 and ADR-16.
+    // position, and removing the first would slide the second onto it — the
+    // override defect reduced to a narrower case but intact.
     const left = componentsOf(scene, cube.entity.id).filter((c) => c.type === 'collider');
     expect(left).toHaveLength(1);
     expect(left[0]!.id).toBe(second.id);
@@ -97,12 +97,16 @@ describe('two components of one type on one entity', () => {
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
-    const loaded = deserializeScene(serializeScene(scene));
-    expect(componentsOf(loaded, cube.entity.id).map((c) => c.id)).toEqual([
-      componentsOf(scene, cube.entity.id)[0]!.id,
-      first.id,
-      second.id,
-    ]);
+    const loaded = componentsOf(deserializeScene(serializeScene(scene)), cube.entity.id);
+
+    // Registry order across types still holds: the mesh comes before both
+    // scripts. Within one type it does not, and `componentsOf` says so — a
+    // document read back from a file lists two scripts in id order, because
+    // `serializeScene` sorts keys, and ids are random. Asserting the order they
+    // were added in passed only when the two happened to sort that way, which
+    // was about half of every run.
+    expect(loaded[0]!.id).toBe(componentsOf(scene, cube.entity.id)[0]!.id);
+    expect(loaded.slice(1).map((c) => c.id).sort()).toEqual([first.id, second.id].sort());
   });
 });
 
@@ -137,7 +141,7 @@ describe('an entity that comes and goes', () => {
     removeSubtree(scene, parent.entity.id);
 
     // A component left behind is reachable from nothing, drawn by nothing, and
-    // written to disk on the next save — the same family of silent leak as B1.
+    // written to disk on the next save — the same family of silent leak.
     expect(entitiesWith(scene, 'mesh')).toEqual([]);
     expect(validateHierarchy(scene)).toEqual([]);
   });
@@ -223,6 +227,11 @@ describe('a document written before the tables existed', () => {
     // The pass runs at the boundary and has to be idempotent, or a scene saved
     // and reopened has its components migrated against an array that is no
     // longer there.
-    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+    //
+    // Compared as the *file* rather than with a plain `JSON.stringify`: keys
+    // are sorted on the way out now, so a freshly migrated document and the
+    // same document read back differ in key order and in nothing else — and
+    // plain stringify calls that a difference. See `stableJson`.
+    expect(serializeScene(twice)).toBe(serializeScene(once));
   });
 });

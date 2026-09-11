@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ASSETS_DIR } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { moveAsset, removeAsset, scanAssets } from '../src/main/assets';
+import { moveAsset, removeAsset } from '../src/main/assetMutations';
+import { scanAssets } from '../src/main/assetScan';
 import { ImportSession } from '../src/main/import/ImportSession';
 
 /*
@@ -128,7 +129,11 @@ describe('moving and deleting such a model', () => {
     expect(files).toContain('props/Tri/Tri.bin');
     expect(files).toContain('props/Tri/maps/albedo.png');
     expect(files).not.toContain('models/Tri/Tri.bin');
-    expect(moved).toBe(`${ASSETS_DIR}/props/Tri/Tri.gltf`);
+    expect(moved.moved[0]?.to).toBe(`${ASSETS_DIR}/props/Tri/Tri.gltf`);
+    // The companions are in the change too, so the manifest follows them
+    // without a rescan — and the folder the move made for them is named.
+    expect(moved.moved.map((move) => move.to)).toContain(`${ASSETS_DIR}/props/Tri/Tri.bin`);
+    expect(moved.addedFolders).toEqual(['props/Tri']);
 
     // The id travels with the sidecar, so every scene reference still resolves.
     const manifest = await scanAssets(root);
@@ -140,7 +145,12 @@ describe('moving and deleting such a model', () => {
     const root = await project();
     const { imported } = await importAssets(root, [await writeGltf(source)]);
 
-    await removeAsset(root, imported[0]!.path);
+    const change = await removeAsset(root, imported[0]!.path);
+
+    // Named, not merely deleted: the renderer drops these from its manifest
+    // rather than rescanning to find out they are gone.
+    expect(change.removed).toContain(imported[0]!.path);
+    expect(change.removed.length).toBeGreaterThan(1);
 
     // Otherwise a deleted model leaves its buffer and its textures behind, and
     // the textures come back as assets of their own on the next scan.

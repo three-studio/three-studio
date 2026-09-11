@@ -30,7 +30,7 @@ export interface ClipPeaksOptions {
  * the panel has shown*, at two kilobytes each, and never with their length: a
  * thousand sounds is two megabytes, which is a size worth not thinking about.
  *
- * Context, resolver and loader are parameters for the reason ADR-7 gives: under
+ * Context, resolver and loader are parameters for one reason: under
  * node `AudioContext` is a type with no value behind it, and a module that
  * reaches for one directly cannot be tested at all.
  */

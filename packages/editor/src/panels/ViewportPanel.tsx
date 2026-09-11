@@ -1,31 +1,37 @@
 import { createAudioSourceEntity, createModelEntity, variantBaseOf } from '@three-studio/core';
 import { Boxes, ChevronLeft } from 'lucide-react';
+import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { addEntity } from '../commands/sceneCommands';
 import { useAssetStore } from '../state/assetStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
-import { useEditorStore } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { instantiatePrefab } from '../commands/prefabCommands';
 
-export function ViewportPanel() {
+export function ViewportPanel(props: IDockviewPanelProps) {
+  // What the box cannot say: dockview parks an inactive tab at full size, so a
+  // hidden panel goes on being drawn unless something tells the viewport. The
+  // dock is the only thing that knows, and it publishes it here.
+  useEffect(() => {
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setSceneOnScreen(onScreen));
+    push(props.api.isVisible);
+    const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
+    return () => sub.dispose();
+  }, [props.api]);
+
   const hostRef = useRef<HTMLDivElement>(null);
   const error = useViewportStore((s) => s.error);
-  const playState = useEditorStore((s) => s.playState);
   const [dropping, setDropping] = useState(false);
 
   useEffect(() => {
-    // While the game runs the canvas belongs to the Game panel; claiming it
-    // here would leave the player looking at an idle editor view.
-    if (playState !== 'stopped') return;
     let cancelled = false;
 
     void acquireViewport()
       .then((viewport) => {
         if (cancelled || !hostRef.current) return;
-        viewport.attach(hostRef.current);
+        viewport.attachScene(hostRef.current);
       })
       .catch((cause: unknown) => {
         useViewportStore
@@ -35,11 +41,15 @@ export function ViewportPanel() {
 
     return () => {
       cancelled = true;
-      // The canvas is shared and outlives this component, so hand it back
-      // rather than leaving it parented to a container React is about to drop.
-      peekViewport()?.detach();
+      // The canvas outlives this component, so hand it back rather than leaving
+      // it parented to a container React is about to drop.
+      peekViewport()?.detachScene();
     };
-  }, [playState]);
+    // Play state is not in here any more: the Scene view keeps its own canvas
+    // while the game runs, which is what lets the two panels be read side by
+    // side. It used to have to stand down so the Game panel could take the one
+    // canvas there was.
+  }, []);
 
   if (error) {
     return (
@@ -100,8 +110,8 @@ export function ViewportPanel() {
       onDrop={onDrop}
     >
       <PrefabModeBar />
-      {/* The canvas is inserted here by EditorViewport.attach and is shared
-          with the Game panel, so it is never rendered by React. */}
+      {/* The canvas is inserted here by `EditorViewport.attachScene`, and
+          outlives this component, so it is never rendered by React. */}
       <div ref={hostRef} className="absolute inset-0" />
       <ViewportStats />
       {dropping && (
@@ -117,6 +127,7 @@ function ViewportStats() {
   const drawCalls = useViewportStore((s) => s.drawCalls);
   const triangles = useViewportStore((s) => s.triangles);
   const flySpeed = useViewportStore((s) => s.flySpeed);
+  const fallbackLighting = useViewportStore((s) => s.fallbackLighting);
 
   return (
     <div className="pointer-events-none absolute right-2 top-2 rounded-sm border border-line-soft/60 bg-surface-0/75 px-2 py-1.5 font-mono text-2xs text-ink-muted backdrop-blur-sm">
@@ -142,6 +153,16 @@ function ViewportStats() {
         <span>Fly</span>
         <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
       </div>
+      {/* Only while it is on, and last, so it reads as a note about this scene
+          rather than as one more counter — and so the numbers above it do not
+          move when it appears. What it says is that this view is lit by
+          something Play and a build do not have. */}
+      {fallbackLighting && (
+        <div className="flex justify-between gap-4">
+          <span>Lighting</span>
+          <span className="text-warn">Editor default</span>
+        </div>
+      )}
     </div>
   );
 }

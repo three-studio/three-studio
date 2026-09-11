@@ -1,10 +1,13 @@
-import { componentsOf, splitInstancedId, type ComponentType } from '@three-studio/core';
+import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { commandById, contextFor, contextForAsset } from '../commands/registry';
 import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
-import { revertEntityOverride } from '../commands/prefabCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
-import { COMPONENT_SCHEMAS, sceneSignature } from '../inspector/schema';
+import { COMPONENT_PANES } from '../components/panes';
+import type { AssetFieldActions } from '../inspector/assetField';
+import { browseAndImport } from '../import/importStore';
+import { sceneSignature } from '../inspector/schema';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
@@ -13,19 +16,20 @@ import { useEditorStore } from '../state/editorStore';
 import { useScriptStore } from '../state/scriptStore';
 import { Menu } from '../ui/Menu';
 
-/** Components a user can attach by hand; `model` comes from dropping an asset. */
-const ADDABLE: readonly ComponentType[] = [
-  'mesh',
-  'water',
-  'light',
-  'camera',
-  'rigidbody',
-  'collider',
-  'audioSource',
-  'audioListener',
-  'playerController',
-  'script',
-];
+/**
+ * What the Inspector's asset slots cannot reach for themselves.
+ *
+ * The panel is where they come from because it is the outermost thing that owns
+ * an Inspector: a Tweakpane control reaching into the import store closed an
+ * import cycle, and one reaching into the dock decided which panel is in front
+ * — neither is a field table's business. Module-level rather than rebuilt per
+ * render: nothing here depends on props, and a new object each render would
+ * rebuild the pane.
+ */
+const ASSET_FIELD_ACTIONS: AssetFieldActions = {
+  importAssets: async () => (await browseAndImport())?.imported ?? [],
+  reveal: (assetId: string) => commandById('revealAsset').run(contextForAsset(assetId)),
+};
 
 export function InspectorPanel() {
   const selection = useEditorStore((s) => s.selection);
@@ -77,7 +81,7 @@ export function InspectorPanel() {
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
   // The script build revision is part of that shape, so recompiling brings new
-  // script properties into the panel.
+  // script properties into the panel — see the signature below.
   const scriptRevision = useScriptStore((s) => s.revision);
   // Editing a shared material changes which fields exist without touching the
   // document, so the material table is part of the shape too.
@@ -90,9 +94,19 @@ export function InspectorPanel() {
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
   const signature = useMemo(() => {
-    // The script revision is already inside `inspectorSignature`.
+    /*
+     * The scene pane has no scripts in it, so the script revision is only on the
+     * entity paths. It used to be read inside `inspectorSignature`, from within
+     * a switch arm — a store lookup buried in a function whose whole job was to
+     * be a pure reading of the schema. It belongs here with the other
+     * revisions, and it has to be here rather than nowhere: recompiling a script
+     * can change which properties it declares without changing their number, and
+     * a shape of the same width would say nothing had moved.
+     */
     if (selection.length === 0) return `${sceneSignature(environment)}#${assetRevision}`;
-    if (entityId !== undefined) return `${inspectorSignature(entityId)}#${assetRevision}`;
+    if (entityId !== undefined) {
+      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}`;
+    }
 
     /*
      * For several, the shape is the shapes of all of them.
@@ -102,7 +116,7 @@ export function InspectorPanel() {
      * selecting a different set of the same shapes is a different pane.
      */
     const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
-    return `${shapes}#${assetRevision}`;
+    return `${shapes}#${assetRevision}#${scriptRevision}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
@@ -130,6 +144,7 @@ export function InspectorPanel() {
         : selection.length > 1
           ? { kind: 'entities', ids: selection }
           : { kind: 'scene' },
+      ASSET_FIELD_ACTIONS,
     );
     bindingRef.current = binding;
     return () => {
@@ -190,8 +205,8 @@ export function InspectorPanel() {
               <Menu
                 placement="above"
                 onClose={() => setAddOpen(false)}
-                items={ADDABLE.map((type) => ({
-                  label: COMPONENT_SCHEMAS[type].label,
+                items={addableTypes().map((type) => ({
+                  label: COMPONENT_PANES[type].label,
                   // A second mesh or camera on one entity has no meaning here —
                   // and neither does a mesh on something already drawing a
                   // model, which `componentFits` is what answers.
@@ -227,7 +242,7 @@ function PrefabBanner({ id, depth }: { id: string; depth: number }) {
         <button
           type="button"
           title="Revert to the prefab"
-          onClick={() => revertEntityOverride(id)}
+          onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim hover:bg-surface-3 hover:text-ink"
         >
           <RotateCcw size={11} />

@@ -1,20 +1,16 @@
 import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
-import { CameraSystem } from './systems/CameraSystem';
-import type { ComponentSystem, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import { buildSystems, type AnySystem } from './components';
+import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY } from './systems/identity';
-import { LightSystem } from './systems/LightSystem';
-import { MeshSystem, type MeshHandle } from './systems/MeshSystem';
-import { ModelSystem, type ModelHandle } from './systems/ModelSystem';
-import { WaterSystem } from './systems/WaterSystem';
 
 /*
  * Mounts, patches and unmounts, one entity at a time.
  *
  * It knows nothing about any component type: it pairs what is mounted against
  * what the document now holds, **by component id**, and hands each pair to the
- * system that claims its type. Adding a renderable type is a system and a line
- * in the table below.
+ * system that claims its type. Adding a renderable type is a folder under
+ * `components/`, and this file does not change.
  *
  * The pairing key is the id phase 3 gave every component and phase 10 made the
  * storage key. Before it, builds were keyed by *position* in an array, so
@@ -22,21 +18,6 @@ import { WaterSystem } from './systems/WaterSystem';
  * geometry key no longer matched, both were rebuilt, and the churn forced the
  * batch holding them to be rebuilt too.
  */
-
-/**
- * A system with its type parameters erased, so one table can hold all four.
- *
- * The cast is at registration and nowhere else. `ComponentSystem<MeshComponent,
- * …>` is genuinely not a `ComponentSystem<ComponentDoc, …>` — a method taking a
- * mesh is not one taking any component — and the guarantee that makes it safe is
- * the table's own key: a system is only ever handed a component of the type it
- * is filed under.
- */
-type AnySystem = ComponentSystem<ComponentDoc, SystemHandle>;
-
-const erase = <T extends ComponentDoc, H extends SystemHandle>(
-  system: ComponentSystem<T, H>,
-): AnySystem => system as unknown as AnySystem;
 
 /** One mounted component: which system owns it, and what it handed back. */
 interface Mounted {
@@ -61,26 +42,16 @@ export interface EntityView {
 export class Reconciler {
   private readonly views = new Map<string, EntityView>();
 
-  private readonly meshSystem = new MeshSystem();
-  private readonly modelSystem = new ModelSystem();
-
   /**
-   * The five types that draw something. The other seven have no object of their
-   * own — physics, audio, scripts and controllers are built by their own layers
-   * from the same document, and a prefab instance was turned into real entities
-   * by `expandPrefabs` before the runtime ever saw the scene.
+   * One system per type that draws, built for this reconciler alone.
    *
-   * A `switch` returning `null` for nine of eleven used to stand here. What
-   * replaces it is a table that simply does not mention them, which is the same
-   * shape the component registry took in phase 9.
+   * A `switch` returning `null` for nine of eleven used to stand here; a table
+   * of five `new XSystem()` replaced it, and this replaces that. The names are
+   * gone: the types register themselves from `components/<type>/`, and the only
+   * thing this file still knows is that some types have a system and most do
+   * not.
    */
-  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = new Map([
-    ['mesh', erase(this.meshSystem)],
-    ['model', erase(this.modelSystem)],
-    ['light', erase(new LightSystem())],
-    ['camera', erase(new CameraSystem())],
-    ['water', erase(new WaterSystem())],
-  ]);
+  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = buildSystems();
 
   view(entityId: string): EntityView | undefined {
     return this.views.get(entityId);
@@ -205,7 +176,6 @@ export class Reconciler {
    * The identity check is on the **handle**, not on the entity: a delete
    * followed by a rebuild under the same id produces a new one, and the old
    * handle's model would otherwise be attached to a container nothing draws.
-   * That is B8.
    */
   attachLate(entityId: string, handle: SystemHandle, object: Object3D): boolean {
     const view = this.views.get(entityId);
@@ -218,23 +188,31 @@ export class Reconciler {
     return false;
   }
 
-  /** Every live mesh build in the scene, which is what the batcher groups. */
-  *meshHandles(): Generator<MeshHandle> {
+  /** Every live build that can be drawn in a batch, which is what the batcher groups. */
+  *batchableHandles(): Generator<BatchableHandle> {
     for (const view of this.views.values()) {
       for (const mounted of view.mounted.values()) {
-        if (mounted.doc.type === 'mesh') yield mounted.handle as MeshHandle;
+        const batchable = mounted.system.batchable?.(mounted.handle);
+        if (batchable) yield batchable;
       }
     }
   }
 
-  /** Resolves once every model in flight has landed or failed. */
+  /**
+   * Resolves once everything in flight has landed or failed.
+   *
+   * Every system that loads, not the one that happens to today: a second
+   * asynchronous type is waited for by declaring `whenLoaded`, and this line
+   * does not change.
+   */
   whenLoaded(): Promise<void> {
-    return this.modelSystem.whenLoaded();
+    const settled = [...this.systems.values()].map((system) => system.whenLoaded?.());
+    return Promise.all(settled).then(() => undefined);
   }
 
   /**
-   * Invalidates every mesh whose material comes from an asset, so each re-reads
-   * what the pool now holds.
+   * Invalidates every build whose material comes from an asset, so each
+   * re-reads what the pool now holds.
    *
    * @returns The entity ids this touched, so the caller can sync exactly those.
    */
@@ -242,24 +220,22 @@ export class Reconciler {
     const found = new Set<string>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
-        // A model draws with a material asset too, since it can override the
-        // one its file shipped with. Asking only about meshes left an edit to a
-        // shared material reaching every cube in the scene and none of the
-        // imported models using it.
-        if (mounted.doc.type !== 'mesh' && mounted.doc.type !== 'model') continue;
-        const handle = mounted.handle as MeshHandle | ModelHandle;
-        if (handle.materialKey !== null) found.add(entityId);
+        const asset = mounted.system.materialAsset?.(mounted.handle) ?? null;
+        if (asset !== null) found.add(entityId);
       }
     }
     return found;
   }
 
-  /** Entity ids carrying a model, for a resolver change that invalidates them all. */
-  entitiesWithModels(): Set<string> {
+  /**
+   * Entity ids whose builds came from a system that loads, for a resolver
+   * change that invalidates them all.
+   */
+  entitiesThatLoad(): Set<string> {
     const found = new Set<string>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
-        if (mounted.doc.type === 'model') found.add(entityId);
+        if (mounted.system.whenLoaded) found.add(entityId);
       }
     }
     return found;

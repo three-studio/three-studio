@@ -38,3 +38,95 @@ jobs:
       - run: npm run typecheck
 
       - run: npm test
+
+  smoke:
+    name: Headless boot
+    # Its own job rather than more steps on the one above: it wants a display, a
+    # software GPU and a whole Electron download, and none of that belongs
+    # between a type error and the person who just wrote it.
+    runs-on: ubuntu-latest
+    # A hung Electron would otherwise sit here until the six-hour ceiling.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # The Electron binary is *not* part of `npm ci`. The `electron` package
+      # declares no `postinstall` at this version, so nothing writes
+      # `node_modules/electron/path.txt`, and electron-vite reads that file to
+      # find what to launch — missing, it answers `Error: Electron uninstall`
+      # and the run is over before a window exists. A developer's machine hides
+      # this: the file is left behind by an earlier install and never goes away.
+      # `install.js` exits immediately when the binary is already there, so this
+      # costs nothing on a warm runner.
+      - run: node node_modules/electron/install.js
+
+      # `npm run dev` at the root builds this first and then starts the desktop
+      # workspace. The steps below start that workspace directly, so that they
+      # can pass `--noSandbox`, which means building it here instead.
+      - run: npm run build:web
+
+      # Two boots, because one cannot do both: the harness needs a project on
+      # disk before it can open an editor window, and nothing outside Electron
+      # can write one.
+      - name: The launcher boots, and makes a project to look at
+        env:
+          STUDIO_SMOKE: '1'
+          STUDIO_SMOKE_SOFTWARE_GPU: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/projects"
+          STUDIO_SMOKE_SETUP="$(sed "s|__PROJECT_DIR__|$RUNNER_TEMP/projects|" \
+            apps/desktop/scripts/smoke-new-project.js)"
+          export STUDIO_SMOKE_SETUP
+
+          # Written, then read. Never piped: `head` closing the pipe sends npm a
+          # SIGPIPE and Electron survives it orphaned, holding a window open.
+          set +e
+          xvfb-run -a npm run dev --workspace @three-studio/desktop -- --noSandbox \
+            > "$RUNNER_TEMP/launcher.log" 2>&1
+          exit_code=$?
+          set -e
+          cat "$RUNNER_TEMP/launcher.log"
+          test "$exit_code" -eq 0
+          grep -q '"verdict": "ok"' "$RUNNER_TEMP/launcher.log"
+
+      - name: The editor boots, and the viewport draws something
+        env:
+          STUDIO_SMOKE: '1'
+          STUDIO_SMOKE_SOFTWARE_GPU: '1'
+          STUDIO_SMOKE_PROJECT: ${{ runner.temp }}/projects/Smoke
+          STUDIO_SMOKE_SHOT: ${{ runner.temp }}/editor.png
+        run: |
+          STUDIO_SMOKE_SETUP="$(cat apps/desktop/scripts/smoke-drew-something.js)"
+          export STUDIO_SMOKE_SETUP
+
+          set +e
+          xvfb-run -a npm run dev --workspace @three-studio/desktop -- --noSandbox \
+            > "$RUNNER_TEMP/editor.log" 2>&1
+          exit_code=$?
+          set -e
+          cat "$RUNNER_TEMP/editor.log"
+
+          # The harness exits non-zero on a renderer error by itself. The verdict
+          # is the other half, and it is the half that catches a viewport which
+          # painted nothing: the canvas keeps its size, the chrome renders, and
+          # the frame rate goes *up*. Only the draw count falls.
+          test "$exit_code" -eq 0
+          grep -q '"verdict": "ok"' "$RUNNER_TEMP/editor.log"
+
+      - name: Keep the picture, a failed run's most of all
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: headless-boot
+          path: |
+            ${{ runner.temp }}/editor.png
+            ${{ runner.temp }}/launcher.log
+            ${{ runner.temp }}/editor.log
+          if-no-files-found: warn
