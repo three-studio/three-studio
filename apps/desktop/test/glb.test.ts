@@ -76,7 +76,12 @@ function sample(over: Partial<GltfJson> = {}): { json: GltfJson; bin: Buffer } {
 /** Options with the lossy half off, which is what all of these want but one. */
 const options = (
   scaleImage: (bytes: Buffer, mimeType: string) => Buffer | null = () => null,
-): RewriteOptions => ({ scaleImage, quantizeNormals: false, encodeGeometry: null });
+): RewriteOptions => ({
+  scaleImage,
+  quantizeNormals: false,
+  quantizePositions: false,
+  encodeGeometry: null,
+});
 
 /** Stands in for the scaler: shorter bytes, so every offset after it moves. */
 const shrink = (bytes: Buffer, mimeType: string): Buffer | null =>
@@ -417,6 +422,7 @@ const FLOAT = 5126;
 const quantising: RewriteOptions = {
   scaleImage: () => null,
   quantizeNormals: true,
+  quantizePositions: false,
   encodeGeometry: null,
 };
 
@@ -562,7 +568,12 @@ describe('quantising the normals', () => {
   });
 
   it('does nothing when the author turned it off', () => {
-    expect(rewriteGlb(meshed(UNIT), { scaleImage: () => null, quantizeNormals: false, encodeGeometry: null })).toBeNull();
+    expect(rewriteGlb(meshed(UNIT), {
+        scaleImage: () => null,
+        quantizeNormals: false,
+        quantizePositions: false,
+        encodeGeometry: null,
+      })).toBeNull();
   });
 });
 
@@ -587,7 +598,12 @@ const fakeEncoder = (source: Buffer, count: number, size: number, mode: EncodeMo
 
 const compressing = (
   encodeGeometry: RewriteOptions['encodeGeometry'] = fakeEncoder,
-): RewriteOptions => ({ scaleImage: () => null, quantizeNormals: false, encodeGeometry });
+): RewriteOptions => ({
+  scaleImage: () => null,
+  quantizeNormals: false,
+  quantizePositions: false,
+  encodeGeometry,
+});
 
 /** Indices in one view, positions in another — the shape a primitive has. */
 function compressible(indices: readonly number[] = [0, 1, 2, 2, 1, 3]): GlbContents {
@@ -826,5 +842,193 @@ describe('what the real decoder gives back', () => {
       if (extension!.mode === 'TRIANGLES') expect(triangles(Buffer.from(decoded))).toEqual(triangles(want));
       else expect(Buffer.from(decoded)).toEqual(want);
     }
+  });
+});
+
+/*
+ * Quantising the positions.
+ *
+ * The one conversion that cannot be made in the accessor alone. A signed short
+ * holds a number between minus one and one, so a place has to be scaled and
+ * moved back into metres by something — and glTF has no transform below a node.
+ *
+ * That something is a **wrapper node**, a child carrying the factor, rather
+ * than the node that already holds the mesh. The difference only shows up under
+ * an animation: a channel writing the parent's scale would take the factor with
+ * it and collapse the model, and nothing in the file would say why.
+ */
+
+const SHORT = 5122;
+
+/** A mesh on a node, positioned somewhere well away from the origin. */
+function placed(
+  points: readonly (readonly [number, number, number])[],
+  node: Record<string, unknown> = {},
+): GlbContents {
+  const positions = Buffer.alloc(points.length * 12);
+  points.forEach(([x, y, z], at) => {
+    positions.writeFloatLE(x, at * 12);
+    positions.writeFloatLE(y, at * 12 + 4);
+    positions.writeFloatLE(z, at * 12 + 8);
+  });
+
+  return {
+    bin: positions,
+    json: {
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: positions.length }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: positions.length, byteStride: 12 }],
+      accessors: [
+        {
+          bufferView: 0,
+          byteOffset: 0,
+          componentType: FLOAT,
+          count: points.length,
+          type: 'VEC3',
+          min: [0, 0, 0],
+          max: [1, 1, 1],
+        },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      nodes: [{ mesh: 0, ...node }],
+      scenes: [{ nodes: [0] }],
+    },
+  };
+}
+
+const CORNERS = [
+  [10, 20, 30],
+  [12, 20, 30],
+  [10, 24, 30],
+  [12, 24, 36],
+] as const;
+
+const shortening: RewriteOptions = {
+  scaleImage: () => null,
+  quantizeNormals: false,
+  quantizePositions: true,
+  encodeGeometry: null,
+};
+
+/** Where a point ends up once the wrapper has put it back. */
+function restored(contents: GlbContents, wrapper: number): number[][] {
+  const node = contents.json.nodes?.[wrapper] as
+    | { translation: number[]; scale: number[] }
+    | undefined;
+  const accessor = contents.json.accessors?.[0];
+  const view = contents.json.bufferViews?.[accessor?.bufferView ?? -1];
+  if (!node || !accessor || !view) return [];
+
+  const step = view.byteStride ?? 6;
+  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  return Array.from({ length: accessor.count }, (_, index) =>
+    [0, 1, 2].map((component) => {
+      const stored = contents.bin.readInt16LE(start + index * step + component * 2);
+      return Math.max(stored / 32767, -1) * node.scale[component]! + node.translation[component]!;
+    }),
+  );
+}
+
+describe('quantising the positions', () => {
+  it('puts every point back where it was, to within a short', () => {
+    const rewritten = rewriteGlb(placed(CORNERS), shortening);
+
+    expect(rewritten?.json.accessors?.[0]?.componentType).toBe(SHORT);
+    expect(rewritten?.json.accessors?.[0]?.normalized).toBe(true);
+    for (const [index, point] of restored(rewritten!, 1).entries()) {
+      point.forEach((value, component) => expect(value).toBeCloseTo(CORNERS[index]![component]!, 3));
+    }
+  });
+
+  it('hangs the factor on a wrapper, not on the node that was already there', () => {
+    const rewritten = rewriteGlb(placed(CORNERS, { name: 'Trunk', scale: [2, 2, 2] }), shortening);
+    const [node, wrapper] = rewritten?.json.nodes ?? [];
+
+    // The original keeps its name, its scale and its index; it has handed the
+    // mesh down and gained a child. An animation writing its scale now moves
+    // the mesh, which is what it meant to do, and leaves the factor alone.
+    expect(node).toEqual({ name: 'Trunk', scale: [2, 2, 2], children: [1] });
+    expect(wrapper).toEqual({ mesh: 0, translation: [11, 22, 33], scale: [1, 2, 3] });
+  });
+
+  it('gives two nodes carrying one mesh the same wrapper', () => {
+    const source = placed(CORNERS);
+    source.json.nodes!.push({ mesh: 0, translation: [100, 0, 0] });
+    source.json.scenes = [{ nodes: [0, 1] }];
+    const rewritten = rewriteGlb(source, shortening);
+    const nodes = rewritten?.json.nodes ?? [];
+
+    // The box belongs to the mesh, so both wrappers say the same thing.
+    expect(nodes).toHaveLength(4);
+    expect(nodes[2]).toEqual(nodes[3]);
+    expect(nodes[0]?.children).toEqual([2]);
+    expect(nodes[1]?.children).toEqual([3]);
+  });
+
+  it('restates min and max in the units it stored', () => {
+    const rewritten = rewriteGlb(placed(CORNERS), shortening);
+
+    expect(rewritten?.json.accessors?.[0]?.min).toEqual([-32767, -32767, -32767]);
+    expect(rewritten?.json.accessors?.[0]?.max).toEqual([32767, 32767, 32767]);
+  });
+
+  it('survives a mesh that is flat on one axis', () => {
+    /*
+     * Half of nothing is nothing, and a scale with a zero in it is a matrix
+     * that cannot be inverted. The positions would still come back — zero
+     * times zero plus the centre is the centre — which is exactly why this
+     * asserts the scale as well: what breaks is the *normal* matrix, three's
+     * inverse transpose of it, and the surface goes to NaN rather than moving.
+     */
+    const flat = [
+      [5, 7, 2],
+      [9, 7, 2],
+      [5, 11, 2],
+    ] as const;
+    const rewritten = rewriteGlb(placed(flat), shortening);
+    const wrapper = rewritten?.json.nodes?.[1] as { scale: number[] } | undefined;
+
+    expect(wrapper?.scale.every((value) => value !== 0)).toBe(true);
+    for (const [index, point] of restored(rewritten!, 1).entries()) {
+      point.forEach((value, component) => expect(value).toBeCloseTo(flat[index]![component]!, 4));
+    }
+  });
+
+  it('refuses a skinned mesh, whose node transform is ignored', () => {
+    // glTF says the skinned mesh node's own transform does not apply — so a
+    // wrapper above it would do nothing and the model would be drawn at the
+    // size of a unit cube.
+    const source = placed(CORNERS, { skin: 0 });
+    source.json.skins = [{ joints: [0] }];
+
+    expect(rewriteGlb(source, shortening)).toBeNull();
+  });
+
+  it('refuses a mesh with morph targets', () => {
+    // A target is a displacement in the mesh's own space; scaling the base and
+    // not the targets pulls the shape apart the moment the morph is applied.
+    const source = placed(CORNERS);
+    source.json.meshes![0]!.primitives![0]!.targets = [{ POSITION: 0 }];
+
+    expect(rewriteGlb(source, shortening)).toBeNull();
+  });
+
+  it('refuses a mesh no node carries', () => {
+    const source = placed(CORNERS);
+    source.json.nodes = [];
+
+    expect(rewriteGlb(source, shortening)).toBeNull();
+  });
+
+  it('refuses a position two meshes share, which would need two boxes', () => {
+    const source = placed(CORNERS);
+    source.json.meshes!.push({ primitives: [{ attributes: { POSITION: 0 } }] });
+    source.json.nodes!.push({ mesh: 1 });
+
+    expect(rewriteGlb(source, shortening)).toBeNull();
+  });
+
+  it('does nothing when the author turned it off', () => {
+    expect(rewriteGlb(placed(CORNERS), { ...shortening, quantizePositions: false })).toBeNull();
   });
 });

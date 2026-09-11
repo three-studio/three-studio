@@ -37,10 +37,12 @@ const HEADER_BYTES = 12;
 const CHUNK_HEADER_BYTES = 8;
 
 const BYTE = 5120;
+const SHORT = 5122;
 const UNSIGNED_SHORT = 5123;
 const UNSIGNED_INT = 5125;
 const FLOAT = 5126;
 const MAX_UNSIGNED_SHORT = 65535;
+const MAX_SHORT = 32767;
 
 /** What a byte-sized normal needs the file to declare. */
 const QUANTIZATION = 'KHR_mesh_quantization';
@@ -113,6 +115,12 @@ export interface GltfJson {
       attributes?: Record<string, number>;
       targets?: Record<string, number>[];
     }[];
+  }[];
+  nodes?: {
+    mesh?: number;
+    skin?: number;
+    children?: number[];
+    [key: string]: unknown;
   }[];
   images?: { bufferView?: number; mimeType?: string; uri?: string }[];
   extensionsUsed?: string[];
@@ -289,6 +297,15 @@ export interface RewriteOptions {
    * which is invisible on a scanned surface and can band on a large smooth one.
    */
   quantizeNormals: boolean;
+  /**
+   * Whether a position may be stored in a short rather than a float.
+   *
+   * Lossy in the other direction: a short describes a place to one part in
+   * 65534 *of the mesh it belongs to*, so the error is in millimetres for a
+   * room and in centimetres for a landscape. The same author answer as the
+   * normals, because it is the same question.
+   */
+  quantizePositions: boolean;
   /**
    * Compresses one stream of geometry, or `null` to store it as it is.
    *
@@ -471,6 +488,112 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     return true;
   };
 
+  /** What a wrapper node has to undo to put a quantised mesh back where it was. */
+  interface Box {
+    /** The middle of the mesh, which the wrapper translates by. */
+    center: number[];
+    /** Half its extent, which the wrapper scales by. */
+    half: number[];
+  }
+
+  // A skinned mesh's vertices are placed by its joints, and glTF says the mesh
+  // node's own transform is ignored — so a wrapper above it would do nothing and
+  // the model would be drawn at the size of the unit cube.
+  const skinned = new Set<number>();
+  const nodesWithMesh = new Set<number>();
+  for (const node of json.nodes ?? []) {
+    if (node.mesh === undefined) continue;
+    nodesWithMesh.add(node.mesh);
+    if (node.skin !== undefined) skinned.add(node.mesh);
+  }
+
+  /** Which meshes each POSITION accessor serves; a shared one has no one box. */
+  const sharing = new Map<number, Set<number>>();
+  (json.meshes ?? []).forEach((mesh, index) => {
+    for (const primitive of mesh.primitives ?? []) {
+      const at = primitive.attributes?.POSITION;
+      if (at === undefined) continue;
+      const found = sharing.get(at);
+      if (found) found.add(index);
+      else sharing.set(at, new Set([index]));
+    }
+  });
+
+  /**
+   * The box a whole mesh fits in, or `null` for one that must keep its floats.
+   *
+   * One box for the mesh and not one per primitive, because the factor that
+   * undoes the quantisation rides on a node, and a node carries a mesh whole.
+   *
+   * Measured from the bytes rather than read from `accessor.min`, which the
+   * spec requires on positions and which an exporter can still get wrong. A box
+   * too small clips the model; a box too large spends its precision on nothing.
+   *
+   * The refusals, and what each would produce:
+   *
+   * - **a skinned mesh**, whose node transform is ignored by the skinning.
+   * - **a mesh with morph targets.** A target is a displacement in the mesh's
+   *   own space; scaling the base without scaling the targets pulls the shape
+   *   apart as soon as the morph is applied.
+   * - **a POSITION shared by two meshes**, which would need two boxes at once.
+   * - **a mesh no node carries**, which has nowhere to hang a wrapper.
+   */
+  const boxFor = (mesh: NonNullable<GltfJson['meshes']>[number], index: number): Box | null => {
+    if (skinned.has(index) || !nodesWithMesh.has(index)) return null;
+
+    const lower = [Infinity, Infinity, Infinity];
+    const upper = [-Infinity, -Infinity, -Infinity];
+    let found = false;
+
+    for (const primitive of mesh.primitives ?? []) {
+      if (primitive.targets !== undefined) return null;
+
+      const at = primitive.attributes?.POSITION;
+      const accessor = at === undefined ? undefined : accessors[at];
+      if (at === undefined || accessor === undefined) return null;
+      if (accessor.componentType !== FLOAT || accessor.type !== 'VEC3') return null;
+      if (accessor.bufferView === undefined || !repackable(accessor.bufferView)) return null;
+      if (sharing.get(at)?.size !== 1) return null;
+
+      const from = spanOf(accessor);
+      if (from === null) return null;
+
+      for (let k = 0; k < accessor.count; k++) {
+        for (let component = 0; component < 3; component++) {
+          const value = bin.readFloatLE(from + k * 12 + component * 4);
+          if (!Number.isFinite(value)) return null;
+          lower[component] = Math.min(lower[component] as number, value);
+          upper[component] = Math.max(upper[component] as number, value);
+        }
+      }
+      found = true;
+    }
+    if (!found) return null;
+
+    return {
+      center: [0, 1, 2].map((c) => ((upper[c] as number) + (lower[c] as number)) / 2),
+      // A flat mesh has no extent on one axis. Half of nothing is one, so every
+      // value there quantises to zero and the centre puts it back exactly.
+      half: [0, 1, 2].map((c) => ((upper[c] as number) - (lower[c] as number)) / 2 || 1),
+    };
+  };
+
+  /** Meshes to wrap, and the accessors inside them, by the same box. */
+  const wrapped = new Map<number, Box>();
+  const boxes = new Map<number, Box>();
+  if (options.quantizePositions) {
+    (json.meshes ?? []).forEach((mesh, index) => {
+      const box = boxFor(mesh, index);
+      if (box === null) return;
+
+      wrapped.set(index, box);
+      for (const primitive of mesh.primitives ?? []) {
+        const at = primitive.attributes?.POSITION;
+        if (at !== undefined) boxes.set(at, box);
+      }
+    });
+  }
+
   const narrowed = new Set<number>();
   const quantized = new Set<number>();
   for (const mesh of json.meshes ?? []) {
@@ -509,7 +632,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   }
 
   const repacked = new Set<number>();
-  for (const at of [...narrowed, ...quantized]) {
+  for (const at of [...narrowed, ...quantized, ...boxes.keys()]) {
     const view = accessors[at]?.bufferView;
     if (view !== undefined) repacked.add(view);
   }
@@ -531,6 +654,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     const accessor = accessors[at] as GltfAccessor;
     if (narrowed.has(at)) return { ...accessor, componentType: UNSIGNED_SHORT };
     if (quantized.has(at)) return { ...accessor, componentType: BYTE, normalized: true };
+    if (boxes.has(at)) return { ...accessor, componentType: SHORT, normalized: true };
     return accessor;
   };
 
@@ -553,6 +677,26 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
           // only one of them round-trips.
           const value = Math.max(-127, Math.min(127, Math.round(unit * 127)));
           out.writeInt8(value, k * step + component);
+          min[component] = Math.min(min[component] as number, value);
+          max[component] = Math.max(max[component] as number, value);
+        }
+      }
+      bounds.set(at, { min, max });
+      return out;
+    }
+
+    const box = boxes.get(at);
+    if (box !== undefined) {
+      const min = [MAX_SHORT, MAX_SHORT, MAX_SHORT];
+      const max = [-MAX_SHORT, -MAX_SHORT, -MAX_SHORT];
+      for (let k = 0; k < accessor.count; k++) {
+        for (let component = 0; component < 3; component++) {
+          const place = bin.readFloatLE(from + k * 12 + component * 4);
+          const unit = (place - (box.center[component] as number)) / (box.half[component] as number);
+          // Clamped at -32767 for the same reason as the normals: the format
+          // reads a signed short back as `max(value / 32767, -1)`.
+          const value = Math.max(-MAX_SHORT, Math.min(MAX_SHORT, Math.round(unit * MAX_SHORT)));
+          out.writeInt16LE(value, k * step + component * 2);
           min[component] = Math.min(min[component] as number, value);
           max[component] = Math.max(max[component] as number, value);
         }
@@ -780,7 +924,13 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
 
   // Everything was laid out again and nothing came out smaller: the copy would
   // be the source with different offsets in it, which is not worth a file.
-  if (scaled.size === 0 && narrowed.size === 0 && quantized.size === 0 && compressed === 0) {
+  if (
+    scaled.size === 0 &&
+    narrowed.size === 0 &&
+    quantized.size === 0 &&
+    boxes.size === 0 &&
+    compressed === 0
+  ) {
     return null;
   }
 
@@ -796,9 +946,44 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   // expects a float, or of a view whose bytes are not where it says. The spec
   // says so in as many words, and three throws rather than guessing.
   const needed = [
-    ...(quantized.size === 0 ? [] : [QUANTIZATION]),
+    ...(quantized.size === 0 && wrapped.size === 0 ? [] : [QUANTIZATION]),
     ...(compressed === 0 ? [] : [MESHOPT]),
   ];
+
+  /**
+   * The nodes, with a quantised mesh moved on to a wrapper of its own.
+   *
+   * **A wrapper rather than the node's own transform**, and the difference is
+   * an animation. Folding the factor into the node that already carries the
+   * mesh works right up until a channel writes that node's scale — and then the
+   * factor is gone and the model collapses to the size of a unit cube, with
+   * nothing in the file to say why. A child node is below anything that
+   * animates the parent, so the factor rides underneath whatever happens above.
+   *
+   * It is also what lets a mesh be carried by two nodes: both get a wrapper,
+   * and the box is the mesh's, so both wrappers say the same thing.
+   *
+   * Appended, never inserted — the same rule the buffer views follow, and for
+   * more reasons here: scenes, children, skin joints and every animation
+   * channel name a node by its number.
+   */
+  const withWrappers = (): GltfJson['nodes'] => {
+    if (wrapped.size === 0) return json.nodes;
+
+    const out = [...(json.nodes ?? [])];
+    const before = out.length;
+    for (let index = 0; index < before; index++) {
+      const node = out[index] as NonNullable<GltfJson['nodes']>[number];
+      const box = node.mesh === undefined ? undefined : wrapped.get(node.mesh);
+      if (box === undefined) continue;
+
+      const wrapper = out.length;
+      out.push({ mesh: node.mesh, translation: [...box.center], scale: [...box.half] });
+      const { mesh: _moved, ...rest } = node;
+      out[index] = { ...rest, children: [...(node.children ?? []), wrapper] };
+    }
+    return out;
+  };
 
   return {
     json: {
@@ -806,6 +991,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
       // Only when the document had one: the spec has no empty arrays, and
       // adding a field a file did not carry is a change nobody asked for.
       ...(json.accessors === undefined ? {} : { accessors: placed }),
+      ...(wrapped.size === 0 ? {} : { nodes: withWrappers() }),
       ...(needed.length === 0
         ? {}
         : {

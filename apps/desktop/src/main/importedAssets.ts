@@ -163,6 +163,7 @@ function rebuildModel(bytes: Buffer, { cap, compressGeometry }: Recipe): Buffer 
       return format === null ? null : processTexture(imageBytes, format, cap);
     },
     quantizeNormals: compressGeometry,
+    quantizePositions: compressGeometry,
     encodeGeometry: compressGeometry ? encodeGeometry : null,
   });
   return rewritten === null ? null : writeGlb(rewritten);

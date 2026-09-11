@@ -56,12 +56,15 @@ export function assetUrl(path: string): string {
  * invisible, which is the worst of the three outcomes.
  *
  * Bump it whenever the bytes this pipeline produces from the same inputs
- * change. `1` is the generation that carried no stamp at all.
+ * change. `1` is the generation that carried no stamp at all. Easy to forget,
+ * and forgetting is silent — `4` covers two changes because `3` was left in
+ * place through one of them, and every project already scanned would have gone
+ * on being served the copy it had.
  *
  * This is Unity's import version under another name, and it works the same way:
  * old copies are simply no longer asked for, and they go when the cache does.
  */
-export const IMPORT_PIPELINE_VERSION = 3;
+export const IMPORT_PIPELINE_VERSION = 4;
 
 /**
  * Where the scaled copy of an asset lives, relative to the project root.
