@@ -1,5 +1,36 @@
 export const ENGINE_NAME = 'Three Studio';
-export const ENGINE_VERSION = '0.2.0';
+
+/**
+ * What this build of the source tree calls itself.
+ *
+ * The one version in this file that is not a format number, and the one with
+ * the longest reach. Three things read it:
+ *
+ *  - **the launcher and the status bar** — the only version a user ever sees.
+ *    Nothing in this codebase calls `app.getVersion()`, so there is no second
+ *    number competing with it on screen;
+ *  - **`project.engineVersion`**, stamped on every project this build opens and
+ *    shown in Project Settings. A record of what wrote the file; nothing
+ *    compares it, so moving it can break nothing;
+ *  - **the key of both derived indexes** — `scenes.index.json` and the asset
+ *    scan, whose key is `${ENGINE_VERSION}:meta${ASSET_META_VERSION}`. Moving
+ *    this throws both away, so the next open of every project is slower, once.
+ *    That is the only cost of a bump, and it is the reason not to do it idly.
+ *
+ * **A release cannot reach this, and that is the arrangement rather than a gap
+ * to close.** `release.yml` stamps the tag into `apps/desktop/package.json` on
+ * the runner, the only file electron-builder reads: that governs the
+ * *installer* — its filename, and the version the packaged app declares to the
+ * operating system. This governs what the *source tree* says it is. The two
+ * agree whenever a tag is cut to match a bump, which is the ordinary flow, and
+ * they are free to differ for a nightly or a tag that is not a version number
+ * at all (`v2026-summer`).
+ *
+ * So: bump it when the product moves, in a commit that says so — never as part
+ * of cutting a release, which already does its own job on the file that needs
+ * it.
+ */
+export const ENGINE_VERSION = '0.3.0';
 
 /**
  * The surface compiled user scripts are built against.

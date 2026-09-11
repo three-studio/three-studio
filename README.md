@@ -179,11 +179,19 @@ shipped. And **the run is dispatched from a branch**, because `workflow_dispatch
 file as it exists on the ref you pick — dispatch from a tag and you get the file that tag was cut with,
 so a fix to the release process could never apply to the release that needed it.
 
-The tag is the authority on the version: the release run stamps it into `apps/desktop/package.json` on
-the runner, the one file electron-builder reads. `v1.4.0` therefore gives an app that reports `1.4.0`
-and installers named `three-studio-1.4.0-…`, with no version to bump by hand. Nothing is committed —
-the version in the repository stays `0.2.0` and only serves as the base for a tag that is not a version
-number, which packages as a prerelease of it (`v2026-summer` → `0.2.0-2026-summer`).
+The tag is the authority on the **installer**: the release run stamps it into
+`apps/desktop/package.json` on the runner, the one file electron-builder reads. `v1.4.0` therefore
+gives installers named `three-studio-1.4.0-…` and an app that declares `1.4.0` to the operating
+system, with nothing to bump by hand for a release. Nothing is committed — the version in the
+repository only serves as the base for a tag that is not a version number, which packages as a
+prerelease of it (`v2026-summer` → `0.3.0-2026-summer`).
+
+**What the app displays is a different number, on purpose.** The launcher and the status bar read
+`ENGINE_VERSION` from [`packages/core/src/constants.ts`](packages/core/src/constants.ts), which no
+release touches — it also keys the derived indexes and stamps `project.engineVersion`, so it is the
+source tree's own identity rather than the installer's. Bump it in a commit when the product moves;
+the two agree whenever a tag is cut to match a bump, which is the ordinary flow. The note on the
+constant is the full reasoning.
 
 ### Headless smoke run
 

@@ -95,7 +95,7 @@ jobs:
           # build still runs and the artifacts still carry the tag.
           #   v1.4.0        -> 1.4.0
           #   v1.4.0-rc.1   -> 1.4.0-rc.1
-          #   v2026-summer  -> 0.2.0-2026-summer
+          #   v2026-summer  -> 0.3.0-2026-summer
           if ! printf '%s' "$version" | grep -Eq "$semver"; then
             base=$(node -p "require('./apps/desktop/package.json').version")
             suffix=$(printf '%s' "$version" | tr -c '0-9A-Za-z.-' '-' | sed -E 's/-{2,}/-/g; s/\.{2,}/./g; s/^[.-]+//; s/[.-]+$//')
@@ -196,11 +196,17 @@ jobs:
 
       - run: npm ci
 
-      # The tag is the authority on the version. electron-builder reads this one
-      # package.json and nothing else, so stamping it here is what makes the tag,
-      # the About box, the installer filenames and the release agree. After
-      # `npm ci`, which would put the committed value back; before packaging.
-      # The file is never committed — the repository stays at its own version.
+      # The tag is the authority on the *installer*. electron-builder reads this
+      # one package.json and nothing else, so stamping it here is what makes the
+      # tag, the installer filenames, the version the packaged app declares to
+      # the operating system, and the release all agree. After `npm ci`, which
+      # would put the committed value back; before packaging. The file is never
+      # committed — the repository stays at its own version.
+      #
+      # It does not reach what the app *shows*. The launcher and the status bar
+      # read `ENGINE_VERSION` from packages/core/src/constants.ts, which nothing
+      # here touches and which is bumped in a commit of its own — the note on
+      # that constant says why the two are separate and when each one moves.
       - name: Stamp the version from the tag
         run: npm pkg set version="$VERSION" --workspace @three-studio/desktop
         env:

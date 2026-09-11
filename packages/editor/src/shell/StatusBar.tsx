@@ -18,7 +18,9 @@ export function StatusBar() {
       {playState !== 'stopped' && (
         <span className="text-play">{playState === 'playing' ? 'Playing' : 'Paused'}</span>
       )}
-      <span>v{ENGINE_VERSION}</span>
+      {/* Named, because it is not the installer's number and may differ from
+          it — see the note on `ENGINE_VERSION`. */}
+      <span title="Engine version">v{ENGINE_VERSION}</span>
     </div>
   );
 }

@@ -65,7 +65,11 @@ export function LauncherApp() {
           <header className="flex items-end gap-3">
             <h1 className="sr-only">{ENGINE_NAME}</h1>
             <StudioLogo className="h-8 w-auto text-ink" />
-            <span className="pb-0.5 text-2xs text-ink-dim">v{ENGINE_VERSION}</span>
+            {/* Named, because it is not the installer's number and may differ
+                from it — see the note on `ENGINE_VERSION`. */}
+            <span className="pb-0.5 text-2xs text-ink-dim" title="Engine version">
+              v{ENGINE_VERSION}
+            </span>
           </header>
 
           {error && (
