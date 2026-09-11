@@ -37,9 +37,14 @@ const SCALE_SNAP = 0.1;
  * Where the gizmo's pivot sits, and which way its handles point.
  *
  * A function rather than three lines inside `update` because it is the whole of
- * what a reader has to get right, and because it is the only part of this file
- * that can be tested: `new TransformControls(camera, dom)` wants an
- * `HTMLElement`, and there is no DOM under vitest.
+ * what a reader has to get right.
+ *
+ * It used to say it was also the only part of this file that could be tested,
+ * because `new TransformControls(camera, dom)` wanted an `HTMLElement`. That is
+ * no longer true and was never quite the obstacle: three's `Controls` takes
+ * `domElement = null` and only listens when it is given one. What wants a DOM
+ * is `RotationReadout`, which asks for a canvas in its constructor — and
+ * `test/gizmoVisibility.test.ts` stands one in and drives the whole controller.
  *
  * The orientation is the half that was missing entirely. `TransformControls`
  * points its handles with the world quaternion of whatever it is attached to
