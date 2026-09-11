@@ -80,6 +80,7 @@ const options = (
   scaleImage,
   quantizeNormals: false,
   quantizePositions: false,
+  quantizeTexCoords: false,
   encodeGeometry: null,
 });
 
@@ -423,6 +424,7 @@ const quantising: RewriteOptions = {
   scaleImage: () => null,
   quantizeNormals: true,
   quantizePositions: false,
+  quantizeTexCoords: false,
   encodeGeometry: null,
 };
 
@@ -572,6 +574,7 @@ describe('quantising the normals', () => {
         scaleImage: () => null,
         quantizeNormals: false,
         quantizePositions: false,
+        quantizeTexCoords: false,
         encodeGeometry: null,
       })).toBeNull();
   });
@@ -602,6 +605,7 @@ const compressing = (
   scaleImage: () => null,
   quantizeNormals: false,
   quantizePositions: false,
+  quantizeTexCoords: false,
   encodeGeometry,
 });
 
@@ -907,6 +911,7 @@ const shortening: RewriteOptions = {
   scaleImage: () => null,
   quantizeNormals: false,
   quantizePositions: true,
+  quantizeTexCoords: false,
   encodeGeometry: null,
 };
 
@@ -1030,5 +1035,168 @@ describe('quantising the positions', () => {
 
   it('does nothing when the author turned it off', () => {
     expect(rewriteGlb(placed(CORNERS), { ...shortening, quantizePositions: false })).toBeNull();
+  });
+});
+
+/*
+ * Quantising the texture coordinates.
+ *
+ * The one conversion that had to be made *smaller* than the task asked for.
+ *
+ * A coordinate inside the unit square is the easy half: a normalised unsigned
+ * short holds it directly, which is plain glTF and needs no extension and no
+ * factor anywhere. A coordinate that tiles past one is the other half, and the
+ * only place to put its factor is a `KHR_texture_transform` on the material —
+ * which is precisely the thing `ModelComponent.materialId` lets an author
+ * replace with a material of their own. That replacement would carry no
+ * transform, would read the coordinates as the unit square they are not, and
+ * would tile at half the scale with nothing anywhere to say why. So those keep
+ * their floats.
+ */
+
+/** A quad with whatever texture coordinates a test wants on it. */
+function textured(
+  uv: readonly (readonly [number, number])[],
+  name = 'TEXCOORD_0',
+): GlbContents {
+  const positions = Buffer.alloc(uv.length * 12);
+  for (let at = 0; at < uv.length * 3; at++) positions.writeFloatLE(at, at * 4);
+  const coordinates = Buffer.alloc(uv.length * 8);
+  uv.forEach(([u, v], at) => {
+    coordinates.writeFloatLE(u, at * 8);
+    coordinates.writeFloatLE(v, at * 8 + 4);
+  });
+  const bin = Buffer.concat([positions, coordinates]);
+
+  return {
+    bin,
+    json: {
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: bin.length }],
+      bufferViews: [
+        { buffer: 0, byteOffset: 0, byteLength: positions.length, byteStride: 12 },
+        { buffer: 0, byteOffset: positions.length, byteLength: coordinates.length, byteStride: 8 },
+      ],
+      accessors: [
+        { bufferView: 0, byteOffset: 0, componentType: FLOAT, count: uv.length, type: 'VEC3' },
+        { bufferView: 1, byteOffset: 0, componentType: FLOAT, count: uv.length, type: 'VEC2' },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0, [name]: 1 } }] }],
+      nodes: [{ mesh: 0 }],
+    },
+  };
+}
+
+const INSIDE = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+  [0.25, 0.75],
+] as const;
+
+const mapping: RewriteOptions = {
+  scaleImage: () => null,
+  quantizeNormals: false,
+  quantizePositions: false,
+  quantizeTexCoords: true,
+  encodeGeometry: null,
+};
+
+/** What a loader reads back out of the coordinates. */
+function coordinates(contents: GlbContents): number[][] {
+  const accessor = contents.json.accessors?.[1];
+  const view = contents.json.bufferViews?.[accessor?.bufferView ?? -1];
+  if (!accessor || !view) return [];
+
+  const short = accessor.componentType === UNSIGNED_SHORT;
+  const step = view.byteStride ?? (short ? 4 : 8);
+  const start = (view.byteOffset ?? 0) + (accessor.byteOffset ?? 0);
+  return Array.from({ length: accessor.count }, (_, index) =>
+    [0, 1].map((component) => {
+      const at = start + index * step + component * (short ? 2 : 4);
+      return short ? contents.bin.readUInt16LE(at) / 65535 : contents.bin.readFloatLE(at);
+    }),
+  );
+}
+
+describe('quantising the texture coordinates', () => {
+  it('stores a coordinate inside the unit square as the short it already is', () => {
+    const rewritten = rewriteGlb(textured(INSIDE), mapping);
+
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(UNSIGNED_SHORT);
+    expect(rewritten?.json.accessors?.[1]?.normalized).toBe(true);
+    for (const [index, point] of coordinates(rewritten!).entries()) {
+      point.forEach((value, component) => expect(value).toBeCloseTo(INSIDE[index]![component]!, 4));
+    }
+  });
+
+  it('adds no extension, because nothing has to be undone', () => {
+    // This is the whole point of stopping at the unit square. A normalised
+    // short *is* the coordinate: plain glTF 2.0, no transform, nothing for a
+    // material to know.
+    const rewritten = rewriteGlb(textured(INSIDE), mapping);
+
+    expect(rewritten?.json.extensionsRequired ?? []).toEqual([]);
+    expect(rewritten?.json.extensionsUsed ?? []).toEqual([]);
+  });
+
+  it('needs four bytes and no padding, which is a format WebGPU has', () => {
+    const rewritten = rewriteGlb(textured(INSIDE), mapping);
+
+    expect(rewritten?.json.bufferViews?.[1]?.byteStride).toBe(4);
+    expect(rewritten?.json.bufferViews?.[1]?.byteLength).toBe(INSIDE.length * 4);
+  });
+
+  it('leaves a coordinate that tiles past one alone', () => {
+    const tiling = [...INSIDE.slice(0, 3), [2, 0]] as const;
+    const rewritten = rewriteGlb(textured(tiling), mapping);
+
+    // Nothing else in this file changes, so there is no copy to write at all.
+    expect(rewritten).toBeNull();
+  });
+
+  it('leaves a negative coordinate alone', () => {
+    expect(rewriteGlb(textured([...INSIDE.slice(0, 3), [-0.5, 0]]), mapping)).toBeNull();
+  });
+
+  it('clamps a float that overshoots one by a rounding error', () => {
+    /*
+     * Refusing the whole accessor over a rounding error would cost far more
+     * than the fiftieth of a texel the clamp costs. And the clamp is not
+     * decoration: at the edge of what the tolerance admits, 65535 × 1.000009
+     * rounds to 65536, which is one more than an unsigned short holds — the
+     * write throws rather than wrapping, so the tolerance and the clamp have to
+     * agree with each other.
+     */
+    const nearly = [...INSIDE.slice(0, 3), [1 + 9e-6, -9e-6]] as const;
+    const rewritten = rewriteGlb(textured(nearly), mapping);
+
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(UNSIGNED_SHORT);
+    expect(coordinates(rewritten!)[3]).toEqual([1, 0]);
+  });
+
+  it('takes a second set as readily as the first', () => {
+    // A lightmap lives in `TEXCOORD_1` and is the set most likely to sit inside
+    // the square. The rule is the same because neither needs anything applied.
+    const rewritten = rewriteGlb(textured(INSIDE, 'TEXCOORD_1'), mapping);
+
+    expect(rewritten?.json.accessors?.[1]?.componentType).toBe(UNSIGNED_SHORT);
+  });
+
+  it('restates min and max in the units it stored', () => {
+    const rewritten = rewriteGlb(textured(INSIDE), mapping);
+
+    expect(rewritten?.json.accessors?.[1]?.min).toBeUndefined();
+    const withBounds = textured(INSIDE);
+    withBounds.json.accessors![1]!.min = [0, 0];
+    withBounds.json.accessors![1]!.max = [1, 1];
+    const bounded = rewriteGlb(withBounds, mapping);
+
+    expect(bounded?.json.accessors?.[1]?.min).toEqual([0, 0]);
+    expect(bounded?.json.accessors?.[1]?.max).toEqual([65535, 65535]);
+  });
+
+  it('does nothing when the author turned it off', () => {
+    expect(rewriteGlb(textured(INSIDE), { ...mapping, quantizeTexCoords: false })).toBeNull();
   });
 });

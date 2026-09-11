@@ -164,6 +164,7 @@ function rebuildModel(bytes: Buffer, { cap, compressGeometry }: Recipe): Buffer 
     },
     quantizeNormals: compressGeometry,
     quantizePositions: compressGeometry,
+    quantizeTexCoords: compressGeometry,
     encodeGeometry: compressGeometry ? encodeGeometry : null,
   });
   return rewritten === null ? null : writeGlb(rewritten);

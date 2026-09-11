@@ -64,7 +64,7 @@ export function assetUrl(path: string): string {
  * This is Unity's import version under another name, and it works the same way:
  * old copies are simply no longer asked for, and they go when the cache does.
  */
-export const IMPORT_PIPELINE_VERSION = 4;
+export const IMPORT_PIPELINE_VERSION = 5;
 
 /**
  * Where the scaled copy of an asset lives, relative to the project root.

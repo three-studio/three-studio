@@ -73,6 +73,14 @@ const MAX_ATTRIBUTE_STRIDE = 256;
 const FALLBACK_BUFFER = 1;
 
 /**
+ * How far outside the unit square a texture coordinate may sit and still be
+ * treated as inside it. A float32 that was meant to be exactly 1 can arrive as
+ * 1.0000001; a tenth of a millionth of a UV is a fiftieth of a texel on the
+ * largest texture the import allows, so it is clamped rather than refused.
+ */
+const TEXCOORD_TOLERANCE = 1e-5;
+
+/**
  * How far a normal's squared length may stray from one before this leaves it
  * alone. Float32 rounding moves it by about 1e-7; this is four orders of
  * magnitude of room, and still catches a normal nobody normalised.
@@ -306,6 +314,18 @@ export interface RewriteOptions {
    * normals, because it is the same question.
    */
   quantizePositions: boolean;
+  /**
+   * Whether a texture coordinate that stays inside the unit square may be
+   * stored in an unsigned short rather than a float.
+   *
+   * **Only inside the unit square**, and that restriction is the whole design.
+   * A normalised short *is* the coordinate there, so nothing has to be undone
+   * and no material has to know anything. Coordinates that tile past one would
+   * need a factor, `KHR_texture_transform` is where it would live, and a
+   * material is exactly the thing this editor lets an author replace — see the
+   * refusal on `insideUnitSquare`.
+   */
+  quantizeTexCoords: boolean;
   /**
    * Compresses one stream of geometry, or `null` to store it as it is.
    *
@@ -594,10 +614,57 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     });
   }
 
+  /**
+   * Whether every coordinate an accessor holds stays inside the unit square.
+   *
+   * The one question that decides whether a texture coordinate can be stored in
+   * a short, and it is a question about *values*, not about the material that
+   * will sample them. Inside the square a normalised short is the coordinate
+   * itself: nothing is applied to it, so nothing has to know.
+   *
+   * **Outside it, there is no safe answer here.** Coordinates that tile past
+   * one would have to be scaled back by a `KHR_texture_transform` on the
+   * material — and a model's material is exactly what `ModelComponent`'s
+   * `materialId` lets an author replace with one of their own. A replacement
+   * carries no transform, would read the coordinates as the unit square they
+   * are not, and would tile the texture at the wrong scale with nothing
+   * anywhere to say why. Those keep their floats.
+   */
+  const insideUnitSquare = (accessor: GltfAccessor): boolean => {
+    const from = spanOf(accessor);
+    if (from === null) return false;
+
+    for (let at = from; at < from + accessor.count * 8; at += 4) {
+      const value = bin.readFloatLE(at);
+      if (!(value >= -TEXCOORD_TOLERANCE && value <= 1 + TEXCOORD_TOLERANCE)) return false;
+    }
+    return true;
+  };
+
   const narrowed = new Set<number>();
   const quantized = new Set<number>();
+  const texCoords = new Set<number>();
   for (const mesh of json.meshes ?? []) {
     for (const primitive of mesh.primitives ?? []) {
+      for (const [name, at] of Object.entries(primitive.attributes ?? {})) {
+        // Every set, not only the first: a lightmap in `TEXCOORD_1` is the one
+        // most likely to sit inside the square, and the rule is the same for
+        // all of them because none of them needs anything applied.
+        const coordinates = accessors[at];
+        if (
+          options.quantizeTexCoords &&
+          /^TEXCOORD_\d+$/.test(name) &&
+          coordinates?.bufferView !== undefined &&
+          !texCoords.has(at) &&
+          coordinates.componentType === FLOAT &&
+          coordinates.type === 'VEC2' &&
+          repackable(coordinates.bufferView) &&
+          insideUnitSquare(coordinates)
+        ) {
+          texCoords.add(at);
+        }
+      }
+
       // An accessor may serve several primitives; it is converted once, and the
       // second visit has nothing to add.
       const indices = primitive.indices;
@@ -632,7 +699,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   }
 
   const repacked = new Set<number>();
-  for (const at of [...narrowed, ...quantized, ...boxes.keys()]) {
+  for (const at of [...narrowed, ...quantized, ...texCoords, ...boxes.keys()]) {
     const view = accessors[at]?.bufferView;
     if (view !== undefined) repacked.add(view);
   }
@@ -655,6 +722,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     if (narrowed.has(at)) return { ...accessor, componentType: UNSIGNED_SHORT };
     if (quantized.has(at)) return { ...accessor, componentType: BYTE, normalized: true };
     if (boxes.has(at)) return { ...accessor, componentType: SHORT, normalized: true };
+    if (texCoords.has(at)) return { ...accessor, componentType: UNSIGNED_SHORT, normalized: true };
     return accessor;
   };
 
@@ -697,6 +765,24 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
           // reads a signed short back as `max(value / 32767, -1)`.
           const value = Math.max(-MAX_SHORT, Math.min(MAX_SHORT, Math.round(unit * MAX_SHORT)));
           out.writeInt16LE(value, k * step + component * 2);
+          min[component] = Math.min(min[component] as number, value);
+          max[component] = Math.max(max[component] as number, value);
+        }
+      }
+      bounds.set(at, { min, max });
+      return out;
+    }
+
+    if (texCoords.has(at)) {
+      const min = [MAX_UNSIGNED_SHORT, MAX_UNSIGNED_SHORT];
+      const max = [0, 0];
+      for (let k = 0; k < accessor.count; k++) {
+        for (let component = 0; component < 2; component++) {
+          const unit = bin.readFloatLE(from + k * 8 + component * 4);
+          // Clamped, because `insideUnitSquare` allows a float that overshoots
+          // by a tenth of a millionth rather than refusing the whole accessor.
+          const value = Math.max(0, Math.min(MAX_UNSIGNED_SHORT, Math.round(unit * MAX_UNSIGNED_SHORT)));
+          out.writeUInt16LE(value, k * step + component * 2);
           min[component] = Math.min(min[component] as number, value);
           max[component] = Math.max(max[component] as number, value);
         }
@@ -928,6 +1014,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     scaled.size === 0 &&
     narrowed.size === 0 &&
     quantized.size === 0 &&
+    texCoords.size === 0 &&
     boxes.size === 0 &&
     compressed === 0
   ) {
