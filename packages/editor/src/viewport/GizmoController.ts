@@ -163,9 +163,42 @@ export class GizmoController {
     return this.controls.dragging || this.controls.axis !== null;
   }
 
+  /**
+   * Whether the handles take the pointer — and, the same question, whether they
+   * are drawn at all.
+   *
+   * Two consequences of one flag, and they have to stay one flag. The rule is
+   * the viewport's own, written where Play switches them off: handles that
+   * cannot be dragged must not be drawn either. A handle that is drawn and does
+   * not answer can only be found out by trying to drag it, and by then the
+   * camera has moved instead.
+   *
+   * (Unity and Blender keep theirs on screen through a camera move. This editor
+   * does not, deliberately: it is the signal that the pointer now belongs to
+   * the camera.)
+   */
   setEnabled(enabled: boolean): void {
     this.controls.enabled = enabled;
-    this.helper.visible = enabled && this.attached;
+    this.showHelper();
+  }
+
+  /**
+   * The one place that decides whether the handles are on screen.
+   *
+   * It used to be two, and they disagreed. `setEnabled` hid them; `update` ran
+   * on the very next frame — and every frame after — and ended by showing them
+   * again unconditionally, so the gizmo stayed drawn right through a camera
+   * gesture it would refuse to answer. `ViewportInput` and `EditorViewport` both
+   * call `setEnabled(false)` for exactly that gesture, and neither had any
+   * effect on what was drawn.
+   *
+   * Play escaped it only by accident of ordering: `EditorViewport` skips
+   * `update` entirely while the game runs, and the comment there says why in as
+   * many words — "Leaving `update` to run would draw them: it ends by showing
+   * the helper."
+   */
+  private showHelper(): void {
+    this.helper.visible = this.attached && this.controls.enabled;
   }
 
   /**
@@ -189,7 +222,7 @@ export class GizmoController {
         this.attached = false;
       }
       this.targets = null;
-      this.helper.visible = false;
+      this.showHelper();
       this.readout.hide();
       return;
     }
@@ -242,7 +275,7 @@ export class GizmoController {
       this.attached = true;
     }
 
-    this.helper.visible = true;
+    this.showHelper();
 
     // `update` runs every frame, and each of these setters fires a change event
     // that makes TransformControls rebuild its gizmo. Only touch what moved.
@@ -272,13 +305,17 @@ export class GizmoController {
    * has to be `dragging`, not "is the angle non-zero".
    */
   private updateReadout(mode: TransformMode): void {
-    const { axis, dragging, size, space } = this.controls;
+    const { axis, dragging, enabled, size, space } = this.controls;
     const source = this.controls as unknown as RotationGestureSource;
 
-    // A gesture that has not swept anything yet: a zero-width sector is a stray
-    // line across the ring, and the number would sit at 0° for as long as the
-    // pointer rests on the handle without moving.
-    if (mode !== 'rotate' || !dragging || axis === null || source.rotationAngle === 0) {
+    // `enabled` because the readout belongs to the handles: a press that starts
+    // a camera gesture mid-drag takes them away, and a sector left hanging where
+    // a gizmo used to be is worse than no feedback at all.
+    //
+    // A gesture that has not swept anything yet is the other case: a zero-width
+    // sector is a stray line across the ring, and the number would sit at 0° for
+    // as long as the pointer rests on the handle without moving.
+    if (!enabled || mode !== 'rotate' || !dragging || axis === null || source.rotationAngle === 0) {
       this.readout.hide();
       return;
     }
