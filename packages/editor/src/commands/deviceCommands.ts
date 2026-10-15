@@ -10,6 +10,7 @@ import {
   hasSlid,
   holderName,
   localDeviceUrl,
+  noteLaunch,
   showDevicePopover,
   useDeviceStore,
 } from '../state/deviceStore';
@@ -176,16 +177,19 @@ function launchedNotes(status: DeviceServerStatus): string[] {
 /**
  * The one call that launches, by hand or for live reload. A launch that became
  * current is this window's, kept with the snapshot it sent, and lifts a pause
- * of live reload: a launch got through. `null` — a newer launch, from any
- * window, or a stop dropped it while it was prepared — leaves both as they
- * were.
+ * of live reload: a launch got through. The devices' lines of the launches
+ * before it leave the Console here, before the caller says what happened.
+ * `null` — a newer launch, from any window, or a stop dropped it while it was
+ * prepared — leaves everything as it was.
  */
 async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
   const status = await window.studio.devices.launch(snapshot);
-  const launch = status?.launch ?? null;
+  if (status === null) return null;
+  const launch = status.launch;
   if (launch !== null) {
     useDeviceStore.setState({ ownLaunch: { id: launch.id, snapshot }, liveReloadRefused: null });
   }
+  noteLaunch(status);
   return status;
 }
 

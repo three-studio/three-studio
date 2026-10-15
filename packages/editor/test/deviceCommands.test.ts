@@ -26,7 +26,9 @@ import {
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
 import {
+  appendDeviceLogs,
   liveReloadState,
+  noteLaunch,
   refreshDevices,
   useDeviceStore,
   watchDevices,
@@ -474,6 +476,74 @@ describe('relaunching, for live reload', () => {
 
     await vi.waitFor(() => expect(useDeviceStore.getState().ownLaunch?.id).toBe('launch-2'));
     expect(useDeviceStore.getState().liveReloadRefused).toBeNull();
+  });
+});
+
+describe('the Console, one launch at a time', () => {
+  const IPHONE_LOGS = {
+    device: 'phone0000',
+    name: 'iPhone',
+    browser: 'Safari',
+    lines: [{ level: 'log' as const, text: 'Shout loaded', count: 1 }],
+    dropped: 0,
+  };
+  const launched = (id: string) => status({ launch: { id, at: 1, sceneName: 'Level' } });
+  const texts = () => useConsoleStore.getState().entries.map((entry) => entry.text);
+
+  it('keeps a device’s lines while its launch is current, and lets them go with the next', () => {
+    noteLaunch(launched('launch-note-1'));
+    useConsoleStore.getState().append('log', 'editor line');
+    appendDeviceLogs(IPHONE_LOGS);
+
+    noteLaunch(launched('launch-note-1'));
+    expect(texts()).toEqual(['editor line', 'Shout loaded']);
+
+    noteLaunch(launched('launch-note-2'));
+    expect(texts()).toEqual(['editor line']);
+  });
+
+  it('keeps them through a status with no launch', () => {
+    noteLaunch(launched('launch-note-3'));
+    appendDeviceLogs(IPHONE_LOGS);
+
+    noteLaunch(status({ state: 'stopped', launch: null }));
+
+    expect(texts()).toEqual(['Shout loaded']);
+  });
+
+  it('lets them go before this window’s relaunch says so, which folds into the line before', async () => {
+    let launches = 100;
+    install({
+      launch: async () =>
+        status({
+          liveReload: true,
+          launch: { id: `launch-${(launches += 1)}`, at: launches, sceneName: 'Level' },
+          devices: [device()],
+        }),
+    });
+
+    await relaunchOnDevices(launchSnapshot());
+    appendDeviceLogs(IPHONE_LOGS);
+    expect(texts()).toEqual(['Relaunched “Level” on 1 device', 'Shout loaded']);
+
+    await relaunchOnDevices(launchSnapshot());
+
+    expect(useConsoleStore.getState().entries.map(({ text, count }) => [text, count])).toEqual([
+      ['Relaunched “Level” on 1 device', 2],
+    ]);
+  });
+
+  it('follows the server, whichever window launched', async () => {
+    const bridge = install({ status: async () => launched('launch-note-5') });
+    watchDevices();
+    await vi.waitFor(() => expect(useDeviceStore.getState().status).not.toBeNull());
+    bridge.logged!(IPHONE_LOGS);
+
+    bridge.changed!(launched('launch-note-5'));
+    expect(texts()).toEqual(['Shout loaded']);
+
+    bridge.changed!(launched('launch-note-6'));
+    expect(texts()).toEqual([]);
   });
 });
 

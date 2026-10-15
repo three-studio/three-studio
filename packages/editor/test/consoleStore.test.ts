@@ -101,4 +101,35 @@ describe('the Console', () => {
 
     expect(store().entries).toBe(before);
   });
+
+  it('lets go of every device’s lines in one change, keeping the editor’s in order', () => {
+    store().append('log', 'Launched “Level”');
+    store().append('log', 'ready', IPHONE);
+    store().append('warn', 'compiled with warnings');
+    store().append('log', 'ready', ANDROID);
+    store().append('error', 'boom');
+    let changes = 0;
+    const stop = useConsoleStore.subscribe(() => {
+      changes += 1;
+    });
+
+    store().clearDeviceEntries();
+    stop();
+
+    expect(read()).toEqual([
+      { level: 'log', text: 'Launched “Level”', count: 1, from: null },
+      { level: 'warn', text: 'compiled with warnings', count: 1, from: null },
+      { level: 'error', text: 'boom', count: 1, from: null },
+    ]);
+    expect(changes).toBe(1);
+  });
+
+  it('changes nothing when letting go of devices’ lines it does not hold', () => {
+    store().append('log', 'kept');
+    const before = store().entries;
+
+    store().clearDeviceEntries();
+
+    expect(store().entries).toBe(before);
+  });
 });

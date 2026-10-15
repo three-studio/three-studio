@@ -96,7 +96,9 @@ async function read(): Promise<void> {
   const before = heard;
   try {
     const status = await window.studio.devices.status();
-    if (heard === before) useDeviceStore.setState({ status });
+    if (heard !== before) return;
+    useDeviceStore.setState({ status });
+    noteLaunch(status);
   } catch {
     // Nothing to show without one; the next change will say.
   }
@@ -110,6 +112,7 @@ export function watchDevices(): () => void {
   const unsubscribe = window.studio.devices.onChanged((status) => {
     heard += 1;
     useDeviceStore.setState({ status });
+    noteLaunch(status);
   });
   const unsubscribeLogs = window.studio.devices.onLog(appendDeviceLogs);
   void read();
@@ -117,6 +120,32 @@ export function watchDevices(): () => void {
     unsubscribe();
     unsubscribeLogs();
   };
+}
+
+/** The launch whose devices' lines the Console holds: the last one noted. */
+let notedLaunch: string | null = null;
+
+/**
+ * Takes every device's lines out of the Console when a new launch becomes
+ * current — by hand or by live reload, from this window or another. The
+ * editor's own lines stay.
+ *
+ * Every relaunch makes every phone log its first lines again, and two phones
+ * interleave, so nothing folds: a minute of retouching with live reload on
+ * would fill the Console with the same start-up lines, and push the editor's
+ * own out. ↻ and a change of transport keep the launch, and its lines. A
+ * status with no launch — the server stopped — changes nothing: the lines of
+ * the last run are still worth reading.
+ *
+ * Called with every status this window hears, and with what its own launch
+ * resolved, so that the lines go before that launch's own Console entry
+ * lands, whichever arrives first.
+ */
+export function noteLaunch(status: DeviceServerStatus): void {
+  const id = status.launch?.id ?? null;
+  if (id === null || id === notedLaunch) return;
+  notedLaunch = id;
+  useConsoleStore.getState().clearDeviceEntries();
 }
 
 /**

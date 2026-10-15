@@ -48,6 +48,8 @@ interface ConsoleState {
    */
   appendMany: (source: LogSource | null, lines: readonly LogLine[]) => void;
   clear: () => void;
+  /** Every device's lines, in one change; this window's own stay, in order. */
+  clearDeviceEntries: () => void;
   toggleLevel: (level: LogLevel) => void;
 }
 
@@ -96,6 +98,12 @@ export const useConsoleStore = create<ConsoleState>()((set) => ({
   },
 
   clear: () => set({ entries: [] }),
+  clearDeviceEntries: () =>
+    set((state) =>
+      state.entries.some((entry) => entry.source !== null)
+        ? { entries: state.entries.filter((entry) => entry.source === null) }
+        : state,
+    ),
   toggleLevel: (level) =>
     set((state) => ({ levels: { ...state.levels, [level]: !state.levels[level] } })),
 }));
