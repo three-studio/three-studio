@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 import { create } from 'zustand';
 
 /**
@@ -65,6 +65,16 @@ export function hasOverlay(): boolean {
 }
 
 /**
+ * True while that surface is the topmost one.
+ *
+ * What a popover asks before a click outside it closes it: a prompt it opened
+ * sits above it, and a click in that prompt is not a click away from it.
+ */
+export function isTopOverlay(id: string): boolean {
+  return topOverlay()?.id === id;
+}
+
+/**
  * Declares that this component is covering the editor while it is mounted.
  *
  * One line per surface, and the surface no longer has to know anything about
@@ -76,8 +86,10 @@ export function hasOverlay(): boolean {
  * @param active False while the component is mounted but showing nothing —
  *   `PromptDialog` is always in the tree and renders only when asked. A hook
  *   cannot be called conditionally, so the condition comes in as an argument.
+ * @returns Whether this surface is on top, asked when an event arrives rather
+ *   than subscribed to: what matters is the stack at the moment of the click.
  */
-export function useOverlay(kind: OverlayKind, onClose: () => void, active = true): void {
+export function useOverlay(kind: OverlayKind, onClose: () => void, active = true): () => boolean {
   const id = useId();
   const close = useRef(onClose);
   close.current = onClose;
@@ -87,4 +99,6 @@ export function useOverlay(kind: OverlayKind, onClose: () => void, active = true
     useOverlayStore.getState().open({ id, kind, close: () => close.current() });
     return () => useOverlayStore.getState().close(id);
   }, [id, kind, active]);
+
+  return useCallback(() => isTopOverlay(id), [id]);
 }

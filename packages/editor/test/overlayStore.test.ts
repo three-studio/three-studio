@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasOverlay, topOverlay, useOverlayStore } from '../src/state/overlayStore';
+import { hasOverlay, isTopOverlay, topOverlay, useOverlayStore } from '../src/state/overlayStore';
 
 /*
  * The stack is what tells the editor's shortcuts that a key is not theirs. It
@@ -66,5 +66,35 @@ describe('the overlay stack', () => {
     open(surface('dialog'));
 
     expect(useOverlayStore.getState().stack).toHaveLength(1);
+  });
+});
+
+describe('whether a surface is on top', () => {
+  it('is true for the one opened last', () => {
+    const { open } = useOverlayStore.getState();
+    open(surface('dialog'));
+    open(surface('popover'));
+
+    expect(isTopOverlay('popover')).toBe(true);
+  });
+
+  it('is false beneath another, and true again once that one closes', () => {
+    // A popover that opened a prompt: a click in the prompt is not a click
+    // away from the popover, which must stay open under it.
+    const { open, close } = useOverlayStore.getState();
+    open(surface('popover'));
+    open(surface('prompt'));
+
+    expect(isTopOverlay('popover')).toBe(false);
+
+    close('prompt');
+
+    expect(isTopOverlay('popover')).toBe(true);
+  });
+
+  it('is false for an id that was never opened', () => {
+    useOverlayStore.getState().open(surface('dialog'));
+
+    expect(isTopOverlay('nothing')).toBe(false);
   });
 });
