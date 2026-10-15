@@ -134,6 +134,96 @@ async function get(
   });
 }
 
+/** What a device's stream has said, read through `fetch` as a page's `EventSource` reads it. */
+interface Listening {
+  /** Reads until `done` holds, the stream ends, or `ms` pass; returns all that arrived. */
+  until: (done: (text: string) => boolean, ms?: number) => Promise<string>;
+  /** Whether the server ended the stream. */
+  ended: () => boolean;
+  close: () => Promise<void>;
+}
+
+async function listen(port: number, device: string, token = TOKEN): Promise<Listening> {
+  const response = await fetch(`http://127.0.0.1:${port}/${token}/__studio/events?device=${device}`);
+  if (response.status !== 200) throw new Error(`the stream answered ${response.status}`);
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let ended = false;
+  let reading: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+  return {
+    async until(done, ms = 2000) {
+      const deadline = Date.now() + ms;
+      while (!done(text) && !ended) {
+        const left = deadline - Date.now();
+        if (left <= 0) break;
+        // A connection cut rather than ended — a server moved — is an end too.
+        reading ??= reader.read().catch(() => ({ done: true, value: undefined }) as const);
+        const read = await Promise.race([
+          reading,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), left)),
+        ]);
+        if (read === null) break;
+        reading = null;
+        if (read.done) ended = true;
+        else text += decoder.decode(read.value, { stream: true });
+      }
+      return text;
+    },
+    ended: () => ended,
+    close: () => reader.cancel().catch(() => undefined),
+  };
+}
+
+/** A device's message, from the page's own origin. */
+function post(port: number, type: string, body: unknown): Promise<number> {
+  const payload = JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const sent = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: `/${TOKEN}/__studio/${type}`,
+        method: 'POST',
+        headers: {
+          host: `127.0.0.1:${port}`,
+          origin: `http://127.0.0.1:${port}`,
+          'content-type': 'application/json',
+          'content-length': String(Buffer.byteLength(payload)),
+        },
+        agent: false,
+      },
+      (response) => {
+        response.resume();
+        response.on('end', () => resolve(response.statusCode ?? 0));
+      },
+    );
+    sent.on('error', reject);
+    sent.end(payload);
+  });
+}
+
+/** A device: its stream open, and its hello said from the waiting page. */
+async function device(port: number, id: string): Promise<Listening> {
+  const stream = await listen(port, id);
+  await stream.until((text) => text.includes('retry: 2000'));
+  const status = await post(port, 'hello', {
+    v: 1,
+    device: id,
+    launch: null,
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1',
+    screen: { width: 393, height: 852, dpr: 3 },
+    secureContext: false,
+    state: 'waiting',
+    backend: null,
+    error: null,
+  });
+  if (status !== 204) throw new Error(`the hello answered ${status}`);
+  return stream;
+}
+
+const launchLine = (id: string | undefined): string => `"type":"launch","launch":"${id}"`;
+
 async function project(script?: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-server-project-'));
   const root = (await createProject('Races', parent)).summary.path;
@@ -665,5 +755,154 @@ describe('a new link', () => {
     const free = await listenOn(port);
     expect(free).not.toBeNull();
     holders.push(free!);
+  });
+});
+
+describe('the devices', () => {
+  it('are none while the server is stopped', async () => {
+    const status = await server(await settingsFile(), await template()).status();
+
+    expect(status.devices).toEqual([]);
+  });
+
+  it('restart on a launch, and are listed as booting in what it answers', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    const root = await project();
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00001');
+
+    const status = await devices.launch(root, await snapshot(root));
+
+    expect(await phone.until((text) => text.includes(launchLine(status.launch?.id)))).toContain(
+      launchLine(status.launch?.id),
+    );
+    expect(status.devices).toMatchObject([
+      { id: 'phoneDevice00001', name: 'iPhone', browser: 'Safari', state: 'booting', connected: true },
+    ]);
+    await phone.close();
+  });
+
+  it('hear nothing of a launch that does not compile', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    const root = await project('export default class Broken {\n');
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00002');
+
+    await expect(devices.launch(root, await snapshot(root))).rejects.toThrow(
+      'Scripts did not compile',
+    );
+
+    expect(await phone.until((text) => text.includes('"type":"launch"'), 300)).not.toContain(
+      '"type":"launch"',
+    );
+    await phone.close();
+  });
+});
+
+describe('restarting one device', () => {
+  it('reaches that device alone', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    const root = await project();
+    await devices.start();
+    const first = await device(port, 'phoneDevice00003');
+    const second = await device(port, 'phoneDevice00004');
+    const launched = await devices.launch(root, await snapshot(root));
+    const line = launchLine(launched.launch?.id);
+    await first.until((text) => text.includes(line));
+    await second.until((text) => text.includes(line));
+
+    const status = await devices.restart('phoneDevice00003');
+
+    const twice = (text: string): boolean => text.split(line).length > 2;
+    expect(twice(await first.until(twice))).toBe(true);
+    expect(twice(await second.until(twice, 300))).toBe(false);
+    expect(status.devices.find((one) => one.id === 'phoneDevice00003')?.state).toBe('booting');
+    await first.close();
+    await second.close();
+  });
+
+  it('is refused before anything is launched', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00005');
+
+    await expect(devices.restart('phoneDevice00005')).rejects.toThrow(
+      'Nothing has been launched yet.',
+    );
+    await phone.close();
+  });
+
+  it('is refused for a device that is not connected', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    const root = await project();
+    await devices.launch(root, await snapshot(root));
+
+    await expect(devices.restart('nobody00')).rejects.toThrow('That device is not connected.');
+  });
+});
+
+describe('what ends a device’s stream', () => {
+  it('a stop, which tells it first, forgets every device, and frees the port', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00006');
+
+    const status = await devices.stop();
+
+    const said = await phone.until(() => false);
+    expect(said).toContain('"type":"stopped"');
+    expect(phone.ended()).toBe(true);
+    expect(status.devices).toEqual([]);
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
+  });
+
+  it('a new link, after which the old token opens no stream and the new one does', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00007');
+
+    const status = await devices.regenerateToken();
+
+    await phone.until(() => false);
+    expect(phone.ended()).toBe(true);
+    expect(status.devices).toEqual([]);
+    await expect(listen(port, 'phoneDevice00007')).rejects.toThrow('answered 404');
+    const token = JSON.parse(await readFile(file, 'utf8')).token as string;
+    const again = await listen(port, 'phoneDevice00007', token);
+    expect(await again.until((text) => text.includes('retry'))).toContain('retry: 2000');
+    await again.close();
+  });
+
+  it('a move to another port, which lets the old one go', async () => {
+    const port = await freePort();
+    const target = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00008');
+
+    await devices.saveSettings({ port: target });
+
+    await phone.until(() => false);
+    expect(phone.ended()).toBe(true);
+    const old = await listenOn(port);
+    expect(old).not.toBeNull();
+    holders.push(old!);
   });
 });

@@ -32,6 +32,7 @@ import {
   conformSettingsPatch,
   conformDeviceSettingsPatch,
   conformLaunchSnapshot,
+  isDeviceId,
   migratePrefab,
   type BridgeHandlers,
 } from '@three-studio/core';
@@ -562,6 +563,13 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     // Nothing to conform: it takes nothing, and the token is made here.
     regenerateToken: (): Promise<DeviceServerStatus> => deps.devices.regenerateToken(),
+
+    restart: (_event, device: string): Promise<DeviceServerStatus> => {
+      // The id goes into the trace and is matched against the link's: only
+      // what a device could have been given gets that far.
+      if (!isDeviceId(device)) throw new Error('Unknown device.');
+      return deps.devices.restart(device);
+    },
   },
   };
 

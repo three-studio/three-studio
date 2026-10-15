@@ -314,6 +314,15 @@ describe('the guards are reached, not merely written', () => {
   });
 });
 
+describe('restarting a device', () => {
+  it('names a device by its id, and nothing else', async () => {
+    await expect(invoke(IPC_INVOKE.devices.restart, 1, '../x')).rejects.toThrow('Unknown device.');
+    await expect(invoke(IPC_INVOKE.devices.restart, 1, { device: 'abc12345' })).rejects.toThrow(
+      'Unknown device.',
+    );
+  });
+});
+
 describe('a new device link', () => {
   it('changes nothing in the file but the token', async () => {
     const found = JSON.parse(devicesFile.contents) as Record<string, unknown>;

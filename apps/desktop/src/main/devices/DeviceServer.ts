@@ -3,6 +3,7 @@ import { hostname, networkInterfaces } from 'node:os';
 import { basename } from 'node:path';
 import {
   createDeviceToken,
+  type DeviceInfo,
   type DeviceServerState,
   type DeviceServerStatus,
   type DeviceSettings,
@@ -82,6 +83,7 @@ interface View {
   holder: PortHolder | null;
   launch: Launch | null;
   reached: boolean;
+  devices: DeviceInfo[];
 }
 
 /**
@@ -133,11 +135,15 @@ export class DeviceServer {
   }
 
   /**
-   * Closes the server, every connection with it, and forgets the launch.
+   * Closes the server, every connection with it, and forgets the launch and
+   * every device.
    *
-   * The connections too: a phone holds a keep-alive connection open, and
-   * `close` alone would wait for it — and keep the port — until it timed out.
-   * A server started again serves the waiting page until the next launch.
+   * Each device is told first, on its stream, so that its page can say the
+   * editor stopped rather than that the network failed — a quit may cut that
+   * short, and the page then keeps trying as it would on any lost network. The
+   * connections too: a phone holds a keep-alive connection open, and `close`
+   * alone would wait for it — and keep the port — until it timed out. A server
+   * started again serves the waiting page until the next launch.
    */
   async stop(): Promise<DeviceServerStatus> {
     // A launch still being prepared is dropped, as a newer one would drop it.
@@ -159,12 +165,13 @@ export class DeviceServer {
   }
 
   /**
-   * Makes a launch from the editor's snapshot, then serves it.
+   * Makes a launch from the editor's snapshot, then serves it, and restarts
+   * every connected device on it.
    *
    * Prepared before the server starts, so that scripts that do not compile
-   * refuse the launch and leave the server as it was. A newer launch, or a
-   * stop, made while this one was prepared drops it: what devices run is
-   * always the last thing asked for.
+   * refuse the launch and leave the server as it was — and tell no device. A
+   * newer launch, or a stop, made while this one was prepared drops it: what
+   * devices run is always the last thing asked for.
    */
   async launch(projectPath: string, snapshot: LaunchSnapshot): Promise<DeviceServerStatus> {
     const ticket = (this.ticket += 1);
@@ -172,10 +179,28 @@ export class DeviceServer {
     if (ticket !== this.ticket) return this.status();
     await this.start();
     if (ticket !== this.ticket) return this.status();
-    if (this.listening === null) throw new Error(this.error ?? 'The device server did not start.');
+    const listening = this.listening;
+    if (listening === null) throw new Error(this.error ?? 'The device server did not start.');
     this.current = prepared;
     this.trace(`launched "${prepared.sceneName}"`);
+    const told = listening.link.launch(prepared.id);
+    this.trace(`launch told to ${told} ${told === 1 ? 'device' : 'devices'}`);
     this.emit();
+    return this.status();
+  }
+
+  /**
+   * Restarts one device on the current launch, without a new snapshot: what
+   * the device ran is what it runs again.
+   */
+  async restart(device: string): Promise<DeviceServerStatus> {
+    if (this.starting !== null) await this.starting;
+    const { listening, current } = this;
+    if (listening === null || current === null) throw new Error('Nothing has been launched yet.');
+    if (!listening.link.restart(device, current.id)) {
+      throw new Error('That device is not connected.');
+    }
+    this.trace(`${device} restarted`);
     return this.status();
   }
 
@@ -261,6 +286,10 @@ export class DeviceServer {
    * at once, and refuses the old one from the next request on — which is the
    * point, since this is how a link that leaked is taken back: every link a
    * device saved stops working.
+   *
+   * The streams opened with the old token are ended too, and their devices
+   * forgotten: a stream outlives the check its request passed, and would
+   * otherwise go on hearing every launch. Their pages then find the link gone.
    */
   async regenerateToken(): Promise<DeviceServerStatus> {
     // A start in flight reads the file: let it, then replace what it read.
@@ -272,6 +301,7 @@ export class DeviceServer {
     if (listening !== null) {
       this.listening = { ...listening, settings: { ...listening.settings, token: saved.token } };
       this.trace('new token');
+      listening.link.closeOpenedWithout(saved.token);
     }
     this.emit();
     return this.status();
@@ -445,6 +475,7 @@ export class DeviceServer {
       holder: this.holder,
       launch: this.current,
       reached: this.reached,
+      devices: this.listening?.link.list() ?? [],
     };
   }
 
@@ -460,6 +491,7 @@ export class DeviceServer {
       portHolder: view.holder,
       launch,
       reachedFromNetwork: view.reached,
+      devices: view.devices,
     };
     if (view.listening === null) {
       const settings = await readDeviceSettings(this.options.settingsFile);

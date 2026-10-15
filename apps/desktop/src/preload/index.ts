@@ -165,6 +165,8 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.devices.reclaimPort),
     regenerateToken: (): Promise<DeviceServerStatus> =>
       ipcRenderer.invoke(IPC_INVOKE.devices.regenerateToken),
+    restart: (device): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.restart, device),
     onChanged: (listener) => {
       const handler = (_event: unknown, status: DeviceServerStatus) => listener(status);
       ipcRenderer.on(IPC_EVENTS.devicesChanged, handler);

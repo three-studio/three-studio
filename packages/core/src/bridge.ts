@@ -337,12 +337,13 @@ export interface DevicesApi {
   status: () => Promise<DeviceServerStatus>;
   /** Listens, on the kept port or the next free one above it. */
   start: () => Promise<DeviceServerStatus>;
-  /** Closes the server and every connection, and forgets the launch. */
+  /** Closes the server and every connection, and forgets the launch and every device, each told first. */
   stop: () => Promise<DeviceServerStatus>;
   /**
    * Serves what is on screen: the snapshot Play would run, unsaved edits
-   * included. Starts the server when it is stopped, once the launch is ready,
-   * so scripts that do not compile refuse it and leave the server as it was.
+   * included, and restarts every connected device on it. Starts the server
+   * when it is stopped, once the launch is ready, so scripts that do not
+   * compile refuse it and leave the server as it was.
    */
   launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus>;
   /**
@@ -363,6 +364,12 @@ export interface DevicesApi {
    * saved stops working.
    */
   regenerateToken: () => Promise<DeviceServerStatus>;
+  /**
+   * Restarts one device on the current launch, as Launch restarts them all —
+   * without taking a new snapshot. Refused before anything is launched, and
+   * for a device with no stream to be told on.
+   */
+  restart: (device: string) => Promise<DeviceServerStatus>;
   /** Every new status of the server, in order. Returns an unsubscribe. */
   onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
 }
@@ -523,6 +530,7 @@ export const IPC_INVOKE = {
     saveSettings: 'devices:saveSettings',
     reclaimPort: 'devices:reclaimPort',
     regenerateToken: 'devices:regenerateToken',
+    restart: 'devices:restart',
   },
 } as const satisfies InvokeChannels;
 

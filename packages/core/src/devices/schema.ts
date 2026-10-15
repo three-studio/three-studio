@@ -317,6 +317,11 @@ export interface DeviceServerStatus {
    * listed.
    */
   address: string | null;
+  /**
+   * Every device that said hello since the server started, connected or not,
+   * in the order they first did. Empty while the server is stopped.
+   */
+  devices: DeviceInfo[];
 }
 
 /**
