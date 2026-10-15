@@ -141,7 +141,7 @@ export function isOwnHost(
 }
 
 /** An address as a socket gives it: `::ffff:` is an IPv4 address reaching an IPv6 socket. */
-function plainAddress(remote: string): string {
+export function plainAddress(remote: string): string {
   return remote.startsWith('::ffff:') ? remote.slice('::ffff:'.length) : remote;
 }
 

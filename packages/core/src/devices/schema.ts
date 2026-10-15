@@ -170,3 +170,33 @@ export interface DeviceUrl {
   /** The page a device opens, token included. */
   url: string;
 }
+
+export type DeviceServerState = 'stopped' | 'starting' | 'running' | 'error';
+
+/**
+ * The device server, as the editor shows it. Sent whole on every change: it is
+ * small, and a window that missed one change needs nothing but the next.
+ */
+export interface DeviceServerStatus {
+  state: DeviceServerState;
+  /** Why it could not start, in the `error` state. */
+  error?: string;
+  /** The running server's; the settings' otherwise. */
+  transport: DeviceTransport;
+  /** The port listened on while running; the settings' otherwise. */
+  port: number;
+  /** The settings' port: the one asked for first, which `port` differs from after a slide. */
+  requestedPort: number;
+  /** Every link to the server, the likeliest first. Empty unless running. */
+  urls: DeviceUrl[];
+  /** The link to show first, or `null` when there is none. */
+  selectedUrl: string | null;
+  /** What a device runs; `null` before the first launch, and after a stop. */
+  launch: { id: string; at: number; sceneName: string } | null;
+  /**
+   * Whether a request has ever come from another machine. Until one has, a
+   * phone that cannot load the page is likely held off by a firewall, which
+   * refuses without a word.
+   */
+  reachedFromNetwork: boolean;
+}

@@ -365,6 +365,8 @@ export {
   isUsableDeviceToken,
 } from './devices/schema';
 export type {
+  DeviceServerState,
+  DeviceServerStatus,
   DeviceSettings,
   DeviceSettingsPatch,
   DeviceTransport,
