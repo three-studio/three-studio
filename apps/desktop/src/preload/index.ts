@@ -1,6 +1,7 @@
 import type {
   AssetImportResult,
   AssetManifest,
+  DeviceLogs,
   DeviceServerStatus,
   ImportSessionState,
   ExportProgress,
@@ -171,6 +172,11 @@ const bridge: StudioBridge = {
       const handler = (_event: unknown, status: DeviceServerStatus) => listener(status);
       ipcRenderer.on(IPC_EVENTS.devicesChanged, handler);
       return () => ipcRenderer.off(IPC_EVENTS.devicesChanged, handler);
+    },
+    onLog: (listener) => {
+      const handler = (_event: unknown, logs: DeviceLogs) => listener(logs);
+      ipcRenderer.on(IPC_EVENTS.devicesLog, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.devicesLog, handler);
     },
   },
 };

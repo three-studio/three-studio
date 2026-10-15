@@ -7,6 +7,7 @@ import type {
 } from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
 import type {
+  DeviceLogs,
   DeviceServerStatus,
   DeviceSettingsPatch,
   LaunchSnapshot,
@@ -372,6 +373,12 @@ export interface DevicesApi {
   restart: (device: string) => Promise<DeviceServerStatus>;
   /** Every new status of the server, in order. Returns an unsubscribe. */
   onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
+  /**
+   * Each batch of lines a device's page logged, as it arrives, with the
+   * device's name and browser. Every editor window hears every device.
+   * Returns an unsubscribe.
+   */
+  onLog: (listener: (logs: DeviceLogs) => void) => () => void;
 }
 
 export interface StudioBridge {
@@ -420,10 +427,11 @@ export interface StudioBridge {
 /**
  * The members of a namespace that cross as a call and a reply.
  *
- * Everything returning a promise. The five that do not are deliberate and each
+ * Everything returning a promise. The six that do not are deliberate and each
  * has its reason: `setDirty` is fire-and-forget, `onProjectChanged`,
- * `onProgress` and `onChanged` are subscriptions, and `pathForFile` never
- * leaves the renderer — `webUtils.getPathForFile` is synchronous and local.
+ * `onProgress`, `onChanged` and `onLog` are subscriptions, and `pathForFile`
+ * never leaves the renderer — `webUtils.getPathForFile` is synchronous and
+ * local.
  */
 type Invocable<T> = {
   [K in keyof T as T[K] extends (...args: never[]) => Promise<unknown> ? K : never]: T[K];
@@ -535,18 +543,20 @@ export const IPC_INVOKE = {
 } as const satisfies InvokeChannels;
 
 /**
- * The four channels that are not a call and a reply.
+ * The five channels that are not a call and a reply.
  *
- * Three are the main process talking first — a project that changed under
- * another window, an export reporting progress, and the device server's status
- * — and one is the renderer telling and not asking. They are listed rather
- * than derived because there are four of them and no shape to derive from.
+ * Four are the main process talking first — a project that changed under
+ * another window, an export reporting progress, the device server's status,
+ * and the lines a device logged — and one is the renderer telling and not
+ * asking. They are listed rather than derived because there are five of them
+ * and no shape to derive from.
  */
 export const IPC_EVENTS = {
   projectChanged: 'project:changed',
   buildProgress: 'build:progress',
   setDirty: 'project:setDirty',
   devicesChanged: 'devices:changed',
+  devicesLog: 'devices:log',
 } as const;
 
 /**

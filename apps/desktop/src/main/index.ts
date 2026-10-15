@@ -54,6 +54,14 @@ void app.whenReady().then(() => {
   // `followWithSmokeDevice`.
   const smokeDevice = process.env['STUDIO_SMOKE_DEVICE'] ? followWithSmokeDevice() : null;
 
+  // What the device server says goes to every editor window alike: each one
+  // shows the server, and any of them may be the one whose Console is open.
+  const toEditors = (channel: string, payload: unknown): void => {
+    for (const win of editorWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    }
+  };
+
   // One per process, and idle until something asks it to serve: it listens on
   // every interface, so it must never be listening without someone knowing.
   const devices = new DeviceServer({
@@ -63,11 +71,10 @@ void app.whenReady().then(() => {
     // in development, the workspace build.
     templateRoots: [process.resourcesPath, app.getAppPath()],
     onChange: (status) => {
-      for (const win of editorWindows()) {
-        if (!win.isDestroyed()) win.webContents.send(IPC_EVENTS.devicesChanged, status);
-      }
+      toEditors(IPC_EVENTS.devicesChanged, status);
       smokeDevice?.(status);
     },
+    onLog: (logs) => toEditors(IPC_EVENTS.devicesLog, logs),
     trace: (line) => {
       if (isDev) console.log(`[devices] ${line}`);
     },
