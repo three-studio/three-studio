@@ -24,6 +24,43 @@ export const DEVICE_BODY_LIMIT = 64 * 1024;
  */
 export const DEVICE_RATE = { messages: 20, perMs: 10_000 } as const;
 
+/**
+ * How many batches of lines one device may post in a window, counted apart
+ * from `DEVICE_RATE`. A game that logs every frame sends four batches a
+ * second: against the link's twenty it would spend them in five seconds, and
+ * the `hello` and `status` that keep its row alive would then be refused — a
+ * heartbeat refused long enough is a device the server ends for silence. The
+ * client sends at most forty; the rest is room for a second tab of the same
+ * browser, which shares its id.
+ */
+export const DEVICE_LOG_RATE = { messages: 50, perMs: 10_000 } as const;
+
+/** Lines in one batch. */
+export const DEVICE_LOG_LINES = 100;
+
+/**
+ * A batch's JSON, as the client measures it: under `DEVICE_BODY_LIMIT`, with
+ * room left for the envelope.
+ */
+export const DEVICE_LOG_BYTES = 48 * 1024;
+
+/** Characters in one line. A longer one is cut, its last character `…`. */
+export const DEVICE_LOG_TEXT = 4_000;
+
+/**
+ * Lines a client keeps while it cannot send them: before its first hello is
+ * answered, or while its stream is down. Past that a line is counted rather
+ * than kept, and the earliest stay, since a cause comes before its
+ * consequences.
+ */
+export const DEVICE_LOG_PENDING = 500;
+
+/**
+ * Between the answer to one batch and the next, and how long the first line
+ * after a quiet moment waits for the rest of its burst.
+ */
+export const DEVICE_LOG_FLUSH_MS = 250;
+
 /** How many devices the server lists at once. Past that, a new stream is refused. */
 export const DEVICE_LIMIT = 32;
 
@@ -86,7 +123,7 @@ export type DeviceState = 'waiting' | 'booting' | 'running' | 'failed';
 export type DeviceBackend = 'webgpu' | 'webgl';
 
 /** The messages a device POSTs, by the last segment of their path. */
-export type DeviceMessageType = 'hello' | 'status';
+export type DeviceMessageType = 'hello' | 'status' | 'log';
 
 /**
  * Sent on every stream a page opens: who the device is, and where its page
@@ -116,6 +153,30 @@ export interface DeviceStatusReport {
   error: string | null;
 }
 
+/** The Console's three levels. A page's `info` is a message; its `debug` is not sent. */
+export type DeviceLogLevel = 'log' | 'warn' | 'error';
+
+/** One line a page logged, folded with the identical ones logged right after it. */
+export interface DeviceLogLine {
+  level: DeviceLogLevel;
+  text: string;
+  /** How many times in a row it was logged. */
+  count: number;
+}
+
+/**
+ * Lines a page logged, from its very first, sent once the hello of its
+ * current stream has been answered: the server ignores a device it does not
+ * know yet.
+ */
+export interface DeviceLogMessage {
+  v: typeof DEVICE_PROTOCOL_VERSION;
+  device: string;
+  lines: DeviceLogLine[];
+  /** Lines lost since the last batch the server took: past the client's queue, or refused. */
+  dropped: number;
+}
+
 /** What the server writes to a stream. */
 export type ServerMessage =
   /** Restart on that launch. */
@@ -132,6 +193,7 @@ export type ServerMessage =
 
 const STATES: readonly DeviceState[] = ['waiting', 'booting', 'running', 'failed'];
 const BACKENDS: readonly DeviceBackend[] = ['webgpu', 'webgl'];
+const LOG_LEVELS: readonly DeviceLogLevel[] = ['log', 'warn', 'error'];
 
 const USER_AGENT_LIMIT = 512;
 const ERROR_LIMIT = 2_000;
@@ -177,6 +239,11 @@ function numberOf(value: unknown, fallback: number, limit: number): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? Math.min(Math.max(value, 0), limit)
     : fallback;
+}
+
+/** A safe integer of at least `least`, or `least`. */
+function countOf(value: unknown, least: number): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= least ? value : least;
 }
 
 /** The fields every device message starts with, or `null` when they do not make one. */
@@ -236,6 +303,52 @@ export function conformStatusReport(value: unknown): DeviceStatusReport | null {
     state,
     backend: backendOf(body['backend']),
     error: textOf(body['error'], ERROR_LIMIT),
+  };
+}
+
+/**
+ * A line as both ends keep it: at most `DEVICE_LOG_TEXT` characters, the last
+ * one `…` when it was cut. The client cuts before it queues a line, and the
+ * server again as a batch arrives, so a line is cut one way whoever cut it.
+ */
+export function cutLogText(text: string): string {
+  return text.length > DEVICE_LOG_TEXT ? `${text.slice(0, DEVICE_LOG_TEXT - 1)}…` : text;
+}
+
+/**
+ * A batch of lines, or `null` when it is not one.
+ *
+ * Refused only for what makes it no message at all: another version, no
+ * device, no list of lines. A line is repaired where it can be — a level this
+ * build does not know is a message, a count that is not one is 1 — and left
+ * out when it has no text. What is left out, with the lines past a batch's
+ * hundred, joins the dropped count, so that the Console says they were lost.
+ */
+export function conformLogMessage(value: unknown): DeviceLogMessage | null {
+  const envelope = envelopeOf(value);
+  if (envelope === null) return null;
+  const { device, body } = envelope;
+  const lines = body['lines'];
+  if (!Array.isArray(lines)) return null;
+  const kept: DeviceLogLine[] = [];
+  let leftOut = 0;
+  for (const line of lines) {
+    if (kept.length === DEVICE_LOG_LINES || !isRecord(line) || typeof line['text'] !== 'string') {
+      leftOut += 1;
+      continue;
+    }
+    const level = line['level'];
+    kept.push({
+      level: LOG_LEVELS.find((known) => known === level) ?? 'log',
+      text: cutLogText(line['text']),
+      count: countOf(line['count'], 1),
+    });
+  }
+  return {
+    v: DEVICE_PROTOCOL_VERSION,
+    device,
+    lines: kept,
+    dropped: countOf(body['dropped'], 0) + leftOut,
   };
 }
 

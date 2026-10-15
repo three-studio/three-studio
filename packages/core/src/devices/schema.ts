@@ -12,6 +12,7 @@ import { migrateScene } from '../scene/serialization';
 import {
   isDeviceTransport,
   type DeviceBackend,
+  type DeviceLogLine,
   type DeviceState,
   type DeviceTransport,
 } from './protocol';
@@ -368,4 +369,23 @@ export interface DeviceInfo {
   error: string | null;
   /** A stream is open. A device without one stays listed a little while, as offline. */
   connected: boolean;
+}
+
+/**
+ * One device's lines, as main hands them to every editor window.
+ *
+ * Its name and browser are stamped as the lines arrive, rather than looked
+ * up by its id later: a device leaves the list half a minute after its last
+ * stream closes, and every device leaves it when the server changes scheme,
+ * while its last lines may still be on their way to a window.
+ */
+export interface DeviceLogs {
+  /** Its id. */
+  device: string;
+  /** From its user agent, as its row says it. */
+  name: string;
+  browser: string;
+  lines: DeviceLogLine[];
+  /** Its lines lost on the way since its last batch. */
+  dropped: number;
 }

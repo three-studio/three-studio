@@ -1,8 +1,12 @@
 import {
+  DEVICE_LOG_LINES,
+  DEVICE_LOG_TEXT,
   DEVICE_PROTOCOL_VERSION,
   conformHello,
+  conformLogMessage,
   conformStatusReport,
   createId,
+  cutLogText,
   isDeviceId,
   parseServerMessage,
   type DeviceHello,
@@ -115,6 +119,87 @@ describe('a device’s status', () => {
     expect(
       conformStatusReport({ v: 1, device: '../x', state: 'running', backend: null, error: null }),
     ).toBeNull();
+  });
+});
+
+describe('a device’s lines', () => {
+  function log(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      v: 1,
+      device: DEVICE,
+      lines: [
+        { level: 'log', text: 'Shout loaded', count: 1 },
+        { level: 'warn', text: 'careful', count: 3 },
+        { level: 'error', text: 'Uncaught Error: late boom (scripts.mjs:57:13)', count: 1 },
+      ],
+      dropped: 2,
+      ...overrides,
+    };
+  }
+
+  const line = (overrides: Record<string, unknown> = {}) => ({
+    level: 'log',
+    text: 'x',
+    count: 1,
+    ...overrides,
+  });
+
+  it('come back equal when they are complete', () => {
+    const complete = log();
+
+    expect(conformLogMessage(complete)).toEqual(complete);
+  });
+
+  it.each([
+    ['another version', log({ v: 2 })],
+    ['no device', log({ device: undefined })],
+    ['an id of seven characters', log({ device: 'Ab3dE6g' })],
+    ['lines that are not a list', log({ lines: 'x' })],
+    ['nothing', null],
+  ])('are refused for %s', (_name, value) => {
+    expect(conformLogMessage(value)).toBeNull();
+  });
+
+  it('keep a hundred lines a batch, and count the rest as dropped', () => {
+    const lines = Array.from({ length: 120 }, (_, i) => line({ text: `line ${i}` }));
+
+    const conformed = conformLogMessage(log({ lines, dropped: 0 }));
+
+    expect(conformed?.lines).toHaveLength(DEVICE_LOG_LINES);
+    expect(conformed?.lines.at(-1)?.text).toBe('line 99');
+    expect(conformed?.dropped).toBe(20);
+  });
+
+  it('cut a line to 4 000 characters, the last one an ellipsis', () => {
+    const conformed = conformLogMessage(log({ lines: [line({ text: 'x'.repeat(5_000) })] }));
+    const text = conformed?.lines[0]?.text ?? '';
+
+    expect(text).toHaveLength(DEVICE_LOG_TEXT);
+    expect(text.endsWith('…')).toBe(true);
+    expect(cutLogText('y'.repeat(DEVICE_LOG_TEXT))).toBe('y'.repeat(DEVICE_LOG_TEXT));
+  });
+
+  it('read a level they do not know as a message', () => {
+    expect(conformLogMessage(log({ lines: [line({ level: 'debug' })] }))?.lines[0]?.level).toBe(
+      'log',
+    );
+  });
+
+  it.each([0, 2.5, '3', -1])('read a count of %s as one', (count) => {
+    expect(conformLogMessage(log({ lines: [line({ count })] }))?.lines[0]?.count).toBe(1);
+  });
+
+  it.each([-4, 'x', 1.5, undefined])('read a dropped count of %s as none', (dropped) => {
+    expect(conformLogMessage(log({ dropped }))?.dropped).toBe(0);
+  });
+
+  it('leave out a line with no text, and count it as dropped', () => {
+    const conformed = conformLogMessage(
+      log({ lines: [line({ text: 'kept' }), line({ text: 42 }), 'not a line'], dropped: 1 }),
+    );
+
+    expect(conformed?.lines).toEqual([line({ text: 'kept' })]);
+    expect(conformed?.dropped).toBe(3);
   });
 });
 
