@@ -14,6 +14,7 @@ import {
   type DeviceHello,
   type DeviceInfo,
   type DeviceStatusReport,
+  type DeviceTransport,
   type ServerMessage,
 } from '@three-studio/core';
 
@@ -217,6 +218,27 @@ export class DeviceLink {
       }
     }
     this.entries.clear();
+  }
+
+  /**
+   * Tells every device to open its page again under the other scheme, then
+   * ends every stream and forgets every device, while the link itself goes on.
+   *
+   * The server is about to listen again on the same port, and none of the old
+   * server's connections survive it. Each page comes back on another origin,
+   * whose storage holds another device id: the rows it had would be nobody's.
+   */
+  reopen(transport: DeviceTransport): void {
+    const reopen = line({ v: DEVICE_PROTOCOL_VERSION, type: 'reopen', transport });
+    this.changing(() => {
+      for (const entry of this.entries.values()) {
+        for (const { stream } of entry.streams) {
+          stream.write(reopen);
+          stream.end();
+        }
+      }
+      this.entries.clear();
+    });
   }
 
   /**

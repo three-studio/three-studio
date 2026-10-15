@@ -989,32 +989,38 @@ async function postOverTls(
   return answer.status;
 }
 
-/** A device's stream over TLS, read as it arrives. */
+/** A device's stream over TLS, read as `listen` reads one over plain HTTP. */
 function streamOverTls(
   port: number,
   ca: string,
   device: string,
-): Promise<{
-  type: string | undefined;
-  until: (done: (text: string) => boolean) => Promise<string>;
-  close: () => void;
-}> {
+): Promise<Listening & { type: string | undefined }> {
   return new Promise((resolve, reject) => {
     const path = `/${TOKEN}/__studio/events?device=${device}`;
     const sent = httpsRequest({ host: '127.0.0.1', port, path, ca, agent: false }, (response) => {
       let text = '';
+      let ended = false;
       const heard = new Set<() => void>();
+      const told = (): void => {
+        for (const listener of heard) listener();
+      };
       response.setEncoding('utf8');
       response.on('data', (chunk: string) => {
         text += chunk;
-        for (const listener of heard) listener();
+        told();
+      });
+      // A connection cut rather than ended — a server switched — is an end too.
+      response.on('error', () => undefined);
+      response.on('close', () => {
+        ended = true;
+        told();
       });
       resolve({
         type: response.headers['content-type'],
-        until: (done) =>
+        until: (done, ms = 2000) =>
           new Promise((settle) => {
             const check = (): void => {
-              if (!done(text)) return;
+              if (!done(text) && !ended) return;
               heard.delete(check);
               clearTimeout(timer);
               settle(text);
@@ -1022,11 +1028,14 @@ function streamOverTls(
             const timer = setTimeout(() => {
               heard.delete(check);
               settle(text);
-            }, 2000);
+            }, ms);
             heard.add(check);
             check();
           }),
-        close: () => sent.destroy(),
+        ended: () => ended,
+        close: async () => {
+          sent.destroy();
+        },
       });
     });
     sent.on('error', reject);
@@ -1133,7 +1142,7 @@ describe('over HTTPS', () => {
     expect((await overTls(port, ca, `/${TOKEN}/__studio/client.js`)).type).toMatch(
       /^text\/javascript/,
     );
-    stream.close();
+    await stream.close();
   });
 
   it('keeps its certificate from one start to the next', async () => {
@@ -1192,5 +1201,132 @@ describe('over HTTPS', () => {
     expect((await devices.status()).certificate).toBeNull();
     expect((await devices.start()).certificate).toBeNull();
     await expect(stat(certificateFileOf(file))).rejects.toThrow();
+  });
+});
+
+describe('switching transport', () => {
+  it('takes a running server to HTTPS on its port, and its pages with it', async () => {
+    const port = await freePort();
+    const file = await settingsFile({
+      version: 1,
+      port,
+      token: TOKEN,
+      transport: 'http',
+      future: { a: 1 },
+    });
+    const heard: DeviceServerStatus[] = [];
+    const devices = server(file, await template(), (status) => heard.push(status));
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00010');
+
+    const status = await devices.saveSettings({ transport: 'https' });
+
+    expect(await phone.until(() => false)).toContain('"type":"reopen","transport":"https"');
+    expect(phone.ended()).toBe(true);
+    expect(status).toMatchObject({ state: 'running', transport: 'https', port, devices: [] });
+    const seen = await overTls(port, await certificateOf(file), `/${TOKEN}/`);
+    expect(seen.status).toBe(200);
+    expect(seen.fingerprint).toBe(status.certificate?.fingerprint);
+    // The port speaks TLS alone now: a link from before the switch reaches nothing.
+    await expect(get(port, `/${TOKEN}/`)).rejects.toThrow();
+    // Never stopped on the way, for the button or the smoke device.
+    expect(heard.map((one) => one.state)).not.toContain('stopped');
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({
+      transport: 'https',
+      future: { a: 1 },
+    });
+  });
+
+  it('takes it back to HTTP, then to HTTPS again under the same certificate', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    const devices = server(file, await template());
+    const first = await devices.start();
+    const ca = await certificateOf(file);
+    const phone = await streamOverTls(port, ca, 'phoneDevice00011');
+    await phone.until((text) => text.includes('retry: 2000'));
+    const origin = `https://127.0.0.1:${port}`;
+    expect(await postOverTls(port, ca, 'hello', helloFrom('phoneDevice00011'), origin)).toBe(204);
+
+    const plain = await devices.saveSettings({ transport: 'http' });
+
+    expect(await phone.until(() => false)).toContain('"type":"reopen","transport":"http"');
+    expect(phone.ended()).toBe(true);
+    expect(plain).toMatchObject({
+      state: 'running',
+      transport: 'http',
+      port,
+      certificate: null,
+      devices: [],
+    });
+    expect((await get(port, `/${TOKEN}/`)).status).toBe(200);
+
+    const again = await devices.saveSettings({ transport: 'https' });
+
+    // Browsers that accepted it before need not be asked again.
+    expect(again.certificate?.fingerprint).toBe(first.certificate?.fingerprint);
+    expect(again.certificate?.renewed).toBe(false);
+  });
+
+  it('stays on the port it slid to', async () => {
+    const port = await freePort();
+    await hold(port);
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+
+    const status = await devices.saveSettings({ transport: 'https' });
+
+    expect(status.port).toBe(port + 1);
+    expect(status.requestedPort).toBe(port);
+    expect((await overTls(port + 1, await certificateOf(file), `/${TOKEN}/`)).status).toBe(200);
+  });
+
+  it('keeps the certificate when HTTPS moves to another port', async () => {
+    const port = await freePort();
+    const target = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    const devices = server(file, await template());
+    const first = await devices.start();
+
+    const moved = await devices.saveSettings({ port: target });
+
+    expect(moved.port).toBe(target);
+    expect(moved.certificate?.fingerprint).toBe(first.certificate?.fingerprint);
+    const seen = await overTls(target, await certificateOf(file), `/${TOKEN}/`);
+    expect(seen.fingerprint).toBe(first.certificate?.fingerprint);
+  });
+
+  it('stays on HTTP when no certificate can be made, and so does the file', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const blocker = join(dirname(file), 'blocker');
+    await writeFile(blocker, '', 'utf8');
+    const certificateFile = join(blocker, 'device-certificate.json');
+    const devices = server(file, await template(), undefined, undefined, certificateFile);
+    await devices.start();
+
+    await expect(devices.saveSettings({ transport: 'https' })).rejects.toThrow(
+      /^Could not make the HTTPS certificate: /,
+    );
+
+    expect((await get(port, `/${TOKEN}/`)).status).toBe(200);
+    expect((await devices.status()).transport).toBe('http');
+    expect(JSON.parse(await readFile(file, 'utf8')).transport).toBe('http');
+  });
+
+  it('is written while the server is stopped, and nothing listens', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+
+    const status = await devices.saveSettings({ transport: 'https' });
+
+    expect(status).toMatchObject({ state: 'stopped', transport: 'https', certificate: null });
+    expect(JSON.parse(await readFile(file, 'utf8')).transport).toBe('https');
+    await expect(stat(certificateFileOf(file))).rejects.toThrow();
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
   });
 });

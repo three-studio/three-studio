@@ -327,6 +327,38 @@ describe('stopping', () => {
   });
 });
 
+describe('a change of transport', () => {
+  it('tells every stream to reopen under the new scheme, ends it, and forgets every device', () => {
+    const phone = connect(id(1));
+    const secondTab = recorded();
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream: secondTab });
+    const tablet = connect(id(2));
+    changes = 0;
+
+    link.reopen('https');
+
+    // Each page comes back on another origin, whose storage holds another
+    // device id: the rows it had are nobody's now.
+    for (const stream of [phone, secondTab, tablet]) {
+      expect(messages(stream)).toEqual([{ v: 1, type: 'reopen', transport: 'https' }]);
+      expect(stream.ended).toBe(true);
+    }
+    expect(link.list()).toEqual([]);
+    expect(changes).toBe(1);
+  });
+
+  it('keeps the link going for the pages that come back', () => {
+    connect(id(1));
+    link.reopen('https');
+
+    const back = connect(id(3));
+
+    expect(link.list().map((device) => device.id)).toEqual([id(3)]);
+    vi.advanceTimersByTime(15_000);
+    expect(types(back)).toEqual(['ping']);
+  });
+});
+
 describe('a new link', () => {
   it('ends the streams opened with the old token, and forgets their devices', () => {
     const old = connect(id(1));

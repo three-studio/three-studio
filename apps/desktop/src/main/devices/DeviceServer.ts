@@ -106,7 +106,11 @@ export class DeviceServer {
   private state: DeviceServerState = 'stopped';
   private error: string | undefined;
   private listening: Listening | null = null;
-  /** A start under way, which a second start waits for rather than repeating. */
+  /**
+   * A start under way, which a second start waits for rather than repeating —
+   * or a change of transport, which listens anew too. Whatever else changes
+   * the server waits for either.
+   */
   private starting: Promise<void> | null = null;
   /** Who holds the kept port, while the server runs on another. */
   private holder: PortHolder | null = null;
@@ -304,14 +308,34 @@ export class DeviceServer {
 
   /**
    * Writes a change to the settings, and moves a running server onto a port
-   * newly chosen — or the next free one above it, as a start would.
+   * newly chosen — or the next free one above it, as a start would — or under
+   * another transport.
    *
    * An address moves nothing: the server listens on every interface already,
    * and the address only decides which link is shown first.
    */
   async saveSettings(patch: DeviceSettingsPatch): Promise<DeviceServerStatus> {
-    const saved = await updateDeviceSettings(this.options.settingsFile, patch);
     if (this.starting !== null) await this.starting;
+    const running = this.listening;
+    let saved: DeviceSettings;
+    if (
+      running !== null &&
+      patch.transport !== undefined &&
+      patch.transport !== running.settings.transport
+    ) {
+      const switching = this.switchTransport(running, patch);
+      this.starting = switching.then(
+        () => undefined,
+        () => undefined,
+      );
+      try {
+        saved = await switching;
+      } finally {
+        this.starting = null;
+      }
+    } else {
+      saved = await updateDeviceSettings(this.options.settingsFile, patch);
+    }
     const listening = this.listening;
     if (listening !== null) {
       const settings = { ...listening.settings, port: saved.port, address: saved.address };
@@ -327,6 +351,53 @@ export class DeviceServer {
     }
     this.emit();
     return this.status();
+  }
+
+  /**
+   * Listens again on the port it listens on, under the other transport, and
+   * takes every page connected along.
+   *
+   * The certificate comes first, so that one that cannot be made reaches the
+   * caller with the file and the server as they were. Each page is told to
+   * reopen under the new scheme just before its stream ends — the old
+   * server's connections all go with it, as a move's do — and it reaches the
+   * new server a moment later. The state stays `running` throughout: for the
+   * button and for every window, a switch is not a stop. A port taken in that
+   * moment slides, as at a start.
+   */
+  private async switchTransport(
+    listening: Listening,
+    patch: DeviceSettingsPatch,
+  ): Promise<DeviceSettings> {
+    const next = { ...listening.settings, ...patch };
+    const certificate = next.transport === 'https' ? await this.certificateFor(next) : null;
+    const saved = await updateDeviceSettings(this.options.settingsFile, patch);
+    const settings = { ...listening.settings, transport: saved.transport };
+    listening.link.reopen(saved.transport);
+    await closeServer(listening.server);
+    this.refusedBy.clear();
+    let moved: { server: Server; port: number };
+    try {
+      moved = await this.listenFrom(listening.port, listening.handler, certificate);
+    } catch (cause) {
+      // Nowhere left to listen: what a start that failed leaves.
+      listening.link.stop();
+      this.listening = null;
+      this.state = 'error';
+      this.error = cause instanceof Error ? cause.message : String(cause);
+      this.trace(`could not listen again: ${this.error}`);
+      this.emit();
+      throw cause;
+    }
+    this.listening = { ...listening, ...moved, settings, certificate };
+    this.trace(
+      moved.port === listening.port
+        ? `serving ${saved.transport}`
+        : `serving ${saved.transport} on port ${moved.port}: ${listening.port} is in use`,
+    );
+    this.emit();
+    await this.findHolder();
+    return saved;
   }
 
   /**
