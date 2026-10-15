@@ -151,7 +151,7 @@ project folder — the editor window opens on it, with renderer HMR live.
 | `npm run build` | Production build into `apps/desktop/out` |
 | `npm run dist` | Build + package for **this** machine into `apps/desktop/release` |
 | `npm run dist:mac` / `dist:win` / `dist:linux` | Same, targeting one platform explicitly |
-| `npm run build:web` | Builds the exported-game player into `apps/web-template/dist` |
+| `npm run build:web` | Builds the exported-game player into `apps/web-template/dist`, and the device client into `apps/web-template/dist-device` |
 | `npm run build:packages` | Builds the three library packages for npm into `packages/*/dist` |
 | `npm run typecheck` | `tsc --noEmit` across every workspace |
 | `npm test` | Vitest (includes the package-boundary assertions) |
