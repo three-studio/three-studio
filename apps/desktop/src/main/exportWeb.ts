@@ -429,8 +429,10 @@ function escapeAttribute(value: string): string {
  * Packaged it sits in the app's resources; in development it is the workspace
  * build, found by walking up from the app path so the answer does not depend on
  * which directory the dev server was started from.
+ *
+ * The device server serves this same player, so it finds it the same way.
  */
-async function findTemplate(searchRoots: readonly string[]): Promise<string> {
+export async function findTemplate(searchRoots: readonly string[]): Promise<string> {
   const candidates = searchRoots.flatMap((root) => [
     join(root, 'web-template'),
     ...ancestors(root).map((dir) => join(dir, 'apps', 'web-template', 'dist')),
