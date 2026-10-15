@@ -33,6 +33,10 @@ describe('the factory', () => {
   it('never gives two machines the same token', () => {
     expect(createDeviceSettings().token).not.toBe(createDeviceSettings().token);
   });
+
+  it('leaves the link’s address to the server', () => {
+    expect(createDeviceSettings().address).toBeNull();
+  });
 });
 
 describe('what a server runs on', () => {
@@ -42,6 +46,7 @@ describe('what a server runs on', () => {
     expect(settings.port).toBe(7800);
     expect(settings.version).toBe(1);
     expect(settings.transport).toBe('http');
+    expect(settings.address).toBeNull();
     expect(isUsableDeviceToken(settings.token)).toBe(true);
     expect(conformDeviceSettings(null).port).toBe(7700);
   });
@@ -72,6 +77,17 @@ describe('what a server runs on', () => {
     // what it can serve, and the file keeps what it said.
     expect(conformDeviceSettings({ transport: 'https' }).transport).toBe('http');
   });
+
+  it.each(['192.168.1.42', '100.101.102.103'])('keeps the address %s', (address) => {
+    expect(conformDeviceSettings({ address }).address).toBe(address);
+  });
+
+  it.each(['en0', '300.1.2.3', '1.2.3', 3])('reads the address %j as no choice at all', (address) => {
+    // An interface's name, an octet out of range, an address cut short, a
+    // number: none of them is an address the server could list, so the link
+    // is chosen as if nobody had picked one.
+    expect(conformDeviceSettings({ address }).address).toBeNull();
+  });
 });
 
 describe('a patch from the renderer', () => {
@@ -88,5 +104,13 @@ describe('a patch from the renderer', () => {
     expect(conformDeviceSettingsPatch({ port: 0 })).toEqual({});
     expect(conformDeviceSettingsPatch({ port: '7800' })).toEqual({});
     expect(conformDeviceSettingsPatch('port')).toEqual({});
+  });
+
+  it('keeps an address, or going back to none, and drops anything else', () => {
+    expect(conformDeviceSettingsPatch({ address: '10.0.0.7' })).toEqual({ address: '10.0.0.7' });
+    expect(conformDeviceSettingsPatch({ address: null })).toEqual({ address: null });
+    // A string is what a `null` field accepts anywhere else at the boundary,
+    // so the address needs a check of its own.
+    expect(conformDeviceSettingsPatch({ address: 'en0' })).toEqual({});
   });
 });

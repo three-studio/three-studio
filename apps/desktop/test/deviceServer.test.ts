@@ -90,12 +90,14 @@ function server(
   file: string,
   templateRoot: string,
   onChange?: (status: DeviceServerStatus) => void,
+  trace?: (line: string) => void,
 ): DeviceServer {
   const made = new DeviceServer({
     settingsFile: file,
     templateRoots: [templateRoot],
     listenHost: '127.0.0.1',
     onChange,
+    trace,
   });
   servers.push(made);
   return made;
@@ -533,5 +535,55 @@ describe('choosing another port', () => {
     expect(status.state).toBe('stopped');
     expect(status.port).toBe(port + 1);
     expect(JSON.parse(await readFile(file, 'utf8')).port).toBe(port + 1);
+  });
+});
+
+describe('choosing the address a link is made of', () => {
+  it('changes what a running server shows, and moves nothing', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const heard: DeviceServerStatus[] = [];
+    const traced: string[] = [];
+    const devices = server(
+      file,
+      await template(),
+      (status) => heard.push(status),
+      (line) => traced.push(line),
+    );
+    await devices.start();
+
+    const status = await devices.saveSettings({ address: '10.9.9.9' });
+
+    expect(status.address).toBe('10.9.9.9');
+    expect((await devices.status()).address).toBe('10.9.9.9');
+    expect(status.port).toBe(port);
+    // The server listens on every interface already: an address only changes
+    // which link is shown first, so the one listen is the start's.
+    expect(traced.filter((line) => /^(started|moved)/.test(line))).toEqual([
+      `started on port ${port}`,
+    ]);
+    await vi.waitFor(() => expect(heard.at(-1)?.address).toBe('10.9.9.9'));
+    expect(JSON.parse(await readFile(file, 'utf8')).address).toBe('10.9.9.9');
+  });
+
+  it('is written while the server is stopped, which stays stopped', async () => {
+    const port = await freePort();
+    const { devices, file } = await keptPortServer(port);
+
+    const status = await devices.saveSettings({ address: '10.9.9.9' });
+
+    expect(status.state).toBe('stopped');
+    expect(status.address).toBe('10.9.9.9');
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      version: 1,
+      port,
+      token: TOKEN,
+      transport: 'http',
+      future: 1,
+      address: '10.9.9.9',
+    });
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
   });
 });

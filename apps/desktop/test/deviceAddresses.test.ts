@@ -76,11 +76,24 @@ describe('the URLs', () => {
   });
 
   it('selects the local network’s, and this computer’s when there is no other', () => {
-    expect(selectedUrl(urls)).toBe(`http://192.168.1.42:7700/${TOKEN}/`);
-    expect(selectedUrl(deviceUrls([], 'http', 7701, TOKEN))).toBe(
+    expect(selectedUrl(urls, null)).toBe(`http://192.168.1.42:7700/${TOKEN}/`);
+    expect(selectedUrl(deviceUrls([], 'http', 7701, TOKEN), null)).toBe(
       `http://localhost:7701/${TOKEN}/`,
     );
-    expect(selectedUrl([])).toBeNull();
+    expect(selectedUrl([], null)).toBeNull();
+  });
+
+  it('selects the address chosen, when it is listed', () => {
+    expect(selectedUrl(urls, '100.101.102.103')).toBe(`http://100.101.102.103:7700/${TOKEN}/`);
+  });
+
+  it('chooses as if nobody had while the chosen address is gone', () => {
+    // A Wi-Fi left, a lease that moved: the choice applies again once the
+    // address is back, and until then a link that works beats none.
+    expect(selectedUrl(urls, '10.9.9.9')).toBe(`http://192.168.1.42:7700/${TOKEN}/`);
+    expect(selectedUrl(deviceUrls([], 'http', 7701, TOKEN), '192.168.1.42')).toBe(
+      `http://localhost:7701/${TOKEN}/`,
+    );
   });
 });
 

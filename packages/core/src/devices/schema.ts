@@ -135,6 +135,17 @@ export interface DeviceSettings {
   /** The first segment of every URL the server answers. See `createDeviceToken`. */
   token: string;
   transport: DeviceTransport;
+  /**
+   * The IPv4 address the link is made of — what the QR code shows — or `null`
+   * to let the server pick one.
+   *
+   * An address rather than an interface: Tailscale's address stays the same
+   * from one connection to the next while its `utunN` interface changes. While
+   * the address is not connected — another Wi-Fi, a lease that moved — the
+   * link is chosen as if nobody had, which puts the Wi-Fi first anyway, and the
+   * file keeps the choice, so it applies again when the network comes back.
+   */
+  address: string | null;
 }
 
 /**
@@ -169,6 +180,7 @@ export function createDeviceSettings(): DeviceSettings {
     port: DEFAULT_DEVICE_PORT,
     token: createDeviceToken(),
     transport: 'http',
+    address: null,
   };
 }
 
@@ -178,12 +190,27 @@ function isPort(value: number): boolean {
 }
 
 /**
+ * Four decimal octets, written the way `os.networkInterfaces()` writes them —
+ * the only addresses the server ever lists, so the only ones worth keeping.
+ * `conform` would keep any string here, since that is what a `null` field
+ * accepts everywhere else at the boundary.
+ */
+function isDeviceAddress(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const octets = value.split('.');
+  return (
+    octets.length === 4 &&
+    octets.every((octet) => /^(?:0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255)
+  );
+}
+
+/**
  * What a server runs on, from whatever the file holds.
  *
- * Filled from the factory, then three checks `conform` cannot make, since each
+ * Filled from the factory, then four checks `conform` cannot make, since each
  * of these is a number or a string like any other: a port that can be listened
- * on, a token worth keeping, a transport this build can serve. Anything else
- * takes the factory's value.
+ * on, a token worth keeping, a transport this build can serve, an address the
+ * server could list. Anything else takes the factory's value.
  *
  * This is a reading, not a repair. What the file holds beyond it — a field a
  * newer build added, a transport it knows — is somebody's, and stays there:
@@ -197,28 +224,33 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
     port: isPort(settings.port) ? settings.port : factory.port,
     token: isUsableDeviceToken(settings.token) ? settings.token : factory.token,
     transport: settings.transport === 'http' ? settings.transport : factory.transport,
+    address: isDeviceAddress(settings.address) ? settings.address : factory.address,
   };
 }
 
 /**
  * What the renderer may change in the settings.
  *
- * The port alone. Never the token: the renderer is where a project's own
- * scripts run, and a token one of them chose would be a link it already knows.
- * Never the version, which is the file's to say.
+ * The port, and the address the link is made of. Never the token: the
+ * renderer is where a project's own scripts run, and a token one of them chose
+ * would be a link it already knows. Never the version, which is the file's to
+ * say.
  */
-export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port'>>;
+export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port' | 'address'>>;
 
 /**
  * A patch, reduced to what it may change.
  *
- * A port out of range is left out rather than replaced by the factory's: the
- * caller asked to change one thing, and the honest answer to nonsense is to
- * change nothing.
+ * A port out of range, or an address that is not one, is left out rather than
+ * replaced by the factory's: the caller asked to change one thing, and the
+ * honest answer to nonsense is to change nothing. `null` stays: it is how the
+ * choice of an address is given back to the server.
  */
 export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch {
-  const patch: DeviceSettingsPatch = conformPatch(value, { port: DEFAULT_DEVICE_PORT });
+  const model: Required<DeviceSettingsPatch> = { port: DEFAULT_DEVICE_PORT, address: null };
+  const patch: DeviceSettingsPatch = conformPatch(value, model);
   if (patch.port !== undefined && !isPort(patch.port)) delete patch.port;
+  if (typeof patch.address === 'string' && !isDeviceAddress(patch.address)) delete patch.address;
   return patch;
 }
 
@@ -278,4 +310,10 @@ export interface DeviceServerStatus {
    * refuses without a word.
    */
   reachedFromNetwork: boolean;
+  /**
+   * The settings' address, whether the server runs or not: `null` when the
+   * server picks the link. `selectedUrl` is made of it only while it is
+   * listed.
+   */
+  address: string | null;
 }

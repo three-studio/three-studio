@@ -100,9 +100,13 @@ export function deviceUrls(
   );
 }
 
-/** The link to show first: the first one a phone can use, else this computer's. `null` with none. */
-export function selectedUrl(urls: readonly DeviceUrl[]): string | null {
-  return (urls.find((url) => url.address !== 'localhost') ?? urls[0])?.url ?? null;
+/**
+ * The link to show first: the chosen address's while it is listed; otherwise
+ * the first one a phone can use, else this computer's. `null` with none.
+ */
+export function selectedUrl(urls: readonly DeviceUrl[], address: string | null): string | null {
+  const chosen = address === null ? undefined : urls.find((url) => url.address === address);
+  return (chosen ?? urls.find((url) => url.address !== 'localhost') ?? urls[0])?.url ?? null;
 }
 
 /** `Host` without its port, in lower case. `[::1]:7700` keeps its brackets. */

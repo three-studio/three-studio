@@ -34,7 +34,13 @@ describe('at start', () => {
     const settings = await ensureDeviceSettings(file);
 
     const saved = await written(file);
-    expect(saved).toEqual({ version: 1, port: 7700, token: settings.token, transport: 'http' });
+    expect(saved).toEqual({
+      version: 1,
+      port: 7700,
+      token: settings.token,
+      transport: 'http',
+      address: null,
+    });
     expect(isUsableDeviceToken(saved.token)).toBe(true);
   });
 
@@ -85,6 +91,7 @@ describe('at start', () => {
       port: 7700,
       token: settings.token,
       transport: 'http',
+      address: null,
     });
   });
 });
@@ -128,6 +135,24 @@ describe('a patch', () => {
     });
   });
 
+  it('changes the address and keeps the token, the port and every other field as found', async () => {
+    const file = await settingsFile(
+      JSON.stringify({ version: 1, port: 7807, token: TOKEN, transport: 'https', future: { a: 1 } }),
+    );
+
+    const settings = await updateDeviceSettings(file, { address: '192.168.1.42' });
+
+    expect(settings.address).toBe('192.168.1.42');
+    expect(await written(file)).toEqual({
+      version: 1,
+      port: 7807,
+      token: TOKEN,
+      transport: 'https',
+      future: { a: 1 },
+      address: '192.168.1.42',
+    });
+  });
+
   it('writes nothing when there is nothing in it', async () => {
     const contents = `{"version":1,"port":7806,"token":"${TOKEN}","transport":"http"}`;
     const file = await settingsFile(contents);
@@ -148,6 +173,7 @@ describe('a patch', () => {
       port: 7805,
       token: settings.token,
       transport: 'http',
+      address: null,
     });
     expect(isUsableDeviceToken(settings.token)).toBe(true);
   });

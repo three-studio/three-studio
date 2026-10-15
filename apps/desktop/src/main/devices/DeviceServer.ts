@@ -61,7 +61,10 @@ export type ConfirmQuit = (holder: PortHolder, port: number) => Promise<boolean>
 interface Listening {
   server: Server;
   port: number;
-  /** What it serves under: the kept port, the token, the transport. */
+  /**
+   * What it serves under — the kept port, the token, the transport — and the
+   * address its link is made of.
+   */
   settings: DeviceSettings;
   /** Kept so that a server moved to another port answers exactly as before. */
   handler: DeviceRequestHandler;
@@ -206,14 +209,19 @@ export class DeviceServer {
   /**
    * Writes a change to the settings, and moves a running server onto a port
    * newly chosen — or the next free one above it, as a start would.
+   *
+   * An address moves nothing: the server listens on every interface already,
+   * and the address only decides which link is shown first.
    */
   async saveSettings(patch: DeviceSettingsPatch): Promise<DeviceServerStatus> {
     const saved = await updateDeviceSettings(this.options.settingsFile, patch);
     if (this.starting !== null) await this.starting;
     const listening = this.listening;
-    if (listening !== null && saved.port !== listening.settings.port) {
-      const settings = { ...listening.settings, port: saved.port };
-      if (saved.port === listening.port) {
+    if (listening !== null) {
+      const settings = { ...listening.settings, port: saved.port, address: saved.address };
+      if (saved.port === listening.settings.port) {
+        this.listening = { ...listening, settings };
+      } else if (saved.port === listening.port) {
         // Already there, after a slide: the port asked for is now the one held.
         this.listening = { ...listening, settings };
         this.holder = null;
@@ -418,6 +426,7 @@ export class DeviceServer {
         requestedPort: settings.port,
         urls: [],
         selectedUrl: null,
+        address: settings.address,
       };
     }
     const { port, settings } = view.listening;
@@ -428,7 +437,8 @@ export class DeviceServer {
       port,
       requestedPort: settings.port,
       urls,
-      selectedUrl: selectedUrl(urls),
+      selectedUrl: selectedUrl(urls, settings.address),
+      address: settings.address,
     };
   }
 

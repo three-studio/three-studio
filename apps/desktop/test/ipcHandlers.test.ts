@@ -278,6 +278,21 @@ describe('the guards are reached, not merely written', () => {
     expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
   });
 
+  it('lets a settings patch choose an address, and nothing that is not one', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { address: 'en0' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { address: '192.168.1.42' });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      address: '192.168.1.42',
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
   it('conforms layout preferences before they reach the file', async () => {
     await invoke(IPC_INVOKE.preferences.saveLayouts, 1, {
       version: LAYOUT_PREFERENCES_VERSION,

@@ -345,7 +345,10 @@ export interface DevicesApi {
    * so scripts that do not compile refuse it and leave the server as it was.
    */
   launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus>;
-  /** Writes what the renderer may change — the port — and moves a running server onto it. */
+  /**
+   * Writes what the renderer may change — the port, the address a link is made
+   * of — and moves a running server onto a new port.
+   */
   saveSettings: (patch: DeviceSettingsPatch) => Promise<DeviceServerStatus>;
   /**
    * Moves a server that slid back onto the kept port. When another Three

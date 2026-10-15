@@ -47,6 +47,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
     selectedUrl: `http://192.168.1.42:${port}/${TOKEN}/`,
     launch: { id: 'launch-1', at: 1, sceneName: 'Level' },
     reachedFromNetwork: false,
+    address: null,
     ...overrides,
   };
 }
