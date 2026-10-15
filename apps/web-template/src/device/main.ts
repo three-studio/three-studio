@@ -159,6 +159,14 @@ const client = startDeviceClient(
       }
       location.reload();
     },
+    reopen: (transport) => {
+      // Only the scheme comes from the server; everything else is this page's
+      // own. No mark for the next load: it lands on another origin, whose
+      // storage cannot read this one's, so it shows its Play screen once.
+      const url = new URL('./', location.href);
+      url.protocol = `${transport}:`;
+      location.replace(url.href);
+    },
     show,
     log: (line) => console.log(`[device] ${line}`),
   },

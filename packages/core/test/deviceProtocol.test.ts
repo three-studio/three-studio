@@ -119,7 +119,7 @@ describe('a device’s status', () => {
 });
 
 describe('what the server sends', () => {
-  it('reads the three messages', () => {
+  it('reads the four messages', () => {
     expect(parseServerMessage('{"v":1,"type":"launch","launch":"L2aunch0000b"}')).toEqual({
       v: 1,
       type: 'launch',
@@ -127,12 +127,20 @@ describe('what the server sends', () => {
     });
     expect(parseServerMessage('{"v":1,"type":"stopped"}')).toEqual({ v: 1, type: 'stopped' });
     expect(parseServerMessage('{"v":1,"type":"ping"}')).toEqual({ v: 1, type: 'ping' });
+    expect(parseServerMessage('{"v":1,"type":"reopen","transport":"https"}')).toEqual({
+      v: 1,
+      type: 'reopen',
+      transport: 'https',
+    });
   });
 
   it.each([
     ['another version', '{"v":2,"type":"launch","launch":"L2aunch0000b"}'],
     ['a type it does not know', '{"v":1,"type":"x"}'],
     ['a launch without its id', '{"v":1,"type":"launch"}'],
+    // A page sent to a scheme no build serves would load nothing at all.
+    ['a reopen on a transport it does not know', '{"v":1,"type":"reopen","transport":"ftp"}'],
+    ['a reopen without its transport', '{"v":1,"type":"reopen"}'],
     ['what is not JSON', 'not json'],
     ['JSON that is not an object', '42'],
   ])('ignores %s', (_name, data) => {

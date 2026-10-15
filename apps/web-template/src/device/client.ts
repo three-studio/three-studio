@@ -9,6 +9,7 @@ import {
   type DeviceMessageType,
   type DeviceState,
   type DeviceStatusReport,
+  type DeviceTransport,
   type ServerMessage,
 } from '@three-studio/core/devices/protocol';
 import type { PlayerAnnouncement } from '../announce';
@@ -55,6 +56,8 @@ export interface DeviceIo {
   probe: () => Promise<ProbeAnswer>;
   /** Marks the next load as asked for by the editor, then reloads. */
   reload: () => void;
+  /** Opens this same page — host, port and path — under the other scheme. */
+  reopen: (transport: DeviceTransport) => void;
   show: (notice: DeviceNotice) => void;
   log: (line: string) => void;
 }
@@ -155,6 +158,13 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
         io.log(`Restarting on launch ${message.launch}.`);
         finish();
         io.reload();
+        return;
+      case 'reopen':
+        // The server is about to listen under the other scheme, and this
+        // page's connections go with the one it leaves. Once, as for a launch.
+        io.log(`Reopening over ${message.transport.toUpperCase()}.`);
+        finish();
+        io.reopen(message.transport);
         return;
       case 'stopped':
         if (notice('stopped')) io.log('Three Studio stopped serving.');

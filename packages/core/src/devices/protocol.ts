@@ -123,7 +123,12 @@ export type ServerMessage =
   /** The editor stopped serving: the next error is not the network's. */
   | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'stopped' }
   /** Nothing to do: the stream is alive. */
-  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'ping' };
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'ping' }
+  /**
+   * The server is about to listen again under that scheme, on the same port:
+   * open this same page there.
+   */
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'reopen'; transport: DeviceTransport };
 
 const STATES: readonly DeviceState[] = ['waiting', 'booting', 'running', 'failed'];
 const BACKENDS: readonly DeviceBackend[] = ['webgpu', 'webgl'];
@@ -258,6 +263,12 @@ export function parseServerMessage(data: string): ServerMessage | null {
       return { v: DEVICE_PROTOCOL_VERSION, type: 'stopped' };
     case 'ping':
       return { v: DEVICE_PROTOCOL_VERSION, type: 'ping' };
+    case 'reopen': {
+      const transport = value['transport'];
+      return isDeviceTransport(transport)
+        ? { v: DEVICE_PROTOCOL_VERSION, type: 'reopen', transport }
+        : null;
+    }
     default:
       return null;
   }

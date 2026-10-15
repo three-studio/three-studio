@@ -45,6 +45,7 @@ function fakeIo() {
   const shown: DeviceNotice[] = [];
   const answer: { probe: ProbeAnswer } = { probe: 'unreachable' };
   const reload = vi.fn();
+  const reopen = vi.fn();
   const io: DeviceIo = {
     openStream: (handlers) => {
       const stream: Stream = { handlers, closed: false };
@@ -60,13 +61,14 @@ function fakeIo() {
     },
     probe: () => Promise.resolve(answer.probe),
     reload,
+    reopen,
     show: (notice) => {
       shown.push(notice);
     },
     log: () => undefined,
   };
   const last = (): Stream => streams.at(-1)!;
-  return { io, streams, posts, shown, answer, reload, last };
+  return { io, streams, posts, shown, answer, reload, reopen, last };
 }
 
 function running(start = vi.fn()): PlayerAnnouncement {
@@ -199,6 +201,24 @@ describe('what the server says', () => {
     vi.advanceTimersByTime(120_000);
 
     expect(fake.reload).toHaveBeenCalledTimes(1);
+    expect(fake.posts).toHaveLength(posted);
+    expect(fake.streams).toHaveLength(1);
+  });
+
+  it('reopens the page on the other scheme once, and does nothing after it', () => {
+    const fake = fakeIo();
+    startDeviceClient(page(), fake.io);
+    const stream = fake.last();
+    stream.handlers.onOpen();
+    const posted = fake.posts.length;
+
+    stream.handlers.onMessage(message({ type: 'reopen', transport: 'https' }));
+    stream.handlers.onMessage(message({ type: 'reopen', transport: 'http' }));
+    stream.handlers.onMessage(message({ type: 'launch', launch: 'L2aunch0000b' }));
+    vi.advanceTimersByTime(120_000);
+
+    expect(fake.reopen).toHaveBeenCalledExactlyOnceWith('https');
+    expect(fake.reload).not.toHaveBeenCalled();
     expect(fake.posts).toHaveLength(posted);
     expect(fake.streams).toHaveLength(1);
   });
