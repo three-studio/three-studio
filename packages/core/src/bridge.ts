@@ -6,6 +6,11 @@ import type {
   AssetSettings,
 } from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
+import type {
+  DeviceServerStatus,
+  DeviceSettingsPatch,
+  LaunchSnapshot,
+} from './devices/schema';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
@@ -320,6 +325,39 @@ export interface PreferencesApi {
   saveShortcuts: (preferences: ShortcutPreferences) => Promise<void>;
 }
 
+/**
+ * The device server: a phone on the same network runs what is on screen.
+ *
+ * Every member answers with the whole status, which is small, so a window
+ * never has to piece one together. Nothing here lets the renderer read a file
+ * or open a connection: it asks the main process to serve, and what is served
+ * is decided there.
+ */
+export interface DevicesApi {
+  status: () => Promise<DeviceServerStatus>;
+  /** Listens, on the kept port or the next free one above it. */
+  start: () => Promise<DeviceServerStatus>;
+  /** Closes the server and every connection, and forgets the launch. */
+  stop: () => Promise<DeviceServerStatus>;
+  /**
+   * Serves what is on screen: the snapshot Play would run, unsaved edits
+   * included. Starts the server when it is stopped, once the launch is ready,
+   * so scripts that do not compile refuse it and leave the server as it was.
+   */
+  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus>;
+  /** Writes what the renderer may change — the port — and moves a running server onto it. */
+  saveSettings: (patch: DeviceSettingsPatch) => Promise<DeviceServerStatus>;
+  /**
+   * Moves a server that slid back onto the kept port. When another Three
+   * Studio holds it, the main process asks in a native dialog before quitting
+   * it: no process id crosses the bridge, so a script calling this gets the
+   * dialog, never a kill.
+   */
+  reclaimPort: () => Promise<DeviceServerStatus>;
+  /** Every new status of the server, in order. Returns an unsubscribe. */
+  onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
+}
+
 export interface StudioBridge {
   readonly platform: Platform;
   /** Which window this is. Known before the first render; see `WindowRole`. */
@@ -345,6 +383,7 @@ export interface StudioBridge {
   readonly scripts: ScriptApi;
   readonly build: BuildApi;
   readonly preferences: PreferencesApi;
+  readonly devices: DevicesApi;
 }
 
 /*
@@ -365,10 +404,10 @@ export interface StudioBridge {
 /**
  * The members of a namespace that cross as a call and a reply.
  *
- * Everything returning a promise. The four that do not are deliberate and each
- * has its reason: `setDirty` is fire-and-forget, `onProjectChanged` and
- * `onProgress` are subscriptions, and `pathForFile` never leaves the renderer —
- * `webUtils.getPathForFile` is synchronous and local.
+ * Everything returning a promise. The five that do not are deliberate and each
+ * has its reason: `setDirty` is fire-and-forget, `onProjectChanged`,
+ * `onProgress` and `onChanged` are subscriptions, and `pathForFile` never
+ * leaves the renderer — `webUtils.getPathForFile` is synchronous and local.
  */
 type Invocable<T> = {
   [K in keyof T as T[K] extends (...args: never[]) => Promise<unknown> ? K : never]: T[K];
@@ -467,20 +506,29 @@ export const IPC_INVOKE = {
     loadShortcuts: 'prefs:loadShortcuts',
     saveShortcuts: 'prefs:saveShortcuts',
   },
+  devices: {
+    status: 'devices:status',
+    start: 'devices:start',
+    stop: 'devices:stop',
+    launch: 'devices:launch',
+    saveSettings: 'devices:saveSettings',
+    reclaimPort: 'devices:reclaimPort',
+  },
 } as const satisfies InvokeChannels;
 
 /**
- * The three channels that are not a call and a reply.
+ * The four channels that are not a call and a reply.
  *
- * Two are the main process talking first — a project that changed under another
- * window, and an export reporting progress — and one is the renderer telling
- * and not asking. They are listed rather than derived because there are three
- * of them and no shape to derive from.
+ * Three are the main process talking first — a project that changed under
+ * another window, an export reporting progress, and the device server's status
+ * — and one is the renderer telling and not asking. They are listed rather
+ * than derived because there are four of them and no shape to derive from.
  */
 export const IPC_EVENTS = {
   projectChanged: 'project:changed',
   buildProgress: 'build:progress',
   setDirty: 'project:setDirty',
+  devicesChanged: 'devices:changed',
 } as const;
 
 /**

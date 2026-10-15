@@ -55,8 +55,8 @@ const GRACE_MS = 3000;
 /** How long the port may stay held after that, before taking it back gives up. */
 const GIVE_UP_MS = 2000;
 
-/** Asks the person whether another Three Studio may be quit. */
-export type ConfirmQuit = (holder: PortHolder) => Promise<boolean>;
+/** Asks the person whether another Three Studio, holding that port, may be quit. */
+export type ConfirmQuit = (holder: PortHolder, port: number) => Promise<boolean>;
 
 interface Listening {
   server: Server;
@@ -253,7 +253,7 @@ export class DeviceServer {
         `Port ${kept} is held by ${describeHolder(holder)}, which Three Studio will not quit.`,
       );
     }
-    if (!(await confirm(holder))) return this.status();
+    if (!(await confirm(holder, kept))) return this.status();
 
     if (!(await this.signalIfHolding(kept, holder.pid, 'SIGTERM'))) {
       // It went while the dialog was open, or something else took its place,

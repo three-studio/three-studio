@@ -1,4 +1,7 @@
+import { join } from 'node:path';
+import { IPC_EVENTS } from '@three-studio/core';
 import { BrowserWindow, app, session } from 'electron';
+import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
 import { handleAssetProtocol, handleImportProtocol, registerAssetScheme } from './protocol';
 import { applyContentSecurityPolicy } from './security';
@@ -8,6 +11,7 @@ import {
   isSceneOpenElsewhere,
   isTransitioning,
   noteScene,
+  onProjectLeft,
   openEditor,
   openLauncher,
   openSceneWindow,
@@ -45,6 +49,23 @@ void app.whenReady().then(() => {
   applyContentSecurityPolicy(session.defaultSession, isDev);
   handleAssetProtocol();
   handleImportProtocol();
+
+  // One per process, and idle until something asks it to serve: it listens on
+  // every interface, so it must never be listening without someone knowing.
+  const devices = new DeviceServer({
+    settingsFile: join(app.getPath('userData'), 'devices.json'),
+    // Where the exporter looks for the player: packaged, the app's resources;
+    // in development, the workspace build.
+    templateRoots: [process.resourcesPath, app.getAppPath()],
+    onChange: (status) => {
+      for (const win of editorWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(IPC_EVENTS.devicesChanged, status);
+      }
+    },
+    trace: (line) => {
+      if (isDev) console.log(`[devices] ${line}`);
+    },
+  });
   registerIpcHandlers({
     openEditor,
     switchScene,
@@ -52,7 +73,12 @@ void app.whenReady().then(() => {
     noteScene,
     isSceneOpenElsewhere,
     editorWindows,
+    devices,
   });
+  // Stopped with the project: the server serves the project's files, and
+  // nothing else would close it once the last window showing them has gone.
+  onProjectLeft(() => void devices.stop());
+  app.on('will-quit', () => void devices.stop());
 
   // The check can start in either window. Given a project it boots straight
   // into the editor, because driving the launcher through a picker from a

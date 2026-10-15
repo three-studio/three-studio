@@ -66,6 +66,21 @@ app.on('before-quit', () => {
   quitting = true;
 });
 
+/** What has to happen once the project's last editor window has gone; see `onProjectLeft`. */
+const projectLeftListeners: (() => void)[] = [];
+
+/**
+ * Registers what has to happen when the project's last editor window closes.
+ *
+ * That is what "the project closes" means, whatever the reason: Close Project,
+ * which is `window.close()`; another project replacing it, which closes every
+ * window first; the app quitting. No renderer sends `project:close`, so this
+ * is the one place all three pass through.
+ */
+export function onProjectLeft(listener: () => void): void {
+  projectLeftListeners.push(listener);
+}
+
 /**
  * Says the application is leaving on purpose.
  *
@@ -352,6 +367,9 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
     if (index >= 0) editors.splice(index, 1);
     forgetWindow(entry.contentsId);
     trace(`editor closed on ${entry.sceneId ?? 'the start scene'}`);
+    // Whatever `quitting` and `transitioning` say: each of them is a way of
+    // leaving the project too.
+    if (editors.length === 0) for (const listener of projectLeftListeners) listener();
 
     // Back to the picker rather than out of the app: closing the last scene is
     // leaving the project, not leaving the editor. Not during a project switch,

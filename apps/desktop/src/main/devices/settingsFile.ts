@@ -78,12 +78,18 @@ export async function ensureDeviceSettings(file: string): Promise<DeviceSettings
   return conformDeviceSettings(found);
 }
 
-/** Writes a patch over the file as found — or over the factory's settings when there is none. */
+/**
+ * Writes a patch over the file as found — or over the factory's settings when
+ * there is none. A patch with nothing in it, as one is once conformed from
+ * nonsense, writes nothing.
+ */
 export async function updateDeviceSettings(
   file: string,
   patch: DeviceSettingsPatch,
 ): Promise<DeviceSettings> {
-  const updated = { ...((await readFound(file)) ?? createDeviceSettings()), ...patch };
+  const found = await readFound(file);
+  if (found !== null && Object.keys(patch).length === 0) return conformDeviceSettings(found);
+  const updated = { ...(found ?? createDeviceSettings()), ...patch };
   await write(file, updated);
   return conformDeviceSettings(updated);
 }

@@ -1,6 +1,7 @@
 import type {
   AssetImportResult,
   AssetManifest,
+  DeviceServerStatus,
   ImportSessionState,
   ExportProgress,
   ExportResult,
@@ -151,6 +152,22 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.preferences.loadShortcuts),
     saveShortcuts: (preferences): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.preferences.saveShortcuts, preferences),
+  },
+  devices: {
+    status: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.status),
+    start: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.start),
+    stop: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.stop),
+    launch: (snapshot): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.launch, snapshot),
+    saveSettings: (patch): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.saveSettings, patch),
+    reclaimPort: (): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.reclaimPort),
+    onChanged: (listener) => {
+      const handler = (_event: unknown, status: DeviceServerStatus) => listener(status);
+      ipcRenderer.on(IPC_EVENTS.devicesChanged, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.devicesChanged, handler);
+    },
   },
 };
 

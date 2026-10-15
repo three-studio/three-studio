@@ -1,8 +1,14 @@
-import { conform, conformPatch } from '../guards';
+import { conform, conformMaterial, conformPatch } from '../guards';
 import { createId } from '../ids';
-import type { PhysicsSettings, RenderingSettings } from '../project/schema';
-import type { PrefabDoc } from '../scene/prefab';
+import {
+  createPhysicsSettings,
+  createRenderingSettings,
+  type PhysicsSettings,
+  type RenderingSettings,
+} from '../project/schema';
+import { migratePrefab, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
+import { migrateScene } from '../scene/serialization';
 
 export const LAUNCH_SNAPSHOT_VERSION = 1;
 
@@ -32,6 +38,65 @@ export interface LaunchSnapshot {
   rendering: RenderingSettings;
   physics: PhysicsSettings;
   loadingScene: string | null;
+}
+
+/** The entries of a record that arrived from elsewhere: none when it is not one. */
+function entriesOf(value: unknown): [string, unknown][] {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? Object.entries(value)
+    : [];
+}
+
+/**
+ * A snapshot, made safe where it arrives in the main process.
+ *
+ * Whatever the renderer sent: a project's own script can call the bridge with
+ * anything, and what it sends becomes the files a phone downloads. Each part
+ * goes through the repair its kind already has — a scene and a prefab through
+ * their migrations, which keep what a newer editor wrote; a material and the
+ * settings against their factories. A field this does not know is dropped:
+ * nothing here is kept on disk, and the renderer that sends it ships in the
+ * same build.
+ *
+ * Refused outright when it cannot be read as a launch at all: a version this
+ * build does not know, or an entry scene with no id and name to serve it under.
+ */
+export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('A launch snapshot is an object.');
+  }
+  const given = value as Record<string, unknown>;
+  if (given['version'] !== LAUNCH_SNAPSHOT_VERSION) {
+    throw new Error(`This build cannot launch a snapshot of version ${String(given['version'])}.`);
+  }
+  const entry = given['entry'];
+  const { id, name, scene } = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<
+    string,
+    unknown
+  >;
+  if (typeof id !== 'string' || typeof name !== 'string') {
+    throw new Error('A launch snapshot names its entry scene by id and name.');
+  }
+
+  const materials: Record<string, MaterialDef> = {};
+  for (const [key, material] of entriesOf(given['materials'])) {
+    materials[key] = conformMaterial(material);
+  }
+  const prefabs: Record<string, PrefabDoc> = {};
+  for (const [key, prefab] of entriesOf(given['prefabs'])) {
+    if (typeof prefab === 'object' && prefab !== null) prefabs[key] = migratePrefab(prefab as PrefabDoc);
+  }
+  const loadingScene = given['loadingScene'];
+
+  return {
+    version: LAUNCH_SNAPSHOT_VERSION,
+    entry: { id, name, scene: migrateScene(scene) },
+    materials,
+    prefabs,
+    rendering: conform(given['rendering'], createRenderingSettings()),
+    physics: conform(given['physics'], createPhysicsSettings()),
+    loadingScene: typeof loadingScene === 'string' ? loadingScene : null,
+  };
 }
 
 /*

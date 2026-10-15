@@ -13,6 +13,7 @@ export type {
   ProjectApi,
   ScriptApi,
   BuildApi,
+  DevicesApi,
   BuildSize,
   ExportProgress,
   ExportResult,
@@ -352,7 +353,7 @@ export {
 } from './scene/graph';
 
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
-export { LAUNCH_SNAPSHOT_VERSION } from './devices/schema';
+export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot } from './devices/schema';
 export type { LaunchSnapshot } from './devices/schema';
 /* The device server's settings: per machine, never in a project. */
 export {

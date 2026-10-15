@@ -128,6 +128,16 @@ describe('a patch', () => {
     });
   });
 
+  it('writes nothing when there is nothing in it', async () => {
+    const contents = `{"version":1,"port":7806,"token":"${TOKEN}","transport":"http"}`;
+    const file = await settingsFile(contents);
+
+    const settings = await updateDeviceSettings(file, {});
+
+    expect(settings.port).toBe(7806);
+    expect(await readFile(file, 'utf8')).toBe(contents);
+  });
+
   it('lands over the factory’s settings when there was no file', async () => {
     const file = await settingsFile();
 

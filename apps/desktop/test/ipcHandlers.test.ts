@@ -1,17 +1,23 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   IPC_EVENTS,
   IPC_INVOKE,
+  LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   createMaterial,
+  createPhysicsSettings,
+  createRenderingSettings,
+  deserializeScene,
   type AssetManifest,
+  type DeviceServerStatus,
   type ProjectContents,
   type ProjectFile,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
  * The handler table, driven.
@@ -45,7 +51,10 @@ vi.mock('electron', () => ({
     getAppPath: (): string => stub.userData,
   },
   BrowserWindow: { fromWebContents: () => null },
-  dialog: { showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }) },
+  dialog: {
+    showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    showMessageBox: () => Promise.resolve({ response: 0, checkboxChecked: false }),
+  },
   ipcMain: {
     on: () => undefined,
     handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => {
@@ -56,6 +65,7 @@ vi.mock('electron', () => ({
 }));
 
 const { registerIpcHandlers } = await import('../src/main/ipc');
+const { DeviceServer } = await import('../src/main/devices/DeviceServer');
 const { createProject, discoverScenes, readProject } = await import('../src/main/project');
 const { adoptProject, releaseProject } = await import('../src/main/session');
 
@@ -75,8 +85,41 @@ function editorWindow(id: number, destroyed = false) {
 let windows: ReturnType<typeof editorWindow>[] = [];
 let sceneOpenElsewhere = false;
 
+/** A port nothing holds, below the range the system hands out to every other test's sockets. */
+async function freePort(): Promise<number> {
+  for (;;) {
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = createNetServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
+    });
+    if (free) return port;
+  }
+}
+
+/** The device server the handlers drive, on loopback, so a test wakes no firewall. */
+let devices: InstanceType<typeof DeviceServer>;
+const devicesFile = { path: '', contents: '' };
+
 beforeAll(async () => {
   stub.userData = await mkdtemp(join(tmpdir(), 'studio-ipc-prefs-'));
+  const templateRoot = await mkdtemp(join(tmpdir(), 'studio-ipc-template-'));
+  await mkdir(join(templateRoot, 'web-template'), { recursive: true });
+  await writeFile(join(templateRoot, 'web-template', 'index.html'), '<html></html>', 'utf8');
+  devicesFile.path = join(stub.userData, 'devices.json');
+  devicesFile.contents = JSON.stringify({
+    version: 1,
+    port: await freePort(),
+    token: 'abcdefghijKLMNOPQRST01',
+    transport: 'http',
+  });
+  await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  devices = new DeviceServer({
+    settingsFile: devicesFile.path,
+    templateRoots: [templateRoot],
+    listenHost: '127.0.0.1',
+  });
   registerIpcHandlers({
     openEditor: () => undefined,
     switchScene: () => true,
@@ -84,7 +127,12 @@ beforeAll(async () => {
     noteScene: () => undefined,
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
     editorWindows: () => windows as unknown as BrowserWindow[],
+    devices,
   });
+});
+
+afterAll(async () => {
+  await devices.stop();
 });
 
 beforeEach(() => {
@@ -187,6 +235,47 @@ describe('the guards are reached, not merely written', () => {
     // a copy of the model, and the Package dialog then offered them.
     const after = await readProject(root);
     expect(Object.keys(after.settings.build.profiles)).toEqual(before);
+  });
+
+  it('conforms a launch snapshot before a phone is served it', async () => {
+    const root = await project();
+    const [entry] = await discoverScenes(root);
+
+    const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: {
+        id: entry!.id,
+        name: entry!.name,
+        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+      },
+      materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
+      prefabs: {},
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      loadingScene: null,
+      trap: 1,
+    });
+
+    // Read back from the server, as a phone reads it: what is checked is what
+    // a device is given, not what the handler was handed.
+    const local = status.urls.find((url) => url.address === 'localhost')!.url;
+    const build = (await (await fetch(`${local.replace('localhost', '127.0.0.1')}build.json`)).json()) as {
+      materials: Record<string, Record<string, unknown>>;
+    };
+    expect(build.materials['stone']!.side).toBe('front');
+    expect(build.materials['stone']).not.toHaveProperty('trap');
+  });
+
+  it('never lets a settings patch choose the token or the version', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, {
+      token: 'ZYXWVUTSRQPONMLKJIHGFEDCBA',
+      version: 9,
+      port: 70000,
+    });
+
+    // The token is the one secret a phone's link carries; a script that could
+    // set it would hold a link it already knows.
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
   });
 
   it('conforms layout preferences before they reach the file', async () => {
