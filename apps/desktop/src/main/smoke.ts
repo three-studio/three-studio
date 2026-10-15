@@ -5,6 +5,9 @@ import type { DeviceServerStatus } from '@three-studio/core';
 import { BrowserWindow, app } from 'electron';
 import { beginQuit } from './windows';
 
+/** How long after a device first runs `STUDIO_SMOKE_DEVICE_CRASH` ends the smoke device's page. */
+const CRASH_AFTER_MS = 4_000;
+
 const PROBE = `(() => ({
   text: document.body.innerText.trim(),
   nodes: document.querySelectorAll('#root *').length,
@@ -125,10 +128,18 @@ async function run(win: BrowserWindow, errors: string[]): Promise<void> {
  * `setCertificateVerifyProc`, would hide the state a phone is in after that
  * press — Chromium keeps the error, and caches nothing received under it.
  * Nothing else in the app ever accepts a certificate the system refuses.
+ *
+ * With `STUDIO_SMOKE_DEVICE_CRASH=1` too, its page is ended once, a few seconds
+ * after a device first runs, the way iOS ends a page for the memory it uses —
+ * no event reaches the page — then loaded again, as Safari does by itself and
+ * Chrome's *Reload* does: a smoke run then carries the detection of a reload
+ * nobody asked for from end to end.
  */
 export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
   let device: BrowserWindow | null = null;
   let fingerprint: string | null = null;
+  const crash = process.env['STUDIO_SMOKE_DEVICE_CRASH'] === '1';
+  let crashing = false;
   // Electron keeps no exception from one connection to the next, so the
   // question comes back with each one: said once per certificate.
   let accepted: string | null = null;
@@ -155,6 +166,16 @@ export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
       device = null;
       return;
     }
+    if (crash && !crashing && status.devices.some((entry) => entry.state === 'running')) {
+      // Once, and long enough after the game runs for its page to have marked
+      // itself alive and drawn a while.
+      crashing = true;
+      setTimeout(() => {
+        if (device === null || device.isDestroyed()) return;
+        console.log('[smoke device] crashed on purpose');
+        device.webContents.forcefullyCrashRenderer();
+      }, CRASH_AFTER_MS);
+    }
     if (status.state !== 'running' || (device !== null && !device.isDestroyed())) return;
     const url = status.urls.find((entry) => entry.address === 'localhost')?.url;
     if (url === undefined) return;
@@ -178,6 +199,13 @@ export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
     opened.webContents.on('did-fail-load', (_event, code, description, failed) => {
       console.log(`[smoke device] could not load ${failed}: ${description} (${code})`);
     });
+    if (crash) {
+      opened.webContents.on('render-process-gone', () => {
+        if (opened.isDestroyed()) return;
+        console.log('[smoke device] reloaded');
+        opened.webContents.reload();
+      });
+    }
     console.log('[smoke device] opening the localhost link');
     opened.loadURL(url).catch(() => {
       // Said by `did-fail-load`, with what failed.
