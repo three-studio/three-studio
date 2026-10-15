@@ -1,5 +1,6 @@
 import { ASSET_COMMANDS } from './assetCommands';
 import type { Command } from './command';
+import { DEVICE_COMMANDS } from './deviceCommands';
 import { EDIT_COMMANDS } from './editCommands';
 import { EXPORT_COMMANDS } from './exportCommands';
 import { MODEL_COMMANDS } from './modelCommands';
@@ -46,6 +47,7 @@ export const COMMANDS = {
   ...MODEL_COMMANDS,
   ...EXPORT_COMMANDS,
   ...PLAY_COMMANDS,
+  ...DEVICE_COMMANDS,
 };
 
 export type CommandId = keyof typeof COMMANDS;

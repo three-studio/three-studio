@@ -3,6 +3,7 @@ import { audioPreview } from './audio/preview';
 import { useAssetStore } from './state/assetStore';
 import { openImportDialog, useImportStore } from './import/importStore';
 import { useConsoleStore } from './state/consoleStore';
+import { useDeviceStore } from './state/deviceStore';
 import { useDocumentStore } from './state/documentStore';
 import { useEditorStore } from './state/editorStore';
 import { usePrefabModeStore } from './state/prefabModeStore';
@@ -25,6 +26,7 @@ export function installDevtools(): void {
   (globalThis as unknown as Record<string, unknown>)['__studioStores'] = {
     asset: useAssetStore,
     console: useConsoleStore,
+    devices: useDeviceStore,
     document: useDocumentStore,
     editor: useEditorStore,
     // With the one action that opens it: the dialog is the only path assets
