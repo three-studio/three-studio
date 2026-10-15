@@ -25,9 +25,10 @@ function stats(overrides: Partial<DeviceStats> = {}): DeviceStats {
 }
 
 describe('a device’s stats, described', () => {
-  it('read as three lines: the pace, the scene, the pixels', () => {
+  it('read as three lines — the pace, the scene, the pixels — and what a frame draws', () => {
     expect(describeDeviceStats(stats())).toEqual({
       pace: '58 fps · p95 21 ms',
+      draws: '142 draws · 85.2k tris',
       scene: '142 draws · 85.2k tris · 31 textures · 180 MB',
       pixels: 'drawn at 2× · 786×1704',
     });

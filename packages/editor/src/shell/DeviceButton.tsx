@@ -25,6 +25,8 @@ export function DeviceButton({ className = '' }: { className?: string }) {
   // Read so that the button re-renders when it changes: whether a launch can
   // run is the open project's question.
   useProjectStore((s) => s.summary);
+  // Whether the project forces WebGL2 itself, which a row says.
+  const rendering = useProjectStore((s) => s.project?.settings.rendering ?? null);
 
   const launch = commandById('launchOnDevices');
   const view = deviceView(status, {
@@ -32,6 +34,7 @@ export function DeviceButton({ className = '' }: { className?: string }) {
     dev: import.meta.env.DEV,
     ownLaunch,
     liveReloadRefused,
+    projectRendering: rendering,
   });
 
   return (

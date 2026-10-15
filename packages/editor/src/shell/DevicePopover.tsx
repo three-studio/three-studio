@@ -274,8 +274,10 @@ function Served({ view }: { view: DeviceView }) {
 
 /**
  * One device: what it is, what it draws with — and why not WebGPU, when that
- * is why — its screen, and ↻. A failed page says what it failed on below it,
- * three lines at most; the whole of it in the title, and selectable.
+ * is why — its screen, and ↻. Below it, what its page measured on one line,
+ * every number in the title, then what looks wrong with the page, a line
+ * each. A failed page says what it failed on, three lines at most; the whole
+ * of it in the title, and selectable.
  */
 function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
   const why = row.insecure ? view.insecureNote : row.noWebGpu ? view.noWebGpuNote : null;
@@ -286,7 +288,10 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
         <span title={row.tooltip} className="min-w-0 flex-1 truncate text-ink">
           {row.label}
         </span>
-        <span className="flex shrink-0 items-center gap-1 text-ink-muted">
+        <span
+          title={row.backendTitle ?? undefined}
+          className="flex shrink-0 items-center gap-1 text-ink-muted"
+        >
           {row.state}
           {row.backend !== null && why !== null && (
             <span title={why} className="text-warn">
@@ -306,6 +311,19 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
           <RotateCw size={12} strokeWidth={2} />
         </button>
       </div>
+      {row.stats !== null ? (
+        <p title={row.statsTitle ?? undefined} className="truncate pl-3.5 tabular-nums text-ink-muted">
+          {row.stats}
+        </p>
+      ) : (
+        row.measuring && <p className="pl-3.5 text-ink-dim">Measuring…</p>
+      )}
+      {row.warnings.map((warning) => (
+        <p key={warning} className="flex gap-1 pl-3.5 text-warn">
+          <TriangleAlert size={12} strokeWidth={2} aria-hidden className="mt-px shrink-0" />
+          <span>{warning}</span>
+        </p>
+      ))}
       {row.error !== null && (
         <p data-selectable title={row.error} className="line-clamp-3 pl-3.5 text-error">
           {row.error}

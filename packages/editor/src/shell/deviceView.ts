@@ -1,5 +1,6 @@
 import {
   DEFAULT_DEVICE_PORT,
+  describeDeviceStats,
   type DeviceBackend,
   type DeviceInfo,
   type DeviceServerState,
@@ -7,6 +8,7 @@ import {
   type DeviceState,
   type DeviceTransport,
   type Platform,
+  type RenderingSettings,
 } from '@three-studio/core';
 import {
   deviceLabel,
@@ -34,9 +36,13 @@ export interface DeviceRow {
   id: string;
   /** `iPhone · Safari`. */
   label: string;
-  /** What it draws with — `WebGPU`, `WebGL2` — while it runs; `null` otherwise. */
+  /** What it draws with — `WebGPU`, `WebGL2`, `WebGL2 (forced)` — while it runs; `null` otherwise. */
   backend: string | null;
-  /** Its page is not a secure context, which is why it has no WebGPU. */
+  /** Who forced WebGL2, said over the backend; `null` unless forced. */
+  backendTitle: string | null;
+  /** WebGL2 because someone asked for it: the launch options, or the project's settings. */
+  forced: 'options' | 'project' | null;
+  /** Its page is not a secure context, which is why it has no WebGPU. Never said of one forced. */
   insecure: boolean;
   /** A secure context, and WebGL2 all the same: the browser gave its page no WebGPU. */
   noWebGpu: boolean;
@@ -51,6 +57,14 @@ export interface DeviceRow {
   canRestart: boolean;
   /** Where it connected from, then its whole user agent. */
   tooltip: string;
+  /** `58 fps · p95 21 ms · 142 draws · 85.2k tris`: its page's last report; `null` before one. */
+  stats: string | null;
+  /** Every number of that report, a line each. */
+  statsTitle: string | null;
+  /** Its page runs the current launch, and has not reported yet: the first comes about 3 s in. */
+  measuring: boolean;
+  /** What looks wrong with the page, a sentence each: held at 30 fps, reloaded by its browser. */
+  warnings: string[];
 }
 
 /**
@@ -159,6 +173,11 @@ export interface DeviceViewContext {
   ownLaunch: Pick<OwnLaunch, 'id'> | null;
   /** The refusal holding live reload in this window, or `null`. */
   liveReloadRefused: string | null;
+  /**
+   * The open project's rendering settings, which may force WebGL2 themselves;
+   * `null` with no project. Read by the caller, so that this stays pure.
+   */
+  projectRendering: Pick<RenderingSettings, 'forceWebGL' | 'maxPixelRatio'> | null;
 }
 
 const LAUNCH = 'Launch on Devices';
@@ -182,6 +201,34 @@ const ROW_STATES: Readonly<Record<DeviceState, { label: string; tone: DeviceDot 
 };
 
 const DEVICES_NOTE = 'No device yet. Open the link on a phone: it restarts on every launch.';
+
+const FORCED_TITLES: Readonly<Record<NonNullable<DeviceRow['forced']>, string>> = {
+  options: 'Forced by the launch options.',
+  project: 'Forced by the project’s settings.',
+};
+
+/*
+ * What a page's own numbers say is wrong with it. Each one a guess the page
+ * cannot confirm — a frame rate held at 30 is a power-saving mode only most
+ * of the time, a page ended in the foreground ran out of memory only most of
+ * the time — so each says "probably", or "most likely", and where to look.
+ */
+const LOW_POWER = 'Held at 30 fps: Low Power Mode is probably on — Settings › Battery.';
+const POWER_SAVING = 'Held at 30 fps: a power-saving mode is probably on.';
+const RELOADED =
+  'The page ended without warning and was reloaded: it most likely ran out of memory.';
+
+function warningsOf(device: DeviceInfo): string[] {
+  const warnings: string[] = [];
+  if (device.stats?.pinned30 === true) {
+    // iOS is where a whole system holds every page at 30, and says so nowhere.
+    warnings.push(device.name === 'iPhone' || device.name === 'iPad' ? LOW_POWER : POWER_SAVING);
+  }
+  if (device.reloads > 0) {
+    warnings.push(device.reloads === 1 ? RELOADED : `${RELOADED} (${device.reloads}×)`);
+  }
+  return warnings;
+}
 
 const INSECURE_NOTE =
   'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost.';
@@ -239,22 +286,44 @@ function screenOf({ width, height, dpr }: DeviceInfo['screen']): string {
   return `${width}×${height} @${Number(dpr.toFixed(2))}x`;
 }
 
-function rowOf(device: DeviceInfo, launched: boolean): DeviceRow {
+interface RowContext {
+  /** There is a launch to restart a device on. */
+  launched: boolean;
+  /** The current launch's id. */
+  current: string | null;
+  /** Who would force WebGL2 on a page now, if anyone. */
+  forcedBy: DeviceRow['forced'];
+}
+
+function rowOf(device: DeviceInfo, { launched, current, forcedBy }: RowContext): DeviceRow {
   const running = device.connected && device.state === 'running' && device.backend !== null;
-  const backend = running && device.backend !== null ? BACKEND_LABELS[device.backend] : null;
+  // Asked for, WebGL2 is no sign that a page lacks anything: neither mark applies.
+  const forced = running && device.backend === 'webgl' ? forcedBy : null;
+  const backend =
+    running && device.backend !== null
+      ? `${BACKEND_LABELS[device.backend]}${forced === null ? '' : ' (forced)'}`
+      : null;
   const known = ROW_STATES[device.state];
+  const described = device.stats === null ? null : describeDeviceStats(device.stats);
   return {
     id: device.id,
     label: deviceLabel(device),
     backend,
-    insecure: !device.secureContext,
-    noWebGpu: running && device.secureContext && device.backend === 'webgl',
+    backendTitle: forced === null ? null : FORCED_TITLES[forced],
+    forced,
+    insecure: forced === null && !device.secureContext,
+    noWebGpu: forced === null && running && device.secureContext && device.backend === 'webgl',
     screen: screenOf(device.screen),
     state: device.connected ? (backend ?? known.label) : 'Offline',
     tone: device.connected ? known.tone : 'none',
     error: device.connected && device.state === 'failed' ? device.error : null,
     canRestart: device.connected && launched,
     tooltip: `Connected from ${device.address}\n${device.userAgent}`,
+    stats: described === null ? null : `${described.pace} · ${described.draws}`,
+    statsTitle:
+      described === null ? null : [described.pace, described.scene, described.pixels].join('\n'),
+    measuring: running && device.stats === null && current !== null && device.launch === current,
+    warnings: warningsOf(device),
   };
 }
 
@@ -461,7 +530,15 @@ export function deviceView(
   // A stopped server has forgotten every device, whatever a status says.
   const listed = running ? (status?.devices ?? []) : [];
   const launched = running && status?.launch !== null;
-  const devices = listed.map((device) => rowOf(device, launched));
+  const forcedBy =
+    status?.launchOptions.forceWebGL === true
+      ? 'options'
+      : context.projectRendering?.forceWebGL === true
+        ? 'project'
+        : null;
+  const devices = listed.map((device) =>
+    rowOf(device, { launched, current: status?.launch?.id ?? null, forcedBy }),
+  );
   const count = listed.filter((device) => device.connected).length;
   const transport = status?.transport ?? 'http';
   const waiting = waitingOf(status);

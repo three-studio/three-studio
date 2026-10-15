@@ -14,6 +14,8 @@ import type { DeviceStats } from './protocol';
 export interface DescribedDeviceStats {
   /** `58 fps · p95 21 ms`: how smoothly it runs. */
   pace: string;
+  /** `142 draws · 85.2k tris`: what one frame draws — the start of `scene`, for a row's one line. */
+  draws: string;
   /** `142 draws · 85.2k tris · 31 textures · 180 MB`: what one frame costs. */
   scene: string;
   /** `drawn at 2× · 786×1704`: how many pixels it draws. */
@@ -54,12 +56,13 @@ function counted(count: number, one: string, many: string): string {
 }
 
 export function describeDeviceStats(stats: DeviceStats): DescribedDeviceStats {
+  const draws = `${counted(stats.drawCalls, 'draw', 'draws')} · ${formatCount(stats.triangles)} tris`;
   return {
     // A tenth of a millisecond is what tells 16.7 from 16 — two refresh rates.
     pace: `${stats.fps} fps · p95 ${Number(stats.p95.toFixed(1))} ms`,
+    draws,
     scene: [
-      counted(stats.drawCalls, 'draw', 'draws'),
-      `${formatCount(stats.triangles)} tris`,
+      draws,
       counted(stats.textures, 'texture', 'textures'),
       formatBytes(stats.gpuMemory),
     ].join(' · '),

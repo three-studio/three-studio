@@ -1,4 +1,9 @@
-import { createDeviceLaunchOptions, type DeviceInfo, type DeviceServerStatus } from '@three-studio/core';
+import {
+  createDeviceLaunchOptions,
+  type DeviceInfo,
+  type DeviceServerStatus,
+  type DeviceStats,
+} from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { deviceView } from '../src/shell/deviceView';
 import { deviceLink, localDeviceUrl } from '../src/state/deviceStore';
@@ -49,7 +54,13 @@ const STOPPED = status({
   launch: null,
 });
 
-const ON_MAC = { platform: 'darwin', dev: false, ownLaunch: null, liveReloadRefused: null } as const;
+const ON_MAC = {
+  platform: 'darwin',
+  dev: false,
+  ownLaunch: null,
+  liveReloadRefused: null,
+  projectRendering: { forceWebGL: false, maxPixelRatio: 2 },
+} as const;
 
 describe('a server that is stopped', () => {
   it('shows the settings’ port, no link and no dot', () => {
@@ -426,6 +437,157 @@ function overHttps(overrides: Partial<DeviceServerStatus> = {}): DeviceServerSta
     ...overrides,
   });
 }
+
+describe('a device’s numbers', () => {
+  const STATS: DeviceStats = {
+    fps: 58,
+    p95: 21,
+    frames: 116,
+    drawCalls: 142,
+    triangles: 85_210,
+    textures: 31,
+    gpuMemory: 180 * 1024 * 1024,
+    pixelRatio: 3,
+    width: 1179,
+    height: 2556,
+    pinned30: false,
+  };
+
+  it('read on one line under its row, and every one of them in its title', () => {
+    const [row] = deviceView(status({ devices: [device({ stats: STATS })] }), ON_MAC).devices;
+
+    expect(row).toMatchObject({
+      stats: '58 fps · p95 21 ms · 142 draws · 85.2k tris',
+      measuring: false,
+      warnings: [],
+    });
+    expect(row!.statsTitle).toBe(
+      '58 fps · p95 21 ms\n142 draws · 85.2k tris · 31 textures · 180 MB\ndrawn at 3× · 1179×2556',
+    );
+  });
+
+  it('are being measured on a page that runs the current launch, and on no other', () => {
+    const rows = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000' }),
+          device({ id: 'b0000000', connected: false }),
+          device({ id: 'c0000000', state: 'booting', backend: null }),
+          device({ id: 'd0000000', launch: 'launch-0' }),
+        ],
+      }),
+      ON_MAC,
+    ).devices;
+
+    expect(rows.map((row) => row.measuring)).toEqual([true, false, false, false]);
+    expect(rows.map((row) => row.stats)).toEqual([null, null, null, null]);
+  });
+
+  it('warn of Low Power Mode on an iPhone held at 30 fps, of a power-saving mode elsewhere', () => {
+    const held: DeviceStats = { ...STATS, fps: 30, pinned30: true };
+
+    const rows = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000', stats: held }),
+          device({ id: 'b0000000', name: 'iPad', stats: held }),
+          device({ id: 'c0000000', name: 'Android', browser: 'Chrome', stats: held }),
+        ],
+      }),
+      ON_MAC,
+    ).devices;
+
+    expect(rows.map((row) => row.warnings)).toEqual([
+      ['Held at 30 fps: Low Power Mode is probably on — Settings › Battery.'],
+      ['Held at 30 fps: Low Power Mode is probably on — Settings › Battery.'],
+      ['Held at 30 fps: a power-saving mode is probably on.'],
+    ]);
+  });
+
+  it('warn that a page ended without warning and was reloaded, counted from the second time', () => {
+    const rows = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000', reloads: 0 }),
+          device({ id: 'b0000000', reloads: 1 }),
+          // The count is the device's: it stays said while the device is offline.
+          device({ id: 'c0000000', reloads: 2, connected: false }),
+        ],
+      }),
+      ON_MAC,
+    ).devices;
+
+    expect(rows.map((row) => row.warnings)).toEqual([
+      [],
+      ['The page ended without warning and was reloaded: it most likely ran out of memory.'],
+      ['The page ended without warning and was reloaded: it most likely ran out of memory. (2×)'],
+    ]);
+  });
+});
+
+describe('WebGL2, forced', () => {
+  const forcing = { ...createDeviceLaunchOptions(), forceWebGL: true };
+
+  it('is said when the launch options force it, and a secure page then lacks nothing', () => {
+    const [row] = deviceView(
+      status({ launchOptions: forcing, devices: [device({ secureContext: true })] }),
+      ON_MAC,
+    ).devices;
+
+    expect(row).toMatchObject({
+      backend: 'WebGL2 (forced)',
+      state: 'WebGL2 (forced)',
+      forced: 'options',
+      backendTitle: 'Forced by the launch options.',
+      insecure: false,
+      noWebGpu: false,
+    });
+  });
+
+  it('leaves a page under plain HTTP unmarked: WebGPU was not what it lacked', () => {
+    const [row] = deviceView(status({ launchOptions: forcing, devices: [device()] }), ON_MAC).devices;
+
+    expect(row).toMatchObject({ forced: 'options', insecure: false, noWebGpu: false });
+  });
+
+  it('is said when the project forces it', () => {
+    const [row] = deviceView(status({ devices: [device({ secureContext: true })] }), {
+      ...ON_MAC,
+      projectRendering: { forceWebGL: true, maxPixelRatio: 2 },
+    }).devices;
+
+    expect(row).toMatchObject({
+      backend: 'WebGL2 (forced)',
+      forced: 'project',
+      backendTitle: 'Forced by the project’s settings.',
+      noWebGpu: false,
+    });
+  });
+
+  it('is never said of a page on WebGPU, nor when nothing forces it', () => {
+    const rows = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000', secureContext: true, backend: 'webgpu' }),
+          device({ id: 'b0000000', secureContext: true }),
+          device({ id: 'c0000000' }),
+        ],
+      }),
+      { ...ON_MAC, projectRendering: null },
+    ).devices;
+
+    expect(rows.map((row) => [row.backend, row.forced, row.insecure, row.noWebGpu])).toEqual([
+      ['WebGPU', null, false, false],
+      ['WebGL2', null, false, true],
+      ['WebGL2', null, true, false],
+    ]);
+    // A page still on WebGPU while the option arrives: its restart is on its way.
+    const onWebGpu = device({ secureContext: true, backend: 'webgpu' });
+    expect(
+      deviceView(status({ launchOptions: forcing, devices: [onWebGpu] }), ON_MAC).devices[0]!.forced,
+    ).toBeNull();
+  });
+});
 
 /** A phone that accepted the certificate, and runs. */
 const accepted = (): DeviceInfo => device({ secureContext: true, backend: 'webgpu' });
