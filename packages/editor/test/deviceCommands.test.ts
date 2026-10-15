@@ -4,6 +4,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  type DeviceInfo,
   type DeviceServerStatus,
   type DevicesApi,
   type ProjectFile,
@@ -18,6 +19,7 @@ import {
   newDeviceLink,
   openDevicePage,
   reclaimDevicePort,
+  restartDevice,
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
 import { refreshDevices, useDeviceStore, watchDevices } from '../src/state/deviceStore';
@@ -89,6 +91,7 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
         saveSettings: call('saveSettings'),
         reclaimPort: call('reclaimPort'),
         regenerateToken: call('regenerateToken'),
+        restart: call('restart'),
         onChanged: (listener: (status: DeviceServerStatus) => void) => {
           bridge.changed = listener;
           return () => {
@@ -121,6 +124,24 @@ function openProject(): void {
     sceneId: 'scene-1',
     scenes: [{ id: 'scene-1', name: 'Level', path: 'scenes/Level.scene.json', shadowedBy: null }],
   } as never);
+}
+
+function device(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
+  return {
+    id: 'phone0000',
+    name: 'iPhone',
+    browser: 'Safari',
+    userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
+    address: '192.168.1.20',
+    screen: { width: 393, height: 852, dpr: 3 },
+    secureContext: false,
+    launch: 'launch-1',
+    state: 'booting',
+    backend: null,
+    error: null,
+    connected: true,
+    ...overrides,
+  };
 }
 
 const toasts = () => useToastStore.getState().toasts;
@@ -158,7 +179,7 @@ describe('Launch on Devices', () => {
     expect(toasts()).toHaveLength(1);
     expect(lastToast()).toMatchObject({
       kind: 'success',
-      title: 'Launched “Level” on devices',
+      title: 'Launched “Level”',
       description: `http://192.168.1.42:7700/${TOKEN}/`,
     });
     const entry = lastEntry();
@@ -167,7 +188,47 @@ describe('Launch on Devices', () => {
     expect(entry.text).toContain(`http://100.101.102.103:7700/${TOKEN}/`);
     expect(entry.text).toContain(`http://localhost:7700/${TOKEN}/`);
     expect(entry.text).toContain('Tailscale');
-    expect(entry.text).toContain('Reload the page on each device to run this launch.');
+  });
+
+  it('counts the devices it restarted, and the Console names them', async () => {
+    install({
+      launch: async () =>
+        status({
+          devices: [
+            device({ id: 'phone0001', address: '192.168.1.20' }),
+            device({ id: 'phone0002', name: 'Android', browser: 'Chrome', address: '192.168.1.21' }),
+            device({ id: 'phone0003', name: 'iPad', connected: false }),
+          ],
+        }),
+    });
+
+    await launchOnDevices();
+
+    expect(lastToast().title).toBe('Launched “Level” on 2 devices');
+    const entry = lastEntry().text;
+    expect(entry).toContain('iPhone · Safari (192.168.1.20)');
+    expect(entry).toContain('Android · Chrome (192.168.1.21)');
+    expect(entry).not.toContain('iPad');
+  });
+
+  it('says how a phone joins when none was there to restart', async () => {
+    install({ launch: async () => status() });
+
+    await launchOnDevices();
+
+    const hint = 'Open the link on a phone: it restarts on every launch.';
+    expect(lastToast().title).toBe('Launched “Level”');
+    expect(lastToast().details).toContain(hint);
+    expect(lastEntry().text).toContain(hint);
+  });
+
+  it('no longer asks for each page to be reloaded', async () => {
+    install({ launch: async () => status({ devices: [device()] }) });
+
+    await launchOnDevices();
+
+    expect(lastToast().details).not.toContain('Reload the page');
+    expect(lastEntry().text).not.toContain('Reload the page');
   });
 
   it('warns about a port another Three Studio holds, and offers to quit it', async () => {
@@ -259,6 +320,36 @@ describe('Launch on Devices', () => {
     expect(lastEntry().level).toBe('error');
     expect(lastEntry().text).toContain('Spin.ts:1:28');
     expect(lastEntry().text).not.toContain('Error invoking remote method');
+  });
+});
+
+describe('restarting one device', () => {
+  it('asks the main process to restart that device, and says nothing when it does', async () => {
+    const bridge = install({ restart: async () => status({ devices: [device({ state: 'booting' })] }) });
+
+    await restartDevice('abc12345');
+
+    expect(bridge.calls).toEqual([{ method: 'restart', args: ['abc12345'] }]);
+    expect(toasts()).toEqual([]);
+  });
+
+  it('says why it was refused, without the wrapper IPC puts around it', async () => {
+    install({
+      restart: async () => {
+        throw new Error(
+          "Error invoking remote method 'devices:restart': Error: That device is not connected.",
+        );
+      },
+    });
+
+    await restartDevice('abc12345');
+
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Could not restart the device',
+      description: 'That device is not connected.',
+    });
+    expect(lastEntry().level).toBe('error');
   });
 });
 

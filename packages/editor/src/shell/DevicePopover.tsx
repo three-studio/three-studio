@@ -1,10 +1,11 @@
+import { RotateCw, TriangleAlert } from 'lucide-react';
 import { useEffect, type RefObject } from 'react';
-import { chooseDeviceAddress } from '../commands/deviceCommands';
+import { chooseDeviceAddress, restartDevice } from '../commands/deviceCommands';
 import { commandById, type CommandId } from '../commands/registry';
 import { refreshDevices } from '../state/deviceStore';
 import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
-import type { DeviceDot, DeviceView } from './deviceView';
+import type { DeviceDot, DeviceRow, DeviceView } from './deviceView';
 
 /** Wide enough for the code beside a link that breaks over two lines at most. */
 const WIDTH = 360;
@@ -32,9 +33,38 @@ const DOT_CLASSES: Readonly<Record<DeviceDot, string>> = {
   error: 'bg-error',
 };
 
+/** The same tones, for a number standing where the dot would. */
+const COUNT_CLASSES: Readonly<Record<DeviceDot, string>> = {
+  none: 'text-ink-dim',
+  starting: 'animate-pulse text-accent',
+  running: 'text-ok',
+  slid: 'text-warn',
+  error: 'text-error',
+};
+
 /** The server's state as a coloured dot: on the button's icon, and beside the popover's state. */
 export function StateDot({ dot, className = '' }: { dot: DeviceDot; className?: string }) {
-  return <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT_CLASSES[dot]} ${className}`} />;
+  return <span aria-hidden className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT_CLASSES[dot]} ${className}`} />;
+}
+
+/** How many devices are connected, in the dot's place and tone. */
+export function StateCount({
+  dot,
+  count,
+  className = '',
+}: {
+  dot: DeviceDot;
+  count: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={`text-[9px] font-semibold leading-none tabular-nums ${COUNT_CLASSES[dot]} ${className}`}
+    >
+      {count}
+    </span>
+  );
 }
 
 /** A button that runs a command, and is greyed while it cannot. */
@@ -141,6 +171,66 @@ function Served({ view }: { view: DeviceView }) {
 }
 
 /**
+ * One device: what it is, what it draws with — and why not WebGPU, when that
+ * is why — its screen, and ↻. A failed page says what it failed on below it,
+ * three lines at most; the whole of it in the title, and selectable.
+ */
+function DeviceItem({ row, insecureNote }: { row: DeviceRow; insecureNote: string }) {
+  return (
+    <li className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-2">
+        <StateDot dot={row.tone} />
+        <span title={row.tooltip} className="min-w-0 flex-1 truncate text-ink">
+          {row.label}
+        </span>
+        <span className="flex shrink-0 items-center gap-1 text-ink-muted">
+          {row.state}
+          {row.backend !== null && row.insecure && (
+            <span title={insecureNote} className="text-warn">
+              <TriangleAlert size={12} strokeWidth={2} aria-label={insecureNote} />
+            </span>
+          )}
+        </span>
+        <span className="w-24 shrink-0 text-right tabular-nums text-ink-dim">{row.screen}</span>
+        <button
+          type="button"
+          aria-label={`Restart ${row.label}`}
+          title={`Restart ${row.label}`}
+          disabled={!row.canRestart}
+          onClick={() => void restartDevice(row.id)}
+          className="-mr-1 shrink-0 rounded-sm p-1 text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40"
+        >
+          <RotateCw size={12} strokeWidth={2} />
+        </button>
+      </div>
+      {row.error !== null && (
+        <p data-selectable title={row.error} className="line-clamp-3 pl-3.5 text-error">
+          {row.error}
+        </p>
+      )}
+    </li>
+  );
+}
+
+/** Every device that opened the link, or how to get a first one. */
+function Devices({ view }: { view: DeviceView }) {
+  return (
+    <section aria-label="Devices" className="flex flex-col gap-1.5">
+      <h3 className="text-ink-muted">Devices</h3>
+      {view.devicesNote !== null ? (
+        <p className="text-ink-dim">{view.devicesNote}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {view.devices.map((row) => (
+            <DeviceItem key={row.id} row={row} insecureNote={view.insecureNote} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
  * Where devices are served, and how to change it: the code a phone scans, the
  * link, the address and the port, and what to check when a phone cannot
  * connect. Everything it says comes from `deviceView`.
@@ -204,6 +294,8 @@ export function DevicePopover({
         </header>
 
         {body}
+
+        {(view.dot === 'running' || view.dot === 'slid') && <Devices view={view} />}
 
         <details className="text-ink-muted">
           <summary className="cursor-default select-none hover:text-ink">Can’t connect?</summary>

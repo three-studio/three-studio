@@ -1,4 +1,4 @@
-import type { DeviceServerStatus } from '@three-studio/core';
+import type { DeviceInfo, DeviceServerStatus } from '@three-studio/core';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
 import {
   deviceLink,
@@ -23,8 +23,8 @@ import { ipcErrorMessage } from './ipcError';
  * time; the Console keeps it, in rows that can be selected and copied.
  */
 
-/** Until devices restart on their own, a launch reaches a phone when its page is reloaded. */
-const RELOAD_REMINDER = 'Reload the page on each device to run this launch.';
+/** Said by a launch that had no device to restart: what makes a phone one. */
+const NO_DEVICE = 'Open the link on a phone: it restarts on every launch.';
 
 const NO_NETWORK = 'No network address — only this computer can reach it.';
 
@@ -66,11 +66,12 @@ function urlLines(status: DeviceServerStatus): string[] {
  * Studio carries the one action that fixes it — which the palette offers as
  * well, as *Take Back Port*, so the toast is never the only way to it. A link
  * a phone can open carries its code, which the button's chevron shows too.
+ * `notes` go after the links: what a launch did with the devices.
  */
 function servedToast(
   status: DeviceServerStatus,
   title: string,
-  reminder: boolean,
+  notes: readonly string[],
   reclaim: () => void,
 ): ToastInput {
   const warnings = warningsOf(status);
@@ -84,7 +85,7 @@ function servedToast(
       ...warnings.slice(1),
       ...(warnings.length > 1 ? [''] : []),
       ...urlLines(status),
-      ...(reminder ? ['', RELOAD_REMINDER] : []),
+      ...(notes.length > 0 ? ['', ...notes] : []),
     ].join('\n'),
     detailsOpen: warnings.length > 0,
     actions: [
@@ -104,17 +105,16 @@ function servedToast(
 function showServed(
   status: DeviceServerStatus,
   title: string,
-  reminder: boolean,
+  notes: readonly string[],
   toastId?: string,
 ): void {
   let id = toastId;
-  const toast = servedToast(status, title, reminder, () => void reclaimDevicePort(id));
+  const toast = servedToast(status, title, notes, () => void reclaimDevicePort(id));
   if (id === undefined) id = useToastStore.getState().push(toast);
   else useToastStore.getState().update(id, toast);
 
   const warnings = warningsOf(status);
-  const lines = [`${title}.`, ...warnings, ...urlLines(status)];
-  if (reminder) lines.push(RELOAD_REMINDER);
+  const lines = [`${title}.`, ...warnings, ...urlLines(status), ...notes];
   if (hasSlid(status) && status.portHolder?.sameApp !== true) {
     lines.push(`To see what holds port ${status.requestedPort}: ${holderCommand(status.requestedPort)}`);
   }
@@ -139,8 +139,29 @@ function showFailure(title: string, cause: unknown, toastId?: string): void {
   useConsoleStore.getState().append('error', `${title}: ${message}`);
 }
 
-function launchedTitle(sceneName: string): string {
-  return `Launched “${sceneName}” on devices`;
+/** The devices a launch reached: those with a stream, every one of which it told to restart. */
+function connectedDevices(status: DeviceServerStatus): DeviceInfo[] {
+  return status.devices.filter((device) => device.connected);
+}
+
+/** `Launched “Level 1” on 2 devices`, or without a count when no device was there to restart. */
+function launchedTitle(status: DeviceServerStatus): string {
+  const name = `“${status.launch?.sceneName ?? 'Scene'}”`;
+  const count = connectedDevices(status).length;
+  if (count === 0) return `Launched ${name}`;
+  return `Launched ${name} on ${count} ${count === 1 ? 'device' : 'devices'}`;
+}
+
+/**
+ * What a launch did with the devices: the ones it restarted, by name and
+ * address — two phones of one kind are told apart by where they are — or,
+ * with none, how a phone becomes one.
+ */
+function launchedNotes(status: DeviceServerStatus): string[] {
+  const devices = connectedDevices(status);
+  if (devices.length === 0) return [NO_DEVICE];
+  const names = devices.map((device) => `${device.name} · ${device.browser} (${device.address})`);
+  return [`Restarting ${names.join(', ')}.`];
 }
 
 /**
@@ -156,9 +177,22 @@ export async function launchOnDevices(): Promise<void> {
     .push({ kind: 'progress', title: 'Launching on devices…', progress: null });
   try {
     const status = await window.studio.devices.launch(launchSnapshot());
-    showServed(status, launchedTitle(status.launch?.sceneName ?? 'Scene'), true, id);
+    showServed(status, launchedTitle(status), launchedNotes(status), id);
   } catch (cause) {
     showFailure('Could not launch on devices', cause, id);
+  }
+}
+
+/**
+ * Restarts one device on the current launch: ↻ on its row. Not in the table
+ * below: its argument is a row's, and only a row can dispatch it. Says nothing
+ * when it works — the row already shows the device starting.
+ */
+export async function restartDevice(id: string): Promise<void> {
+  try {
+    await window.studio.devices.restart(id);
+  } catch (cause) {
+    showFailure('Could not restart the device', cause);
   }
 }
 
@@ -211,7 +245,7 @@ export async function chooseDevicePort(): Promise<void> {
   try {
     const status = await window.studio.devices.saveSettings({ port: Number(answer.trim()) });
     if (isRunning(status)) {
-      showServed(status, `Devices are served on port ${status.port}`, false);
+      showServed(status, `Devices are served on port ${status.port}`, []);
     } else {
       useToastStore.getState().push({
         kind: 'info',
@@ -237,9 +271,9 @@ export async function reclaimDevicePort(toastId?: string): Promise<void> {
     // Declined, or the server went meanwhile: nothing moved, nothing to say.
     if (!isRunning(status) || status.port !== status.requestedPort) return;
     if (status.launch === null) {
-      showServed(status, `Devices are served on port ${status.port}`, false, toastId);
+      showServed(status, `Devices are served on port ${status.port}`, [], toastId);
     } else {
-      showServed(status, launchedTitle(status.launch.sceneName), true, toastId);
+      showServed(status, launchedTitle(status), launchedNotes(status), toastId);
     }
   } catch (cause) {
     const title = kept === undefined ? 'Could not take back the port' : `Could not take back port ${kept}`;

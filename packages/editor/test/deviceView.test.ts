@@ -1,4 +1,4 @@
-import type { DeviceServerStatus } from '@three-studio/core';
+import type { DeviceInfo, DeviceServerStatus } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { deviceView } from '../src/shell/deviceView';
 import { deviceLink, localDeviceUrl } from '../src/state/deviceStore';
@@ -250,5 +250,139 @@ describe('the links a window reads from the status', () => {
     expect(localDeviceUrl(status())).toBe(LOCAL);
     expect(localDeviceUrl(STOPPED)).toBeNull();
     expect(localDeviceUrl(null)).toBeNull();
+  });
+});
+
+const IPHONE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+function device(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
+  return {
+    id: 'phone0000000001',
+    name: 'iPhone',
+    browser: 'Safari',
+    userAgent: IPHONE_UA,
+    address: '192.168.1.20',
+    screen: { width: 393, height: 852, dpr: 3 },
+    secureContext: false,
+    launch: 'launch-1',
+    state: 'running',
+    backend: 'webgl',
+    error: null,
+    connected: true,
+    ...overrides,
+  };
+}
+
+describe('the devices', () => {
+  it('names a phone, what it draws with, why not WebGPU, and its screen', () => {
+    const [row] = deviceView(status({ devices: [device()] }), ON_MAC).devices;
+
+    expect(row).toMatchObject({
+      id: 'phone0000000001',
+      label: 'iPhone · Safari',
+      backend: 'WebGL2',
+      state: 'WebGL2',
+      tone: 'running',
+      insecure: true,
+      screen: '393×852 @3x',
+      canRestart: true,
+      error: null,
+    });
+    expect(row!.tooltip).toBe(`Connected from 192.168.1.20\n${IPHONE_UA}`);
+  });
+
+  it('marks nothing for a page in a secure context', () => {
+    const mac = device({
+      name: 'Mac',
+      browser: 'Chrome',
+      address: '::1',
+      secureContext: true,
+      backend: 'webgpu',
+      screen: { width: 1512, height: 982, dpr: 2 },
+    });
+
+    const [row] = deviceView(status({ devices: [mac] }), ON_MAC).devices;
+
+    expect(row).toMatchObject({ backend: 'WebGPU', insecure: false, screen: '1512×982 @2x' });
+  });
+
+  it('writes a pixel ratio to two decimals at most', () => {
+    const [row] = deviceView(
+      status({ devices: [device({ screen: { width: 412, height: 915, dpr: 2.625 } })] }),
+      ON_MAC,
+    ).devices;
+
+    expect(row!.screen).toBe('412×915 @2.63x');
+  });
+
+  it('says what each page is doing, and Offline for one with no stream', () => {
+    const rows = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000', state: 'waiting', launch: null, backend: null }),
+          device({ id: 'b0000000', state: 'booting', backend: null }),
+          device({ id: 'c0000000', state: 'running' }),
+          device({ id: 'd0000000', state: 'failed', error: 'WebGL2 is not available.' }),
+          device({ id: 'e0000000', state: 'running', connected: false }),
+        ],
+      }),
+      ON_MAC,
+    ).devices;
+
+    expect(rows.map((row) => [row.state, row.tone])).toEqual([
+      ['Waiting', 'running'],
+      ['Starting…', 'starting'],
+      ['WebGL2', 'running'],
+      ['Failed', 'error'],
+      ['Offline', 'none'],
+    ]);
+    expect(rows.map((row) => row.backend)).toEqual([null, null, 'WebGL2', null, null]);
+    expect(rows[3]!.error).toBe('WebGL2 is not available.');
+  });
+
+  it('restarts only a connected device, and only once something is launched', () => {
+    expect(deviceView(status({ devices: [device({ connected: false })] }), ON_MAC).devices[0]!
+      .canRestart).toBe(false);
+    expect(deviceView(status({ devices: [device()], launch: null }), ON_MAC).devices[0]!
+      .canRestart).toBe(false);
+  });
+
+  it('counts the connected devices, and the tooltip says how many', () => {
+    const view = deviceView(
+      status({
+        devices: [
+          device({ id: 'a0000000' }),
+          device({ id: 'b0000000' }),
+          device({ id: 'c0000000', connected: false }),
+        ],
+      }),
+      ON_MAC,
+    );
+
+    expect(view.count).toBe(2);
+    expect(view.title.split('\n')[0]).toBe('Launch on Devices — 2 devices');
+    expect(deviceView(status({ devices: [device()] }), ON_MAC).title.split('\n')[0]).toBe(
+      'Launch on Devices — 1 device',
+    );
+    expect(deviceView(status(), ON_MAC).title.split('\n')[0]).toBe('Launch on Devices');
+  });
+
+  it('says how to get a first one', () => {
+    const view = deviceView(status(), ON_MAC);
+
+    expect(view.devices).toEqual([]);
+    expect(view.count).toBe(0);
+    expect(view.devicesNote).toBe(
+      'No device yet. Open the link on a phone: it restarts on every launch.',
+    );
+    expect(deviceView(status({ devices: [device()] }), ON_MAC).devicesNote).toBeNull();
+    expect(deviceView(STOPPED, ON_MAC).devicesNote).toBeNull();
+  });
+
+  it('explains the warning mark', () => {
+    expect(deviceView(status(), ON_MAC).insecureNote).toBe(
+      'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost.',
+    );
   });
 });

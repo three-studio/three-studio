@@ -4,7 +4,7 @@ import { commandById } from '../commands/registry';
 import { setDevicePopoverOpen, useDeviceStore } from '../state/deviceStore';
 import { useProjectStore } from '../state/projectStore';
 import { toolTone } from '../ui/ToolButton';
-import { DevicePopover, StateDot } from './DevicePopover';
+import { DevicePopover, StateCount, StateDot } from './DevicePopover';
 import { deviceView } from './deviceView';
 
 /**
@@ -13,7 +13,8 @@ import { deviceView } from './deviceView';
  * A split button, as `ToolSplitToggle` is: the body acts and the chevron
  * opens. The act is the one click this exists for — *Launch on Devices* — and
  * the popover is where the link is shown and changed. A dot on the icon
- * carries the server's state, and the tooltip the link it serves.
+ * carries the server's state — the number of devices connected, once there
+ * are some, in the same tone — and the tooltip the link it serves.
  */
 export function DeviceButton({ className = '' }: { className?: string }) {
   const anchor = useRef<HTMLDivElement>(null);
@@ -44,7 +45,11 @@ export function DeviceButton({ className = '' }: { className?: string }) {
         className={`relative flex h-7 w-7 items-center justify-center rounded-l-sm transition-colors ${toolTone(false)} disabled:text-ink-dim disabled:hover:bg-transparent`}
       >
         <Smartphone size={15} strokeWidth={1.75} />
-        {view.dot !== 'none' && <StateDot dot={view.dot} className="absolute right-1 top-1" />}
+        {view.count > 0 ? (
+          <StateCount dot={view.dot} count={view.count} className="absolute right-0.5 top-0.5" />
+        ) : (
+          view.dot !== 'none' && <StateDot dot={view.dot} className="absolute right-1 top-1" />
+        )}
       </button>
       <button
         type="button"
