@@ -1,11 +1,16 @@
+import { isDeviceTransport } from '@three-studio/core';
 import { RotateCw, TriangleAlert } from 'lucide-react';
-import { useEffect, type RefObject } from 'react';
-import { chooseDeviceAddress, restartDevice } from '../commands/deviceCommands';
+import { useEffect, useState, type RefObject } from 'react';
+import {
+  chooseDeviceAddress,
+  chooseDeviceTransport,
+  restartDevice,
+} from '../commands/deviceCommands';
 import { commandById, type CommandId } from '../commands/registry';
 import { refreshDevices } from '../state/deviceStore';
 import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
-import type { DeviceDot, DeviceRow, DeviceView } from './deviceView';
+import type { CertificateView, DeviceDot, DeviceRow, DeviceView } from './deviceView';
 
 /** Wide enough for the code beside a link that breaks over two lines at most. */
 const WIDTH = 360;
@@ -135,6 +140,76 @@ function AddressPicker({ view }: { view: DeviceView }) {
   );
 }
 
+/**
+ * Plain HTTP or HTTPS, and what each gives a phone. Shown whether the server
+ * runs or not: a stopped one starts on what is chosen here.
+ */
+function ProtocolPicker({ view }: { view: DeviceView }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-ink-muted">Protocol</span>
+      <select
+        value={view.transport}
+        onChange={(event) => {
+          const transport = event.target.value;
+          if (isDeviceTransport(transport)) void chooseDeviceTransport(transport);
+        }}
+        className={SELECT}
+      >
+        <option value="http">HTTP</option>
+        <option value="https">HTTPS</option>
+      </select>
+      <span className="text-ink-dim">{view.transportNote}</span>
+    </label>
+  );
+}
+
+/**
+ * How to get each phone past the warning, and what to compare before
+ * accepting. Open as the view says when it first shows, and opened again
+ * whenever a reason to read it appears — the server started with no device
+ * yet, a browser held at the warning, a new certificate — which is the first
+ * time through: HTTPS chosen while stopped, then Launch. Never shut by one of
+ * those reasons going: a device connecting does not fold it under the
+ * person's eyes, and what they open or shut stays so.
+ */
+function Certificate({ certificate }: { certificate: CertificateView }) {
+  const [open, setOpen] = useState(certificate.open);
+  useEffect(() => {
+    if (certificate.open) setOpen(true);
+  }, [certificate.open]);
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="text-ink-muted"
+    >
+      <summary className="cursor-default select-none hover:text-ink">
+        Accepting the certificate
+      </summary>
+      <div data-selectable className="mt-1.5 flex flex-col gap-1.5">
+        {certificate.renewedNote !== null && <p className="text-warn">{certificate.renewedNote}</p>}
+        <p>{certificate.lead}</p>
+        <ul className="flex list-disc flex-col gap-1 pl-4">
+          {certificate.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ul>
+        {certificate.check !== null && <p>{certificate.check}</p>}
+        {certificate.fingerprint !== null && (
+          <p className="flex gap-2">
+            <span className="shrink-0">SHA-256</span>
+            <span data-selectable className="break-all font-mono text-ink">
+              {certificate.fingerprint}
+            </span>
+          </p>
+        )}
+        <p>{certificate.lifetime}</p>
+      </div>
+    </details>
+  );
+}
+
 /** What a running server serves: the code beside the link, or why there is none. */
 function Served({ view }: { view: DeviceView }) {
   const open = (
@@ -148,6 +223,7 @@ function Served({ view }: { view: DeviceView }) {
         <p className="text-warn">No network address — only this computer can open the page.</p>
         <div>{open}</div>
         {picker}
+        <ProtocolPicker view={view} />
         <PortLine view={view} />
       </div>
     );
@@ -164,6 +240,7 @@ function Served({ view }: { view: DeviceView }) {
           {open}
         </div>
         {picker}
+        <ProtocolPicker view={view} />
         <PortLine view={view} />
       </div>
     </div>
@@ -175,7 +252,8 @@ function Served({ view }: { view: DeviceView }) {
  * is why — its screen, and ↻. A failed page says what it failed on below it,
  * three lines at most; the whole of it in the title, and selectable.
  */
-function DeviceItem({ row, insecureNote }: { row: DeviceRow; insecureNote: string }) {
+function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
+  const why = row.insecure ? view.insecureNote : row.noWebGpu ? view.noWebGpuNote : null;
   return (
     <li className="flex flex-col gap-0.5">
       <div className="flex items-center gap-2">
@@ -185,9 +263,9 @@ function DeviceItem({ row, insecureNote }: { row: DeviceRow; insecureNote: strin
         </span>
         <span className="flex shrink-0 items-center gap-1 text-ink-muted">
           {row.state}
-          {row.backend !== null && row.insecure && (
-            <span title={insecureNote} className="text-warn">
-              <TriangleAlert size={12} strokeWidth={2} aria-label={insecureNote} />
+          {row.backend !== null && why !== null && (
+            <span title={why} className="text-warn">
+              <TriangleAlert size={12} strokeWidth={2} aria-label={why} />
             </span>
           )}
         </span>
@@ -212,17 +290,31 @@ function DeviceItem({ row, insecureNote }: { row: DeviceRow; insecureNote: strin
   );
 }
 
-/** Every device that opened the link, or how to get a first one. */
+/**
+ * Every device that opened the link, or how to get a first one — after the
+ * addresses held at the certificate's warning, which have no row to restart
+ * yet.
+ */
 function Devices({ view }: { view: DeviceView }) {
   return (
     <section aria-label="Devices" className="flex flex-col gap-1.5">
       <h3 className="text-ink-muted">Devices</h3>
+      {view.waiting.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {view.waiting.map((waiting) => (
+            <li key={waiting.address} className="flex items-center gap-2 text-warn">
+              <StateDot dot="slid" />
+              <span className="min-w-0 flex-1">{waiting.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {view.devicesNote !== null ? (
         <p className="text-ink-dim">{view.devicesNote}</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {view.devices.map((row) => (
-            <DeviceItem key={row.id} row={row} insecureNote={view.insecureNote} />
+            <DeviceItem key={row.id} row={row} view={view} />
           ))}
         </ul>
       )}
@@ -259,6 +351,7 @@ export function DevicePopover({
         <p data-selectable className="text-error">
           {view.error}
         </p>
+        <ProtocolPicker view={view} />
         <PortLine view={view} />
       </div>
     );
@@ -268,6 +361,7 @@ export function DevicePopover({
         <p className="text-ink-muted">
           Launch runs the scene on screen on every device that opens the link. Nothing is saved.
         </p>
+        <ProtocolPicker view={view} />
         <PortLine view={view} />
       </div>
     );
@@ -294,6 +388,8 @@ export function DevicePopover({
         </header>
 
         {body}
+
+        {view.certificate !== null && <Certificate certificate={view.certificate} />}
 
         {(view.dot === 'running' || view.dot === 'slid') && <Devices view={view} />}
 

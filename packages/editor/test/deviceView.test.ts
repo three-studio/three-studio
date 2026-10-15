@@ -305,7 +305,23 @@ describe('the devices', () => {
 
     const [row] = deviceView(status({ devices: [mac] }), ON_MAC).devices;
 
-    expect(row).toMatchObject({ backend: 'WebGPU', insecure: false, screen: '1512×982 @2x' });
+    expect(row).toMatchObject({
+      backend: 'WebGPU',
+      insecure: false,
+      noWebGpu: false,
+      screen: '1512×982 @2x',
+    });
+  });
+
+  it('says why a secure page still draws with WebGL2', () => {
+    // Safari before iOS 26, or a phone whose GPU Chrome does not take: the
+    // page is secure, and the browser still gives it no WebGPU.
+    const view = deviceView(status({ devices: [device({ secureContext: true })] }), ON_MAC);
+
+    expect(view.devices[0]).toMatchObject({ backend: 'WebGL2', insecure: false, noWebGpu: true });
+    expect(view.noWebGpuNote).toBe(
+      'A secure page, and still WebGL2: this browser gave the page no WebGPU.',
+    );
   });
 
   it('writes a pixel ratio to two decimals at most', () => {
@@ -381,9 +397,153 @@ describe('the devices', () => {
     expect(deviceView(STOPPED, ON_MAC).devicesNote).toBeNull();
   });
 
-  it('explains the warning mark', () => {
+  it('explains the warning mark, and points to HTTPS under HTTP', () => {
     expect(deviceView(status(), ON_MAC).insecureNote).toBe(
+      'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost. ' +
+        'Choose HTTPS under Protocol.',
+    );
+    expect(deviceView(overHttps(), ON_MAC).insecureNote).toBe(
       'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost.',
     );
+  });
+});
+
+const FINGERPRINT =
+  'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89';
+
+/** A server running over HTTPS, whose certificate nobody has refused. */
+function overHttps(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus {
+  const secure = (url: string): string => url.replace('http://', 'https://');
+  return status({
+    transport: 'https',
+    urls: URLS.map((url) => ({ ...url, url: secure(url.url) })),
+    selectedUrl: secure(EN0),
+    certificate: { fingerprint: FINGERPRINT, renewed: false, refusedBy: [] },
+    ...overrides,
+  });
+}
+
+/** A phone that accepted the certificate, and runs. */
+const accepted = (): DeviceInfo => device({ secureContext: true, backend: 'webgpu' });
+
+describe('the protocol', () => {
+  it('is HTTP, which says what phones run on, with nothing to accept', () => {
+    const view = deviceView(status(), ON_MAC);
+
+    expect(view.transport).toBe('http');
+    expect(view.transportNote).toBe(
+      'Phones run WebGL2: browsers give WebGPU only to pages served over HTTPS.',
+    );
+    expect(view.certificate).toBeNull();
+    expect(view.waiting).toEqual([]);
+  });
+
+  it('is HTTPS, which says what it gives and what it asks', () => {
+    const view = deviceView(overHttps(), ON_MAC);
+
+    expect(view.transport).toBe('https');
+    expect(view.transportNote).toBe(
+      'Phones get WebGPU. Each one asks once to trust this computer’s certificate.',
+    );
+  });
+
+  it('is the settings’ while the server is stopped', () => {
+    expect(deviceView({ ...STOPPED, transport: 'https' }, ON_MAC).transport).toBe('https');
+    expect(deviceView(null, ON_MAC).transport).toBe('http');
+  });
+});
+
+describe('accepting the certificate', () => {
+  it('walks a phone through the warning, in each browser’s words, for the link’s host', () => {
+    const { certificate } = deviceView(overHttps(), ON_MAC);
+
+    expect(certificate?.lead).toBe(
+      'Each phone first warns that the connection is not private: this computer signed its own ' +
+        'certificate, and no authority vouches for it. Accept it once:',
+    );
+    expect(certificate?.steps).toEqual([
+      'iPhone, Safari: Show Details › visit this website › Visit Website.',
+      'Android, Chrome: Advanced › Proceed to 192.168.1.42 (unsafe).',
+      'Other browsers: the same warning, then Advanced, and continue.',
+      'This computer’s browser asks too, the first time Open in Browser uses HTTPS.',
+    ]);
+    expect(certificate?.lifetime).toBe(
+      'Chrome asks again after a week. Every phone asks again when this computer makes a new ' +
+        'certificate: on a network it has not served from before, and about once a year.',
+    );
+    expect(certificate?.renewedNote).toBeNull();
+  });
+
+  it('gives the fingerprint to check, whole and by its first four groups', () => {
+    const { certificate } = deviceView(overHttps(), ON_MAC);
+
+    expect(certificate?.fingerprint).toBe(FINGERPRINT);
+    expect(certificate?.fingerprintStart).toBe('AB:CD:EF:01');
+    expect(certificate?.check).toBe(
+      'On a network you do not trust, view the certificate on the phone before accepting: ' +
+        'its SHA-256 fingerprint starts with AB:CD:EF:01.',
+    );
+  });
+
+  it('opens while no device is connected, and stays shut once one runs with nobody waiting', () => {
+    expect(deviceView(overHttps(), ON_MAC).certificate?.open).toBe(true);
+    expect(deviceView(overHttps({ devices: [accepted()] }), ON_MAC).certificate?.open).toBe(false);
+  });
+
+  it('lists addresses held at the warning, this computer’s browser by name, and opens', () => {
+    const view = deviceView(
+      overHttps({
+        devices: [accepted()],
+        certificate: {
+          fingerprint: FINGERPRINT,
+          renewed: false,
+          refusedBy: ['192.168.1.50', '127.0.0.1'],
+        },
+      }),
+      ON_MAC,
+    );
+
+    expect(view.waiting).toEqual([
+      { address: '192.168.1.50', label: '192.168.1.50 has not accepted the certificate yet.' },
+      {
+        address: '127.0.0.1',
+        label: 'This computer’s browser has not accepted the certificate yet.',
+      },
+    ]);
+    expect(view.certificate?.open).toBe(true);
+  });
+
+  it('says phones ask again after a new certificate, and opens', () => {
+    const view = deviceView(
+      overHttps({
+        devices: [accepted()],
+        certificate: { fingerprint: FINGERPRINT, renewed: true, refusedBy: [] },
+      }),
+      ON_MAC,
+    );
+
+    expect(view.certificate?.renewedNote).toBe(
+      'This computer made a new certificate as the server started: phones that had accepted ' +
+        'the old one ask again.',
+    );
+    expect(view.certificate?.open).toBe(true);
+  });
+
+  it('gives the steps before the server runs, with no fingerprint to check yet', () => {
+    const view = deviceView({ ...STOPPED, transport: 'https' }, ON_MAC);
+
+    expect(view.certificate).toMatchObject({
+      fingerprint: null,
+      fingerprintStart: null,
+      check: null,
+      open: false,
+    });
+    expect(view.certificate?.steps[1]).toBe(
+      'Android, Chrome: Advanced › Proceed to this computer’s address (unsafe).',
+    );
+    expect(
+      deviceView({ ...STOPPED, transport: 'https', address: '10.0.0.7' }, ON_MAC).certificate
+        ?.steps[1],
+    ).toBe('Android, Chrome: Advanced › Proceed to 10.0.0.7 (unsafe).');
   });
 });

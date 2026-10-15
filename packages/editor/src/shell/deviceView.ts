@@ -5,6 +5,7 @@ import {
   type DeviceServerState,
   type DeviceServerStatus,
   type DeviceState,
+  type DeviceTransport,
   type Platform,
 } from '@three-studio/core';
 import { deviceLink, hasSlid, holderName, localDeviceUrl } from '../state/deviceStore';
@@ -28,6 +29,8 @@ export interface DeviceRow {
   backend: string | null;
   /** Its page is not a secure context, which is why it has no WebGPU. */
   insecure: boolean;
+  /** A secure context, and WebGL2 all the same: the browser gave its page no WebGPU. */
+  noWebGpu: boolean;
   /** `393×852 @3x`: the screen in CSS pixels, and its pixel ratio. */
   screen: string;
   /** What the page is doing: the backend while it runs, `Offline` without a stream. */
@@ -39,6 +42,35 @@ export interface DeviceRow {
   canRestart: boolean;
   /** Where it connected from, then its whole user agent. */
   tooltip: string;
+}
+
+/**
+ * How to get a phone past the warning a certificate signed by this computer
+ * brings, and what to check first. Under HTTPS only.
+ */
+export interface CertificateView {
+  /** SHA-256, `AB:CD:…`; `null` until the server runs. */
+  fingerprint: string | null;
+  /** Its first four groups: enough to compare by eye. `null` until the server runs. */
+  fingerprintStart: string | null;
+  /** Why a phone warns, and that accepting once is enough. */
+  lead: string;
+  /** What to tap, in the words each browser uses. */
+  steps: string[];
+  /** What to compare before accepting on a network not to be trusted; `null` with no fingerprint. */
+  check: string | null;
+  /** How long an acceptance lasts. */
+  lifetime: string;
+  /** This start replaced a certificate: phones that had accepted the old one ask again. */
+  renewedNote: string | null;
+  /** Whether the section opens with the popover: when someone is likely to need it. */
+  open: boolean;
+}
+
+/** An address whose browser refused the certificate, as the device list says it. */
+export interface WaitingDevice {
+  address: string;
+  label: string;
 }
 
 /** One entry of the address picker. `''` is the automatic choice. */
@@ -66,6 +98,14 @@ export interface DeviceView {
   /** The picker's value. */
   address: string;
   addressNote: string | null;
+  /** The protocol picker's value: the running server's, the settings' otherwise. */
+  transport: DeviceTransport;
+  /** What the protocol gives a phone, and what it asks of it. */
+  transportNote: string;
+  /** Under HTTPS, whether the server runs or not; `null` under HTTP. */
+  certificate: CertificateView | null;
+  /** Addresses held at the certificate's warning: browsers that refused it, and got no further. */
+  waiting: WaitingDevice[];
   /** The port shown: the one listened on while running, the settings' otherwise. */
   port: number;
   /** The settings' port, which *Take Back* moves the server onto. */
@@ -85,8 +125,10 @@ export interface DeviceView {
   devices: DeviceRow[];
   /** What the list says while the server runs with no device in it. */
   devicesNote: string | null;
-  /** Why a row's backend carries a warning mark. */
+  /** Why a row's backend carries a warning mark: not a secure context. */
   insecureNote: string;
+  /** Why a secure row's backend carries one: the browser gave no WebGPU. */
+  noWebGpuNote: string;
 }
 
 export interface DeviceViewContext {
@@ -119,6 +161,13 @@ const DEVICES_NOTE = 'No device yet. Open the link on a phone: it restarts on ev
 
 const INSECURE_NOTE =
   'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost.';
+
+const NO_WEBGPU_NOTE = 'A secure page, and still WebGL2: this browser gave the page no WebGPU.';
+
+const TRANSPORT_NOTES: Readonly<Record<DeviceTransport, string>> = {
+  http: 'Phones run WebGL2: browsers give WebGPU only to pages served over HTTPS.',
+  https: 'Phones get WebGPU. Each one asks once to trust this computer’s certificate.',
+};
 
 const STATE_LABELS: Readonly<Record<DeviceServerState, string>> = {
   stopped: 'Stopped',
@@ -155,6 +204,7 @@ function rowOf(device: DeviceInfo, launched: boolean): DeviceRow {
     label: `${device.name} · ${device.browser}`,
     backend,
     insecure: !device.secureContext,
+    noWebGpu: running && device.secureContext && device.backend === 'webgl',
     screen: screenOf(device.screen),
     state: device.connected ? (backend ?? known.label) : 'Offline',
     tone: device.connected ? known.tone : 'none',
@@ -228,6 +278,71 @@ function addressNoteOf(status: DeviceServerStatus | null, link: string | null): 
     : null;
 }
 
+function isLoopback(address: string): boolean {
+  return address === '::1' || address.startsWith('127.');
+}
+
+/** The host a browser's warning names: the link's, else the address chosen, else a description. */
+function warningHost(status: DeviceServerStatus | null, url: string | null): string {
+  if (url !== null) return new URL(url).hostname;
+  return status?.address ?? 'this computer’s address';
+}
+
+function waitingOf(status: DeviceServerStatus | null): WaitingDevice[] {
+  return (status?.certificate?.refusedBy ?? []).map((address) => ({
+    address,
+    label: isLoopback(address)
+      ? 'This computer’s browser has not accepted the certificate yet.'
+      : `${address} has not accepted the certificate yet.`,
+  }));
+}
+
+/**
+ * What accepting the certificate takes, in each browser's words.
+ *
+ * Opened with the popover when someone is likely to need it: a browser held at
+ * the warning, a certificate made anew, or no device connected yet.
+ */
+function certificateOf(
+  status: DeviceServerStatus | null,
+  {
+    host,
+    running,
+    count,
+    waiting,
+  }: { host: string; running: boolean; count: number; waiting: number },
+): CertificateView {
+  const fingerprint = status?.certificate?.fingerprint ?? null;
+  const fingerprintStart = fingerprint?.split(':').slice(0, 4).join(':') ?? null;
+  const renewed = status?.certificate?.renewed === true;
+  return {
+    fingerprint,
+    fingerprintStart,
+    lead:
+      'Each phone first warns that the connection is not private: this computer signed its own ' +
+      'certificate, and no authority vouches for it. Accept it once:',
+    steps: [
+      'iPhone, Safari: Show Details › visit this website › Visit Website.',
+      `Android, Chrome: Advanced › Proceed to ${host} (unsafe).`,
+      'Other browsers: the same warning, then Advanced, and continue.',
+      'This computer’s browser asks too, the first time Open in Browser uses HTTPS.',
+    ],
+    check:
+      fingerprintStart === null
+        ? null
+        : 'On a network you do not trust, view the certificate on the phone before accepting: ' +
+          `its SHA-256 fingerprint starts with ${fingerprintStart}.`,
+    lifetime:
+      'Chrome asks again after a week. Every phone asks again when this computer makes a new ' +
+      'certificate: on a network it has not served from before, and about once a year.',
+    renewedNote: renewed
+      ? 'This computer made a new certificate as the server started: phones that had accepted ' +
+        'the old one ask again.'
+      : null,
+    open: running && (waiting > 0 || renewed || count === 0),
+  };
+}
+
 /**
  * Where each system lets a program through its firewall. `app` is the name the
  * firewall knows it by: from `npm run dev`, Electron is what listens.
@@ -299,6 +414,8 @@ export function deviceView(
   const launched = running && status?.launch !== null;
   const devices = listed.map((device) => rowOf(device, launched));
   const count = listed.filter((device) => device.connected).length;
+  const transport = status?.transport ?? 'http';
+  const waiting = waitingOf(status);
 
   return {
     dot: dotOf(status),
@@ -312,6 +429,18 @@ export function deviceView(
     addresses: addressOptions(status, running),
     address: status?.address ?? '',
     addressNote: addressNoteOf(status, link),
+    transport,
+    transportNote: TRANSPORT_NOTES[transport],
+    certificate:
+      transport === 'https'
+        ? certificateOf(status, {
+            host: warningHost(status, link ?? localUrl),
+            running,
+            count,
+            waiting: waiting.length,
+          })
+        : null,
+    waiting,
     port,
     requestedPort: status?.requestedPort ?? port,
     note,
@@ -320,6 +449,8 @@ export function deviceView(
     count,
     devices,
     devicesNote: running && devices.length === 0 ? DEVICES_NOTE : null,
-    insecureNote: INSECURE_NOTE,
+    insecureNote:
+      transport === 'http' ? `${INSECURE_NOTE} Choose HTTPS under Protocol.` : INSECURE_NOTE,
+    noWebGpuNote: NO_WEBGPU_NOTE,
   };
 }

@@ -1,4 +1,4 @@
-import type { DeviceInfo, DeviceServerStatus } from '@three-studio/core';
+import type { DeviceInfo, DeviceServerStatus, DeviceTransport } from '@three-studio/core';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
 import {
   deviceLink,
@@ -25,6 +25,10 @@ import { ipcErrorMessage } from './ipcError';
 
 /** Said by a launch that had no device to restart: what makes a phone one. */
 const NO_DEVICE = 'Open the link on a phone: it restarts on every launch.';
+
+/** The same, under HTTPS, where a phone has a warning to get past first. */
+const NO_DEVICE_HTTPS =
+  'Open the link on a phone and accept its certificate once: it restarts on every launch.';
 
 const NO_NETWORK = 'No network address — only this computer can reach it.';
 
@@ -159,7 +163,7 @@ function launchedTitle(status: DeviceServerStatus): string {
  */
 function launchedNotes(status: DeviceServerStatus): string[] {
   const devices = connectedDevices(status);
-  if (devices.length === 0) return [NO_DEVICE];
+  if (devices.length === 0) return [status.transport === 'https' ? NO_DEVICE_HTTPS : NO_DEVICE];
   const names = devices.map((device) => `${device.name} · ${device.browser} (${device.address})`);
   return [`Restarting ${names.join(', ')}.`];
 }
@@ -297,7 +301,9 @@ export async function copyDeviceLink(): Promise<void> {
 /**
  * Opens the page in this computer's browser, over `localhost`: a browser
  * treats `localhost` as a secure context, which a network address is not. The
- * window's own handler hands the link to the system.
+ * window's own handler hands the link to the system. Under HTTPS the link
+ * follows, and that browser asks once to accept the certificate, as a phone
+ * does.
  */
 export function openDevicePage(): void {
   const url = localDeviceUrl(useDeviceStore.getState().status);
@@ -352,6 +358,50 @@ export async function chooseDeviceAddress(address: string | null): Promise<void>
   } catch (cause) {
     showFailure('Could not change the address', cause);
   }
+}
+
+/** What a toast calls a transport. */
+const TRANSPORT_NAMES: Readonly<Record<DeviceTransport, string>> = { http: 'HTTP', https: 'HTTPS' };
+
+/**
+ * Picks the protocol devices are served over. Not in the table below: its
+ * argument is a value the protocol picker produced, and only the picker can
+ * dispatch it.
+ *
+ * A running server listens again at once, and every page connected follows
+ * it by itself. A page that was not connected holds a link in the old scheme,
+ * which the port no longer speaks: it needs the new code. The new links go to
+ * the Console, as every link does.
+ */
+export async function chooseDeviceTransport(transport: DeviceTransport): Promise<void> {
+  const name = TRANSPORT_NAMES[transport];
+  let status: DeviceServerStatus;
+  try {
+    status = await window.studio.devices.saveSettings({ transport });
+  } catch (cause) {
+    showFailure('Could not change the protocol', cause);
+    return;
+  }
+  if (!isRunning(status)) {
+    useToastStore.getState().push({
+      kind: 'info',
+      title: `Devices will be served over ${name}`,
+      description: 'It takes effect when the server starts.',
+    });
+    return;
+  }
+  useToastStore.getState().push({
+    kind: 'info',
+    title: `Serving devices over ${name}`,
+    description:
+      transport === 'https'
+        ? 'Connected devices reopen the page by themselves, and each one asks once to accept ' +
+          'the certificate. Any other device needs the new code.'
+        : 'Connected devices reopen the page by themselves.',
+  });
+  useConsoleStore
+    .getState()
+    .append('log', [`Serving devices over ${name}.`, ...urlLines(status)].join('\n'));
 }
 
 /*

@@ -14,6 +14,7 @@ import {
   DEVICE_COMMANDS,
   chooseDeviceAddress,
   chooseDevicePort,
+  chooseDeviceTransport,
   copyDeviceLink,
   launchOnDevices,
   newDeviceLink,
@@ -219,6 +220,17 @@ describe('Launch on Devices', () => {
 
     const hint = 'Open the link on a phone: it restarts on every launch.';
     expect(lastToast().title).toBe('Launched “Level”');
+    expect(lastToast().details).toContain(hint);
+    expect(lastEntry().text).toContain(hint);
+  });
+
+  it('says a phone accepts the certificate once, under HTTPS', async () => {
+    install({ launch: async () => status({ transport: 'https' }) });
+
+    await launchOnDevices();
+
+    const hint =
+      'Open the link on a phone and accept its certificate once: it restarts on every launch.';
     expect(lastToast().details).toContain(hint);
     expect(lastEntry().text).toContain(hint);
   });
@@ -647,6 +659,78 @@ describe('choosing the address', () => {
     await chooseDeviceAddress('100.101.102.103');
 
     expect(lastToast()).toMatchObject({ kind: 'error', description: 'EACCES' });
+  });
+});
+
+describe('choosing the protocol', () => {
+  /** The links of a server that went over to HTTPS. */
+  const secure = (): DeviceServerStatus => {
+    const running = status({ transport: 'https' });
+    const urls = running.urls.map((url) => ({ ...url, url: url.url.replace('http:', 'https:') }));
+    return { ...running, urls, selectedUrl: urls[0]!.url };
+  };
+
+  it('saves HTTPS, and says connected devices follow while others need the new code', async () => {
+    const bridge = install({ saveSettings: async () => secure() });
+
+    await chooseDeviceTransport('https');
+
+    expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ transport: 'https' }] }]);
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      title: 'Serving devices over HTTPS',
+      description:
+        'Connected devices reopen the page by themselves, and each one asks once to accept ' +
+        'the certificate. Any other device needs the new code.',
+    });
+    // Every link changed its scheme: the Console keeps the new ones.
+    expect(lastEntry().text).toContain(`https://192.168.1.42:7700/${TOKEN}/`);
+  });
+
+  it('says connected devices follow back to HTTP', async () => {
+    install({ saveSettings: async () => status() });
+
+    await chooseDeviceTransport('http');
+
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      title: 'Serving devices over HTTP',
+      description: 'Connected devices reopen the page by themselves.',
+    });
+  });
+
+  it('says when it takes effect, while the server is stopped', async () => {
+    install({
+      saveSettings: async () =>
+        status({ state: 'stopped', transport: 'https', urls: [], selectedUrl: null }),
+    });
+
+    await chooseDeviceTransport('https');
+
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      title: 'Devices will be served over HTTPS',
+      description: 'It takes effect when the server starts.',
+    });
+  });
+
+  it('says why it was refused, without the wrapper IPC puts around it', async () => {
+    install({
+      saveSettings: async () => {
+        throw new Error(
+          "Error invoking remote method 'devices:saveSettings': " +
+            'Error: Could not make the HTTPS certificate: EACCES',
+        );
+      },
+    });
+
+    await chooseDeviceTransport('https');
+
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Could not change the protocol',
+      description: 'Could not make the HTTPS certificate: EACCES',
+    });
   });
 });
 
