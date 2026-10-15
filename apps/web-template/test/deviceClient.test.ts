@@ -415,6 +415,7 @@ describe('the page’s lines', () => {
         message: {
           v: 1,
           device: DEVICE,
+          launch: 'L1aunch0000a',
           lines: [
             { level: 'log', text: 'Shout loaded', count: 1 },
             { level: 'warn', text: 'careful', count: 1 },
@@ -423,6 +424,22 @@ describe('the page’s lines', () => {
         },
       },
     ]);
+  });
+
+  it('name the launch their page runs, and none on the waiting page', async () => {
+    const player = fakeIo();
+    player.logs.push('log', 'Shout loaded');
+    startDeviceClient(page(), player.io, player.logs);
+    player.last().handlers.onOpen();
+    const waiting = fakeIo();
+    waiting.logs.push('log', 'still waiting');
+    startDeviceClient(page({ launch: null }), waiting.io, waiting.logs);
+    waiting.last().handlers.onOpen();
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(batches(player).map((post) => post.message['launch'])).toEqual(['L1aunch0000a']);
+    expect(batches(waiting).map((post) => post.message['launch'])).toEqual([null]);
   });
 
   it('leave a quarter of a second after a line, one batch at a time', async () => {
@@ -500,8 +517,14 @@ describe('the page’s lines', () => {
     await vi.advanceTimersByTimeAsync(250);
 
     expect(batches(fake).map((post) => post.message)).toEqual([
-      { v: 1, device: DEVICE, lines: [{ level: 'log', text: 'a', count: 2 }], dropped: 0 },
-      { v: 1, device: DEVICE, lines: lines('b'), dropped: 2 },
+      {
+        v: 1,
+        device: DEVICE,
+        launch: 'L1aunch0000a',
+        lines: [{ level: 'log', text: 'a', count: 2 }],
+        dropped: 0,
+      },
+      { v: 1, device: DEVICE, launch: 'L1aunch0000a', lines: lines('b'), dropped: 2 },
     ]);
   });
 
@@ -540,6 +563,7 @@ describe('the page’s lines', () => {
       message: {
         v: 1,
         device: DEVICE,
+        launch: 'L1aunch0000a',
         lines: [{ level: 'error', text: 'last words', count: 1 }],
         dropped: 0,
       },
@@ -555,12 +579,15 @@ describe('the page’s lines', () => {
     client.pageHidden();
 
     expect(fake.reload).toHaveBeenCalledOnce();
+    // Named after the launch this page ran, not the one it restarts on: the
+    // server, which runs the new one, drops it.
     expect(batches(fake)).toEqual([
       {
         type: 'log',
         message: {
           v: 1,
           device: DEVICE,
+          launch: 'L1aunch0000a',
           lines: [{ level: 'warn', text: 'unloading', count: 1 }],
           dropped: 0,
         },

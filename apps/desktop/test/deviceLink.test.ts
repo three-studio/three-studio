@@ -232,7 +232,7 @@ describe('a batch of lines', () => {
   ];
 
   function log(device: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return { v: 1, device, lines, dropped: 0, ...overrides };
+    return { v: 1, device, launch: L1, lines, dropped: 0, ...overrides };
   }
 
   it('is handed on with the device’s name and browser, and changes no row', () => {
@@ -271,6 +271,28 @@ describe('a batch of lines', () => {
     expect(link.receive('log', log(id(1), { lines: 'x' }))).toBe('ignored');
     expect(link.receive('log', log(id(1), { v: 2 }))).toBe('ignored');
     expect(handed).toEqual([]);
+  });
+
+  it('is ignored when its page ran a launch that is no longer current, and spends no rate', () => {
+    // The last batch a page sends as it goes arrives once the next launch is
+    // current: that run's lines have left every Console.
+    current = L2;
+    connect(id(1), { launch: L2 });
+
+    for (let n = 0; n < 60; n += 1) expect(link.receive('log', log(id(1), { launch: L1 }))).toBe('ignored');
+    expect(handed).toEqual([]);
+
+    expect(link.receive('log', log(id(1), { launch: L2 }))).toBe('applied');
+    expect(handed).toHaveLength(1);
+  });
+
+  it('is handed on from the waiting page while nothing is launched, and from no other launch', () => {
+    current = null;
+    connect(id(1), { launch: null, state: 'waiting', backend: null });
+
+    expect(link.receive('log', log(id(1), { launch: null }))).toBe('applied');
+    expect(link.receive('log', log(id(1), { launch: L1 }))).toBe('ignored');
+    expect(handed).toHaveLength(1);
   });
 
   it('hands nothing on when it holds no line and lost none', () => {

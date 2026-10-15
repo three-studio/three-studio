@@ -191,7 +191,12 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
   /** Posts a batch, and settles it by the answer. */
   const post = (batch: LogBatch, options?: PostOptions): void => {
     sending += 1;
-    const message: DeviceLogMessage = { v: DEVICE_PROTOCOL_VERSION, device: page.device, ...batch };
+    const message: DeviceLogMessage = {
+      v: DEVICE_PROTOCOL_VERSION,
+      device: page.device,
+      launch: page.launch,
+      ...batch,
+    };
     void io.post('log', message, options).then((status) => {
       sending -= 1;
       if (status === 0) {

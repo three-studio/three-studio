@@ -127,6 +127,7 @@ describe('a device’s lines', () => {
     return {
       v: 1,
       device: DEVICE,
+      launch: 'LaunchL1',
       lines: [
         { level: 'log', text: 'Shout loaded', count: 1 },
         { level: 'warn', text: 'careful', count: 3 },
@@ -158,6 +159,13 @@ describe('a device’s lines', () => {
     ['nothing', null],
   ])('are refused for %s', (_name, value) => {
     expect(conformLogMessage(value)).toBeNull();
+  });
+
+  it('name the launch their page ran, and read anything else as none', () => {
+    // A batch with no launch is not refused: the waiting page's say `null`.
+    expect(conformLogMessage(log({ launch: 'LaunchL1' }))?.launch).toBe('LaunchL1');
+    expect(conformLogMessage(log({ launch: 42 }))?.launch).toBeNull();
+    expect(conformLogMessage(log({ launch: undefined }))?.launch).toBeNull();
   });
 
   it('keep a hundred lines a batch, and count the rest as dropped', () => {

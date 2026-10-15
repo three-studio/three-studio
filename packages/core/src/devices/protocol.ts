@@ -173,6 +173,13 @@ export interface DeviceLogLine {
 export interface DeviceLogMessage {
   v: typeof DEVICE_PROTOCOL_VERSION;
   device: string;
+  /**
+   * The launch the page that logged them runs; `null` on the waiting page. A
+   * page sends what it still holds as it goes, and that batch arrives once the
+   * next launch is current, when its run's lines have left every Console: the
+   * server drops it.
+   */
+  launch: string | null;
   lines: DeviceLogLine[];
   /** Lines lost since the last batch the server took: past the client's queue, or refused. */
   dropped: number;
@@ -331,6 +338,7 @@ export function conformLogMessage(value: unknown): DeviceLogMessage | null {
   const { device, body } = envelope;
   const lines = body['lines'];
   if (!Array.isArray(lines)) return null;
+  const launch = body['launch'];
   const kept: DeviceLogLine[] = [];
   let leftOut = 0;
   for (const line of lines) {
@@ -348,6 +356,8 @@ export function conformLogMessage(value: unknown): DeviceLogMessage | null {
   return {
     v: DEVICE_PROTOCOL_VERSION,
     device,
+    // Read as a hello reads its own, and never a reason to refuse the batch.
+    launch: isId(launch) ? launch : null,
     lines: kept,
     dropped: countOf(body['dropped'], 0) + leftOut,
   };

@@ -344,10 +344,16 @@ export class DeviceLink {
    * a change of row, since a row shows no line, and never in the trace,
    * which says only that lines were lost or refused: the lines are the
    * Console's.
+   *
+   * Ignored, and spending no rate, when its page ran another launch than the
+   * current one. Each launch takes the devices' lines out of every Console, and
+   * a page sends what it still holds as it goes — a batch that arrives once
+   * the next launch is current, and would bring back a run that left.
    */
   private log(entry: Entry, message: DeviceLogMessage | null): DeviceReceipt {
     const info = entry.info;
     if (message === null || info === null) return 'ignored';
+    if (message.launch !== this.options.currentLaunch()) return 'ignored';
     if (!this.withinRate(entry, 'log')) {
       this.trace(`${entry.id} sent lines too fast: a batch was refused`);
       return 'limited';
