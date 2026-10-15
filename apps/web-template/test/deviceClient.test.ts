@@ -58,10 +58,24 @@ function fakeIo() {
    * What the server answers: a status, at once — 0 for no answer at all — or
    * `held`, until the test releases it.
    */
-  const answer: { probe: ProbeAnswer; post: (type: string) => number | 'held' } = {
+  const answer: {
+    probe: ProbeAnswer;
+    post: (type: string) => number | 'held';
+    /** What encoding the canvas gives, and what an upload is answered. */
+    capture: Blob | null;
+    upload: number;
+  } = {
     probe: 'unreachable',
     post: () => 204,
+    capture: new Blob(['png'], { type: 'image/png' }),
+    upload: 204,
   };
+  /** Whether the page is in front, as `document.visibilityState` says. */
+  const visibility = { visible: true };
+  /** Each read of the canvas: the renderer it was given, and whether a frame was being drawn. */
+  const captures: { renderer: unknown; inFrame: boolean }[] = [];
+  const uploads: { request: string; image: Blob }[] = [];
+  let drawing = false;
   const held: ((status: number) => void)[] = [];
   const reload = vi.fn();
   const reopen = vi.fn();
@@ -107,12 +121,23 @@ function fakeIo() {
     stats: (view) => {
       drawn.push(view);
     },
+    visible: () => visibility.visible,
+    capture: (renderer) => {
+      captures.push({ renderer, inFrame: drawing });
+      return Promise.resolve(answer.capture);
+    },
+    upload: (request, image) => {
+      uploads.push({ request, image });
+      return Promise.resolve(answer.upload);
+    },
   };
   const last = (): Stream => streams.at(-1)!;
   /** Frames at 60 Hz, from `from` to `to`, in milliseconds. */
   const frames = (from: number, to: number): void => {
     for (let time = from; time <= to; time += 1000 / 60) {
+      drawing = true;
       for (const listener of [...frameListeners]) listener(time);
+      drawing = false;
     }
   };
   /** Answers the oldest post still held. */
@@ -135,6 +160,9 @@ function fakeIo() {
     frameListeners,
     frames,
     drawn,
+    visibility,
+    captures,
+    uploads,
   };
 }
 
@@ -577,6 +605,191 @@ describe('the page’s frames', () => {
 
     expect(fake.frameListeners).toHaveLength(0);
     expect(fake.drawn).toEqual([]);
+  });
+});
+
+describe('a screenshot', () => {
+  const REQUEST = 'Rq3dE6gH9jK2mN5p';
+  const LATER = 'Rq3dE6gH9jK2mN5q';
+
+  const reports = (fake: ReturnType<typeof fakeIo>) =>
+    fake.posts.filter((post) => post.type === 'stats');
+
+  /** A client on a player page whose game runs, its hello answered. */
+  async function playing(fake = fakeIo(), at = page()) {
+    const client = startDeviceClient(at, fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+    client.playerAnnounced(running());
+    return { fake, client };
+  }
+
+  const ask = (fake: ReturnType<typeof fakeIo>, request = REQUEST): void => {
+    fake.last().handlers.onMessage(message({ type: 'screenshot', request }));
+  };
+
+  it('reads the canvas in the next frame the player draws, then posts it under its request', async () => {
+    const { fake } = await playing();
+
+    ask(fake);
+    expect(fake.captures).toEqual([]);
+
+    fake.frames(0, 0);
+    expect(fake.captures).toEqual([{ renderer: RENDERER, inFrame: true }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.uploads).toEqual([{ request: REQUEST, image: fake.answer.capture }]);
+    expect(fake.logged).toContain('Screenshot sent (1179×2556).');
+
+    fake.frames(20, 100);
+    expect(fake.captures).toHaveLength(1);
+  });
+
+  it('does not wait for the server to know the device: the request is its own permission', async () => {
+    const fake = fakeIo();
+    fake.answer.post = (type) => (type === 'hello' ? 'held' : 204);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    client.playerAnnounced(running());
+
+    ask(fake);
+    fake.frames(0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.uploads).toHaveLength(1);
+  });
+
+  it('measures afresh after the frame it copied, warm-up included', async () => {
+    const { fake } = await playing();
+    fake.frames(0, 2000);
+
+    ask(fake);
+    fake.frames(2000, 4900);
+    expect(reports(fake)).toEqual([]);
+
+    fake.frames(4900, 5200);
+    expect(reports(fake)).toHaveLength(1);
+  });
+
+  it('copies one frame for two requests before it, under the later one', async () => {
+    const { fake } = await playing();
+
+    ask(fake);
+    ask(fake, LATER);
+    fake.frames(0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.captures).toHaveLength(1);
+    expect(fake.uploads.map((upload) => upload.request)).toEqual([LATER]);
+  });
+
+  it('says the server refused it', async () => {
+    const { fake } = await playing();
+    fake.answer.upload = 409;
+
+    ask(fake);
+    fake.frames(0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.logged).toContain('Screenshot refused (409).');
+  });
+
+  it('posts nothing when the browser cannot encode the frame, and says so', async () => {
+    const { fake } = await playing();
+    fake.answer.capture = null;
+
+    ask(fake);
+    fake.frames(0, 0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.uploads).toEqual([]);
+    expect(fake.logged).toContain('Screenshot failed: the browser could not encode the frame.');
+  });
+
+  it('is skipped by a hidden page, which draws no frame to read', async () => {
+    const { fake } = await playing();
+    fake.visibility.visible = false;
+
+    ask(fake);
+    fake.frames(0, 100);
+
+    expect(fake.captures).toEqual([]);
+    expect(fake.logged.filter((line) => line.startsWith('Screenshot skipped'))).toEqual([
+      'Screenshot skipped: the page is hidden.',
+    ]);
+  });
+
+  it('is skipped by the waiting page, which runs no game', async () => {
+    const fake = fakeIo();
+    startDeviceClient(page({ launch: null }), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+
+    ask(fake);
+
+    expect(fake.logged).toContain('Screenshot skipped: the waiting page runs no game.');
+  });
+
+  it('is skipped while the game is not running yet', async () => {
+    const fake = fakeIo();
+    startDeviceClient(page(), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+
+    ask(fake);
+
+    expect(fake.logged).toContain('Screenshot skipped: the game is not running.');
+  });
+
+  it('is dropped when the page turns hidden before its frame', async () => {
+    const { fake, client } = await playing();
+
+    ask(fake);
+    client.pageHidden();
+    fake.frames(0, 100);
+
+    expect(fake.captures).toEqual([]);
+  });
+
+  it.each([
+    ['a launch', { type: 'launch', launch: 'L2aunch0000b' }],
+    ['a reopen', { type: 'reopen', transport: 'https' }],
+  ])('is ignored after %s, as everything is', async (_name, said) => {
+    const { fake } = await playing();
+    const stream = fake.last();
+
+    stream.handlers.onMessage(message(said));
+    stream.handlers.onMessage(message({ type: 'screenshot', request: REQUEST }));
+    fake.frames(0, 100);
+
+    expect(fake.captures).toEqual([]);
+  });
+
+  it('is ignored once the link is gone', async () => {
+    const { fake } = await playing();
+    const stream = fake.last();
+    fake.answer.probe = 'gone';
+    stream.handlers.onError(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    stream.handlers.onMessage(message({ type: 'screenshot', request: REQUEST }));
+    fake.frames(0, 100);
+
+    expect(fake.captures).toEqual([]);
+  });
+
+  it('posts nothing for a frame being encoded as the page restarts', async () => {
+    const { fake } = await playing();
+    let encoded: (image: Blob | null) => void = () => undefined;
+    fake.io.capture = () =>
+      new Promise((resolve) => {
+        encoded = resolve;
+      });
+
+    ask(fake);
+    fake.frames(0, 0);
+    fake.last().handlers.onMessage(message({ type: 'launch', launch: 'L2aunch0000b' }));
+    encoded(new Blob(['png']));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fake.uploads).toEqual([]);
   });
 });
 

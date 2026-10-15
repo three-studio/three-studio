@@ -236,6 +236,31 @@ const client = startDeviceClient(
     },
     // The options arrive as the stream opens, which may be before the body is.
     stats: (view) => whenParsed(() => overlay.show(view)),
+    visible: () => document.visibilityState === 'visible',
+    // Called in the client's frame callback, and nowhere else: see `capture` in
+    // `client.ts`. `toBlob` copies the canvas as it is called, then encodes it
+    // off the frame — where `toDataURL` would encode on the spot, and add a
+    // third in base64.
+    capture: (renderer) =>
+      new Promise((resolve) => {
+        try {
+          renderer.domElement.toBlob(resolve, 'image/png');
+        } catch {
+          resolve(null);
+        }
+      }),
+    // Never `keepalive`: a request that outlives the page carries 64 KB at most.
+    upload: (request, image) =>
+      fetch(`__studio/screenshot?request=${request}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'image/png' },
+        body: image,
+        referrerPolicy: 'same-origin',
+        cache: 'no-store',
+      }).then(
+        (response) => response.status,
+        () => 0,
+      ),
   },
   logs,
 );

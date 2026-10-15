@@ -69,6 +69,9 @@ export interface PostOptions {
   keepalive?: boolean;
 }
 
+/** The renderer the player announced: its counters, and the canvas it draws into. */
+export type PlayerRenderer = Extract<PlayerAnnouncement, { state: 'running' }>['renderer'];
+
 export interface DeviceIo {
   openStream: (handlers: StreamHandlers) => { close: () => void };
   /** Resolves the answer's status, or `0` when none came: the request failed on the way. */
@@ -88,6 +91,15 @@ export interface DeviceIo {
   onFrame: (listener: (time: number) => void) => () => void;
   /** Draws the page's numbers in its corner; `null` takes them away. */
   stats: (view: StatsView | 'measuring' | null) => void;
+  /** Whether the page is in front. */
+  visible: () => boolean;
+  /**
+   * Reads the canvas the player draws into, as it is when called; the promise
+   * is its encoding as a PNG, or `null` when the browser could not make one.
+   */
+  capture: (renderer: PlayerRenderer) => Promise<Blob | null>;
+  /** Posts a frame under the request it answers. Resolves the answer's status, or `0` when none came. */
+  upload: (request: string, image: Blob) => Promise<number>;
 }
 
 export interface DeviceClient {
@@ -159,6 +171,10 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
   let showing = false;
   /** What the corner said last, so that it comes back as it was when shown again. */
   let view: StatsView | null = null;
+  /** The renderer the player announced, whose canvas a screenshot reads; `null` until it runs. */
+  let renderer: PlayerRenderer | null = null;
+  /** The screenshot asked for, taken in the next frame the player draws; `null` when none is. */
+  let armed: string | null = null;
 
   const hello = (): DeviceHello => ({
     v: DEVICE_PROTOCOL_VERSION,
@@ -216,6 +232,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
 
   const finish = (): void => {
     done = true;
+    armed = null;
     stopFrames?.();
     stopFrames = null;
     closeStream();
@@ -270,20 +287,67 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
   };
 
   /** Every frame the player draws: a report every 2 s, posted while linked, drawn while shown. */
-  const measure = (
-    window: FrameWindow,
-    renderer: Extract<PlayerAnnouncement, { state: 'running' }>['renderer'],
-    time: number,
-  ): void => {
+  const measure = (window: FrameWindow, drawing: PlayerRenderer, time: number): void => {
     const sample = window.frame(time);
     if (sample === null || done) return;
-    const stats: DeviceStats = { ...sample, ...readRenderer(renderer) };
+    const stats: DeviceStats = { ...sample, ...readRenderer(drawing) };
     view = viewOf(stats);
     if (showing) io.stats(view);
     // Not tried again when it fails: the next one is two seconds away.
     if (linked) {
       void io.post('stats', { v: DEVICE_PROTOCOL_VERSION, device: page.device, launch: page.launch, ...stats });
     }
+  };
+
+  /**
+   * The frame the player has just drawn, copied for the screenshot asked for.
+   *
+   * Here, in the client's frame callback, and nowhere else: the player's loop
+   * runs before this one in every frame, so the canvas holds the frame just
+   * drawn and not yet shown — the one moment WebGL still keeps it, since three
+   * asks it to keep nothing past the page's compositing. WebGPU keeps it until
+   * the next frame begins, so the same moment does for both.
+   */
+  const capture = (window: FrameWindow, drawing: PlayerRenderer, request: string): void => {
+    const { width, height } = drawing.domElement;
+    const encoding = io.capture(drawing);
+    // Copying the canvas stalls this frame on a phone: the measure starts
+    // over rather than count it, as it does when the page comes back.
+    window.restart();
+    void encoding.then(async (image) => {
+      // The page restarts, or goes elsewhere: the server gave up on it already.
+      if (done) return;
+      if (image === null) {
+        io.log('Screenshot failed: the browser could not encode the frame.');
+        return;
+      }
+      // Whether linked or not: the request came down the stream, and its id
+      // is the upload's permission.
+      const status = await io.upload(request, image);
+      if (status === 204) io.log(`Screenshot sent (${width}×${height}).`);
+      else if (status === 0) io.log('Screenshot lost on the way.');
+      else io.log(`Screenshot refused (${status}).`);
+    });
+  };
+
+  /** Every frame the player draws: the screenshot asked for, else the measure. */
+  const frame = (window: FrameWindow, drawing: PlayerRenderer, time: number): void => {
+    if (armed === null) {
+      measure(window, drawing, time);
+      return;
+    }
+    const request = armed;
+    armed = null;
+    capture(window, drawing, request);
+  };
+
+  /** Why this page has no frame to give, or `null` when it has one. */
+  const noFrame = (): string | null => {
+    if (page.launch === null) return 'the waiting page runs no game';
+    if (state !== 'running' || renderer === null) return 'the game is not running';
+    // Its browser draws no frame for a page behind another, or a phone locked.
+    if (!io.visible()) return 'the page is hidden';
+    return null;
   };
 
   const receive = (message: ServerMessage | null): void => {
@@ -317,6 +381,16 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
         io.log(showing ? 'Stats on screen.' : 'Stats off screen.');
         io.stats(showing ? (view ?? 'measuring') : null);
         return;
+      case 'screenshot': {
+        const why = noFrame();
+        if (why !== null) {
+          io.log(`Screenshot skipped: ${why}.`);
+          return;
+        }
+        // One after another replaces it: the server no longer waits for that one.
+        armed = message.request;
+        return;
+      }
       default:
         // A ping, or something a newer server says: either way, the stream lives.
         return;
@@ -417,9 +491,10 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
         error = null;
         if (frames === null) {
           const window = createFrameWindow();
-          const { renderer } = detail;
+          const drawing = detail.renderer;
           frames = window;
-          stopFrames = io.onFrame((time) => measure(window, renderer, time));
+          renderer = drawing;
+          stopFrames = io.onFrame((time) => frame(window, drawing, time));
         }
         if (page.asked) {
           io.log('Started without the Play screen.');
@@ -443,6 +518,11 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
       later();
     },
     pageHidden() {
+      // A hidden page draws no frame to read: the server says so in 10 s.
+      if (armed !== null) {
+        armed = null;
+        io.log('Screenshot skipped: the page is hidden.');
+      }
       if (!linked) return;
       clearTimeout(flush);
       flush = undefined;
