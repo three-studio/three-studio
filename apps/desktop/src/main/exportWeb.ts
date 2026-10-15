@@ -1,5 +1,5 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, posix, relative, resolve, sep } from 'node:path';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, posix, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
   collectSceneAssets,
@@ -25,6 +25,7 @@ import { companionsOf, scanAssets } from './assetScan';
 import { sizeOf, writeBuildFiles } from './buildFiles';
 import { assembleManifest, type ShippedAsset } from './buildManifest';
 import { resolveInside } from './paths';
+import { findTemplate } from './prebuilt';
 import { discoverScenes, readProject } from './project';
 import { buildScripts } from './scripts';
 
@@ -421,47 +422,6 @@ async function applyBase(indexPath: string, base: string): Promise<void> {
  */
 function escapeAttribute(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
-}
-
-/**
- * Locates the prebuilt player.
- *
- * Packaged it sits in the app's resources; in development it is the workspace
- * build, found by walking up from the app path so the answer does not depend on
- * which directory the dev server was started from.
- *
- * The device server serves this same player, so it finds it the same way.
- */
-export async function findTemplate(searchRoots: readonly string[]): Promise<string> {
-  const candidates = searchRoots.flatMap((root) => [
-    join(root, 'web-template'),
-    ...ancestors(root).map((dir) => join(dir, 'apps', 'web-template', 'dist')),
-  ]);
-
-  for (const candidate of candidates) {
-    try {
-      const entries = await readdir(candidate);
-      if (entries.includes('index.html')) return candidate;
-    } catch {
-      // Not here; try the next one.
-    }
-  }
-
-  throw new AssetError(
-    'The web player has not been built. Run `npm run build --workspace @three-studio/web-template`.',
-  );
-}
-
-function ancestors(from: string): string[] {
-  const list: string[] = [];
-  let current = resolve(from);
-  for (let depth = 0; depth < 8; depth++) {
-    list.push(current);
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return list;
 }
 
 function toPosix(path: string): string {

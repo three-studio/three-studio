@@ -212,8 +212,9 @@ jobs:
         env:
           VERSION: ${{ needs.verify.outputs.version }}
 
-      # electron-builder copies this into the app's resources as `web-template`,
-      # and fails outright if the directory is missing.
+      # Both its outputs: electron-builder copies `dist` into the app's resources
+      # as `web-template` and `dist-device` as `device-client`, and fails outright
+      # if either directory is missing.
       - name: Build the web player
         run: npm run build:web
 

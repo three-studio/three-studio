@@ -10,7 +10,7 @@ import {
   type LaunchSnapshot,
   type PortHolder,
 } from '@three-studio/core';
-import { findTemplate } from '../exportWeb';
+import { findTemplate } from '../prebuilt';
 import {
   deviceUrls,
   isFromOutside,
