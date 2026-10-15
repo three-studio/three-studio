@@ -29,8 +29,12 @@ import { WAITING_PAGE } from './waitingPage';
 
 /** What the handler answers from, read on every request. */
 export interface DeviceRoutes {
-  /** The first segment of every URL answered. */
-  token: string;
+  /**
+   * The first segment of every URL answered. Read on every request rather than
+   * once, so that a new link refuses the old one at once — on a connection a
+   * phone keeps open between requests too.
+   */
+  token: () => string;
   /** The prebuilt player: `index.html`, `favicon.svg` and `_studio/`. */
   templateDir: string;
   /** The launch to answer from: `null` until there is one, and after a stop. */
@@ -182,9 +186,10 @@ async function answer(
   response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader('X-Content-Type-Options', 'nosniff');
 
+  const token = routes.token();
   const path = (request.url ?? '').split(/[?#]/, 1)[0] ?? '';
   const [, first = '', ...rest] = path.split('/');
-  const matched = path.startsWith('/') && isToken(first, routes.token);
+  const matched = path.startsWith('/') && isToken(first, token);
   const shown = matched ? `/<token>${path.slice(1 + first.length)}` : '/<not the token>';
   const trace = (status: number): void => {
     routes.trace?.(`${request.method} ${shown} ${status} (${request.socket.remoteAddress ?? '?'})`);
@@ -216,7 +221,7 @@ async function answer(
     // loading screen. Typed by hand, the slash is what gets left off. The
     // target is path-absolute, so no scheme is written.
     trace(308);
-    response.setHeader('Location', `/${routes.token}/`);
+    response.setHeader('Location', `/${token}/`);
     send(request, response, 308, 'no-store', 'text/plain; charset=utf-8', '');
     return;
   }

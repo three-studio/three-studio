@@ -312,6 +312,20 @@ describe('the guards are reached, not merely written', () => {
   });
 });
 
+describe('a new device link', () => {
+  it('changes nothing in the file but the token', async () => {
+    const found = JSON.parse(devicesFile.contents) as Record<string, unknown>;
+
+    await invoke(IPC_INVOKE.devices.regenerateToken, 1);
+
+    const written = JSON.parse(await readFile(devicesFile.path, 'utf8')) as Record<string, unknown>;
+    expect(written.token).not.toBe(found.token);
+    expect(written).toEqual({ ...found, token: written.token });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+});
+
 describe('the refusals that exist only at the boundary', () => {
   it('will not delete a scene another window has open, and leaves the file', async () => {
     const root = await project();

@@ -153,6 +153,17 @@ describe('a patch', () => {
     });
   });
 
+  it('writes a new token alone, as the main process asks it to', async () => {
+    const found = { version: 1, port: 7808, token: TOKEN, transport: 'https', future: { a: 1 } };
+    const file = await settingsFile(JSON.stringify(found));
+    const token = 'ZYXWVUTSRQPONMLKJIHGFE';
+
+    const settings = await updateDeviceSettings(file, { token });
+
+    expect(settings.token).toBe(token);
+    expect(await written(file)).toEqual({ ...found, token });
+  });
+
   it('writes nothing when there is nothing in it', async () => {
     const contents = `{"version":1,"port":7806,"token":"${TOKEN}","transport":"http"}`;
     const file = await settingsFile(contents);

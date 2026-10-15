@@ -5,7 +5,6 @@ import {
   createDeviceToken,
   isUsableDeviceToken,
   type DeviceSettings,
-  type DeviceSettingsPatch,
 } from '@three-studio/core';
 import { atomicWrite } from '../atomicWrite';
 
@@ -82,10 +81,15 @@ export async function ensureDeviceSettings(file: string): Promise<DeviceSettings
  * Writes a patch over the file as found — or over the factory's settings when
  * there is none. A patch with nothing in it, as one is once conformed from
  * nonsense, writes nothing.
+ *
+ * Any field but the version, the token included: a new link is the main
+ * process writing a token it made. What the renderer sends is a
+ * `DeviceSettingsPatch`, conformed where it arrives, so it never gets here
+ * carrying one.
  */
 export async function updateDeviceSettings(
   file: string,
-  patch: DeviceSettingsPatch,
+  patch: Partial<Omit<DeviceSettings, 'version'>>,
 ): Promise<DeviceSettings> {
   const found = await readFound(file);
   if (found !== null && Object.keys(patch).length === 0) return conformDeviceSettings(found);

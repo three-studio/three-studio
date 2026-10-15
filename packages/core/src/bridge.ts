@@ -357,6 +357,12 @@ export interface DevicesApi {
    * dialog, never a kill.
    */
   reclaimPort: () => Promise<DeviceServerStatus>;
+  /**
+   * A new link: a new token, made and written in the main process. A running
+   * server answers it at once, and no longer the old one — every link a device
+   * saved stops working.
+   */
+  regenerateToken: () => Promise<DeviceServerStatus>;
   /** Every new status of the server, in order. Returns an unsubscribe. */
   onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
 }
@@ -516,6 +522,7 @@ export const IPC_INVOKE = {
     launch: 'devices:launch',
     saveSettings: 'devices:saveSettings',
     reclaimPort: 'devices:reclaimPort',
+    regenerateToken: 'devices:regenerateToken',
   },
 } as const satisfies InvokeChannels;
 

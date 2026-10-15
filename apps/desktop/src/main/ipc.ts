@@ -559,6 +559,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     reclaimPort: (event): Promise<DeviceServerStatus> =>
       deps.devices.reclaimPort((holder, port) => confirmQuit(event.sender, holder, port)),
+
+    // Nothing to conform: it takes nothing, and the token is made here.
+    regenerateToken: (): Promise<DeviceServerStatus> => deps.devices.regenerateToken(),
   },
   };
 

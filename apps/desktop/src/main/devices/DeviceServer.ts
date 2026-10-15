@@ -1,13 +1,14 @@
 import { createServer, type Server } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
 import { basename } from 'node:path';
-import type {
-  DeviceServerState,
-  DeviceServerStatus,
-  DeviceSettings,
-  DeviceSettingsPatch,
-  LaunchSnapshot,
-  PortHolder,
+import {
+  createDeviceToken,
+  type DeviceServerState,
+  type DeviceServerStatus,
+  type DeviceSettings,
+  type DeviceSettingsPatch,
+  type LaunchSnapshot,
+  type PortHolder,
 } from '@three-studio/core';
 import { findTemplate } from '../exportWeb';
 import {
@@ -182,7 +183,7 @@ export class DeviceServer {
       const settings = await ensureDeviceSettings(this.options.settingsFile);
       const templateDir = await findTemplate(this.options.templateRoots);
       const handler = createDeviceHandler({
-        token: settings.token,
+        token: () => this.listening?.settings.token ?? settings.token,
         templateDir,
         launch: () => this.current,
         isOwnHost: (host) => this.isOwnHost(host),
@@ -228,6 +229,27 @@ export class DeviceServer {
       } else {
         await this.moveTo(saved.port, { slide: true, settings });
       }
+    }
+    this.emit();
+    return this.status();
+  }
+
+  /**
+   * Makes a new link: a new token, written alone. A running server answers it
+   * at once, and refuses the old one from the next request on — which is the
+   * point, since this is how a link that leaked is taken back: every link a
+   * device saved stops working.
+   */
+  async regenerateToken(): Promise<DeviceServerStatus> {
+    // A start in flight reads the file: let it, then replace what it read.
+    if (this.starting !== null) await this.starting;
+    const saved = await updateDeviceSettings(this.options.settingsFile, {
+      token: createDeviceToken(),
+    });
+    const listening = this.listening;
+    if (listening !== null) {
+      this.listening = { ...listening, settings: { ...listening.settings, token: saved.token } };
+      this.trace('new token');
     }
     this.emit();
     return this.status();

@@ -103,13 +103,19 @@ function server(
   return made;
 }
 
-async function get(port: number, path: string, agent?: Agent): Promise<{ status: number; body: string }> {
+/** A request, its answer, and the local port of the connection it went over. */
+async function get(
+  port: number,
+  path: string,
+  agent?: Agent,
+): Promise<{ status: number; body: string; connection: number | undefined }> {
   return new Promise((resolve, reject) => {
     const sent = httpRequest({ host: '127.0.0.1', port, path, agent: agent ?? false }, (response) => {
       let body = '';
+      const connection = response.socket.localPort;
       response.setEncoding('utf8');
       response.on('data', (chunk: string) => (body += chunk));
-      response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body, connection }));
     });
     sent.on('error', reject);
     sent.end();
@@ -582,6 +588,51 @@ describe('choosing the address a link is made of', () => {
       future: 1,
       address: '10.9.9.9',
     });
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
+  });
+});
+
+describe('a new link', () => {
+  it('is answered at once, and the old one refused, on a connection already open too', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const heard: DeviceServerStatus[] = [];
+    const devices = server(file, await template(), (status) => heard.push(status));
+    const root = await project();
+    await devices.launch(root, await snapshot(root));
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    const before = await get(port, `/${TOKEN}/`, agent);
+    expect(before.status).toBe(200);
+
+    const status = await devices.regenerateToken();
+
+    const token = JSON.parse(await readFile(file, 'utf8')).token as string;
+    expect(token).not.toBe(TOKEN);
+    // A phone keeps its connection open between requests: the token is
+    // checked on each request, not once for the connection.
+    const after = await get(port, `/${TOKEN}/`, agent);
+    expect(after.status).toBe(404);
+    expect(after.connection).toBe(before.connection);
+    expect((await get(port, `/${token}/`)).body).toBe(TEMPLATE_HTML);
+    expect(status.port).toBe(port);
+    expect(status.urls.length).toBeGreaterThan(0);
+    for (const url of status.urls) expect(url.url).toContain(`:${port}/${token}/`);
+    await vi.waitFor(() => expect(heard.at(-1)?.urls[0]?.url).toContain(`/${token}/`));
+    agent.destroy();
+  });
+
+  it('is written while the server is stopped, and nothing listens', async () => {
+    const port = await freePort();
+    const { devices, file } = await keptPortServer(port);
+
+    const status = await devices.regenerateToken();
+
+    const written = JSON.parse(await readFile(file, 'utf8'));
+    expect(written.token).not.toBe(TOKEN);
+    expect(written).toEqual({ version: 1, port, token: written.token, transport: 'http', future: 1 });
+    expect(status.state).toBe('stopped');
     const free = await listenOn(port);
     expect(free).not.toBeNull();
     holders.push(free!);

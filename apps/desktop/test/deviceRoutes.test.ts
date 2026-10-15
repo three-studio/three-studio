@@ -182,7 +182,7 @@ beforeAll(async () => {
 
   server = createServer(
     createDeviceHandler({
-      token: TOKEN,
+      token: () => TOKEN,
       templateDir,
       launch: () => current,
       isOwnHost: (host) => isOwnHost(host, [], 'Mac'),
