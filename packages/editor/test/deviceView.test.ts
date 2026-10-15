@@ -156,6 +156,7 @@ describe('a port that slid', () => {
 
     expect(view.dot).toBe('slid');
     expect(view.port).toBe(7701);
+    expect(view.requestedPort).toBe(7700);
     expect(view.note).toBe('7700 is held by another Three Studio (process 4242).');
     expect(view.takeBack).toBe(true);
     expect(view.title).toContain('7700');

@@ -43,6 +43,8 @@ export interface DeviceView {
   addressNote: string | null;
   /** The port shown: the one listened on while running, the settings' otherwise. */
   port: number;
+  /** The settings' port, which *Take Back* moves the server onto. */
+  requestedPort: number;
   /** Why the server is not on the port it asked for, after a slide. */
   note: string | null;
   /**
@@ -219,6 +221,7 @@ export function deviceView(
     address: status?.address ?? '',
     addressNote: addressNoteOf(status, link),
     port,
+    requestedPort: status?.requestedPort ?? port,
     note,
     takeBack: slid,
     help: helpOf(status, context, port),

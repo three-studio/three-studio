@@ -83,6 +83,16 @@ export function ToolToggle({
 }
 
 /**
+ * How a split button's halves look, on and off. Exported so that every split
+ * button in the toolbar takes the same two looks rather than a copy of them.
+ */
+export function toolTone(active: boolean): string {
+  return active
+    ? 'bg-accent-dim text-ink'
+    : 'text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink';
+}
+
+/**
  * Split button: the body steps to the next value, the chevron lists them all.
  *
  * Both halves earn their place and neither replaces the other. Stepping is the
@@ -118,9 +128,7 @@ export function ToolSplitToggle({
   const [open, setOpen] = useState(false);
 
   const title = [hint ? `${label} — ${hint}` : label, shortcut ? `  (${shortcut})` : ''].join('');
-  const tone = active
-    ? 'bg-accent-dim text-ink'
-    : 'text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink';
+  const tone = toolTone(active);
 
   return (
     <div className="relative flex items-center">
