@@ -105,7 +105,7 @@ describe('a launch', () => {
       title: 'Races',
       scripts: launch.scripts,
     });
-    expect(JSON.parse(launch.manifestJson)).toEqual(expected);
+    expect(launch.manifest).toEqual(expected);
     expect(expected.title).toBe('Races');
     expect(launch.scenes).toEqual(await discoverScenes(root));
   });
@@ -133,9 +133,9 @@ describe('a launch', () => {
     const bare = await prepareLaunch(without, await snapshot(without));
 
     expect(launch.scripts).toContain('registerScript');
-    expect(JSON.parse(launch.manifestJson).scripts).toBe('scripts.mjs');
+    expect(launch.manifest.scripts).toBe('scripts.mjs');
     expect(bare.scripts).toBeNull();
-    expect(JSON.parse(bare.manifestJson).scripts).toBeNull();
+    expect(bare.manifest.scripts).toBeNull();
   });
 
   it('is refused when a script does not compile, in the compiler’s words', async () => {

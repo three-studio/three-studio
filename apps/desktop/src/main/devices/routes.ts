@@ -8,6 +8,7 @@ import {
   findScene,
   isDeviceId,
   type AssetEntry,
+  type DeviceLaunchOptions,
   type DeviceTransport,
 } from '@three-studio/core';
 import { companionsOf } from '../assetScan';
@@ -17,6 +18,7 @@ import { plainAddress } from './addresses';
 import type { DeviceLink } from './deviceLink';
 import type { Launch } from './launch';
 import { launchAssetPath } from './launchManifest';
+import { applyLaunchOptions } from './launchOptions';
 import { WAITING_PAGE } from './waitingPage';
 
 /*
@@ -24,7 +26,7 @@ import { WAITING_PAGE } from './waitingPage';
  *
  *   ''                         the player when a launch is current, the waiting page otherwise,
  *                              either with the device client first in its <head>
- *   build.json                 the launch's manifest
+ *   build.json                 the launch's manifest, with the launch options the renderer reads
  *   scenes/<id>.json           the entry from the editor's memory, any other scene from its file
  *   assets/<id>/<name>         an asset by id, and the files a model names beside it
  *   scripts.mjs                the compiled bundle
@@ -55,6 +57,11 @@ export interface DeviceRoutes {
   clientDir: string;
   /** The launch to answer from: `null` until there is one, and after a stop. */
   launch: () => Launch | null;
+  /**
+   * The launch options, read on every request as the token is: an option
+   * changed while devices run reaches the next `build.json` they fetch.
+   */
+  launchOptions: () => DeviceLaunchOptions;
   /** The link with each device: its streams, and what it posts. */
   link: DeviceLink;
   /** The scheme the server answers on, which a device's `Origin` names. */
@@ -369,7 +376,8 @@ async function answer(
 
   if (single && head === 'build.json') {
     trace(200);
-    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', launch.manifestJson);
+    const manifest = applyLaunchOptions(launch.manifest, routes.launchOptions());
+    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', JSON.stringify(manifest));
     return;
   }
   if (single && head === 'scripts.mjs') {

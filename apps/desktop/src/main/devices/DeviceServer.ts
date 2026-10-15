@@ -281,6 +281,7 @@ export class DeviceServer {
         templateDir,
         clientDir,
         launch: () => this.current,
+        launchOptions: () => this.listening?.settings.launchOptions ?? settings.launchOptions,
         link,
         transport: () => this.listening?.settings.transport ?? settings.transport,
         isOwnHost: (host) => this.isOwnHost(host),

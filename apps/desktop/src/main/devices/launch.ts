@@ -2,6 +2,7 @@ import {
   createId,
   serializeScene,
   type AssetEntry,
+  type BuildManifest,
   type LaunchSnapshot,
   type SceneEntry,
 } from '@three-studio/core';
@@ -29,7 +30,12 @@ export interface Launch {
   readonly entryId: string;
   /** The scene on screen, serialized once. */
   readonly entryJson: string;
-  readonly manifestJson: string;
+  /**
+   * As `launchManifest` made it. Kept whole rather than written once: the
+   * launch options a device's renderer reads are written into it as it is
+   * served, and they may change while the launch runs.
+   */
+  readonly manifest: BuildManifest;
   /** The compiled bundle, or `null` when the project has no scripts. */
   readonly scripts: string | null;
   /** Every asset a device may ask for, by id. Scripts are not among them: they ship compiled. */
@@ -75,7 +81,7 @@ export async function prepareLaunch(
     sceneName: snapshot.entry.name,
     entryId: snapshot.entry.id,
     entryJson: serializeScene(snapshot.entry.scene),
-    manifestJson: JSON.stringify(manifest),
+    manifest,
     scripts,
     assets: new Map(
       assets.filter((asset) => asset.kind !== 'script').map((asset) => [asset.id, asset]),

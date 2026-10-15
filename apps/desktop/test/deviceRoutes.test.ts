@@ -8,11 +8,14 @@ import {
   CACHE_DIR,
   LAUNCH_SNAPSHOT_VERSION,
   SCENES_DIR,
+  createDeviceLaunchOptions,
   createEmptyScene,
   createMeshEntity,
   deserializeScene,
   insertEntity,
   serializeScene,
+  type BuildManifest,
+  type DeviceLaunchOptions,
   type LaunchSnapshot,
 } from '@three-studio/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -43,6 +46,7 @@ let templateDir = '';
 let link: DeviceLink;
 let launch: Launch;
 let current: Launch | null = null;
+let launchOptions: DeviceLaunchOptions = createDeviceLaunchOptions();
 let entryId = '';
 let otherSceneJson = '';
 let slashedId = '';
@@ -264,6 +268,7 @@ beforeAll(async () => {
       templateDir,
       clientDir,
       launch: () => current,
+      launchOptions: () => launchOptions,
       link,
       transport: () => 'http',
       isOwnHost: (host) => isOwnHost(host, [], 'Mac'),
@@ -282,6 +287,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   current = launch;
+  launchOptions = createDeviceLaunchOptions();
 });
 
 describe('the token', () => {
@@ -470,7 +476,8 @@ describe('build.json', () => {
     const answer = await ask(under('build.json'));
 
     expect(answer.status).toBe(200);
-    expect(answer.body.toString()).toBe(launch.manifestJson);
+    // With the factory's options, byte for byte what the launch was made with.
+    expect(answer.body.toString()).toBe(JSON.stringify(launch.manifest));
     expect(answer.headers['content-type']).toBe('application/json; charset=utf-8');
     expect(answer.headers['cache-control']).toBe('no-store');
   });
@@ -479,8 +486,23 @@ describe('build.json', () => {
     const answer = await ask(under('build.json'), { method: 'HEAD' });
 
     expect(answer.status).toBe(200);
-    expect(answer.headers['content-length']).toBe(String(Buffer.byteLength(launch.manifestJson)));
+    expect(answer.headers['content-length']).toBe(
+      String(Buffer.byteLength(JSON.stringify(launch.manifest))),
+    );
     expect(answer.body.length).toBe(0);
+  });
+
+  it('carries the launch options the renderer reads, as they are when it is asked for', async () => {
+    launchOptions = { forceWebGL: true, maxPixelRatio: 1, stats: true };
+
+    const answer = await ask(under('build.json'));
+
+    const served = JSON.parse(answer.body.toString()) as BuildManifest;
+    expect(served.forceWebGL).toBe(true);
+    expect(served.rendering).toMatchObject({ forceWebGL: true, maxPixelRatio: 1 });
+    expect(answer.headers['cache-control']).toBe('no-store');
+    // What the launch keeps is the project's: unticked, the next one is too.
+    expect(launch.manifest.forceWebGL).toBe(false);
   });
 });
 
