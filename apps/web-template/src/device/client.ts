@@ -133,6 +133,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
     state,
     backend,
     error,
+    reloaded: false,
   });
 
   const status = (): DeviceStatusReport => ({

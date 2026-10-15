@@ -4,6 +4,7 @@ import {
   DEVICE_PROTOCOL_VERSION,
   conformHello,
   conformLogMessage,
+  conformStatsReport,
   conformStatusReport,
   createId,
   cutLogText,
@@ -35,6 +36,7 @@ function hello(overrides: Record<string, unknown> = {}): Record<string, unknown>
     state: 'booting',
     backend: null,
     error: null,
+    reloaded: false,
     ...overrides,
   };
 }
@@ -99,6 +101,12 @@ describe('a device’s hello', () => {
     );
 
     expect(conformed?.error).toHaveLength(2000);
+  });
+
+  it('says its page was reloaded by its browser only when it says so', () => {
+    expect(conformHello(hello({ reloaded: true }))?.reloaded).toBe(true);
+    expect(conformHello(hello({ reloaded: 'yes' }))?.reloaded).toBe(false);
+    expect(conformHello(hello({ reloaded: undefined }))?.reloaded).toBe(false);
   });
 });
 
@@ -211,6 +219,70 @@ describe('a device’s lines', () => {
   });
 });
 
+describe('a device’s stats', () => {
+  function stats(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      v: 1,
+      device: DEVICE,
+      launch: 'LaunchL1',
+      fps: 58,
+      p95: 21.4,
+      frames: 116,
+      drawCalls: 142,
+      triangles: 85_210,
+      textures: 31,
+      gpuMemory: 188_743_680,
+      pixelRatio: 2.625,
+      width: 1080,
+      height: 2340,
+      pinned30: false,
+      ...overrides,
+    };
+  }
+
+  it('come back equal when they are complete', () => {
+    const complete = stats();
+
+    expect(conformStatsReport(complete)).toEqual(complete);
+  });
+
+  it.each([
+    ['another version', stats({ v: 2 })],
+    ['no device', stats({ device: undefined })],
+    ['an id of seven characters', stats({ device: 'Ab3dE6g' })],
+    ['not an object', 'stats'],
+    ['nothing', null],
+  ])('are refused for %s', (_name, value) => {
+    expect(conformStatsReport(value)).toBeNull();
+  });
+
+  it.each([NaN, -3, 'x', undefined])('read a frame rate of %s as none', (fps) => {
+    expect(conformStatsReport(stats({ fps }))?.fps).toBe(0);
+  });
+
+  it('bound what they count, and round it', () => {
+    const conformed = conformStatsReport(
+      stats({ triangles: 1e15, drawCalls: 2.6, p95: 21.46, gpuMemory: Infinity, width: 1e9 }),
+    );
+
+    expect(conformed?.triangles).toBe(1e9);
+    expect(conformed?.drawCalls).toBe(3);
+    expect(conformed?.p95).toBe(21.5);
+    expect(conformed?.gpuMemory).toBe(0);
+    expect(conformed?.width).toBe(65_536);
+  });
+
+  it('say they are held at 30 fps only when they say so', () => {
+    expect(conformStatsReport(stats({ pinned30: 'yes' }))?.pinned30).toBe(false);
+    expect(conformStatsReport(stats({ pinned30: true }))?.pinned30).toBe(true);
+  });
+
+  it('name the launch their page runs, and read anything else as none', () => {
+    expect(conformStatsReport(stats({ launch: 42 }))?.launch).toBeNull();
+    expect(conformStatsReport(stats({ launch: null }))?.launch).toBeNull();
+  });
+});
+
 describe('what the server sends', () => {
   it('reads the four messages', () => {
     expect(parseServerMessage('{"v":1,"type":"launch","launch":"L2aunch0000b"}')).toEqual({
@@ -224,6 +296,24 @@ describe('what the server sends', () => {
       v: 1,
       type: 'reopen',
       transport: 'https',
+    });
+  });
+
+  it('reads whether a page draws its stats, and anything else as not', () => {
+    expect(parseServerMessage('{"v":1,"type":"options","stats":true}')).toEqual({
+      v: 1,
+      type: 'options',
+      stats: true,
+    });
+    expect(parseServerMessage('{"v":1,"type":"options","stats":1}')).toEqual({
+      v: 1,
+      type: 'options',
+      stats: false,
+    });
+    expect(parseServerMessage('{"v":1,"type":"options"}')).toEqual({
+      v: 1,
+      type: 'options',
+      stats: false,
     });
   });
 

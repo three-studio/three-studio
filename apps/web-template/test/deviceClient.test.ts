@@ -144,6 +144,7 @@ describe('opening', () => {
           state: 'booting',
           backend: null,
           error: null,
+          reloaded: false,
         },
       },
     ]);

@@ -62,6 +62,28 @@ export const DEVICE_LOG_PENDING = 500;
  */
 export const DEVICE_LOG_FLUSH_MS = 250;
 
+/**
+ * How long a page measures its frames before it reports them: one window. At
+ * 60 Hz, 120 intervals make a 95th percentile that is more than one frame's
+ * accident, and a status sent to every editor window every two seconds per
+ * device costs little.
+ */
+export const DEVICE_STATS_MS = 2_000;
+
+/**
+ * What a page leaves out of its measure after the player starts, and after it
+ * turns visible again: shaders compile on the first frames that need them, and
+ * those stalls are the boot's, not the game's.
+ */
+export const DEVICE_STATS_WARMUP_MS = 1_000;
+
+/**
+ * How many reports of its frames one device may post in a window, counted apart
+ * from the link's and from its lines'. A page sends five in ten seconds; the
+ * rest is room for a second tab of the same browser, which shares its id.
+ */
+export const DEVICE_STATS_RATE = { messages: 10, perMs: 10_000 } as const;
+
 /** How many devices the server lists at once. Past that, a new stream is refused. */
 export const DEVICE_LIMIT = 32;
 
@@ -124,7 +146,7 @@ export type DeviceState = 'waiting' | 'booting' | 'running' | 'failed';
 export type DeviceBackend = 'webgpu' | 'webgl';
 
 /** The messages a device POSTs, by the last segment of their path. */
-export type DeviceMessageType = 'hello' | 'status' | 'log';
+export type DeviceMessageType = 'hello' | 'status' | 'log' | 'stats';
 
 /**
  * Sent on every stream a page opens: who the device is, and where its page
@@ -143,6 +165,13 @@ export interface DeviceHello {
   state: DeviceState;
   backend: DeviceBackend | null;
   error: string | null;
+  /**
+   * The page before this one, in this tab, ended while it was in the
+   * foreground without going the way a page goes — and nobody asked for this
+   * load. On a phone, that is a page its browser ended for the memory it used,
+   * then loaded again. Sent until a hello carrying it has been answered.
+   */
+  reloaded: boolean;
 }
 
 /** Sent on each change of state, and every `DEVICE_HEARTBEAT_MS`. */
@@ -185,6 +214,49 @@ export interface DeviceLogMessage {
   dropped: number;
 }
 
+/**
+ * What a page measured over its last window, and what its renderer counts.
+ *
+ * Measured on the device, since the editor sees nothing of its frames: the
+ * page's own `requestAnimationFrame` runs in the same frames as the player's
+ * loop, so a frame late for the game is late for the measure too.
+ */
+export interface DeviceStats {
+  /** The median frame rate over the window, rounded. */
+  fps: number;
+  /** The 95th percentile of the frame intervals, in ms, to a tenth: what stutter is made of. */
+  p95: number;
+  /** Frames counted in the window. */
+  frames: number;
+  /** The last frame's, as the renderer counted them. */
+  drawCalls: number;
+  triangles: number;
+  textures: number;
+  /** What the renderer gave the GPU, in bytes: three's own count, not the browser's. */
+  gpuMemory: number;
+  /** The ratio the page draws at: the device's, capped by the project or the launch options. */
+  pixelRatio: number;
+  /** The canvas's drawing buffer, in pixels. */
+  width: number;
+  height: number;
+  /**
+   * The frame rate was held at 30 for two windows in a row: on a phone, most
+   * likely a power-saving mode that throttles every page.
+   */
+  pinned30: boolean;
+}
+
+/** A page's stats, as it posts them every `DEVICE_STATS_MS` while the player runs. */
+export interface DeviceStatsReport extends DeviceStats {
+  v: typeof DEVICE_PROTOCOL_VERSION;
+  device: string;
+  /**
+   * The launch the page that measured runs. A report that arrives once the next
+   * launch is current measured a page already replaced: the server drops it.
+   */
+  launch: string | null;
+}
+
 /** What the server writes to a stream. */
 export type ServerMessage =
   /** Restart on that launch. */
@@ -197,7 +269,13 @@ export type ServerMessage =
    * The server is about to listen again under that scheme, on the same port:
    * open this same page there.
    */
-  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'reopen'; transport: DeviceTransport };
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'reopen'; transport: DeviceTransport }
+  /**
+   * What the page draws for itself, as the launch options say: written as each
+   * stream opens, and to every stream when it changes, so it takes effect
+   * without a reload.
+   */
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'options'; stats: boolean };
 
 const STATES: readonly DeviceState[] = ['waiting', 'booting', 'running', 'failed'];
 const BACKENDS: readonly DeviceBackend[] = ['webgpu', 'webgl'];
@@ -209,6 +287,16 @@ const ERROR_LIMIT = 2_000;
 /** Wider than any screen, so that only nonsense is clamped. */
 const SCREEN_LIMIT = 100_000;
 const DPR_LIMIT = 16;
+
+/*
+ * Bounds for a report's numbers: far past anything a page could measure, so
+ * that only nonsense is clamped, and never so large that a row cannot write it.
+ */
+const FPS_LIMIT = 1_000;
+const FRAME_TIME_LIMIT = 60_000;
+const COUNT_LIMIT = 1e9;
+const MEMORY_LIMIT = 1e12;
+const BUFFER_LIMIT = 65_536;
 
 /**
  * An id the client made, or one the server made for a launch: letters and
@@ -291,6 +379,7 @@ export function conformHello(value: unknown): DeviceHello | null {
     state: stateOf(body['state']) ?? 'waiting',
     backend: backendOf(body['backend']),
     error: textOf(body['error'], ERROR_LIMIT),
+    reloaded: body['reloaded'] === true,
   };
 }
 
@@ -363,6 +452,41 @@ export function conformLogMessage(value: unknown): DeviceLogMessage | null {
   };
 }
 
+/** A whole number within its bound: a count, a rate, a size in pixels or bytes. */
+function wholeOf(value: unknown, limit: number): number {
+  return Math.round(numberOf(value, 0, limit));
+}
+
+/**
+ * A page's report, or `null` when it is not one.
+ *
+ * Refused only for what makes it no message at all: another version, or no
+ * device. A number that is not one reads 0, and every number is bounded,
+ * since each is written in every editor window.
+ */
+export function conformStatsReport(value: unknown): DeviceStatsReport | null {
+  const envelope = envelopeOf(value);
+  if (envelope === null) return null;
+  const { device, body } = envelope;
+  const launch = body['launch'];
+  return {
+    v: DEVICE_PROTOCOL_VERSION,
+    device,
+    launch: isId(launch) ? launch : null,
+    fps: wholeOf(body['fps'], FPS_LIMIT),
+    p95: Math.round(numberOf(body['p95'], 0, FRAME_TIME_LIMIT) * 10) / 10,
+    frames: wholeOf(body['frames'], COUNT_LIMIT),
+    drawCalls: wholeOf(body['drawCalls'], COUNT_LIMIT),
+    triangles: wholeOf(body['triangles'], COUNT_LIMIT),
+    textures: wholeOf(body['textures'], COUNT_LIMIT),
+    gpuMemory: wholeOf(body['gpuMemory'], MEMORY_LIMIT),
+    pixelRatio: numberOf(body['pixelRatio'], 0, DPR_LIMIT),
+    width: wholeOf(body['width'], BUFFER_LIMIT),
+    height: wholeOf(body['height'], BUFFER_LIMIT),
+    pinned30: body['pinned30'] === true,
+  };
+}
+
 /**
  * One message from the stream, as the client reads it, or `null`.
  *
@@ -393,6 +517,8 @@ export function parseServerMessage(data: string): ServerMessage | null {
         ? { v: DEVICE_PROTOCOL_VERSION, type: 'reopen', transport }
         : null;
     }
+    case 'options':
+      return { v: DEVICE_PROTOCOL_VERSION, type: 'options', stats: value['stats'] === true };
     default:
       return null;
   }

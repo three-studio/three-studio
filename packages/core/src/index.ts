@@ -400,11 +400,15 @@ export {
   DEVICE_RATE,
   DEVICE_RETRY_MS,
   DEVICE_SILENCE_MS,
+  DEVICE_STATS_MS,
+  DEVICE_STATS_RATE,
+  DEVICE_STATS_WARMUP_MS,
   DEVICE_STREAMS_PER_DEVICE,
   DEVICE_STREAM_TIMEOUT_MS,
   DEVICE_TRANSPORTS,
   conformHello,
   conformLogMessage,
+  conformStatsReport,
   conformStatusReport,
   cutLogText,
   isDeviceId,
@@ -419,8 +423,13 @@ export type {
   DeviceLogMessage,
   DeviceMessageType,
   DeviceState,
+  DeviceStats,
+  DeviceStatsReport,
   DeviceStatusReport,
   ServerMessage,
 } from './devices/protocol';
 export { describeUserAgent } from './devices/userAgent';
 export type { DescribedUserAgent } from './devices/userAgent';
+/* A device's numbers in words, as its row and its own overlay both write them. */
+export { describeDeviceStats, formatCount } from './devices/stats';
+export type { DescribedDeviceStats } from './devices/stats';
