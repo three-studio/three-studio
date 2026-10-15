@@ -354,3 +354,14 @@ export {
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
 export { LAUNCH_SNAPSHOT_VERSION } from './devices/schema';
 export type { LaunchSnapshot } from './devices/schema';
+/* The device server's settings: per machine, never in a project. */
+export {
+  DEFAULT_DEVICE_PORT,
+  DEVICE_SETTINGS_VERSION,
+  conformDeviceSettings,
+  conformDeviceSettingsPatch,
+  createDeviceSettings,
+  createDeviceToken,
+  isUsableDeviceToken,
+} from './devices/schema';
+export type { DeviceSettings, DeviceSettingsPatch, DeviceTransport } from './devices/schema';
