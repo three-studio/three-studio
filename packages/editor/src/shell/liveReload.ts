@@ -1,4 +1,12 @@
 import type { LaunchSnapshot } from '@three-studio/core';
+import { relaunchOnDevices } from '../commands/deviceCommands';
+import { useAssetStore } from '../state/assetStore';
+import { liveReloadState, useDeviceStore } from '../state/deviceStore';
+import { useDocumentStore } from '../state/documentStore';
+import { useEditorStore } from '../state/editorStore';
+import { usePrefabModeStore } from '../state/prefabModeStore';
+import { useProjectStore } from '../state/projectStore';
+import { launchSnapshot } from '../viewport/PlaySession';
 
 /*
  * Live reload: every device relaunched a second after the last change made in
@@ -137,4 +145,125 @@ export function createLiveReload(
       timer = null;
     },
   };
+}
+
+/** Whether live reload relaunches in this window now. */
+function isActive(): boolean {
+  const { status, ownLaunch, liveReloadRefused } = useDeviceStore.getState();
+  return liveReloadState(status, ownLaunch, liveReloadRefused) === 'on';
+}
+
+/**
+ * Live reload, wired to this window: what pokes the pause, and what holds it.
+ *
+ * Every input of what Play runs pokes it whenever it is a new object — the
+ * scene, the materials, the prefabs, the project, its scene list, Prefab
+ * Mode's stack — and so do Stop, live reload becoming active, and the last
+ * gesture let go. Whether a new object holds anything new is decided once the
+ * pause ends, by content.
+ *
+ * Nothing in the editor says that a drag is under way. Every drag writes the
+ * document on each move — the gizmo, the Inspector's sliders, knobs and colour
+ * picker — and a drag held still writes nothing and looks idle; the hierarchy
+ * and the asset drops are native drag-and-drop, written on `drop`. So the hold
+ * is the hand itself: a pointer down anywhere in the window, until it is let
+ * go, and a native drag, until it ends. Both are heard on the window while
+ * capturing, so that no handler can hide them. The window's losing the focus
+ * lets go of both, since a release outside it is not always seen.
+ *
+ * Returns what removes every listener and subscription, and ends the pause.
+ */
+export function watchLiveReload(target: EventTarget = window): () => void {
+  const pointers = new Set<number>();
+  let dragging = false;
+  const held = (): boolean => pointers.size > 0 || dragging;
+
+  const live = createLiveReload({
+    active: isActive,
+    held,
+    playing: () => useEditorStore.getState().playState !== 'stopped',
+    read: launchSnapshot,
+    launched: () => useDeviceStore.getState().ownLaunch?.snapshot ?? null,
+    relaunch: relaunchOnDevices,
+  });
+
+  /** The release that ends the last hold starts the pause again. */
+  const release = (wasHeld: boolean): void => {
+    if (wasHeld && !held()) live.poke();
+  };
+
+  const listeners: [string, (event: Event) => void][] = [
+    ['pointerdown', (event) => void pointers.add(pointerIdOf(event))],
+    ['pointerup', (event) => release(pointers.delete(pointerIdOf(event)))],
+    ['pointercancel', (event) => release(pointers.delete(pointerIdOf(event)))],
+    ['dragstart', () => (dragging = true)],
+    [
+      'dragend',
+      () => {
+        const was = dragging;
+        dragging = false;
+        release(was);
+      },
+    ],
+    [
+      'drop',
+      () => {
+        const was = dragging;
+        dragging = false;
+        release(was);
+      },
+    ],
+    [
+      'blur',
+      (event) => {
+        // Captured, every element's blur reaches here too — and the one a
+        // click causes comes right after its pointer went down. Only the
+        // window's own means that a release may go unseen.
+        if (event.target !== target) return;
+        const was = held();
+        pointers.clear();
+        dragging = false;
+        release(was);
+      },
+    ],
+  ];
+  for (const [type, listener] of listeners) target.addEventListener(type, listener, true);
+
+  const poke = (): void => live.poke();
+  const unsubscribe = [
+    useDocumentStore.subscribe((state, before) => {
+      if (state.scene !== before.scene) poke();
+    }),
+    useAssetStore.subscribe((state, before) => {
+      if (state.materials !== before.materials || state.prefabs !== before.prefabs) poke();
+    }),
+    useProjectStore.subscribe((state, before) => {
+      if (state.project !== before.project || state.scenes !== before.scenes) poke();
+    }),
+    usePrefabModeStore.subscribe((state, before) => {
+      if (state.stack !== before.stack) poke();
+    }),
+    useEditorStore.subscribe((state, before) => {
+      if (state.playState === 'stopped' && before.playState !== 'stopped') poke();
+    }),
+    useDeviceStore.subscribe((state, before) => {
+      // Turned on, a launch from this window become current, a refusal
+      // cleared: what is on screen may already differ from what was sent.
+      const now = liveReloadState(state.status, state.ownLaunch, state.liveReloadRefused);
+      const then = liveReloadState(before.status, before.ownLaunch, before.liveReloadRefused);
+      if (now === 'on' && then !== 'on') poke();
+    }),
+  ];
+
+  return () => {
+    for (const [type, listener] of listeners) target.removeEventListener(type, listener, true);
+    for (const stop of unsubscribe) stop();
+    live.dispose();
+  };
+}
+
+/** A pointer event's id; `0` for an event that carries none. */
+function pointerIdOf(event: Event): number {
+  const id = (event as { pointerId?: unknown }).pointerId;
+  return typeof id === 'number' ? id : 0;
 }

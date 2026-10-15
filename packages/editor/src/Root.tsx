@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
+import { watchLiveReload } from './shell/liveReload';
 import { loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
@@ -73,6 +74,10 @@ function EditorWindow() {
   // The device server is the app's, not this window's: another window, or a
   // project's script, may start or stop it at any moment.
   useEffect(() => watchDevices(), []);
+
+  // Relaunches the devices a second after each change made here, while live
+  // reload is on and the devices run this window's launch.
+  useEffect(() => watchLiveReload(), []);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.
