@@ -316,6 +316,7 @@ export async function exportBuild(
   const build = assembleManifest({
     title: profile.title,
     rendering: project.settings.rendering,
+    physics: project.settings.physics,
     scenes: scenes.map(({ entry }) => entry),
     loadingScene: project.settings.loadingScene,
     assets: shippedAssets,

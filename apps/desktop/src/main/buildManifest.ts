@@ -4,6 +4,7 @@ import {
   type AssetSettings,
   type BuildManifest,
   type MaterialDef,
+  type PhysicsSettings,
   type PrefabDoc,
   type RenderingSettings,
   type SceneEntry,
@@ -25,6 +26,7 @@ export interface ShippedAsset {
 export interface ManifestContents {
   title: string;
   rendering: RenderingSettings;
+  physics: PhysicsSettings;
   /** Entry point first; the rest ship for a script to load later. */
   scenes: readonly Pick<SceneEntry, 'id' | 'name'>[];
   loadingScene: string | null;
@@ -104,6 +106,7 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     // it. Persisted data gains fields; it does not lose them.
     forceWebGL: contents.rendering.forceWebGL,
     rendering: contents.rendering,
+    physics: contents.physics,
     scenes: contents.scenes.map(({ id }) => id),
     sceneNames: Object.fromEntries(names),
     // The id the project already holds, passed through. An id naming a scene

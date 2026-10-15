@@ -1,5 +1,6 @@
 import {
   BUILD_FORMAT_VERSION,
+  createPhysicsSettings,
   createRenderingSettings,
   defaultSettings,
   type AssetEntry,
@@ -41,6 +42,7 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
   return {
     title: 'Game',
     rendering: createRenderingSettings(),
+    physics: createPhysicsSettings(),
     scenes: [{ id: 'main', name: 'Main' }],
     loadingScene: null,
     assets: [],

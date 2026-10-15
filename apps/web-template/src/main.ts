@@ -5,16 +5,15 @@ import {
   type TextureEncoding,
   SCRIPT_API_VERSION,
   buildScenePath,
-  createRenderingSettings,
   deserializeScene,
   encodePath,
   type MaterialDef,
   type PrefabDoc,
-  type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { entrySceneName, sceneIdOf } from './scenes';
+import { runSettingsOf } from './settings';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
@@ -184,15 +183,8 @@ async function boot(): Promise<void> {
 
   await loadScripts(build.scripts ?? null);
 
-  /*
-   * One reading of the settings, shared by the renderer and the engine — the
-   * same shape the editor viewport uses. This is the third of the three modes
-   * that used to answer the question for itself.
-   */
-  const rendering: RenderingSettings = build.rendering ?? {
-    ...createRenderingSettings(),
-    forceWebGL: build.forceWebGL,
-  };
+  // The third of the three modes that used to answer the question for itself.
+  const { rendering, physics } = runSettingsOf(build);
 
   const { renderer } = await createRenderer({
     canvas,
@@ -221,6 +213,7 @@ async function boot(): Promise<void> {
     prefabs,
     loadingScene: build.loadingScene ?? null,
     rendering,
+    physicsSettings: physics,
     renderer,
     domElement: canvas,
     audioContext,
