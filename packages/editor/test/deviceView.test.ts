@@ -33,6 +33,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
     reachedFromNetwork: false,
     address: null,
     devices: [],
+    certificate: null,
     ...overrides,
   };
 }

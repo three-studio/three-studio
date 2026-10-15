@@ -45,6 +45,7 @@ describe('with no certificate yet', () => {
 
     const made = await ensureDeviceCertificate(file, NAMES, NOW);
 
+    expect(made.kept).toBe(false);
     expect(made.renewed).toBe(false);
     expect(made.names).toEqual(NAMES);
     expect(made.fingerprint).toBe(new X509Certificate(made.certificate).fingerprint256);
@@ -76,6 +77,7 @@ describe('a certificate kept', () => {
     const again = await ensureDeviceCertificate(file, NAMES, NOW + DAY);
 
     expect(again.fingerprint).toBe(first.fingerprint);
+    expect(again.kept).toBe(true);
     expect(again.renewed).toBe(false);
     expect(await readFile(file, 'utf8')).toBe(contents);
     expect((await stat(file)).mtimeMs).toBe(before.mtimeMs);
@@ -125,6 +127,7 @@ describe('a certificate made again', () => {
 
     const made = await ensureDeviceCertificate(file, needed, NOW);
 
+    expect(made.kept).toBe(false);
     expect(made.renewed).toBe(true);
     expect(made.fingerprint).not.toBe(fingerprintOf(contents));
     expect(made.names).toEqual([...needed, '192.168.1.42']);

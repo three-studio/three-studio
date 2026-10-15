@@ -48,7 +48,7 @@ describe('at start', () => {
     // A transport a newer build wrote, and a field this one has never heard
     // of: both are somebody's, and both stay exactly as they were.
     const file = await settingsFile(
-      JSON.stringify({ version: 1, port: 7801, token: 'short', transport: 'https', future: { a: 1 } }),
+      JSON.stringify({ version: 1, port: 7801, token: 'short', transport: 'gopher', future: { a: 1 } }),
     );
 
     const settings = await ensureDeviceSettings(file);
@@ -58,7 +58,7 @@ describe('at start', () => {
       version: 1,
       port: 7801,
       token: settings.token,
-      transport: 'https',
+      transport: 'gopher',
       future: { a: 1 },
     });
     expect(isUsableDeviceToken(saved.token)).toBe(true);
@@ -151,6 +151,23 @@ describe('a patch', () => {
       future: { a: 1 },
       address: '192.168.1.42',
     });
+  });
+
+  it('changes the transport and keeps every other field as found', async () => {
+    const found = {
+      version: 1,
+      port: 7809,
+      token: TOKEN,
+      transport: 'http',
+      address: '192.168.1.42',
+      future: { a: 1 },
+    };
+    const file = await settingsFile(JSON.stringify(found));
+
+    const settings = await updateDeviceSettings(file, { transport: 'https' });
+
+    expect(settings.transport).toBe('https');
+    expect(await written(file)).toEqual({ ...found, transport: 'https' });
   });
 
   it('writes a new token alone, as the main process asks it to', async () => {

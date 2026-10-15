@@ -72,10 +72,14 @@ describe('what a server runs on', () => {
     expect(conformDeviceSettings({ port }).port).toBe(7700);
   });
 
-  it('serves only a transport this build knows', () => {
+  it('keeps HTTPS', () => {
+    expect(conformDeviceSettings({ transport: 'https' }).transport).toBe('https');
+  });
+
+  it.each(['ftp', 3])('serves %j as plain HTTP', (transport) => {
     // A newer build may have written another one into the file; this one runs
     // what it can serve, and the file keeps what it said.
-    expect(conformDeviceSettings({ transport: 'https' }).transport).toBe('http');
+    expect(conformDeviceSettings({ transport }).transport).toBe('http');
   });
 
   it.each(['192.168.1.42', '100.101.102.103'])('keeps the address %s', (address) => {
@@ -104,6 +108,15 @@ describe('a patch from the renderer', () => {
     expect(conformDeviceSettingsPatch({ port: 0 })).toEqual({});
     expect(conformDeviceSettingsPatch({ port: '7800' })).toEqual({});
     expect(conformDeviceSettingsPatch('port')).toEqual({});
+  });
+
+  it('keeps a transport this build serves, and drops anything else', () => {
+    expect(conformDeviceSettingsPatch({ transport: 'https' })).toEqual({ transport: 'https' });
+    expect(conformDeviceSettingsPatch({ transport: 'http' })).toEqual({ transport: 'http' });
+    // Written to the file, a transport no build serves would be read back as
+    // plain HTTP anyway: the honest answer is to change nothing.
+    expect(conformDeviceSettingsPatch({ transport: 'ftp' })).toEqual({});
+    expect(conformDeviceSettingsPatch({ transport: 3 })).toEqual({});
   });
 
   it('keeps an address, or going back to none, and drops anything else', () => {

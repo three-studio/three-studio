@@ -1,6 +1,7 @@
 import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
 import type { TLSSocket } from 'node:tls';
+import type { DeviceTransport } from '@three-studio/core';
 import { plainAddress } from './addresses';
 import { refusesCertificate } from './certificate';
 import type { DeviceRequestHandler } from './routes';
@@ -22,7 +23,7 @@ export interface DeviceListenerOptions {
 
 /** A server, not yet listening, that answers with `handler` over `transport`. */
 export function createDeviceListener(
-  transport: 'http' | 'https',
+  transport: DeviceTransport,
   handler: DeviceRequestHandler,
   { credentials, onRefused }: DeviceListenerOptions = {},
 ): Server {

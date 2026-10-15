@@ -58,6 +58,7 @@ void app.whenReady().then(() => {
   // every interface, so it must never be listening without someone knowing.
   const devices = new DeviceServer({
     settingsFile: join(app.getPath('userData'), 'devices.json'),
+    certificateFile: join(app.getPath('userData'), 'device-certificate.json'),
     // Where the exporter looks for the player: packaged, the app's resources;
     // in development, the workspace build.
     templateRoots: [process.resourcesPath, app.getAppPath()],

@@ -119,6 +119,7 @@ beforeAll(async () => {
   await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   devices = new DeviceServer({
     settingsFile: devicesFile.path,
+    certificateFile: join(stub.userData, 'device-certificate.json'),
     templateRoots: [templateRoot],
     listenHost: '127.0.0.1',
   });
@@ -290,6 +291,21 @@ describe('the guards are reached, not merely written', () => {
     expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
       ...JSON.parse(devicesFile.contents),
       address: '192.168.1.42',
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
+  it('lets a settings patch choose a transport this build serves, and no other', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { transport: 'gopher' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { transport: 'https' });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      transport: 'https',
     });
     // Put back, so that every other test here finds the file it was given.
     await writeFile(devicesFile.path, devicesFile.contents, 'utf8');

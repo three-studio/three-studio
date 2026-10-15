@@ -61,6 +61,24 @@ export const DEVICE_SILENCE_MS = 60_000;
 /** How long a device without a stream stays listed, as offline, before it is forgotten. */
 export const DEVICE_FORGET_MS = 30_000;
 
+/**
+ * How a page reaches the server.
+ *
+ * Plain HTTP by default: it works everywhere with nothing to accept first, but
+ * a browser treats a page on a LAN address as an insecure context, which costs
+ * WebGPU on a phone. HTTPS, under a certificate this computer signs for
+ * itself, gives the page a secure context once each browser has accepted it.
+ * Here rather than with the settings, so that the client can read a transport
+ * the server names without carrying the settings' guards.
+ */
+export const DEVICE_TRANSPORTS = ['http', 'https'] as const;
+
+export type DeviceTransport = (typeof DEVICE_TRANSPORTS)[number];
+
+export function isDeviceTransport(value: unknown): value is DeviceTransport {
+  return DEVICE_TRANSPORTS.some((transport) => transport === value);
+}
+
 /** Where a page is: the waiting page, the player loading, the game running, or the error it stopped on. */
 export type DeviceState = 'waiting' | 'booting' | 'running' | 'failed';
 

@@ -366,6 +366,7 @@ export {
   isUsableDeviceToken,
 } from './devices/schema';
 export type {
+  DeviceCertificateStatus,
   DeviceInfo,
   DeviceServerState,
   DeviceServerStatus,
@@ -392,9 +393,11 @@ export {
   DEVICE_SILENCE_MS,
   DEVICE_STREAMS_PER_DEVICE,
   DEVICE_STREAM_TIMEOUT_MS,
+  DEVICE_TRANSPORTS,
   conformHello,
   conformStatusReport,
   isDeviceId,
+  isDeviceTransport,
   parseServerMessage,
 } from './devices/protocol';
 export type {

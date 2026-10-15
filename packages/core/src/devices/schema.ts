@@ -9,7 +9,14 @@ import {
 import { migratePrefab, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
 import { migrateScene } from '../scene/serialization';
-import type { DeviceBackend, DeviceState } from './protocol';
+import {
+  isDeviceTransport,
+  type DeviceBackend,
+  type DeviceState,
+  type DeviceTransport,
+} from './protocol';
+
+export type { DeviceTransport } from './protocol';
 
 export const LAUNCH_SNAPSHOT_VERSION = 1;
 
@@ -104,16 +111,6 @@ export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
  * ------------------------------------------------------------- the settings
  */
 
-/**
- * How a device reaches the server.
- *
- * Plain HTTP alone for now: a browser treats a page on a LAN address as an
- * insecure context, which costs WebGPU on a phone, but it works everywhere with
- * nothing to accept first. The scheme is still a setting rather than a literal
- * so that no URL anywhere has to be written with one.
- */
-export type DeviceTransport = 'http';
-
 export const DEVICE_SETTINGS_VERSION = 1;
 
 /** The port asked for first, unless someone chose another. */
@@ -135,6 +132,10 @@ export interface DeviceSettings {
   port: number;
   /** The first segment of every URL the server answers. See `createDeviceToken`. */
   token: string;
+  /**
+   * Plain HTTP unless someone chose HTTPS. A setting rather than a literal in
+   * any URL, so that every link, every QR code and the client follow it.
+   */
   transport: DeviceTransport;
   /**
    * The IPv4 address the link is made of — what the QR code shows — or `null`
@@ -224,7 +225,7 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
     ...settings,
     port: isPort(settings.port) ? settings.port : factory.port,
     token: isUsableDeviceToken(settings.token) ? settings.token : factory.token,
-    transport: settings.transport === 'http' ? settings.transport : factory.transport,
+    transport: isDeviceTransport(settings.transport) ? settings.transport : factory.transport,
     address: isDeviceAddress(settings.address) ? settings.address : factory.address,
   };
 }
@@ -232,12 +233,12 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
 /**
  * What the renderer may change in the settings.
  *
- * The port, and the address the link is made of. Never the token: the
- * renderer is where a project's own scripts run, and a token one of them chose
- * would be a link it already knows. Never the version, which is the file's to
- * say.
+ * The port, the address the link is made of, and the transport. Never the
+ * token: the renderer is where a project's own scripts run, and a token one of
+ * them chose would be a link it already knows. Never the version, which is the
+ * file's to say.
  */
-export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port' | 'address'>>;
+export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port' | 'address' | 'transport'>>;
 
 /**
  * A patch, reduced to what it may change.
@@ -248,10 +249,15 @@ export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port' | 'address
  * choice of an address is given back to the server.
  */
 export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch {
-  const model: Required<DeviceSettingsPatch> = { port: DEFAULT_DEVICE_PORT, address: null };
+  const model: Required<DeviceSettingsPatch> = {
+    port: DEFAULT_DEVICE_PORT,
+    address: null,
+    transport: 'http',
+  };
   const patch: DeviceSettingsPatch = conformPatch(value, model);
   if (patch.port !== undefined && !isPort(patch.port)) delete patch.port;
   if (typeof patch.address === 'string' && !isDeviceAddress(patch.address)) delete patch.address;
+  if (patch.transport !== undefined && !isDeviceTransport(patch.transport)) delete patch.transport;
   return patch;
 }
 
@@ -281,6 +287,16 @@ export interface PortHolder {
    * offer to quit. Any other holder is only ever named.
    */
   sameApp: boolean;
+}
+
+/** The certificate a server running over HTTPS answers with, as the editor shows it. */
+export interface DeviceCertificateStatus {
+  /** SHA-256, `AB:CD:…`: what a person compares with what the phone shows before accepting. */
+  fingerprint: string;
+  /** This start replaced a certificate that phones may have accepted: they ask again. */
+  renewed: boolean;
+  /** Addresses whose browser refused the certificate, with no request answered since. */
+  refusedBy: string[];
 }
 
 /**
@@ -322,6 +338,8 @@ export interface DeviceServerStatus {
    * in the order they first did. Empty while the server is stopped.
    */
   devices: DeviceInfo[];
+  /** While running over HTTPS; `null` otherwise. Never the key: the main process keeps it. */
+  certificate: DeviceCertificateStatus | null;
 }
 
 /**

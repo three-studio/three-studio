@@ -48,6 +48,8 @@ export interface ServerCertificate {
   fingerprint: string;
   /** Every name the certificate lists, in order. */
   names: string[];
+  /** Whether the certificate found was kept, rather than a new one written. */
+  kept: boolean;
   /** Whether this call replaced a certificate that phones may have accepted. */
   renewed: boolean;
 }
@@ -102,7 +104,8 @@ export async function ensureDeviceCertificate(
     held.validToDate.getTime() - now > RENEW_WITHIN &&
     needed.every((name) => heldNames.includes(name))
   ) {
-    return { key, certificate, fingerprint: held.fingerprint256, names: heldNames, renewed: false };
+    const fingerprint = held.fingerprint256;
+    return { key, certificate, fingerprint, names: heldNames, kept: true, renewed: false };
   }
   // Every name needed now, even past the limit: a certificate that left one out
   // would be made again at every start.
@@ -120,6 +123,7 @@ export async function ensureDeviceCertificate(
     ...made,
     fingerprint: certificateFingerprint(made.certificate),
     names,
+    kept: false,
     renewed: held !== null,
   };
 }

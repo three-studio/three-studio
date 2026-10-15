@@ -1,9 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises';
-import { Agent, request as httpRequest } from 'node:http';
-import { createServer as createNetServer, type Server as NetServer } from 'node:net';
+import { Agent, request as httpRequest, type OutgoingHttpHeaders } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { connect, createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { Duplex } from 'node:stream';
+import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import {
   ASSETS_DIR,
   LAUNCH_SNAPSHOT_VERSION,
@@ -98,14 +101,19 @@ async function settingsFile(settings?: Record<string, unknown>): Promise<string>
   return file;
 }
 
+/** Where a server keeps its certificate: beside its settings, as in the app's data directory. */
+const certificateFileOf = (file: string): string => join(dirname(file), 'device-certificate.json');
+
 function server(
   file: string,
   templateRoot: string,
   onChange?: (status: DeviceServerStatus) => void,
   trace?: (line: string) => void,
+  certificateFile = certificateFileOf(file),
 ): DeviceServer {
   const made = new DeviceServer({
     settingsFile: file,
+    certificateFile,
     templateRoots: [templateRoot],
     listenHost: '127.0.0.1',
     onChange,
@@ -904,5 +912,285 @@ describe('what ends a device’s stream', () => {
     const old = await listenOn(port);
     expect(old).not.toBeNull();
     holders.push(old!);
+  });
+});
+
+/*
+ * Over HTTPS, a client trusts the server's own certificate and nothing else,
+ * read from the file the server wrote: the state a phone is in once a person
+ * has accepted it.
+ */
+
+/** The certificate a server under HTTPS wrote beside its settings. */
+async function certificateOf(file: string): Promise<string> {
+  return (JSON.parse(await readFile(certificateFileOf(file), 'utf8')) as { certificate: string })
+    .certificate;
+}
+
+interface TlsAnswer {
+  status: number;
+  body: string;
+  type: string | undefined;
+  /** The certificate's SHA-256, as the client saw it in the handshake. */
+  fingerprint: string;
+}
+
+/** A request over TLS that trusts `ca` alone. */
+function overTls(
+  port: number,
+  ca: string,
+  path: string,
+  send: { method?: string; headers?: OutgoingHttpHeaders; body?: string } = {},
+): Promise<TlsAnswer> {
+  return new Promise((resolve, reject) => {
+    const { method = 'GET', headers, body } = send;
+    const sent = httpsRequest(
+      { host: '127.0.0.1', port, path, method, headers, ca, agent: false },
+      (response) => {
+        const socket = response.socket as TLSSocket;
+        const fingerprint = socket.getPeerX509Certificate()?.fingerprint256 ?? '';
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk: string) => (text += chunk));
+        response.on('end', () =>
+          resolve({
+            status: response.statusCode ?? 0,
+            body: text,
+            type: response.headers['content-type'],
+            fingerprint,
+          }),
+        );
+      },
+    );
+    sent.on('error', reject);
+    sent.end(body);
+  });
+}
+
+/** A device's message over TLS, from the origin given. */
+async function postOverTls(
+  port: number,
+  ca: string,
+  type: string,
+  message: unknown,
+  origin: string,
+): Promise<number> {
+  const body = JSON.stringify(message);
+  const answer = await overTls(port, ca, `/${TOKEN}/__studio/${type}`, {
+    method: 'POST',
+    headers: {
+      host: `127.0.0.1:${port}`,
+      origin,
+      'content-type': 'application/json',
+      'content-length': String(Buffer.byteLength(body)),
+    },
+    body,
+  });
+  return answer.status;
+}
+
+/** A device's stream over TLS, read as it arrives. */
+function streamOverTls(
+  port: number,
+  ca: string,
+  device: string,
+): Promise<{
+  type: string | undefined;
+  until: (done: (text: string) => boolean) => Promise<string>;
+  close: () => void;
+}> {
+  return new Promise((resolve, reject) => {
+    const path = `/${TOKEN}/__studio/events?device=${device}`;
+    const sent = httpsRequest({ host: '127.0.0.1', port, path, ca, agent: false }, (response) => {
+      let text = '';
+      const heard = new Set<() => void>();
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => {
+        text += chunk;
+        for (const listener of heard) listener();
+      });
+      resolve({
+        type: response.headers['content-type'],
+        until: (done) =>
+          new Promise((settle) => {
+            const check = (): void => {
+              if (!done(text)) return;
+              heard.delete(check);
+              clearTimeout(timer);
+              settle(text);
+            };
+            const timer = setTimeout(() => {
+              heard.delete(check);
+              settle(text);
+            }, 2000);
+            heard.add(check);
+            check();
+          }),
+        close: () => sent.destroy(),
+      });
+    });
+    sent.on('error', reject);
+    sent.end();
+  });
+}
+
+/**
+ * What a browser that will not accept the certificate does: it begins a
+ * handshake and, once the server has shown its certificate, answers with a
+ * fatal alert, *unknown CA*.
+ *
+ * Node's own client never sends one — it checks a certificate once the
+ * handshake is over — so its hello is captured, and the alert written by
+ * hand. Under TLS 1.2, where an alert at that point travels in the clear:
+ * OpenSSL takes no alert before a hello at all.
+ */
+async function refuseCertificate(port: number): Promise<void> {
+  let client: TLSSocket | undefined;
+  const hello = await new Promise<Buffer>((resolve) => {
+    const wire = new Duplex({
+      read: () => undefined,
+      write: (chunk: Buffer, _encoding, done) => {
+        resolve(Buffer.from(chunk));
+        done();
+      },
+    });
+    client = tlsConnect({ socket: wire, maxVersion: 'TLSv1.2', servername: 'localhost' });
+    client.on('error', () => undefined);
+  });
+  client?.destroy();
+  await new Promise<void>((resolve) => {
+    const socket = connect(port, '127.0.0.1', () => socket.write(hello));
+    socket.once('data', () => socket.end(Buffer.from([0x15, 0x03, 0x03, 0x00, 0x02, 0x02, 0x30])));
+    socket.on('error', () => undefined);
+    socket.on('close', () => resolve());
+  });
+}
+
+const helloFrom = (id: string): Record<string, unknown> => ({
+  v: 1,
+  device: id,
+  launch: null,
+  userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) Version/26.0 Safari/604.1',
+  screen: { width: 393, height: 852, dpr: 3 },
+  secureContext: true,
+  state: 'waiting',
+  backend: null,
+  error: null,
+});
+
+describe('over HTTPS', () => {
+  async function httpsServer(
+    trace?: (line: string) => void,
+  ): Promise<{ devices: DeviceServer; port: number; file: string }> {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    return { devices: server(file, await template(), undefined, trace), port, file };
+  }
+
+  it('starts under a certificate of its own, the one a client sees', async () => {
+    const lines: string[] = [];
+    const { devices, port, file } = await httpsServer((line) => lines.push(line));
+
+    const status = await devices.start();
+
+    expect(status.state).toBe('running');
+    expect(status.transport).toBe('https');
+    for (const url of status.urls) expect(url.url).toMatch(/^https:\/\//);
+    const seen = await overTls(port, await certificateOf(file), `/${TOKEN}/`);
+    expect(seen.status).toBe(200);
+    expect(status.certificate).toEqual({
+      fingerprint: seen.fingerprint,
+      renewed: false,
+      refusedBy: [],
+    });
+    expect(lines).toContain('serving https');
+    expect(lines.some((line) => /^certificate made for localhost, .*127\.0\.0\.1/.test(line))).toBe(
+      true,
+    );
+  });
+
+  it('serves the player, the client, a stream and messages through it', async () => {
+    const { devices, port, file } = await httpsServer();
+    const root = await project();
+    await devices.start();
+    const ca = await certificateOf(file);
+    const stream = await streamOverTls(port, ca, 'phoneDevice00009');
+
+    expect(stream.type).toMatch(/^text\/event-stream/);
+    expect(await stream.until((text) => text.includes('retry: 2000'))).toMatch(/^retry: 2000/);
+    const hello = helloFrom('phoneDevice00009');
+    // The page's own origin is the HTTPS one: the same message from the
+    // plain-HTTP origin is another site's.
+    expect(await postOverTls(port, ca, 'hello', hello, `http://127.0.0.1:${port}`)).toBe(403);
+    expect(await postOverTls(port, ca, 'hello', hello, `https://127.0.0.1:${port}`)).toBe(204);
+    expect((await devices.status()).devices.map((one) => one.id)).toEqual(['phoneDevice00009']);
+
+    const launched = await devices.launch(root, await snapshot(root));
+
+    const line = launchLine(launched.launch?.id);
+    expect(await stream.until((text) => text.includes(line))).toContain(line);
+    expect(isPlayer((await overTls(port, ca, `/${TOKEN}/`)).body)).toBe(true);
+    expect((await overTls(port, ca, `/${TOKEN}/__studio/client.js`)).type).toMatch(
+      /^text\/javascript/,
+    );
+    stream.close();
+  });
+
+  it('keeps its certificate from one start to the next', async () => {
+    const lines: string[] = [];
+    const { devices } = await httpsServer((line) => lines.push(line));
+    const first = await devices.start();
+    await devices.stop();
+
+    const again = await devices.start();
+
+    expect(again.certificate?.fingerprint).toBe(first.certificate?.fingerprint);
+    expect(again.certificate?.renewed).toBe(false);
+    expect(lines).toContainEqual(expect.stringMatching(/^certificate kept \(\d+ names\)$/));
+  });
+
+  it('lists the address whose browser refused the certificate, until it is answered', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    let refused: (status: DeviceServerStatus) => void = () => undefined;
+    const heard = new Promise<DeviceServerStatus>((resolve) => (refused = resolve));
+    const devices = server(file, await template(), (status) => {
+      if (status.certificate?.refusedBy.length) refused(status);
+    });
+    await devices.start();
+
+    await refuseCertificate(port);
+
+    expect((await heard).certificate?.refusedBy).toEqual(['127.0.0.1']);
+    // Accepted, the browser loads the page again: a request from that
+    // address, answered.
+    await overTls(port, await certificateOf(file), `/${TOKEN}/`);
+    expect((await devices.status()).certificate?.refusedBy).toEqual([]);
+  });
+
+  it('is an error, naming the certificate, when it cannot be kept', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    // A file where the certificate's folder should be: nothing can be written there.
+    const blocker = join(dirname(file), 'blocker');
+    await writeFile(blocker, '', 'utf8');
+    const certificateFile = join(blocker, 'device-certificate.json');
+    const devices = server(file, await template(), undefined, undefined, certificateFile);
+
+    const status = await devices.start();
+
+    expect(status.state).toBe('error');
+    expect(status.error).toMatch(/^Could not make the HTTPS certificate: /);
+    expect(status.certificate).toBeNull();
+  });
+
+  it('is not there under HTTP', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+
+    expect((await devices.status()).certificate).toBeNull();
+    expect((await devices.start()).certificate).toBeNull();
+    await expect(stat(certificateFileOf(file))).rejects.toThrow();
   });
 });

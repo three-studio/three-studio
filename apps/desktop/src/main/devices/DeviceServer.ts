@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:http';
+import type { Server } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
 import { basename } from 'node:path';
 import {
@@ -19,8 +19,10 @@ import {
   listAddresses,
   plainAddress,
   selectedUrl,
+  serverNames,
   type ListedAddress,
 } from './addresses';
+import { ensureDeviceCertificate, type ServerCertificate } from './certificateFile';
 import { DeviceLink } from './deviceLink';
 import { prepareLaunch, type Launch } from './launch';
 import { portHolderOf } from './portHolder';
@@ -30,10 +32,13 @@ import {
   readDeviceSettings,
   updateDeviceSettings,
 } from './settingsFile';
+import { createDeviceListener } from './transport';
 
 export interface DeviceServerOptions {
   /** `devices.json`, in the app's data directory. */
   settingsFile: string;
+  /** `device-certificate.json`, beside it: the certificate HTTPS is served under, and its key. */
+  certificateFile: string;
   /** Where to look for the prebuilt player, as the exporter looks, and for the device client beside it. */
   templateRoots: readonly string[];
   /**
@@ -73,6 +78,8 @@ interface Listening {
   handler: DeviceRequestHandler;
   /** The link with each device, for as long as this server runs: a stop forgets them all. */
   link: DeviceLink;
+  /** What it answers HTTPS with; `null` under plain HTTP. A move keeps it. */
+  certificate: ServerCertificate | null;
 }
 
 /** What a status is made of, read at the moment it changed. */
@@ -84,6 +91,7 @@ interface View {
   launch: Launch | null;
   reached: boolean;
   devices: DeviceInfo[];
+  refusedBy: string[];
 }
 
 /**
@@ -106,6 +114,12 @@ export class DeviceServer {
   /** Counts launches and stops, so a launch can tell it was overtaken while it was prepared. */
   private ticket = 0;
   private reached = false;
+  /**
+   * Addresses whose browser refused the certificate, until a request from one
+   * is answered — which is that browser having accepted it. For this run
+   * alone: a start, a stop or a change of transport begins it again.
+   */
+  private refusedBy = new Set<string>();
   private addresses: ListedAddress[] = [];
   private changes: Promise<void> = Promise.resolve();
 
@@ -155,6 +169,7 @@ export class DeviceServer {
     this.current = null;
     this.state = 'stopped';
     this.error = undefined;
+    this.refusedBy.clear();
     if (listening !== null) {
       listening.link.stop();
       await closeServer(listening.server);
@@ -214,6 +229,10 @@ export class DeviceServer {
       // Refused like a missing player: every page served carries the client,
       // and a page without it is a phone the editor can never restart.
       const clientDir = await findDeviceClient(this.options.templateRoots);
+      // Before listening: a certificate that cannot be made is a start that
+      // failed, never a server on a port no browser can use.
+      const certificate =
+        settings.transport === 'https' ? await this.certificateFor(settings) : null;
       const link = new DeviceLink({
         currentLaunch: () => this.current?.id ?? null,
         onChange: () => this.emit(),
@@ -230,21 +249,23 @@ export class DeviceServer {
         onRequest: (remote) => this.noteRequest(remote),
         trace: this.options.trace,
       });
+      this.refusedBy.clear();
       let listened: { server: Server; port: number };
       try {
-        listened = await this.listenFrom(settings.port, handler);
+        listened = await this.listenFrom(settings.port, handler, certificate);
       } catch (cause) {
         link.stop();
         throw cause;
       }
       const { server, port } = listened;
-      this.listening = { server, port, settings, handler, link };
+      this.listening = { server, port, settings, handler, link, certificate };
       this.state = 'running';
       this.trace(
         port === settings.port
           ? `started on port ${port}`
           : `started on port ${port}: ${settings.port} is in use`,
       );
+      if (certificate !== null) this.trace('serving https');
     } catch (cause) {
       this.state = 'error';
       this.error = cause instanceof Error ? cause.message : String(cause);
@@ -252,6 +273,33 @@ export class DeviceServer {
     }
     this.emit();
     await this.findHolder();
+  }
+
+  /**
+   * The certificate a start under HTTPS answers with: the one kept, unless it
+   * leaves out a name this computer is now reached by.
+   *
+   * The names are read now, for this start. A network joined while running is
+   * not in the certificate until the next one: a phone there sees one more
+   * warning, about the name, which it can accept like the other.
+   */
+  private async certificateFor(settings: DeviceSettings): Promise<ServerCertificate> {
+    this.addresses = listAddresses(networkInterfaces());
+    const names = serverNames(this.addresses, hostname(), settings.address);
+    let certificate: ServerCertificate;
+    try {
+      certificate = await ensureDeviceCertificate(this.options.certificateFile, names);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      throw new Error(`Could not make the HTTPS certificate: ${reason}`);
+    }
+    this.trace(
+      certificate.kept
+        ? `certificate kept (${certificate.names.length} names)`
+        : `certificate made for ${certificate.names.join(', ')}` +
+            (certificate.renewed ? ', replacing the previous one' : ''),
+    );
+    return certificate;
   }
 
   /**
@@ -390,9 +438,9 @@ export class DeviceServer {
     if (listening === null) return false;
     let moved: { server: Server; port: number };
     if (slide) {
-      moved = await this.listenFrom(target, listening.handler);
+      moved = await this.listenFrom(target, listening.handler, listening.certificate);
     } else {
-      const server = await this.tryListen(target, listening.handler);
+      const server = await this.tryListen(target, listening.handler, listening.certificate);
       if (server === null) return false;
       moved = { server, port: target };
     }
@@ -422,18 +470,32 @@ export class DeviceServer {
   private async listenFrom(
     port: number,
     handler: DeviceRequestHandler,
+    certificate: ServerCertificate | null,
   ): Promise<{ server: Server; port: number }> {
     const last = Math.min(port + SLIDE, 65535);
     for (let candidate = port; candidate <= last; candidate += 1) {
-      const server = await this.tryListen(candidate, handler);
+      const server = await this.tryListen(candidate, handler, certificate);
       if (server !== null) return { server, port: candidate };
     }
     throw new Error(`Ports ${port} to ${last} are all in use.`);
   }
 
-  /** A server listening on that port, or `null` when something else holds it. */
-  private async tryListen(port: number, handler: DeviceRequestHandler): Promise<Server | null> {
-    const server = createServer(handler);
+  /**
+   * A server listening on that port, or `null` when something else holds it:
+   * under HTTPS with a certificate, under plain HTTP without one.
+   */
+  private async tryListen(
+    port: number,
+    handler: DeviceRequestHandler,
+    certificate: ServerCertificate | null,
+  ): Promise<Server | null> {
+    const server =
+      certificate === null
+        ? createDeviceListener('http', handler)
+        : createDeviceListener('https', handler, {
+            credentials: certificate,
+            onRefused: (address, code) => this.noteRefusal(address, code),
+          });
     try {
       await listenOn(server, port, this.options.listenHost);
     } catch (cause) {
@@ -457,7 +519,22 @@ export class DeviceServer {
     return isOwnHost(host, this.addresses, hostname());
   }
 
+  /**
+   * A browser refused the certificate. Its address waits in the status until
+   * a request from it is answered, so that the editor can say which device is
+   * held at the warning, waiting for someone to accept.
+   */
+  private noteRefusal(address: string, code: string): void {
+    if (this.refusedBy.has(address)) return;
+    this.refusedBy.add(address);
+    this.trace(`${address} refused the certificate (${code})`);
+    this.emit();
+  }
+
   private noteRequest(remote: string | undefined): void {
+    // A request at all, from an address that refused the certificate: its
+    // handshake went through this time, so its browser has accepted it since.
+    if (remote !== undefined && this.refusedBy.delete(plainAddress(remote))) this.emit();
     if (this.reached || !isFromOutside(remote, this.addresses)) return;
     // This machine's address on a network it has just joined is not outside.
     this.addresses = listAddresses(networkInterfaces());
@@ -476,6 +553,7 @@ export class DeviceServer {
       launch: this.current,
       reached: this.reached,
       devices: this.listening?.link.list() ?? [],
+      refusedBy: [...this.refusedBy],
     };
   }
 
@@ -503,9 +581,10 @@ export class DeviceServer {
         urls: [],
         selectedUrl: null,
         address: settings.address,
+        certificate: null,
       };
     }
-    const { port, settings } = view.listening;
+    const { port, settings, certificate } = view.listening;
     const urls = deviceUrls(this.addresses, settings.transport, port, settings.token);
     return {
       ...common,
@@ -515,6 +594,14 @@ export class DeviceServer {
       urls,
       selectedUrl: selectedUrl(urls, settings.address),
       address: settings.address,
+      certificate:
+        certificate === null
+          ? null
+          : {
+              fingerprint: certificate.fingerprint,
+              renewed: certificate.renewed,
+              refusedBy: view.refusedBy,
+            },
     };
   }
 
