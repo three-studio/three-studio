@@ -8,7 +8,7 @@ import {
   type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
-import { Engine, SceneHost } from '@three-studio/runtime';
+import { Engine, SceneHost, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
@@ -97,6 +97,34 @@ export function launchSnapshot(): LaunchSnapshot {
 }
 
 /**
+ * Where a running game finds its scenes: by id or by name, never by path — a
+ * build files every scene under its id, so a script naming a path would work
+ * here and break once exported.
+ *
+ * The entry is answered from what Play started with every time it is asked
+ * for, not only the first: a script that restarts the level asks for the scene
+ * it is in, and the saved file used to answer, so a restart dropped every
+ * unsaved edit. A device answers the same way, from the launch it holds.
+ * A fresh copy each time, because the game mutates the world it is handed and
+ * the next restart has to begin from the scene as authored.
+ *
+ * Every other scene is read from its file, as it always was.
+ */
+export function playSceneSource(
+  entry: LaunchSnapshot['entry'],
+  readFile: (path: string) => Promise<string>,
+): SceneSource {
+  return {
+    read: async (idOrName) => {
+      if (idOrName === entry.id || idOrName === entry.name) return structuredClone(entry.scene);
+      const scene = resolveScene(useProjectStore.getState().scenes, idOrName);
+      if (!scene) throw new Error(`No scene "${idOrName}" in this project.`);
+      return deserializeScene(await readFile(scene.path));
+    },
+  };
+}
+
+/**
  * Play, Pause, Stop — and everything that has to happen around them.
  *
  * Lifted out of `EditorViewport`, where `beginPlay` alone was a hundred and
@@ -159,12 +187,13 @@ export class PlaySession {
     // exactly what Play started from.
     const inputs = readPlayInputs();
     this.playSnapshot = structuredClone(inputs.entry.scene);
+    // The entry as Play keeps it: what Stop restores, what a restarted level is
+    // answered with, and what a launch made during Play sends.
+    const entry = { ...inputs.entry, scene: this.playSnapshot };
     // Unless Stop came while Prefab Mode was being left: `endPlay` has run
     // already, nothing after it would clear this, and every launch would send
     // a scene the person has since gone on editing.
-    if (useEditorStore.getState().playState !== 'stopped') {
-      running = { ...inputs, entry: { ...inputs.entry, scene: this.playSnapshot } };
-    }
+    if (useEditorStore.getState().playState !== 'stopped') running = { ...inputs, entry };
 
     // Compiled fresh on every Play, so editing a script and pressing Play is
     // the whole loop — no build step to remember.
@@ -189,16 +218,7 @@ export class PlaySession {
       // the document being edited, not `startScene`: pressing Play means "run
       // what is on screen".
       const host = new SceneHost({
-        source: {
-          // By id or by name, never by path: a build renames the entry scene
-          // and files the rest elsewhere, so a script naming a path would work
-          // here and break once exported.
-          read: async (idOrName) => {
-            const entry = resolveScene(useProjectStore.getState().scenes, idOrName);
-            if (!entry) throw new Error(`No scene "${idOrName}" in this project.`);
-            return deserializeScene(await window.studio.project.readScene(entry.path));
-          },
-        },
+        source: playSceneSource(entry, (path) => window.studio.project.readScene(path)),
         loadingScene: inputs.loadingScene,
         resolver: editorAssetResolver,
         physicsSettings: inputs.physics,

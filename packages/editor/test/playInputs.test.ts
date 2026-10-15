@@ -7,6 +7,8 @@ import {
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  createStarterScene,
+  serializeScene,
   type PrefabDoc,
   type ProjectFile,
 } from '@three-studio/core';
@@ -20,7 +22,13 @@ import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { useScriptStore } from '../src/state/scriptStore';
-import { PlaySession, launchSnapshot, readPlayInputs, type PlayHost } from '../src/viewport/PlaySession';
+import {
+  PlaySession,
+  launchSnapshot,
+  playSceneSource,
+  readPlayInputs,
+  type PlayHost,
+} from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 
 /*
@@ -178,5 +186,69 @@ describe('what a launch sends while the editor plays', () => {
     addEntity(createMeshEntity('box'));
     expect(launchSnapshot().entry.scene).toBe(doc().scene);
     session.dispose();
+  });
+});
+
+describe('the scenes a running game reaches', () => {
+  /*
+   * A script that restarts the level asks for the scene it is in, by id or by
+   * name. The saved file used to answer, so a restart dropped every unsaved
+   * edit: the game on screen was the edited scene right up to the moment a
+   * script reloaded it.
+   */
+  const OTHER = { id: 'other-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+
+  function givenTwoScenes(): { reads: string[]; readFile: (path: string) => Promise<string> } {
+    useProjectStore.setState({
+      scenes: [
+        { id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null },
+        OTHER,
+      ],
+    });
+    const reads: string[] = [];
+    const boss = createStarterScene();
+    boss.name = 'Boss';
+    return {
+      reads,
+      readFile: async (path) => {
+        reads.push(path);
+        return serializeScene(boss);
+      },
+    };
+  }
+
+  it('answers the entry, by id or by name, with what Play started from, a new copy each time', async () => {
+    const { reads, readFile } = givenTwoScenes();
+    const unsaved = createMeshEntity('box');
+    addEntity(unsaved);
+    const entry = readPlayInputs().entry;
+    const source = playSceneSource(entry, readFile);
+
+    const byId = await source.read(SCENE_ID);
+    const byName = await source.read('Level One');
+
+    for (const scene of [byId, byName]) {
+      expect(scene.entities[unsaved.entity.id]).toBeDefined();
+      expect(scene).toEqual(entry.scene);
+      expect(scene).not.toBe(entry.scene);
+    }
+    expect(byId).not.toBe(byName);
+    expect(reads).toEqual([]);
+  });
+
+  it('reads any other scene from its file, by id or by name', async () => {
+    const { reads, readFile } = givenTwoScenes();
+    const source = playSceneSource(readPlayInputs().entry, readFile);
+
+    expect((await source.read('Boss')).name).toBe('Boss');
+    expect((await source.read(OTHER.id)).name).toBe('Boss');
+    expect(reads).toEqual([OTHER.path, OTHER.path]);
+  });
+
+  it('refuses a scene the project does not have, and names it', async () => {
+    const { readFile } = givenTwoScenes();
+    const source = playSceneSource(readPlayInputs().entry, readFile);
+
+    await expect(source.read('Nowhere')).rejects.toThrow('No scene "Nowhere"');
   });
 });
