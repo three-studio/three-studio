@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises';
 import { Agent, request as httpRequest } from 'node:http';
 import { createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -24,8 +25,10 @@ const TEMPLATE_HTML = '<!doctype html><html><head></head><body>player</body></ht
 
 const servers: DeviceServer[] = [];
 const holders: NetServer[] = [];
+const children: ChildProcess[] = [];
 
 afterEach(async () => {
+  for (const child of children.splice(0)) child.kill('SIGKILL');
   await Promise.all(servers.splice(0).map((server) => server.stop()));
   await Promise.all(
     holders.splice(0).map((holder) => new Promise((resolve) => holder.close(resolve))),
@@ -40,13 +43,20 @@ function listenOn(port: number): Promise<NetServer | null> {
   });
 }
 
-/** A port nothing holds, with the one above it free too, for a slide to land on. */
+/**
+ * A port nothing holds, with the one above it free too, for a slide to land on.
+ *
+ * Below the range the system hands out on its own: every other test file runs
+ * beside this one, and their connections and port-0 servers take ports from
+ * that range — the one above a port found there was taken often enough to
+ * fail a run in ten.
+ */
 async function freePort(): Promise<number> {
   for (;;) {
-    const probe = await listenOn(0);
-    const port = (probe!.address() as { port: number }).port;
-    await new Promise((resolve) => probe!.close(resolve));
-    if (port >= 65535) continue;
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const probe = await listenOn(port);
+    if (probe === null) continue;
+    await new Promise((resolve) => probe.close(resolve));
     const above = await listenOn(port + 1);
     if (above === null) continue;
     await new Promise((resolve) => above.close(resolve));
@@ -360,5 +370,168 @@ describe('what the editor is told', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect(heard).toEqual([]);
+  });
+});
+
+/**
+ * Holds a port from another `node`, the way another Three Studio would: the
+ * test runner is `node` too, so it is this same program.
+ */
+async function holdFromChild(port: number, ignoreTerm = false): Promise<ChildProcess> {
+  const script = [
+    ignoreTerm ? "process.on('SIGTERM', () => {});" : '',
+    `require('net').createServer().listen(${port}, '127.0.0.1', () => process.stdout.write('ready'));`,
+  ].join('\n');
+  const child = spawn(process.execPath, ['-e', script]);
+  children.push(child);
+  await new Promise((resolve, reject) => {
+    child.stdout!.once('data', resolve);
+    child.once('exit', () => reject(new Error('the holder exited before it held the port')));
+  });
+  return child;
+}
+
+function isAlive(child: ChildProcess): boolean {
+  return child.exitCode === null && child.signalCode === null;
+}
+
+function exited(child: ChildProcess): Promise<void> {
+  return isAlive(child) ? new Promise((resolve) => child.once('exit', () => resolve())) : Promise.resolve();
+}
+
+async function keptPortServer(port: number): Promise<{ devices: DeviceServer; file: string }> {
+  const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http', future: 1 });
+  return { devices: server(file, await template()), file };
+}
+
+describe('a kept port held by another Three Studio', () => {
+  it('is named, with the same program, while the server runs on the next one', async () => {
+    const port = await freePort();
+    const child = await holdFromChild(port);
+    const { devices } = await keptPortServer(port);
+
+    const status = await devices.start();
+
+    expect(status.port).toBe(port + 1);
+    expect(status.requestedPort).toBe(port);
+    expect(status.portHolder).toMatchObject({ pid: child.pid, sameApp: true });
+    expect(await realpath(status.portHolder!.program!)).toBe(await realpath(process.execPath));
+  });
+
+  it('is left alone when the person declines', async () => {
+    const port = await freePort();
+    const child = await holdFromChild(port);
+    const { devices } = await keptPortServer(port);
+    await devices.start();
+    const asked: number[] = [];
+
+    const status = await devices.reclaimPort(async (holder) => {
+      asked.push(holder.pid);
+      return false;
+    });
+
+    expect(asked).toEqual([child.pid]);
+    expect(isAlive(child)).toBe(true);
+    expect(status.port).toBe(port + 1);
+  });
+
+  it('is quit when the person agrees, and the server moves back with its launch', async () => {
+    const port = await freePort();
+    const child = await holdFromChild(port);
+    const { devices } = await keptPortServer(port);
+    const root = await project();
+    const launched = await devices.launch(root, await snapshot(root));
+
+    const status = await devices.reclaimPort(async () => true);
+    await exited(child);
+
+    expect(status.port).toBe(port);
+    expect(status.requestedPort).toBe(port);
+    expect(status.portHolder).toBeNull();
+    expect(status.launch?.id).toBe(launched.launch?.id);
+    expect((await get(port, `/${TOKEN}/`)).body).toBe(TEMPLATE_HTML);
+    // The port it slid to is let go.
+    const slid = await listenOn(port + 1);
+    expect(slid).not.toBeNull();
+    holders.push(slid!);
+  });
+
+  it('is killed when it ignores being asked to quit', { timeout: 15_000 }, async () => {
+    const port = await freePort();
+    const child = await holdFromChild(port, true);
+    const { devices } = await keptPortServer(port);
+    await devices.start();
+
+    const status = await devices.reclaimPort(async () => true);
+    await exited(child);
+
+    expect(child.signalCode).toBe('SIGKILL');
+    expect(status.port).toBe(port);
+  });
+});
+
+describe('a kept port that came free', () => {
+  it('is taken back without asking anyone', async () => {
+    const port = await freePort();
+    await hold(port);
+    const { devices } = await keptPortServer(port);
+    await devices.start();
+    await new Promise((resolve) => holders.pop()!.close(resolve));
+
+    const status = await devices.reclaimPort(async () => {
+      throw new Error('nobody should have been asked');
+    });
+
+    expect(status.port).toBe(port);
+    expect(status.portHolder).toBeNull();
+  });
+});
+
+describe('choosing another port', () => {
+  it('moves a running server, and the file keeps what it held', async () => {
+    const port = await freePort();
+    const target = await freePort();
+    const { devices, file } = await keptPortServer(port);
+    await devices.start();
+
+    const status = await devices.saveSettings({ port: target });
+
+    expect(status.port).toBe(target);
+    expect(status.requestedPort).toBe(target);
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      version: 1,
+      port: target,
+      token: TOKEN,
+      transport: 'http',
+      future: 1,
+    });
+    expect((await get(target, `/${TOKEN}/`)).status).toBe(200);
+    const old = await listenOn(port);
+    expect(old).not.toBeNull();
+    holders.push(old!);
+  });
+
+  it('slides from a busy port, as a start does', async () => {
+    const port = await freePort();
+    const target = await freePort();
+    await hold(target);
+    const { devices } = await keptPortServer(port);
+    await devices.start();
+
+    const status = await devices.saveSettings({ port: target });
+
+    expect(status.port).toBe(target + 1);
+    expect(status.requestedPort).toBe(target);
+  });
+
+  it('only writes the file while the server is stopped', async () => {
+    const port = await freePort();
+    const { devices, file } = await keptPortServer(port);
+
+    const status = await devices.saveSettings({ port: port + 1 });
+
+    expect(status.state).toBe('stopped');
+    expect(status.port).toBe(port + 1);
+    expect(JSON.parse(await readFile(file, 'utf8')).port).toBe(port + 1);
   });
 });

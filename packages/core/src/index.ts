@@ -371,4 +371,5 @@ export type {
   DeviceSettingsPatch,
   DeviceTransport,
   DeviceUrl,
+  PortHolder,
 } from './devices/schema';

@@ -173,6 +173,18 @@ export interface DeviceUrl {
 
 export type DeviceServerState = 'stopped' | 'starting' | 'running' | 'error';
 
+/** The process holding the port the settings ask for, as the system describes it. */
+export interface PortHolder {
+  pid: number;
+  /** Its executable, or `null` when the system will not say. */
+  program: string | null;
+  /**
+   * It runs this very executable: another Three Studio, which the editor may
+   * offer to quit. Any other holder is only ever named.
+   */
+  sameApp: boolean;
+}
+
 /**
  * The device server, as the editor shows it. Sent whole on every change: it is
  * small, and a window that missed one change needs nothing but the next.
@@ -187,6 +199,8 @@ export interface DeviceServerStatus {
   port: number;
   /** The settings' port: the one asked for first, which `port` differs from after a slide. */
   requestedPort: number;
+  /** Who holds `requestedPort` after a slide, when the system says. */
+  portHolder: PortHolder | null;
   /** Every link to the server, the likeliest first. Empty unless running. */
   urls: DeviceUrl[];
   /** The link to show first, or `null` when there is none. */

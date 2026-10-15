@@ -1,10 +1,13 @@
 import { createServer, type Server } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
+import { basename } from 'node:path';
 import type {
   DeviceServerState,
   DeviceServerStatus,
   DeviceSettings,
+  DeviceSettingsPatch,
   LaunchSnapshot,
+  PortHolder,
 } from '@three-studio/core';
 import { findTemplate } from '../exportWeb';
 import {
@@ -17,8 +20,13 @@ import {
   type ListedAddress,
 } from './addresses';
 import { prepareLaunch, type Launch } from './launch';
+import { portHolderOf } from './portHolder';
 import { createDeviceHandler, type DeviceRequestHandler } from './routes';
-import { ensureDeviceSettings, readDeviceSettings } from './settingsFile';
+import {
+  ensureDeviceSettings,
+  readDeviceSettings,
+  updateDeviceSettings,
+} from './settingsFile';
 
 export interface DeviceServerOptions {
   /** `devices.json`, in the app's data directory. */
@@ -40,11 +48,23 @@ export interface DeviceServerOptions {
 /** How many ports above the kept one a start tries, when that one is held. */
 const SLIDE = 9;
 
+/** How often taking the port back tries it, once its holder was asked to quit. */
+const RETRY_MS = 200;
+/** How long a holder has to quit when asked, before it is made to. */
+const GRACE_MS = 3000;
+/** How long the port may stay held after that, before taking it back gives up. */
+const GIVE_UP_MS = 2000;
+
+/** Asks the person whether another Three Studio may be quit. */
+export type ConfirmQuit = (holder: PortHolder) => Promise<boolean>;
+
 interface Listening {
   server: Server;
   port: number;
-  /** What it started on: the kept port, the token, the transport. */
+  /** What it serves under: the kept port, the token, the transport. */
   settings: DeviceSettings;
+  /** Kept so that a server moved to another port answers exactly as before. */
+  handler: DeviceRequestHandler;
 }
 
 /** What a status is made of, read at the moment it changed. */
@@ -52,6 +72,7 @@ interface View {
   state: DeviceServerState;
   error: string | undefined;
   listening: Listening | null;
+  holder: PortHolder | null;
   launch: Launch | null;
   reached: boolean;
 }
@@ -70,6 +91,8 @@ export class DeviceServer {
   private listening: Listening | null = null;
   /** A start under way, which a second start waits for rather than repeating. */
   private starting: Promise<void> | null = null;
+  /** Who holds the kept port, while the server runs on another. */
+  private holder: PortHolder | null = null;
   private current: Launch | null = null;
   /** Counts launches and stops, so a launch can tell it was overtaken while it was prepared. */
   private ticket = 0;
@@ -115,6 +138,7 @@ export class DeviceServer {
     if (this.starting !== null) await this.starting;
     const { listening, current, state } = this;
     this.listening = null;
+    this.holder = null;
     this.current = null;
     this.state = 'stopped';
     this.error = undefined;
@@ -163,7 +187,7 @@ export class DeviceServer {
         trace: this.options.trace,
       });
       const { server, port } = await this.listenFrom(settings.port, handler);
-      this.listening = { server, port, settings };
+      this.listening = { server, port, settings, handler };
       this.state = 'running';
       this.trace(
         port === settings.port
@@ -176,6 +200,140 @@ export class DeviceServer {
       this.trace(`could not start: ${this.error}`);
     }
     this.emit();
+    await this.findHolder();
+  }
+
+  /**
+   * Writes a change to the settings, and moves a running server onto a port
+   * newly chosen — or the next free one above it, as a start would.
+   */
+  async saveSettings(patch: DeviceSettingsPatch): Promise<DeviceServerStatus> {
+    const saved = await updateDeviceSettings(this.options.settingsFile, patch);
+    if (this.starting !== null) await this.starting;
+    const listening = this.listening;
+    if (listening !== null && saved.port !== listening.settings.port) {
+      const settings = { ...listening.settings, port: saved.port };
+      if (saved.port === listening.port) {
+        // Already there, after a slide: the port asked for is now the one held.
+        this.listening = { ...listening, settings };
+        this.holder = null;
+      } else {
+        await this.moveTo(saved.port, { slide: true, settings });
+      }
+    }
+    this.emit();
+    return this.status();
+  }
+
+  /**
+   * Moves a server that slid back onto the port the settings keep.
+   *
+   * When that port came free meanwhile, at once. When another Three Studio —
+   * this very executable — holds it, after `confirm`: it is asked to quit,
+   * then made to if it has not within a few seconds, and the server moves
+   * back once the port is free. Any other holder is named and left alone:
+   * this never quits a program it cannot tell is this one.
+   *
+   * The process id is never taken from the caller, and it is looked up again
+   * before each signal: a holder that quit while the dialog was open may have
+   * left its id to something else.
+   */
+  async reclaimPort(confirm: ConfirmQuit): Promise<DeviceServerStatus> {
+    if (this.starting !== null) await this.starting;
+    const listening = this.listening;
+    if (listening === null || listening.port === listening.settings.port) return this.status();
+    const kept = listening.settings.port;
+    if (await this.moveTo(kept)) return this.status();
+
+    const holder = await portHolderOf(kept);
+    this.holder = holder;
+    this.emit();
+    if (holder === null || !holder.sameApp) {
+      throw new Error(
+        `Port ${kept} is held by ${describeHolder(holder)}, which Three Studio will not quit.`,
+      );
+    }
+    if (!(await confirm(holder))) return this.status();
+
+    if (!(await this.signalIfHolding(kept, holder.pid, 'SIGTERM'))) {
+      // It went while the dialog was open, or something else took its place,
+      // which nobody agreed to quit.
+      if (await this.moveTo(kept)) return this.status();
+      throw new Error(`Port ${kept} is now held by ${describeHolder(await portHolderOf(kept))}.`);
+    }
+    if (await this.retryMove(kept, GRACE_MS)) return this.status();
+    await this.signalIfHolding(kept, holder.pid, 'SIGKILL');
+    if (await this.retryMove(kept, GIVE_UP_MS)) return this.status();
+    throw new Error(`Port ${kept} is still in use.`);
+  }
+
+  /** Sends a signal, only if that same process still holds the port. */
+  private async signalIfHolding(
+    port: number,
+    pid: number,
+    signal: NodeJS.Signals,
+  ): Promise<boolean> {
+    if ((await portHolderOf(port))?.pid !== pid) return false;
+    try {
+      process.kill(pid, signal);
+      this.trace(`sent ${signal} to process ${pid}, which held port ${port}`);
+      return true;
+    } catch {
+      // Gone between the look and the signal: what matters is the port.
+      return false;
+    }
+  }
+
+  /** Tries to move onto a port until it is free, or the time is up. */
+  private async retryMove(port: number, during: number): Promise<boolean> {
+    const until = Date.now() + during;
+    while (Date.now() < until) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+      if (this.listening === null) return true;
+      if (await this.moveTo(port)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Listens anew on a port with the same handler, then closes the old server,
+   * so that a device's next request finds the same launch on the new port.
+   * `false` when the port is held, unless sliding was asked for.
+   */
+  private async moveTo(
+    target: number,
+    { slide = false, settings }: { slide?: boolean; settings?: DeviceSettings } = {},
+  ): Promise<boolean> {
+    const listening = this.listening;
+    if (listening === null) return false;
+    let moved: { server: Server; port: number };
+    if (slide) {
+      moved = await this.listenFrom(target, listening.handler);
+    } else {
+      const server = await this.tryListen(target, listening.handler);
+      if (server === null) return false;
+      moved = { server, port: target };
+    }
+    this.listening = { ...listening, ...moved, settings: settings ?? listening.settings };
+    await closeServer(listening.server);
+    this.trace(`moved to port ${moved.port}`);
+    this.holder = null;
+    this.emit();
+    await this.findHolder();
+    return true;
+  }
+
+  /** After a slide, who holds the kept port: what the editor names, and may offer to quit. */
+  private async findHolder(): Promise<void> {
+    const listening = this.listening;
+    if (listening === null || listening.port === listening.settings.port) return;
+    const holder = await portHolderOf(listening.settings.port);
+    if (this.listening !== listening) return;
+    this.holder = holder;
+    if (holder !== null) {
+      this.trace(`port ${listening.settings.port} is held by ${describeHolder(holder)}`);
+      this.emit();
+    }
   }
 
   /** The first of the kept port and the nine above it that is free. */
@@ -185,19 +343,25 @@ export class DeviceServer {
   ): Promise<{ server: Server; port: number }> {
     const last = Math.min(port + SLIDE, 65535);
     for (let candidate = port; candidate <= last; candidate += 1) {
-      const server = createServer(handler);
-      try {
-        await listenOn(server, candidate, this.options.listenHost);
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code === 'EADDRINUSE') continue;
-        throw cause;
-      }
-      // Once listening, an error is a broken socket rather than a refusal, and
-      // an `error` event nobody listens to would take the main process down.
-      server.on('error', (error) => this.trace(`server error: ${error.message}`));
-      return { server, port: candidate };
+      const server = await this.tryListen(candidate, handler);
+      if (server !== null) return { server, port: candidate };
     }
     throw new Error(`Ports ${port} to ${last} are all in use.`);
+  }
+
+  /** A server listening on that port, or `null` when something else holds it. */
+  private async tryListen(port: number, handler: DeviceRequestHandler): Promise<Server | null> {
+    const server = createServer(handler);
+    try {
+      await listenOn(server, port, this.options.listenHost);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code === 'EADDRINUSE') return null;
+      throw cause;
+    }
+    // Once listening, an error is a broken socket rather than a refusal, and
+    // an `error` event nobody listens to would take the main process down.
+    server.on('error', (error) => this.trace(`server error: ${error.message}`));
+    return server;
   }
 
   /**
@@ -226,6 +390,7 @@ export class DeviceServer {
       state: this.state,
       error: this.error,
       listening: this.listening,
+      holder: this.holder,
       launch: this.current,
       reached: this.reached,
     };
@@ -240,6 +405,7 @@ export class DeviceServer {
     const common = {
       state: view.state,
       ...(view.error === undefined ? {} : { error: view.error }),
+      portHolder: view.holder,
       launch,
       reachedFromNetwork: view.reached,
     };
@@ -285,6 +451,13 @@ export class DeviceServer {
   private trace(line: string): void {
     this.options.trace?.(line);
   }
+}
+
+/** A holder as a sentence names it: `node (process 4242)`. */
+function describeHolder(holder: PortHolder | null): string {
+  if (holder === null) return 'another program';
+  const name = holder.program === null ? 'a program' : basename(holder.program);
+  return `${name} (process ${holder.pid})`;
 }
 
 function listenOn(server: Server, port: number, host: string | undefined): Promise<void> {
