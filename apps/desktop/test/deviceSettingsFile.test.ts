@@ -42,6 +42,7 @@ describe('at start', () => {
       address: null,
       liveReload: false,
       launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
+      screenshotFolders: {},
     });
     expect(isUsableDeviceToken(saved.token)).toBe(true);
   });
@@ -96,6 +97,7 @@ describe('at start', () => {
       address: null,
       liveReload: false,
       launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
+      screenshotFolders: {},
     });
   });
 
@@ -116,6 +118,16 @@ describe('at start', () => {
     const settings = await ensureDeviceSettings(file);
 
     expect(settings.launchOptions).toEqual({ forceWebGL: false, maxPixelRatio: null, stats: false });
+    expect(await readFile(file, 'utf8')).toBe(contents);
+  });
+
+  it('reads a file written before screenshots existed as remembering none, and leaves it alone', async () => {
+    const contents = `{"version":1,"port":7814,"token":"${TOKEN}","transport":"http","liveReload":true}`;
+    const file = await settingsFile(contents);
+
+    const settings = await ensureDeviceSettings(file);
+
+    expect(settings.screenshotFolders).toEqual({});
     expect(await readFile(file, 'utf8')).toBe(contents);
   });
 });
@@ -235,6 +247,28 @@ describe('a patch', () => {
     expect(settings.launchOptions).toEqual({ forceWebGL: false, maxPixelRatio: 1, stats: false });
   });
 
+  it('writes a project’s screenshot folder into the file’s own, and keeps every other as found', async () => {
+    // Another project's folder stays, and so does an entry this build cannot
+    // read: written whole, the map would lose both.
+    const found = {
+      version: 1,
+      port: 7815,
+      token: TOKEN,
+      transport: 'http',
+      screenshotFolders: { '/a': '/x', '/c': 7 },
+      future: 1,
+    };
+    const file = await settingsFile(JSON.stringify(found));
+
+    const settings = await updateDeviceSettings(file, { screenshotFolders: { '/b': '/shots' } });
+
+    expect(await written(file)).toEqual({
+      ...found,
+      screenshotFolders: { '/a': '/x', '/c': 7, '/b': '/shots' },
+    });
+    expect(settings.screenshotFolders).toEqual({ '/a': '/x', '/b': '/shots' });
+  });
+
   it('writes a new token alone, as the main process asks it to', async () => {
     const found = { version: 1, port: 7808, token: TOKEN, transport: 'https', future: { a: 1 } };
     const file = await settingsFile(JSON.stringify(found));
@@ -269,6 +303,7 @@ describe('a patch', () => {
       address: null,
       liveReload: false,
       launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
+      screenshotFolders: {},
     });
     expect(isUsableDeviceToken(settings.token)).toBe(true);
   });

@@ -86,6 +86,13 @@ export type DeviceSettingsUpdate = Partial<Omit<DeviceSettings, 'version' | 'lau
   launchOptions?: Partial<DeviceLaunchOptions>;
 };
 
+/** The fields a patch writes into the file's own object, entry by entry, rather than over it. */
+const MERGED = ['launchOptions', 'screenshotFolders'] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Writes a patch over the file as found — or over the factory's settings when
  * there is none. A patch with nothing in it, as one is once conformed from
@@ -96,9 +103,10 @@ export type DeviceSettingsUpdate = Partial<Omit<DeviceSettings, 'version' | 'lau
  * `DeviceSettingsPatch`, conformed where it arrives, so it never gets here
  * carrying one.
  *
- * The launch options are written into the file's own, one level down: ticking
- * one option leaves every other as found, an option a newer build wrote
- * included.
+ * The launch options and the screenshot folders are written into the file's
+ * own, one level down: ticking one option leaves every other as found, an
+ * option a newer build wrote included, and a project's folder leaves every
+ * other project's.
  */
 export async function updateDeviceSettings(
   file: string,
@@ -108,12 +116,11 @@ export async function updateDeviceSettings(
   if (found !== null && Object.keys(patch).length === 0) return conformDeviceSettings(found);
   const base: Record<string, unknown> = found ?? { ...createDeviceSettings() };
   const updated: Record<string, unknown> = { ...base, ...patch };
-  if (patch.launchOptions !== undefined) {
-    const kept = base['launchOptions'];
-    updated['launchOptions'] = {
-      ...(typeof kept === 'object' && kept !== null && !Array.isArray(kept) ? kept : {}),
-      ...patch.launchOptions,
-    };
+  for (const key of MERGED) {
+    const fields = patch[key];
+    if (fields === undefined) continue;
+    const kept = base[key];
+    updated[key] = { ...(isRecord(kept) ? kept : {}), ...fields };
   }
   await write(file, updated);
   return conformDeviceSettings(updated);

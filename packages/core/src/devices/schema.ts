@@ -192,6 +192,14 @@ export interface DeviceSettings {
    * carries them.
    */
   launchOptions: DeviceLaunchOptions;
+  /**
+   * A project's path → the folder its last screenshot was saved in, where the
+   * next one's Save dialog opens. By path, since a project has no id — its
+   * recent entry is kept by path for the same reason — and here rather than in
+   * the project, since a folder on this computer means nothing on another.
+   * Written by the main process alone, as a screenshot is saved.
+   */
+  screenshotFolders: Record<string, string>;
 }
 
 /**
@@ -229,6 +237,7 @@ export function createDeviceSettings(): DeviceSettings {
     address: null,
     liveReload: false,
     launchOptions: createDeviceLaunchOptions(),
+    screenshotFolders: {},
   };
 }
 
@@ -273,6 +282,20 @@ function pixelRatioCapOf(options: unknown): number | null {
 }
 
 /**
+ * The screenshot folders a file names, entry by entry: a project's path and a
+ * folder, both strings with something in them. Read by hand, since `conform`
+ * reads an object by the factory's own keys, and the factory's map has none.
+ */
+function screenshotFoldersOf(value: unknown): Record<string, string> {
+  const folders: Record<string, string> = {};
+  if (!isRecord(value)) return folders;
+  for (const [project, folder] of Object.entries(value)) {
+    if (project !== '' && typeof folder === 'string' && folder !== '') folders[project] = folder;
+  }
+  return folders;
+}
+
+/**
  * What a server runs on, from whatever the file holds.
  *
  * Filled from the factory, then four checks `conform` cannot make, since each
@@ -297,6 +320,7 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
       ...settings.launchOptions,
       maxPixelRatio: pixelRatioCapOf(isRecord(value) ? value['launchOptions'] : null),
     },
+    screenshotFolders: screenshotFoldersOf(isRecord(value) ? value['screenshotFolders'] : null),
   };
 }
 
@@ -307,7 +331,9 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
  * the launch options it names — each one alone, so that ticking one option
  * leaves the others as the file has them. Never the token: the renderer is
  * where a project's own scripts run, and a token one of them chose would be a
- * link it already knows. Never the version, which is the file's to say.
+ * link it already knows. Never the version, which is the file's to say. Never
+ * a screenshot folder: the person names one in a Save dialog, which the main
+ * process shows.
  */
 export type DeviceSettingsPatch = Partial<
   Pick<DeviceSettings, 'port' | 'address' | 'transport' | 'liveReload'>

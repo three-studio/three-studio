@@ -51,6 +51,10 @@ describe('the factory', () => {
     });
     expect(createDeviceLaunchOptions()).toEqual(createDeviceSettings().launchOptions);
   });
+
+  it('remembers no screenshot folder: each project starts in its own', () => {
+    expect(createDeviceSettings().screenshotFolders).toEqual({});
+  });
 });
 
 describe('what a server runs on', () => {
@@ -131,6 +135,19 @@ describe('what a server runs on', () => {
     // draw a phone in a way no export ever could.
     expect(conformDeviceSettings({ launchOptions: { maxPixelRatio } }).launchOptions.maxPixelRatio).toBeNull();
   });
+
+  it('keeps each project’s screenshot folder, and drops an entry that names none', () => {
+    // A map, which the factory's empty one cannot describe: read entry by entry.
+    expect(
+      conformDeviceSettings({ screenshotFolders: { '/p': '/p/Screenshots' } }).screenshotFolders,
+    ).toEqual({ '/p': '/p/Screenshots' });
+    expect(
+      conformDeviceSettings({ screenshotFolders: { '/p': '/p/Screenshots', '/q': 3, '/r': '' } })
+        .screenshotFolders,
+    ).toEqual({ '/p': '/p/Screenshots' });
+    expect(conformDeviceSettings({ screenshotFolders: 'x' }).screenshotFolders).toEqual({});
+    expect(conformDeviceSettings({ port: 7800 }).screenshotFolders).toEqual({});
+  });
 });
 
 describe('a patch from the renderer', () => {
@@ -183,6 +200,10 @@ describe('a patch from the renderer', () => {
     expect(conformDeviceSettingsPatch({ launchOptions: { maxPixelRatio: null } })).toEqual({
       launchOptions: { maxPixelRatio: null },
     });
+  });
+
+  it('never names a screenshot folder: the main process writes them as it saves', () => {
+    expect(conformDeviceSettingsPatch({ screenshotFolders: { '/p': '/elsewhere' } })).toEqual({});
   });
 
   it('drops launch options that change nothing it knows', () => {
