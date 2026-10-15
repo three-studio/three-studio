@@ -40,6 +40,12 @@ export interface DevicePage {
   launch: string | null;
   /** The editor asked for this load: the game starts without its Play screen. */
   asked: boolean;
+  /**
+   * The page before this one, in this tab, was ended in the foreground and
+   * loaded again by the browser — on a phone, most likely for the memory it
+   * used.
+   */
+  reloaded: boolean;
   identity: Pick<DeviceHello, 'userAgent' | 'screen' | 'secureContext'>;
 }
 
@@ -124,6 +130,11 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
   /** Batches posted and not answered yet. */
   let sending = 0;
   let flush: ReturnType<typeof setTimeout> | undefined;
+  /**
+   * Said in each hello until one saying it is answered: a hello can be lost
+   * or refused, and the server counts a reload once, for the device.
+   */
+  let reloaded = page.reloaded;
 
   const hello = (): DeviceHello => ({
     v: DEVICE_PROTOCOL_VERSION,
@@ -133,7 +144,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
     state,
     backend,
     error,
-    reloaded: false,
+    reloaded,
   });
 
   const status = (): DeviceStatusReport => ({
@@ -307,7 +318,10 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
               : 'Connected to Three Studio.',
           );
         }
-        void io.post('hello', hello()).then((status) => {
+        const said = hello();
+        void io.post('hello', said).then((status) => {
+          // Taken, whatever became of the stream since: the reload is counted.
+          if (status === 204 && said.reloaded) reloaded = false;
           // Only for the stream it was posted on, and only while it is open:
           // an answer that arrives after the stream broke links nothing.
           if (done || mine !== generation || !open || status !== 204) return;

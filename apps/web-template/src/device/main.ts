@@ -9,6 +9,7 @@ import {
   type ProbeAnswer,
 } from './client';
 import { createLogQueue } from './logQueue';
+import { clearAlive, markAlive, readReload, type MarkStorage } from './reloadMark';
 
 /*
  * The device client: the script the device server puts first in the `<head>`
@@ -86,6 +87,17 @@ function takeAsked(): boolean {
   }
 }
 
+/**
+ * This tab's `sessionStorage`, reached inside each call: a browser that
+ * refuses storage throws on reaching it at all, and the mark's calls are where
+ * that is caught.
+ */
+const session: MarkStorage = {
+  getItem: (key) => sessionStorage.getItem(key),
+  setItem: (key, value) => sessionStorage.setItem(key, value),
+  removeItem: (key) => sessionStorage.removeItem(key),
+};
+
 /** Runs once the page's body exists: this script runs in `<head>`, before it. */
 function whenParsed(run: () => void): void {
   if (document.readyState === 'loading') {
@@ -138,12 +150,22 @@ async function probe(): Promise<ProbeAnswer> {
 }
 
 const device = deviceId();
+const asked = takeAsked();
+/** A player page: the waiting page runs no game, so it neither dies of one nor marks itself. */
+const playing = launch !== null;
+// Read before this page marks itself: a mark found now is the page before's.
+const reloaded = playing && readReload(session, asked);
+const markSeen = (): void => {
+  if (playing) markAlive(session, document.visibilityState === 'visible');
+};
+markSeen();
 
 const client = startDeviceClient(
   {
     device,
     launch,
-    asked: takeAsked(),
+    asked,
+    reloaded,
     identity: {
       userAgent: navigator.userAgent,
       screen: { width: screen.width, height: screen.height, dpr: devicePixelRatio },
@@ -212,9 +234,19 @@ window.addEventListener(PLAYER_EVENT, (event) => client.playerAnnounced(event.de
 // as they do when the page goes: a launch reloads it, and the lines just
 // before a restart are often the ones that explain it.
 document.addEventListener('visibilitychange', () => {
+  markSeen();
   if (document.visibilityState === 'visible') client.wake();
   else client.pageHidden();
 });
-window.addEventListener('pagehide', () => client.pageHidden());
-window.addEventListener('pageshow', () => client.wake());
+window.addEventListener('pagehide', () => {
+  // Gone the way a page goes — a navigation, a reload, a restart the editor
+  // asked for: the next page must not take it for one ended in the foreground.
+  if (playing) clearAlive(session);
+  client.pageHidden();
+});
+window.addEventListener('pageshow', (event) => {
+  // Back from the back-forward cache, which went through `pagehide`.
+  if (event.persisted) markSeen();
+  client.wake();
+});
 window.addEventListener('online', () => client.wake());

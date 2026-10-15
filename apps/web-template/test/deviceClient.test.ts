@@ -31,6 +31,7 @@ function page(overrides: Partial<DevicePage> = {}): DevicePage {
     device: DEVICE,
     launch: 'L1aunch0000a',
     asked: false,
+    reloaded: false,
     identity: {
       userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)',
       screen: { width: 393, height: 852, dpr: 3 },
@@ -380,6 +381,54 @@ describe('a stream closed for good', () => {
     await failAndWait(12_000);
     fake.last().handlers.onOpen();
     await failAndWait(3_000);
+  });
+});
+
+describe('a reload nobody asked for', () => {
+  const said = (fake: ReturnType<typeof fakeIo>) =>
+    fake.posts.filter((post) => post.type === 'hello').map((post) => post.message['reloaded']);
+
+  /** The browser opening the stream again, as it does on its own after an error. */
+  async function reconnect(fake: ReturnType<typeof fakeIo>): Promise<void> {
+    fake.last().handlers.onError(false);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+  }
+
+  it('is said in each hello until one saying it is answered, then no more', async () => {
+    const fake = fakeIo();
+    fake.answer.post = (type) => (type === 'hello' ? 429 : 204);
+    startDeviceClient(page({ reloaded: true }), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+
+    fake.answer.post = () => 204;
+    await reconnect(fake);
+    await reconnect(fake);
+
+    // Counted once: the server keeps the count for the device.
+    expect(said(fake)).toEqual([true, true, false]);
+  });
+
+  it('is said again after a hello that got no answer at all', async () => {
+    const fake = fakeIo();
+    fake.answer.post = (type) => (type === 'hello' ? 0 : 204);
+    startDeviceClient(page({ reloaded: true }), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+
+    await reconnect(fake);
+
+    expect(said(fake)).toEqual([true, true]);
+  });
+
+  it('is never said by a page that was not reloaded', async () => {
+    const fake = fakeIo();
+    startDeviceClient(page(), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(said(fake)).toEqual([false]);
   });
 });
 
