@@ -1177,6 +1177,24 @@ describe('over HTTPS', () => {
     expect((await devices.status()).certificate?.refusedBy).toEqual([]);
   });
 
+  it('lists nobody for a refusal that a request from the same address follows', async () => {
+    // A browser that accepted the certificate may still refuse it on each new
+    // connection, then connect again at once past the error, as Electron's does.
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });
+    const heard: DeviceServerStatus[] = [];
+    const devices = server(file, await template(), (status) => heard.push(status));
+    await devices.start();
+    const ca = await certificateOf(file);
+
+    await refuseCertificate(port);
+    await overTls(port, ca, `/${TOKEN}/`);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    expect(heard.some((status) => (status.certificate?.refusedBy.length ?? 0) > 0)).toBe(false);
+    expect((await devices.status()).certificate?.refusedBy).toEqual([]);
+  });
+
   it('is an error, naming the certificate, when it cannot be kept', async () => {
     const port = await freePort();
     const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'https' });

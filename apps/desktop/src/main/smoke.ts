@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { DeviceServerStatus } from '@three-studio/core';
@@ -117,10 +118,38 @@ async function run(win: BrowserWindow, errors: string[]): Promise<void> {
  *
  * It proves the path, not the phones: Electron's Chromium, on this computer,
  * over `localhost`, which a browser counts as a secure context.
+ *
+ * Under HTTPS it accepts the server's certificate the way a person pressing
+ * *Proceed* does: for this window alone, and only the certificate the server
+ * answers with, matched by its fingerprint. Trusting it instead, through
+ * `setCertificateVerifyProc`, would hide the state a phone is in after that
+ * press — Chromium keeps the error, and caches nothing received under it.
+ * Nothing else in the app ever accepts a certificate the system refuses.
  */
 export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
   let device: BrowserWindow | null = null;
+  let fingerprint: string | null = null;
+  // Electron keeps no exception from one connection to the next, so the
+  // question comes back with each one: said once per certificate.
+  let accepted: string | null = null;
+  app.on('certificate-error', (event, webContents, _url, _error, certificate, callback) => {
+    if (device === null || device.isDestroyed() || webContents !== device.webContents) return;
+    let presented: string;
+    try {
+      presented = new X509Certificate(certificate.data).fingerprint256;
+    } catch {
+      return;
+    }
+    // Anything else is refused, as Chromium does when nobody answers.
+    if (fingerprint === null || presented !== fingerprint) return;
+    event.preventDefault();
+    callback(true);
+    if (accepted === fingerprint) return;
+    accepted = fingerprint;
+    console.log(`[smoke device] accepted the certificate ${fingerprint.slice(0, 23)}…`);
+  });
   return (status) => {
+    fingerprint = status.certificate?.fingerprint ?? null;
     if (status.state === 'stopped') {
       if (device !== null && !device.isDestroyed()) device.destroy();
       device = null;

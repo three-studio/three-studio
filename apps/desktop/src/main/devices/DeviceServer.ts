@@ -53,6 +53,15 @@ export interface DeviceServerOptions {
   trace?: (line: string) => void;
 }
 
+/**
+ * How long a refused certificate waits for that address to get through before
+ * the address is listed as waiting. A browser that has accepted the
+ * certificate may still refuse it on each new connection, then connect again
+ * at once past the error — Electron's does — so only a refusal that nothing
+ * follows is a browser held at the warning.
+ */
+const REFUSAL_GRACE_MS = 1_000;
+
 /** How many ports above the kept one a start tries, when that one is held. */
 const SLIDE = 9;
 
@@ -124,6 +133,8 @@ export class DeviceServer {
    * alone: a start, a stop or a change of transport begins it again.
    */
   private refusedBy = new Set<string>();
+  /** Refusals waiting out `REFUSAL_GRACE_MS`, by address. */
+  private refusing = new Map<string, ReturnType<typeof setTimeout>>();
   private addresses: ListedAddress[] = [];
   private changes: Promise<void> = Promise.resolve();
 
@@ -173,7 +184,7 @@ export class DeviceServer {
     this.current = null;
     this.state = 'stopped';
     this.error = undefined;
-    this.refusedBy.clear();
+    this.forgetRefusals();
     if (listening !== null) {
       listening.link.stop();
       await closeServer(listening.server);
@@ -253,7 +264,7 @@ export class DeviceServer {
         onRequest: (remote) => this.noteRequest(remote),
         trace: this.options.trace,
       });
-      this.refusedBy.clear();
+      this.forgetRefusals();
       let listened: { server: Server; port: number };
       try {
         listened = await this.listenFrom(settings.port, handler, certificate);
@@ -375,7 +386,7 @@ export class DeviceServer {
     const settings = { ...listening.settings, transport: saved.transport };
     listening.link.reopen(saved.transport);
     await closeServer(listening.server);
-    this.refusedBy.clear();
+    this.forgetRefusals();
     let moved: { server: Server; port: number };
     try {
       moved = await this.listenFrom(listening.port, listening.handler, certificate);
@@ -591,21 +602,40 @@ export class DeviceServer {
   }
 
   /**
-   * A browser refused the certificate. Its address waits in the status until
-   * a request from it is answered, so that the editor can say which device is
-   * held at the warning, waiting for someone to accept.
+   * A browser refused the certificate. Unless that address gets through within
+   * the grace, it waits in the status until a request from it is answered, so
+   * that the editor can say which device is held at the warning, waiting for
+   * someone to accept.
    */
   private noteRefusal(address: string, code: string): void {
-    if (this.refusedBy.has(address)) return;
-    this.refusedBy.add(address);
-    this.trace(`${address} refused the certificate (${code})`);
-    this.emit();
+    if (this.refusedBy.has(address) || this.refusing.has(address)) return;
+    const timer = setTimeout(() => {
+      this.refusing.delete(address);
+      this.refusedBy.add(address);
+      this.trace(`${address} refused the certificate (${code})`);
+      this.emit();
+    }, REFUSAL_GRACE_MS);
+    // Never what keeps the app alive.
+    timer.unref();
+    this.refusing.set(address, timer);
+  }
+
+  /** The refusals of the run before are nobody's: a start, a stop, a change of transport. */
+  private forgetRefusals(): void {
+    for (const timer of this.refusing.values()) clearTimeout(timer);
+    this.refusing.clear();
+    this.refusedBy.clear();
   }
 
   private noteRequest(remote: string | undefined): void {
-    // A request at all, from an address that refused the certificate: its
-    // handshake went through this time, so its browser has accepted it since.
-    if (remote !== undefined && this.refusedBy.delete(plainAddress(remote))) this.emit();
+    if (remote !== undefined) {
+      // A request at all, from an address that refused the certificate: its
+      // handshake went through this time, so its browser has accepted it.
+      const address = plainAddress(remote);
+      clearTimeout(this.refusing.get(address));
+      this.refusing.delete(address);
+      if (this.refusedBy.delete(address)) this.emit();
+    }
     if (this.reached || !isFromOutside(remote, this.addresses)) return;
     // This machine's address on a network it has just joined is not outside.
     this.addresses = listAddresses(networkInterfaces());
