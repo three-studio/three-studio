@@ -8,7 +8,13 @@ import {
   type DeviceTransport,
   type Platform,
 } from '@three-studio/core';
-import { deviceLink, hasSlid, holderName, localDeviceUrl } from '../state/deviceStore';
+import {
+  deviceLabel,
+  deviceLink,
+  hasSlid,
+  holderName,
+  localDeviceUrl,
+} from '../state/deviceStore';
 
 /*
  * What the device button and its popover say, read from the status alone.
@@ -201,7 +207,7 @@ function rowOf(device: DeviceInfo, launched: boolean): DeviceRow {
   const known = ROW_STATES[device.state];
   return {
     id: device.id,
-    label: `${device.name} · ${device.browser}`,
+    label: deviceLabel(device),
     backend,
     insecure: !device.secureContext,
     noWebGpu: running && device.secureContext && device.backend === 'webgl',

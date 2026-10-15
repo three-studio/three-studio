@@ -5,6 +5,7 @@ import {
   createRenderingSettings,
   createStarterScene,
   type DeviceInfo,
+  type DeviceLogs,
   type DeviceServerStatus,
   type DevicesApi,
   type ProjectFile,
@@ -66,13 +67,15 @@ type Answers = Partial<Record<keyof DevicesApi, (...args: unknown[]) => Promise<
 interface Bridge {
   calls: { method: string; args: unknown[] }[];
   changed: ((status: DeviceServerStatus) => void) | null;
+  /** Who listens to the devices' lines, as `devices:log` would reach them. */
+  logged: ((logs: DeviceLogs) => void) | null;
   /** What `window.open` was asked to open. */
   opened: unknown[][];
 }
 
 /** `window.studio`, with only what these gestures reach, answering as told. */
 function install(answers: Answers, platform = 'darwin'): Bridge {
-  const bridge: Bridge = { calls: [], changed: null, opened: [] };
+  const bridge: Bridge = { calls: [], changed: null, logged: null, opened: [] };
   const call =
     (method: keyof DevicesApi) =>
     async (...args: unknown[]): Promise<DeviceServerStatus> => {
@@ -98,6 +101,12 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
           bridge.changed = listener;
           return () => {
             bridge.changed = null;
+          };
+        },
+        onLog: (listener: (logs: DeviceLogs) => void) => {
+          bridge.logged = listener;
+          return () => {
+            bridge.logged = null;
           };
         },
       },
@@ -473,6 +482,82 @@ describe('following the server', () => {
     watchDevices();
 
     await vi.waitFor(() => expect(useDeviceStore.getState().status?.state).toBe('stopped'));
+  });
+});
+
+describe('a device’s lines', () => {
+  const IPHONE = { device: 'phone0000', name: 'iPhone', browser: 'Safari' };
+  const read = () =>
+    useConsoleStore.getState().entries.map(({ level, text, count, source }) => ({
+      level,
+      text,
+      count,
+      from: source?.label ?? null,
+    }));
+
+  it('reach the Console under the device’s label, and never through the console', () => {
+    const bridge = install({ status: async () => status() });
+    const spies = [vi.spyOn(console, 'log'), vi.spyOn(console, 'warn'), vi.spyOn(console, 'error')];
+    watchDevices();
+
+    bridge.logged!({
+      ...IPHONE,
+      lines: [
+        { level: 'log', text: 'Shout loaded', count: 1 },
+        { level: 'warn', text: 'careful', count: 1 },
+        { level: 'error', text: 'Uncaught Error: late boom (scripts.mjs:57:13)', count: 2 },
+      ],
+      dropped: 0,
+    });
+
+    expect(read()).toEqual([
+      { level: 'log', text: 'Shout loaded', count: 1, from: 'iPhone · Safari' },
+      { level: 'warn', text: 'careful', count: 1, from: 'iPhone · Safari' },
+      {
+        level: 'error',
+        text: 'Uncaught Error: late boom (scripts.mjs:57:13)',
+        count: 2,
+        from: 'iPhone · Safari',
+      },
+    ]);
+    for (const spy of spies) {
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    }
+  });
+
+  it('say once how many were dropped on the way', () => {
+    const bridge = install({ status: async () => status() });
+    watchDevices();
+
+    bridge.logged!({ ...IPHONE, lines: [], dropped: 120 });
+    bridge.logged!({ ...IPHONE, lines: [{ level: 'log', text: 'after', count: 1 }], dropped: 1 });
+
+    expect(read()).toEqual([
+      {
+        level: 'warn',
+        text: '120 lines from this device were dropped before reaching the editor: it logged more than the link carries.',
+        count: 1,
+        from: 'iPhone · Safari',
+      },
+      { level: 'log', text: 'after', count: 1, from: 'iPhone · Safari' },
+      {
+        level: 'warn',
+        text: '1 line from this device was dropped before reaching the editor: it logged more than the link carries.',
+        count: 1,
+        from: 'iPhone · Safari',
+      },
+    ]);
+  });
+
+  it('stop being heard when the window stops following the server', () => {
+    const bridge = install({ status: async () => status() });
+    const stop = watchDevices();
+
+    stop();
+
+    expect(bridge.changed).toBeNull();
+    expect(bridge.logged).toBeNull();
   });
 });
 

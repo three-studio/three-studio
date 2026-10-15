@@ -1,5 +1,6 @@
-import type { DeviceServerStatus, PortHolder } from '@three-studio/core';
+import type { DeviceLogs, DeviceServerStatus, PortHolder } from '@three-studio/core';
 import { create } from 'zustand';
+import { useConsoleStore, type LogLine } from './consoleStore';
 
 /**
  * The device server, as this window last heard of it.
@@ -48,14 +49,53 @@ async function read(): Promise<void> {
   }
 }
 
-/** Follows the server: every change, and one reading to start from. Returns the unsubscribe. */
+/**
+ * Follows the server: every change, and one reading to start from, and every
+ * line a device logs. Returns the unsubscribe, which ends both.
+ */
 export function watchDevices(): () => void {
   const unsubscribe = window.studio.devices.onChanged((status) => {
     heard += 1;
     useDeviceStore.setState({ status });
   });
+  const unsubscribeLogs = window.studio.devices.onLog(appendDeviceLogs);
   void read();
-  return unsubscribe;
+  return () => {
+    unsubscribe();
+    unsubscribeLogs();
+  };
+}
+
+/**
+ * A device as its row and its Console lines both say it: `iPhone · Safari`.
+ * The same words in both places, so that typing what a row says into the
+ * Console's Filter finds that device's lines.
+ */
+export function deviceLabel({ name, browser }: { name: string; browser: string }): string {
+  return `${name} · ${browser}`;
+}
+
+/**
+ * A device's batch of lines, into the Console under the device's label, with
+ * one warning when lines were lost on the way.
+ *
+ * Straight into the Console's store, never through `console.*`: the editor's
+ * own capture would take the lines in again as this window's, the smoke
+ * harness counts every `console.error` of the window as the editor failing,
+ * and the window's devtools would show a phone's lines as its own.
+ */
+export function appendDeviceLogs(logs: DeviceLogs): void {
+  const lines: LogLine[] = [...logs.lines];
+  // After the batch's own lines: what a page loses is mostly what it logged
+  // last, once its queue was full.
+  if (logs.dropped > 0) lines.push({ level: 'warn', text: droppedText(logs.dropped), count: 1 });
+  useConsoleStore.getState().appendMany({ id: logs.device, label: deviceLabel(logs) }, lines);
+}
+
+function droppedText(dropped: number): string {
+  const lost =
+    dropped === 1 ? '1 line from this device was' : `${dropped} lines from this device were`;
+  return `${lost} dropped before reaching the editor: it logged more than the link carries.`;
 }
 
 /**

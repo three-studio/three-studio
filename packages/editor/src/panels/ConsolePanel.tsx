@@ -1,6 +1,6 @@
 import { Ban, CircleAlert, Info, Search, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useConsoleStore, type LogLevel } from '../state/consoleStore';
+import { useConsoleStore, type LogEntry, type LogLevel } from '../state/consoleStore';
 import { PanelToolbar } from './PanelShell';
 
 const LEVEL_STYLE: Record<LogLevel, { icon: typeof Info; className: string; label: string }> = {
@@ -21,9 +21,14 @@ export function ConsolePanel() {
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return entries.filter(
-      (entry) => levels[entry.level] && (needle === '' || entry.text.toLowerCase().includes(needle)),
-    );
+    // A device's label is matched as well as the text, so that typing
+    // `iphone` keeps that phone's lines: the Filter is how one device is
+    // read apart from the others.
+    const matches = (entry: LogEntry): boolean =>
+      needle === '' ||
+      entry.text.toLowerCase().includes(needle) ||
+      (entry.source?.label.toLowerCase().includes(needle) ?? false);
+    return entries.filter((entry) => levels[entry.level] && matches(entry));
   }, [entries, levels, query]);
 
   useEffect(() => {
@@ -115,6 +120,14 @@ export function ConsolePanel() {
                 data-selectable
               >
                 <Icon size={11} className={`mt-0.5 shrink-0 ${style.className}`} />
+                {entry.source !== null && (
+                  <span
+                    title={`Logged on ${entry.source.label}`}
+                    className="shrink-0 rounded-sm bg-surface-3 px-1 text-ink-muted"
+                  >
+                    {entry.source.label}
+                  </span>
+                )}
                 <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-ink">
                   {entry.text}
                 </span>
