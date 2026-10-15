@@ -5,8 +5,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, extname, join } from 'node:path';
 import {
   DEVICE_BODY_LIMIT,
+  DEVICE_SCREENSHOT_LIMIT,
+  DEVICE_SCREENSHOT_WAIT_MS,
   findScene,
   isDeviceId,
+  isRequestId,
   type AssetEntry,
   type DeviceLaunchOptions,
   type DeviceTransport,
@@ -19,6 +22,7 @@ import type { DeviceLink } from './deviceLink';
 import type { Launch } from './launch';
 import { launchAssetPath } from './launchManifest';
 import { applyLaunchOptions } from './launchOptions';
+import { readPngSize } from './screenshots';
 import { WAITING_PAGE } from './waitingPage';
 
 /*
@@ -34,6 +38,7 @@ import { WAITING_PAGE } from './waitingPage';
  *   __studio/client.js         the device client
  *   __studio/events?device=…   a device's event stream
  *   __studio/<type>            a device's message, POSTed as JSON: the one thing answered to POST
+ *   __studio/screenshot?request=…   a device's frame, POSTed as the PNG itself, when asked for
  *
  * **Nothing in the project is opened from a request path.** A scene and an
  * asset are found by id, in what the launch read from disk; a model's side
@@ -139,6 +144,11 @@ function decodeSegments(segments: readonly string[]): string[] | null {
   } catch {
     return null;
   }
+}
+
+/** The query a request's URL carries, which the path's checks never read. */
+function queryOf(request: IncomingMessage): URLSearchParams {
+  return new URLSearchParams((request.url ?? '').split('#', 1)[0]!.split('?')[1] ?? '');
 }
 
 /** A weak validator, from what changes when the file does. */
@@ -424,8 +434,7 @@ function openStream(
   token: string,
   trace: (status: number) => void,
 ): void {
-  const query = (request.url ?? '').split('#', 1)[0]!.split('?')[1] ?? '';
-  const device = new URLSearchParams(query).get('device');
+  const device = queryOf(request).get('device');
   if (!isDeviceId(device)) {
     trace(400);
     send(request, response, 400, 'no-store', 'text/plain; charset=utf-8', 'Not a device');
@@ -487,6 +496,10 @@ async function receive(
     send(request, response, 403, 'no-store', 'text/plain; charset=utf-8', 'Not this page’s origin');
     return;
   }
+  if (type === 'screenshot') {
+    await receiveScreenshot(routes, request, response, trace);
+    return;
+  }
   const body = await readBody(request, DEVICE_BODY_LIMIT);
   if (body === null) {
     // The rest of what was sent is not read: closed behind the answer.
@@ -505,6 +518,76 @@ async function receive(
     refuse(429, 'Too many messages');
     return;
   }
+  response.statusCode = 204;
+  response.setHeader('Cache-Control', CACHE_CONTROL['no-store']);
+  response.end();
+}
+
+/** `32`, as a refusal names the limit, in MB. */
+const SCREENSHOT_LIMIT_MB = DEVICE_SCREENSHOT_LIMIT / (1024 * 1024);
+
+/**
+ * A device's frame: the one POST whose body is the PNG itself, not JSON.
+ *
+ * Read only when it answers a request the server made and still waits for.
+ * Anything else is refused before a byte of it is read, the connection closed
+ * behind the answer, so that 32 MB nobody asked for are never taken in. Once
+ * read, it is checked as a PNG by its header and handed over as it came. A
+ * refusal from the moment the request is found ends it, in words the editor
+ * shows; before that, the request still waits for the page's own upload.
+ */
+async function receiveScreenshot(
+  routes: DeviceRoutes,
+  request: IncomingMessage,
+  response: ServerResponse,
+  trace: (status: number) => void,
+): Promise<void> {
+  const refuse = (status: number, text: string): void => {
+    response.setHeader('Connection', 'close');
+    trace(status);
+    send(request, response, status, 'no-store', 'text/plain; charset=utf-8', text);
+  };
+  const id = queryOf(request).get('request');
+  if (!isRequestId(id)) return refuse(400, 'Not a request');
+  const upload = routes.link.screenshotUpload(id);
+  if (upload === null) return refuse(409, 'Nothing was asked for');
+  const { label } = upload;
+  const notPng = `${label} sent something that is not a PNG.`;
+  const tooLarge =
+    `The frame from ${label} is over ${SCREENSHOT_LIMIT_MB} MB. ` +
+    'Lower the pixel ratio under Launch options.';
+  const mediaType = (request.headers['content-type'] ?? '').split(';', 1)[0]!.trim().toLowerCase();
+  if (mediaType !== 'image/png') {
+    upload.refuse(notPng);
+    return refuse(415, 'Not a PNG');
+  }
+  if (Number(request.headers['content-length']) > DEVICE_SCREENSHOT_LIMIT) {
+    upload.refuse(tooLarge);
+    return refuse(413, 'Too large');
+  }
+  // A phone that stops sending — asleep, off the Wi-Fi — would otherwise hold
+  // the request, and the editor's toast, for as long as its socket lives.
+  request.setTimeout(DEVICE_SCREENSHOT_WAIT_MS, () => request.destroy(new Error('stalled')));
+  let body: Buffer | null;
+  try {
+    body = await readBody(request, DEVICE_SCREENSHOT_LIMIT);
+  } catch {
+    upload.refuse(`The upload from ${label} was cut short.`);
+    response.destroy();
+    return;
+  } finally {
+    request.setTimeout(0);
+  }
+  if (body === null) {
+    upload.refuse(tooLarge);
+    return refuse(413, 'Too large');
+  }
+  const size = readPngSize(body);
+  if (size === null) {
+    upload.refuse(notPng);
+    return refuse(400, 'Not a PNG');
+  }
+  upload.accept(body, size);
   response.statusCode = 204;
   response.setHeader('Cache-Control', CACHE_CONTROL['no-store']);
   response.end();

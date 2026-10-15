@@ -26,6 +26,7 @@ import { prepareLaunch, type Launch } from '../src/main/devices/launch';
 import { createDeviceHandler } from '../src/main/devices/routes';
 import { WAITING_PAGE } from '../src/main/devices/waitingPage';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
+import { pngOf } from './png';
 
 /*
  * The routes, over a real socket: what a phone asks for, and what it is
@@ -475,6 +476,175 @@ describe('a device’s message', () => {
   });
 });
 
+describe('a device’s frame', () => {
+  const png = pngOf(3, 2);
+  const origin = (): string => `http://127.0.0.1:${port}`;
+
+  /**
+   * A device listed, its stream open, and a frame asked of it: the request
+   * its stream was sent. The answer is marked as handled, so that a case that
+   * leaves it waiting does not fail the file once the link stops.
+   */
+  async function asked(device: string) {
+    const stream = await listen(device);
+    await stream.until((text) => text.includes('retry'));
+    expect((await post('hello', hello(device))).status).toBe(204);
+    const frame = link.requestScreenshot(device);
+    frame.catch(() => undefined);
+    const text = await stream.until((text) => text.includes('"type":"screenshot"'));
+    const request = /"type":"screenshot","request":"([A-Za-z0-9]+)"/.exec(text)?.[1] ?? '';
+    return { stream, frame, request };
+  }
+
+  /** The frame, posted as the client posts it. `withheld` declares a body and never sends it. */
+  function upload(
+    query: string,
+    options: { headers?: Record<string, string>; body?: Buffer; withheld?: number } = {},
+  ): Promise<Answer> {
+    return ask(under(`__studio/screenshot${query}`), {
+      method: 'POST',
+      headers: { origin: origin(), 'content-type': 'image/png', ...options.headers },
+      ...(options.withheld === undefined ? { body: options.body ?? png } : { withheld: options.withheld }),
+    });
+  }
+
+  it('is taken when it answers a request still waiting, which it resolves', async () => {
+    const { stream, frame, request } = await asked('shotDevice000001');
+
+    const answer = await upload(`?request=${request}`);
+
+    expect(answer.status).toBe(204);
+    expect(answer.body.length).toBe(0);
+    await expect(frame).resolves.toEqual({ bytes: png, width: 3, height: 2 });
+    await stream.close();
+  });
+
+  it('is taken whatever the case of its media type, and its parameters', async () => {
+    const { stream, frame, request } = await asked('shotDevice000002');
+
+    const answer = await upload(`?request=${request}`, {
+      headers: { 'content-type': 'Image/PNG; charset=binary' },
+    });
+
+    expect(answer.status).toBe(204);
+    await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
+    await stream.close();
+  });
+
+  it('is refused from another site, unread, and the request still waits', async () => {
+    const { stream, frame, request } = await asked('shotDevice000003');
+
+    const refused = await upload(`?request=${request}`, {
+      headers: { origin: 'http://evil.example' },
+      withheld: 100,
+    });
+    expect(refused.status).toBe(403);
+    expect(refused.headers.connection).toBe('close');
+
+    expect((await upload(`?request=${request}`)).status).toBe(204);
+    await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
+    await stream.close();
+  });
+
+  it.each([
+    ['naming no request', ''],
+    ['naming a path', '?request=../x'],
+  ])('is refused %s, unread, and the request still waits', async (_name, query) => {
+    const device = query === '' ? 'shotDevice000004' : 'shotDevice000005';
+    const { stream, frame, request } = await asked(device);
+
+    const refused = await upload(query, { withheld: 100 });
+    expect(refused.status).toBe(400);
+    expect(refused.headers.connection).toBe('close');
+
+    expect((await upload(`?request=${request}`)).status).toBe(204);
+    await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
+    await stream.close();
+  });
+
+  it('is refused, unread, when it answers no request the server made', async () => {
+    const answer = await upload('?request=Ab3dE6gH9jK2mN5p', { withheld: 100 });
+
+    expect(answer.status).toBe(409);
+    expect(answer.headers.connection).toBe('close');
+  });
+
+  it('is refused, unread, once its request has been answered', async () => {
+    const { stream, frame, request } = await asked('shotDevice000006');
+    expect((await upload(`?request=${request}`)).status).toBe(204);
+    await frame;
+
+    const again = await upload(`?request=${request}`, { withheld: 100 });
+
+    expect(again.status).toBe(409);
+    expect(again.headers.connection).toBe('close');
+    await stream.close();
+  });
+
+  it('is refused, unread, when it says it is not a PNG, and the request ends', async () => {
+    const { stream, frame, request } = await asked('shotDevice000007');
+
+    const answer = await upload(`?request=${request}`, {
+      headers: { 'content-type': 'application/json' },
+      withheld: 100,
+    });
+
+    expect(answer.status).toBe(415);
+    expect(answer.headers.connection).toBe('close');
+    await expect(frame).rejects.toThrow('Mac · Safari sent something that is not a PNG.');
+    await stream.close();
+  });
+
+  it('is refused, unread, past 32 MB, and the request ends', async () => {
+    const { stream, frame, request } = await asked('shotDevice000008');
+
+    const answer = await upload(`?request=${request}`, { withheld: 32 * 1024 * 1024 + 1 });
+
+    expect(answer.status).toBe(413);
+    expect(answer.headers.connection).toBe('close');
+    await expect(frame).rejects.toThrow(
+      'The frame from Mac · Safari is over 32 MB. Lower the pixel ratio under Launch options.',
+    );
+    await stream.close();
+  });
+
+  it('is refused when its bytes are not a PNG, and the request ends', async () => {
+    const { stream, frame, request } = await asked('shotDevice000009');
+
+    const answer = await upload(`?request=${request}`, { body: Buffer.from('not a png at all, not at all') });
+
+    expect(answer.status).toBe(400);
+    await expect(frame).rejects.toThrow('Mac · Safari sent something that is not a PNG.');
+    await stream.close();
+  });
+
+  it('ends the request when its upload is cut short', async () => {
+    const { stream, frame, request } = await asked('shotDevice000010');
+    const sent = httpRequest({
+      host: '127.0.0.1',
+      port,
+      path: under(`__studio/screenshot?request=${request}`),
+      method: 'POST',
+      headers: {
+        host: `127.0.0.1:${port}`,
+        origin: origin(),
+        'content-type': 'image/png',
+        'content-length': '1000',
+      },
+      agent: false,
+    });
+    sent.on('error', () => undefined);
+    sent.write(png.subarray(0, 20));
+    // Long enough on loopback for the server to have begun reading it.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    sent.destroy();
+
+    await expect(frame).rejects.toThrow('The upload from Mac · Safari was cut short.');
+    await stream.close();
+  });
+});
+
 describe('build.json', () => {
   it('is the launch’s manifest, never kept', async () => {
     const answer = await ask(under('build.json'));
@@ -670,6 +840,11 @@ describe('what is refused', () => {
       ask(under('__studio/events')),
       post('hello', hello('headerDevice0001')),
       post('hello', '{'),
+      ask(under('__studio/screenshot?request=Ab3dE6gH9jK2mN5p'), {
+        method: 'POST',
+        headers: { origin: `http://127.0.0.1:${port}`, 'content-type': 'image/png' },
+        withheld: 100,
+      }),
       ask(under('__studio/hello'), {
         method: 'POST',
         headers: { origin: 'http://evil.example' },
