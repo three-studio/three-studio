@@ -439,6 +439,9 @@ describe('the palette is a view over the table, not a feature', () => {
       // A launch serves the open project, and a server stops with it.
       'launchOnDevices',
       'stopDeviceServer',
+      // A link exists only while the server runs.
+      'copyDeviceLink',
+      'openDevicePage',
     ] as const) {
       expect(offered, id).not.toContain(id);
     }

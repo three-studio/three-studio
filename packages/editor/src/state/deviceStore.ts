@@ -12,32 +12,59 @@ import { create } from 'zustand';
 interface DeviceState {
   /** `null` until the first reading arrives. */
   status: DeviceServerStatus | null;
+  /**
+   * Whether this window's device popover is open. Here rather than in the
+   * button, so that the launch toast's *Show QR Code* can open it too.
+   */
+  popoverOpen: boolean;
 }
 
-export const useDeviceStore = create<DeviceState>()(() => ({ status: null }));
+export const useDeviceStore = create<DeviceState>()(() => ({ status: null, popoverOpen: false }));
+
+export function showDevicePopover(): void {
+  useDeviceStore.setState({ popoverOpen: true });
+}
+
+export function setDevicePopoverOpen(open: boolean): void {
+  useDeviceStore.setState({ popoverOpen: open });
+}
+
+/** How many changes this window has heard, so a reading can tell one arrived while it was on its way. */
+let heard = 0;
 
 /**
- * Follows the server: every change, and one reading to start from.
- *
- * The reading is kept only if no change arrived while it was on its way: a
- * change sent meanwhile is newer, and the reading would put the window back in
- * the past — a server shown stopped that has just started. Returns the
- * unsubscribe.
+ * Asks for the status, and keeps the answer only if no change arrived while
+ * it was on its way: a change sent meanwhile is newer, and the reading would
+ * put the window back in the past — a server shown stopped that has just
+ * started.
  */
+async function read(): Promise<void> {
+  const before = heard;
+  try {
+    const status = await window.studio.devices.status();
+    if (heard === before) useDeviceStore.setState({ status });
+  } catch {
+    // Nothing to show without one; the next change will say.
+  }
+}
+
+/** Follows the server: every change, and one reading to start from. Returns the unsubscribe. */
 export function watchDevices(): () => void {
-  let changed = false;
   const unsubscribe = window.studio.devices.onChanged((status) => {
-    changed = true;
+    heard += 1;
     useDeviceStore.setState({ status });
   });
-  void window.studio.devices
-    .status()
-    .then((status) => {
-      if (!changed) useDeviceStore.setState({ status });
-    })
-    // Nothing to show without one; the next change will say.
-    .catch(() => undefined);
+  void read();
   return unsubscribe;
+}
+
+/**
+ * Reads the server again. Its addresses are read anew on every status, and
+ * nothing else announces that this computer joined another Wi-Fi while the
+ * server ran.
+ */
+export function refreshDevices(): Promise<void> {
+  return read();
 }
 
 /** Running on another port than the one the settings keep, because something held that one. */

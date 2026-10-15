@@ -57,8 +57,18 @@ const DEVELOPMENT_CSP = [
  * request simply never resolved.
  *
  * `fullscreen` is here so a game can go fullscreen from the Game view.
+ *
+ * `clipboard-sanitized-write` is `navigator.clipboard.writeText`, which *Copy
+ * Device Link* uses: refused, the copy fails with nothing on the clipboard.
+ * Writing plain text is all it allows — reading the clipboard is
+ * `clipboard-read`, and stays refused.
  */
-const ALLOWED_PERMISSIONS = new Set(['pointerLock', 'fullscreen', 'keyboardLock']);
+const ALLOWED_PERMISSIONS = new Set([
+  'pointerLock',
+  'fullscreen',
+  'keyboardLock',
+  'clipboard-sanitized-write',
+]);
 
 export function applyContentSecurityPolicy(target: Session, isDev: boolean): void {
   const policy = isDev ? DEVELOPMENT_CSP : PRODUCTION_CSP;

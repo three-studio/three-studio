@@ -1,7 +1,14 @@
 import type { DeviceServerStatus } from '@three-studio/core';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
-import { hasSlid, holderName, useDeviceStore } from '../state/deviceStore';
-import { askForText } from '../state/dialogStore';
+import {
+  deviceLink,
+  hasSlid,
+  holderName,
+  localDeviceUrl,
+  showDevicePopover,
+  useDeviceStore,
+} from '../state/deviceStore';
+import { askForText, askToConfirm } from '../state/dialogStore';
 import { useProjectStore } from '../state/projectStore';
 import { useToastStore, type ToastInput } from '../state/toastStore';
 import { launchSnapshot } from '../viewport/PlaySession';
@@ -57,7 +64,8 @@ function urlLines(status: DeviceServerStatus): string[] {
  * A warning stays until it is dismissed, since its point is to be read, and
  * opens its details, where the links are. A slid port held by another Three
  * Studio carries the one action that fixes it — which the palette offers as
- * well, as *Take Back Port*, so the toast is never the only way to it.
+ * well, as *Take Back Port*, so the toast is never the only way to it. A link
+ * a phone can open carries its code, which the button's chevron shows too.
  */
 function servedToast(
   status: DeviceServerStatus,
@@ -66,6 +74,7 @@ function servedToast(
   reclaim: () => void,
 ): ToastInput {
   const warnings = warningsOf(status);
+  const quit = hasSlid(status) && status.portHolder?.sameApp === true;
   return {
     kind: warnings.length > 0 ? 'warning' : 'success',
     title,
@@ -78,10 +87,12 @@ function servedToast(
       ...(reminder ? ['', RELOAD_REMINDER] : []),
     ].join('\n'),
     detailsOpen: warnings.length > 0,
-    actions:
-      hasSlid(status) && status.portHolder?.sameApp === true
-        ? [{ label: 'Quit the Other Three Studio', primary: true, onClick: reclaim }]
-        : [],
+    actions: [
+      ...(quit ? [{ label: 'Quit the Other Three Studio', primary: true, onClick: reclaim }] : []),
+      ...(deviceLink(status) === null
+        ? []
+        : [{ label: 'Show QR Code', primary: !quit, onClick: showDevicePopover }]),
+    ],
   };
 }
 
@@ -236,6 +247,79 @@ export async function reclaimDevicePort(toastId?: string): Promise<void> {
   }
 }
 
+/** Puts the link a phone opens on the clipboard: for a message, a note, a phone the code cannot reach. */
+export async function copyDeviceLink(): Promise<void> {
+  const link = deviceLink(useDeviceStore.getState().status);
+  if (link === null) return;
+  try {
+    await navigator.clipboard.writeText(link);
+    useToastStore.getState().push({ kind: 'info', title: 'Device link copied', description: link });
+  } catch (cause) {
+    // Chromium refuses a window that does not have the focus.
+    showFailure('Could not copy the device link', cause);
+  }
+}
+
+/**
+ * Opens the page in this computer's browser, over `localhost`: a browser
+ * treats `localhost` as a secure context, which a network address is not. The
+ * window's own handler hands the link to the system.
+ */
+export function openDevicePage(): void {
+  const url = localDeviceUrl(useDeviceStore.getState().status);
+  if (url !== null) window.open(url, '_blank', 'noopener');
+}
+
+/**
+ * Replaces the link with a new one, once the person agrees: the way to take
+ * back a link that leaked — a screenshot of the code is enough.
+ */
+export async function newDeviceLink(): Promise<void> {
+  const confirmed = await askToConfirm({
+    title: 'Make a new device link?',
+    message:
+      'The current link stops working at once. Every device that saved it — a bookmark, ' +
+      'a home-screen icon — needs the new one.',
+    confirmLabel: 'Make New Link',
+    destructive: true,
+  });
+  if (!confirmed) return;
+
+  try {
+    const status = await window.studio.devices.regenerateToken();
+    if (!isRunning(status)) {
+      useToastStore.getState().push({
+        kind: 'info',
+        title: 'New device link',
+        description: 'It takes effect when the server starts.',
+      });
+      return;
+    }
+    const link = deviceLink(status) ?? localDeviceUrl(status);
+    useToastStore.getState().push({
+      kind: 'info',
+      title: 'New device link',
+      description: link ?? undefined,
+    });
+    useConsoleStore.getState().append('log', ['New device link.', ...urlLines(status)].join('\n'));
+  } catch (cause) {
+    showFailure('Could not make a new device link', cause);
+  }
+}
+
+/**
+ * Picks the address the link is made of; `null` gives the choice back to the
+ * server. Not in the table below: its argument is a value the address picker
+ * produced, and only the picker can dispatch it.
+ */
+export async function chooseDeviceAddress(address: string | null): Promise<void> {
+  try {
+    await window.studio.devices.saveSettings({ address });
+  } catch (cause) {
+    showFailure('Could not change the address', cause);
+  }
+}
+
 /*
  * The device server's gestures. Choosing the port asks for its value itself,
  * as creating a scene asks for a name, so it is a gesture like the others.
@@ -267,5 +351,22 @@ export const DEVICE_COMMANDS = {
     label: () => `Take Back Port ${useDeviceStore.getState().status?.requestedPort ?? ''}`.trim(),
     can: () => hasSlid(useDeviceStore.getState().status),
     run: () => reclaimDevicePort(),
+  }),
+  copyDeviceLink: defineCommand({
+    label: () => 'Copy Device Link',
+    can: () => deviceLink(useDeviceStore.getState().status) !== null,
+    run: () => copyDeviceLink(),
+  }),
+  openDevicePage: defineCommand({
+    label: () => 'Open Device Page in Browser',
+    can: () => localDeviceUrl(useDeviceStore.getState().status) !== null,
+    run: () => openDevicePage(),
+  }),
+  newDeviceLink: defineCommand({
+    label: () => 'New Device Link…',
+    // The token is kept per machine, as the port is: a new one can be made
+    // whether or not the server runs.
+    can: () => true,
+    run: () => newDeviceLink(),
   }),
 };

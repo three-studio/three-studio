@@ -11,12 +11,16 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEVICE_COMMANDS,
+  chooseDeviceAddress,
   chooseDevicePort,
+  copyDeviceLink,
   launchOnDevices,
+  newDeviceLink,
+  openDevicePage,
   reclaimDevicePort,
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
-import { useDeviceStore, watchDevices } from '../src/state/deviceStore';
+import { refreshDevices, useDeviceStore, watchDevices } from '../src/state/deviceStore';
 import { useDialogStore } from '../src/state/dialogStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useProjectStore } from '../src/state/projectStore';
@@ -57,11 +61,13 @@ type Answers = Partial<Record<keyof DevicesApi, (...args: unknown[]) => Promise<
 interface Bridge {
   calls: { method: string; args: unknown[] }[];
   changed: ((status: DeviceServerStatus) => void) | null;
+  /** What `window.open` was asked to open. */
+  opened: unknown[][];
 }
 
 /** `window.studio`, with only what these gestures reach, answering as told. */
 function install(answers: Answers, platform = 'darwin'): Bridge {
-  const bridge: Bridge = { calls: [], changed: null };
+  const bridge: Bridge = { calls: [], changed: null, opened: [] };
   const call =
     (method: keyof DevicesApi) =>
     async (...args: unknown[]): Promise<DeviceServerStatus> => {
@@ -71,6 +77,7 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
       return answer(...args);
     };
   vi.stubGlobal('window', {
+    open: (...args: unknown[]) => void bridge.opened.push(args),
     studio: {
       platform,
       devices: {
@@ -80,6 +87,7 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
         launch: call('launch'),
         saveSettings: call('saveSettings'),
         reclaimPort: call('reclaimPort'),
+        regenerateToken: call('regenerateToken'),
         onChanged: (listener: (status: DeviceServerStatus) => void) => {
           bridge.changed = listener;
           return () => {
@@ -121,7 +129,7 @@ const lastEntry = () => useConsoleStore.getState().entries.at(-1)!;
 beforeEach(() => {
   useToastStore.getState().clear();
   useConsoleStore.getState().clear();
-  useDeviceStore.setState({ status: null });
+  useDeviceStore.setState({ status: null, popoverOpen: false });
   useDialogStore.getState().cancel();
   useDocumentStore.getState().replaceScene(createStarterScene());
   openProject();
@@ -199,7 +207,8 @@ describe('Launch on Devices', () => {
 
     expect(lastToast().kind).toBe('warning');
     expect(lastToast().description).toContain('node (process 99)');
-    expect(lastToast().actions).toEqual([]);
+    // Nothing offers to quit it: the only action is the code.
+    expect(lastToast().actions?.map((action) => action.label)).toEqual(['Show QR Code']);
     expect(lastEntry().text).toContain('lsof -nP -iTCP:7700 -sTCP:LISTEN');
   });
 
@@ -359,5 +368,253 @@ describe('following the server', () => {
     watchDevices();
 
     await vi.waitFor(() => expect(useDeviceStore.getState().status?.state).toBe('stopped'));
+  });
+});
+
+const LOCAL_ONLY = {
+  urls: [{ address: 'localhost', label: 'This computer', url: `http://localhost:7700/${TOKEN}/` }],
+  selectedUrl: `http://localhost:7700/${TOKEN}/`,
+};
+
+/** `navigator.clipboard`, keeping what was written, or refusing as an unfocused window does. */
+function clipboard(refuse = false): string[] {
+  const written: string[] = [];
+  vi.stubGlobal('navigator', {
+    clipboard: {
+      writeText: async (text: string) => {
+        if (refuse) throw new DOMException('Document is not focused.', 'NotAllowedError');
+        written.push(text);
+      },
+    },
+  });
+  return written;
+}
+
+describe('Copy Device Link', () => {
+  it('copies the link a phone opens, and shows it', async () => {
+    useDeviceStore.setState({ status: status() });
+    install({});
+    const written = clipboard();
+
+    await copyDeviceLink();
+
+    expect(written).toEqual([`http://192.168.1.42:7700/${TOKEN}/`]);
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      description: `http://192.168.1.42:7700/${TOKEN}/`,
+    });
+  });
+
+  it('cannot run while the server is stopped, nor while only this computer can reach it', () => {
+    useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
+    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(false);
+    useDeviceStore.setState({ status: status(LOCAL_ONLY) });
+    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(false);
+    useDeviceStore.setState({ status: status() });
+    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(true);
+  });
+
+  it('says so when the clipboard refuses', async () => {
+    useDeviceStore.setState({ status: status() });
+    install({});
+    clipboard(true);
+
+    await copyDeviceLink();
+
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Could not copy the device link',
+      description: 'Document is not focused.',
+    });
+  });
+});
+
+describe('Open Device Page in Browser', () => {
+  it('opens this computer’s link, not the network’s', () => {
+    useDeviceStore.setState({ status: status() });
+    const bridge = install({});
+
+    openDevicePage();
+
+    // `localhost` is a secure context to the browser, where a LAN address is not.
+    expect(bridge.opened).toEqual([[`http://localhost:7700/${TOKEN}/`, '_blank', 'noopener']]);
+  });
+
+  it('can run while the server runs, network or not', () => {
+    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(false);
+    useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
+    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(false);
+    useDeviceStore.setState({ status: status(LOCAL_ONLY) });
+    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(true);
+  });
+});
+
+describe('New Device Link…', () => {
+  const FRESH = 'ZYXWVUTSRQPONMLKJIHGFE';
+
+  async function answer(accept: boolean): Promise<void> {
+    await vi.waitFor(() => expect(useDialogStore.getState().confirm).not.toBeNull());
+    if (accept) useDialogStore.getState().accept();
+    else useDialogStore.getState().cancel();
+  }
+
+  it('asks first, and does nothing when declined', async () => {
+    const bridge = install({ regenerateToken: async () => status() });
+
+    const making = newDeviceLink();
+    await vi.waitFor(() => expect(useDialogStore.getState().confirm).not.toBeNull());
+    expect(useDialogStore.getState().confirm).toMatchObject({
+      title: 'Make a new device link?',
+      message:
+        'The current link stops working at once. Every device that saved it — a bookmark, ' +
+        'a home-screen icon — needs the new one.',
+      confirmLabel: 'Make New Link',
+      destructive: true,
+    });
+    await answer(false);
+    await making;
+
+    expect(bridge.calls).toEqual([]);
+    expect(toasts()).toEqual([]);
+  });
+
+  it('makes one when accepted, and shows it', async () => {
+    const renewed = status({
+      urls: status().urls.map((url) => ({ ...url, url: url.url.replace(TOKEN, FRESH) })),
+      selectedUrl: `http://192.168.1.42:7700/${FRESH}/`,
+    });
+    const bridge = install({ regenerateToken: async () => renewed });
+
+    const making = newDeviceLink();
+    await answer(true);
+    await making;
+
+    expect(bridge.calls.map((call) => call.method)).toEqual(['regenerateToken']);
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      description: `http://192.168.1.42:7700/${FRESH}/`,
+    });
+    expect(lastEntry().text).toContain(`http://localhost:7700/${FRESH}/`);
+  });
+
+  it('says when it takes effect, while the server is stopped', async () => {
+    install({
+      regenerateToken: async () => status({ state: 'stopped', urls: [], selectedUrl: null }),
+    });
+
+    const making = newDeviceLink();
+    await answer(true);
+    await making;
+
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      description: 'It takes effect when the server starts.',
+    });
+  });
+
+  it('says why it was refused', async () => {
+    install({
+      regenerateToken: async () => {
+        throw new Error("Error invoking remote method 'devices:regenerateToken': Error: EACCES");
+      },
+    });
+
+    const making = newDeviceLink();
+    await answer(true);
+    await making;
+
+    expect(lastToast()).toMatchObject({ kind: 'error', description: 'EACCES' });
+  });
+
+  it('can always run', () => {
+    expect(DEVICE_COMMANDS.newDeviceLink.can()).toBe(true);
+  });
+});
+
+describe('choosing the address', () => {
+  it('saves the address picked, or gives the choice back to the server', async () => {
+    const bridge = install({ saveSettings: async () => status() });
+
+    await chooseDeviceAddress('100.101.102.103');
+    await chooseDeviceAddress(null);
+
+    expect(bridge.calls).toEqual([
+      { method: 'saveSettings', args: [{ address: '100.101.102.103' }] },
+      { method: 'saveSettings', args: [{ address: null }] },
+    ]);
+  });
+
+  it('says why it was refused', async () => {
+    install({
+      saveSettings: async () => {
+        throw new Error("Error invoking remote method 'devices:saveSettings': Error: EACCES");
+      },
+    });
+
+    await chooseDeviceAddress('100.101.102.103');
+
+    expect(lastToast()).toMatchObject({ kind: 'error', description: 'EACCES' });
+  });
+});
+
+describe('the code, from the launch toast', () => {
+  const labels = () => (lastToast().actions ?? []).map((action) => action.label);
+
+  it('is offered with a link a phone can open, and opens the popover', async () => {
+    install({ launch: async () => status() });
+
+    await launchOnDevices();
+
+    expect(labels()).toEqual(['Show QR Code']);
+    lastToast().actions![0]!.onClick();
+    expect(useDeviceStore.getState().popoverOpen).toBe(true);
+  });
+
+  it('is not offered when only this computer can open the page', async () => {
+    install({ launch: async () => status(LOCAL_ONLY) });
+
+    await launchOnDevices();
+
+    expect(labels()).toEqual([]);
+  });
+
+  it('sits beside quitting the other Three Studio, after a slide', async () => {
+    install({
+      launch: async () =>
+        status({ port: 7701, portHolder: { pid: 4242, program: null, sameApp: true } }),
+    });
+
+    await launchOnDevices();
+
+    expect(labels()).toEqual(['Quit the Other Three Studio', 'Show QR Code']);
+  });
+});
+
+describe('reading the server again', () => {
+  it('keeps a change that arrived while the reading was on its way', async () => {
+    let answer: (status: DeviceServerStatus) => void = () => undefined;
+    const bridge = install({
+      status: () => new Promise<DeviceServerStatus>((resolve) => (answer = resolve)),
+    });
+    const stop = watchDevices();
+    answer(status({ state: 'stopped', urls: [], selectedUrl: null }));
+    await vi.waitFor(() => expect(useDeviceStore.getState().status?.state).toBe('stopped'));
+
+    const refreshing = refreshDevices();
+    bridge.changed!(status({ state: 'running' }));
+    answer(status({ state: 'stopped', urls: [], selectedUrl: null }));
+    await refreshing;
+
+    expect(useDeviceStore.getState().status?.state).toBe('running');
+    stop();
+  });
+
+  it('takes the reading when nothing changed meanwhile', async () => {
+    useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
+    install({ status: async () => status({ address: '100.101.102.103' }) });
+
+    await refreshDevices();
+
+    expect(useDeviceStore.getState().status?.address).toBe('100.101.102.103');
   });
 });
