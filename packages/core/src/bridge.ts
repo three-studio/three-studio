@@ -304,8 +304,10 @@ export interface ScriptBuildResult {
   warnings: string[];
   scriptCount: number;
   /**
-   * No script source changed since the last build, so the classes already
-   * registered still match the code on disk and need not be re-imported.
+   * No script source changed since the main process last compiled — for
+   * whoever asked: any window, an export, a device launch. It says nothing of
+   * what one window has imported, so the editor compares `code` with the
+   * bundle it imported instead.
    */
   unchanged?: boolean;
 }
