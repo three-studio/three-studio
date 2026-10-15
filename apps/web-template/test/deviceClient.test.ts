@@ -11,6 +11,7 @@ import {
   type StreamHandlers,
 } from '../src/device/client';
 import { createLogQueue } from '../src/device/logQueue';
+import type { StatsView } from '../src/device/overlay';
 
 /*
  * The client a served page runs, with everything around it faked: the stream,
@@ -64,6 +65,10 @@ function fakeIo() {
   const held: ((status: number) => void)[] = [];
   const reload = vi.fn();
   const reopen = vi.fn();
+  /** Who listens to the page's frames: the test draws them. */
+  const frameListeners: ((time: number) => void)[] = [];
+  /** What the page was asked to draw in its corner, in order. */
+  const drawn: (StatsView | 'measuring' | null)[] = [];
   const io: DeviceIo = {
     openStream: (handlers) => {
       const stream: Stream = { handlers, closed: false };
@@ -93,21 +98,61 @@ function fakeIo() {
     log: (line) => {
       logged.push(line);
     },
+    onFrame: (listener) => {
+      frameListeners.push(listener);
+      return () => {
+        frameListeners.splice(frameListeners.indexOf(listener), 1);
+      };
+    },
+    stats: (view) => {
+      drawn.push(view);
+    },
   };
   const last = (): Stream => streams.at(-1)!;
+  /** Frames at 60 Hz, from `from` to `to`, in milliseconds. */
+  const frames = (from: number, to: number): void => {
+    for (let time = from; time <= to; time += 1000 / 60) {
+      for (const listener of [...frameListeners]) listener(time);
+    }
+  };
   /** Answers the oldest post still held. */
   const release = (status: number): void => {
     held.shift()?.(status);
   };
   const logs = createLogQueue();
-  return { io, streams, posts, shown, logged, answer, release, reload, reopen, last, logs };
+  return {
+    io,
+    streams,
+    posts,
+    shown,
+    logged,
+    answer,
+    release,
+    reload,
+    reopen,
+    last,
+    logs,
+    frameListeners,
+    frames,
+    drawn,
+  };
 }
 
-function running(start = vi.fn()): PlayerAnnouncement {
+/** What three counts, as a player's renderer would hold it. */
+const RENDERER = {
+  info: {
+    render: { drawCalls: 142, triangles: 85_210 },
+    memory: { textures: 31, total: 180 * 1024 * 1024 },
+  },
+  getPixelRatio: () => 3,
+  domElement: { width: 1179, height: 2556 },
+};
+
+function running(start = vi.fn(), renderer: object = RENDERER): PlayerAnnouncement {
   return {
     state: 'running',
     backend: 'webgl',
-    renderer: {} as unknown as WebGPURenderer,
+    renderer: renderer as unknown as WebGPURenderer,
     host: {} as unknown as SceneHost,
     start,
   };
@@ -381,6 +426,157 @@ describe('a stream closed for good', () => {
     await failAndWait(12_000);
     fake.last().handlers.onOpen();
     await failAndWait(3_000);
+  });
+});
+
+describe('the page’s frames', () => {
+  const reports = (fake: ReturnType<typeof fakeIo>) =>
+    fake.posts.filter((post) => post.type === 'stats').map((post) => post.message);
+
+  /** A client on a player page, its hello answered. */
+  async function linked(fake = fakeIo(), at = page()) {
+    const client = startDeviceClient(at, fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+    return { fake, client };
+  }
+
+  it('are measured once the player runs, and not before', async () => {
+    const { fake, client } = await linked();
+    expect(fake.frameListeners).toHaveLength(0);
+
+    client.playerAnnounced(running());
+
+    expect(fake.frameListeners).toHaveLength(1);
+  });
+
+  it('are reported every 2 s after a second of warm-up, with the renderer’s counters', async () => {
+    const { fake, client } = await linked();
+    client.playerAnnounced(running());
+
+    fake.frames(0, 3100);
+
+    expect(reports(fake)).toEqual([
+      {
+        v: 1,
+        device: DEVICE,
+        launch: 'L1aunch0000a',
+        fps: 60,
+        p95: 16.7,
+        frames: expect.any(Number),
+        drawCalls: 142,
+        triangles: 85_210,
+        textures: 31,
+        gpuMemory: 180 * 1024 * 1024,
+        pixelRatio: 3,
+        width: 1179,
+        height: 2556,
+        pinned30: false,
+      },
+    ]);
+  });
+
+  it('are not reported until the server knows the device', async () => {
+    const fake = fakeIo();
+    fake.answer.post = (type) => (type === 'hello' ? 'held' : 204);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    client.playerAnnounced(running());
+
+    fake.frames(0, 5100);
+
+    expect(reports(fake)).toEqual([]);
+  });
+
+  it('are neither measured nor reported once the page restarts', async () => {
+    const { fake, client } = await linked();
+    client.playerAnnounced(running());
+    fake.frames(0, 2000);
+
+    fake.last().handlers.onMessage(message({ type: 'launch', launch: 'L2aunch0000b' }));
+    fake.frames(2000, 5100);
+
+    expect(reports(fake)).toEqual([]);
+    expect(fake.frameListeners).toHaveLength(0);
+  });
+
+  it('warm up again when the page wakes', async () => {
+    const { fake, client } = await linked();
+    client.playerAnnounced(running());
+    fake.frames(0, 2000);
+
+    client.wake();
+    fake.frames(2000, 4900);
+    expect(reports(fake)).toEqual([]);
+
+    fake.frames(4900, 5200);
+    expect(reports(fake)).toHaveLength(1);
+  });
+
+  it('are drawn in a corner when the server says so, measuring until the first sample', async () => {
+    const { fake, client } = await linked();
+    const stream = fake.last();
+
+    stream.handlers.onMessage(message({ type: 'options', stats: true }));
+    expect(fake.drawn).toEqual(['measuring']);
+    expect(fake.logged).toContain('Stats on screen.');
+
+    client.playerAnnounced(running());
+    fake.frames(0, 3100);
+    expect(fake.drawn.at(-1)).toEqual({
+      lines: [
+        '60 fps · p95 16.7 ms',
+        '142 draws · 85.2k tris · 31 textures · 180 MB',
+        'drawn at 3× · 1179×2556',
+      ],
+      warning: null,
+    });
+
+    stream.handlers.onMessage(message({ type: 'options', stats: false }));
+    expect(fake.drawn.at(-1)).toBeNull();
+    expect(fake.logged).toContain('Stats off screen.');
+  });
+
+  it('come back drawn as they last were when shown again', async () => {
+    const { fake, client } = await linked();
+    const stream = fake.last();
+    client.playerAnnounced(running());
+    fake.frames(0, 3100);
+
+    stream.handlers.onMessage(message({ type: 'options', stats: true }));
+
+    expect(fake.drawn).toEqual([expect.objectContaining({ warning: null })]);
+  });
+
+  it('say the page is held at 30 fps, where they are drawn', async () => {
+    const { fake, client } = await linked();
+    fake.last().handlers.onMessage(message({ type: 'options', stats: true }));
+    client.playerAnnounced(running());
+
+    for (let time = 0; time <= 5100; time += 1000 / 30) {
+      for (const listener of [...fake.frameListeners]) listener(time);
+    }
+
+    expect(fake.drawn.at(-1)).toMatchObject({ warning: 'Held at 30 fps — power saving?' });
+  });
+
+  it('draw nothing when the server says nothing changed', async () => {
+    const { fake } = await linked();
+
+    // Every stream opens with the options: hidden, they change nothing.
+    fake.last().handlers.onMessage(message({ type: 'options', stats: false }));
+
+    expect(fake.drawn).toEqual([]);
+    expect(fake.logged.join('\n')).not.toContain('Stats');
+  });
+
+  it('are never measured nor drawn on the waiting page, which runs no game', async () => {
+    const { fake } = await linked(fakeIo(), page({ launch: null }));
+
+    fake.last().handlers.onMessage(message({ type: 'options', stats: true }));
+
+    expect(fake.frameListeners).toHaveLength(0);
+    expect(fake.drawn).toEqual([]);
   });
 });
 

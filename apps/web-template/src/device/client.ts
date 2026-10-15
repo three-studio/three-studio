@@ -10,12 +10,17 @@ import {
   type DeviceLogMessage,
   type DeviceMessageType,
   type DeviceState,
+  type DeviceStats,
+  type DeviceStatsReport,
   type DeviceStatusReport,
   type DeviceTransport,
   type ServerMessage,
 } from '@three-studio/core/devices/protocol';
+import { describeDeviceStats } from '@three-studio/core/devices/stats';
 import type { PlayerAnnouncement } from '../announce';
 import type { LogBatch, LogQueue } from './logQueue';
+import type { StatsView } from './overlay';
+import { createFrameWindow, readRenderer, type FrameWindow } from './stats';
 
 /*
  * The link a served page keeps with the editor, without the page around it.
@@ -69,7 +74,7 @@ export interface DeviceIo {
   /** Resolves the answer's status, or `0` when none came: the request failed on the way. */
   post: (
     type: DeviceMessageType,
-    message: DeviceHello | DeviceStatusReport | DeviceLogMessage,
+    message: DeviceHello | DeviceStatusReport | DeviceLogMessage | DeviceStatsReport,
     options?: PostOptions,
   ) => Promise<number>;
   probe: () => Promise<ProbeAnswer>;
@@ -79,6 +84,10 @@ export interface DeviceIo {
   reopen: (transport: DeviceTransport) => void;
   show: (notice: DeviceNotice) => void;
   log: (line: string) => void;
+  /** Calls `listener` in every frame the page draws, until the function it returns is called. */
+  onFrame: (listener: (time: number) => void) => () => void;
+  /** Draws the page's numbers in its corner; `null` takes them away. */
+  stats: (view: StatsView | 'measuring' | null) => void;
 }
 
 export interface DeviceClient {
@@ -103,6 +112,14 @@ const LAST_RETRY_MS = 30_000;
  * server's pings are apart, so that a stream that heard one lately is kept.
  */
 const WAKE_SILENCE_MS = DEVICE_PING_MS + 5_000;
+
+/** What the corner says under the numbers when the page is held at 30 fps. */
+const HELD_30_WARNING = 'Held at 30 fps — power saving?';
+
+function viewOf(stats: DeviceStats): StatsView {
+  const { pace, scene, pixels } = describeDeviceStats(stats);
+  return { lines: [pace, scene, pixels], warning: stats.pinned30 ? HELD_30_WARNING : null };
+}
 
 export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue): DeviceClient {
   let state: DeviceState = page.launch === null ? 'waiting' : 'booting';
@@ -135,6 +152,13 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
    * or refused, and the server counts a reload once, for the device.
    */
   let reloaded = page.reloaded;
+  /** The page's frames, measured once the player runs; `null` before, and on the waiting page. */
+  let frames: FrameWindow | null = null;
+  let stopFrames: (() => void) | null = null;
+  /** The page's numbers are drawn in its corner, as the server's options say. */
+  let showing = false;
+  /** What the corner said last, so that it comes back as it was when shown again. */
+  let view: StatsView | null = null;
 
   const hello = (): DeviceHello => ({
     v: DEVICE_PROTOCOL_VERSION,
@@ -192,6 +216,8 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
 
   const finish = (): void => {
     done = true;
+    stopFrames?.();
+    stopFrames = null;
     closeStream();
     clearTimeout(silence);
     clearTimeout(retry);
@@ -243,6 +269,23 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
     flush = setTimeout(send, DEVICE_LOG_FLUSH_MS);
   };
 
+  /** Every frame the player draws: a report every 2 s, posted while linked, drawn while shown. */
+  const measure = (
+    window: FrameWindow,
+    renderer: Extract<PlayerAnnouncement, { state: 'running' }>['renderer'],
+    time: number,
+  ): void => {
+    const sample = window.frame(time);
+    if (sample === null || done) return;
+    const stats: DeviceStats = { ...sample, ...readRenderer(renderer) };
+    view = viewOf(stats);
+    if (showing) io.stats(view);
+    // Not tried again when it fails: the next one is two seconds away.
+    if (linked) {
+      void io.post('stats', { v: DEVICE_PROTOCOL_VERSION, device: page.device, launch: page.launch, ...stats });
+    }
+  };
+
   const receive = (message: ServerMessage | null): void => {
     switch (message?.type) {
       case 'launch':
@@ -265,6 +308,14 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
       case 'stopped':
         unlink();
         if (notice('stopped')) io.log('Three Studio stopped serving.');
+        return;
+      case 'options':
+        // Every stream opens with them, so only a change is one. The waiting
+        // page runs no game: it has nothing to measure, nor to draw.
+        if (page.launch === null || message.stats === showing) return;
+        showing = message.stats;
+        io.log(showing ? 'Stats on screen.' : 'Stats off screen.');
+        io.stats(showing ? (view ?? 'measuring') : null);
         return;
       default:
         // A ping, or something a newer server says: either way, the stream lives.
@@ -364,6 +415,12 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
         state = 'running';
         backend = detail.backend;
         error = null;
+        if (frames === null) {
+          const window = createFrameWindow();
+          const { renderer } = detail;
+          frames = window;
+          stopFrames = io.onFrame((time) => measure(window, renderer, time));
+        }
         if (page.asked) {
           io.log('Started without the Play screen.');
           detail.start();
@@ -375,7 +432,10 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue
       if (open) void io.post('status', status());
     },
     wake() {
-      if (done || Date.now() - lastHeard < WAKE_SILENCE_MS) return;
+      if (done) return;
+      // Its next frames are a page coming back, not yet the game's.
+      frames?.restart();
+      if (Date.now() - lastHeard < WAKE_SILENCE_MS) return;
       io.log('Back after a while. Reconnecting.');
       connect();
     },

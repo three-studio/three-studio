@@ -9,6 +9,7 @@ import {
   type ProbeAnswer,
 } from './client';
 import { createLogQueue } from './logQueue';
+import { createStatsOverlay } from './overlay';
 import { clearAlive, markAlive, readReload, type MarkStorage } from './reloadMark';
 
 /*
@@ -149,6 +150,8 @@ async function probe(): Promise<ProbeAnswer> {
   }
 }
 
+const overlay = createStatsOverlay(document);
+
 const device = deviceId();
 const asked = takeAsked();
 /** A player page: the waiting page runs no game, so it neither dies of one nor marks itself. */
@@ -221,6 +224,18 @@ const client = startDeviceClient(
     // Through the console as it was, so that the client's own lines stay on
     // the device: the row already says what they say.
     log: (line) => captured.original.log(`[device] ${line}`),
+    // A loop of its own beside the player's, which is `requestAnimationFrame`
+    // too: both run in the same frames, and the player's, begun first, runs
+    // first in each — so the renderer's counters read here are this frame's.
+    onFrame: (listener) => {
+      let frame = requestAnimationFrame(function next(time) {
+        listener(time);
+        frame = requestAnimationFrame(next);
+      });
+      return () => cancelAnimationFrame(frame);
+    },
+    // The options arrive as the stream opens, which may be before the body is.
+    stats: (view) => whenParsed(() => overlay.show(view)),
   },
   logs,
 );
