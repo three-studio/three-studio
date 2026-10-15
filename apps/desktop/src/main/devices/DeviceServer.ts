@@ -4,6 +4,7 @@ import { basename } from 'node:path';
 import {
   createDeviceToken,
   type DeviceInfo,
+  type DeviceLogs,
   type DeviceServerState,
   type DeviceServerStatus,
   type DeviceSettings,
@@ -50,6 +51,8 @@ export interface DeviceServerOptions {
   listenHost?: string;
   /** Every new status, in the order they happened. */
   onChange?: (status: DeviceServerStatus) => void;
+  /** A device's lines, as they arrive: for every editor window's Console. */
+  onLog?: (logs: DeviceLogs) => void;
   trace?: (line: string) => void;
 }
 
@@ -251,6 +254,7 @@ export class DeviceServer {
       const link = new DeviceLink({
         currentLaunch: () => this.current?.id ?? null,
         onChange: () => this.emit(),
+        onLog: this.options.onLog,
         trace: this.options.trace,
       });
       const handler = createDeviceHandler({

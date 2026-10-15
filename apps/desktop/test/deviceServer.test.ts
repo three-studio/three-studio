@@ -9,8 +9,10 @@ import { Duplex } from 'node:stream';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import {
   ASSETS_DIR,
+  DEVICE_BODY_LIMIT,
   LAUNCH_SNAPSHOT_VERSION,
   deserializeScene,
+  type DeviceLogs,
   type DeviceServerStatus,
   type LaunchSnapshot,
 } from '@three-studio/core';
@@ -807,6 +809,43 @@ describe('the devices', () => {
     expect(await phone.until((text) => text.includes('"type":"launch"'), 300)).not.toContain(
       '"type":"launch"',
     );
+    await phone.close();
+  });
+});
+
+describe('a device’s lines', () => {
+  it('reach whoever listens, stamped with the device’s name, and never past 64 KB', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const handed: DeviceLogs[] = [];
+    const devices = new DeviceServer({
+      settingsFile: file,
+      certificateFile: certificateFileOf(file),
+      templateRoots: [await template()],
+      listenHost: '127.0.0.1',
+      onLog: (logs) => {
+        handed.push(logs);
+      },
+    });
+    servers.push(devices);
+    await devices.start();
+    const phone = await device(port, 'phoneDevice00012');
+    const lines = [{ level: 'warn', text: 'careful', count: 1 }];
+
+    expect(await post(port, 'log', { v: 1, device: 'phoneDevice00012', lines, dropped: 0 })).toBe(
+      204,
+    );
+    expect(handed).toEqual([
+      { device: 'phoneDevice00012', name: 'iPhone', browser: 'Safari', lines, dropped: 0 },
+    ]);
+
+    const line = { level: 'log', text: '', count: 1 };
+    const large = { v: 1, device: 'phoneDevice00012', lines: [line], dropped: 0 };
+    line.text = 'x'.repeat(DEVICE_BODY_LIMIT + 1 - JSON.stringify(large).length);
+    expect(Buffer.byteLength(JSON.stringify(large))).toBe(DEVICE_BODY_LIMIT + 1);
+
+    expect(await post(port, 'log', large)).toBe(413);
+    expect(handed).toHaveLength(1);
     await phone.close();
   });
 });

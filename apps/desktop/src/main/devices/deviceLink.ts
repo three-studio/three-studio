@@ -1,6 +1,7 @@
 import {
   DEVICE_FORGET_MS,
   DEVICE_LIMIT,
+  DEVICE_LOG_RATE,
   DEVICE_PING_MS,
   DEVICE_PROTOCOL_VERSION,
   DEVICE_RATE,
@@ -8,11 +9,14 @@ import {
   DEVICE_SILENCE_MS,
   DEVICE_STREAMS_PER_DEVICE,
   conformHello,
+  conformLogMessage,
   conformStatusReport,
   describeUserAgent,
   isDeviceId,
   type DeviceHello,
   type DeviceInfo,
+  type DeviceLogMessage,
+  type DeviceLogs,
   type DeviceStatusReport,
   type DeviceTransport,
   type ServerMessage,
@@ -38,12 +42,24 @@ export interface DeviceLinkOptions {
   currentLaunch: () => string | null;
   /** A row changed: a device came, went, or said something new. */
   onChange: () => void;
+  /** A device's lines, with its name and browser as they are when the lines arrive. */
+  onLog?: (logs: DeviceLogs) => void;
   trace?: (line: string) => void;
   now?: () => number;
 }
 
 /** What became of a message: kept, dropped without a word, or refused for its rate. */
 export type DeviceReceipt = 'applied' | 'ignored' | 'limited';
+
+/**
+ * The rates a device's messages are counted against, each apart from the
+ * other: a game that logs every frame must never spend the hellos and
+ * statuses that keep its row alive — a heartbeat refused long enough is a
+ * device ended for silence.
+ */
+const RATES = { link: DEVICE_RATE, log: DEVICE_LOG_RATE } as const;
+
+type RateKind = keyof typeof RATES;
 
 interface OpenStream {
   stream: DeviceStream;
@@ -64,8 +80,8 @@ interface Entry {
   heard: number;
   /** Since when it has had no stream, while it is listed as offline. */
   offlineSince: number | null;
-  /** When it posted, within the last rate window. */
-  posts: number[];
+  /** When it posted, within the last window of each rate. */
+  posts: Record<RateKind, number[]>;
 }
 
 /** How often the silence and forgetting rules are checked. */
@@ -137,7 +153,7 @@ export class DeviceLink {
         order: 0,
         heard: this.now(),
         offlineSince: null,
-        posts: [],
+        posts: { link: [], log: [] },
       };
       this.entries.set(device, entry);
     } else if (entry.streams.length >= DEVICE_STREAMS_PER_DEVICE) {
@@ -160,19 +176,23 @@ export class DeviceLink {
    * A message a device posted. Ignored — not refused — when it comes from no
    * device with a stream, when it is malformed, or of a type this build does
    * not know: a newer client talks to an older editor, and a phone with no
-   * stream is told nothing either way.
+   * stream is told nothing either way. A type it does not know spends no
+   * rate, so that what a newer client sends never starves the link.
    */
   receive(type: string, body: unknown): DeviceReceipt {
     const device = isRecord(body) ? body['device'] : undefined;
     const entry = isDeviceId(device) ? this.entries.get(device) : undefined;
     if (entry === undefined || entry.streams.length === 0) return 'ignored';
-    if (!this.withinRate(entry)) return 'limited';
-    entry.heard = this.now();
     switch (type) {
       case 'hello':
-        return this.hello(entry, conformHello(body));
       case 'status':
-        return this.status(entry, conformStatusReport(body));
+        if (!this.withinRate(entry, 'link')) return 'limited';
+        entry.heard = this.now();
+        return type === 'hello'
+          ? this.hello(entry, conformHello(body))
+          : this.status(entry, conformStatusReport(body));
+      case 'log':
+        return this.log(entry, conformLogMessage(body));
       default:
         return 'ignored';
     }
@@ -318,6 +338,32 @@ export class DeviceLink {
     return 'applied';
   }
 
+  /**
+   * A batch of lines, handed on with the device's name and browser as they
+   * are now: the device may leave the list before a window reads them. Never
+   * a change of row, since a row shows no line, and never in the trace,
+   * which says only that lines were lost or refused: the lines are the
+   * Console's.
+   */
+  private log(entry: Entry, message: DeviceLogMessage | null): DeviceReceipt {
+    const info = entry.info;
+    if (message === null || info === null) return 'ignored';
+    if (!this.withinRate(entry, 'log')) {
+      this.trace(`${entry.id} sent lines too fast: a batch was refused`);
+      return 'limited';
+    }
+    entry.heard = this.now();
+    const { lines, dropped } = message;
+    if (dropped > 0) {
+      this.trace(`${entry.id} lost ${dropped} ${dropped === 1 ? 'line' : 'lines'} on the way`);
+    }
+    if (lines.length > 0 || dropped > 0) {
+      const { name, browser } = info;
+      this.options.onLog?.({ device: entry.id, name, browser, lines, dropped });
+    }
+    return 'applied';
+  }
+
   /** Sends a launch down every stream of a device, which turns booting. `false` with no stream. */
   private tell(entry: Entry, launchId: string): boolean {
     if (entry.streams.length === 0) return false;
@@ -377,11 +423,13 @@ export class DeviceLink {
     entry.offlineSince = now;
   }
 
-  private withinRate(entry: Entry): boolean {
+  private withinRate(entry: Entry, kind: RateKind): boolean {
+    const { messages, perMs } = RATES[kind];
     const now = this.now();
-    entry.posts = entry.posts.filter((at) => now - at < DEVICE_RATE.perMs);
-    if (entry.posts.length >= DEVICE_RATE.messages) return false;
-    entry.posts.push(now);
+    const posts = entry.posts[kind].filter((at) => now - at < perMs);
+    entry.posts[kind] = posts;
+    if (posts.length >= messages) return false;
+    posts.push(now);
     return true;
   }
 

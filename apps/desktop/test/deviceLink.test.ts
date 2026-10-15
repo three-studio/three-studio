@@ -1,3 +1,4 @@
+import type { DeviceLogs } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeviceLink, type DeviceStream } from '../src/main/devices/deviceLink';
 
@@ -68,16 +69,27 @@ const id = (n: number): string => `device${String(n).padStart(4, '0')}`;
 
 let current: string | null;
 let changes: number;
+/** What the link handed on of the devices' lines. */
+let handed: DeviceLogs[];
+let traced: string[];
 let link: DeviceLink;
 
 beforeEach(() => {
   vi.useFakeTimers();
   current = L1;
   changes = 0;
+  handed = [];
+  traced = [];
   link = new DeviceLink({
     currentLaunch: () => current,
     onChange: () => {
       changes += 1;
+    },
+    onLog: (logs) => {
+      handed.push(logs);
+    },
+    trace: (line) => {
+      traced.push(line);
     },
   });
 });
@@ -210,6 +222,86 @@ describe('a status', () => {
     connect(id(2));
     expect(link.receive('status', { v: 2, device: id(2), state: 'running' })).toBe('ignored');
     expect(link.receive('dance', status(id(2)))).toBe('ignored');
+  });
+});
+
+describe('a batch of lines', () => {
+  const lines = [
+    { level: 'log', text: 'Shout loaded', count: 1 },
+    { level: 'error', text: 'Uncaught Error: late boom (scripts.mjs:57:13)', count: 2 },
+  ];
+
+  function log(device: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return { v: 1, device, lines, dropped: 0, ...overrides };
+  }
+
+  it('is handed on with the device’s name and browser, and changes no row', () => {
+    connect(id(1));
+    changes = 0;
+
+    expect(link.receive('log', log(id(1), { dropped: 3 }))).toBe('applied');
+
+    expect(handed).toEqual([
+      { device: id(1), name: 'iPhone', browser: 'Safari', lines, dropped: 3 },
+    ]);
+    expect(changes).toBe(0);
+  });
+
+  it('says in the trace that lines were lost, and never what they said', () => {
+    connect(id(1));
+
+    link.receive('log', log(id(1), { dropped: 3 }));
+
+    expect(traced.filter((line) => line.includes('lost'))).toEqual([
+      `${id(1)} lost 3 lines on the way`,
+    ]);
+    expect(traced.join('\n')).not.toContain('Shout loaded');
+  });
+
+  it('is ignored from a device that never said hello', () => {
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream: recorded() });
+
+    expect(link.receive('log', log(id(1)))).toBe('ignored');
+    expect(handed).toEqual([]);
+  });
+
+  it('is ignored when it is no batch', () => {
+    connect(id(1));
+
+    expect(link.receive('log', log(id(1), { lines: 'x' }))).toBe('ignored');
+    expect(link.receive('log', log(id(1), { v: 2 }))).toBe('ignored');
+    expect(handed).toEqual([]);
+  });
+
+  it('hands nothing on when it holds no line and lost none', () => {
+    connect(id(1));
+
+    expect(link.receive('log', log(id(1), { lines: [] }))).toBe('applied');
+    expect(handed).toEqual([]);
+  });
+
+  it('is limited to 50 in 10 s, which the link’s own messages never spend', () => {
+    connect(id(1));
+
+    for (let n = 0; n < 50; n += 1) expect(link.receive('log', log(id(1)))).toBe('applied');
+    expect(link.receive('log', log(id(1)))).toBe('limited');
+    expect(link.receive('status', status(id(1)))).toBe('applied');
+
+    expect(handed).toHaveLength(50);
+    expect(traced.filter((line) => line.includes('refused'))).toEqual([
+      `${id(1)} sent lines too fast: a batch was refused`,
+    ]);
+    vi.advanceTimersByTime(10_000);
+    expect(link.receive('log', log(id(1)))).toBe('applied');
+  });
+
+  it('spends nothing of the link’s rate, nor the link of its', () => {
+    // A hello and nineteen statuses: the link's twenty.
+    connect(id(1));
+    for (let n = 0; n < 19; n += 1) expect(link.receive('status', status(id(1)))).toBe('applied');
+
+    for (let n = 0; n < 50; n += 1) expect(link.receive('log', log(id(1)))).toBe('applied');
+    expect(link.receive('status', status(id(1)))).toBe('limited');
   });
 });
 

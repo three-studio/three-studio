@@ -18,9 +18,10 @@ export const DEVICE_PROTOCOL_VERSION = 1;
 export const DEVICE_BODY_LIMIT = 64 * 1024;
 
 /**
- * How many messages one device may send in a window, before it is answered
- * 429. A heartbeat every 20 s and a status on each change is a handful;
- * twenty leaves room for a page that reloads a few times in a row.
+ * How many hellos and statuses one device may send in a window, before it is
+ * answered 429. A heartbeat every 20 s and a status on each change is a
+ * handful; twenty leaves room for a page that reloads a few times in a row.
+ * Its lines are counted apart, against `DEVICE_LOG_RATE`.
  */
 export const DEVICE_RATE = { messages: 20, perMs: 10_000 } as const;
 
