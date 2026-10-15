@@ -41,6 +41,7 @@ describe('at start', () => {
       transport: 'http',
       address: null,
       liveReload: false,
+      launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
     });
     expect(isUsableDeviceToken(saved.token)).toBe(true);
   });
@@ -94,6 +95,7 @@ describe('at start', () => {
       transport: 'http',
       address: null,
       liveReload: false,
+      launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
     });
   });
 
@@ -104,6 +106,16 @@ describe('at start', () => {
     const settings = await ensureDeviceSettings(file);
 
     expect(settings.liveReload).toBe(false);
+    expect(await readFile(file, 'utf8')).toBe(contents);
+  });
+
+  it('reads a file written before launch options existed as the factory’s, and leaves it alone', async () => {
+    const contents = `{"version":1,"port":7811,"token":"${TOKEN}","transport":"http","liveReload":true}`;
+    const file = await settingsFile(contents);
+
+    const settings = await ensureDeviceSettings(file);
+
+    expect(settings.launchOptions).toEqual({ forceWebGL: false, maxPixelRatio: null, stats: false });
     expect(await readFile(file, 'utf8')).toBe(contents);
   });
 });
@@ -192,6 +204,37 @@ describe('a patch', () => {
     expect(await written(file)).toEqual({ ...found, liveReload: true });
   });
 
+  it('writes a launch option into the file’s own, and keeps the rest of them as found', async () => {
+    // An option a newer build wrote stays: written whole, the options this
+    // build knows would take its place.
+    const found = {
+      version: 1,
+      port: 7812,
+      token: TOKEN,
+      transport: 'http',
+      launchOptions: { forceWebGL: true, future: 1 },
+    };
+    const file = await settingsFile(JSON.stringify(found));
+
+    const settings = await updateDeviceSettings(file, { launchOptions: { stats: true } });
+
+    expect(await written(file)).toEqual({
+      ...found,
+      launchOptions: { forceWebGL: true, future: 1, stats: true },
+    });
+    expect(settings.launchOptions).toEqual({ forceWebGL: true, maxPixelRatio: null, stats: true });
+  });
+
+  it('writes a launch option alone over launch options that are not an object', async () => {
+    const found = { version: 1, port: 7813, token: TOKEN, transport: 'http', launchOptions: 'x' };
+    const file = await settingsFile(JSON.stringify(found));
+
+    const settings = await updateDeviceSettings(file, { launchOptions: { maxPixelRatio: 1 } });
+
+    expect(await written(file)).toEqual({ ...found, launchOptions: { maxPixelRatio: 1 } });
+    expect(settings.launchOptions).toEqual({ forceWebGL: false, maxPixelRatio: 1, stats: false });
+  });
+
   it('writes a new token alone, as the main process asks it to', async () => {
     const found = { version: 1, port: 7808, token: TOKEN, transport: 'https', future: { a: 1 } };
     const file = await settingsFile(JSON.stringify(found));
@@ -225,6 +268,7 @@ describe('a patch', () => {
       transport: 'http',
       address: null,
       liveReload: false,
+      launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
     });
     expect(isUsableDeviceToken(settings.token)).toBe(true);
   });

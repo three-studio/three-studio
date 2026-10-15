@@ -363,6 +363,7 @@ export {
   DEVICE_SETTINGS_VERSION,
   conformDeviceSettings,
   conformDeviceSettingsPatch,
+  createDeviceLaunchOptions,
   createDeviceSettings,
   createDeviceToken,
   isUsableDeviceToken,
@@ -370,6 +371,7 @@ export {
 export type {
   DeviceCertificateStatus,
   DeviceInfo,
+  DeviceLaunchOptions,
   DeviceLogs,
   DeviceServerState,
   DeviceServerStatus,

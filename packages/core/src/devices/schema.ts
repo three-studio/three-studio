@@ -118,6 +118,32 @@ export const DEVICE_SETTINGS_VERSION = 1;
 export const DEFAULT_DEVICE_PORT = 7700;
 
 /**
+ * What every device is launched with beyond what the project says: a way to
+ * see a phone otherwise — on WebGL2, at another pixel ratio, with its numbers
+ * on screen — without touching the project. One set for every device.
+ */
+export interface DeviceLaunchOptions {
+  /**
+   * Draw with WebGL2 even where WebGPU is offered. Served in the `build.json`
+   * a device fetches, so the player reads it as it reads any export's, and
+   * every device restarts on it.
+   */
+  forceWebGL: boolean;
+  /**
+   * The highest ratio a device draws at, 1 to 3 as the project's own setting
+   * takes; `null` keeps the project's. Served in `build.json` too.
+   */
+  maxPixelRatio: number | null;
+  /** Each device draws its numbers in a corner. Sent down the stream: no restart. */
+  stats: boolean;
+}
+
+/** As the project says: nothing forced, its own pixel ratio, no numbers on screen. */
+export function createDeviceLaunchOptions(): DeviceLaunchOptions {
+  return { forceWebGL: false, maxPixelRatio: null, stats: false };
+}
+
+/**
  * What the device server keeps between runs, in the app's data directory.
  *
  * Per machine, never in the project: the token is a secret, and a phone's
@@ -159,6 +185,12 @@ export interface DeviceSettings {
    * stores, so the editor is what relaunches.
    */
   liveReload: boolean;
+  /**
+   * Kept per machine rather than in the project: they are how this person
+   * looks at their phones today, not how the game is made — an export never
+   * carries them.
+   */
+  launchOptions: DeviceLaunchOptions;
 }
 
 /**
@@ -195,6 +227,7 @@ export function createDeviceSettings(): DeviceSettings {
     transport: 'http',
     address: null,
     liveReload: false,
+    launchOptions: createDeviceLaunchOptions(),
   };
 }
 
@@ -218,6 +251,26 @@ function isDeviceAddress(value: unknown): value is string {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A cap the project's own setting could hold — 1 to 3 — or `null` for the
+ * project's. Checked by hand, from the value as it was given: `conform` reads
+ * a `null` field as one that takes a string, so it would keep `'2'` there and
+ * drop a number.
+ */
+function isPixelRatioCap(value: unknown): value is number | null {
+  return value === null || (typeof value === 'number' && value >= 1 && value <= 3);
+}
+
+/** The cap a value holds, or `null` — the project's — when it holds none that will do. */
+function pixelRatioCapOf(options: unknown): number | null {
+  const cap = isRecord(options) ? options['maxPixelRatio'] : null;
+  return isPixelRatioCap(cap) ? cap : null;
+}
+
 /**
  * What a server runs on, from whatever the file holds.
  *
@@ -239,20 +292,42 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
     token: isUsableDeviceToken(settings.token) ? settings.token : factory.token,
     transport: isDeviceTransport(settings.transport) ? settings.transport : factory.transport,
     address: isDeviceAddress(settings.address) ? settings.address : factory.address,
+    launchOptions: {
+      ...settings.launchOptions,
+      maxPixelRatio: pixelRatioCapOf(isRecord(value) ? value['launchOptions'] : null),
+    },
   };
 }
 
 /**
  * What the renderer may change in the settings.
  *
- * The port, the address the link is made of, the transport, and live reload.
- * Never the token: the renderer is where a project's own scripts run, and a
- * token one of them chose would be a link it already knows. Never the version,
- * which is the file's to say.
+ * The port, the address the link is made of, the transport, live reload, and
+ * the launch options it names — each one alone, so that ticking one option
+ * leaves the others as the file has them. Never the token: the renderer is
+ * where a project's own scripts run, and a token one of them chose would be a
+ * link it already knows. Never the version, which is the file's to say.
  */
 export type DeviceSettingsPatch = Partial<
   Pick<DeviceSettings, 'port' | 'address' | 'transport' | 'liveReload'>
->;
+> & { launchOptions?: Partial<DeviceLaunchOptions> };
+
+/**
+ * The launch options a patch names, each conformed; the rest left out.
+ *
+ * Conformed apart from the settings' patch, which would conform them as one
+ * whole value: every option the caller did not name would come back as the
+ * factory's, and be written over the file's.
+ */
+function conformLaunchOptionsPatch(value: unknown): Partial<DeviceLaunchOptions> {
+  const patch: Partial<DeviceLaunchOptions> = conformPatch(value, createDeviceLaunchOptions());
+  delete patch.maxPixelRatio;
+  if (isRecord(value) && 'maxPixelRatio' in value) {
+    const cap = value['maxPixelRatio'];
+    if (isPixelRatioCap(cap)) patch.maxPixelRatio = cap;
+  }
+  return patch;
+}
 
 /**
  * A patch, reduced to what it may change.
@@ -263,7 +338,7 @@ export type DeviceSettingsPatch = Partial<
  * choice of an address is given back to the server.
  */
 export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch {
-  const model: Required<DeviceSettingsPatch> = {
+  const model: Required<Omit<DeviceSettingsPatch, 'launchOptions'>> = {
     port: DEFAULT_DEVICE_PORT,
     address: null,
     transport: 'http',
@@ -273,6 +348,11 @@ export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch 
   if (patch.port !== undefined && !isPort(patch.port)) delete patch.port;
   if (typeof patch.address === 'string' && !isDeviceAddress(patch.address)) delete patch.address;
   if (patch.transport !== undefined && !isDeviceTransport(patch.transport)) delete patch.transport;
+  if (isRecord(value) && 'launchOptions' in value) {
+    const launchOptions = conformLaunchOptionsPatch(value['launchOptions']);
+    // Options that change nothing this build knows are no change at all.
+    if (Object.keys(launchOptions).length > 0) patch.launchOptions = launchOptions;
+  }
   return patch;
 }
 
@@ -350,6 +430,8 @@ export interface DeviceServerStatus {
   address: string | null;
   /** The settings' live reload, whether the server runs or not. */
   liveReload: boolean;
+  /** The settings' launch options, whether the server runs or not. */
+  launchOptions: DeviceLaunchOptions;
   /**
    * Every device that said hello since the server started, connected or not,
    * in the order they first did. Empty while the server is stopped.

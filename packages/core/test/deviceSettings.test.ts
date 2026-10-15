@@ -3,6 +3,7 @@ import {
   DEVICE_SETTINGS_VERSION,
   conformDeviceSettings,
   conformDeviceSettingsPatch,
+  createDeviceLaunchOptions,
   createDeviceSettings,
   isUsableDeviceToken,
 } from '@three-studio/core';
@@ -40,6 +41,15 @@ describe('the factory', () => {
 
   it('leaves live reload off: devices restart only when someone launches', () => {
     expect(createDeviceSettings().liveReload).toBe(false);
+  });
+
+  it('launches every device as the project says: nothing forced, its pixel ratio, no stats', () => {
+    expect(createDeviceSettings().launchOptions).toEqual({
+      forceWebGL: false,
+      maxPixelRatio: null,
+      stats: false,
+    });
+    expect(createDeviceLaunchOptions()).toEqual(createDeviceSettings().launchOptions);
   });
 });
 
@@ -105,6 +115,22 @@ describe('what a server runs on', () => {
   it.each(['yes', 1])('reads live reload %j as off', (liveReload) => {
     expect(conformDeviceSettings({ liveReload }).liveReload).toBe(false);
   });
+
+  it('keeps the launch options, and fills what is missing from their factory', () => {
+    expect(
+      conformDeviceSettings({ launchOptions: { forceWebGL: true, maxPixelRatio: 1.5 } }).launchOptions,
+    ).toEqual({ forceWebGL: true, maxPixelRatio: 1.5, stats: false });
+    expect(conformDeviceSettings({ launchOptions: 'x' }).launchOptions).toEqual(
+      createDeviceLaunchOptions(),
+    );
+  });
+
+  it.each([0.5, 7, '2', NaN])('reads a pixel-ratio cap of %j as the project’s', (maxPixelRatio) => {
+    // A `null` field takes a string anywhere else at the boundary, so the cap
+    // needs a check of its own; a number out of the project's own range would
+    // draw a phone in a way no export ever could.
+    expect(conformDeviceSettings({ launchOptions: { maxPixelRatio } }).launchOptions.maxPixelRatio).toBeNull();
+  });
 });
 
 describe('a patch from the renderer', () => {
@@ -144,5 +170,25 @@ describe('a patch from the renderer', () => {
     expect(conformDeviceSettingsPatch({ liveReload: true })).toEqual({ liveReload: true });
     expect(conformDeviceSettingsPatch({ liveReload: false })).toEqual({ liveReload: false });
     expect(conformDeviceSettingsPatch({ liveReload: 'on' })).toEqual({});
+  });
+
+  it('keeps the launch options it names, and fills in none it does not', () => {
+    // Filled in, an option nobody touched would be written over the file's.
+    expect(conformDeviceSettingsPatch({ launchOptions: { forceWebGL: true } })).toEqual({
+      launchOptions: { forceWebGL: true },
+    });
+    expect(conformDeviceSettingsPatch({ launchOptions: { maxPixelRatio: 2.5, stats: true } })).toEqual({
+      launchOptions: { maxPixelRatio: 2.5, stats: true },
+    });
+    expect(conformDeviceSettingsPatch({ launchOptions: { maxPixelRatio: null } })).toEqual({
+      launchOptions: { maxPixelRatio: null },
+    });
+  });
+
+  it('drops launch options that change nothing it knows', () => {
+    expect(conformDeviceSettingsPatch({ launchOptions: { maxPixelRatio: 9 } })).toEqual({});
+    expect(conformDeviceSettingsPatch({ launchOptions: { maxPixelRatio: '2' } })).toEqual({});
+    expect(conformDeviceSettingsPatch({ launchOptions: { stats: 'on', future: 1 } })).toEqual({});
+    expect(conformDeviceSettingsPatch({ launchOptions: 'x' })).toEqual({});
   });
 });

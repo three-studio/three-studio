@@ -1,6 +1,7 @@
 import {
   PROJECT_FORMAT_VERSION,
   createBuildProfiles,
+  createDeviceLaunchOptions,
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
@@ -66,6 +67,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
     reachedFromNetwork: false,
     address: null,
     liveReload: false,
+    launchOptions: createDeviceLaunchOptions(),
     devices: [],
     certificate: null,
     ...overrides,

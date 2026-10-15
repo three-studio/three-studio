@@ -1,4 +1,4 @@
-import type { DeviceInfo, DeviceServerStatus } from '@three-studio/core';
+import { createDeviceLaunchOptions, type DeviceInfo, type DeviceServerStatus } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { deviceView } from '../src/shell/deviceView';
 import { deviceLink, localDeviceUrl } from '../src/state/deviceStore';
@@ -33,6 +33,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
     reachedFromNetwork: false,
     address: null,
     liveReload: false,
+    launchOptions: createDeviceLaunchOptions(),
     devices: [],
     certificate: null,
     ...overrides,

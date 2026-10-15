@@ -808,6 +808,55 @@ describe('live reload', () => {
   });
 });
 
+describe('the launch options', () => {
+  it('are the file’s, whether the server runs or not', async () => {
+    const port = await freePort();
+    const launchOptions = { forceWebGL: true, maxPixelRatio: 1.5, stats: false };
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http', launchOptions });
+    const devices = server(file, await template());
+
+    expect((await devices.status()).launchOptions).toEqual(launchOptions);
+    expect((await devices.start()).launchOptions).toEqual(launchOptions);
+    expect((await devices.status()).launchOptions).toEqual(launchOptions);
+  });
+
+  it('are the factory’s for a file that has none, which is left alone', async () => {
+    const file = await settingsFile({ version: 1, port: 7700, token: TOKEN, transport: 'http' });
+    const before = await readFile(file, 'utf8');
+
+    const status = await server(file, await template()).status();
+
+    expect(status.launchOptions).toEqual({ forceWebGL: false, maxPixelRatio: null, stats: false });
+    expect(await readFile(file, 'utf8')).toBe(before);
+  });
+
+  it('are kept by a running server as they are saved, and the file keeps the rest', async () => {
+    const port = await freePort();
+    const file = await settingsFile({
+      version: 1,
+      port,
+      token: TOKEN,
+      transport: 'http',
+      launchOptions: { forceWebGL: true, future: 1 },
+    });
+    const heard: DeviceServerStatus[] = [];
+    const devices = server(file, await template(), (status) => heard.push(status));
+    await devices.start();
+
+    const status = await devices.saveSettings({ launchOptions: { maxPixelRatio: 2 } });
+
+    const expected = { forceWebGL: true, maxPixelRatio: 2, stats: false };
+    expect(status.launchOptions).toEqual(expected);
+    expect((await devices.status()).launchOptions).toEqual(expected);
+    await vi.waitFor(() => expect(heard.at(-1)?.launchOptions).toEqual(expected));
+    expect(JSON.parse(await readFile(file, 'utf8')).launchOptions).toEqual({
+      forceWebGL: true,
+      future: 1,
+      maxPixelRatio: 2,
+    });
+  });
+});
+
 describe('a new link', () => {
   it('is answered at once, and the old one refused, on a connection already open too', async () => {
     const port = await freePort();

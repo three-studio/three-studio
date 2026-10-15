@@ -326,6 +326,26 @@ describe('the guards are reached, not merely written', () => {
     await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   });
 
+  it('lets a settings patch change the launch options it names, and keeps the others', async () => {
+    // A string is what a `null` field takes anywhere else at the boundary; a
+    // cap has to be a number a project could choose.
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { launchOptions: { maxPixelRatio: '2' } });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    const found = { ...JSON.parse(devicesFile.contents), launchOptions: { maxPixelRatio: 2, stats: true } };
+    await writeFile(devicesFile.path, JSON.stringify(found), 'utf8');
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { launchOptions: { forceWebGL: true } });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...found,
+      launchOptions: { maxPixelRatio: 2, stats: true, forceWebGL: true },
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
   it('conforms layout preferences before they reach the file', async () => {
     await invoke(IPC_INVOKE.preferences.saveLayouts, 1, {
       version: LAYOUT_PREFERENCES_VERSION,

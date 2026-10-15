@@ -321,7 +321,7 @@ export class DeviceServer {
    * not in the certificate until the next one: a phone there sees one more
    * warning, about the name, which it can accept like the other.
    */
-  private async certificateFor(settings: DeviceSettings): Promise<ServerCertificate> {
+  private async certificateFor(settings: Pick<DeviceSettings, 'address'>): Promise<ServerCertificate> {
     this.addresses = listAddresses(networkInterfaces());
     const names = serverNames(this.addresses, hostname(), settings.address);
     let certificate: ServerCertificate;
@@ -378,6 +378,7 @@ export class DeviceServer {
         port: saved.port,
         address: saved.address,
         liveReload: saved.liveReload,
+        launchOptions: saved.launchOptions,
       };
       if (saved.port === listening.settings.port) {
         this.listening = { ...listening, settings };
@@ -712,6 +713,7 @@ export class DeviceServer {
         selectedUrl: null,
         address: settings.address,
         liveReload: settings.liveReload,
+        launchOptions: settings.launchOptions,
         certificate: null,
       };
     }
@@ -726,6 +728,7 @@ export class DeviceServer {
       selectedUrl: selectedUrl(urls, settings.address),
       address: settings.address,
       liveReload: settings.liveReload,
+      launchOptions: settings.launchOptions,
       certificate:
         certificate === null
           ? null

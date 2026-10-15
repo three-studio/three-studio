@@ -4,6 +4,7 @@ import {
   createDeviceSettings,
   createDeviceToken,
   isUsableDeviceToken,
+  type DeviceLaunchOptions,
   type DeviceSettings,
 } from '@three-studio/core';
 import { atomicWrite } from '../atomicWrite';
@@ -80,6 +81,11 @@ export async function ensureDeviceSettings(file: string): Promise<DeviceSettings
   return conformDeviceSettings(found);
 }
 
+/** What may be written over the file: any field but the version, the launch options one by one. */
+export type DeviceSettingsUpdate = Partial<Omit<DeviceSettings, 'version' | 'launchOptions'>> & {
+  launchOptions?: Partial<DeviceLaunchOptions>;
+};
+
 /**
  * Writes a patch over the file as found — or over the factory's settings when
  * there is none. A patch with nothing in it, as one is once conformed from
@@ -89,14 +95,26 @@ export async function ensureDeviceSettings(file: string): Promise<DeviceSettings
  * process writing a token it made. What the renderer sends is a
  * `DeviceSettingsPatch`, conformed where it arrives, so it never gets here
  * carrying one.
+ *
+ * The launch options are written into the file's own, one level down: ticking
+ * one option leaves every other as found, an option a newer build wrote
+ * included.
  */
 export async function updateDeviceSettings(
   file: string,
-  patch: Partial<Omit<DeviceSettings, 'version'>>,
+  patch: DeviceSettingsUpdate,
 ): Promise<DeviceSettings> {
   const found = await readFound(file);
   if (found !== null && Object.keys(patch).length === 0) return conformDeviceSettings(found);
-  const updated = { ...(found ?? createDeviceSettings()), ...patch };
+  const base: Record<string, unknown> = found ?? { ...createDeviceSettings() };
+  const updated: Record<string, unknown> = { ...base, ...patch };
+  if (patch.launchOptions !== undefined) {
+    const kept = base['launchOptions'];
+    updated['launchOptions'] = {
+      ...(typeof kept === 'object' && kept !== null && !Array.isArray(kept) ? kept : {}),
+      ...patch.launchOptions,
+    };
+  }
   await write(file, updated);
   return conformDeviceSettings(updated);
 }
