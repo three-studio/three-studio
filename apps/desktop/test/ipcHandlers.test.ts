@@ -107,6 +107,8 @@ beforeAll(async () => {
   const templateRoot = await mkdtemp(join(tmpdir(), 'studio-ipc-template-'));
   await mkdir(join(templateRoot, 'web-template'), { recursive: true });
   await writeFile(join(templateRoot, 'web-template', 'index.html'), '<html></html>', 'utf8');
+  await mkdir(join(templateRoot, 'device-client'), { recursive: true });
+  await writeFile(join(templateRoot, 'device-client', 'client.js'), '// client', 'utf8');
   devicesFile.path = join(stub.userData, 'devices.json');
   devicesFile.contents = JSON.stringify({
     version: 1,

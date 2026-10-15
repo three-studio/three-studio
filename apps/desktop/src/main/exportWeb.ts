@@ -24,6 +24,7 @@ import { readMaterialAssets, readPrefabAssets } from './assetLibraries';
 import { companionsOf, scanAssets } from './assetScan';
 import { sizeOf, writeBuildFiles } from './buildFiles';
 import { assembleManifest, type ShippedAsset } from './buildManifest';
+import { escapeAttribute, insertIntoHead } from './html';
 import { resolveInside } from './paths';
 import { findTemplate } from './prebuilt';
 import { discoverScenes, readProject } from './project';
@@ -401,27 +402,13 @@ function pick<T>(source: Readonly<Record<string, T>>, ids: ReadonlySet<string>):
  */
 async function applyBase(indexPath: string, base: string): Promise<void> {
   const html = await readFile(indexPath, 'utf8');
-  if (!/<head[^>]*>/i.test(html)) {
+  // Escaped though `basePathProblem` already refused the characters that
+  // would need it: see `escapeAttribute`.
+  const tagged = insertIntoHead(html, `<base href="${escapeAttribute(base)}" />`);
+  if (tagged === null) {
     throw new AssetError('The web player page has no <head>, so it cannot be given a base URL.');
   }
-  // A replacer function, not a replacement string: `String.replace` reads `$&`,
-  // "$`", `$1` and friends out of a string, so a base carrying `$1` would be
-  // written back with a captured group in place of itself.
-  const tag = `<base href="${escapeAttribute(base)}" />`;
-  const tagged = html.replace(
-    /<head([^>]*)>/i,
-    (_match, attributes: string) => `<head${attributes}>\n    ${tag}`,
-  );
   await writeFile(indexPath, tagged, 'utf8');
-}
-
-/**
- * Second net behind `basePathProblem`, which already refuses the characters
- * that would need it. Kept because the value lands in markup either way, and a
- * validator and an emitter that trust each other are how injections happen.
- */
-function escapeAttribute(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
 }
 
 function toPosix(path: string): string {

@@ -71,13 +71,25 @@ async function hold(port: number): Promise<void> {
   holders.push(holder);
 }
 
+/** The app's resources, as packaged: the player, and the device client beside it. */
 async function template(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-server-template-'));
   const dir = join(root, 'web-template');
   await mkdir(join(dir, '_studio'), { recursive: true });
   await writeFile(join(dir, 'index.html'), TEMPLATE_HTML, 'utf8');
   await writeFile(join(dir, '_studio', 'player.js'), '// player', 'utf8');
+  await deviceClient(root);
   return root;
+}
+
+async function deviceClient(root: string): Promise<void> {
+  await mkdir(join(root, 'device-client'), { recursive: true });
+  await writeFile(join(root, 'device-client', 'client.js'), '// client', 'utf8');
+}
+
+/** Whether a page is the player's, as the server serves it: with the device client added. */
+function isPlayer(body: string): boolean {
+  return body.includes('<body>player</body>') && body.includes('src="__studio/client.js"');
 }
 
 async function settingsFile(settings?: Record<string, unknown>): Promise<string> {
@@ -235,6 +247,7 @@ describe('starting', () => {
     const port = await freePort();
     const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
     const empty = await mkdtemp(join(tmpdir(), 'studio-server-noplayer-'));
+    await deviceClient(empty);
     const devices = server(file, empty);
 
     const failed = await devices.start();
@@ -247,6 +260,22 @@ describe('starting', () => {
     const running = await devices.start();
     expect(running.state).toBe('running');
     expect(running.error).toBeUndefined();
+  });
+
+  it('is an error without the device client, which names the command that builds it', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const root = await mkdtemp(join(tmpdir(), 'studio-server-noclient-'));
+    await mkdir(join(root, 'web-template'), { recursive: true });
+    await writeFile(join(root, 'web-template', 'index.html'), TEMPLATE_HTML, 'utf8');
+
+    const failed = await server(file, root).start();
+
+    expect(failed.state).toBe('error');
+    expect(failed.error).toContain('npm run build:web');
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
   });
 });
 
@@ -281,7 +310,7 @@ describe('launching', () => {
 
     expect(status.state).toBe('running');
     expect(status.launch?.sceneName).toBe((await discoverScenes(root))[0]!.name);
-    expect((await get(port, `/${TOKEN}/`)).body).toBe(TEMPLATE_HTML);
+    expect(isPlayer((await get(port, `/${TOKEN}/`)).body)).toBe(true);
   });
 
   it('replaces build.json with each launch', async () => {
@@ -457,7 +486,7 @@ describe('a kept port held by another Three Studio', () => {
     expect(status.requestedPort).toBe(port);
     expect(status.portHolder).toBeNull();
     expect(status.launch?.id).toBe(launched.launch?.id);
-    expect((await get(port, `/${TOKEN}/`)).body).toBe(TEMPLATE_HTML);
+    expect(isPlayer((await get(port, `/${TOKEN}/`)).body)).toBe(true);
     // The port it slid to is let go.
     const slid = await listenOn(port + 1);
     expect(slid).not.toBeNull();
@@ -615,7 +644,7 @@ describe('a new link', () => {
     const after = await get(port, `/${TOKEN}/`, agent);
     expect(after.status).toBe(404);
     expect(after.connection).toBe(before.connection);
-    expect((await get(port, `/${token}/`)).body).toBe(TEMPLATE_HTML);
+    expect(isPlayer((await get(port, `/${token}/`)).body)).toBe(true);
     expect(status.port).toBe(port);
     expect(status.urls.length).toBeGreaterThan(0);
     for (const url of status.urls) expect(url.url).toContain(`:${port}/${token}/`);

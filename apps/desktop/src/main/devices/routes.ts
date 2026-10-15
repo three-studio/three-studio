@@ -3,9 +3,18 @@ import { createReadStream } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, extname, join } from 'node:path';
-import { findScene, type AssetEntry } from '@three-studio/core';
+import {
+  DEVICE_BODY_LIMIT,
+  findScene,
+  isDeviceId,
+  type AssetEntry,
+  type DeviceTransport,
+} from '@three-studio/core';
 import { companionsOf } from '../assetScan';
+import { escapeAttribute, insertIntoHead } from '../html';
 import { resolveInside } from '../paths';
+import { plainAddress } from './addresses';
+import type { DeviceLink } from './deviceLink';
 import type { Launch } from './launch';
 import { launchAssetPath } from './launchManifest';
 import { WAITING_PAGE } from './waitingPage';
@@ -13,18 +22,23 @@ import { WAITING_PAGE } from './waitingPage';
 /*
  * What a device can ask the server for, under `/<token>/`:
  *
- *   ''                         the player when a launch is current, the waiting page otherwise
+ *   ''                         the player when a launch is current, the waiting page otherwise,
+ *                              either with the device client first in its <head>
  *   build.json                 the launch's manifest
  *   scenes/<id>.json           the entry from the editor's memory, any other scene from its file
  *   assets/<id>/<name>         an asset by id, and the files a model names beside it
  *   scripts.mjs                the compiled bundle
  *   _studio/*, favicon.svg     the prebuilt player
+ *   __studio/client.js         the device client
+ *   __studio/events?device=…   a device's event stream
+ *   __studio/<type>            a device's message, POSTed as JSON: the one thing answered to POST
  *
  * **Nothing in the project is opened from a request path.** A scene and an
  * asset are found by id, in what the launch read from disk; a model's side
  * files come from the model's own list of them. The only path taken from a
  * request is under `_studio/`, which is the public build output of the player,
- * and it is resolved inside that directory.
+ * and it is resolved inside that directory. The client's folder gives out
+ * `client.js` and nothing else.
  */
 
 /** What the handler answers from, read on every request. */
@@ -37,8 +51,14 @@ export interface DeviceRoutes {
   token: () => string;
   /** The prebuilt player: `index.html`, `favicon.svg` and `_studio/`. */
   templateDir: string;
+  /** The device client's build, where `client.js` is. */
+  clientDir: string;
   /** The launch to answer from: `null` until there is one, and after a stop. */
   launch: () => Launch | null;
+  /** The link with each device: its streams, and what it posts. */
+  link: DeviceLink;
+  /** The scheme the server answers on, which a device's `Origin` names. */
+  transport: () => DeviceTransport;
   /** Whether a request's `Host` names this machine. */
   isOwnHost: (host: string | undefined) => boolean;
   /** Called for every request, with the address it came from, before any check. */
@@ -117,6 +137,69 @@ function decodeSegments(segments: readonly string[]): string[] | null {
 /** A weak validator, from what changes when the file does. */
 function etagOf(size: number, mtimeMs: number): string {
   return `W/"${size.toString(16)}-${Math.floor(mtimeMs).toString(16)}"`;
+}
+
+/** `__studio/<type>`, still encoded: the one path a POST may name. */
+function isMessagePath(segments: readonly string[]): boolean {
+  return segments.length === 2 && segments[0] === '__studio' && /^[A-Za-z]{1,32}$/.test(segments[1]!);
+}
+
+/**
+ * Whether a POST comes from a page this server served.
+ *
+ * `Origin` names it, when there is one worth reading. A browser may send
+ * `null` instead — the Fetch standard writes it for a no-cors request, WebKit
+ * has been seen to write it for a same-origin one, and every answer here asks
+ * for no referrer — or nothing at all. The client posts with `fetch` and a
+ * referrer policy that lets the origin through, and where it is still hidden,
+ * Fetch Metadata says whether the request came from the same origin. Another
+ * site's page can set neither.
+ */
+function isSameOrigin(request: IncomingMessage, transport: DeviceTransport): boolean {
+  const origin = request.headers.origin;
+  if (origin === undefined || origin === 'null') {
+    return request.headers['sec-fetch-site'] === 'same-origin';
+  }
+  const host = request.headers.host;
+  return host !== undefined && origin.toLowerCase() === `${transport}://${host}`.toLowerCase();
+}
+
+/**
+ * A request's body, or `null` past the limit. Read until it ends or goes past
+ * the limit, never declined from `Content-Length` alone: a socket closed on a
+ * body it has not read answers the sender with a reset, which can lose the
+ * answer on its way.
+ */
+function readBody(request: IncomingMessage, limit: number): Promise<Buffer | null> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const finish = (): void => {
+      request.off('data', onData);
+      request.off('end', onEnd);
+      request.off('error', onError);
+    };
+    const onData = (chunk: Buffer): void => {
+      size += chunk.length;
+      if (size > limit) {
+        finish();
+        resolve(null);
+      } else {
+        chunks.push(chunk);
+      }
+    };
+    const onEnd = (): void => {
+      finish();
+      resolve(Buffer.concat(chunks));
+    };
+    const onError = (error: Error): void => {
+      finish();
+      reject(error);
+    };
+    request.on('data', onData);
+    request.on('end', onEnd);
+    request.on('error', onError);
+  });
 }
 
 function isFresh(request: IncomingMessage, etag: string): boolean {
@@ -199,7 +282,8 @@ async function answer(
     send(request, response, 404, 'no-store', 'text/plain; charset=utf-8', 'Not found');
   };
 
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
+  const isMessage = request.method === 'POST' && isMessagePath(rest);
+  if (request.method !== 'GET' && request.method !== 'HEAD' && !isMessage) {
     // Answered without reading what was sent, and the connection closed
     // behind it so that an unread body cannot be taken for the next request.
     response.setHeader('Connection', 'close');
@@ -225,6 +309,10 @@ async function answer(
     send(request, response, 308, 'no-store', 'text/plain; charset=utf-8', '');
     return;
   }
+  if (isMessage) {
+    await receive(routes, request, response, rest[1]!, shown, trace);
+    return;
+  }
 
   const segments = decodeSegments(rest);
   if (segments === null) return notFound();
@@ -233,9 +321,16 @@ async function answer(
   const single = segments.length === 1;
 
   if (single && head === '') {
-    const page = launch ? await readFile(join(routes.templateDir, 'index.html')) : WAITING_PAGE;
+    const page = launch
+      ? await readFile(join(routes.templateDir, 'index.html'), 'utf8')
+      : WAITING_PAGE;
+    // In memory, on every page: the template on disk stays the one an export
+    // copies, and a game someone publishes never carries the client.
+    const client = `<script src="__studio/client.js" data-launch="${escapeAttribute(launch?.id ?? '')}"></script>`;
+    const tagged = insertIntoHead(page, client);
+    if (tagged === null) throw new Error('The player page has no <head> to put the device client in.');
     trace(200);
-    send(request, response, 200, 'no-store', 'text/html; charset=utf-8', page);
+    send(request, response, 200, 'no-store', 'text/html; charset=utf-8', tagged);
     return;
   }
   if (single && head === 'favicon.svg') {
@@ -247,6 +342,20 @@ async function answer(
     const file = inside(join(routes.templateDir, '_studio'), tail.join('/'));
     if (file === null || !(await sendFile(request, response, file, 'immutable'))) notFound();
     return;
+  }
+  if (head === '__studio' && tail.length === 1) {
+    if (tail[0] === 'client.js') {
+      // The one file served from the client's folder, named here rather than
+      // taken from the request.
+      const file = join(routes.clientDir, 'client.js');
+      if (!(await sendFile(request, response, file, 'no-store'))) notFound();
+      return;
+    }
+    if (tail[0] === 'events' && request.method === 'GET') {
+      openStream(routes, request, response, token, trace);
+      return;
+    }
+    return notFound();
   }
   // Everything below belongs to a launch, and before the first there is none.
   if (launch === null) return notFound();
@@ -286,6 +395,104 @@ async function answer(
     return;
   }
   notFound();
+}
+
+/**
+ * A device's event stream: what the server tells it, for as long as its page
+ * is open. Refused when the device is not one, or when the link holds as many
+ * devices — or this device as many streams — as it takes.
+ */
+function openStream(
+  routes: DeviceRoutes,
+  request: IncomingMessage,
+  response: ServerResponse,
+  token: string,
+  trace: (status: number) => void,
+): void {
+  const query = (request.url ?? '').split('#', 1)[0]!.split('?')[1] ?? '';
+  const device = new URLSearchParams(query).get('device');
+  if (!isDeviceId(device)) {
+    trace(400);
+    send(request, response, 400, 'no-store', 'text/plain; charset=utf-8', 'Not a device');
+    return;
+  }
+  // Staged, not sent: a link that refuses the stream answers 503 instead.
+  response.statusCode = 200;
+  response.setHeader('Cache-Control', CACHE_CONTROL['no-store']);
+  response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  const close = routes.link.open({
+    device,
+    token,
+    address: plainAddress(request.socket.remoteAddress ?? ''),
+    stream: {
+      // A phone can vanish between a write and the `close` that says so.
+      write: (text) => {
+        if (!response.writableEnded && !response.destroyed) response.write(text);
+      },
+      end: () => {
+        if (!response.writableEnded) response.end();
+      },
+    },
+  });
+  if (close === null) {
+    trace(503);
+    send(request, response, 503, 'no-store', 'text/plain; charset=utf-8', 'Too many devices');
+    return;
+  }
+  trace(200);
+  response.on('close', close);
+}
+
+/**
+ * A device's message: refused for another origin before a byte of its body is
+ * read, then bounded, parsed, and handed to the link. Answered with no body:
+ * the device acts on what the stream says, never on an answer.
+ */
+async function receive(
+  routes: DeviceRoutes,
+  request: IncomingMessage,
+  response: ServerResponse,
+  type: string,
+  shown: string,
+  trace: (status: number) => void,
+): Promise<void> {
+  const refuse = (status: number, text: string): void => {
+    trace(status);
+    send(request, response, status, 'no-store', 'text/plain; charset=utf-8', text);
+  };
+  if (!isSameOrigin(request, routes.transport())) {
+    // Said with what was sent: a phone that never gets a row is most likely
+    // here, and which of the two headers its browser wrote is the answer.
+    const { origin, 'sec-fetch-site': site } = request.headers;
+    routes.trace?.(
+      `POST ${shown} 403 (${request.socket.remoteAddress ?? '?'}): ` +
+        `Origin ${origin ?? 'absent'}, Sec-Fetch-Site ${String(site ?? 'absent')}`,
+    );
+    response.setHeader('Connection', 'close');
+    send(request, response, 403, 'no-store', 'text/plain; charset=utf-8', 'Not this page’s origin');
+    return;
+  }
+  const body = await readBody(request, DEVICE_BODY_LIMIT);
+  if (body === null) {
+    // The rest of what was sent is not read: closed behind the answer.
+    response.setHeader('Connection', 'close');
+    refuse(413, 'Too large');
+    return;
+  }
+  let message: unknown;
+  try {
+    message = JSON.parse(body.toString('utf8'));
+  } catch {
+    refuse(400, 'Not JSON');
+    return;
+  }
+  if (routes.link.receive(type, message) === 'limited') {
+    refuse(429, 'Too many messages');
+    return;
+  }
+  response.statusCode = 204;
+  response.setHeader('Cache-Control', CACHE_CONTROL['no-store']);
+  response.end();
 }
 
 /**

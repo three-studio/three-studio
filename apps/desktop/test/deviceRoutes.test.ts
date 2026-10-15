@@ -18,6 +18,7 @@ import {
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
 import { isOwnHost } from '../src/main/devices/addresses';
+import { DeviceLink } from '../src/main/devices/deviceLink';
 import { prepareLaunch, type Launch } from '../src/main/devices/launch';
 import { createDeviceHandler } from '../src/main/devices/routes';
 import { WAITING_PAGE } from '../src/main/devices/waitingPage';
@@ -31,12 +32,15 @@ import { createProject, discoverScenes, readProject } from '../src/main/project'
  */
 
 const TOKEN = 'abcdefghijKLMNOPQRST01';
-const TEMPLATE_HTML = '<!doctype html><html><head></head><body>player</body></html>';
+const PLAYER_MODULE = '<script type="module" src="./_studio/player.js"></script>';
+const TEMPLATE_HTML = `<!doctype html><html><head>${PLAYER_MODULE}</head><body>player</body></html>`;
+const CLIENT_JS = '/* the device client */';
 
 let server: Server;
 let port = 0;
 let root = '';
 let templateDir = '';
+let link: DeviceLink;
 let launch: Launch;
 let current: Launch | null = null;
 let entryId = '';
@@ -52,9 +56,18 @@ interface Answer {
   body: Buffer;
 }
 
+/**
+ * A request and its answer. `withheld` declares a body of that many bytes and
+ * never sends it: an answer that arrives anyway was given without reading it.
+ */
 function ask(
   path: string,
-  options: { method?: string; headers?: Record<string, string> } = {},
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string | Buffer;
+    withheld?: number;
+  } = {},
 ): Promise<Answer> {
   return new Promise((resolve, reject) => {
     const sent = httpRequest(
@@ -63,24 +76,83 @@ function ask(
         port,
         path,
         method: options.method ?? 'GET',
-        headers: { host: `127.0.0.1:${port}`, ...options.headers },
+        headers: {
+          host: `127.0.0.1:${port}`,
+          ...(options.body === undefined
+            ? {}
+            : { 'content-length': String(Buffer.byteLength(options.body)) }),
+          ...(options.withheld === undefined
+            ? {}
+            : { 'content-length': String(options.withheld) }),
+          ...options.headers,
+        },
         agent: false,
       },
       (response) => {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(chunk));
-        response.on('end', () =>
+        response.on('end', () => {
           resolve({
             status: response.statusCode ?? 0,
             headers: response.headers,
             body: Buffer.concat(chunks),
-          }),
-        );
+          });
+          if (options.withheld !== undefined) sent.destroy();
+        });
       },
     );
     sent.on('error', reject);
-    sent.end();
+    if (options.withheld !== undefined) sent.flushHeaders();
+    else sent.end(options.body);
   });
+}
+
+/** A device's message, from the page's own origin unless told otherwise. */
+function post(
+  type: string,
+  body: unknown,
+  headers: Record<string, string> = { origin: `http://127.0.0.1:${port}` },
+): Promise<Answer> {
+  return ask(under(`__studio/${type}`), {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+/** A device's event stream, read through `fetch` as a page's `EventSource` would. */
+async function listen(device: string, token = TOKEN) {
+  const response = await fetch(`http://127.0.0.1:${port}/${token}/__studio/events?device=${device}`);
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  return {
+    response,
+    /** Reads until what arrived satisfies `done`, and returns all of it. */
+    async until(done: (text: string) => boolean): Promise<string> {
+      while (!done(text)) {
+        const { value, done: ended } = await reader.read();
+        if (ended) break;
+        text += decoder.decode(value, { stream: true });
+      }
+      return text;
+    },
+    close: () => reader.cancel().catch(() => undefined),
+  };
+}
+
+function hello(device: string): Record<string, unknown> {
+  return {
+    v: 1,
+    device,
+    launch: null,
+    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Version/18.0 Safari/605.1.15',
+    screen: { width: 1512, height: 982, dpr: 2 },
+    secureContext: true,
+    state: 'waiting',
+    backend: null,
+    error: null,
+  };
 }
 
 const under = (path: string): string => `/${TOKEN}/${path}`;
@@ -179,12 +251,21 @@ beforeAll(async () => {
   await writeFile(join(templateDir, 'index.html'), TEMPLATE_HTML, 'utf8');
   await writeFile(join(templateDir, '_studio', 'player.js'), '// player', 'utf8');
   await writeFile(join(templateDir, 'favicon.svg'), '<svg/>', 'utf8');
+  const clientDir = join(parent, 'device-client');
+  await mkdir(clientDir, { recursive: true });
+  await writeFile(join(clientDir, 'client.js'), CLIENT_JS, 'utf8');
+  // Beside the client, where a path taken from a request could reach it.
+  await writeFile(join(clientDir, 'index.html'), 'not served', 'utf8');
 
+  link = new DeviceLink({ currentLaunch: () => current?.id ?? null, onChange: () => undefined });
   server = createServer(
     createDeviceHandler({
       token: () => TOKEN,
       templateDir,
+      clientDir,
       launch: () => current,
+      link,
+      transport: () => 'http',
       isOwnHost: (host) => isOwnHost(host, [], 'Mac'),
       onRequest: () => undefined,
     }),
@@ -194,6 +275,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  link.stop();
+  server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
 });
 
@@ -219,25 +302,166 @@ describe('the token', () => {
 });
 
 describe('the page', () => {
-  it('is the waiting page before anything is launched', async () => {
+  it('is the waiting page before anything is launched, with the client and no launch', async () => {
     current = null;
 
     const page = await ask(under(''));
 
     expect(page.status).toBe(200);
-    expect(page.body.toString()).toBe(WAITING_PAGE);
+    const html = page.body.toString();
+    expect(html).toBe(
+      WAITING_PAGE.replace('<head>', '<head>\n    <script src="__studio/client.js" data-launch=""></script>'),
+    );
+    expect(html).toContain('id="studio-state"');
     expect(page.headers['cache-control']).toBe('no-store');
     expect((await ask(under('build.json'))).status).toBe(404);
     expect((await ask(under('scripts.mjs'))).status).toBe(404);
   });
 
-  it('is the player once a launch is current', async () => {
+  it('is the player once a launch is current, with the client before its module', async () => {
     const page = await ask(under(''));
 
     expect(page.status).toBe(200);
-    expect(page.body.toString()).toBe(TEMPLATE_HTML);
+    expect(page.body.toString()).toBe(
+      TEMPLATE_HTML.replace(
+        '<head>',
+        `<head>\n    <script src="__studio/client.js" data-launch="${launch.id}"></script>`,
+      ),
+    );
     expect(page.headers['content-type']).toBe('text/html; charset=utf-8');
     expect(page.headers['cache-control']).toBe('no-store');
+  });
+
+  it('leaves the player’s page on disk as an export copies it', async () => {
+    await ask(under(''));
+
+    expect(await readFile(join(templateDir, 'index.html'), 'utf8')).toBe(TEMPLATE_HTML);
+  });
+});
+
+describe('the device client', () => {
+  it('is served, never kept', async () => {
+    const answer = await ask(under('__studio/client.js'));
+
+    expect(answer.status).toBe(200);
+    expect(answer.body.toString()).toBe(CLIENT_JS);
+    expect(answer.headers['content-type']).toBe('text/javascript; charset=utf-8');
+    expect(answer.headers['cache-control']).toBe('no-store');
+  });
+
+  it('is the one file served from its folder', async () => {
+    expect((await ask(under('__studio/index.html'))).status).toBe(404);
+    expect((await ask(under('__studio/%2e%2e/index.html'))).status).toBe(404);
+    expect((await ask(under('__studio/%2e%2e%2fdevice-client%2findex.html'))).status).toBe(404);
+  });
+});
+
+describe('a device’s stream', () => {
+  it('is an event stream that says how soon to come back, then what the link sends', async () => {
+    const stream = await listen('streamDevice0001');
+
+    expect(stream.response.status).toBe(200);
+    expect(stream.response.headers.get('content-type')).toBe('text/event-stream; charset=utf-8');
+    expect(stream.response.headers.get('cache-control')).toBe('no-store');
+    expect(await stream.until((text) => text.includes('\n\n'))).toMatch(/^retry: 2000\n\n/);
+
+    link.launch(launch.id);
+    const text = await stream.until((read) => read.includes('"type":"launch"'));
+    expect(text).toContain(`data: {"v":1,"type":"launch","launch":"${launch.id}"}\n\n`);
+    await stream.close();
+  });
+
+  it('is refused without a device, under a wrong token, and to HEAD', async () => {
+    expect((await ask(under('__studio/events'))).status).toBe(400);
+    expect((await ask(under('__studio/events?device=../x'))).status).toBe(400);
+    expect((await ask('/abcdefghijKLMNOPQRST02/__studio/events?device=streamDevice0002')).status)
+      .toBe(404);
+    expect((await ask(under('__studio/events?device=streamDevice0002'), { method: 'HEAD' })).status)
+      .toBe(404);
+  });
+});
+
+describe('a device’s message', () => {
+  it('is taken from the page’s origin, and lists the device', async () => {
+    const stream = await listen('helloDevice00001');
+    await stream.until((text) => text.includes('retry'));
+
+    const answer = await post('hello', hello('helloDevice00001'));
+
+    expect(answer.status).toBe(204);
+    expect(answer.body.length).toBe(0);
+    expect(answer.headers['cache-control']).toBe('no-store');
+    expect(link.list().map((device) => device.id)).toContain('helloDevice00001');
+    await stream.close();
+  });
+
+  it('is taken with a hidden origin when Fetch Metadata says it is the same', async () => {
+    const answer = await post('hello', hello('helloDevice00002'), {
+      origin: 'null',
+      'sec-fetch-site': 'same-origin',
+    });
+
+    expect(answer.status).toBe(204);
+  });
+
+  it.each([
+    ['a hidden origin alone', { origin: 'null' }],
+    ['another site', { origin: 'http://evil.example' }],
+    ['another scheme', { origin: `https://127.0.0.1:${'PORT'}` }],
+    ['no origin at all', {}],
+    ['another site that calls itself the same', { origin: 'null', 'sec-fetch-site': 'cross-site' }],
+  ])('is refused from %s, its body unread', async (_name, given: Record<string, string>) => {
+    const headers = Object.fromEntries(
+      Object.entries(given).map(([key, value]) => [key, value.replace('PORT', String(port))]),
+    );
+
+    const answer = await ask(under('__studio/hello'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      withheld: 100,
+    });
+
+    expect(answer.status).toBe(403);
+    expect(answer.headers.connection).toBe('close');
+  });
+
+  it('is refused past 64 KB, and closes the connection', async () => {
+    const answer = await post('hello', Buffer.alloc(64 * 1024 + 1, 0x20));
+
+    expect(answer.status).toBe(413);
+    expect(answer.headers.connection).toBe('close');
+  });
+
+  it('is refused when it is not JSON', async () => {
+    expect((await post('hello', '{')).status).toBe(400);
+  });
+
+  it('is refused past 20 messages in 10 s from one device', async () => {
+    const stream = await listen('rateDevice000001');
+    await stream.until((text) => text.includes('retry'));
+    const status = { v: 1, device: 'rateDevice000001', state: 'waiting', backend: null, error: null };
+
+    for (let n = 0; n < 20; n += 1) expect((await post('status', status)).status).toBe(204);
+
+    expect((await post('status', status)).status).toBe(429);
+    await stream.close();
+  });
+
+  it('of a type it does not know changes nothing', async () => {
+    const before = link.list();
+
+    expect((await post('unknown', hello('helloDevice00003'))).status).toBe(204);
+    expect(link.list()).toEqual(before);
+  });
+
+  it('is not taken anywhere but under __studio, and its body is not read', async () => {
+    const answer = await ask(under('build.json'), {
+      method: 'POST',
+      headers: { origin: `http://127.0.0.1:${port}` },
+      withheld: 100,
+    });
+
+    expect(answer.status).toBe(404);
   });
 });
 
@@ -416,6 +640,15 @@ describe('what is refused', () => {
       ask(`/${TOKEN}`),
       ask('/nothing/'),
       ask(under(''), { headers: { host: 'evil.example' } }),
+      ask(under('__studio/client.js')),
+      ask(under('__studio/events')),
+      post('hello', hello('headerDevice0001')),
+      post('hello', '{'),
+      ask(under('__studio/hello'), {
+        method: 'POST',
+        headers: { origin: 'http://evil.example' },
+        withheld: 100,
+      }),
     ]);
 
     for (const answer of answers) {

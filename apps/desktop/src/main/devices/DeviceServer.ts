@@ -10,7 +10,7 @@ import {
   type LaunchSnapshot,
   type PortHolder,
 } from '@three-studio/core';
-import { findTemplate } from '../prebuilt';
+import { findDeviceClient, findTemplate } from '../prebuilt';
 import {
   deviceUrls,
   isFromOutside,
@@ -20,6 +20,7 @@ import {
   selectedUrl,
   type ListedAddress,
 } from './addresses';
+import { DeviceLink } from './deviceLink';
 import { prepareLaunch, type Launch } from './launch';
 import { portHolderOf } from './portHolder';
 import { createDeviceHandler, type DeviceRequestHandler } from './routes';
@@ -32,7 +33,7 @@ import {
 export interface DeviceServerOptions {
   /** `devices.json`, in the app's data directory. */
   settingsFile: string;
-  /** Where to look for the prebuilt player, as the exporter looks. */
+  /** Where to look for the prebuilt player, as the exporter looks, and for the device client beside it. */
   templateRoots: readonly string[];
   /**
    * The interface to listen on. Unset in the app, which listens on every one:
@@ -69,6 +70,8 @@ interface Listening {
   settings: DeviceSettings;
   /** Kept so that a server moved to another port answers exactly as before. */
   handler: DeviceRequestHandler;
+  /** The link with each device, for as long as this server runs: a stop forgets them all. */
+  link: DeviceLink;
 }
 
 /** What a status is made of, read at the moment it changed. */
@@ -147,6 +150,7 @@ export class DeviceServer {
     this.state = 'stopped';
     this.error = undefined;
     if (listening !== null) {
+      listening.link.stop();
       await closeServer(listening.server);
       this.trace('stopped');
     }
@@ -182,16 +186,34 @@ export class DeviceServer {
     try {
       const settings = await ensureDeviceSettings(this.options.settingsFile);
       const templateDir = await findTemplate(this.options.templateRoots);
+      // Refused like a missing player: every page served carries the client,
+      // and a page without it is a phone the editor can never restart.
+      const clientDir = await findDeviceClient(this.options.templateRoots);
+      const link = new DeviceLink({
+        currentLaunch: () => this.current?.id ?? null,
+        onChange: () => this.emit(),
+        trace: this.options.trace,
+      });
       const handler = createDeviceHandler({
         token: () => this.listening?.settings.token ?? settings.token,
         templateDir,
+        clientDir,
         launch: () => this.current,
+        link,
+        transport: () => this.listening?.settings.transport ?? settings.transport,
         isOwnHost: (host) => this.isOwnHost(host),
         onRequest: (remote) => this.noteRequest(remote),
         trace: this.options.trace,
       });
-      const { server, port } = await this.listenFrom(settings.port, handler);
-      this.listening = { server, port, settings, handler };
+      let listened: { server: Server; port: number };
+      try {
+        listened = await this.listenFrom(settings.port, handler);
+      } catch (cause) {
+        link.stop();
+        throw cause;
+      }
+      const { server, port } = listened;
+      this.listening = { server, port, settings, handler, link };
       this.state = 'running';
       this.trace(
         port === settings.port
