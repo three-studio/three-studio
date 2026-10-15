@@ -1,11 +1,13 @@
 import type { Server } from 'node:http';
 import { hostname, networkInterfaces } from 'node:os';
-import { basename } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import {
   createDeviceToken,
+  deviceLabel,
   type DeviceInfo,
   type DeviceLaunchOptions,
   type DeviceLogs,
+  type DeviceScreenshot,
   type DeviceServerState,
   type DeviceServerStatus,
   type DeviceSettings,
@@ -13,6 +15,7 @@ import {
   type LaunchSnapshot,
   type PortHolder,
 } from '@three-studio/core';
+import { atomicWrite } from '../atomicWrite';
 import { findDeviceClient, findTemplate } from '../prebuilt';
 import {
   deviceUrls,
@@ -25,10 +28,11 @@ import {
   type ListedAddress,
 } from './addresses';
 import { ensureDeviceCertificate, type ServerCertificate } from './certificateFile';
-import { DeviceLink } from './deviceLink';
+import { DeviceLink, type DeviceFrame } from './deviceLink';
 import { prepareLaunch, type Launch } from './launch';
 import { portHolderOf } from './portHolder';
 import { createDeviceHandler, type DeviceRequestHandler } from './routes';
+import { screenshotFileName, screenshotFolder, withPngExtension } from './screenshots';
 import {
   ensureDeviceSettings,
   readDeviceSettings,
@@ -78,6 +82,12 @@ const GIVE_UP_MS = 2000;
 
 /** Asks the person whether another Three Studio, holding that port, may be quit. */
 export type ConfirmQuit = (holder: PortHolder, port: number) => Promise<boolean>;
+
+/**
+ * Asks the person where to save a screenshot, the dialog opened on the path
+ * given: the path chosen, or `null` when the person cancelled.
+ */
+export type ChooseScreenshotPath = (defaultPath: string) => Promise<string | null>;
 
 interface Listening {
   server: Server;
@@ -143,6 +153,10 @@ export class DeviceServer {
   private refusing = new Map<string, ReturnType<typeof setTimeout>>();
   private addresses: ListedAddress[] = [];
   private changes: Promise<void> = Promise.resolve();
+  /** Screenshots under way, by device: asked again meanwhile, a device gives the same one. */
+  private readonly screenshots = new Map<string, Promise<DeviceScreenshot | null>>();
+  /** The last Save dialog in line: one at a time, whichever device its frame came from. */
+  private dialogs: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly options: DeviceServerOptions) {}
 
@@ -255,6 +269,90 @@ export class DeviceServer {
     }
     this.trace(`${device} restarted`);
     return this.status();
+  }
+
+  /**
+   * Takes a device's next frame, asks the person where to save it, and saves
+   * it there. Resolves what was written, or `null` when the person cancelled:
+   * then nothing is written, and nothing remembered.
+   *
+   * The frame first, the dialog once it has arrived: asked the other way
+   * round, the phone would be captured after the dialog closed, showing
+   * whatever it showed by then. The name is taken as the person asks, which is
+   * the moment it shows. Dialogs open one after the other, in the order the
+   * frames arrive, each in the folder the one before it left remembered.
+   */
+  screenshot(device: string, choose: ChooseScreenshotPath): Promise<DeviceScreenshot | null> {
+    const taking = this.screenshots.get(device);
+    if (taking !== undefined) return taking;
+    const taken = this.takeScreenshot(device, choose).finally(() => {
+      this.screenshots.delete(device);
+    });
+    this.screenshots.set(device, taken);
+    return taken;
+  }
+
+  private async takeScreenshot(
+    device: string,
+    choose: ChooseScreenshotPath,
+  ): Promise<DeviceScreenshot | null> {
+    if (this.starting !== null) await this.starting;
+    const { listening, current } = this;
+    if (listening === null) throw new Error('The device server is not running.');
+    if (current === null) throw new Error('Nothing has been launched yet.');
+    const info = listening.link.list().find((listed) => listed.id === device);
+    if (info === undefined || !info.connected) throw new Error('That device is not connected.');
+    // Its page draws the game it was launched on, or no frame comes: a page
+    // still booting, failed, on the waiting page, or left on a launch before.
+    if (info.state !== 'running' || info.launch !== current.id) {
+      throw new Error('That device is not running the game.');
+    }
+    const label = deviceLabel(info);
+    const name = screenshotFileName({ scene: current.sceneName, device: label, at: new Date() });
+    const frame = await listening.link.requestScreenshot(device);
+    return this.inTurn(() => this.saveScreenshot(current.projectPath, name, label, frame, choose));
+  }
+
+  /** Runs a step once the one before it is over, whatever became of that one. */
+  private inTurn<T>(step: () => Promise<T>): Promise<T> {
+    const turn = this.dialogs.then(step);
+    this.dialogs = turn.catch(() => undefined);
+    return turn;
+  }
+
+  /**
+   * The Save dialog for a frame that has arrived, then the file.
+   *
+   * The folder is read from the file, which only this process writes it to,
+   * rather than from the settings a running server holds: those are what it
+   * serves under, and a screenshot's dialog may still be open after a stop.
+   * The folder chosen is remembered for the project only when it changed, so
+   * that a screenshot saved where the dialog opened writes the file once.
+   */
+  private async saveScreenshot(
+    projectPath: string,
+    name: string,
+    label: string,
+    frame: DeviceFrame,
+    choose: ChooseScreenshotPath,
+  ): Promise<DeviceScreenshot | null> {
+    const { settingsFile } = this.options;
+    const remembered = (await readDeviceSettings(settingsFile)).screenshotFolders[projectPath];
+    const folder = await screenshotFolder(remembered, projectPath);
+    const chosen = await choose(join(folder, name));
+    if (chosen === null) {
+      this.trace(`screenshot from ${label} not saved: the dialog was cancelled`);
+      return null;
+    }
+    const path = withPngExtension(chosen);
+    await atomicWrite(path, frame.bytes);
+    if (dirname(path) !== remembered) {
+      await updateDeviceSettings(settingsFile, {
+        screenshotFolders: { [projectPath]: dirname(path) },
+      });
+    }
+    this.trace(`screenshot from ${label} saved as ${basename(path)}`);
+    return { path, width: frame.width, height: frame.height, bytes: frame.bytes.length };
   }
 
   private async listen(): Promise<void> {

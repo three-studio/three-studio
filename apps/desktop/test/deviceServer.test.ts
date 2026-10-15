@@ -1,10 +1,10 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { Agent, request as httpRequest, type OutgoingHttpHeaders } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { connect, createServer as createNetServer, type Server as NetServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { Duplex } from 'node:stream';
 import { connect as tlsConnect, type TLSSocket } from 'node:tls';
 import {
@@ -19,6 +19,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeviceServer } from '../src/main/devices/DeviceServer';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
+import { pngOf } from './png';
 
 /*
  * The device server, started and stopped for real on loopback: the port it
@@ -1626,5 +1627,267 @@ describe('switching transport', () => {
     const free = await listenOn(port);
     expect(free).not.toBeNull();
     holders.push(free!);
+  });
+});
+
+describe('a screenshot', () => {
+  const png = pngOf(3, 2);
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1';
+
+  /** The frame, posted under the request it answers, as the client posts it. */
+  function postFrame(port: number, request: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const sent = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          path: `/${TOKEN}/__studio/screenshot?request=${request}`,
+          method: 'POST',
+          headers: {
+            host: `127.0.0.1:${port}`,
+            origin: `http://127.0.0.1:${port}`,
+            'content-type': 'image/png',
+            'content-length': String(png.length),
+          },
+          agent: false,
+        },
+        (response) => {
+          response.resume();
+          response.on('end', () => resolve(response.statusCode ?? 0));
+        },
+      );
+      sent.on('error', reject);
+      sent.end(png);
+    });
+  }
+
+  interface Camera {
+    /** The requests its stream was sent, in order. */
+    asked: string[];
+    /** What each of its uploads was answered. */
+    answered: number[];
+    close: () => Promise<void>;
+  }
+
+  /**
+   * A phone running the launch, which answers every frame asked of it as the
+   * client does: the test's PNG, posted under the request's id.
+   */
+  async function camera(port: number, id: string, launch: string): Promise<Camera> {
+    const response = await fetch(`http://127.0.0.1:${port}/${TOKEN}/__studio/events?device=${id}`);
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    const asked: string[] = [];
+    const answered: number[] = [];
+    let buffered = '';
+    let opened!: () => void;
+    const open = new Promise<void>((resolve) => {
+      opened = resolve;
+    });
+    const reading = (async () => {
+      for (;;) {
+        const read = await reader.read().catch(() => ({ done: true, value: undefined }) as const);
+        if (read.done) return;
+        buffered += decoder.decode(read.value, { stream: true });
+        const events = buffered.split('\n\n');
+        buffered = events.pop() ?? '';
+        for (const event of events) {
+          if (event.startsWith('retry')) opened();
+          if (!event.startsWith('data: ')) continue;
+          const message = JSON.parse(event.slice('data: '.length)) as Record<string, unknown>;
+          if (message['type'] !== 'screenshot') continue;
+          const request = String(message['request']);
+          asked.push(request);
+          postFrame(port, request).then(
+            (status) => answered.push(status),
+            () => answered.push(0),
+          );
+        }
+      }
+    })();
+    await open;
+    const status = await post(port, 'hello', {
+      v: 1,
+      device: id,
+      launch,
+      userAgent: iphone,
+      screen: { width: 393, height: 852, dpr: 3 },
+      secureContext: false,
+      state: 'running',
+      backend: 'webgl',
+      error: null,
+    });
+    if (status !== 204) throw new Error(`the hello answered ${status}`);
+    return {
+      asked,
+      answered,
+      close: async () => {
+        await reader.cancel().catch(() => undefined);
+        await reading;
+      },
+    };
+  }
+
+  /** A server running a launch of a new project, and what its settings file held at first. */
+  async function running(trace?: (line: string) => void) {
+    const port = await freePort();
+    const settings = { version: 1, port, token: TOKEN, transport: 'http' };
+    const file = await settingsFile(settings);
+    const devices = server(file, await template(), undefined, trace);
+    const root = await project();
+    const launched = await launchOn(devices, root);
+    return { port, settings, file, devices, root, launch: launched.launch! };
+  }
+
+  it('is saved where the person says, first in the project’s Screenshots/, which is remembered', async () => {
+    const traced: string[] = [];
+    const { port, settings, file, devices, root, launch } = await running((line) => {
+      traced.push(line);
+    });
+    const phone = await camera(port, 'shotDevice000001', launch.id);
+    const offered: string[] = [];
+
+    const shot = await devices.screenshot('shotDevice000001', async (path) => {
+      offered.push(path);
+      return path;
+    });
+
+    const folder = join(root, 'Screenshots');
+    const [path = ''] = offered;
+    expect(offered).toHaveLength(1);
+    expect(dirname(path)).toBe(folder);
+    expect((await stat(folder)).isDirectory()).toBe(true);
+    expect(basename(path).startsWith(`${launch.sceneName} — iPhone · Safari — `)).toBe(true);
+    expect(basename(path)).toMatch(/ — \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png$/);
+    expect(shot).toEqual({ path, width: 3, height: 2, bytes: png.length });
+    expect(await readFile(path)).toEqual(png);
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      ...settings,
+      screenshotFolders: { [root]: folder },
+    });
+    expect(phone.asked).toHaveLength(1);
+    expect(traced).toContain(`screenshot from iPhone · Safari saved as ${basename(path)}`);
+    await phone.close();
+  });
+
+  it('is saved in another folder, ending in .png, where the next opens until the folder is gone', async () => {
+    const { port, devices, root, launch } = await running();
+    const phone = await camera(port, 'shotDevice000002', launch.id);
+    const elsewhere = await mkdtemp(join(tmpdir(), 'studio-shots-elsewhere-'));
+    const offered: string[] = [];
+    const cancel = async (path: string): Promise<null> => {
+      offered.push(path);
+      return null;
+    };
+
+    const shot = await devices.screenshot('shotDevice000002', async () => join(elsewhere, 'Mine'));
+    expect(shot?.path).toBe(join(elsewhere, 'Mine.png'));
+    expect(await readFile(join(elsewhere, 'Mine.png'))).toEqual(png);
+
+    await devices.screenshot('shotDevice000002', cancel);
+    expect(dirname(offered[0] ?? '')).toBe(elsewhere);
+
+    await rm(elsewhere, { recursive: true });
+    await devices.screenshot('shotDevice000002', cancel);
+    expect(dirname(offered[1] ?? '')).toBe(join(root, 'Screenshots'));
+    await phone.close();
+  });
+
+  it('writes nothing, and remembers nothing, when the person cancels', async () => {
+    const { port, file, devices, root, launch } = await running();
+    const phone = await camera(port, 'shotDevice000003', launch.id);
+    const before = await readFile(file, 'utf8');
+
+    const shot = await devices.screenshot('shotDevice000003', async () => null);
+
+    expect(shot).toBeNull();
+    expect(phone.asked).toHaveLength(1);
+    // Made as the dialog opened, so that it opened inside it.
+    expect(await readdir(join(root, 'Screenshots'))).toEqual([]);
+    expect(await readFile(file, 'utf8')).toBe(before);
+    await phone.close();
+  });
+
+  it('opens one dialog at a time, whichever device the frames came from', async () => {
+    const { port, devices, launch } = await running();
+    const first = await camera(port, 'shotDevice000004', launch.id);
+    const second = await camera(port, 'shotDevice000005', launch.id);
+    const offered: string[] = [];
+    let answerFirst: (path: string | null) => void = () => undefined;
+    const choose = (path: string): Promise<string | null> => {
+      offered.push(path);
+      if (offered.length > 1) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        answerFirst = resolve;
+      });
+    };
+
+    const one = devices.screenshot('shotDevice000004', choose);
+    const two = devices.screenshot('shotDevice000005', choose);
+    await vi.waitFor(() => expect([...first.answered, ...second.answered]).toEqual([204, 204]));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(offered).toHaveLength(1);
+    answerFirst(null);
+    await Promise.all([one, two]);
+    expect(offered).toHaveLength(2);
+    await first.close();
+    await second.close();
+  });
+
+  it('asks a device asked twice at once for one frame, under one dialog', async () => {
+    const { port, devices, launch } = await running();
+    const phone = await camera(port, 'shotDevice000006', launch.id);
+    const choose = vi.fn(async (path: string) => path);
+
+    const [once, twice] = await Promise.all([
+      devices.screenshot('shotDevice000006', choose),
+      devices.screenshot('shotDevice000006', choose),
+    ]);
+
+    expect(twice).toBe(once);
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(phone.asked).toHaveLength(1);
+    await phone.close();
+  });
+
+  it('is refused while the server is stopped', async () => {
+    const devices = server(await settingsFile(), await template());
+
+    await expect(devices.screenshot('shotDevice000007', async () => null)).rejects.toThrow(
+      'The device server is not running.',
+    );
+  });
+
+  it('is refused before anything is launched', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    await devices.start();
+    const phone = await device(port, 'shotDevice000008');
+
+    await expect(devices.screenshot('shotDevice000008', async () => null)).rejects.toThrow(
+      'Nothing has been launched yet.',
+    );
+    await phone.close();
+  });
+
+  it('is refused for a device that is not connected', async () => {
+    const { devices } = await running();
+
+    await expect(devices.screenshot('nobody00', async () => null)).rejects.toThrow(
+      'That device is not connected.',
+    );
+  });
+
+  it('is refused for a device that is not running the game', async () => {
+    const { port, devices } = await running();
+    // Its hello from the waiting page restarts it on the launch: booting, not running.
+    const phone = await device(port, 'shotDevice000009');
+
+    await expect(devices.screenshot('shotDevice000009', async () => null)).rejects.toThrow(
+      'That device is not running the game.',
+    );
+    await phone.close();
   });
 });
