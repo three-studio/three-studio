@@ -471,6 +471,33 @@ export async function chooseDeviceTransport(transport: DeviceTransport): Promise
     .append('log', [`Serving devices over ${name}.`, ...urlLines(status)].join('\n'));
 }
 
+/**
+ * Turns live reload on or off, for every window: the setting is kept with the
+ * device settings, per machine. Not in the table below: its argument is the
+ * checkbox's value; the palette has `toggleLiveReload`.
+ *
+ * Turning it on lifts a pause: someone who turns it on again means it to run.
+ */
+export async function setLiveReload(on: boolean): Promise<void> {
+  try {
+    await window.studio.devices.saveSettings({ liveReload: on });
+  } catch (cause) {
+    showFailure('Could not change live reload', cause);
+    return;
+  }
+  if (on) useDeviceStore.setState({ liveReloadRefused: null });
+  useToastStore.getState().push(
+    on
+      ? {
+          kind: 'info',
+          title: 'Live reload on',
+          description:
+            'Devices relaunch a second after each change, from the window that launched them.',
+        }
+      : { kind: 'info', title: 'Live reload off' },
+  );
+}
+
 /*
  * The device server's gestures. Choosing the port asks for its value itself,
  * as creating a scene asks for a name, so it is a gesture like the others.
@@ -519,5 +546,16 @@ export const DEVICE_COMMANDS = {
     // whether or not the server runs.
     can: () => true,
     run: () => newDeviceLink(),
+  }),
+  toggleLiveReload: defineCommand({
+    // Names the action, as Hide and Show do.
+    label: () =>
+      useDeviceStore.getState().status?.liveReload === true
+        ? 'Turn Off Live Reload on Devices'
+        : 'Turn On Live Reload on Devices',
+    // Whether it is on is the server's to say: until a status has been read,
+    // the label could only guess.
+    can: () => useDeviceStore.getState().status !== null,
+    run: () => setLiveReload(useDeviceStore.getState().status?.liveReload !== true),
   }),
 };

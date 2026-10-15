@@ -5,6 +5,7 @@ import {
   chooseDeviceAddress,
   chooseDeviceTransport,
   restartDevice,
+  setLiveReload,
 } from '../commands/deviceCommands';
 import { commandById, type CommandId } from '../commands/registry';
 import { refreshDevices } from '../state/deviceStore';
@@ -161,6 +162,30 @@ function ProtocolPicker({ view }: { view: DeviceView }) {
       </select>
       <span className="text-ink-dim">{view.transportNote}</span>
     </label>
+  );
+}
+
+/**
+ * Live reload, whatever the server's state: the setting is kept. Its note says
+ * what it does in this window now — waiting for a launch, following another
+ * window, paused by a refusal, or relaunching.
+ */
+function LiveReload({ view }: { view: DeviceView }) {
+  const { on, note, tone, title } = view.liveReload;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label title={title} className="flex items-center gap-2 self-start text-ink">
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(event) => void setLiveReload(event.target.checked)}
+        />
+        Live reload
+      </label>
+      {note !== null && (
+        <p className={`pl-5 ${tone === 'warning' ? 'text-warn' : 'text-ink-dim'}`}>{note}</p>
+      )}
+    </div>
   );
 }
 
@@ -404,6 +429,8 @@ export function DevicePopover({
             </ul>
           </div>
         </details>
+
+        <LiveReload view={view} />
       </div>
 
       <footer className="flex items-center gap-2 border-t border-line-soft px-3 py-2">

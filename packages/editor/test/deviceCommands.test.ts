@@ -23,6 +23,7 @@ import {
   reclaimDevicePort,
   relaunchOnDevices,
   restartDevice,
+  setLiveReload,
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
 import {
@@ -544,6 +545,73 @@ describe('the Console, one launch at a time', () => {
 
     bridge.changed!(launched('launch-note-6'));
     expect(texts()).toEqual([]);
+  });
+});
+
+describe('turning live reload on and off', () => {
+  it('writes the setting, says so, and lifts a pause', async () => {
+    const bridge = install({ saveSettings: async () => status({ liveReload: true }) });
+    useDeviceStore.setState({ liveReloadRefused: 'Scripts did not compile:' });
+
+    await setLiveReload(true);
+
+    expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ liveReload: true }] }]);
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      title: 'Live reload on',
+      description: 'Devices relaunch a second after each change, from the window that launched them.',
+    });
+    expect(useDeviceStore.getState().liveReloadRefused).toBeNull();
+  });
+
+  it('turns it off, which leaves a pause where it was', async () => {
+    const bridge = install({ saveSettings: async () => status({ liveReload: false }) });
+    useDeviceStore.setState({ liveReloadRefused: 'Scripts did not compile:' });
+
+    await setLiveReload(false);
+
+    expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ liveReload: false }] }]);
+    expect(lastToast()).toMatchObject({ kind: 'info', title: 'Live reload off' });
+    expect(useDeviceStore.getState().liveReloadRefused).toBe('Scripts did not compile:');
+  });
+
+  it('says why it could not, without the wrapper IPC puts around it', async () => {
+    install({
+      saveSettings: async () => {
+        throw new Error("Error invoking remote method 'devices:saveSettings': Error: EACCES: permission denied");
+      },
+    });
+
+    await setLiveReload(true);
+
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Could not change live reload',
+      description: 'EACCES: permission denied',
+    });
+    expect(lastEntry().level).toBe('error');
+  });
+
+  it('is a command whose label says what it would do, once the server has been read', () => {
+    const toggle = DEVICE_COMMANDS.toggleLiveReload;
+
+    expect(toggle.can()).toBe(false);
+
+    useDeviceStore.setState({ status: status({ liveReload: false }) });
+    expect(toggle.can()).toBe(true);
+    expect(toggle.label()).toBe('Turn On Live Reload on Devices');
+
+    useDeviceStore.setState({ status: status({ liveReload: true }) });
+    expect(toggle.label()).toBe('Turn Off Live Reload on Devices');
+  });
+
+  it('runs as the command turns it the other way', async () => {
+    const bridge = install({ saveSettings: async () => status({ liveReload: false }) });
+    useDeviceStore.setState({ status: status({ liveReload: true }) });
+
+    await DEVICE_COMMANDS.toggleLiveReload.run();
+
+    expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ liveReload: false }] }]);
   });
 });
 

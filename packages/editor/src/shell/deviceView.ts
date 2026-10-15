@@ -13,7 +13,10 @@ import {
   deviceLink,
   hasSlid,
   holderName,
+  liveReloadState,
   localDeviceUrl,
+  type LiveReloadState,
+  type OwnLaunch,
 } from '../state/deviceStore';
 
 /*
@@ -79,6 +82,16 @@ export interface WaitingDevice {
   label: string;
 }
 
+/** The live reload checkbox, and what live reload does in this window now. */
+export interface LiveReloadView {
+  on: boolean;
+  /** Beneath the checkbox; `null` while it is off. */
+  note: string | null;
+  tone: 'hint' | 'warning';
+  /** The checkbox's tooltip: what turning it on does. */
+  title: string;
+}
+
 /** One entry of the address picker. `''` is the automatic choice. */
 export interface AddressOption {
   value: string;
@@ -135,12 +148,17 @@ export interface DeviceView {
   insecureNote: string;
   /** Why a secure row's backend carries one: the browser gave no WebGPU. */
   noWebGpuNote: string;
+  liveReload: LiveReloadView;
 }
 
 export interface DeviceViewContext {
   platform: Platform;
   /** Run from `npm run dev`, where the firewall knows the app as Electron. */
   dev: boolean;
+  /** This window's last launch that became current, which live reload follows. */
+  ownLaunch: Pick<OwnLaunch, 'id'> | null;
+  /** The refusal holding live reload in this window, or `null`. */
+  liveReloadRefused: string | null;
 }
 
 const LAUNCH = 'Launch on Devices';
@@ -174,6 +192,26 @@ const TRANSPORT_NOTES: Readonly<Record<DeviceTransport, string>> = {
   http: 'Phones run WebGL2: browsers give WebGPU only to pages served over HTTPS.',
   https: 'Phones get WebGPU. Each one asks once to trust this computer’s certificate.',
 };
+
+const LIVE_RELOAD_TITLE = 'Relaunch every device a second after each change.';
+
+function liveReloadNote(state: LiveReloadState, status: DeviceServerStatus | null): string | null {
+  switch (state) {
+    case 'off':
+      return null;
+    case 'idle':
+      return 'Starts with the next Launch from this window.';
+    case 'elsewhere':
+      return (
+        `“${status?.launch?.sceneName ?? 'Another scene'}” was launched from another window. ` +
+        'Launch here to follow this one.'
+      );
+    case 'paused':
+      return 'Paused: the last relaunch was refused. Launch to try again.';
+    case 'on':
+      return 'Devices relaunch a second after each change — never mid-drag, never during Play.';
+  }
+}
 
 const STATE_LABELS: Readonly<Record<DeviceServerState, string>> = {
   stopped: 'Stopped',
@@ -226,27 +264,32 @@ function launchLine(count: number): string {
   return `${LAUNCH} — ${count} ${count === 1 ? 'device' : 'devices'}`;
 }
 
+/**
+ * What the button does, its first line naming live reload while it is on: a
+ * click then launches, and every change after it relaunches.
+ */
 function titleOf(
   status: DeviceServerStatus | null,
   { served, note, count }: { served: string | null; note: string | null; count: number },
 ): string {
+  const live = status?.liveReload === true ? ' — live reload' : '';
   switch (status?.state) {
     case 'starting':
-      return `${LAUNCH}\nThe device server is starting…`;
+      return `${LAUNCH}${live}\nThe device server is starting…`;
     case 'error':
       return status.error === undefined
-        ? `${LAUNCH}\nThe device server could not start.`
-        : `${LAUNCH}\nThe device server could not start: ${status.error}`;
+        ? `${LAUNCH}${live}\nThe device server could not start.`
+        : `${LAUNCH}${live}\nThe device server could not start: ${status.error}`;
     case 'running':
       return [
-        launchLine(count),
+        `${launchLine(count)}${live}`,
         served,
         note === null ? null : `Served on port ${status.port}: ${note}`,
       ]
         .filter((line) => line !== null)
         .join('\n');
     default:
-      return LAUNCH;
+      return `${LAUNCH}${live}`;
   }
 }
 
@@ -422,6 +465,7 @@ export function deviceView(
   const count = listed.filter((device) => device.connected).length;
   const transport = status?.transport ?? 'http';
   const waiting = waitingOf(status);
+  const live = liveReloadState(status, context.ownLaunch, context.liveReloadRefused);
 
   return {
     dot: dotOf(status),
@@ -458,5 +502,11 @@ export function deviceView(
     insecureNote:
       transport === 'http' ? `${INSECURE_NOTE} Choose HTTPS under Protocol.` : INSECURE_NOTE,
     noWebGpuNote: NO_WEBGPU_NOTE,
+    liveReload: {
+      on: live !== 'off',
+      note: liveReloadNote(live, status),
+      tone: live === 'paused' ? 'warning' : 'hint',
+      title: LIVE_RELOAD_TITLE,
+    },
   };
 }

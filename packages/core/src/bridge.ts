@@ -356,7 +356,8 @@ export interface DevicesApi {
   launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus | null>;
   /**
    * Writes what the renderer may change — the port, the address a link is made
-   * of — and moves a running server onto a new port.
+   * of, the transport, live reload — and moves a running server onto a new
+   * port, or under the other transport.
    */
   saveSettings: (patch: DeviceSettingsPatch) => Promise<DeviceServerStatus>;
   /**

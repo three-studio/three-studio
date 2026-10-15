@@ -48,7 +48,7 @@ const STOPPED = status({
   launch: null,
 });
 
-const ON_MAC = { platform: 'darwin', dev: false } as const;
+const ON_MAC = { platform: 'darwin', dev: false, ownLaunch: null, liveReloadRefused: null } as const;
 
 describe('a server that is stopped', () => {
   it('shows the settings’ port, no link and no dot', () => {
@@ -201,7 +201,7 @@ describe('a server that could not start', () => {
 
 describe('the help for a phone that cannot connect', () => {
   it('names Electron on macOS in development, which is what the firewall asks about', () => {
-    const [, firewall] = deviceView(status(), { platform: 'darwin', dev: true }).help.items;
+    const [, firewall] = deviceView(status(), { ...ON_MAC, dev: true }).help.items;
 
     expect(firewall).toBe(
       'If macOS asked whether Electron may accept incoming connections and it was refused, ' +
@@ -210,14 +210,14 @@ describe('the help for a phone that cannot connect', () => {
   });
 
   it('names Three Studio on Windows, and private networks', () => {
-    const [, firewall] = deviceView(status(), { platform: 'win32', dev: false }).help.items;
+    const [, firewall] = deviceView(status(), { ...ON_MAC, platform: 'win32' }).help.items;
 
     expect(firewall).toContain('Allow Three Studio in Windows Security');
     expect(firewall).toContain('private');
   });
 
   it('puts the port in the ufw command on Linux', () => {
-    const [, firewall] = deviceView(status({ port: 7702 }), { platform: 'linux', dev: false }).help
+    const [, firewall] = deviceView(status({ port: 7702 }), { ...ON_MAC, platform: 'linux' }).help
       .items;
 
     expect(firewall).toContain('sudo ufw allow 7702/tcp');
@@ -426,6 +426,81 @@ function overHttps(overrides: Partial<DeviceServerStatus> = {}): DeviceServerSta
 
 /** A phone that accepted the certificate, and runs. */
 const accepted = (): DeviceInfo => device({ secureContext: true, backend: 'webgpu' });
+
+describe('live reload', () => {
+  /** This window's launch, current in `status()`. */
+  const MINE = { ...ON_MAC, ownLaunch: { id: 'launch-1' } };
+
+  it('says nothing while it is off, and the checkbox what it would do', () => {
+    const { liveReload } = deviceView(status(), MINE);
+
+    expect(liveReload).toEqual({
+      on: false,
+      note: null,
+      tone: 'hint',
+      title: 'Relaunch every device a second after each change.',
+    });
+  });
+
+  it('waits for a launch from this window while there is none to follow', () => {
+    expect(deviceView({ ...STOPPED, liveReload: true }, MINE).liveReload).toMatchObject({
+      on: true,
+      note: 'Starts with the next Launch from this window.',
+      tone: 'hint',
+    });
+    expect(deviceView(status({ liveReload: true, launch: null }), MINE).liveReload.note).toBe(
+      'Starts with the next Launch from this window.',
+    );
+  });
+
+  it('names the scene another window launched, and how to follow this one', () => {
+    const view = deviceView(
+      status({ liveReload: true, launch: { id: 'launch-9', at: 9, sceneName: 'Boss' } }),
+      MINE,
+    );
+
+    expect(view.liveReload.note).toBe(
+      '“Boss” was launched from another window. Launch here to follow this one.',
+    );
+    expect(view.liveReload.tone).toBe('hint');
+  });
+
+  it('warns that a refusal holds it', () => {
+    const view = deviceView(status({ liveReload: true }), {
+      ...MINE,
+      liveReloadRefused: 'Scripts did not compile:',
+    });
+
+    expect(view.liveReload).toMatchObject({
+      on: true,
+      note: 'Paused: the last relaunch was refused. Launch to try again.',
+      tone: 'warning',
+    });
+  });
+
+  it('says what it does while it relaunches', () => {
+    expect(deviceView(status({ liveReload: true }), MINE).liveReload).toMatchObject({
+      on: true,
+      note: 'Devices relaunch a second after each change — never mid-drag, never during Play.',
+      tone: 'hint',
+    });
+  });
+
+  it('is named on the button’s first line while it is on, and not while it is off', () => {
+    const first = (view: { title: string }) => view.title.split('\n')[0];
+
+    expect(first(deviceView(status({ liveReload: true, devices: [device()] }), MINE))).toBe(
+      'Launch on Devices — 1 device — live reload',
+    );
+    expect(deviceView({ ...STOPPED, liveReload: true }, MINE).title).toBe(
+      'Launch on Devices — live reload',
+    );
+    expect(first(deviceView(status({ devices: [device()] }), MINE))).toBe(
+      'Launch on Devices — 1 device',
+    );
+    expect(deviceView(STOPPED, MINE).title).toBe('Launch on Devices');
+  });
+});
 
 describe('the protocol', () => {
   it('is HTTP, which says what phones run on, with nothing to accept', () => {

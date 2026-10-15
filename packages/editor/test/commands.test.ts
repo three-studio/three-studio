@@ -442,6 +442,8 @@ describe('the palette is a view over the table, not a feature', () => {
       // A link exists only while the server runs.
       'copyDeviceLink',
       'openDevicePage',
+      // Whether live reload is on is the server's to say.
+      'toggleLiveReload',
     ] as const) {
       expect(offered, id).not.toContain(id);
     }
