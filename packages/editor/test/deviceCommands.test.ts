@@ -14,6 +14,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEVICE_COMMANDS,
+  captureDevice,
+  captureDevices,
   chooseDeviceAddress,
   chooseDevicePort,
   chooseDeviceTransport,
@@ -76,9 +78,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
   };
 }
 
-type Answers = Partial<
-  Record<keyof DevicesApi, (...args: unknown[]) => Promise<DeviceServerStatus | null>>
->;
+type Answers = Partial<Record<keyof DevicesApi, (...args: unknown[]) => Promise<unknown>>>;
 
 interface Bridge {
   calls: { method: string; args: unknown[] }[];
@@ -94,7 +94,7 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
   const bridge: Bridge = { calls: [], changed: null, logged: null, opened: [] };
   const call =
     (method: keyof DevicesApi) =>
-    async (...args: unknown[]): Promise<DeviceServerStatus | null> => {
+    async (...args: unknown[]): Promise<unknown> => {
       bridge.calls.push({ method, args });
       const answer = answers[method];
       if (answer === undefined) throw new Error(`devices.${method} was not expected`);
@@ -113,6 +113,8 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
         reclaimPort: call('reclaimPort'),
         regenerateToken: call('regenerateToken'),
         restart: call('restart'),
+        screenshot: call('screenshot'),
+        revealScreenshot: call('revealScreenshot'),
         onChanged: (listener: (status: DeviceServerStatus) => void) => {
           bridge.changed = listener;
           return () => {
@@ -186,6 +188,7 @@ beforeEach(() => {
     ownLaunch: null,
     liveReloadRefused: null,
     notedReloads: null,
+    capturing: [],
   });
   useDialogStore.getState().cancel();
   useDocumentStore.getState().replaceScene(createStarterScene());
@@ -843,6 +846,149 @@ describe('restarting one device', () => {
       description: 'That device is not connected.',
     });
     expect(lastEntry().level).toBe('error');
+  });
+});
+
+describe('a screenshot on one device', () => {
+  const shot = {
+    path: '/projects/Races/Screenshots/Level — iPhone · Safari — 2026-10-01 at 14.32.05.png',
+    width: 786,
+    height: 1704,
+    bytes: 2_100_000,
+  };
+
+  beforeEach(() => {
+    useDeviceStore.setState({
+      status: status({ devices: [device({ id: 'abc12345', state: 'running', backend: 'webgl' })] }),
+    });
+  });
+
+  it('asks the main process for that device’s frame, and marks the device meanwhile', async () => {
+    let meanwhile: readonly string[] = [];
+    const bridge = install({
+      screenshot: async () => {
+        meanwhile = useDeviceStore.getState().capturing;
+        return shot;
+      },
+    });
+
+    await captureDevice('abc12345');
+
+    expect(bridge.calls).toEqual([{ method: 'screenshot', args: ['abc12345'] }]);
+    expect(meanwhile).toEqual(['abc12345']);
+    expect(useDeviceStore.getState().capturing).toEqual([]);
+  });
+
+  it('waits in one toast, for the frame and then for where to save it', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    install({ screenshot: () => new Promise((resolve) => (answer = resolve)) });
+
+    const taking = captureDevice('abc12345');
+    expect(toasts()).toHaveLength(1);
+    expect(lastToast()).toMatchObject({
+      kind: 'progress',
+      title: 'Screenshot from iPhone · Safari',
+      description: 'Waiting for its frame, then for where to save it…',
+    });
+
+    answer(shot);
+    await taking;
+    expect(toasts()).toHaveLength(1);
+  });
+
+  it('says where it was saved and how large it is, and shows it in the Finder', async () => {
+    const bridge = install({ screenshot: async () => shot, revealScreenshot: async () => undefined });
+
+    await captureDevice('abc12345');
+
+    expect(lastToast()).toMatchObject({
+      kind: 'success',
+      title: 'Screenshot saved',
+      description: '786×1704 · 2.1 MB',
+      details: shot.path,
+    });
+    expect(lastToast().actions).toMatchObject([{ label: 'Show in Finder', primary: true }]);
+    lastToast().actions![0]!.onClick();
+    expect(bridge.calls.at(-1)).toEqual({ method: 'revealScreenshot', args: [shot.path] });
+    expect(lastEntry()).toMatchObject({
+      level: 'log',
+      text: `Screenshot from iPhone · Safari, 786×1704: ${shot.path}`,
+    });
+  });
+
+  it('leaves nothing behind when the person cancels the dialog', async () => {
+    install({ screenshot: async () => null });
+
+    await captureDevice('abc12345');
+
+    expect(toasts()).toEqual([]);
+    expect(useConsoleStore.getState().entries).toEqual([]);
+    expect(useDeviceStore.getState().capturing).toEqual([]);
+  });
+
+  it('says why no frame came, without the wrapper IPC puts around it', async () => {
+    install({
+      screenshot: async () => {
+        throw new Error(
+          "Error invoking remote method 'devices:screenshot': Error: No frame came back from " +
+            'iPhone · Safari within 10 s. Is the game in front on the device?',
+        );
+      },
+    });
+
+    await captureDevice('abc12345');
+
+    expect(toasts()).toHaveLength(1);
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'No screenshot from iPhone · Safari',
+      description:
+        'No frame came back from iPhone · Safari within 10 s. Is the game in front on the device?',
+    });
+    expect(lastEntry().level).toBe('error');
+    expect(useDeviceStore.getState().capturing).toEqual([]);
+  });
+});
+
+describe('Take Screenshots on Devices', () => {
+  const shot = { path: '/shots/a.png', width: 3, height: 2, bytes: 70 };
+  const devices = [
+    device({ id: 'aaaa0000', state: 'running', backend: 'webgl' }),
+    device({ id: 'bbbb0000', state: 'running', backend: 'webgpu', name: 'Android', browser: 'Chrome' }),
+    device({ id: 'cccc0000', state: 'running', backend: 'webgl', connected: false }),
+  ];
+
+  it('asks every device that can give a frame, all at once', async () => {
+    useDeviceStore.setState({ status: status({ devices }) });
+    const answers: ((value: unknown) => void)[] = [];
+    const bridge = install({ screenshot: () => new Promise((resolve) => answers.push(resolve)) });
+
+    const taking = captureDevices();
+    expect(bridge.calls).toEqual([
+      { method: 'screenshot', args: ['aaaa0000'] },
+      { method: 'screenshot', args: ['bbbb0000'] },
+    ]);
+
+    for (const answer of answers) answer(shot);
+    await taking;
+  });
+
+  it('does not ask again a device this window is already taking one of', async () => {
+    useDeviceStore.setState({ status: status({ devices }), capturing: ['aaaa0000'] });
+    const bridge = install({ screenshot: async () => shot });
+
+    await captureDevices();
+
+    expect(bridge.calls).toEqual([{ method: 'screenshot', args: ['bbbb0000'] }]);
+  });
+
+  it('is offered once a status has been read, while a device can give a frame', () => {
+    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(false);
+    useDeviceStore.setState({ status: status({ devices: [devices[2]!] }) });
+    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(false);
+    useDeviceStore.setState({ status: status({ devices }) });
+    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(true);
+    expect(DEVICE_COMMANDS.captureDevices.label()).toBe('Take Screenshots on Devices');
   });
 });
 

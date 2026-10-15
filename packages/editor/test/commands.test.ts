@@ -447,6 +447,8 @@ describe('the palette is a view over the table, not a feature', () => {
       'toggleLiveReload',
       'toggleDeviceStats',
       'toggleForceWebGL',
+      // A frame is a running device's, which only the server can name.
+      'captureDevices',
     ] as const) {
       expect(offered, id).not.toContain(id);
     }

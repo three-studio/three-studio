@@ -60,6 +60,7 @@ const ON_MAC = {
   ownLaunch: null,
   liveReloadRefused: null,
   projectRendering: { forceWebGL: false, maxPixelRatio: 2 },
+  capturing: [],
 } as const;
 
 describe('a server that is stopped', () => {
@@ -420,6 +421,36 @@ describe('the devices', () => {
     expect(deviceView(overHttps(), ON_MAC).insecureNote).toBe(
       'Not a secure context, so no WebGPU: browsers allow it only over HTTPS or on localhost.',
     );
+  });
+});
+
+describe('a device’s camera', () => {
+  it('takes a frame of a connected device running the current launch', () => {
+    const [row] = deviceView(status({ devices: [device()] }), ON_MAC).devices;
+
+    expect(row).toMatchObject({ canCapture: true, capturing: false });
+  });
+
+  it.each<[string, Partial<DeviceInfo>]>([
+    ['offline', { connected: false }],
+    ['starting', { state: 'booting', backend: null }],
+    ['that failed', { state: 'failed', backend: null, error: 'WebGL2 is not available.' }],
+    ['on the waiting page', { state: 'waiting', launch: null, backend: null }],
+    // A page left on a launch it slept through draws a game no longer launched.
+    ['on another launch', { launch: 'launch-0' }],
+  ])('takes nothing of a device %s', (_name, overrides) => {
+    const [row] = deviceView(status({ devices: [device(overrides)] }), ON_MAC).devices;
+
+    expect(row!.canCapture).toBe(false);
+  });
+
+  it('says which devices this window is taking a screenshot of', () => {
+    const view = deviceView(
+      status({ devices: [device({ id: 'a0000000' }), device({ id: 'b0000000' })] }),
+      { ...ON_MAC, capturing: ['b0000000'] },
+    );
+
+    expect(view.devices.map((row) => row.capturing)).toEqual([false, true]);
   });
 });
 

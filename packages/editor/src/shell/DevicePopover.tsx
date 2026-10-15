@@ -1,7 +1,8 @@
 import { isDeviceTransport } from '@three-studio/core';
-import { RotateCw, TriangleAlert } from 'lucide-react';
+import { Camera, RotateCw, TriangleAlert } from 'lucide-react';
 import { useEffect, useState, type RefObject } from 'react';
 import {
+  captureDevice,
   chooseDeviceAddress,
   chooseDeviceTransport,
   restartDevice,
@@ -350,10 +351,10 @@ function Served({ view }: { view: DeviceView }) {
 
 /**
  * One device: what it is, what it draws with — and why not WebGPU, when that
- * is why — its screen, and ↻. Below it, what its page measured on one line,
- * every number in the title, then what looks wrong with the page, a line
- * each. A failed page says what it failed on, three lines at most; the whole
- * of it in the title, and selectable.
+ * is why — its screen, its camera and ↻. Below it, what its page measured on
+ * one line, every number in the title, then what looks wrong with the page, a
+ * line each. A failed page says what it failed on, three lines at most; the
+ * whole of it in the title, and selectable.
  */
 function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
   const why = row.insecure ? view.insecureNote : row.noWebGpu ? view.noWebGpuNote : null;
@@ -376,6 +377,16 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
           )}
         </span>
         <span className="w-24 shrink-0 text-right tabular-nums text-ink-dim">{row.screen}</span>
+        <button
+          type="button"
+          aria-label={`Take a screenshot on ${row.label}`}
+          title={`Take a screenshot on ${row.label}`}
+          disabled={!row.canCapture || row.capturing}
+          onClick={() => void captureDevice(row.id)}
+          className={`shrink-0 rounded-sm p-1 text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40 ${row.capturing ? 'animate-pulse' : ''}`}
+        >
+          <Camera size={12} strokeWidth={2} />
+        </button>
         <button
           type="button"
           aria-label={`Restart ${row.label}`}

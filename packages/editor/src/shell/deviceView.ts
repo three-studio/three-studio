@@ -13,6 +13,7 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import {
+  canCapture,
   deviceLink,
   hasSlid,
   holderName,
@@ -56,6 +57,10 @@ export interface DeviceRow {
   error: string | null;
   /** Connected, and there is a launch to restart it on. */
   canRestart: boolean;
+  /** Running the current launch: there is a frame of it to ask for. */
+  canCapture: boolean;
+  /** This window is taking a screenshot of it. */
+  capturing: boolean;
   /** Where it connected from, then its whole user agent. */
   tooltip: string;
   /** `58 fps · p95 21 ms · 142 draws · 85.2k tris`: its page's last report; `null` before one. */
@@ -193,6 +198,8 @@ export interface DeviceViewContext {
    * `null` with no project. Read by the caller, so that this stays pure.
    */
   projectRendering: Pick<RenderingSettings, 'forceWebGL' | 'maxPixelRatio'> | null;
+  /** The devices this window is taking a screenshot of, read by the caller as the rendering is. */
+  capturing: readonly string[];
 }
 
 const LAUNCH = 'Launch on Devices';
@@ -334,15 +341,20 @@ function screenOf({ width, height, dpr }: DeviceInfo['screen']): string {
 }
 
 interface RowContext {
+  status: DeviceServerStatus | null;
   /** There is a launch to restart a device on. */
   launched: boolean;
   /** The current launch's id. */
   current: string | null;
   /** Who would force WebGL2 on a page now, if anyone. */
   forcedBy: DeviceRow['forced'];
+  capturing: readonly string[];
 }
 
-function rowOf(device: DeviceInfo, { launched, current, forcedBy }: RowContext): DeviceRow {
+function rowOf(
+  device: DeviceInfo,
+  { status, launched, current, forcedBy, capturing }: RowContext,
+): DeviceRow {
   const running = device.connected && device.state === 'running' && device.backend !== null;
   // Asked for, WebGL2 is no sign that a page lacks anything: neither mark applies.
   const forced = running && device.backend === 'webgl' ? forcedBy : null;
@@ -365,6 +377,8 @@ function rowOf(device: DeviceInfo, { launched, current, forcedBy }: RowContext):
     tone: device.connected ? known.tone : 'none',
     error: device.connected && device.state === 'failed' ? device.error : null,
     canRestart: device.connected && launched,
+    canCapture: canCapture(device, status),
+    capturing: capturing.includes(device.id),
     tooltip: `Connected from ${device.address}\n${device.userAgent}`,
     stats: described === null ? null : `${described.pace} · ${described.draws}`,
     statsTitle:
@@ -584,7 +598,13 @@ export function deviceView(
         ? 'project'
         : null;
   const devices = listed.map((device) =>
-    rowOf(device, { launched, current: status?.launch?.id ?? null, forcedBy }),
+    rowOf(device, {
+      status,
+      launched,
+      current: status?.launch?.id ?? null,
+      forcedBy,
+      capturing: context.capturing,
+    }),
   );
   const count = listed.filter((device) => device.connected).length;
   const transport = status?.transport ?? 'http';

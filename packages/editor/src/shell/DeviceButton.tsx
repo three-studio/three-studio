@@ -22,6 +22,7 @@ export function DeviceButton({ className = '' }: { className?: string }) {
   const open = useDeviceStore((s) => s.popoverOpen);
   const ownLaunch = useDeviceStore((s) => s.ownLaunch);
   const liveReloadRefused = useDeviceStore((s) => s.liveReloadRefused);
+  const capturing = useDeviceStore((s) => s.capturing);
   // Read so that the button re-renders when it changes: whether a launch can
   // run is the open project's question.
   useProjectStore((s) => s.summary);
@@ -35,6 +36,7 @@ export function DeviceButton({ className = '' }: { className?: string }) {
     ownLaunch,
     liveReloadRefused,
     projectRendering: rendering,
+    capturing,
   });
 
   return (

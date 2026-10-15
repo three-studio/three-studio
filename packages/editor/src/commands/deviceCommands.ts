@@ -1,17 +1,21 @@
-import type {
-  DeviceInfo,
-  DeviceLaunchOptions,
-  DeviceServerStatus,
-  DeviceTransport,
-  LaunchSnapshot,
+import {
+  deviceLabel,
+  type DeviceInfo,
+  type DeviceLaunchOptions,
+  type DeviceServerStatus,
+  type DeviceTransport,
+  type LaunchSnapshot,
 } from '@three-studio/core';
+import { formatBytes } from '../import/preview/facts';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
 import {
+  canCapture,
   deviceLink,
   hasSlid,
   holderName,
   localDeviceUrl,
   noteLaunch,
+  setCapturing,
   showDevicePopover,
   useDeviceStore,
 } from '../state/deviceStore';
@@ -171,7 +175,7 @@ function launchedTitle(status: DeviceServerStatus, verb = 'Launched'): string {
 function launchedNotes(status: DeviceServerStatus): string[] {
   const devices = connectedDevices(status);
   if (devices.length === 0) return [status.transport === 'https' ? NO_DEVICE_HTTPS : NO_DEVICE];
-  const names = devices.map((device) => `${device.name} · ${device.browser} (${device.address})`);
+  const names = devices.map((device) => `${deviceLabel(device)} (${device.address})`);
   return [`Restarting ${names.join(', ')}.`];
 }
 
@@ -266,6 +270,73 @@ export async function restartDevice(id: string): Promise<void> {
   } catch (cause) {
     showFailure('Could not restart the device', cause);
   }
+}
+
+/**
+ * Takes a screenshot on one device: the camera on its row, and each device
+ * *Take Screenshots on Devices* reaches. Not in the table below: its argument
+ * is a row's.
+ *
+ * One toast for the whole of it, as a launch has: the frame comes first, then
+ * the Save dialog, and the toast waits for both before it becomes the result.
+ * A cancelled dialog leaves nothing to say, so the toast goes. The path goes
+ * to the Console too, where it can be copied after the toast has gone.
+ */
+export async function captureDevice(id: string): Promise<void> {
+  const known = useDeviceStore.getState().status?.devices.find((device) => device.id === id);
+  const label = known === undefined ? 'the device' : deviceLabel(known);
+  const toastId = useToastStore.getState().push({
+    kind: 'progress',
+    title: `Screenshot from ${label}`,
+    description: 'Waiting for its frame, then for where to save it…',
+    progress: null,
+  });
+  setCapturing(id, true);
+  try {
+    const shot = await window.studio.devices.screenshot(id);
+    if (shot === null) {
+      useToastStore.getState().dismiss(toastId);
+      return;
+    }
+    const size = `${shot.width}×${shot.height}`;
+    useToastStore.getState().update(toastId, {
+      kind: 'success',
+      title: 'Screenshot saved',
+      description: `${size} · ${formatBytes(shot.bytes)}`,
+      progress: undefined,
+      details: shot.path,
+      detailsOpen: false,
+      actions: [
+        {
+          label: 'Show in Finder',
+          primary: true,
+          onClick: () => {
+            window.studio.devices
+              .revealScreenshot(shot.path)
+              .catch((cause: unknown) => showFailure('Could not show the screenshot', cause));
+          },
+        },
+      ],
+    });
+    useConsoleStore.getState().append('log', `Screenshot from ${label}, ${size}: ${shot.path}`);
+  } catch (cause) {
+    showFailure(`No screenshot from ${label}`, cause, toastId);
+  } finally {
+    setCapturing(id, false);
+  }
+}
+
+/**
+ * Takes a screenshot on every device that can give one, all at once: their
+ * frames are taken at the same moment, and their Save dialogs open one after
+ * the other. A device this window is already taking one of is not asked again.
+ */
+export async function captureDevices(): Promise<void> {
+  const { status, capturing } = useDeviceStore.getState();
+  const devices = (status?.devices ?? []).filter(
+    (device) => canCapture(device, status) && !capturing.includes(device.id),
+  );
+  await Promise.all(devices.map((device) => captureDevice(device.id)));
 }
 
 export async function stopDeviceServer(): Promise<void> {
@@ -615,6 +686,15 @@ export const DEVICE_COMMANDS = {
     can: () => useDeviceStore.getState().status !== null,
     run: () =>
       setLaunchOptions({ stats: useDeviceStore.getState().status?.launchOptions.stats !== true }),
+  }),
+  captureDevices: defineCommand({
+    label: () => 'Take Screenshots on Devices',
+    // A frame is a running device's, which only the server can name.
+    can: () => {
+      const { status } = useDeviceStore.getState();
+      return status !== null && status.devices.some((device) => canCapture(device, status));
+    },
+    run: () => captureDevices(),
   }),
   toggleForceWebGL: defineCommand({
     label: () =>

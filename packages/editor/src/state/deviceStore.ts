@@ -1,5 +1,6 @@
 import {
   deviceLabel,
+  type DeviceInfo,
   type DeviceLogs,
   type DeviceServerStatus,
   type LaunchSnapshot,
@@ -45,6 +46,12 @@ interface DeviceState {
    * the Console is told from it.
    */
   notedReloads: Readonly<Record<string, number>> | null;
+  /**
+   * The devices this window is taking a screenshot of, from the moment it
+   * asks until the file is written or the dialog cancelled: their camera
+   * waits meanwhile.
+   */
+  capturing: readonly string[];
 }
 
 /** A launch this window made, and what it sent. */
@@ -59,6 +66,7 @@ export const useDeviceStore = create<DeviceState>()(() => ({
   ownLaunch: null,
   liveReloadRefused: null,
   notedReloads: null,
+  capturing: [],
 }));
 
 /**
@@ -81,6 +89,26 @@ export function liveReloadState(
   if (status.state !== 'running' || status.launch === null) return 'idle';
   if (ownLaunch === null || ownLaunch.id !== status.launch.id) return 'elsewhere';
   return refused === null ? 'on' : 'paused';
+}
+
+/**
+ * Whether a device can be asked for a screenshot: connected, and its page
+ * running the game the server launched last — the one page with a frame of
+ * it to give. One rule, for a row's camera and for the command.
+ */
+export function canCapture(device: DeviceInfo, status: DeviceServerStatus | null): boolean {
+  return (
+    status?.state === 'running' &&
+    status.launch !== null &&
+    device.connected &&
+    device.state === 'running' &&
+    device.launch === status.launch.id
+  );
+}
+
+export function setCapturing(device: string, on: boolean): void {
+  const others = useDeviceStore.getState().capturing.filter((id) => id !== device);
+  useDeviceStore.setState({ capturing: on ? [...others, device] : others });
 }
 
 export function showDevicePopover(): void {
