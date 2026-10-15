@@ -1,5 +1,6 @@
 import {
   DEFAULT_DEVICE_PORT,
+  createDeviceLaunchOptions,
   describeDeviceStats,
   type DeviceBackend,
   type DeviceInfo,
@@ -112,6 +113,18 @@ export interface AddressOption {
   label: string;
 }
 
+/** What every device is launched with, beyond what the project says. */
+export interface LaunchOptionsView {
+  forceWebGL: boolean;
+  stats: boolean;
+  /** The pixel-ratio picker's value: `''` for the project's, else the cap as written. */
+  pixelRatio: string;
+  /** The project's first, then 1× to 3× in half steps, as Project Settings offers them. */
+  pixelRatios: { value: string; label: string }[];
+  /** Beside the disclosure's title: what is set otherwise than the project says; `null` when nothing is. */
+  summary: string | null;
+}
+
 export interface DeviceView {
   dot: DeviceDot;
   /** The button's tooltip: what it does, then where devices are served or what is wrong. */
@@ -163,6 +176,8 @@ export interface DeviceView {
   /** Why a secure row's backend carries one: the browser gave no WebGPU. */
   noWebGpuNote: string;
   liveReload: LiveReloadView;
+  /** The settings', whatever the server's state: they are kept. */
+  launchOptions: LaunchOptionsView;
 }
 
 export interface DeviceViewContext {
@@ -241,6 +256,38 @@ const TRANSPORT_NOTES: Readonly<Record<DeviceTransport, string>> = {
 };
 
 const LIVE_RELOAD_TITLE = 'Relaunch every device a second after each change.';
+
+/** The caps a person can pick: the range and the steps of Project Settings' own field. */
+const PIXEL_RATIOS = [1, 1.5, 2, 2.5, 3];
+
+function launchOptionsOf(
+  status: DeviceServerStatus | null,
+  { projectRendering }: DeviceViewContext,
+): LaunchOptionsView {
+  const options = status?.launchOptions ?? createDeviceLaunchOptions();
+  const cap = options.maxPixelRatio;
+  // A cap written in the file by hand, between the steps, is offered as it is.
+  const caps = cap === null || PIXEL_RATIOS.includes(cap) ? PIXEL_RATIOS : [...PIXEL_RATIOS, cap];
+  const summary = [
+    options.forceWebGL ? 'WebGL2 forced' : null,
+    cap === null ? null : `pixel ratio ${cap}×`,
+    options.stats ? 'stats on screen' : null,
+  ].filter((part) => part !== null);
+  return {
+    forceWebGL: options.forceWebGL,
+    stats: options.stats,
+    pixelRatio: cap === null ? '' : String(cap),
+    pixelRatios: [
+      {
+        value: '',
+        label:
+          projectRendering === null ? 'Project’s' : `Project’s (${projectRendering.maxPixelRatio}×)`,
+      },
+      ...caps.map((ratio) => ({ value: String(ratio), label: `${ratio}×` })),
+    ],
+    summary: summary.length === 0 ? null : summary.join(' · '),
+  };
+}
 
 function liveReloadNote(state: LiveReloadState, status: DeviceServerStatus | null): string | null {
   switch (state) {
@@ -585,5 +632,6 @@ export function deviceView(
       tone: live === 'paused' ? 'warning' : 'hint',
       title: LIVE_RELOAD_TITLE,
     },
+    launchOptions: launchOptionsOf(status, context),
   };
 }

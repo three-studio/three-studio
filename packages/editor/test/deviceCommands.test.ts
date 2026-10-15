@@ -24,6 +24,7 @@ import {
   reclaimDevicePort,
   relaunchOnDevices,
   restartDevice,
+  setLaunchOptions,
   setLiveReload,
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
@@ -31,6 +32,7 @@ import {
   appendDeviceLogs,
   liveReloadState,
   noteLaunch,
+  noteReloads,
   refreshDevices,
   useDeviceStore,
   watchDevices,
@@ -183,6 +185,7 @@ beforeEach(() => {
     popoverOpen: false,
     ownLaunch: null,
     liveReloadRefused: null,
+    notedReloads: null,
   });
   useDialogStore.getState().cancel();
   useDocumentStore.getState().replaceScene(createStarterScene());
@@ -616,6 +619,170 @@ describe('turning live reload on and off', () => {
     await DEVICE_COMMANDS.toggleLiveReload.run();
 
     expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ liveReload: false }] }]);
+  });
+});
+
+describe('the launch options', () => {
+  const forcing = { ...createDeviceLaunchOptions(), forceWebGL: true };
+  const TWO_PHONES = [device(), device({ id: 'phone0001', name: 'Android', browser: 'Chrome' })];
+
+  it('write the one option changed, and count the devices that restart on it', async () => {
+    const bridge = install({
+      saveSettings: async () => status({ launchOptions: forcing, devices: TWO_PHONES }),
+    });
+
+    await setLaunchOptions({ forceWebGL: true });
+
+    expect(bridge.calls).toEqual([
+      { method: 'saveSettings', args: [{ launchOptions: { forceWebGL: true } }] },
+    ]);
+    expect(lastToast()).toMatchObject({
+      kind: 'info',
+      title: 'WebGL2 forced on devices',
+      description: '2 devices restart on it.',
+    });
+  });
+
+  it('leave it to the devices that open the link when none is connected', async () => {
+    install({
+      saveSettings: async () =>
+        status({ launchOptions: createDeviceLaunchOptions(), devices: [device({ connected: false })] }),
+    });
+
+    await setLaunchOptions({ forceWebGL: false });
+
+    expect(lastToast()).toMatchObject({
+      title: 'WebGL2 no longer forced',
+      description: 'Devices that open the link use it.',
+    });
+  });
+
+  it('take effect at the next launch while stopped, or before anything is launched', async () => {
+    install({ saveSettings: async () => status({ state: 'stopped', launch: null, launchOptions: forcing }) });
+    await setLaunchOptions({ forceWebGL: true });
+    expect(lastToast()).toMatchObject({
+      title: 'WebGL2 forced on devices',
+      description: 'It takes effect at the next launch.',
+    });
+
+    install({ saveSettings: async () => status({ launch: null, launchOptions: forcing }) });
+    await setLaunchOptions({ stats: true });
+    expect(lastToast()).toMatchObject({
+      title: 'Stats shown on devices',
+      description: 'It takes effect at the next launch.',
+    });
+  });
+
+  it('say the pixel ratio, the project’s included', async () => {
+    install({ saveSettings: async () => status({ devices: TWO_PHONES }) });
+
+    await setLaunchOptions({ maxPixelRatio: 1 });
+    expect(lastToast().title).toBe('Pixel ratio on devices: 1×');
+
+    await setLaunchOptions({ maxPixelRatio: null });
+    expect(lastToast().title).toBe('Pixel ratio on devices: the project’s (2×)');
+  });
+
+  it('say stats are drawn or no longer, and that nothing restarts', async () => {
+    install({ saveSettings: async () => status({ devices: TWO_PHONES }) });
+
+    await setLaunchOptions({ stats: true });
+    expect(lastToast()).toMatchObject({
+      title: 'Stats shown on devices',
+      description: 'Each device draws its numbers in a corner, without restarting.',
+    });
+
+    await setLaunchOptions({ stats: false });
+    expect(lastToast()).toMatchObject({ title: 'Stats hidden on devices', description: undefined });
+  });
+
+  it('say why they could not be changed, without the wrapper IPC puts around it', async () => {
+    install({
+      saveSettings: async () => {
+        throw new Error("Error invoking remote method 'devices:saveSettings': Error: EACCES: permission denied");
+      },
+    });
+
+    await setLaunchOptions({ stats: true });
+
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Could not change the launch options',
+      description: 'EACCES: permission denied',
+    });
+  });
+
+  it('are two commands whose labels say what they would do, once the server has been read', () => {
+    const stats = DEVICE_COMMANDS.toggleDeviceStats;
+    const webgl = DEVICE_COMMANDS.toggleForceWebGL;
+
+    expect(stats.can()).toBe(false);
+    expect(webgl.can()).toBe(false);
+
+    useDeviceStore.setState({ status: status() });
+    expect([stats.can(), webgl.can()]).toEqual([true, true]);
+    expect([stats.label(), webgl.label()]).toEqual(['Show Stats on Devices', 'Force WebGL2 on Devices']);
+
+    useDeviceStore.setState({ status: status({ launchOptions: { ...forcing, stats: true } }) });
+    expect([stats.label(), webgl.label()]).toEqual([
+      'Hide Stats on Devices',
+      'Stop Forcing WebGL2 on Devices',
+    ]);
+  });
+
+  it('run as the commands turn them the other way', async () => {
+    const bridge = install({ saveSettings: async () => status() });
+    useDeviceStore.setState({ status: status({ launchOptions: { ...forcing, stats: true } }) });
+
+    await DEVICE_COMMANDS.toggleDeviceStats.run();
+    await DEVICE_COMMANDS.toggleForceWebGL.run();
+
+    expect(bridge.calls.map((call) => call.args)).toEqual([
+      [{ launchOptions: { stats: false } }],
+      [{ launchOptions: { forceWebGL: false } }],
+    ]);
+  });
+});
+
+describe('a reload nobody asked for, in the Console', () => {
+  const SAID =
+    'iPhone · Safari: the page ended without warning and was reloaded — it most likely ran out of memory.';
+
+  it('is said once as this window’s own line when a device’s count grows, never at the first reading', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      // A reload before the window opened is the row's to show.
+      noteReloads(status({ devices: [device({ reloads: 1 })] }));
+      expect(warn).not.toHaveBeenCalled();
+
+      noteReloads(status({ devices: [device({ reloads: 2 })] }));
+      expect(warn.mock.calls).toEqual([[SAID]]);
+
+      const android = device({ id: 'phone0001', name: 'Android', browser: 'Chrome', reloads: 1 });
+      noteReloads(status({ devices: [device({ reloads: 2 }), android] }));
+      noteReloads(status({ devices: [device({ reloads: 2 }), android] }));
+      expect(warn.mock.calls.map(([text]) => String(text).split(':')[0])).toEqual([
+        'iPhone · Safari',
+        'Android · Chrome',
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('is noted from every status the window hears', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const bridge = install({ status: async () => status({ devices: [device()] }) });
+      watchDevices();
+      await vi.waitFor(() => expect(useDeviceStore.getState().status).not.toBeNull());
+
+      bridge.changed!(status({ devices: [device({ reloads: 1 })] }));
+
+      expect(warn.mock.calls).toEqual([[SAID]]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

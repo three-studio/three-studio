@@ -589,6 +589,62 @@ describe('WebGL2, forced', () => {
   });
 });
 
+describe('the launch options', () => {
+  it('offer the project’s pixel ratio first, then 1× to 3× in half steps', () => {
+    const { pixelRatios } = deviceView(status(), ON_MAC).launchOptions;
+
+    expect(pixelRatios).toEqual([
+      { value: '', label: 'Project’s (2×)' },
+      { value: '1', label: '1×' },
+      { value: '1.5', label: '1.5×' },
+      { value: '2', label: '2×' },
+      { value: '2.5', label: '2.5×' },
+      { value: '3', label: '3×' },
+    ]);
+    expect(
+      deviceView(status(), { ...ON_MAC, projectRendering: null }).launchOptions.pixelRatios[0],
+    ).toEqual({ value: '', label: 'Project’s' });
+  });
+
+  it('pick the project’s with an empty value, and a cap by its number', () => {
+    const capped = (maxPixelRatio: number | null) =>
+      deviceView(status({ launchOptions: { ...createDeviceLaunchOptions(), maxPixelRatio } }), ON_MAC)
+        .launchOptions;
+
+    expect(capped(null).pixelRatio).toBe('');
+    expect(capped(1.5).pixelRatio).toBe('1.5');
+    // A cap written by hand, between the steps, is still offered as it is.
+    expect(capped(1.25).pixelRatios.map((option) => option.value)).toContain('1.25');
+  });
+
+  it('sum up what is not the project’s, beside their title', () => {
+    expect(deviceView(status(), ON_MAC).launchOptions).toMatchObject({
+      forceWebGL: false,
+      stats: false,
+      summary: null,
+    });
+    expect(
+      deviceView(status({ launchOptions: { forceWebGL: true, maxPixelRatio: 1, stats: true } }), ON_MAC)
+        .launchOptions,
+    ).toMatchObject({
+      forceWebGL: true,
+      stats: true,
+      summary: 'WebGL2 forced · pixel ratio 1× · stats on screen',
+    });
+  });
+
+  it('are the settings’ whatever the server’s state, and the factory’s before a reading', () => {
+    const stopped = { ...STOPPED, launchOptions: { ...createDeviceLaunchOptions(), stats: true } };
+
+    expect(deviceView(stopped, ON_MAC).launchOptions.stats).toBe(true);
+    expect(deviceView(null, ON_MAC).launchOptions).toMatchObject({
+      forceWebGL: false,
+      pixelRatio: '',
+      stats: false,
+    });
+  });
+});
+
 /** A phone that accepted the certificate, and runs. */
 const accepted = (): DeviceInfo => device({ secureContext: true, backend: 'webgpu' });
 

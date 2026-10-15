@@ -1,5 +1,6 @@
 import type {
   DeviceInfo,
+  DeviceLaunchOptions,
   DeviceServerStatus,
   DeviceTransport,
   LaunchSnapshot,
@@ -498,6 +499,53 @@ export async function setLiveReload(on: boolean): Promise<void> {
   );
 }
 
+/** What a toast calls the option a patch changed, as it is now. */
+function launchOptionTitle(patch: Partial<DeviceLaunchOptions>): string {
+  if (patch.forceWebGL !== undefined) {
+    return patch.forceWebGL ? 'WebGL2 forced on devices' : 'WebGL2 no longer forced';
+  }
+  if (patch.maxPixelRatio !== undefined) {
+    if (patch.maxPixelRatio !== null) return `Pixel ratio on devices: ${patch.maxPixelRatio}×`;
+    const project = useProjectStore.getState().project?.settings.rendering.maxPixelRatio;
+    return `Pixel ratio on devices: the project’s${project === undefined ? '' : ` (${project}×)`}`;
+  }
+  return patch.stats === true ? 'Stats shown on devices' : 'Stats hidden on devices';
+}
+
+/**
+ * Changes what every device is launched with — one option at a time, the
+ * others kept as the settings have them. Not in the table below: its argument
+ * is a value a checkbox or the pixel-ratio picker produced; the palette has
+ * the two toggles.
+ *
+ * An option the renderer reads restarts every connected device on the current
+ * launch at once, in the main process; stats on screen reach each page with
+ * no restart. The toast says which, and how many devices it touched.
+ */
+export async function setLaunchOptions(patch: Partial<DeviceLaunchOptions>): Promise<void> {
+  let status: DeviceServerStatus;
+  try {
+    status = await window.studio.devices.saveSettings({ launchOptions: patch });
+  } catch (cause) {
+    showFailure('Could not change the launch options', cause);
+    return;
+  }
+  const title = launchOptionTitle(patch);
+  let description: string | undefined;
+  if (!isRunning(status) || status.launch === null) {
+    description = 'It takes effect at the next launch.';
+  } else if (patch.forceWebGL !== undefined || patch.maxPixelRatio !== undefined) {
+    const count = connectedDevices(status).length;
+    description =
+      count === 0
+        ? 'Devices that open the link use it.'
+        : `${count} ${count === 1 ? 'device restarts' : 'devices restart'} on it.`;
+  } else if (patch.stats === true) {
+    description = 'Each device draws its numbers in a corner, without restarting.';
+  }
+  useToastStore.getState().push({ kind: 'info', title, description });
+}
+
 /*
  * The device server's gestures. Choosing the port asks for its value itself,
  * as creating a scene asks for a name, so it is a gesture like the others.
@@ -557,5 +605,26 @@ export const DEVICE_COMMANDS = {
     // the label could only guess.
     can: () => useDeviceStore.getState().status !== null,
     run: () => setLiveReload(useDeviceStore.getState().status?.liveReload !== true),
+  }),
+  toggleDeviceStats: defineCommand({
+    label: () =>
+      useDeviceStore.getState().status?.launchOptions.stats === true
+        ? 'Hide Stats on Devices'
+        : 'Show Stats on Devices',
+    // The options are the server's to say, as live reload is.
+    can: () => useDeviceStore.getState().status !== null,
+    run: () =>
+      setLaunchOptions({ stats: useDeviceStore.getState().status?.launchOptions.stats !== true }),
+  }),
+  toggleForceWebGL: defineCommand({
+    label: () =>
+      useDeviceStore.getState().status?.launchOptions.forceWebGL === true
+        ? 'Stop Forcing WebGL2 on Devices'
+        : 'Force WebGL2 on Devices',
+    can: () => useDeviceStore.getState().status !== null,
+    run: () =>
+      setLaunchOptions({
+        forceWebGL: useDeviceStore.getState().status?.launchOptions.forceWebGL !== true,
+      }),
   }),
 };

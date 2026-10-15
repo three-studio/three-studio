@@ -5,6 +5,7 @@ import {
   chooseDeviceAddress,
   chooseDeviceTransport,
   restartDevice,
+  setLaunchOptions,
   setLiveReload,
 } from '../commands/deviceCommands';
 import { commandById, type CommandId } from '../commands/registry';
@@ -186,6 +187,81 @@ function LiveReload({ view }: { view: DeviceView }) {
         <p className={`pl-5 ${tone === 'warning' ? 'text-warn' : 'text-ink-dim'}`}>{note}</p>
       )}
     </div>
+  );
+}
+
+/** A checkbox, and what ticking it does beneath. */
+function Option({
+  label,
+  checked,
+  note,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  note: string;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <label className="flex items-center gap-2 self-start text-ink">
+        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+        {label}
+      </label>
+      <p className="pl-5 text-ink-dim">{note}</p>
+    </div>
+  );
+}
+
+/**
+ * What every device is launched with, beyond what the project says: shut
+ * unless opened, since most launches want the project as it is, and its title
+ * says what is set otherwise. Whatever the server's state: the options are
+ * kept, and a stopped server starts on them.
+ */
+function LaunchOptions({ view }: { view: DeviceView }) {
+  const options = view.launchOptions;
+  return (
+    <details className="text-ink-muted">
+      <summary className="cursor-default select-none hover:text-ink">
+        Launch options
+        {options.summary !== null && (
+          <span className="float-right text-ink-dim">{options.summary}</span>
+        )}
+      </summary>
+      <div className="mt-1.5 flex flex-col gap-2">
+        <Option
+          label="Force WebGL2"
+          checked={options.forceWebGL}
+          note="Every device restarts on it."
+          onChange={(forceWebGL) => void setLaunchOptions({ forceWebGL })}
+        />
+        <label className="flex flex-col gap-1">
+          <span className="text-ink">Pixel ratio</span>
+          <select
+            value={options.pixelRatio}
+            onChange={(event) => {
+              const value = event.target.value;
+              void setLaunchOptions({ maxPixelRatio: value === '' ? null : Number(value) });
+            }}
+            className={SELECT}
+          >
+            {options.pixelRatios.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <span className="text-ink-dim">Every device restarts on it.</span>
+        </label>
+        <Option
+          label="Stats on screen"
+          checked={options.stats}
+          note="Each device draws its numbers in a corner, without restarting."
+          onChange={(stats) => void setLaunchOptions({ stats })}
+        />
+      </div>
+    </details>
   );
 }
 
@@ -447,6 +523,8 @@ export function DevicePopover({
             </ul>
           </div>
         </details>
+
+        <LaunchOptions view={view} />
 
         <LiveReload view={view} />
       </div>

@@ -38,6 +38,12 @@ interface DeviceState {
    * live reload on again.
    */
   liveReloadRefused: string | null;
+  /**
+   * How many reloads nobody asked for each device had, by id, as this window
+   * last read them; `null` before its first reading. What a reload adds to
+   * the Console is told from it.
+   */
+  notedReloads: Readonly<Record<string, number>> | null;
 }
 
 /** A launch this window made, and what it sent. */
@@ -51,6 +57,7 @@ export const useDeviceStore = create<DeviceState>()(() => ({
   popoverOpen: false,
   ownLaunch: null,
   liveReloadRefused: null,
+  notedReloads: null,
 }));
 
 /**
@@ -99,6 +106,7 @@ async function read(): Promise<void> {
     if (heard !== before) return;
     useDeviceStore.setState({ status });
     noteLaunch(status);
+    noteReloads(status);
   } catch {
     // Nothing to show without one; the next change will say.
   }
@@ -113,6 +121,7 @@ export function watchDevices(): () => void {
     heard += 1;
     useDeviceStore.setState({ status });
     noteLaunch(status);
+    noteReloads(status);
   });
   const unsubscribeLogs = window.studio.devices.onLog(appendDeviceLogs);
   void read();
@@ -146,6 +155,34 @@ export function noteLaunch(status: DeviceServerStatus): void {
   if (id === null || id === notedLaunch) return;
   notedLaunch = id;
   useConsoleStore.getState().clearDeviceEntries();
+}
+
+/**
+ * Says in the Console, once, each reload nobody asked for: a page its browser
+ * ended in the foreground and loaded again — on a phone, most likely for the
+ * memory it used. The row says it for as long as the device is listed; the
+ * Console says when.
+ *
+ * Through `console.warn`, so the line is this window's own: each launch takes
+ * the devices' lines out of the Console, and this one, about a device rather
+ * than from it, stays. The first status a window reads is only remembered: a
+ * reload that happened before the window opened is the row's to show, and a
+ * line about it now would say it happened now.
+ */
+export function noteReloads(status: DeviceServerStatus): void {
+  const before = useDeviceStore.getState().notedReloads;
+  const counts: Record<string, number> = {};
+  for (const device of status.devices) counts[device.id] = device.reloads;
+  useDeviceStore.setState({ notedReloads: counts });
+  if (before === null) return;
+  for (const device of status.devices) {
+    // A device listed anew counts from nothing.
+    if (device.reloads <= (before[device.id] ?? 0)) continue;
+    console.warn(
+      `${deviceLabel(device)}: the page ended without warning and was reloaded — ` +
+        'it most likely ran out of memory.',
+    );
+  }
 }
 
 /**
