@@ -1,7 +1,9 @@
 import { createId } from '@three-studio/core/ids';
 import { isDeviceId } from '@three-studio/core/devices/protocol';
 import { PLAYER_EVENT } from '../announce';
+import { captureLogs } from './capture';
 import { startDeviceClient, type DeviceNotice, type ProbeAnswer } from './client';
+import { createLogQueue } from './logQueue';
 
 /*
  * The device client: the script the device server puts first in the `<head>`
@@ -13,6 +15,17 @@ import { startDeviceClient, type DeviceNotice, type ProbeAnswer } from './client
  * relative to the page, so it follows the page to whatever scheme and address
  * it was opened on.
  */
+
+/*
+ * The page's console, from its first line: this is the first statement of the
+ * first script the page runs, before the device id, the launch or anything
+ * else is read. Any later line — the player failing to boot, a script throwing
+ * in its first frame — may be the one that explains a failure, and a line
+ * logged before the capture would be gone for good. The lines wait here until
+ * the server knows this device.
+ */
+const logs = createLogQueue();
+const captured = captureLogs(window, (level, text) => logs.push(level, text));
 
 /** Where a browser keeps its device id, so that a reload — and every tab — is the same device. */
 const DEVICE_KEY = 'three-studio.device';
@@ -168,7 +181,9 @@ const client = startDeviceClient(
       location.replace(url.href);
     },
     show,
-    log: (line) => console.log(`[device] ${line}`),
+    // Through the console as it was, so that the client's own lines stay on
+    // the device: the row already says what they say.
+    log: (line) => captured.original.log(`[device] ${line}`),
   },
 );
 
