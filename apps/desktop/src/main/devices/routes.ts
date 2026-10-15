@@ -265,6 +265,13 @@ async function answer(
    * a script in the game that fetches another site would hand it over in
    * `Referer` without the first; the second stops a browser reading a file
    * the project holds as something it is not.
+   *
+   * Never `Strict-Transport-Security`, under HTTPS either. A browser told to
+   * keep to HTTPS for a host refuses a changed self-signed certificate there,
+   * with nothing to press to accept it — Safari was seen doing so — and this
+   * computer makes a new certificate whenever it serves from a new network.
+   * Browsers ignore the header for an address, but not for `localhost` or a
+   * `.local` name.
    */
   response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader('X-Content-Type-Options', 'nosniff');
