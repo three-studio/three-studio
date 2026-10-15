@@ -6,6 +6,7 @@ import {
   isSceneOpenElsewhere as sceneIsOpenElsewhere,
   leftWithNothing,
   needsDiscardPrompt,
+  opensInBrowser,
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
@@ -236,9 +237,10 @@ function createWindow(options: WindowOptions): BrowserWindow {
   }
 
   // Nothing in this app should navigate away or open a window: project assets
-  // and user scripts are served through dedicated custom protocols instead.
+  // and user scripts are served through dedicated custom protocols instead. A
+  // web link goes to the system browser; any other is dropped (`opensInBrowser`).
   win.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    if (opensInBrowser(url)) void shell.openExternal(url);
     return { action: 'deny' };
   });
 
@@ -246,7 +248,7 @@ function createWindow(options: WindowOptions): BrowserWindow {
     const current = win.webContents.getURL();
     if (current && new URL(url).origin !== new URL(current).origin) {
       event.preventDefault();
-      void shell.openExternal(url);
+      if (opensInBrowser(url)) void shell.openExternal(url);
     }
   });
 
