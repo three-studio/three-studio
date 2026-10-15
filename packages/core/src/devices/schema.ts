@@ -14,6 +14,7 @@ import {
   type DeviceBackend,
   type DeviceLogLine,
   type DeviceState,
+  type DeviceStats,
   type DeviceTransport,
 } from './protocol';
 
@@ -467,6 +468,19 @@ export interface DeviceInfo {
   error: string | null;
   /** A stream is open. A device without one stays listed a little while, as offline. */
   connected: boolean;
+  /**
+   * What its page measured last, over its last two seconds; `null` until the
+   * page that runs now has reported. Emptied whenever the device is told to
+   * restart, says hello, or loses its last stream: every page is measured on
+   * its own.
+   */
+  stats: DeviceStats | null;
+  /**
+   * How many times its browser reloaded a page that ended in the foreground,
+   * since it was listed — on a phone, a page that ran out of memory. The
+   * device's, so it outlives every launch.
+   */
+  reloads: number;
 }
 
 /**

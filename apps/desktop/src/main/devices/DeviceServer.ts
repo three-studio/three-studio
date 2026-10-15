@@ -4,6 +4,7 @@ import { basename } from 'node:path';
 import {
   createDeviceToken,
   type DeviceInfo,
+  type DeviceLaunchOptions,
   type DeviceLogs,
   type DeviceServerState,
   type DeviceServerStatus,
@@ -272,6 +273,9 @@ export class DeviceServer {
         settings.transport === 'https' ? await this.certificateFor(settings) : null;
       const link = new DeviceLink({
         currentLaunch: () => this.current?.id ?? null,
+        clientOptions: () => ({
+          stats: (this.listening?.settings ?? settings).launchOptions.stats,
+        }),
         onChange: () => this.emit(),
         onLog: this.options.onLog,
         trace: this.options.trace,
@@ -322,7 +326,9 @@ export class DeviceServer {
    * not in the certificate until the next one: a phone there sees one more
    * warning, about the name, which it can accept like the other.
    */
-  private async certificateFor(settings: Pick<DeviceSettings, 'address'>): Promise<ServerCertificate> {
+  private async certificateFor(
+    settings: Pick<DeviceSettings, 'address'>,
+  ): Promise<ServerCertificate> {
     this.addresses = listAddresses(networkInterfaces());
     const names = serverNames(this.addresses, hostname(), settings.address);
     let certificate: ServerCertificate;
@@ -349,10 +355,17 @@ export class DeviceServer {
    * An address moves nothing: the server listens on every interface already,
    * and the address only decides which link is shown first. Nor does live
    * reload, which the server only keeps: the editor is what relaunches.
+   *
+   * A launch option takes effect the way it reaches a page: one the renderer
+   * reads restarts every connected device on the current launch, which then
+   * fetches a `build.json` that says it; stats on screen go down every stream,
+   * and nothing restarts. While stopped, or before the first launch, an option
+   * is only written: the next page reads it.
    */
   async saveSettings(patch: DeviceSettingsPatch): Promise<DeviceServerStatus> {
     if (this.starting !== null) await this.starting;
     const running = this.listening;
+    const optionsBefore = running?.settings.launchOptions ?? null;
     let saved: DeviceSettings;
     if (
       running !== null &&
@@ -391,8 +404,34 @@ export class DeviceServer {
         await this.moveTo(saved.port, { slide: true, settings });
       }
     }
+    if (optionsBefore !== null) this.launchOptionsChanged(optionsBefore, saved.launchOptions);
     this.emit();
     return this.status();
+  }
+
+  /** What a change of launch options does to the devices of a running server. */
+  private launchOptionsChanged(before: DeviceLaunchOptions, after: DeviceLaunchOptions): void {
+    const link = this.listening?.link;
+    if (link === undefined) return;
+    const renderer = describeRendererOptions(before, after);
+    if (renderer !== null) {
+      // The same launch again, as ↻ sends it: no snapshot, no compile, no
+      // scan — and the Console keeps the devices' lines, which a new launch
+      // would take away.
+      const current = this.current;
+      if (current === null) {
+        this.trace(`launch options: ${renderer} — for the next launch`);
+      } else {
+        const told = link.launch(current.id);
+        const verb = told === 1 ? 'restarts' : 'restart';
+        this.trace(`launch options: ${renderer} — ${count(told)} ${verb}`);
+      }
+    }
+    if (before.stats !== after.stats) {
+      const told = link.sendOptions();
+      const shown = after.stats ? 'on' : 'off';
+      this.trace(`launch options: stats ${shown} screen — sent to ${count(told)}`);
+    }
   }
 
   /**
@@ -760,6 +799,27 @@ export class DeviceServer {
   private trace(line: string): void {
     this.options.trace?.(line);
   }
+}
+
+/** `1 device`, `2 devices`. */
+function count(devices: number): string {
+  return `${devices} ${devices === 1 ? 'device' : 'devices'}`;
+}
+
+/** What changed of the options the renderer reads, as the trace says it; `null` when nothing did. */
+function describeRendererOptions(
+  before: DeviceLaunchOptions,
+  after: DeviceLaunchOptions,
+): string | null {
+  const changed: string[] = [];
+  if (before.forceWebGL !== after.forceWebGL) {
+    changed.push(after.forceWebGL ? 'WebGL2 forced' : 'WebGL2 no longer forced');
+  }
+  if (before.maxPixelRatio !== after.maxPixelRatio) {
+    const cap = after.maxPixelRatio;
+    changed.push(cap === null ? 'the project’s pixel ratio' : `pixel ratio ${cap}×`);
+  }
+  return changed.length === 0 ? null : changed.join(', ');
 }
 
 /** A holder as a sentence names it: `node (process 4242)`. */

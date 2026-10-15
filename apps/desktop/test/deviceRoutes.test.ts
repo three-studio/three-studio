@@ -261,7 +261,11 @@ beforeAll(async () => {
   // Beside the client, where a path taken from a request could reach it.
   await writeFile(join(clientDir, 'index.html'), 'not served', 'utf8');
 
-  link = new DeviceLink({ currentLaunch: () => current?.id ?? null, onChange: () => undefined });
+  link = new DeviceLink({
+    currentLaunch: () => current?.id ?? null,
+    clientOptions: () => ({ stats: launchOptions.stats }),
+    onChange: () => undefined,
+  });
   server = createServer(
     createDeviceHandler({
       token: () => TOKEN,

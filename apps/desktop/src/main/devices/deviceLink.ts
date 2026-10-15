@@ -7,9 +7,11 @@ import {
   DEVICE_RATE,
   DEVICE_RETRY_MS,
   DEVICE_SILENCE_MS,
+  DEVICE_STATS_RATE,
   DEVICE_STREAMS_PER_DEVICE,
   conformHello,
   conformLogMessage,
+  conformStatsReport,
   conformStatusReport,
   describeUserAgent,
   isDeviceId,
@@ -17,6 +19,7 @@ import {
   type DeviceInfo,
   type DeviceLogMessage,
   type DeviceLogs,
+  type DeviceStatsReport,
   type DeviceStatusReport,
   type DeviceTransport,
   type ServerMessage,
@@ -40,6 +43,12 @@ export interface DeviceStream {
 export interface DeviceLinkOptions {
   /** The launch a device should run, or `null` before the first. */
   currentLaunch: () => string | null;
+  /**
+   * What each page draws for itself, as the launch options say: written as
+   * each stream opens, so that a page that loads — a restart, a page back
+   * from sleep — draws as the others do without being told again.
+   */
+  clientOptions: () => { stats: boolean };
   /** A row changed: a device came, went, or said something new. */
   onChange: () => void;
   /** A device's lines, with its name and browser as they are when the lines arrive. */
@@ -53,11 +62,11 @@ export type DeviceReceipt = 'applied' | 'ignored' | 'limited';
 
 /**
  * The rates a device's messages are counted against, each apart from the
- * other: a game that logs every frame must never spend the hellos and
+ * others: a game that logs every frame must never spend the hellos and
  * statuses that keep its row alive — a heartbeat refused long enough is a
- * device ended for silence.
+ * device ended for silence — and neither must its stats.
  */
-const RATES = { link: DEVICE_RATE, log: DEVICE_LOG_RATE } as const;
+const RATES = { link: DEVICE_RATE, log: DEVICE_LOG_RATE, stats: DEVICE_STATS_RATE } as const;
 
 type RateKind = keyof typeof RATES;
 
@@ -153,7 +162,7 @@ export class DeviceLink {
         order: 0,
         heard: this.now(),
         offlineSince: null,
-        posts: { link: [], log: [] },
+        posts: { link: [], log: [], stats: [] },
       };
       this.entries.set(device, entry);
     } else if (entry.streams.length >= DEVICE_STREAMS_PER_DEVICE) {
@@ -169,6 +178,7 @@ export class DeviceLink {
       if (known.info !== null) known.info = { ...known.info, address };
     });
     stream.write(`retry: ${DEVICE_RETRY_MS}\n\n`);
+    stream.write(this.optionsLine());
     return () => this.closed(known, opened);
   }
 
@@ -193,6 +203,8 @@ export class DeviceLink {
           : this.status(entry, conformStatusReport(body));
       case 'log':
         return this.log(entry, conformLogMessage(body));
+      case 'stats':
+        return this.stats(entry, conformStatsReport(body));
       default:
         return 'ignored';
     }
@@ -206,6 +218,22 @@ export class DeviceLink {
         if (this.tell(entry, id)) told += 1;
       }
     });
+    return told;
+  }
+
+  /**
+   * Tells every stream what its page draws for itself, as the launch options
+   * now say. Returns how many devices were told. No row reads differently:
+   * what a page draws is not shown in one.
+   */
+  sendOptions(): number {
+    const options = this.optionsLine();
+    let told = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.streams.length === 0) continue;
+      for (const { stream } of entry.streams) stream.write(options);
+      told += 1;
+    }
     return told;
   }
 
@@ -299,6 +327,7 @@ export class DeviceLink {
     // launch it slept through — restarts on the current one: its hello is
     // how a launch made meanwhile reaches it.
     const restartOn = current !== null && hello.launch !== current ? current : null;
+    const reloads = (entry.info?.reloads ?? 0) + (hello.reloaded ? 1 : 0);
     this.changing(() => {
       if (entry.info === null) {
         entry.order = this.helloCount;
@@ -315,6 +344,12 @@ export class DeviceLink {
         state: hello.state,
         backend: hello.backend,
         error: hello.error,
+        // A new page, or a new stream: either way, what was measured before
+        // was another page's, or another moment's.
+        stats: null,
+        // The device's, not the page's: the page that died is the one that
+        // would have counted it.
+        reloads,
       };
       if (restartOn !== null) this.tell(entry, restartOn);
     });
@@ -322,6 +357,7 @@ export class DeviceLink {
     this.trace(
       `${entry.id} said hello: ${name} · ${browser} from ${entry.address}, ${describeState(hello)}`,
     );
+    if (hello.reloaded) this.trace(`${name} · ${browser} was reloaded by its browser`);
     if (restartOn !== null) this.trace(`${entry.id} told to restart on the current launch`);
     return 'applied';
   }
@@ -370,12 +406,51 @@ export class DeviceLink {
     return 'applied';
   }
 
-  /** Sends a launch down every stream of a device, which turns booting. `false` with no stream. */
+  /**
+   * A page's stats, kept on its device's row until the next report — or until
+   * the page is replaced: they are emptied whenever the device is told to
+   * restart, says hello, or loses its last stream, so a row never shows one
+   * build's numbers under another.
+   *
+   * Ignored, and spending no rate, from a page on another launch than the
+   * current one: a report that arrives once the next launch is current
+   * measured a page already replaced.
+   */
+  private stats(entry: Entry, report: DeviceStatsReport | null): DeviceReceipt {
+    const info = entry.info;
+    if (report === null || info === null) return 'ignored';
+    if (report.launch !== this.options.currentLaunch()) return 'ignored';
+    if (!this.withinRate(entry, 'stats')) return 'limited';
+    entry.heard = this.now();
+    const { v: _v, device: _device, launch: _launch, ...stats } = report;
+    const label = `${info.name} · ${info.browser}`;
+    // A state worth a line, rather than every report: one every two seconds
+    // per device would bury the trace.
+    if (stats.pinned30 && info.stats?.pinned30 !== true) this.trace(`${label} held at 30 fps`);
+    if (!stats.pinned30 && info.stats?.pinned30 === true) {
+      this.trace(`${label} no longer held at 30 fps`);
+    }
+    this.changing(() => {
+      entry.info = { ...info, stats };
+    });
+    return 'applied';
+  }
+
+  /** What every stream starts with, and hears again when the launch options change. */
+  private optionsLine(): string {
+    const { stats } = this.options.clientOptions();
+    return line({ v: DEVICE_PROTOCOL_VERSION, type: 'options', stats });
+  }
+
+  /**
+   * Sends a launch down every stream of a device, which turns booting, its
+   * stats emptied for the page that replaces this one. `false` with no stream.
+   */
   private tell(entry: Entry, launchId: string): boolean {
     if (entry.streams.length === 0) return false;
     const message = line({ v: DEVICE_PROTOCOL_VERSION, type: 'launch', launch: launchId });
     for (const { stream } of entry.streams) stream.write(message);
-    if (entry.info !== null) entry.info = { ...entry.info, state: 'booting' };
+    if (entry.info !== null) entry.info = { ...entry.info, state: 'booting', stats: null };
     return true;
   }
 
@@ -420,12 +495,17 @@ export class DeviceLink {
     });
   }
 
-  /** A device left with no stream: listed as offline for a while, or dropped if it never said hello. */
+  /**
+   * A device left with no stream: listed as offline for a while, its stats
+   * emptied — nothing measures there any more — or dropped if it never said
+   * hello.
+   */
   private disconnected(entry: Entry, now: number): void {
     if (entry.info === null) {
       if (this.entries.get(entry.id) === entry) this.entries.delete(entry.id);
       return;
     }
+    entry.info = { ...entry.info, stats: null };
     entry.offlineSince = now;
   }
 

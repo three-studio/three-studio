@@ -165,6 +165,8 @@ function device(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
     backend: null,
     error: null,
     connected: true,
+    stats: null,
+    reloads: 0,
     ...overrides,
   };
 }

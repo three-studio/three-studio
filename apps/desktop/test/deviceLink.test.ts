@@ -34,9 +34,14 @@ function recorded(): RecordedStream {
   return stream;
 }
 
-/** What a stream was sent, as messages: the `data:` lines, parsed. */
+/**
+ * What a stream was sent once open, as messages: the `data:` lines, parsed,
+ * after the two every stream starts with — `retry`, then the options its page
+ * draws by.
+ */
 function messages(stream: RecordedStream): Record<string, unknown>[] {
   return stream.written
+    .slice(2)
     .filter((text) => text.startsWith('data: '))
     .map((text) => JSON.parse(text.slice('data: '.length)) as Record<string, unknown>);
 }
@@ -68,6 +73,8 @@ function status(device: string, overrides: Record<string, unknown> = {}): Record
 const id = (n: number): string => `device${String(n).padStart(4, '0')}`;
 
 let current: string | null;
+/** What a page draws for itself, as the launch options say. */
+let clientOptions: { stats: boolean };
 let changes: number;
 /** What the link handed on of the devices' lines. */
 let handed: DeviceLogs[];
@@ -77,11 +84,13 @@ let link: DeviceLink;
 beforeEach(() => {
   vi.useFakeTimers();
   current = L1;
+  clientOptions = { stats: false };
   changes = 0;
   handed = [];
   traced = [];
   link = new DeviceLink({
     currentLaunch: () => current,
+    clientOptions: () => clientOptions,
     onChange: () => {
       changes += 1;
     },
@@ -108,11 +117,41 @@ function connect(device: string, overrides: Record<string, unknown> = {}): Recor
 }
 
 describe('a stream', () => {
-  it('starts by telling the browser how soon to reconnect', () => {
+  it('starts by telling the browser how soon to reconnect, then the page what to draw', () => {
     const stream = recorded();
     link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
 
-    expect(stream.written[0]).toBe('retry: 2000\n\n');
+    expect(stream.written).toEqual([
+      'retry: 2000\n\n',
+      'data: {"v":1,"type":"options","stats":false}\n\n',
+    ]);
+  });
+
+  it('starts with stats on screen when the launch options draw them', () => {
+    clientOptions = { stats: true };
+    const stream = recorded();
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
+
+    expect(stream.written[1]).toBe('data: {"v":1,"type":"options","stats":true}\n\n');
+  });
+});
+
+describe('the options a page draws by', () => {
+  it('reach every stream of every device when they change, and say how many devices', () => {
+    const phone = connect(id(1));
+    const secondTab = recorded();
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream: secondTab });
+    const tablet = connect(id(2));
+    changes = 0;
+
+    clientOptions = { stats: true };
+    expect(link.sendOptions()).toBe(2);
+
+    for (const stream of [phone, secondTab, tablet]) {
+      expect(messages(stream)).toEqual([{ v: 1, type: 'options', stats: true }]);
+    }
+    // No row reads differently: what a page draws for itself is not shown in one.
+    expect(changes).toBe(0);
   });
 });
 
@@ -182,6 +221,8 @@ describe('a hello', () => {
         state: 'running',
         backend: 'webgl',
         error: null,
+        stats: null,
+        reloads: 0,
         connected: true,
       },
     ]);
@@ -324,6 +365,158 @@ describe('a batch of lines', () => {
 
     for (let n = 0; n < 50; n += 1) expect(link.receive('log', log(id(1)))).toBe('applied');
     expect(link.receive('status', status(id(1)))).toBe('limited');
+  });
+});
+
+describe('a page’s stats', () => {
+  function report(device: string, overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      v: 1,
+      device,
+      launch: L1,
+      fps: 58,
+      p95: 21.4,
+      frames: 116,
+      drawCalls: 142,
+      triangles: 85_210,
+      textures: 31,
+      gpuMemory: 188_743_680,
+      pixelRatio: 3,
+      width: 1179,
+      height: 2556,
+      pinned30: false,
+      ...overrides,
+    };
+  }
+
+  const kept = {
+    fps: 58,
+    p95: 21.4,
+    frames: 116,
+    drawCalls: 142,
+    triangles: 85_210,
+    textures: 31,
+    gpuMemory: 188_743_680,
+    pixelRatio: 3,
+    width: 1179,
+    height: 2556,
+    pinned30: false,
+  };
+
+  it('are kept on the device’s row, from a page on the current launch', () => {
+    connect(id(1));
+    changes = 0;
+
+    expect(link.receive('stats', report(id(1)))).toBe('applied');
+
+    expect(link.list()[0]?.stats).toEqual(kept);
+    expect(changes).toBe(1);
+  });
+
+  it('are ignored from a page on another launch, from a device that never said hello, or malformed', () => {
+    current = L2;
+    connect(id(1), { launch: L2 });
+    link.open({ device: id(2), token: TOKEN, address: '192.168.1.21', stream: recorded() });
+
+    expect(link.receive('stats', report(id(1), { launch: L1 }))).toBe('ignored');
+    expect(link.receive('stats', report(id(2), { launch: L2 }))).toBe('ignored');
+    expect(link.receive('stats', report(id(1), { v: 2, launch: L2 }))).toBe('ignored');
+    expect(link.list()[0]?.stats).toBeNull();
+  });
+
+  it('are limited to 10 in 10 s, which spend nothing the link and the lines need', () => {
+    connect(id(1));
+
+    for (let n = 0; n < 10; n += 1) expect(link.receive('stats', report(id(1)))).toBe('applied');
+    expect(link.receive('stats', report(id(1)))).toBe('limited');
+
+    expect(link.receive('status', status(id(1)))).toBe('applied');
+    expect(
+      link.receive('log', { v: 1, device: id(1), launch: L1, lines: [], dropped: 0 }),
+    ).toBe('applied');
+    vi.advanceTimersByTime(10_000);
+    expect(link.receive('stats', report(id(1)))).toBe('applied');
+  });
+
+  it('are emptied when the device is told to restart: every page is measured on its own', () => {
+    connect(id(1));
+    connect(id(2));
+    link.receive('stats', report(id(1)));
+    link.receive('stats', report(id(2)));
+
+    current = L2;
+    link.launch(L2);
+    expect(link.list().map((device) => device.stats)).toEqual([null, null]);
+
+    link.receive('stats', report(id(1), { launch: L2 }));
+    link.restart(id(1), L2);
+    expect(link.list()[0]?.stats).toBeNull();
+  });
+
+  it('are emptied by a hello, which is a new page or a new stream', () => {
+    connect(id(1));
+    link.receive('stats', report(id(1)));
+
+    link.receive('hello', hello(id(1)));
+
+    expect(link.list()[0]?.stats).toBeNull();
+  });
+
+  it('are emptied when the device’s last stream ends', () => {
+    const stream = recorded();
+    const close = link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
+    link.receive('hello', hello(id(1), { reloaded: true }));
+    link.receive('stats', report(id(1)));
+
+    close?.();
+
+    expect(link.list()[0]).toMatchObject({ connected: false, stats: null, reloads: 1 });
+  });
+
+  it('say in the trace when a device is held at 30 fps, and when it no longer is', () => {
+    connect(id(1));
+
+    link.receive('stats', report(id(1)));
+    link.receive('stats', report(id(1), { fps: 30, pinned30: true }));
+    link.receive('stats', report(id(1), { fps: 30, pinned30: true }));
+    link.receive('stats', report(id(1), { fps: 60 }));
+
+    expect(traced.filter((line) => line.includes('30 fps'))).toEqual([
+      'iPhone · Safari held at 30 fps',
+      'iPhone · Safari no longer held at 30 fps',
+    ]);
+    // A report itself is never traced: one every two seconds per device.
+    expect(traced.join('\n')).not.toContain('58');
+  });
+});
+
+describe('a reload nobody asked for', () => {
+  it('is counted on the device, and traced', () => {
+    connect(id(1), { reloaded: true });
+
+    expect(link.list()[0]?.reloads).toBe(1);
+    expect(traced).toContain('iPhone · Safari was reloaded by its browser');
+
+    link.receive('hello', hello(id(1), { reloaded: true }));
+    expect(link.list()[0]?.reloads).toBe(2);
+    link.receive('hello', hello(id(1)));
+    expect(link.list()[0]?.reloads).toBe(2);
+  });
+
+  it('outlives every launch, and goes with the device once it is forgotten', () => {
+    const stream = recorded();
+    const close = link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
+    link.receive('hello', hello(id(1), { reloaded: true }));
+
+    current = L2;
+    link.launch(L2);
+    expect(link.list()[0]?.reloads).toBe(1);
+
+    close?.();
+    vi.advanceTimersByTime(35_000);
+    expect(link.list()).toEqual([]);
+    connect(id(1));
+    expect(link.list()[0]?.reloads).toBe(0);
   });
 });
 

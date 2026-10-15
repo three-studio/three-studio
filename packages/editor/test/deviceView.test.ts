@@ -273,6 +273,8 @@ function device(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
     backend: 'webgl',
     error: null,
     connected: true,
+    stats: null,
+    reloads: 0,
     ...overrides,
   };
 }

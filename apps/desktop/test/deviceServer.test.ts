@@ -855,6 +855,113 @@ describe('the launch options', () => {
       maxPixelRatio: 2,
     });
   });
+
+  /** A device whose page runs the current launch: its stream open, and its hello said. */
+  async function running(port: number, id: string, launch: string): Promise<Listening> {
+    const stream = await listen(port, id);
+    await stream.until((text) => text.includes('"type":"options"'));
+    const status = await post(port, 'hello', {
+      v: 1,
+      device: id,
+      launch,
+      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1',
+      screen: { width: 393, height: 852, dpr: 3 },
+      secureContext: true,
+      state: 'running',
+      backend: 'webgpu',
+      error: null,
+      reloaded: false,
+    });
+    if (status !== 204) throw new Error(`the hello answered ${status}`);
+    return stream;
+  }
+
+  it('restart every device on the current launch when one the renderer reads changes', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const traced: string[] = [];
+    const devices = server(file, await template(), undefined, (line) => traced.push(line));
+    const launched = await launchOn(devices, await project());
+    const id = launched.launch!.id;
+    const phone = await running(port, 'phoneDevice00001', id);
+
+    const status = await devices.saveSettings({ launchOptions: { forceWebGL: true } });
+
+    // No new launch: the devices fetch the same one again, served otherwise.
+    expect(await phone.until((text) => text.includes(launchLine(id)))).toContain(launchLine(id));
+    expect(status.launch?.id).toBe(id);
+    const build = (await (await fetch(`http://127.0.0.1:${port}/${TOKEN}/build.json`)).json()) as {
+      forceWebGL: boolean;
+    };
+    expect(build.forceWebGL).toBe(true);
+    expect(traced).toContain('launch options: WebGL2 forced — 1 device restarts');
+    await phone.close();
+  });
+
+  it('send stats on screen down every stream, and restart nobody', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const traced: string[] = [];
+    const devices = server(file, await template(), undefined, (line) => traced.push(line));
+    const launched = await launchOn(devices, await project());
+    const phone = await running(port, 'phoneDevice00001', launched.launch!.id);
+
+    await devices.saveSettings({ launchOptions: { stats: true } });
+
+    const text = await phone.until((seen) => seen.includes('"type":"options","stats":true'));
+    expect(text).toContain('"type":"options","stats":true');
+    expect(text).not.toContain('"type":"launch"');
+    expect(traced).toContain('launch options: stats on screen — sent to 1 device');
+    await phone.close();
+  });
+
+  it('are only written while the server is stopped', async () => {
+    const port = await freePort();
+    const { devices, file } = await keptPortServer(port);
+
+    const status = await devices.saveSettings({ launchOptions: { forceWebGL: true, stats: true } });
+
+    expect(status.state).toBe('stopped');
+    expect(status.launchOptions).toEqual({ forceWebGL: true, maxPixelRatio: null, stats: true });
+    expect(JSON.parse(await readFile(file, 'utf8')).launchOptions).toEqual({
+      forceWebGL: true,
+      stats: true,
+    });
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
+  });
+});
+
+describe('a device’s stats', () => {
+  it('reach its row in the status', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const devices = server(file, await template());
+    const launched = await launchOn(devices, await project());
+    const phone = await device(port, 'phoneDevice00001');
+
+    const answer = await post(port, 'stats', {
+      v: 1,
+      device: 'phoneDevice00001',
+      launch: launched.launch!.id,
+      fps: 58,
+      p95: 21.4,
+      frames: 116,
+      drawCalls: 142,
+      triangles: 85_210,
+      textures: 31,
+      gpuMemory: 188_743_680,
+      pixelRatio: 3,
+      width: 1179,
+      height: 2556,
+      pinned30: false,
+    });
+
+    expect(answer).toBe(204);
+    expect((await devices.status()).devices[0]?.stats).toMatchObject({ fps: 58, drawCalls: 142 });
+    await phone.close();
+  });
 });
 
 describe('a new link', () => {
