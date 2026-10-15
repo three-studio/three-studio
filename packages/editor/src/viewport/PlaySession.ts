@@ -1,6 +1,10 @@
 import {
+  LAUNCH_SNAPSHOT_VERSION,
+  createPhysicsSettings,
+  createRenderingSettings,
   deserializeScene,
   resolveScene,
+  type LaunchSnapshot,
   type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
@@ -11,7 +15,7 @@ import { editorAudioContext } from '../audio/context';
 import { editorAssetResolver, useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
-import { inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
+import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { useViewportStore } from '../state/viewportStore';
@@ -35,6 +39,61 @@ export interface PlayHost {
   readonly rendering: RenderingSettings;
   onPlayStarted(): void;
   onPlayStopped(): void;
+}
+
+/**
+ * What Play runs, read from the editor's stores in one place.
+ *
+ * A device launch reads the same, so that a phone runs what Play would: two
+ * readings drift, and a device that runs something else cannot be trusted to
+ * show what is on screen.
+ *
+ * In Prefab Mode, the scene the prefab was opened from, with every open
+ * prefab's unsaved edits composed in — without leaving the mode or saving
+ * anything, which Play does on its way in but a launch may not.
+ *
+ * `entry.scene` is the document itself, not a copy: immer never changes a
+ * published document in place, so whoever keeps it longer copies it — Play for
+ * Stop, the main process across IPC.
+ *
+ * Here rather than in a module of its own: a module that reads the project
+ * store and that this one imports would join the import cycle this file is
+ * already part of (see `test/architecture.test.ts`).
+ */
+export function readPlayInputs(): LaunchSnapshot {
+  const { project, sceneId } = useProjectStore.getState();
+  const assets = useAssetStore.getState();
+  const composed = composedPrefabMode();
+  const scene = composed?.scene ?? useDocumentStore.getState().scene;
+  return {
+    version: LAUNCH_SNAPSHOT_VERSION,
+    // The window's id, never the document's: the window's is the one the
+    // project's scene list and every reference use. The document's own is
+    // only a fallback for a window with no project, which a test alone reaches.
+    entry: { id: sceneId ?? scene.id, name: currentSceneName(), scene },
+    materials: assets.materials,
+    prefabs: composed?.prefabs ?? assets.prefabs,
+    rendering: project?.settings.rendering ?? createRenderingSettings(),
+    physics: project?.settings.physics ?? createPhysicsSettings(),
+    loadingScene: project?.settings.loadingScene ?? null,
+  };
+}
+
+/**
+ * The inputs of the game running in this window, `null` when stopped.
+ *
+ * Module-level rather than on the session, because a launch asks without a
+ * session to hand — and a window has one viewport, so one session.
+ */
+let running: LaunchSnapshot | null = null;
+
+/**
+ * What a device launch sends: while the editor plays, what Play started from —
+ * never a world the running game has mutated, nor an edit made since; otherwise
+ * what Play would run now.
+ */
+export function launchSnapshot(): LaunchSnapshot {
+  return running ?? readPlayInputs();
 }
 
 /**
@@ -93,10 +152,19 @@ export class PlaySession {
     // Closing saves the prefab, so nothing is lost by leaving on the way.
     if (inPrefabMode()) await usePrefabModeStore.getState().exit();
 
-    const document = useDocumentStore.getState();
-    // Snapshot before anything runs: physics and scripts mutate the world, and
-    // Stop has to put the scene back exactly as it was authored.
-    this.playSnapshot = structuredClone(document.scene);
+    // Read at the press, before anything runs: physics and scripts mutate the
+    // world, and Stop has to put the scene back exactly as it was authored.
+    // The materials, prefabs and settings used to be read after the compile;
+    // they are read here with the scene, so a launch made during Play sends
+    // exactly what Play started from.
+    const inputs = readPlayInputs();
+    this.playSnapshot = structuredClone(inputs.entry.scene);
+    // Unless Stop came while Prefab Mode was being left: `endPlay` has run
+    // already, nothing after it would clear this, and every launch would send
+    // a scene the person has since gone on editing.
+    if (useEditorStore.getState().playState !== 'stopped') {
+      running = { ...inputs, entry: { ...inputs.entry, scene: this.playSnapshot } };
+    }
 
     // Compiled fresh on every Play, so editing a script and pressing Play is
     // the whole loop — no build step to remember.
@@ -131,17 +199,20 @@ export class PlaySession {
             return deserializeScene(await window.studio.project.readScene(entry.path));
           },
         },
-        loadingScene: useProjectStore.getState().project?.settings.loadingScene ?? null,
+        loadingScene: inputs.loadingScene,
         resolver: editorAssetResolver,
-        physicsSettings: useProjectStore.getState().project?.settings.physics,
-        // The viewport's own, not the store's: Play has to draw with what the
-        // Scene view is drawing with, and re-reading is how they came apart.
+        physicsSettings: inputs.physics,
+        // The viewport's own, not the inputs': Play draws on the viewport's
+        // renderer, which was made with these and is not remade when Project
+        // Settings saves new ones — so Play has to draw with what the Scene view
+        // is drawing with, and re-reading is how they came apart. A launch
+        // sends the project's, since a phone makes a new renderer every time.
         rendering: this.host.rendering,
         // Without this a mesh linked to a material asset would play with its
         // embedded material — the scene would look different the moment you
         // pressed Play, for no reason the author could see.
-        materials: useAssetStore.getState().materials,
-        prefabs: useAssetStore.getState().prefabs,
+        materials: inputs.materials,
+        prefabs: inputs.prefabs,
         // Play mode draws on this same renderer, so the running scene captures
         // its sky on the device the editor already holds.
         renderer: this.host.renderer,
@@ -161,7 +232,7 @@ export class PlaySession {
       // The name, which is what a script comparing `scenes.current` reads. It
       // is the indicative half of a scene's identity — and a
       // script that wants the stable half can name the id instead.
-      await host.adopt(currentSceneName(), document.scene);
+      await host.adopt(inputs.entry.name, inputs.entry.scene);
       const engine = host.engine;
       if (!engine) return;
 
@@ -214,6 +285,7 @@ export class PlaySession {
     this.sceneHost?.dispose();
     this.sceneHost = null;
     this.engine = null;
+    running = null;
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
 
@@ -239,5 +311,6 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine?.dispose();
     this.engine = null;
+    running = null;
   }
 }

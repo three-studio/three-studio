@@ -350,3 +350,7 @@ export {
   unlinkEntity,
   validateHierarchy,
 } from './scene/graph';
+
+/* What a device launch runs: the editor's in-memory state, as Play would run it. */
+export { LAUNCH_SNAPSHOT_VERSION } from './devices/schema';
+export type { LaunchSnapshot } from './devices/schema';
