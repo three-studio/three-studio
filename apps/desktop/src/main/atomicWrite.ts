@@ -29,6 +29,11 @@ import { createId } from '@three-studio/core';
  * the error is the caller's. The two callers with a reason to swallow it — a
  * layout that cannot be saved, a cache that cannot be written — say so at their
  * own call site, next to the reason.
+ *
+ * **A mode, when one is given**, is the temporary file's from its creation,
+ * and the rename carries it onto the target, whatever the target's was. One
+ * file needs it: the device server's certificate holds its private key, and a
+ * `chmod` after the write would leave a moment in which anyone could read it.
  */
 export async function atomicWrite(
   target: string,
@@ -36,10 +41,11 @@ export async function atomicWrite(
   // same reason. `writeFile` ignores the encoding for anything that is not a
   // string, so the one call still serves both.
   contents: string | Uint8Array,
+  options: { mode?: number } = {},
 ): Promise<void> {
   const staging = `${target}.${createId()}.tmp`;
   try {
-    await writeFile(staging, contents, 'utf8');
+    await writeFile(staging, contents, { encoding: 'utf8', mode: options.mode });
     await rename(staging, target);
   } catch (cause) {
     // The original failure is what the caller needs to hear about, so a

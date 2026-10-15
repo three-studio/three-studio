@@ -20,8 +20,11 @@ import { atomicWrite } from '../atomicWrite';
  * not take it.
  */
 
-/** What the file holds, when it holds a JSON object; `null` when there is none to read. */
-async function readFound(file: string): Promise<Record<string, unknown> | null> {
+/**
+ * What the file holds, when it holds a JSON object; `null` when there is none
+ * to read. The device certificate's file is read the same way.
+ */
+export async function readFound(file: string): Promise<Record<string, unknown> | null> {
   let raw: string;
   try {
     raw = await readFile(file, 'utf8');

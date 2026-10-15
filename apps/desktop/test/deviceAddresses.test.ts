@@ -4,7 +4,9 @@ import {
   isFromOutside,
   isOwnHost,
   listAddresses,
+  ownHostNames,
   selectedUrl,
+  serverNames,
   type NetworkInterfaces,
 } from '../src/main/devices/addresses';
 
@@ -37,10 +39,10 @@ const TOKEN = 'abcdefghijKLMNOPQRST01';
 describe('the addresses listed', () => {
   it('puts the local network first, then Tailscale, then the rest', () => {
     expect(listAddresses(INTERFACES)).toEqual([
-      { address: '192.168.1.42', label: 'en0' },
-      { address: '10.0.0.7', label: 'en1' },
-      { address: '100.101.102.103', label: 'Tailscale' },
-      { address: '192.168.64.1', label: 'bridge100' },
+      { address: '192.168.1.42', label: 'en0', kind: 'network' },
+      { address: '10.0.0.7', label: 'en1', kind: 'network' },
+      { address: '100.101.102.103', label: 'Tailscale', kind: 'tailscale' },
+      { address: '192.168.64.1', label: 'bridge100', kind: 'other' },
     ]);
   });
 
@@ -124,6 +126,56 @@ describe('the Host a request names', () => {
       expect(isOwnHost(host, addresses, 'Mac')).toBe(false);
     },
   );
+});
+
+describe('the names the machine goes by', () => {
+  it.each([
+    ['Mac', ['mac', 'mac.local']],
+    ['jerome.local', ['jerome.local']],
+    ['mac.lan', ['mac.lan', 'mac.local']],
+    // Neither a Host a browser sends nor a name a certificate can carry.
+    ['My Mac', []],
+  ])('%s is %j', (hostName, names) => {
+    expect(ownHostNames(hostName)).toEqual(names);
+  });
+});
+
+describe('the names a certificate needs', () => {
+  const addresses = listAddresses(INTERFACES);
+  const everyday = [
+    'localhost',
+    'mac',
+    'mac.local',
+    '127.0.0.1',
+    '192.168.1.42',
+    '10.0.0.7',
+    '100.101.102.103',
+  ];
+
+  it('are this computer’s, then the networks a phone reaches, and no virtual machine’s', () => {
+    // A bridge comes and goes with its virtual machine: a certificate made
+    // again for each one would have every phone accept it again.
+    expect(serverNames(addresses, 'Mac', null)).toEqual(everyday);
+  });
+
+  it('end with the address chosen, whatever its interface', () => {
+    expect(serverNames(addresses, 'Mac', '192.168.64.1')).toEqual([...everyday, '192.168.64.1']);
+    expect(serverNames(addresses, 'Mac', '192.168.1.42')).toEqual(everyday);
+  });
+
+  it('leave out a chosen address that is not listed', () => {
+    // The choice outlives the network it was made on, and a certificate
+    // naming an address this computer no longer has helps nobody.
+    expect(serverNames(addresses, 'Mac', '10.9.9.9')).toEqual(everyday);
+  });
+
+  it('name each name once', () => {
+    expect(serverNames([], 'localhost', null)).toEqual([
+      'localhost',
+      'localhost.local',
+      '127.0.0.1',
+    ]);
+  });
 });
 
 describe('where a request comes from', () => {

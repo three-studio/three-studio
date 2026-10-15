@@ -20,6 +20,8 @@ export interface ListedAddress {
   address: string;
   /** The interface's name, or `Tailscale`. */
   label: string;
+  /** Which of the three groups below it falls in. */
+  kind: 'network' | 'tailscale' | 'other';
 }
 
 /**
@@ -76,9 +78,15 @@ export function listAddresses(interfaces: NetworkInterfaces): ListedAddress[] {
   const byName = (a: [string, string], b: [string, string]): number =>
     a[0].localeCompare(b[0], 'en', { numeric: true });
   return [
-    ...local.sort(byName).map(([name, address]) => ({ address, label: name })),
-    ...tailscale.sort(byName).map(([, address]) => ({ address, label: 'Tailscale' })),
-    ...rest.sort(byName).map(([name, address]) => ({ address, label: name })),
+    ...local
+      .sort(byName)
+      .map(([name, address]) => ({ address, label: name, kind: 'network' as const })),
+    ...tailscale
+      .sort(byName)
+      .map(([, address]) => ({ address, label: 'Tailscale', kind: 'tailscale' as const })),
+    ...rest
+      .sort(byName)
+      .map(([name, address]) => ({ address, label: name, kind: 'other' as const })),
   ];
 }
 
@@ -140,8 +148,50 @@ export function isOwnHost(
   if (name === '') return false;
   if (name === 'localhost' || name === '127.0.0.1' || name === '[::1]') return true;
   if (addresses.some((entry) => entry.address === name)) return true;
+  return ownHostNames(hostName).includes(name);
+}
+
+const HOST_NAME = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*$/;
+
+/**
+ * The names this machine goes by, in lower case: its host name, and the
+ * `.local` name a phone's mDNS resolves — the first label of the host name,
+ * then `.local`.
+ *
+ * The `Host` check and the certificate both read them here, so that the server
+ * answers no name its certificate leaves out, nor the reverse. A name holding
+ * anything but letters, digits, hyphens and dots is neither a `Host` a browser
+ * sends nor a name a certificate can carry, and is left out.
+ */
+export function ownHostNames(hostName: string): string[] {
   const machine = hostName.toLowerCase();
-  return name === machine || name === `${machine.split('.')[0]}.local`;
+  const names = new Set([machine, `${machine.split('.')[0]}.local`]);
+  return [...names].filter((name) => HOST_NAME.test(name));
+}
+
+/**
+ * Every name the server's certificate has to list, for a browser to accept it
+ * under any name it is reached by: this computer's, then the addresses a phone
+ * reaches it on, local network and Tailscale.
+ *
+ * Not the other interfaces': a virtual machine's bridge or a VPN's tunnel comes
+ * and goes, and a certificate made again each time would have every phone
+ * accept it again. The one exception is an address someone chose to show, which
+ * comes last, so long as this computer still has it.
+ */
+export function serverNames(
+  addresses: readonly ListedAddress[],
+  hostName: string,
+  chosen: string | null,
+): string[] {
+  const names = [
+    'localhost',
+    ...ownHostNames(hostName),
+    '127.0.0.1',
+    ...addresses.filter((entry) => entry.kind !== 'other').map((entry) => entry.address),
+  ];
+  if (chosen !== null && addresses.some((entry) => entry.address === chosen)) names.push(chosen);
+  return [...new Set(names)];
 }
 
 /** An address as a socket gives it: `::ffff:` is an IPv4 address reaching an IPv6 socket. */
