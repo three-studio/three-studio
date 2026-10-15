@@ -149,6 +149,16 @@ export interface DeviceSettings {
    * file keeps the choice, so it applies again when the network comes back.
    */
   address: string | null;
+  /**
+   * Whether every device relaunches by itself a second after each change made
+   * in the editor. Off unless someone turns it on: a phone that restarts on
+   * every edit is a surprise nobody asked for.
+   *
+   * Kept here rather than in a window, so every window shows the same choice;
+   * the server does nothing with it. What changed lives in the editor's
+   * stores, so the editor is what relaunches.
+   */
+  liveReload: boolean;
 }
 
 /**
@@ -184,6 +194,7 @@ export function createDeviceSettings(): DeviceSettings {
     token: createDeviceToken(),
     transport: 'http',
     address: null,
+    liveReload: false,
   };
 }
 
@@ -234,12 +245,14 @@ export function conformDeviceSettings(value: unknown): DeviceSettings {
 /**
  * What the renderer may change in the settings.
  *
- * The port, the address the link is made of, and the transport. Never the
- * token: the renderer is where a project's own scripts run, and a token one of
- * them chose would be a link it already knows. Never the version, which is the
- * file's to say.
+ * The port, the address the link is made of, the transport, and live reload.
+ * Never the token: the renderer is where a project's own scripts run, and a
+ * token one of them chose would be a link it already knows. Never the version,
+ * which is the file's to say.
  */
-export type DeviceSettingsPatch = Partial<Pick<DeviceSettings, 'port' | 'address' | 'transport'>>;
+export type DeviceSettingsPatch = Partial<
+  Pick<DeviceSettings, 'port' | 'address' | 'transport' | 'liveReload'>
+>;
 
 /**
  * A patch, reduced to what it may change.
@@ -254,6 +267,7 @@ export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch 
     port: DEFAULT_DEVICE_PORT,
     address: null,
     transport: 'http',
+    liveReload: false,
   };
   const patch: DeviceSettingsPatch = conformPatch(value, model);
   if (patch.port !== undefined && !isPort(patch.port)) delete patch.port;
@@ -334,6 +348,8 @@ export interface DeviceServerStatus {
    * listed.
    */
   address: string | null;
+  /** The settings' live reload, whether the server runs or not. */
+  liveReload: boolean;
   /**
    * Every device that said hello since the server started, connected or not,
    * in the order they first did. Empty while the server is stopped.

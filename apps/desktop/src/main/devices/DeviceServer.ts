@@ -327,7 +327,8 @@ export class DeviceServer {
    * another transport.
    *
    * An address moves nothing: the server listens on every interface already,
-   * and the address only decides which link is shown first.
+   * and the address only decides which link is shown first. Nor does live
+   * reload, which the server only keeps: the editor is what relaunches.
    */
   async saveSettings(patch: DeviceSettingsPatch): Promise<DeviceServerStatus> {
     if (this.starting !== null) await this.starting;
@@ -353,7 +354,12 @@ export class DeviceServer {
     }
     const listening = this.listening;
     if (listening !== null) {
-      const settings = { ...listening.settings, port: saved.port, address: saved.address };
+      const settings = {
+        ...listening.settings,
+        port: saved.port,
+        address: saved.address,
+        liveReload: saved.liveReload,
+      };
       if (saved.port === listening.settings.port) {
         this.listening = { ...listening, settings };
       } else if (saved.port === listening.port) {
@@ -686,6 +692,7 @@ export class DeviceServer {
         urls: [],
         selectedUrl: null,
         address: settings.address,
+        liveReload: settings.liveReload,
         certificate: null,
       };
     }
@@ -699,6 +706,7 @@ export class DeviceServer {
       urls,
       selectedUrl: selectedUrl(urls, settings.address),
       address: settings.address,
+      liveReload: settings.liveReload,
       certificate:
         certificate === null
           ? null

@@ -37,6 +37,10 @@ describe('the factory', () => {
   it('leaves the link’s address to the server', () => {
     expect(createDeviceSettings().address).toBeNull();
   });
+
+  it('leaves live reload off: devices restart only when someone launches', () => {
+    expect(createDeviceSettings().liveReload).toBe(false);
+  });
 });
 
 describe('what a server runs on', () => {
@@ -92,6 +96,15 @@ describe('what a server runs on', () => {
     // is chosen as if nobody had picked one.
     expect(conformDeviceSettings({ address }).address).toBeNull();
   });
+
+  it('keeps live reload on', () => {
+    expect(conformDeviceSettings({ liveReload: true }).liveReload).toBe(true);
+    expect(conformDeviceSettings({ port: 7800 }).liveReload).toBe(false);
+  });
+
+  it.each(['yes', 1])('reads live reload %j as off', (liveReload) => {
+    expect(conformDeviceSettings({ liveReload }).liveReload).toBe(false);
+  });
 });
 
 describe('a patch from the renderer', () => {
@@ -125,5 +138,11 @@ describe('a patch from the renderer', () => {
     // A string is what a `null` field accepts anywhere else at the boundary,
     // so the address needs a check of its own.
     expect(conformDeviceSettingsPatch({ address: 'en0' })).toEqual({});
+  });
+
+  it('keeps live reload turned on or off, and drops anything else', () => {
+    expect(conformDeviceSettingsPatch({ liveReload: true })).toEqual({ liveReload: true });
+    expect(conformDeviceSettingsPatch({ liveReload: false })).toEqual({ liveReload: false });
+    expect(conformDeviceSettingsPatch({ liveReload: 'on' })).toEqual({});
   });
 });

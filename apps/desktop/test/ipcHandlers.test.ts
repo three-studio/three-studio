@@ -311,6 +311,21 @@ describe('the guards are reached, not merely written', () => {
     await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   });
 
+  it('lets a settings patch turn live reload on, and nothing that is not a boolean', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { liveReload: 'yes' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { liveReload: true });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      liveReload: true,
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
   it('conforms layout preferences before they reach the file', async () => {
     await invoke(IPC_INVOKE.preferences.saveLayouts, 1, {
       version: LAYOUT_PREFERENCES_VERSION,

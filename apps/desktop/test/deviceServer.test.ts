@@ -723,6 +723,59 @@ describe('choosing the address a link is made of', () => {
   });
 });
 
+describe('live reload', () => {
+  it('is kept by a running server, which moves nothing and keeps its launch', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const heard: DeviceServerStatus[] = [];
+    const traced: string[] = [];
+    const devices = server(
+      file,
+      await template(),
+      (status) => heard.push(status),
+      (line) => traced.push(line),
+    );
+    const root = await project();
+    const launched = await devices.launch(root, await snapshot(root));
+    expect(launched.liveReload).toBe(false);
+
+    const status = await devices.saveSettings({ liveReload: true });
+
+    expect(status.liveReload).toBe(true);
+    expect((await devices.status()).liveReload).toBe(true);
+    expect(status.port).toBe(port);
+    expect(status.launch?.id).toBe(launched.launch?.id);
+    // The editor relaunches; the server only keeps the choice, so the one
+    // listen is the start's.
+    expect(traced.filter((line) => /^(started|moved|serving)/.test(line))).toEqual([
+      `started on port ${port}`,
+    ]);
+    await vi.waitFor(() => expect(heard.at(-1)?.liveReload).toBe(true));
+    expect(JSON.parse(await readFile(file, 'utf8')).liveReload).toBe(true);
+  });
+
+  it('is written while the server is stopped, and nothing listens', async () => {
+    const port = await freePort();
+    const { devices, file } = await keptPortServer(port);
+
+    const status = await devices.saveSettings({ liveReload: true });
+
+    expect(status.state).toBe('stopped');
+    expect(status.liveReload).toBe(true);
+    expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+      version: 1,
+      port,
+      token: TOKEN,
+      transport: 'http',
+      future: 1,
+      liveReload: true,
+    });
+    const free = await listenOn(port);
+    expect(free).not.toBeNull();
+    holders.push(free!);
+  });
+});
+
 describe('a new link', () => {
   it('is answered at once, and the old one refused, on a connection already open too', async () => {
     const port = await freePort();

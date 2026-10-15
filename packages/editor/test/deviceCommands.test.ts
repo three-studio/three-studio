@@ -56,6 +56,7 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
     launch: { id: 'launch-1', at: 1, sceneName: 'Level' },
     reachedFromNetwork: false,
     address: null,
+    liveReload: false,
     devices: [],
     certificate: null,
     ...overrides,
