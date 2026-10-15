@@ -1,4 +1,4 @@
-import { describeUserAgent } from '@three-studio/core';
+import { describeUserAgent, deviceLabel } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
 /*
@@ -115,5 +115,11 @@ describe('the name a user agent gives', () => {
 
   it('has a name for nothing at all', () => {
     expect(describeUserAgent('')).toEqual({ name: 'Device', browser: 'Browser' });
+  });
+});
+
+describe('a device’s label', () => {
+  it('is its system and its browser, as a row and a screenshot’s name both say it', () => {
+    expect(deviceLabel({ name: 'iPhone', browser: 'Safari' })).toBe('iPhone · Safari');
   });
 });

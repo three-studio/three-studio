@@ -501,3 +501,14 @@ export interface DeviceLogs {
   /** Its lines lost on the way since its last batch. */
   dropped: number;
 }
+
+/** A device's frame, saved where the person said. */
+export interface DeviceScreenshot {
+  /** The file written. */
+  path: string;
+  /** From the PNG's header: the canvas as the page drew it. */
+  width: number;
+  height: number;
+  /** The file's size. */
+  bytes: number;
+}

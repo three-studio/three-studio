@@ -53,3 +53,12 @@ export function describeUserAgent(userAgent: string): DescribedUserAgent {
     browser: firstMatch(BROWSERS, userAgent, 'Browser'),
   };
 }
+
+/**
+ * A device as its row, its Console lines and its screenshots' names all say
+ * it: `iPhone · Safari`. The same words everywhere, so that typing what a row
+ * says into the Console's Filter finds that device's lines.
+ */
+export function deviceLabel({ name, browser }: DescribedUserAgent): string {
+  return `${name} · ${browser}`;
+}

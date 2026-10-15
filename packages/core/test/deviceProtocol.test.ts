@@ -9,6 +9,7 @@ import {
   createId,
   cutLogText,
   isDeviceId,
+  isRequestId,
   parseServerMessage,
   type DeviceHello,
 } from '@three-studio/core';
@@ -317,6 +318,16 @@ describe('what the server sends', () => {
     });
   });
 
+  it('reads a request for the next frame, under the id the server made for it', () => {
+    const request = createId(16);
+
+    expect(parseServerMessage(JSON.stringify({ v: 1, type: 'screenshot', request }))).toEqual({
+      v: 1,
+      type: 'screenshot',
+      request,
+    });
+  });
+
   it.each([
     ['another version', '{"v":2,"type":"launch","launch":"L2aunch0000b"}'],
     ['a type it does not know', '{"v":1,"type":"x"}'],
@@ -326,6 +337,11 @@ describe('what the server sends', () => {
     ['a reopen without its transport', '{"v":1,"type":"reopen"}'],
     ['what is not JSON', 'not json'],
     ['JSON that is not an object', '42'],
+    // The id goes into the path the page posts its frame to.
+    ['a screenshot request whose id is too short', '{"v":1,"type":"screenshot","request":"Ab3dE6g"}'],
+    ['a screenshot request whose id is a path', '{"v":1,"type":"screenshot","request":"Ab3dE6gH/../x"}'],
+    ['a screenshot request without its id', '{"v":1,"type":"screenshot"}'],
+    ['a screenshot request of another version', '{"v":2,"type":"screenshot","request":"Ab3dE6gH9jK2mN5p"}'],
   ])('ignores %s', (_name, data) => {
     expect(parseServerMessage(data)).toBeNull();
   });
@@ -342,4 +358,17 @@ describe('a device id', () => {
     expect(isDeviceId('Ab3dE6g_')).toBe(false);
     expect(isDeviceId(12345678)).toBe(false);
   });
+});
+
+describe('a screenshot request’s id', () => {
+  it('is what the server makes', () => {
+    expect(isRequestId(createId(16))).toBe(true);
+  });
+
+  it.each([['Ab3dE6gH'], ['A'.repeat(65)], ['Ab3dE6g_'], [12345678]])(
+    'reads %s as a device id would',
+    (value) => {
+      expect(isRequestId(value)).toBe(isDeviceId(value));
+    },
+  );
 });

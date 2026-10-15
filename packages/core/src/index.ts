@@ -373,6 +373,7 @@ export type {
   DeviceInfo,
   DeviceLaunchOptions,
   DeviceLogs,
+  DeviceScreenshot,
   DeviceServerState,
   DeviceServerStatus,
   DeviceSettings,
@@ -401,6 +402,9 @@ export {
   DEVICE_PROTOCOL_VERSION,
   DEVICE_RATE,
   DEVICE_RETRY_MS,
+  DEVICE_SCREENSHOT_LIMIT,
+  DEVICE_SCREENSHOT_RATE,
+  DEVICE_SCREENSHOT_WAIT_MS,
   DEVICE_SILENCE_MS,
   DEVICE_STATS_MS,
   DEVICE_STATS_RATE,
@@ -415,6 +419,7 @@ export {
   cutLogText,
   isDeviceId,
   isDeviceTransport,
+  isRequestId,
   parseServerMessage,
 } from './devices/protocol';
 export type {
@@ -430,7 +435,7 @@ export type {
   DeviceStatusReport,
   ServerMessage,
 } from './devices/protocol';
-export { describeUserAgent } from './devices/userAgent';
+export { describeUserAgent, deviceLabel } from './devices/userAgent';
 export type { DescribedUserAgent } from './devices/userAgent';
 /* A device's numbers in words, as its row and its own overlay both write them. */
 export { describeDeviceStats, formatCount } from './devices/stats';

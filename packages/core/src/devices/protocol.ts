@@ -2,7 +2,8 @@
  * What a device and the device server say to each other, version 1.
  *
  * The server writes to an event stream the page opens; the page POSTs its own
- * messages back, one JSON body each, to `__studio/<type>`. No WebSocket: an
+ * messages back, one JSON body each, to `__studio/<type>` — all but a
+ * screenshot, whose body is the PNG itself. No WebSocket: an
  * event stream is plain HTTP, so it goes wherever the page goes — a proxy, a
  * tunnel, HTTPS — and reconnects on its own.
  *
@@ -83,6 +84,31 @@ export const DEVICE_STATS_WARMUP_MS = 1_000;
  * rest is room for a second tab of the same browser, which shares its id.
  */
 export const DEVICE_STATS_RATE = { messages: 10, perMs: 10_000 } as const;
+
+/**
+ * The largest frame a device may post, apart from `DEVICE_BODY_LIMIT`: a PNG
+ * of its canvas as the page draws it. The largest phone at 3× draws 1320×2868,
+ * 15 MB of pixels, and the largest iPad at 2× draws 2064×2752, 23 MB; a PNG of
+ * either stays under this even when nothing in it compresses.
+ */
+export const DEVICE_SCREENSHOT_LIMIT = 32 * 1024 * 1024;
+
+/**
+ * How many screenshots the server asks of one device in a window — counted
+ * where the server asks, not where a frame arrives. The server reads a frame
+ * only when it answers a request still pending, so the uploads are held to the
+ * requests already; a request is what makes a phone copy and encode its
+ * canvas. A person waits for a dialog between two, so this stops nobody but a
+ * script calling the bridge in a loop.
+ */
+export const DEVICE_SCREENSHOT_RATE = { messages: 5, perMs: 10_000 } as const;
+
+/**
+ * How long a device has to begin sending the frame it was asked for, and the
+ * longest its upload may then stall. A page that has not begun by then draws
+ * no frame to read: a hidden tab, a locked phone, a page that died.
+ */
+export const DEVICE_SCREENSHOT_WAIT_MS = 10_000;
 
 /** How many devices the server lists at once. Past that, a new stream is refused. */
 export const DEVICE_LIMIT = 32;
@@ -275,7 +301,13 @@ export type ServerMessage =
    * stream opens, and to every stream when it changes, so it takes effect
    * without a reload.
    */
-  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'options'; stats: boolean };
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'options'; stats: boolean }
+  /**
+   * Post the next frame the player draws to `__studio/screenshot?request=…`.
+   * Written to every stream of the device, since its tabs share its id; a page
+   * that draws no frame — hidden, or not running the game — lets it go.
+   */
+  | { v: typeof DEVICE_PROTOCOL_VERSION; type: 'screenshot'; request: string };
 
 const STATES: readonly DeviceState[] = ['waiting', 'booting', 'running', 'failed'];
 const BACKENDS: readonly DeviceBackend[] = ['webgpu', 'webgl'];
@@ -311,6 +343,15 @@ function isId(value: unknown): value is string {
 
 /** A device's id, as the client makes it with `createId(16)` and keeps in `localStorage`. */
 export function isDeviceId(value: unknown): value is string {
+  return isId(value);
+}
+
+/**
+ * The id the server made for one screenshot request, with `createId(16)`. The
+ * page writes it into the path it posts its frame to, so it is held to what a
+ * device's id is held to.
+ */
+export function isRequestId(value: unknown): value is string {
   return isId(value);
 }
 
@@ -519,6 +560,12 @@ export function parseServerMessage(data: string): ServerMessage | null {
     }
     case 'options':
       return { v: DEVICE_PROTOCOL_VERSION, type: 'options', stats: value['stats'] === true };
+    case 'screenshot': {
+      const request = value['request'];
+      return isRequestId(request)
+        ? { v: DEVICE_PROTOCOL_VERSION, type: 'screenshot', request }
+        : null;
+    }
     default:
       return null;
   }

@@ -2,6 +2,7 @@ import {
   DEFAULT_DEVICE_PORT,
   createDeviceLaunchOptions,
   describeDeviceStats,
+  deviceLabel,
   type DeviceBackend,
   type DeviceInfo,
   type DeviceServerState,
@@ -12,7 +13,6 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import {
-  deviceLabel,
   deviceLink,
   hasSlid,
   holderName,

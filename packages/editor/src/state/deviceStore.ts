@@ -1,8 +1,9 @@
-import type {
-  DeviceLogs,
-  DeviceServerStatus,
-  LaunchSnapshot,
-  PortHolder,
+import {
+  deviceLabel,
+  type DeviceLogs,
+  type DeviceServerStatus,
+  type LaunchSnapshot,
+  type PortHolder,
 } from '@three-studio/core';
 import { create } from 'zustand';
 import { useConsoleStore, type LogLine } from './consoleStore';
@@ -183,15 +184,6 @@ export function noteReloads(status: DeviceServerStatus): void {
         'it most likely ran out of memory.',
     );
   }
-}
-
-/**
- * A device as its row and its Console lines both say it: `iPhone · Safari`.
- * The same words in both places, so that typing what a row says into the
- * Console's Filter finds that device's lines.
- */
-export function deviceLabel({ name, browser }: { name: string; browser: string }): string {
-  return `${name} · ${browser}`;
 }
 
 /**
