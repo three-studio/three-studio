@@ -9,6 +9,7 @@ import {
 import { migratePrefab, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
 import { migrateScene } from '../scene/serialization';
+import type { DeviceBackend, DeviceState } from './protocol';
 
 export const LAUNCH_SNAPSHOT_VERSION = 1;
 
@@ -316,4 +317,32 @@ export interface DeviceServerStatus {
    * listed.
    */
   address: string | null;
+}
+
+/**
+ * A device that said hello, as a row in the editor shows it.
+ *
+ * Kept in the server's memory only: a stop forgets every device, and a device
+ * is listed again by the next hello its page sends.
+ */
+export interface DeviceInfo {
+  /** The id its browser keeps; every tab of one browser shares it. */
+  id: string;
+  /** The system, from its user agent: `iPhone`, `Android`, `Mac`… */
+  name: string;
+  browser: string;
+  /** As sent, at most 512 characters. */
+  userAgent: string;
+  /** Where its stream came from. */
+  address: string;
+  screen: { width: number; height: number; dpr: number };
+  /** Whether its page is a secure context. Without one a browser offers no WebGPU. */
+  secureContext: boolean;
+  /** The launch its page runs; `null` on the waiting page. */
+  launch: string | null;
+  state: DeviceState;
+  backend: DeviceBackend | null;
+  error: string | null;
+  /** A stream is open. A device without one stays listed a little while, as offline. */
+  connected: boolean;
 }

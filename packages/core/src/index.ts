@@ -366,6 +366,7 @@ export {
   isUsableDeviceToken,
 } from './devices/schema';
 export type {
+  DeviceInfo,
   DeviceServerState,
   DeviceServerStatus,
   DeviceSettings,
@@ -374,3 +375,35 @@ export type {
   DeviceUrl,
   PortHolder,
 } from './devices/schema';
+/*
+ * What a device and the server say to each other. The client a phone runs
+ * imports `./devices/protocol` itself rather than this barrel, so that its
+ * bundle carries that one file.
+ */
+export {
+  DEVICE_BODY_LIMIT,
+  DEVICE_FORGET_MS,
+  DEVICE_HEARTBEAT_MS,
+  DEVICE_LIMIT,
+  DEVICE_PING_MS,
+  DEVICE_PROTOCOL_VERSION,
+  DEVICE_RATE,
+  DEVICE_RETRY_MS,
+  DEVICE_SILENCE_MS,
+  DEVICE_STREAMS_PER_DEVICE,
+  DEVICE_STREAM_TIMEOUT_MS,
+  conformHello,
+  conformStatusReport,
+  isDeviceId,
+  parseServerMessage,
+} from './devices/protocol';
+export type {
+  DeviceBackend,
+  DeviceHello,
+  DeviceMessageType,
+  DeviceState,
+  DeviceStatusReport,
+  ServerMessage,
+} from './devices/protocol';
+export { describeUserAgent } from './devices/userAgent';
+export type { DescribedUserAgent } from './devices/userAgent';
