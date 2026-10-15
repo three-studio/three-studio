@@ -2,7 +2,12 @@ import { createId } from '@three-studio/core/ids';
 import { isDeviceId } from '@three-studio/core/devices/protocol';
 import { PLAYER_EVENT } from '../announce';
 import { captureLogs } from './capture';
-import { startDeviceClient, type DeviceNotice, type ProbeAnswer } from './client';
+import {
+  startDeviceClient,
+  type DeviceClient,
+  type DeviceNotice,
+  type ProbeAnswer,
+} from './client';
 import { createLogQueue } from './logQueue';
 
 /*
@@ -25,7 +30,12 @@ import { createLogQueue } from './logQueue';
  * the server knows this device.
  */
 const logs = createLogQueue();
-const captured = captureLogs(window, (level, text) => logs.push(level, text));
+/** Set once the client starts, below: what is logged before then waits in the queue. */
+let started: DeviceClient | null = null;
+const captured = captureLogs(window, (level, text) => {
+  logs.push(level, text);
+  started?.logged();
+});
 
 /** Where a browser keeps its device id, so that a reload — and every tab — is the same device. */
 const DEVICE_KEY = 'three-studio.device';
@@ -150,19 +160,24 @@ const client = startDeviceClient(
       source.onerror = () => onError(source.readyState === EventSource.CLOSED);
       return { close: () => source.close() };
     },
-    post: (type, message) => {
+    post: (type, message, options) =>
       // `fetch`, never `sendBeacon` nor a form: those post in no-cors mode,
       // with an `Origin` of `null` the server cannot tell from another site's.
       // The referrer policy lets the browser name this page's origin even
-      // though the server asks for no referrer on everything it sends.
-      void fetch(`__studio/${type}`, {
+      // though the server asks for no referrer on everything it sends. Still
+      // a `fetch` with `keepalive`, so a request that outlives the page
+      // carries its origin like any other.
+      fetch(`__studio/${type}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(message),
         referrerPolicy: 'same-origin',
         cache: 'no-store',
-      }).catch(() => undefined);
-    },
+        keepalive: options?.keepalive === true,
+      }).then(
+        (response) => response.status,
+        () => 0,
+      ),
     probe,
     reload: () => {
       try {
@@ -185,14 +200,21 @@ const client = startDeviceClient(
     // the device: the row already says what they say.
     log: (line) => captured.original.log(`[device] ${line}`),
   },
+  logs,
 );
+started = client;
 
 window.addEventListener(PLAYER_EVENT, (event) => client.playerAnnounced(event.detail));
 // A phone that locked, a tab in the background, a page restored from the
 // back-forward cache, a network back: each may have left a stream that looks
-// open and is not.
+// open and is not. A page turning hidden may never run again — a phone ends
+// pages in the background without a word — so the lines that wait leave then,
+// as they do when the page goes: a launch reloads it, and the lines just
+// before a restart are often the ones that explain it.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') client.wake();
+  else client.pageHidden();
 });
+window.addEventListener('pagehide', () => client.pageHidden());
 window.addEventListener('pageshow', () => client.wake());
 window.addEventListener('online', () => client.wake());

@@ -10,6 +10,7 @@ import {
   type ProbeAnswer,
   type StreamHandlers,
 } from '../src/device/client';
+import { createLogQueue } from '../src/device/logQueue';
 
 /*
  * The client a served page runs, with everything around it faked: the stream,
@@ -39,11 +40,27 @@ function page(overrides: Partial<DevicePage> = {}): DevicePage {
   };
 }
 
+interface Post {
+  type: string;
+  message: Record<string, unknown>;
+  keepalive?: true;
+}
+
 function fakeIo() {
   const streams: Stream[] = [];
-  const posts: { type: string; message: Record<string, unknown> }[] = [];
+  const posts: Post[] = [];
   const shown: DeviceNotice[] = [];
-  const answer: { probe: ProbeAnswer } = { probe: 'unreachable' };
+  /** The client's own lines, which it writes through `io.log`. */
+  const logged: string[] = [];
+  /**
+   * What the server answers: a status, at once — 0 for no answer at all — or
+   * `held`, until the test releases it.
+   */
+  const answer: { probe: ProbeAnswer; post: (type: string) => number | 'held' } = {
+    probe: 'unreachable',
+    post: () => 204,
+  };
+  const held: ((status: number) => void)[] = [];
   const reload = vi.fn();
   const reopen = vi.fn();
   const io: DeviceIo = {
@@ -56,8 +73,15 @@ function fakeIo() {
         },
       };
     },
-    post: (type, message) => {
-      posts.push({ type, message: { ...message } });
+    post: (type, message, options) => {
+      posts.push(
+        options?.keepalive === true
+          ? { type, message: { ...message }, keepalive: true }
+          : { type, message: { ...message } },
+      );
+      const status = answer.post(type);
+      if (status === 'held') return new Promise((resolve) => held.push(resolve));
+      return Promise.resolve(status);
     },
     probe: () => Promise.resolve(answer.probe),
     reload,
@@ -65,10 +89,17 @@ function fakeIo() {
     show: (notice) => {
       shown.push(notice);
     },
-    log: () => undefined,
+    log: (line) => {
+      logged.push(line);
+    },
   };
   const last = (): Stream => streams.at(-1)!;
-  return { io, streams, posts, shown, answer, reload, reopen, last };
+  /** Answers the oldest post still held. */
+  const release = (status: number): void => {
+    held.shift()?.(status);
+  };
+  const logs = createLogQueue();
+  return { io, streams, posts, shown, logged, answer, release, reload, reopen, last, logs };
 }
 
 function running(start = vi.fn()): PlayerAnnouncement {
@@ -94,7 +125,7 @@ afterEach(() => {
 describe('opening', () => {
   it('says hello with the launch its page runs, booting on a player page', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
 
     expect(fake.streams).toHaveLength(1);
     expect(fake.posts).toEqual([]);
@@ -121,7 +152,7 @@ describe('opening', () => {
 
   it('says it waits on the waiting page', () => {
     const fake = fakeIo();
-    startDeviceClient(page({ launch: null }), fake.io);
+    startDeviceClient(page({ launch: null }), fake.io, fake.logs);
     fake.last().handlers.onOpen();
 
     expect(fake.posts[0]?.message).toMatchObject({ launch: null, state: 'waiting' });
@@ -131,7 +162,7 @@ describe('opening', () => {
 describe('the player', () => {
   it('reports that it runs, and on what', () => {
     const fake = fakeIo();
-    const client = startDeviceClient(page(), fake.io);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
     fake.last().handlers.onOpen();
 
     client.playerAnnounced(running());
@@ -144,7 +175,7 @@ describe('the player', () => {
 
   it('reports what it failed on', () => {
     const fake = fakeIo();
-    const client = startDeviceClient(page(), fake.io);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
     fake.last().handlers.onOpen();
 
     client.playerAnnounced({ state: 'failed', error: 'No scene to start on.' });
@@ -157,7 +188,7 @@ describe('the player', () => {
 
   it('says hello with what the player said before the stream opened', () => {
     const fake = fakeIo();
-    const client = startDeviceClient(page(), fake.io);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
 
     client.playerAnnounced(running());
     expect(fake.posts).toEqual([]);
@@ -170,7 +201,7 @@ describe('the player', () => {
   it('starts the game when the editor asked for this page', () => {
     const fake = fakeIo();
     const start = vi.fn();
-    const client = startDeviceClient(page({ asked: true }), fake.io);
+    const client = startDeviceClient(page({ asked: true }), fake.io, fake.logs);
 
     client.playerAnnounced(running(start));
 
@@ -180,7 +211,7 @@ describe('the player', () => {
   it('leaves the Play screen to a page opened by hand', () => {
     const fake = fakeIo();
     const start = vi.fn();
-    const client = startDeviceClient(page({ asked: false }), fake.io);
+    const client = startDeviceClient(page({ asked: false }), fake.io, fake.logs);
 
     client.playerAnnounced(running(start));
 
@@ -191,7 +222,7 @@ describe('the player', () => {
 describe('what the server says', () => {
   it('restarts once on a launch, and does nothing after it', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
     const posted = fake.posts.length;
@@ -207,7 +238,7 @@ describe('what the server says', () => {
 
   it('reopens the page on the other scheme once, and does nothing after it', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
     const posted = fake.posts.length;
@@ -225,7 +256,7 @@ describe('what the server says', () => {
 
   it('says the editor stopped, and keeps saying it through the errors that follow', () => {
     const fake = fakeIo();
-    startDeviceClient(page({ launch: null }), fake.io);
+    startDeviceClient(page({ launch: null }), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
 
@@ -237,7 +268,7 @@ describe('what the server says', () => {
 
   it('ignores a message it does not know, and another version', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
     const posted = fake.posts.length;
@@ -255,7 +286,7 @@ describe('what the server says', () => {
 describe('keeping the link alive', () => {
   it('posts its status every 20 s', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
 
@@ -270,7 +301,7 @@ describe('keeping the link alive', () => {
 
   it('reopens a stream that has said nothing for 45 s, and says hello again', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const first = fake.last();
     first.handlers.onOpen();
 
@@ -286,7 +317,7 @@ describe('keeping the link alive', () => {
 
   it('reopens on waking after 30 s of silence, not after 10 s', () => {
     const fake = fakeIo();
-    const client = startDeviceClient(page(), fake.io);
+    const client = startDeviceClient(page(), fake.io, fake.logs);
     fake.last().handlers.onOpen();
 
     vi.advanceTimersByTime(10_000);
@@ -300,7 +331,7 @@ describe('keeping the link alive', () => {
 
   it('says the editor cannot be reached while it connects, and connected once it has', () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     const stream = fake.last();
     stream.handlers.onOpen();
 
@@ -314,7 +345,7 @@ describe('keeping the link alive', () => {
 describe('a stream closed for good', () => {
   it('stops for good when the link is gone', async () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     fake.last().handlers.onOpen();
     const posted = fake.posts.length;
     fake.answer.probe = 'gone';
@@ -330,7 +361,7 @@ describe('a stream closed for good', () => {
 
   it('tries again after 3 s, then 6 s, then 12 s, and from 3 s once a stream opens', async () => {
     const fake = fakeIo();
-    startDeviceClient(page(), fake.io);
+    startDeviceClient(page(), fake.io, fake.logs);
     fake.answer.probe = 'unreachable';
 
     const failAndWait = async (delay: number): Promise<void> => {
@@ -348,5 +379,234 @@ describe('a stream closed for good', () => {
     await failAndWait(12_000);
     fake.last().handlers.onOpen();
     await failAndWait(3_000);
+  });
+});
+
+describe('the page’s lines', () => {
+  const lines = (...texts: string[]) => texts.map((text) => ({ level: 'log', text, count: 1 }));
+  const batches = (fake: ReturnType<typeof fakeIo>) =>
+    fake.posts.filter((post) => post.type === 'log');
+
+  /** A client whose hello has been answered. */
+  async function linked(fake = fakeIo()) {
+    const client = startDeviceClient(page(), fake.io, fake.logs);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+    return { fake, client };
+  }
+
+  it('wait for the hello to be answered, then leave together, in order', async () => {
+    const fake = fakeIo();
+    fake.logs.push('log', 'Shout loaded');
+    fake.logs.push('warn', 'careful');
+    startDeviceClient(page(), fake.io, fake.logs);
+    fake.answer.post = (type) => (type === 'hello' ? 'held' : 204);
+
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(batches(fake)).toEqual([]);
+
+    fake.release(204);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(batches(fake)).toEqual([
+      {
+        type: 'log',
+        message: {
+          v: 1,
+          device: DEVICE,
+          lines: [
+            { level: 'log', text: 'Shout loaded', count: 1 },
+            { level: 'warn', text: 'careful', count: 1 },
+          ],
+          dropped: 0,
+        },
+      },
+    ]);
+  });
+
+  it('leave a quarter of a second after a line, one batch at a time', async () => {
+    const { fake, client } = await linked();
+    fake.answer.post = (type) => (type === 'log' ? 'held' : 204);
+
+    fake.logs.push('log', 'a');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(249);
+    expect(batches(fake)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(batches(fake)).toHaveLength(1);
+
+    fake.logs.push('log', 'b');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(batches(fake)).toHaveLength(1);
+
+    fake.release(204);
+    await vi.advanceTimersByTimeAsync(249);
+    expect(batches(fake)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(batches(fake).map((post) => post.message['lines'])).toEqual([lines('a'), lines('b')]);
+  });
+
+  it('wait for the next stream when the hello was not answered', async () => {
+    const fake = fakeIo();
+    fake.logs.push('log', 'early');
+    const client = startDeviceClient(page(), fake.io, fake.logs);
+    fake.answer.post = (type) => (type === 'hello' ? 0 : 204);
+
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(1_000);
+    client.logged();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(batches(fake)).toEqual([]);
+
+    fake.answer.post = () => 204;
+    fake.last().handlers.onError(false);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(batches(fake).map((post) => post.message['lines'])).toEqual([lines('early')]);
+  });
+
+  it('stop leaving while the stream is down, and go on with the next hello', async () => {
+    const { fake, client } = await linked();
+
+    fake.last().handlers.onError(false);
+    fake.logs.push('log', 'while away');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(batches(fake)).toEqual([]);
+
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(batches(fake).map((post) => post.message['lines'])).toEqual([lines('while away')]);
+  });
+
+  it('count a refused batch in the dropped count of the next', async () => {
+    const { fake, client } = await linked();
+    let refuse = true;
+    fake.answer.post = (type) => {
+      if (type !== 'log' || !refuse) return 204;
+      refuse = false;
+      return 429;
+    };
+
+    fake.logs.push('log', 'a');
+    fake.logs.push('log', 'a');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(250);
+    fake.logs.push('log', 'b');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(batches(fake).map((post) => post.message)).toEqual([
+      { v: 1, device: DEVICE, lines: [{ level: 'log', text: 'a', count: 2 }], dropped: 0 },
+      { v: 1, device: DEVICE, lines: lines('b'), dropped: 2 },
+    ]);
+  });
+
+  it('send the same lines again on the same stream when a batch was lost on the way', async () => {
+    const { fake, client } = await linked();
+    let lose = true;
+    fake.answer.post = (type) => {
+      if (type !== 'log' || !lose) return 204;
+      lose = false;
+      return 0;
+    };
+
+    fake.logs.push('error', 'boom');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(250);
+    await vi.advanceTimersByTimeAsync(250);
+
+    const sent = batches(fake).map((post) => post.message['lines']);
+    const boom = [{ level: 'error', text: 'boom', count: 1 }];
+    expect(sent).toEqual([boom, boom]);
+    expect(fake.streams).toHaveLength(1);
+  });
+
+  it('leave at once, in a request that outlives the page, when the page goes', async () => {
+    const { fake, client } = await linked();
+    fake.answer.post = (type) => (type === 'log' ? 'held' : 204);
+    fake.logs.push('log', 'a');
+    client.logged();
+    await vi.advanceTimersByTimeAsync(250);
+
+    fake.logs.push('error', 'last words');
+    client.pageHidden();
+
+    expect(batches(fake).at(-1)).toEqual({
+      type: 'log',
+      message: {
+        v: 1,
+        device: DEVICE,
+        lines: [{ level: 'error', text: 'last words', count: 1 }],
+        dropped: 0,
+      },
+      keepalive: true,
+    });
+  });
+
+  it('still leave as the page restarts on a launch', async () => {
+    const { fake, client } = await linked();
+
+    fake.last().handlers.onMessage(message({ type: 'launch', launch: 'L2aunch0000b' }));
+    fake.logs.push('warn', 'unloading');
+    client.pageHidden();
+
+    expect(fake.reload).toHaveBeenCalledOnce();
+    expect(batches(fake)).toEqual([
+      {
+        type: 'log',
+        message: {
+          v: 1,
+          device: DEVICE,
+          lines: [{ level: 'warn', text: 'unloading', count: 1 }],
+          dropped: 0,
+        },
+        keepalive: true,
+      },
+    ]);
+  });
+
+  it('never leave once told to reopen elsewhere', async () => {
+    const { fake, client } = await linked();
+
+    fake.last().handlers.onMessage(message({ type: 'reopen', transport: 'https' }));
+    fake.logs.push('log', 'x');
+    client.logged();
+    client.pageHidden();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(batches(fake)).toEqual([]);
+  });
+
+  it('never leave once the link is gone', async () => {
+    const { fake, client } = await linked();
+    fake.answer.probe = 'gone';
+
+    fake.last().handlers.onError(true);
+    await vi.advanceTimersByTimeAsync(0);
+    fake.logs.push('log', 'x');
+    client.logged();
+    client.pageHidden();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(fake.shown.at(-1)).toBe('gone');
+    expect(batches(fake)).toEqual([]);
+  });
+
+  it('carry none of the client’s own lines', async () => {
+    const { fake, client } = await linked();
+    fake.logs.push('log', 'from the game');
+    client.logged();
+    fake.last().handlers.onError(false);
+    fake.last().handlers.onOpen();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(fake.logged.length).toBeGreaterThan(0);
+    const sent = JSON.stringify(batches(fake));
+    for (const line of fake.logged) expect(sent).not.toContain(line);
+    expect(sent).toContain('from the game');
   });
 });

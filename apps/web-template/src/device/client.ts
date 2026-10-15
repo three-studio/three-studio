@@ -1,11 +1,13 @@
 import {
   DEVICE_HEARTBEAT_MS,
+  DEVICE_LOG_FLUSH_MS,
   DEVICE_PING_MS,
   DEVICE_PROTOCOL_VERSION,
   DEVICE_STREAM_TIMEOUT_MS,
   parseServerMessage,
   type DeviceBackend,
   type DeviceHello,
+  type DeviceLogMessage,
   type DeviceMessageType,
   type DeviceState,
   type DeviceStatusReport,
@@ -13,6 +15,7 @@ import {
   type ServerMessage,
 } from '@three-studio/core/devices/protocol';
 import type { PlayerAnnouncement } from '../announce';
+import type { LogBatch, LogQueue } from './logQueue';
 
 /*
  * The link a served page keeps with the editor, without the page around it.
@@ -50,9 +53,19 @@ export interface StreamHandlers {
   onError: (closed: boolean) => void;
 }
 
+export interface PostOptions {
+  /** The request outlives the page: for what waits as the page goes. */
+  keepalive?: boolean;
+}
+
 export interface DeviceIo {
   openStream: (handlers: StreamHandlers) => { close: () => void };
-  post: (type: DeviceMessageType, message: DeviceHello | DeviceStatusReport) => void;
+  /** Resolves the answer's status, or `0` when none came: the request failed on the way. */
+  post: (
+    type: DeviceMessageType,
+    message: DeviceHello | DeviceStatusReport | DeviceLogMessage,
+    options?: PostOptions,
+  ) => Promise<number>;
   probe: () => Promise<ProbeAnswer>;
   /** Marks the next load as asked for by the editor, then reloads. */
   reload: () => void;
@@ -66,6 +79,13 @@ export interface DeviceClient {
   playerAnnounced: (detail: PlayerAnnouncement) => void;
   /** The page is back — visible again, restored, online — and its stream may have died meanwhile. */
   wake: () => void;
+  /** A line joined the queue: it leaves with the next batch, a moment from now. */
+  logged: () => void;
+  /**
+   * The page is going, or hidden, which on a phone may be the last moment it
+   * runs: what waits leaves now, in a request that outlives the page.
+   */
+  pageHidden: () => void;
 }
 
 /** The first wait before asking again for a stream the server refused; doubled on each refusal. */
@@ -78,7 +98,7 @@ const LAST_RETRY_MS = 30_000;
  */
 const WAKE_SILENCE_MS = DEVICE_PING_MS + 5_000;
 
-export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient {
+export function startDeviceClient(page: DevicePage, io: DeviceIo, logs: LogQueue): DeviceClient {
   let state: DeviceState = page.launch === null ? 'waiting' : 'booting';
   let backend: DeviceBackend | null = null;
   let error: string | null = null;
@@ -94,6 +114,16 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
   let shown: DeviceNotice | null = null;
   /** Restarting, or the link is gone: nothing more is sent or heard. */
   let done = false;
+  /**
+   * The hello posted on the current stream was answered: the server knows
+   * this device, and lines may leave — before that, it would ignore them. A
+   * launch leaves it set, so that the page's last lines still go as it
+   * unloads; a stream lost, a reopen elsewhere or a link gone clear it.
+   */
+  let linked = false;
+  /** Batches posted and not answered yet. */
+  let sending = 0;
+  let flush: ReturnType<typeof setTimeout> | undefined;
 
   const hello = (): DeviceHello => ({
     v: DEVICE_PROTOCOL_VERSION,
@@ -142,12 +172,58 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
     stream = null;
   };
 
+  const unlink = (): void => {
+    linked = false;
+    clearTimeout(flush);
+    flush = undefined;
+  };
+
   const finish = (): void => {
     done = true;
     closeStream();
     clearTimeout(silence);
     clearTimeout(retry);
+    clearTimeout(flush);
+    flush = undefined;
     clearInterval(beat);
+  };
+
+  /** Posts a batch, and settles it by the answer. */
+  const post = (batch: LogBatch, options?: PostOptions): void => {
+    sending += 1;
+    const message: DeviceLogMessage = { v: DEVICE_PROTOCOL_VERSION, device: page.device, ...batch };
+    void io.post('log', message, options).then((status) => {
+      sending -= 1;
+      if (status === 0) {
+        // Lost on the way: tried again at the same pace while the stream
+        // holds. Unlinking would keep every line until the stream next
+        // breaks, which one answering its pings never does; a network that is
+        // really gone breaks the stream too, and its next hello comes first.
+        logs.putBack(batch);
+      } else if (status !== 204) {
+        logs.lose(batch);
+      }
+      later();
+    });
+  };
+
+  /** The next batch, while linked, with none in flight. */
+  const send = (): void => {
+    clearTimeout(flush);
+    flush = undefined;
+    if (!linked || sending > 0) return;
+    const batch = logs.take();
+    if (batch !== null) post(batch);
+  };
+
+  /**
+   * A batch `DEVICE_LOG_FLUSH_MS` from now, unless one is due already: the
+   * first line after a quiet moment waits that long, so that a burst leaves
+   * as one batch, and the batches that follow keep that pace.
+   */
+  const later = (): void => {
+    if (!linked || done || flush !== undefined) return;
+    flush = setTimeout(send, DEVICE_LOG_FLUSH_MS);
   };
 
   const receive = (message: ServerMessage | null): void => {
@@ -162,11 +238,15 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
       case 'reopen':
         // The server is about to listen under the other scheme, and this
         // page's connections go with the one it leaves. Once, as for a launch.
+        // The page that opens there is another device to it: these lines
+        // stay with this one.
         io.log(`Reopening over ${message.transport.toUpperCase()}.`);
+        unlink();
         finish();
         io.reopen(message.transport);
         return;
       case 'stopped':
+        unlink();
         if (notice('stopped')) io.log('Three Studio stopped serving.');
         return;
       default:
@@ -180,6 +260,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
    * else would say so — `EventSource` reports an error without its status.
    */
   const lost = (): void => {
+    unlink();
     closeStream();
     clearTimeout(silence);
     const mine = generation;
@@ -202,6 +283,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
   };
 
   function connect(): void {
+    unlink();
     closeStream();
     clearTimeout(retry);
     const mine = generation;
@@ -219,7 +301,14 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
               : 'Connected to Three Studio.',
           );
         }
-        io.post('hello', hello());
+        void io.post('hello', hello()).then((status) => {
+          // Only for the stream it was posted on, and only while it is open:
+          // an answer that arrives after the stream broke links nothing.
+          if (done || mine !== generation || !open || status !== 204) return;
+          linked = true;
+          // What waits leaves at once: the page's first moments.
+          send();
+        });
       },
       onMessage: (data) => {
         if (done || mine !== generation) return;
@@ -229,6 +318,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
       onError: (closed) => {
         if (done || mine !== generation) return;
         open = false;
+        unlink();
         if (closed) {
           lost();
         } else if (notice('unreachable')) {
@@ -242,7 +332,7 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
   // Only while a stream is open: with none, there is nobody to hear it, and
   // the hello of the next one says the same.
   const beat = setInterval(() => {
-    if (open && !done) io.post('status', status());
+    if (open && !done) void io.post('status', status());
   }, DEVICE_HEARTBEAT_MS);
 
   connect();
@@ -262,12 +352,26 @@ export function startDeviceClient(page: DevicePage, io: DeviceIo): DeviceClient 
         state = 'failed';
         error = detail.error;
       }
-      if (open) io.post('status', status());
+      if (open) void io.post('status', status());
     },
     wake() {
       if (done || Date.now() - lastHeard < WAKE_SILENCE_MS) return;
       io.log('Back after a while. Reconnecting.');
       connect();
+    },
+    logged() {
+      later();
+    },
+    pageHidden() {
+      if (!linked) return;
+      clearTimeout(flush);
+      flush = undefined;
+      // One batch, whether another is in flight or not: a browser lets the
+      // requests that outlive a page carry 64 KB in all, and a batch may hold
+      // 48. Lines leave every quarter of a second while linked, so what waits
+      // here is the last moment's.
+      const batch = logs.take();
+      if (batch !== null) post(batch, { keepalive: true });
     },
   };
 }
