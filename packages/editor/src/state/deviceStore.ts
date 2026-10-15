@@ -1,4 +1,4 @@
-import type { DeviceServerStatus } from '@three-studio/core';
+import type { DeviceServerStatus, PortHolder } from '@three-studio/core';
 import { create } from 'zustand';
 
 /**
@@ -38,4 +38,33 @@ export function watchDevices(): () => void {
     // Nothing to show without one; the next change will say.
     .catch(() => undefined);
   return unsubscribe;
+}
+
+/** Running on another port than the one the settings keep, because something held that one. */
+export function hasSlid(status: DeviceServerStatus | null): status is DeviceServerStatus {
+  return status?.state === 'running' && status.port !== status.requestedPort;
+}
+
+/** A holder as a sentence names it: the toast and the popover say it the same way. */
+export function holderName(holder: PortHolder | null): string {
+  if (holder === null) return 'another program';
+  if (holder.sameApp) return `another Three Studio (process ${holder.pid})`;
+  const program = holder.program === null ? 'a program' : holder.program.split(/[\\/]/).at(-1);
+  return `${program} (process ${holder.pid})`;
+}
+
+/**
+ * The link a phone opens: the selected one while the server runs — unless it
+ * is this computer's own, which no phone can open.
+ */
+export function deviceLink(status: DeviceServerStatus | null): string | null {
+  if (status?.state !== 'running') return null;
+  const selected = status.urls.find((url) => url.url === status.selectedUrl);
+  return selected === undefined || selected.address === 'localhost' ? null : selected.url;
+}
+
+/** The link this computer opens, over `localhost`, while the server runs. */
+export function localDeviceUrl(status: DeviceServerStatus | null): string | null {
+  if (status?.state !== 'running') return null;
+  return status.urls.find((url) => url.address === 'localhost')?.url ?? null;
 }

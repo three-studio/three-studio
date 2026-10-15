@@ -1,6 +1,6 @@
-import type { DeviceServerStatus, PortHolder } from '@three-studio/core';
+import type { DeviceServerStatus } from '@three-studio/core';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
-import { useDeviceStore } from '../state/deviceStore';
+import { hasSlid, holderName, useDeviceStore } from '../state/deviceStore';
 import { askForText } from '../state/dialogStore';
 import { useProjectStore } from '../state/projectStore';
 import { useToastStore, type ToastInput } from '../state/toastStore';
@@ -23,19 +23,6 @@ const NO_NETWORK = 'No network address — only this computer can reach it.';
 
 function isRunning(status: DeviceServerStatus | null): boolean {
   return status?.state === 'running';
-}
-
-/** Running on another port than the one the settings keep, because something held that one. */
-function hasSlid(status: DeviceServerStatus | null): status is DeviceServerStatus {
-  return status !== null && isRunning(status) && status.port !== status.requestedPort;
-}
-
-/** A holder as a sentence names it. */
-function holderName(holder: PortHolder | null): string {
-  if (holder === null) return 'another program';
-  if (holder.sameApp) return `another Three Studio (process ${holder.pid})`;
-  const program = holder.program === null ? 'a program' : holder.program.split(/[\\/]/).at(-1);
-  return `${program} (process ${holder.pid})`;
 }
 
 /** What a person types to see what holds a port, the system's own way. */
