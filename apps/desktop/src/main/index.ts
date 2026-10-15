@@ -5,7 +5,7 @@ import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
 import { handleAssetProtocol, handleImportProtocol, registerAssetScheme } from './protocol';
 import { applyContentSecurityPolicy } from './security';
-import { runSmokeTest } from './smoke';
+import { followWithSmokeDevice, runSmokeTest } from './smoke';
 import {
   editorWindows,
   isSceneOpenElsewhere,
@@ -50,6 +50,10 @@ void app.whenReady().then(() => {
   handleAssetProtocol();
   handleImportProtocol();
 
+  // A hidden window standing in for a phone, for the smoke harness. See
+  // `followWithSmokeDevice`.
+  const smokeDevice = process.env['STUDIO_SMOKE_DEVICE'] ? followWithSmokeDevice() : null;
+
   // One per process, and idle until something asks it to serve: it listens on
   // every interface, so it must never be listening without someone knowing.
   const devices = new DeviceServer({
@@ -61,6 +65,7 @@ void app.whenReady().then(() => {
       for (const win of editorWindows()) {
         if (!win.isDestroyed()) win.webContents.send(IPC_EVENTS.devicesChanged, status);
       }
+      smokeDevice?.(status);
     },
     trace: (line) => {
       if (isDev) console.log(`[devices] ${line}`);

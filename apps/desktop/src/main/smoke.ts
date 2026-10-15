@@ -1,6 +1,7 @@
 import { writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { app, type BrowserWindow } from 'electron';
+import type { DeviceServerStatus } from '@three-studio/core';
+import { BrowserWindow, app } from 'electron';
 import { beginQuit } from './windows';
 
 const PROBE = `(() => ({
@@ -100,4 +101,57 @@ async function run(win: BrowserWindow, errors: string[]): Promise<void> {
     beginQuit();
     app.exit(1);
   }
+}
+
+/**
+ * A device of the harness's own: with `STUDIO_SMOKE_DEVICE=1`, a hidden window
+ * opens on the device server's `localhost` link as soon as the server runs, so
+ * that the real client, the real player and the real protocol run before
+ * anyone picks up a phone. What its page logs is printed as `[smoke device]`.
+ *
+ * In a session of its own, held in memory, with the sandbox and no preload: a
+ * phone gets neither the editor's content security policy nor its storage, and
+ * neither should the page standing in for one. It closes when the server
+ * stops — every window gone is how the app quits, and this one must never be
+ * what keeps it alive — and opens again when the server runs again.
+ *
+ * It proves the path, not the phones: Electron's Chromium, on this computer,
+ * over `localhost`, which a browser counts as a secure context.
+ */
+export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
+  let device: BrowserWindow | null = null;
+  return (status) => {
+    if (status.state === 'stopped') {
+      if (device !== null && !device.isDestroyed()) device.destroy();
+      device = null;
+      return;
+    }
+    if (status.state !== 'running' || (device !== null && !device.isDestroyed())) return;
+    const url = status.urls.find((entry) => entry.address === 'localhost')?.url;
+    if (url === undefined) return;
+
+    const opened = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        partition: 'smoke-device',
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        // A hidden window is a background page to Chromium, which would slow
+        // its timers to a crawl — the heartbeat among them.
+        backgroundThrottling: false,
+      },
+    });
+    device = opened;
+    opened.webContents.on('console-message', ({ level, message }) => {
+      console.log(`[smoke device] ${level} ${message}`);
+    });
+    opened.webContents.on('did-fail-load', (_event, code, description, failed) => {
+      console.log(`[smoke device] could not load ${failed}: ${description} (${code})`);
+    });
+    console.log('[smoke device] opening the localhost link');
+    opened.loadURL(url).catch(() => {
+      // Said by `did-fail-load`, with what failed.
+    });
+  };
 }
