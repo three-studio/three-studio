@@ -364,4 +364,9 @@ export {
   createDeviceToken,
   isUsableDeviceToken,
 } from './devices/schema';
-export type { DeviceSettings, DeviceSettingsPatch, DeviceTransport } from './devices/schema';
+export type {
+  DeviceSettings,
+  DeviceSettingsPatch,
+  DeviceTransport,
+  DeviceUrl,
+} from './devices/schema';

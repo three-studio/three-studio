@@ -156,3 +156,17 @@ export function conformDeviceSettingsPatch(value: unknown): DeviceSettingsPatch 
   if (patch.port !== undefined && !isPort(patch.port)) delete patch.port;
   return patch;
 }
+
+/*
+ * --------------------------------------------------------------- the status
+ */
+
+/** One way to reach the server, as a person picks it: an address, what it is, and the link. */
+export interface DeviceUrl {
+  /** An IPv4 address the server listens on, or `localhost`. */
+  address: string;
+  /** The interface it is on, `Tailscale`, or `This computer` for `localhost`. */
+  label: string;
+  /** The page a device opens, token included. */
+  url: string;
+}
