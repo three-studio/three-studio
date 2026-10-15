@@ -29,14 +29,51 @@ interface DeviceState {
    * the server's current launch being this one — a launch from another
    * window replaces it there, never here. `null` until this window launches.
    */
-  ownLaunch: { id: string; snapshot: LaunchSnapshot } | null;
+  ownLaunch: OwnLaunch | null;
+  /**
+   * Why live reload stopped relaunching: the refusal of its last relaunch, or
+   * `null`. Mostly scripts that do not compile — files, which no change in
+   * the editor fixes — so a retry on every pause would be refused every time.
+   * A launch from this window that succeeds clears it, and so does turning
+   * live reload on again.
+   */
+  liveReloadRefused: string | null;
+}
+
+/** A launch this window made, and what it sent. */
+export interface OwnLaunch {
+  id: string;
+  snapshot: LaunchSnapshot;
 }
 
 export const useDeviceStore = create<DeviceState>()(() => ({
   status: null,
   popoverOpen: false,
   ownLaunch: null,
+  liveReloadRefused: null,
 }));
+
+/**
+ * What live reload is doing in this window:
+ * - `off`: the setting is off, or the server has not been read yet;
+ * - `idle`: on, with the server stopped or nothing launched;
+ * - `elsewhere`: on, while the devices run another window's launch — each
+ *   window holds one scene, and the phones follow the window that launched;
+ * - `paused`: on, held by a refusal;
+ * - `on`: relaunching a second after each change.
+ */
+export type LiveReloadState = 'off' | 'idle' | 'elsewhere' | 'paused' | 'on';
+
+export function liveReloadState(
+  status: DeviceServerStatus | null,
+  ownLaunch: Pick<OwnLaunch, 'id'> | null,
+  refused: string | null,
+): LiveReloadState {
+  if (status === null || !status.liveReload) return 'off';
+  if (status.state !== 'running' || status.launch === null) return 'idle';
+  if (ownLaunch === null || ownLaunch.id !== status.launch.id) return 'elsewhere';
+  return refused === null ? 'on' : 'paused';
+}
 
 export function showDevicePopover(): void {
   useDeviceStore.setState({ popoverOpen: true });

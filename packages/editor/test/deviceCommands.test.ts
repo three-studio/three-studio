@@ -21,10 +21,16 @@ import {
   newDeviceLink,
   openDevicePage,
   reclaimDevicePort,
+  relaunchOnDevices,
   restartDevice,
 } from '../src/commands/deviceCommands';
 import { useConsoleStore } from '../src/state/consoleStore';
-import { refreshDevices, useDeviceStore, watchDevices } from '../src/state/deviceStore';
+import {
+  liveReloadState,
+  refreshDevices,
+  useDeviceStore,
+  watchDevices,
+} from '../src/state/deviceStore';
 import { useDialogStore } from '../src/state/dialogStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useProjectStore } from '../src/state/projectStore';
@@ -165,7 +171,12 @@ const lastEntry = () => useConsoleStore.getState().entries.at(-1)!;
 beforeEach(() => {
   useToastStore.getState().clear();
   useConsoleStore.getState().clear();
-  useDeviceStore.setState({ status: null, popoverOpen: false, ownLaunch: null });
+  useDeviceStore.setState({
+    status: null,
+    popoverOpen: false,
+    ownLaunch: null,
+    liveReloadRefused: null,
+  });
   useDialogStore.getState().cancel();
   useDocumentStore.getState().replaceScene(createStarterScene());
   openProject();
@@ -368,6 +379,131 @@ describe('Launch on Devices', () => {
     expect(lastEntry().level).toBe('error');
     expect(lastEntry().text).toContain('Spin.ts:1:28');
     expect(lastEntry().text).not.toContain('Error invoking remote method');
+  });
+});
+
+describe('relaunching, for live reload', () => {
+  /** A launch made current, its id counted, and every device listed told of it. */
+  function current(id: number, devices: DeviceInfo[]): DeviceServerStatus {
+    return status({ liveReload: true, launch: { id: `launch-${id}`, at: id, sceneName: 'Level' }, devices });
+  }
+
+  const PHONES = [
+    device({ id: 'phone0001' }),
+    device({ id: 'phone0002', name: 'Android', browser: 'Chrome', address: '192.168.1.21' }),
+  ];
+
+  const REFUSAL =
+    "Error invoking remote method 'devices:launch': Error: Scripts did not compile:\nShout.ts:3:1: Expected \";\"";
+
+  it('says so in one Console line, which the next relaunch folds into, and in no toast', async () => {
+    let launches = 1;
+    install({ launch: async () => current((launches += 1), PHONES) });
+
+    await relaunchOnDevices(launchSnapshot());
+
+    expect(toasts()).toEqual([]);
+    expect(lastEntry()).toMatchObject({
+      level: 'log',
+      text: 'Relaunched “Level” on 2 devices',
+      count: 1,
+    });
+
+    const second = launchSnapshot();
+    await relaunchOnDevices(second);
+
+    expect(useConsoleStore.getState().entries).toHaveLength(1);
+    expect(lastEntry().count).toBe(2);
+    expect(useDeviceStore.getState().ownLaunch?.id).toBe('launch-3');
+    expect(useDeviceStore.getState().ownLaunch?.snapshot).toBe(second);
+  });
+
+  it('names no count when no device was there to restart', async () => {
+    install({ launch: async () => current(2, []) });
+
+    await relaunchOnDevices(launchSnapshot());
+
+    expect(lastEntry().text).toBe('Relaunched “Level”');
+  });
+
+  it('says nothing, and keeps the launch it had, when a newer launch or a stop dropped it', async () => {
+    const mine = { id: 'launch-1', snapshot: launchSnapshot() };
+    useDeviceStore.setState({ ownLaunch: mine });
+    install({ launch: async () => null });
+
+    await relaunchOnDevices(launchSnapshot());
+
+    expect(toasts()).toEqual([]);
+    expect(useConsoleStore.getState().entries).toEqual([]);
+    expect(useDeviceStore.getState().ownLaunch).toBe(mine);
+  });
+
+  it('pauses on a refusal, said once, until a launch from this window succeeds', async () => {
+    let refuse = true;
+    install({
+      launch: async () => {
+        if (refuse) throw new Error(REFUSAL);
+        return current(2, PHONES);
+      },
+    });
+    useDeviceStore.setState({
+      status: current(1, PHONES),
+      ownLaunch: { id: 'launch-1', snapshot: launchSnapshot() },
+    });
+
+    await relaunchOnDevices(launchSnapshot());
+
+    expect(toasts()).toHaveLength(1);
+    expect(lastToast()).toMatchObject({
+      kind: 'error',
+      title: 'Live reload paused',
+      description: 'Scripts did not compile:',
+    });
+    expect(lastToast().details).toBe('Scripts did not compile:\nShout.ts:3:1: Expected ";"');
+    expect(lastToast().actions?.map((action) => action.label)).toEqual(['Launch']);
+    expect(lastEntry()).toMatchObject({
+      level: 'error',
+      text: 'Live reload paused — the launch was refused: Scripts did not compile:\nShout.ts:3:1: Expected ";"',
+    });
+    const paused = useDeviceStore.getState();
+    expect(paused.liveReloadRefused).toBe('Scripts did not compile:\nShout.ts:3:1: Expected ";"');
+    expect(liveReloadState(paused.status, paused.ownLaunch, paused.liveReloadRefused)).toBe('paused');
+
+    refuse = false;
+    lastToast().actions![0]!.onClick();
+
+    await vi.waitFor(() => expect(useDeviceStore.getState().ownLaunch?.id).toBe('launch-2'));
+    expect(useDeviceStore.getState().liveReloadRefused).toBeNull();
+  });
+});
+
+describe('what live reload is doing in this window', () => {
+  const own = (id: string) => ({ id, snapshot: launchSnapshot() });
+
+  it('is off while the setting is, or before the server has been read', () => {
+    expect(liveReloadState(status({ liveReload: false }), own('launch-1'), null)).toBe('off');
+    expect(liveReloadState(null, own('launch-1'), null)).toBe('off');
+  });
+
+  it('is idle while the server is stopped, or runs with nothing launched', () => {
+    expect(
+      liveReloadState(status({ liveReload: true, state: 'stopped', launch: null }), null, null),
+    ).toBe('idle');
+    expect(liveReloadState(status({ liveReload: true, launch: null }), own('launch-1'), null)).toBe(
+      'idle',
+    );
+  });
+
+  it('is elsewhere while the devices run another window’s launch', () => {
+    expect(liveReloadState(status({ liveReload: true }), own('launch-9'), null)).toBe('elsewhere');
+    expect(liveReloadState(status({ liveReload: true }), null, null)).toBe('elsewhere');
+  });
+
+  it('is paused by a refusal, and on otherwise', () => {
+    expect(liveReloadState(status({ liveReload: true }), own('launch-1'), 'Scripts did not compile')).toBe(
+      'paused',
+    );
+    expect(liveReloadState(status({ liveReload: true }), own('launch-1'), null)).toBe('on');
   });
 });
 

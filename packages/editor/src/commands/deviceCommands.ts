@@ -154,11 +154,11 @@ function connectedDevices(status: DeviceServerStatus): DeviceInfo[] {
 }
 
 /** `Launched “Level 1” on 2 devices`, or without a count when no device was there to restart. */
-function launchedTitle(status: DeviceServerStatus): string {
+function launchedTitle(status: DeviceServerStatus, verb = 'Launched'): string {
   const name = `“${status.launch?.sceneName ?? 'Scene'}”`;
   const count = connectedDevices(status).length;
-  if (count === 0) return `Launched ${name}`;
-  return `Launched ${name} on ${count} ${count === 1 ? 'device' : 'devices'}`;
+  if (count === 0) return `${verb} ${name}`;
+  return `${verb} ${name} on ${count} ${count === 1 ? 'device' : 'devices'}`;
 }
 
 /**
@@ -174,14 +174,18 @@ function launchedNotes(status: DeviceServerStatus): string[] {
 }
 
 /**
- * The one call that launches. A launch that became current is this window's,
- * kept with the snapshot it sent; `null` — a newer launch, from any window, or
- * a stop dropped it while it was prepared — leaves the one kept as it was.
+ * The one call that launches, by hand or for live reload. A launch that became
+ * current is this window's, kept with the snapshot it sent, and lifts a pause
+ * of live reload: a launch got through. `null` — a newer launch, from any
+ * window, or a stop dropped it while it was prepared — leaves both as they
+ * were.
  */
 async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
   const status = await window.studio.devices.launch(snapshot);
   const launch = status?.launch ?? null;
-  if (launch !== null) useDeviceStore.setState({ ownLaunch: { id: launch.id, snapshot } });
+  if (launch !== null) {
+    useDeviceStore.setState({ ownLaunch: { id: launch.id, snapshot }, liveReloadRefused: null });
+  }
   return status;
 }
 
@@ -208,6 +212,42 @@ export async function launchOnDevices(): Promise<void> {
   } catch (cause) {
     showFailure('Could not launch on devices', cause, id);
   }
+}
+
+/**
+ * Relaunches what is on screen, for live reload — a second after each change,
+ * so quietly: no toast, and one Console line, which folds into the one before
+ * it when nothing came between them. Not in the table below: its argument is
+ * the snapshot live reload read, and only live reload dispatches it. Never
+ * rejects.
+ *
+ * A refusal is said once, then holds live reload until a launch from this
+ * window succeeds. What refuses a launch is mostly scripts that do not
+ * compile: files, which no change in the editor fixes, so a relaunch on every
+ * pause would be refused — and a toast raised — every time.
+ */
+export async function relaunchOnDevices(snapshot: LaunchSnapshot): Promise<void> {
+  let status: DeviceServerStatus | null;
+  try {
+    status = await sendLaunch(snapshot);
+  } catch (cause) {
+    const message = ipcErrorMessage(cause);
+    useDeviceStore.setState({ liveReloadRefused: message });
+    useToastStore.getState().push({
+      kind: 'error',
+      title: 'Live reload paused',
+      description: message.split('\n')[0],
+      progress: undefined,
+      details: message,
+      detailsOpen: false,
+      actions: [{ label: 'Launch', primary: true, onClick: () => void launchOnDevices() }],
+    });
+    useConsoleStore
+      .getState()
+      .append('error', `Live reload paused — the launch was refused: ${message}`);
+    return;
+  }
+  if (status !== null) useConsoleStore.getState().append('log', launchedTitle(status, 'Relaunched'));
 }
 
 /**
