@@ -12,6 +12,8 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { announce } from './announce';
+import { unlockAudioOnGesture } from './audioGesture';
 import { entrySceneName, sceneIdOf } from './scenes';
 import { runSettingsOf } from './settings';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
@@ -186,7 +188,7 @@ async function boot(): Promise<void> {
   // The third of the three modes that used to answer the question for itself.
   const { rendering, physics } = runSettingsOf(build);
 
-  const { renderer } = await createRenderer({
+  const { renderer, backend } = await createRenderer({
     canvas,
     forceWebGL: rendering.forceWebGL,
     antialias: rendering.antialias,
@@ -196,8 +198,8 @@ async function boot(): Promise<void> {
   });
 
   // Built before the host so the engine can mix into it. A browser will not
-  // start it here — that takes a user gesture, which is what the Start button
-  // below is for.
+  // start it here — that takes a user gesture: the Play button below, or the
+  // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
 
   // Hosted rather than a single engine: a game is a sequence of scenes, and a
@@ -264,15 +266,31 @@ async function boot(): Promise<void> {
   });
 
   message.textContent = build.title || scene.name;
-  startButton.hidden = false;
-  startButton.addEventListener('click', () => {
+  let started = false;
+  // What the Play button does, once: a page the editor restarted calls it
+  // without the button, and a click that lands after it must not do it twice.
+  const start = (): void => {
+    if (started) return;
+    started = true;
     overlay.hidden = true;
     canvas.focus();
     // The gesture the whole page exists to collect, as far as audio is
     // concerned: a context created without one stays suspended, and a build
     // that is silent for that reason says nothing about it anywhere.
     void host.engine?.audio?.unlock();
-  });
+  };
+  startButton.hidden = false;
+  startButton.addEventListener('click', start);
+  // Any gesture, not only the Play button: a page started without it — a
+  // phone the editor restarted — would otherwise stay silent for good. In an
+  // export the Play tap is the first gesture, and starts the sound as before.
+  if (audioContext !== undefined) {
+    unlockAudioOnGesture(
+      window,
+      () => void host.engine?.audio?.unlock(),
+      () => audioContext.state === 'running',
+    );
+  }
 
   // A game nobody is looking at is a game nobody should be hearing. The root
   // gain and not `context.suspend()`, so the timeline keeps running and a
@@ -299,10 +317,15 @@ async function boot(): Promise<void> {
     resize();
   };
   watch();
+
+  // Last, once the page is whole: whoever hears this may start the game at
+  // once. See `announce.ts` for who does.
+  announce({ state: 'running', backend, renderer, host, start });
 }
 
 boot().catch((cause: unknown) => {
   const text = cause instanceof Error ? cause.message : String(cause);
   if (message) message.textContent = `Could not start: ${text}`;
   console.error('[studio] boot failed:', cause);
+  announce({ state: 'failed', error: text });
 });
