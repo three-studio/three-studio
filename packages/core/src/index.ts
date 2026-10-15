@@ -291,6 +291,8 @@ export type { ComponentDefinition, ComponentIcon } from './components';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';
+/* How a console call's arguments read: in the editor's Console, and on a device. */
+export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */
 export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 

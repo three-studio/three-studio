@@ -1,3 +1,4 @@
+import { formatLogArgs } from '@three-studio/core';
 import { create } from 'zustand';
 
 export type LogLevel = 'log' | 'warn' | 'error';
@@ -47,20 +48,6 @@ export const useConsoleStore = create<ConsoleState>()((set) => ({
     set((state) => ({ levels: { ...state.levels, [level]: !state.levels[level] } })),
 }));
 
-function format(args: readonly unknown[]): string {
-  return args
-    .map((arg) => {
-      if (typeof arg === 'string') return arg;
-      if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
-      try {
-        return JSON.stringify(arg);
-      } catch {
-        return String(arg);
-      }
-    })
-    .join(' ');
-}
-
 let installed = false;
 
 /**
@@ -75,22 +62,28 @@ export function captureConsole(): void {
   if (installed) return;
   installed = true;
 
-  const append = (level: LogLevel) => {
-    const original = console[level].bind(console);
-    return (...args: unknown[]) => {
+  const hook = (method: 'log' | 'info' | 'warn' | 'error', level: LogLevel) => {
+    const original = console[method].bind(console);
+    console[method] = (...args: unknown[]) => {
       original(...args);
-      useConsoleStore.getState().append(level, format(args));
+      useConsoleStore.getState().append(level, formatLogArgs(args));
     };
   };
 
-  console.log = append('log');
-  console.warn = append('warn');
-  console.error = append('error');
+  hook('log', 'log');
+  // A message like any other: the Console has three levels, and a script's
+  // `console.info` reaches it from a phone, so it must from Play too.
+  // `debug` stays out, for the probes that log every event to devtools alone.
+  hook('info', 'log');
+  hook('warn', 'warn');
+  hook('error', 'error');
 
   window.addEventListener('error', (event) => {
     useConsoleStore.getState().append('error', event.message);
   });
   window.addEventListener('unhandledrejection', (event) => {
-    useConsoleStore.getState().append('error', `Unhandled rejection: ${String(event.reason)}`);
+    useConsoleStore
+      .getState()
+      .append('error', `Unhandled rejection: ${formatLogArgs([event.reason])}`);
   });
 }
