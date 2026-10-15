@@ -6,6 +6,8 @@ import {
   DEVICE_PROTOCOL_VERSION,
   DEVICE_RATE,
   DEVICE_RETRY_MS,
+  DEVICE_SCREENSHOT_RATE,
+  DEVICE_SCREENSHOT_WAIT_MS,
   DEVICE_SILENCE_MS,
   DEVICE_STATS_RATE,
   DEVICE_STREAMS_PER_DEVICE,
@@ -13,7 +15,9 @@ import {
   conformLogMessage,
   conformStatsReport,
   conformStatusReport,
+  createId,
   describeUserAgent,
+  deviceLabel,
   isDeviceId,
   type DeviceHello,
   type DeviceInfo,
@@ -60,13 +64,38 @@ export interface DeviceLinkOptions {
 /** What became of a message: kept, dropped without a word, or refused for its rate. */
 export type DeviceReceipt = 'applied' | 'ignored' | 'limited';
 
+/** A device's frame, as its upload brought it: the PNG's bytes, and the size its header says. */
+export interface DeviceFrame {
+  bytes: Uint8Array;
+  width: number;
+  height: number;
+}
+
+/**
+ * What the route settles a screenshot request with, once it reads the upload
+ * that answers it. The first call settles it; any after that does nothing.
+ */
+export interface ScreenshotUpload {
+  /** The device, as its row says it, for the words of a refusal. */
+  label: string;
+  accept: (bytes: Uint8Array, size: { width: number; height: number }) => void;
+  refuse: (message: string) => void;
+}
+
 /**
  * The rates a device's messages are counted against, each apart from the
  * others: a game that logs every frame must never spend the hellos and
  * statuses that keep its row alive — a heartbeat refused long enough is a
- * device ended for silence — and neither must its stats.
+ * device ended for silence — and neither must its stats. Screenshots are
+ * counted where the server asks for them, since a request is what makes a
+ * phone copy and encode its canvas.
  */
-const RATES = { link: DEVICE_RATE, log: DEVICE_LOG_RATE, stats: DEVICE_STATS_RATE } as const;
+const RATES = {
+  link: DEVICE_RATE,
+  log: DEVICE_LOG_RATE,
+  stats: DEVICE_STATS_RATE,
+  screenshot: DEVICE_SCREENSHOT_RATE,
+} as const;
 
 type RateKind = keyof typeof RATES;
 
@@ -89,8 +118,23 @@ interface Entry {
   heard: number;
   /** Since when it has had no stream, while it is listed as offline. */
   offlineSince: number | null;
-  /** When it posted, within the last window of each rate. */
+  /** When it posted — or, for screenshots, was asked — within the last window of each rate. */
   posts: Record<RateKind, number[]>;
+}
+
+/** A frame asked of a device, until its upload is accepted or refused, or the request ends. */
+interface PendingScreenshot {
+  /** Its id, `createId(16)`: the one permission an upload carries beside the token. */
+  request: string;
+  device: string;
+  label: string;
+  promise: Promise<DeviceFrame>;
+  resolve: (frame: DeviceFrame) => void;
+  reject: (error: Error) => void;
+  /** Gives up on an upload that has not begun; cleared once one has. */
+  timer: ReturnType<typeof setTimeout> | null;
+  /** An upload has begun: the route reads it, and no other may answer. */
+  receiving: boolean;
 }
 
 /** How often the silence and forgetting rules are checked. */
@@ -117,6 +161,8 @@ function describeState(info: Pick<DeviceInfo, 'state' | 'backend' | 'error'>): s
 
 export class DeviceLink {
   private readonly entries = new Map<string, Entry>();
+  /** By request id: an upload names its request, not its device. */
+  private readonly screenshots = new Map<string, PendingScreenshot>();
   private helloCount = 0;
   private readonly timers: ReturnType<typeof setInterval>[];
 
@@ -162,7 +208,7 @@ export class DeviceLink {
         order: 0,
         heard: this.now(),
         offlineSince: null,
-        posts: { link: [], log: [], stats: [] },
+        posts: { link: [], log: [], stats: [], screenshot: [] },
       };
       this.entries.set(device, entry);
     } else if (entry.streams.length >= DEVICE_STREAMS_PER_DEVICE) {
@@ -249,6 +295,88 @@ export class DeviceLink {
   }
 
   /**
+   * Asks a device for the next frame its player draws, and resolves once the
+   * route has taken the upload that answers.
+   *
+   * The request is written to every stream of the device, since its tabs share
+   * its id and only a visible one can answer. One request per device at a
+   * time: asked again meanwhile, the device is not asked twice, and both get
+   * the same frame. An upload must begin within `DEVICE_SCREENSHOT_WAIT_MS`;
+   * once begun it is the route's to time, since a large frame on a slow
+   * Wi-Fi may take longer than that to arrive.
+   */
+  requestScreenshot(device: string): Promise<DeviceFrame> {
+    const entry = this.entries.get(device);
+    if (entry === undefined || entry.streams.length === 0 || entry.info === null) {
+      return Promise.reject(new Error('That device is not connected.'));
+    }
+    const asked = this.screenshotOf(device);
+    if (asked !== undefined) return asked.promise;
+    const label = deviceLabel(entry.info);
+    if (!this.withinRate(entry, 'screenshot')) {
+      return Promise.reject(new Error(`Too many screenshots from ${label}: wait a few seconds.`));
+    }
+    let resolve!: (frame: DeviceFrame) => void;
+    let reject!: (error: Error) => void;
+    const promise = new Promise<DeviceFrame>((resolved, rejected) => {
+      resolve = resolved;
+      reject = rejected;
+    });
+    const screenshot: PendingScreenshot = {
+      request: createId(16),
+      device,
+      label,
+      promise,
+      resolve,
+      reject,
+      timer: null,
+      receiving: false,
+    };
+    const seconds = DEVICE_SCREENSHOT_WAIT_MS / 1000;
+    screenshot.timer = setTimeout(
+      () =>
+        this.refuseScreenshot(
+          screenshot,
+          `No frame came back from ${label} within ${seconds} s. Is the game in front on the device?`,
+        ),
+      DEVICE_SCREENSHOT_WAIT_MS,
+    );
+    screenshot.timer.unref?.();
+    this.screenshots.set(screenshot.request, screenshot);
+    const message = line({
+      v: DEVICE_PROTOCOL_VERSION,
+      type: 'screenshot',
+      request: screenshot.request,
+    });
+    for (const { stream } of entry.streams) stream.write(message);
+    this.trace(`screenshot asked of ${label}`);
+    return promise;
+  }
+
+  /**
+   * The request an upload names, for the route to read the upload and settle
+   * the request with — or `null` when it names none still waiting, or one whose
+   * upload has already begun: an upload is read only when it answers a request
+   * the server made, and only one upload answers it.
+   */
+  screenshotUpload(request: string): ScreenshotUpload | null {
+    const screenshot = this.screenshots.get(request);
+    if (screenshot === undefined || screenshot.receiving) return null;
+    screenshot.receiving = true;
+    if (screenshot.timer !== null) clearTimeout(screenshot.timer);
+    screenshot.timer = null;
+    return {
+      label: screenshot.label,
+      accept: (bytes, { width, height }) => {
+        if (!this.settled(screenshot)) return;
+        this.trace(`screenshot from ${screenshot.label}: ${width}×${height}, ${bytes.length} bytes`);
+        screenshot.resolve({ bytes, width, height });
+      },
+      refuse: (message) => this.refuseScreenshot(screenshot, message),
+    };
+  }
+
+  /**
    * Tells every device that the editor stopped serving, then ends every
    * stream and forgets every device.
    *
@@ -258,6 +386,7 @@ export class DeviceLink {
    */
   stop(): void {
     for (const timer of this.timers) clearInterval(timer);
+    this.endScreenshots((label) => `The device server stopped before ${label} sent its frame.`);
     const stopped = line({ v: DEVICE_PROTOCOL_VERSION, type: 'stopped' });
     for (const entry of this.entries.values()) {
       for (const { stream } of entry.streams) {
@@ -278,6 +407,8 @@ export class DeviceLink {
    */
   reopen(transport: DeviceTransport): void {
     const reopen = line({ v: DEVICE_PROTOCOL_VERSION, type: 'reopen', transport });
+    const scheme = transport.toUpperCase();
+    this.endScreenshots((label) => `${label} moved to ${scheme} before sending its frame.`);
     this.changing(() => {
       for (const entry of this.entries.values()) {
         for (const { stream } of entry.streams) {
@@ -307,6 +438,10 @@ export class DeviceLink {
         if (kept.length === 0) {
           this.entries.delete(entry.id);
           this.trace(`${entry.id} forgotten: it had the old link`);
+          this.endScreenshot(
+            entry.id,
+            (label) => `The device link was renewed before ${label} sent its frame.`,
+          );
         }
       }
     });
@@ -353,11 +488,9 @@ export class DeviceLink {
       };
       if (restartOn !== null) this.tell(entry, restartOn);
     });
-    const { name, browser } = describeUserAgent(hello.userAgent);
-    this.trace(
-      `${entry.id} said hello: ${name} · ${browser} from ${entry.address}, ${describeState(hello)}`,
-    );
-    if (hello.reloaded) this.trace(`${name} · ${browser} was reloaded by its browser`);
+    const label = deviceLabel(describeUserAgent(hello.userAgent));
+    this.trace(`${entry.id} said hello: ${label} from ${entry.address}, ${describeState(hello)}`);
+    if (hello.reloaded) this.trace(`${label} was reloaded by its browser`);
     if (restartOn !== null) this.trace(`${entry.id} told to restart on the current launch`);
     return 'applied';
   }
@@ -423,7 +556,7 @@ export class DeviceLink {
     if (!this.withinRate(entry, 'stats')) return 'limited';
     entry.heard = this.now();
     const { v: _v, device: _device, launch: _launch, ...stats } = report;
-    const label = `${info.name} · ${info.browser}`;
+    const label = deviceLabel(info);
     // A state worth a line, rather than every report: one every two seconds
     // per device would bury the trace.
     if (stats.pinned30 && info.stats?.pinned30 !== true) this.trace(`${label} held at 30 fps`);
@@ -444,13 +577,16 @@ export class DeviceLink {
 
   /**
    * Sends a launch down every stream of a device, which turns booting, its
-   * stats emptied for the page that replaces this one. `false` with no stream.
+   * stats emptied for the page that replaces this one, and the frame asked of
+   * it given up: the page that would have drawn it is going. `false` with no
+   * stream.
    */
   private tell(entry: Entry, launchId: string): boolean {
     if (entry.streams.length === 0) return false;
     const message = line({ v: DEVICE_PROTOCOL_VERSION, type: 'launch', launch: launchId });
     for (const { stream } of entry.streams) stream.write(message);
     if (entry.info !== null) entry.info = { ...entry.info, state: 'booting', stats: null };
+    this.endScreenshot(entry.id, (label) => `${label} restarted before sending its frame.`);
     return true;
   }
 
@@ -497,8 +633,8 @@ export class DeviceLink {
 
   /**
    * A device left with no stream: listed as offline for a while, its stats
-   * emptied — nothing measures there any more — or dropped if it never said
-   * hello.
+   * emptied — nothing measures there any more — and the frame asked of it
+   * given up; or dropped if it never said hello.
    */
   private disconnected(entry: Entry, now: number): void {
     if (entry.info === null) {
@@ -507,6 +643,44 @@ export class DeviceLink {
     }
     entry.info = { ...entry.info, stats: null };
     entry.offlineSince = now;
+    this.endScreenshot(entry.id, (label) => `${label} went away before sending its frame.`);
+  }
+
+  /** The frame asked of a device and not yet settled, whether or not its upload has begun. */
+  private screenshotOf(device: string): PendingScreenshot | undefined {
+    for (const screenshot of this.screenshots.values()) {
+      if (screenshot.device === device) return screenshot;
+    }
+    return undefined;
+  }
+
+  /**
+   * Takes a request out of those waiting, its timer with it. `false` when it
+   * was settled already: the first answer is the one that counts.
+   */
+  private settled(screenshot: PendingScreenshot): boolean {
+    if (this.screenshots.get(screenshot.request) !== screenshot) return false;
+    this.screenshots.delete(screenshot.request);
+    if (screenshot.timer !== null) clearTimeout(screenshot.timer);
+    return true;
+  }
+
+  private refuseScreenshot(screenshot: PendingScreenshot, reason: string): void {
+    if (!this.settled(screenshot)) return;
+    this.trace(`screenshot from ${screenshot.label} failed: ${reason}`);
+    screenshot.reject(new Error(reason));
+  }
+
+  /** Ends the frame asked of a device early, in words that say why. */
+  private endScreenshot(device: string, why: (label: string) => string): void {
+    const screenshot = this.screenshotOf(device);
+    if (screenshot !== undefined) this.refuseScreenshot(screenshot, why(screenshot.label));
+  }
+
+  private endScreenshots(why: (label: string) => string): void {
+    for (const screenshot of [...this.screenshots.values()]) {
+      this.refuseScreenshot(screenshot, why(screenshot.label));
+    }
   }
 
   private withinRate(entry: Entry, kind: RateKind): boolean {

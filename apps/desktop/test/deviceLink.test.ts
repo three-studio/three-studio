@@ -1,6 +1,7 @@
 import type { DeviceLogs } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DeviceLink, type DeviceStream } from '../src/main/devices/deviceLink';
+import { DeviceLink, type DeviceFrame, type DeviceStream } from '../src/main/devices/deviceLink';
+import { pngOf } from './png';
 
 /*
  * The server's side of the link with each device, without HTTP: a stream is
@@ -678,5 +679,225 @@ describe('a new link', () => {
     expect(old.ended).toBe(true);
     expect(fresh.ended).toBe(false);
     expect(link.list().map((device) => device.id)).toEqual([id(2)]);
+  });
+});
+
+describe('a screenshot', () => {
+  const frame = pngOf(3, 2);
+  const size = { width: 3, height: 2 };
+
+  /**
+   * Asks a device for its frame, the answer marked as handled: a test that
+   * leaves it pending has it rejected by the link's stop, after the test.
+   */
+  function ask(device: string): Promise<DeviceFrame> {
+    const asked = link.requestScreenshot(device);
+    asked.catch(() => {});
+    return asked;
+  }
+
+  /** The requests a stream was sent, in order. */
+  function requests(stream: RecordedStream): string[] {
+    return messages(stream)
+      .filter((message) => message['type'] === 'screenshot')
+      .map((message) => String(message['request']));
+  }
+
+  function lastRequest(stream: RecordedStream): string {
+    return requests(stream).at(-1) ?? '';
+  }
+
+  it('is asked of every stream of the device, under one request', () => {
+    const first = connect(id(1));
+    const secondTab = recorded();
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream: secondTab });
+    const other = connect(id(2));
+
+    ask(id(1));
+
+    expect(requests(first)).toHaveLength(1);
+    expect(requests(secondTab)).toEqual(requests(first));
+    expect(requests(other)).toEqual([]);
+    expect(traced).toContain('screenshot asked of iPhone · Safari');
+  });
+
+  it('resolves with the frame its upload brought', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+
+    const upload = link.screenshotUpload(lastRequest(stream));
+    expect(upload?.label).toBe('iPhone · Safari');
+    upload?.accept(frame, size);
+
+    await expect(asked).resolves.toEqual({ bytes: frame, width: 3, height: 2 });
+    expect(traced).toContain(`screenshot from iPhone · Safari: 3×2, ${frame.length} bytes`);
+    // Answered: the request's id is no permission any more.
+    expect(link.screenshotUpload(lastRequest(stream))).toBeNull();
+  });
+
+  it('is taken by one upload at a time', () => {
+    const stream = connect(id(1));
+    ask(id(1));
+
+    expect(link.screenshotUpload(lastRequest(stream))).not.toBeNull();
+    expect(link.screenshotUpload(lastRequest(stream))).toBeNull();
+  });
+
+  it('is taken by no upload it did not ask for', () => {
+    connect(id(1));
+    ask(id(1));
+
+    expect(link.screenshotUpload('Ab3dE6gH9jK2mN5p')).toBeNull();
+  });
+
+  it('rejects with what the upload was refused for', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+
+    link.screenshotUpload(lastRequest(stream))?.refuse('x');
+
+    await expect(asked).rejects.toThrow('x');
+    expect(traced).toContain('screenshot from iPhone · Safari failed: x');
+  });
+
+  it('joins the one already asked of the device', () => {
+    const stream = connect(id(1));
+
+    const first = ask(id(1));
+    const second = ask(id(1));
+
+    expect(second).toBe(first);
+    expect(requests(stream)).toHaveLength(1);
+  });
+
+  it('gives up when no upload has begun within 10 s, and the next is asked afresh', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+
+    vi.advanceTimersByTime(9_999);
+    expect(link.screenshotUpload('Ab3dE6gH9jK2mN5p')).toBeNull();
+    vi.advanceTimersByTime(1);
+
+    await expect(asked).rejects.toThrow(
+      'No frame came back from iPhone · Safari within 10 s. Is the game in front on the device?',
+    );
+    expect(link.screenshotUpload(requests(stream)[0] ?? '')).toBeNull();
+    ask(id(1));
+    expect(requests(stream)).toHaveLength(2);
+  });
+
+  it('waits for an upload begun in time, however long it takes: the route times it on its own', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+
+    vi.advanceTimersByTime(9_000);
+    const upload = link.screenshotUpload(lastRequest(stream));
+    vi.advanceTimersByTime(20_000);
+    upload?.accept(frame, size);
+
+    await expect(asked).resolves.toMatchObject(size);
+  });
+
+  it('is asked five times in 10 s at most, and a sixth writes nothing', async () => {
+    const stream = connect(id(1));
+    for (let n = 0; n < 5; n += 1) {
+      const asked = ask(id(1));
+      link.screenshotUpload(lastRequest(stream))?.accept(frame, size);
+      await asked;
+    }
+
+    await expect(link.requestScreenshot(id(1))).rejects.toThrow(
+      'Too many screenshots from iPhone · Safari: wait a few seconds.',
+    );
+    expect(requests(stream)).toHaveLength(5);
+
+    vi.advanceTimersByTime(10_000);
+    ask(id(1));
+    expect(requests(stream)).toHaveLength(6);
+  });
+
+  it('spends nothing of the link’s rate, nor the link of its', async () => {
+    const stream = connect(id(1));
+    for (let n = 2; n <= 20; n += 1) link.receive('status', status(id(1)));
+
+    const asked = ask(id(1));
+    link.screenshotUpload(lastRequest(stream))?.accept(frame, size);
+
+    await expect(asked).resolves.toMatchObject(size);
+    expect(link.receive('status', status(id(1)))).toBe('limited');
+  });
+
+  it('is refused at once for a device offline, or one never seen', async () => {
+    const stream = recorded();
+    const close = link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
+    link.receive('hello', hello(id(1)));
+    close?.();
+
+    await expect(link.requestScreenshot(id(1))).rejects.toThrow('That device is not connected.');
+    await expect(link.requestScreenshot(id(9))).rejects.toThrow('That device is not connected.');
+    expect(requests(stream)).toEqual([]);
+  });
+
+  it('is refused for a device that never said hello', async () => {
+    link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream: recorded() });
+
+    await expect(link.requestScreenshot(id(1))).rejects.toThrow('That device is not connected.');
+  });
+
+  it.each([
+    ['a launch', () => link.launch(L2), 'iPhone · Safari restarted before sending its frame.'],
+    ['a restart', () => link.restart(id(1), L1), 'iPhone · Safari restarted before sending its frame.'],
+    [
+      'a change of transport',
+      () => link.reopen('https'),
+      'iPhone · Safari moved to HTTPS before sending its frame.',
+    ],
+    [
+      'a new link',
+      () => link.closeOpenedWithout('newtokennewtokennewtok'),
+      'The device link was renewed before iPhone · Safari sent its frame.',
+    ],
+    ['a stop', () => link.stop(), 'The device server stopped before iPhone · Safari sent its frame.'],
+  ])('ends with %s, in its own words', async (_name, end, words) => {
+    connect(id(1));
+    const asked = ask(id(1));
+
+    end();
+
+    await expect(asked).rejects.toThrow(words);
+    expect(traced).toContain(`screenshot from iPhone · Safari failed: ${words}`);
+  });
+
+  it('ends when the device’s last stream does', async () => {
+    const stream = recorded();
+    const close = link.open({ device: id(1), token: TOKEN, address: '192.168.1.20', stream });
+    link.receive('hello', hello(id(1)));
+    const asked = ask(id(1));
+
+    close?.();
+
+    await expect(asked).rejects.toThrow('iPhone · Safari went away before sending its frame.');
+  });
+
+  it('ends while its upload is on its way, which then settles nothing', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+    const upload = link.screenshotUpload(lastRequest(stream));
+
+    link.launch(L2);
+    upload?.accept(frame, size);
+
+    await expect(asked).rejects.toThrow('iPhone · Safari restarted before sending its frame.');
+  });
+
+  it('is left alone by a launch that reaches another device', async () => {
+    const stream = connect(id(1));
+    const asked = ask(id(1));
+    connect(id(2));
+
+    link.restart(id(2), L1);
+    link.screenshotUpload(lastRequest(stream))?.accept(frame, size);
+
+    await expect(asked).resolves.toMatchObject(size);
   });
 });
