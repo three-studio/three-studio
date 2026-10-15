@@ -549,7 +549,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     stop: (): Promise<DeviceServerStatus> => deps.devices.stop(),
 
-    launch: (_event, snapshot: LaunchSnapshot): Promise<DeviceServerStatus> =>
+    launch: (_event, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> =>
       // Conformed here, where it arrives: it is whatever the renderer sent, and
       // it becomes the files a phone downloads. See `conformLaunchSnapshot`.
       deps.devices.launch(requireProject(), conformLaunchSnapshot(snapshot)),

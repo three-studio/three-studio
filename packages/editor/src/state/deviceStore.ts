@@ -1,4 +1,9 @@
-import type { DeviceLogs, DeviceServerStatus, PortHolder } from '@three-studio/core';
+import type {
+  DeviceLogs,
+  DeviceServerStatus,
+  LaunchSnapshot,
+  PortHolder,
+} from '@three-studio/core';
 import { create } from 'zustand';
 import { useConsoleStore, type LogLine } from './consoleStore';
 
@@ -18,9 +23,20 @@ interface DeviceState {
    * button, so that the launch toast's *Show QR Code* can open it too.
    */
   popoverOpen: boolean;
+  /**
+   * The last launch this window made that became current: its id, and the
+   * snapshot it sent. Whether the devices still run this window's scene is
+   * the server's current launch being this one — a launch from another
+   * window replaces it there, never here. `null` until this window launches.
+   */
+  ownLaunch: { id: string; snapshot: LaunchSnapshot } | null;
 }
 
-export const useDeviceStore = create<DeviceState>()(() => ({ status: null, popoverOpen: false }));
+export const useDeviceStore = create<DeviceState>()(() => ({
+  status: null,
+  popoverOpen: false,
+  ownLaunch: null,
+}));
 
 export function showDevicePopover(): void {
   useDeviceStore.setState({ popoverOpen: true });

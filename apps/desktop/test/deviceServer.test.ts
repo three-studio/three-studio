@@ -234,6 +234,17 @@ async function device(port: number, id: string): Promise<Listening> {
 
 const launchLine = (id: string | undefined): string => `"type":"launch","launch":"${id}"`;
 
+/** A launch nothing overtakes: the status in which it is current, never `null`. */
+async function launchOn(
+  devices: DeviceServer,
+  root: string,
+  launch?: LaunchSnapshot,
+): Promise<DeviceServerStatus> {
+  const status = await devices.launch(root, launch ?? (await snapshot(root)));
+  if (status === null) throw new Error('the launch was dropped');
+  return status;
+}
+
 async function project(script?: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-server-project-'));
   const root = (await createProject('Races', parent)).summary.path;
@@ -406,7 +417,7 @@ describe('launching', () => {
     const devices = server(file, await template());
     const root = await project();
 
-    const status = await devices.launch(root, await snapshot(root));
+    const status = await launchOn(devices, root);
 
     expect(status.state).toBe('running');
     expect(status.launch?.sceneName).toBe((await discoverScenes(root))[0]!.name);
@@ -419,8 +430,8 @@ describe('launching', () => {
     const devices = server(file, await template());
     const root = await project();
 
-    const first = await devices.launch(root, await snapshot(root, 1.25));
-    const second = await devices.launch(root, await snapshot(root, 2.5));
+    const first = await launchOn(devices, root, await snapshot(root, 1.25));
+    const second = await launchOn(devices, root, await snapshot(root, 2.5));
 
     expect(second.launch?.id).not.toBe(first.launch?.id);
     const served = JSON.parse((await get(port, `/${TOKEN}/build.json`)).body);
@@ -443,19 +454,40 @@ describe('launching', () => {
     holders.push(free!);
   });
 
-  it('drops a launch a stop overtook while it was prepared', async () => {
+  it('drops a launch a stop overtook while it was prepared, and says it did not happen', async () => {
     const port = await freePort();
     const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
-    const devices = server(file, await template());
+    const traced: string[] = [];
+    const devices = server(file, await template(), undefined, (line) => traced.push(line));
     const root = await project('export default class Spin {}\n');
 
     const launching = devices.launch(root, await snapshot(root));
     await devices.stop();
-    const status = await launching;
 
-    expect(status.state).toBe('stopped');
-    expect(status.launch).toBeNull();
+    // `null` rather than a status: a window keeps the launch it made, and a
+    // status of the moment would name no launch, or another window's.
+    expect(await launching).toBeNull();
     expect((await devices.status()).launch).toBeNull();
+    expect(traced).toContain('launch dropped: the server stopped');
+  });
+
+  it('drops a launch a newer one overtook, which resolves the status naming its own id', async () => {
+    const port = await freePort();
+    const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
+    const traced: string[] = [];
+    const devices = server(file, await template(), undefined, (line) => traced.push(line));
+    const root = await project();
+
+    const first = devices.launch(root, await snapshot(root, 1.25));
+    const second = devices.launch(root, await snapshot(root, 2.5));
+
+    expect(await first).toBeNull();
+    const current = await second;
+    expect(current?.launch?.id).toBeDefined();
+    expect(current?.launch?.id).toBe((await devices.status()).launch?.id);
+    const served = JSON.parse((await get(port, `/${TOKEN}/build.json`)).body);
+    expect(served.rendering.exposure).toBe(2.5);
+    expect(traced).toContain('launch dropped for a newer one');
   });
 
   it('forgets the launch when stopped, and serves the waiting page when started again', async () => {
@@ -577,7 +609,7 @@ describe('a kept port held by another Three Studio', () => {
     const child = await holdFromChild(port);
     const { devices } = await keptPortServer(port);
     const root = await project();
-    const launched = await devices.launch(root, await snapshot(root));
+    const launched = await launchOn(devices, root);
 
     const status = await devices.reclaimPort(async () => true);
     await exited(child);
@@ -736,7 +768,7 @@ describe('live reload', () => {
       (line) => traced.push(line),
     );
     const root = await project();
-    const launched = await devices.launch(root, await snapshot(root));
+    const launched = await launchOn(devices, root);
     expect(launched.liveReload).toBe(false);
 
     const status = await devices.saveSettings({ liveReload: true });
@@ -836,7 +868,7 @@ describe('the devices', () => {
     await devices.start();
     const phone = await device(port, 'phoneDevice00001');
 
-    const status = await devices.launch(root, await snapshot(root));
+    const status = await launchOn(devices, root);
 
     expect(await phone.until((text) => text.includes(launchLine(status.launch?.id)))).toContain(
       launchLine(status.launch?.id),
@@ -912,7 +944,7 @@ describe('restarting one device', () => {
     await devices.start();
     const first = await device(port, 'phoneDevice00003');
     const second = await device(port, 'phoneDevice00004');
-    const launched = await devices.launch(root, await snapshot(root));
+    const launched = await launchOn(devices, root);
     const line = launchLine(launched.launch?.id);
     await first.until((text) => text.includes(line));
     await second.until((text) => text.includes(line));
@@ -1226,7 +1258,7 @@ describe('over HTTPS', () => {
     expect(await postOverTls(port, ca, 'hello', hello, `https://127.0.0.1:${port}`)).toBe(204);
     expect((await devices.status()).devices.map((one) => one.id)).toEqual(['phoneDevice00009']);
 
-    const launched = await devices.launch(root, await snapshot(root));
+    const launched = await launchOn(devices, root);
 
     const line = launchLine(launched.launch?.id);
     expect(await stream.until((text) => text.includes(line))).toContain(line);

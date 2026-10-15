@@ -129,6 +129,8 @@ export class DeviceServer {
   private current: Launch | null = null;
   /** Counts launches and stops, so a launch can tell it was overtaken while it was prepared. */
   private ticket = 0;
+  /** What took the last ticket, for the trace of a launch it dropped. */
+  private overtakenBy: 'launch' | 'stop' = 'stop';
   private reached = false;
   /**
    * Addresses whose browser refused the certificate, until a request from one
@@ -180,6 +182,7 @@ export class DeviceServer {
   async stop(): Promise<DeviceServerStatus> {
     // A launch still being prepared is dropped, as a newer one would drop it.
     this.ticket += 1;
+    this.overtakenBy = 'stop';
     if (this.starting !== null) await this.starting;
     const { listening, current, state } = this;
     this.listening = null;
@@ -205,13 +208,20 @@ export class DeviceServer {
    * refuse the launch and leave the server as it was — and tell no device. A
    * newer launch, or a stop, made while this one was prepared drops it: what
    * devices run is always the last thing asked for.
+   *
+   * Resolves the status in which this launch is current — its `launch.id` is
+   * this launch's — or `null` when it was dropped. A status of the moment
+   * would name no launch after a stop, or the newer one: a window that keeps
+   * the launch it made, to know whether the devices still run its scene,
+   * would take another window's for its own.
    */
-  async launch(projectPath: string, snapshot: LaunchSnapshot): Promise<DeviceServerStatus> {
+  async launch(projectPath: string, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
     const ticket = (this.ticket += 1);
+    this.overtakenBy = 'launch';
     const prepared = await prepareLaunch(projectPath, snapshot);
-    if (ticket !== this.ticket) return this.status();
+    if (ticket !== this.ticket) return this.dropped();
     await this.start();
-    if (ticket !== this.ticket) return this.status();
+    if (ticket !== this.ticket) return this.dropped();
     const listening = this.listening;
     if (listening === null) throw new Error(this.error ?? 'The device server did not start.');
     this.current = prepared;
@@ -220,6 +230,15 @@ export class DeviceServer {
     this.trace(`launch told to ${told} ${told === 1 ? 'device' : 'devices'}`);
     this.emit();
     return this.status();
+  }
+
+  private dropped(): null {
+    this.trace(
+      this.overtakenBy === 'stop'
+        ? 'launch dropped: the server stopped'
+        : 'launch dropped for a newer one',
+    );
+    return null;
   }
 
   /**

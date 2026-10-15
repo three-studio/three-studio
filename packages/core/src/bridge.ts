@@ -347,8 +347,13 @@ export interface DevicesApi {
    * included, and restarts every connected device on it. Starts the server
    * when it is stopped, once the launch is ready, so scripts that do not
    * compile refuse it and leave the server as it was.
+   *
+   * Resolves the status in which this launch is current, or `null` when a
+   * newer launch — from any window — or a stop dropped it while it was
+   * prepared. That is how a window knows whether the devices run its launch,
+   * which a status of the moment cannot say.
    */
-  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus>;
+  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus | null>;
   /**
    * Writes what the renderer may change — the port, the address a link is made
    * of — and moves a running server onto a new port.

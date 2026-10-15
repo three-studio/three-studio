@@ -63,7 +63,9 @@ function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus
   };
 }
 
-type Answers = Partial<Record<keyof DevicesApi, (...args: unknown[]) => Promise<DeviceServerStatus>>>;
+type Answers = Partial<
+  Record<keyof DevicesApi, (...args: unknown[]) => Promise<DeviceServerStatus | null>>
+>;
 
 interface Bridge {
   calls: { method: string; args: unknown[] }[];
@@ -79,7 +81,7 @@ function install(answers: Answers, platform = 'darwin'): Bridge {
   const bridge: Bridge = { calls: [], changed: null, logged: null, opened: [] };
   const call =
     (method: keyof DevicesApi) =>
-    async (...args: unknown[]): Promise<DeviceServerStatus> => {
+    async (...args: unknown[]): Promise<DeviceServerStatus | null> => {
       bridge.calls.push({ method, args });
       const answer = answers[method];
       if (answer === undefined) throw new Error(`devices.${method} was not expected`);
@@ -163,7 +165,7 @@ const lastEntry = () => useConsoleStore.getState().entries.at(-1)!;
 beforeEach(() => {
   useToastStore.getState().clear();
   useConsoleStore.getState().clear();
-  useDeviceStore.setState({ status: null, popoverOpen: false });
+  useDeviceStore.setState({ status: null, popoverOpen: false, ownLaunch: null });
   useDialogStore.getState().cancel();
   useDocumentStore.getState().replaceScene(createStarterScene());
   openProject();
@@ -181,6 +183,29 @@ describe('Launch on Devices', () => {
 
     expect(bridge.calls.map((call) => call.method)).toEqual(['launch']);
     expect(bridge.calls[0]!.args[0]).toEqual(launchSnapshot());
+  });
+
+  it('keeps the launch it made, with the snapshot it sent, once it is current', async () => {
+    const bridge = install({
+      launch: async () => status({ launch: { id: 'launch-7', at: 7, sceneName: 'Level' } }),
+    });
+
+    await launchOnDevices();
+
+    const own = useDeviceStore.getState().ownLaunch;
+    expect(own?.id).toBe('launch-7');
+    expect(own?.snapshot).toBe(bridge.calls[0]!.args[0]);
+  });
+
+  it('leaves nothing behind when a newer launch or a stop dropped it', async () => {
+    // The newer launch reports for itself, and a stop was asked for.
+    install({ launch: async () => null });
+
+    await launchOnDevices();
+
+    expect(toasts()).toEqual([]);
+    expect(useConsoleStore.getState().entries).toEqual([]);
+    expect(useDeviceStore.getState().ownLaunch).toBeNull();
   });
 
   it('shows the link to type, and keeps every link in the Console', async () => {

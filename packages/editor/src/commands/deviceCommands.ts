@@ -1,4 +1,9 @@
-import type { DeviceInfo, DeviceServerStatus, DeviceTransport } from '@three-studio/core';
+import type {
+  DeviceInfo,
+  DeviceServerStatus,
+  DeviceTransport,
+  LaunchSnapshot,
+} from '@three-studio/core';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
 import {
   deviceLink,
@@ -169,6 +174,18 @@ function launchedNotes(status: DeviceServerStatus): string[] {
 }
 
 /**
+ * The one call that launches. A launch that became current is this window's,
+ * kept with the snapshot it sent; `null` — a newer launch, from any window, or
+ * a stop dropped it while it was prepared — leaves the one kept as it was.
+ */
+async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
+  const status = await window.studio.devices.launch(snapshot);
+  const launch = status?.launch ?? null;
+  if (launch !== null) useDeviceStore.setState({ ownLaunch: { id: launch.id, snapshot } });
+  return status;
+}
+
+/**
  * Serves what is on screen to devices: what Play would run, unsaved edits
  * included, with nothing saved.
  *
@@ -180,7 +197,13 @@ export async function launchOnDevices(): Promise<void> {
     .getState()
     .push({ kind: 'progress', title: 'Launching on devices…', progress: null });
   try {
-    const status = await window.studio.devices.launch(launchSnapshot());
+    const status = await sendLaunch(launchSnapshot());
+    if (status === null) {
+      // Dropped: the newer launch reports for itself, and a stop was asked
+      // for. Nothing of this one happened, so nothing is said of it.
+      useToastStore.getState().dismiss(id);
+      return;
+    }
     showServed(status, launchedTitle(status), launchedNotes(status), id);
   } catch (cause) {
     showFailure('Could not launch on devices', cause, id);

@@ -158,7 +158,7 @@ const bridge: StudioBridge = {
     status: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.status),
     start: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.start),
     stop: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.stop),
-    launch: (snapshot): Promise<DeviceServerStatus> =>
+    launch: (snapshot): Promise<DeviceServerStatus | null> =>
       ipcRenderer.invoke(IPC_INVOKE.devices.launch, snapshot),
     saveSettings: (patch): Promise<DeviceServerStatus> =>
       ipcRenderer.invoke(IPC_INVOKE.devices.saveSettings, patch),
