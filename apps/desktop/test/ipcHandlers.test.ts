@@ -40,6 +40,8 @@ const stub = vi.hoisted(() => ({
   /** Where `preferences.ts` writes. A temporary directory, made below. */
   userData: '',
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
+  /** What `shell.showItemInFolder` was asked to show. */
+  shown: [] as string[],
 }));
 
 vi.mock('electron', () => ({
@@ -53,6 +55,7 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: () => null },
   dialog: {
     showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    showSaveDialog: () => Promise.resolve({ canceled: true, filePath: '' }),
     showMessageBox: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
   ipcMain: {
@@ -61,13 +64,18 @@ vi.mock('electron', () => ({
       stub.handlers.set(channel, handler);
     },
   },
-  shell: { showItemInFolder: () => undefined, openPath: () => Promise.resolve('') },
+  shell: {
+    showItemInFolder: (path: string) => {
+      stub.shown.push(path);
+    },
+    openPath: () => Promise.resolve(''),
+  },
 }));
 
 const { registerIpcHandlers } = await import('../src/main/ipc');
 const { DeviceServer } = await import('../src/main/devices/DeviceServer');
 const { createProject, discoverScenes, readProject } = await import('../src/main/project');
-const { adoptProject, releaseProject } = await import('../src/main/session');
+const { adoptProject, noteScreenshot, releaseProject } = await import('../src/main/session');
 
 /** An editor window, as `announce` uses one: an id, a mailbox, and a grave. */
 function editorWindow(id: number, destroyed = false) {
@@ -371,6 +379,34 @@ describe('restarting a device', () => {
     await expect(invoke(IPC_INVOKE.devices.restart, 1, { device: 'abc12345' })).rejects.toThrow(
       'Unknown device.',
     );
+  });
+});
+
+describe('a device’s screenshot', () => {
+  it('names a device by its id, and nothing else', async () => {
+    await expect(invoke(IPC_INVOKE.devices.screenshot, 1, '../x')).rejects.toThrow(
+      'Unknown device.',
+    );
+    await expect(invoke(IPC_INVOKE.devices.screenshot, 1, { device: 'abc12345' })).rejects.toThrow(
+      'Unknown device.',
+    );
+  });
+
+  it('is shown in the file manager only when this session saved it', async () => {
+    stub.shown.length = 0;
+    const saved = join(tmpdir(), 'Level 1 — iPhone · Safari — 2026-10-01 at 14.32.05.png');
+
+    await expect(invoke(IPC_INVOKE.devices.revealScreenshot, 1, saved)).rejects.toThrow(
+      'That file was not saved by this session.',
+    );
+    await expect(invoke(IPC_INVOKE.devices.revealScreenshot, 1, { path: saved })).rejects.toThrow(
+      'That file was not saved by this session.',
+    );
+    expect(stub.shown).toEqual([]);
+
+    noteScreenshot(saved);
+    await invoke(IPC_INVOKE.devices.revealScreenshot, 1, saved);
+    expect(stub.shown).toEqual([saved]);
   });
 });
 

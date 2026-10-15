@@ -2,6 +2,7 @@ import type {
   AssetImportResult,
   AssetManifest,
   DeviceLogs,
+  DeviceScreenshot,
   DeviceServerStatus,
   ImportSessionState,
   ExportProgress,
@@ -168,6 +169,10 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.devices.regenerateToken),
     restart: (device): Promise<DeviceServerStatus> =>
       ipcRenderer.invoke(IPC_INVOKE.devices.restart, device),
+    screenshot: (device): Promise<DeviceScreenshot | null> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.screenshot, device),
+    revealScreenshot: (path): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.revealScreenshot, path),
     onChanged: (listener) => {
       const handler = (_event: unknown, status: DeviceServerStatus) => listener(status);
       ipcRenderer.on(IPC_EVENTS.devicesChanged, handler);

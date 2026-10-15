@@ -8,6 +8,7 @@ import type {
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
 import type {
   DeviceLogs,
+  DeviceScreenshot,
   DeviceServerStatus,
   DeviceSettingsPatch,
   LaunchSnapshot,
@@ -331,10 +332,11 @@ export interface PreferencesApi {
 /**
  * The device server: a phone on the same network runs what is on screen.
  *
- * Every member answers with the whole status, which is small, so a window
- * never has to piece one together. Nothing here lets the renderer read a file
- * or open a connection: it asks the main process to serve, and what is served
- * is decided there.
+ * Every member but the screenshot's answers with the whole status, which is
+ * small, so a window never has to piece one together. Nothing here lets the
+ * renderer read a file or open a connection: it asks the main process to
+ * serve, and what is served is decided there. A screenshot is written where
+ * the person says, in a dialog the main process shows.
  */
 export interface DevicesApi {
   status: () => Promise<DeviceServerStatus>;
@@ -379,6 +381,16 @@ export interface DevicesApi {
    * for a device with no stream to be told on.
    */
   restart: (device: string) => Promise<DeviceServerStatus>;
+  /**
+   * Takes the next frame a device running the current launch draws, then asks
+   * the person where to save it, in a native Save dialog, and saves it there.
+   * Resolves what was written once it is, or `null` when the person cancelled
+   * the dialog. Refused for a device that is not running the game, and when
+   * no frame comes back in time.
+   */
+  screenshot: (device: string) => Promise<DeviceScreenshot | null>;
+  /** Shows a screenshot in the file manager: only one this session saved. */
+  revealScreenshot: (path: string) => Promise<void>;
   /** Every new status of the server, in order. Returns an unsubscribe. */
   onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
   /**
@@ -547,6 +559,8 @@ export const IPC_INVOKE = {
     reclaimPort: 'devices:reclaimPort',
     regenerateToken: 'devices:regenerateToken',
     restart: 'devices:restart',
+    screenshot: 'devices:screenshot',
+    revealScreenshot: 'devices:revealScreenshot',
   },
 } as const satisfies InvokeChannels;
 

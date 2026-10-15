@@ -1,7 +1,7 @@
 /*
  * What the main process remembers between calls.
  *
- * Three facts, and they are together because they have the same lifetime — the
+ * Four facts, and they are together because they have the same lifetime — the
  * run of the app — and because more than one module reads each of them. They
  * lived in `ipc.ts` as a `let`, a `Map` and a `Set`, which put them behind an
  * `import { ipcMain } from 'electron'`: nothing could exercise the rules
@@ -96,4 +96,24 @@ export function noteExport(directory: string): void {
 
 export function wasExported(directory: string): boolean {
   return exportedDirs.has(directory);
+}
+
+/*
+ * ------------------------------------------- files this session saved
+ */
+
+/**
+ * The device screenshots this run saved, for *Show in Finder* — a set apart
+ * from the exports, for the same reason, and of files rather than folders:
+ * the renderer may have the file it was just handed back shown, and nothing
+ * beside it.
+ */
+const savedScreenshots = new Set<string>();
+
+export function noteScreenshot(path: string): void {
+  savedScreenshots.add(path);
+}
+
+export function wasScreenshot(path: string): boolean {
+  return savedScreenshots.has(path);
 }

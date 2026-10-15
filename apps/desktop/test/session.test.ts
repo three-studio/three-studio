@@ -5,10 +5,12 @@ import {
   forgetWindow,
   isDirty,
   noteExport,
+  noteScreenshot,
   releaseProject,
   requireProject,
   setDirty,
   wasExported,
+  wasScreenshot,
 } from '../src/main/session';
 
 /*
@@ -97,5 +99,27 @@ describe('the folders this session produced', () => {
     noteExport('/builds/Races');
     expect(wasExported('/builds')).toBe(false);
     expect(wasExported('/builds/Races/dist')).toBe(false);
+  });
+});
+
+describe('the screenshots this session saved', () => {
+  const saved = '/projects/Races/Screenshots/Level 1 — iPhone · Safari — 2026-10-01 at 14.32.05.png';
+
+  it('refuses a file it never saved, then accepts it once saved', () => {
+    expect(wasScreenshot(saved)).toBe(false);
+    noteScreenshot(saved);
+    expect(wasScreenshot(saved)).toBe(true);
+  });
+
+  it('accepts that file alone, never its folder', () => {
+    // *Show in Finder* on a folder would open whatever the renderer named.
+    noteScreenshot(saved);
+    expect(wasScreenshot('/projects/Races/Screenshots')).toBe(false);
+    expect(wasScreenshot('/projects/Races/Screenshots/other.png')).toBe(false);
+  });
+
+  it('is kept apart from the folders exports wrote', () => {
+    noteExport('/builds/Shots');
+    expect(wasScreenshot('/builds/Shots')).toBe(false);
   });
 });

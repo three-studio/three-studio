@@ -16,6 +16,7 @@ import {
   type AssetChange,
   type LayoutPreferences,
   type ShortcutPreferences,
+  type DeviceScreenshot,
   type DeviceServerStatus,
   type DeviceSettingsPatch,
   type LaunchSnapshot,
@@ -88,10 +89,12 @@ import {
   adoptProject,
   currentProject,
   noteExport,
+  noteScreenshot,
   releaseProject,
   requireProject,
   setDirty,
   wasExported,
+  wasScreenshot,
 } from './session';
 
 /**
@@ -172,6 +175,32 @@ async function confirmQuit(
     ? dialog.showMessageBox(window, options)
     : dialog.showMessageBox(options));
   return response === 1;
+}
+
+/**
+ * Where a device's screenshot goes, asked in a native Save dialog on the
+ * window that asked for it: the path chosen, or `null` when cancelled.
+ *
+ * Under the smoke harness, no dialog: the path offered, so that a run saves
+ * into its scratch copy of a project. `confirmQuit` answers no there because
+ * it would quit a process; this one only writes a file into that copy.
+ */
+async function chooseScreenshotPath(
+  sender: Electron.WebContents,
+  defaultPath: string,
+): Promise<string | null> {
+  if (process.env['STUDIO_SMOKE']) return defaultPath;
+  const window = BrowserWindow.fromWebContents(sender);
+  const options: Electron.SaveDialogOptions = {
+    title: 'Save Screenshot',
+    defaultPath,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    properties: ['createDirectory', 'showOverwriteConfirmation'],
+  };
+  const { canceled, filePath } = await (window
+    ? dialog.showSaveDialog(window, options)
+    : dialog.showSaveDialog(options));
+  return canceled || filePath === '' ? null : filePath;
 }
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -569,6 +598,25 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // what a device could have been given gets that far.
       if (!isDeviceId(device)) throw new Error('Unknown device.');
       return deps.devices.restart(device);
+    },
+
+    screenshot: async (event, device: string): Promise<DeviceScreenshot | null> => {
+      // As for a restart: only what a device could have been given gets as
+      // far as the link.
+      if (!isDeviceId(device)) throw new Error('Unknown device.');
+      const shot = await deps.devices.screenshot(device, (defaultPath) =>
+        chooseScreenshotPath(event.sender, defaultPath),
+      );
+      // The one file *Show in Finder* may now show.
+      if (shot !== null) noteScreenshot(shot.path);
+      return shot;
+    },
+
+    revealScreenshot: (_event, path: string): void => {
+      if (typeof path !== 'string' || !wasScreenshot(path)) {
+        throw new Error('That file was not saved by this session.');
+      }
+      shell.showItemInFolder(path);
     },
   },
   };
