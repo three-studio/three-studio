@@ -1,6 +1,15 @@
-import { isDeviceTransport } from '@three-studio/core';
-import { Camera, RotateCw, TriangleAlert } from 'lucide-react';
-import { useEffect, useState, type RefObject } from 'react';
+import type { DeviceTransport } from '@three-studio/core';
+import {
+  Camera,
+  ChevronRight,
+  CircleX,
+  Copy,
+  ExternalLink,
+  RotateCw,
+  TriangleAlert,
+  type LucideIcon,
+} from 'lucide-react';
+import { Fragment, useEffect, useState, type ReactNode, type RefObject } from 'react';
 import {
   captureDevice,
   chooseDeviceAddress,
@@ -15,8 +24,13 @@ import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
 import type { CertificateView, DeviceDot, DeviceRow, DeviceView } from './deviceView';
 
-/** Wide enough for the code beside a link that breaks over two lines at most. */
-const WIDTH = 360;
+/**
+ * Wide enough for the link to fit on one line beside the code, and for each
+ * setting's note to read in a line or two rather than down a column. At 360 px
+ * the pickers shared what the code left, about 180 px, and cut both. An editor
+ * window is at least 1100 px wide.
+ */
+const WIDTH = 600;
 
 /**
  * The code's side. With four modules of quiet zone, a link of this length
@@ -27,11 +41,49 @@ const CODE_SIZE = 144;
 const SELECT =
   'w-full rounded-xs border border-line-soft bg-surface-0 px-2 py-1 text-2xs text-ink outline-none focus:border-accent';
 
-const BUTTON =
-  'rounded-sm px-2 py-1 text-2xs text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40';
+/** The link, drawn as a field in the pickers' well: they are what it is made of. */
+const FIELD =
+  'break-all rounded-xs border border-line-soft bg-surface-0 px-2 py-1 font-mono text-ink';
 
-const PRIMARY_BUTTON =
-  'rounded-sm bg-accent-dim px-3 py-1 text-2xs text-ink enabled:hover:bg-accent/40 disabled:opacity-50';
+/*
+ * Three weights of button, each one a dialog already draws. With no ground, a
+ * button read as one more word among the notes, so what a person reaches for
+ * has a ground of its own, and the one click this exists for takes the accent.
+ */
+const BUTTON_TONES = {
+  // The import and prompt dialogs' confirmation.
+  primary:
+    'rounded-sm bg-accent px-3 py-1 text-2xs font-medium text-white enabled:hover:brightness-110 disabled:opacity-40',
+  // Package's Choose…, the launcher's Browse….
+  secondary:
+    'inline-flex items-center gap-1 rounded-sm bg-surface-3 px-2 py-1 text-2xs text-ink enabled:hover:bg-surface-4 disabled:opacity-40',
+  // A dialog's Cancel: for what few want, and nobody should hit for another.
+  plain:
+    'rounded-sm px-2 py-1 text-2xs text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40',
+} as const;
+
+type ButtonTone = keyof typeof BUTTON_TONES;
+
+/*
+ * A part of the popover under a hairline, as a panel's sections are. The
+ * titles are the dialogs' group headings a shade lighter: `ink-dim` on this
+ * ground is about 2.5:1, too faint for what is read at a glance.
+ */
+const SECTION = 'flex flex-col gap-2.5 border-t border-line-soft px-3 py-3';
+const SECTION_TITLE = 'text-2xs font-medium uppercase tracking-wide text-ink-muted';
+
+/**
+ * A setting's row, its name on the left as the dialogs' `Field` has it, in a
+ * column narrow enough for a popover. The control takes the rest of the width,
+ * and what it says goes under it.
+ */
+const ROW = 'grid grid-cols-[4rem_minmax(0,1fr)] items-start gap-x-2';
+const ROW_LABEL = 'pt-1 text-ink-muted';
+
+/** The rows of a list, ruled apart in a well one step darker, as Package lists its scenes. */
+const LIST =
+  'flex flex-col divide-y divide-line-soft/60 rounded-sm border border-line-soft bg-surface-1';
+const LIST_ROW = 'px-2 py-1.5';
 
 const DOT_CLASSES: Readonly<Record<DeviceDot, string>> = {
   none: 'bg-ink-dim',
@@ -49,6 +101,20 @@ const COUNT_CLASSES: Readonly<Record<DeviceDot, string>> = {
   slid: 'text-warn',
   error: 'text-error',
 };
+
+/** The same tones again, as the ground of the popover's state. */
+const BADGE_CLASSES: Readonly<Record<DeviceDot, string>> = {
+  none: 'bg-surface-3 text-ink-muted',
+  starting: 'bg-accent/15 text-accent',
+  running: 'bg-ok/15 text-ok',
+  slid: 'bg-warn/15 text-warn',
+  error: 'bg-error/15 text-error',
+};
+
+const CALLOUT_TONES = {
+  warning: { icon: TriangleAlert, box: 'border-warn/40 bg-warn/10', mark: 'text-warn' },
+  error: { icon: CircleX, box: 'border-error/50 bg-error/10', mark: 'text-error' },
+} as const;
 
 /** The server's state as a coloured dot: on the button's icon, and beside the popover's state. */
 export function StateDot({ dot, className = '' }: { dot: DeviceDot; className?: string }) {
@@ -75,18 +141,35 @@ export function StateCount({
   );
 }
 
+/**
+ * The server's state as a badge: the dot and its words on a ground of their
+ * tone, so that Running and Could not start differ before either is read.
+ */
+function StatusBadge({ dot, label }: { dot: DeviceDot; label: string }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 ${BADGE_CLASSES[dot]}`}
+    >
+      <StateDot dot={dot} />
+      {label}
+    </span>
+  );
+}
+
 /** A button that runs a command, and is greyed while it cannot. */
 function Action({
   id,
   label,
   title,
-  primary = false,
+  tone = 'plain',
+  icon: Icon,
   className = '',
 }: {
   id: CommandId;
   label: string;
   title?: string;
-  primary?: boolean;
+  tone?: ButtonTone;
+  icon?: LucideIcon;
   className?: string;
 }) {
   const command = commandById(id);
@@ -96,74 +179,179 @@ function Action({
       title={title}
       disabled={!command.can()}
       onClick={() => command.run()}
-      className={`${primary ? PRIMARY_BUTTON : BUTTON} ${className}`}
+      className={`${BUTTON_TONES[tone]} ${className}`}
     >
+      {Icon !== undefined && <Icon size={11} aria-hidden />}
       {label}
     </button>
   );
 }
 
-function PortLine({ view }: { view: DeviceView }) {
+/**
+ * What is wrong, boxed in its tone together with what to do about it, as
+ * `Alert` tints a toast: the mark and the edge carry the tone, and the words
+ * stay in ink. A sentence in yellow or red read as one more note, and a long
+ * one was hard to read at all.
+ */
+function Callout({ tone, children }: { tone: keyof typeof CALLOUT_TONES; children: ReactNode }) {
+  const { icon: Icon, box, mark } = CALLOUT_TONES[tone];
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex items-center gap-1 text-ink-muted">
-        <span>Port {view.port}</span>
-        <span aria-hidden>·</span>
-        <Action id="deviceServerPort" label="Change…" className="-mx-1" />
-      </div>
-      {view.note !== null && <p className="text-warn">{view.note}</p>}
-      {view.takeBack && (
-        <Action
-          id="reclaimDevicePort"
-          label={`Take Back ${view.requestedPort}`}
-          className="self-start border border-line-soft"
-        />
-      )}
+    <div className={`flex gap-2 rounded-sm border p-2 ${box}`}>
+      <Icon size={13} strokeWidth={2} aria-hidden className={`mt-px shrink-0 ${mark}`} />
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5 text-ink">{children}</div>
     </div>
   );
 }
 
-function AddressPicker({ view }: { view: DeviceView }) {
+/**
+ * A part folded under its title: help, or settings most launches leave alone.
+ *
+ * `<details>` still does the folding, so the keyboard and a screen reader have
+ * it for nothing; only its look is the editor's. The browser's triangle gives
+ * way to the chevron `Alert` turns on its details, and the whole title is the
+ * target. What is set inside can be said beside the title, cut short when long.
+ */
+function Disclosure({
+  title,
+  aside = null,
+  open,
+  onOpenChange,
+  selectable = false,
+  children,
+}: {
+  title: string;
+  aside?: string | null;
+  /** Given, the caller holds whether it is open; left out, the element does. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  selectable?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-ink-muted">Address</span>
-      <select
-        value={view.address}
-        onChange={(event) => void chooseDeviceAddress(event.target.value || null)}
-        className={SELECT}
+    <details
+      open={open}
+      onToggle={(event) => onOpenChange?.(event.currentTarget.open)}
+      className="group/disclosure"
+    >
+      <summary className="-mx-1.5 flex cursor-default select-none list-none items-center gap-1 rounded-sm px-1.5 py-1 text-ink-muted hover:bg-surface-3 hover:text-ink group-open/disclosure:text-ink">
+        <ChevronRight
+          size={12}
+          strokeWidth={2}
+          aria-hidden
+          className="shrink-0 transition-transform group-open/disclosure:rotate-90"
+        />
+        <span className="shrink-0">{title}</span>
+        {aside !== null && (
+          <span title={aside} className="ml-auto min-w-0 truncate pl-2 text-ink-dim">
+            {aside}
+          </span>
+        )}
+      </summary>
+      <div
+        data-selectable={selectable || undefined}
+        className="flex flex-col gap-2 pb-1 pl-4 pt-1.5 text-ink-muted"
       >
-        {view.addresses.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      {view.addressNote !== null && <span className="text-ink-dim">{view.addressNote}</span>}
+        {children}
+      </div>
+    </details>
+  );
+}
+
+function PortRow({ view }: { view: DeviceView }) {
+  return (
+    <div className={ROW}>
+      <span className={ROW_LABEL}>Port</span>
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="tabular-nums text-ink">{view.port}</span>
+          <Action id="deviceServerPort" label="Change…" tone="secondary" />
+        </div>
+        {(view.note !== null || view.takeBack) && (
+          <Callout tone="warning">
+            {view.note !== null && <p>{view.note}</p>}
+            {view.takeBack && (
+              <Action
+                id="reclaimDevicePort"
+                label={`Take Back ${view.requestedPort}`}
+                tone="secondary"
+                className="self-start"
+              />
+            )}
+          </Callout>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddressRow({ view }: { view: DeviceView }) {
+  return (
+    <label className={ROW}>
+      <span className={ROW_LABEL}>Address</span>
+      <span className="flex min-w-0 flex-col gap-1">
+        <select
+          value={view.address}
+          onChange={(event) => void chooseDeviceAddress(event.target.value || null)}
+          className={SELECT}
+        >
+          {view.addresses.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {view.addressNote !== null && <span className="text-ink-dim">{view.addressNote}</span>}
+      </span>
     </label>
   );
 }
 
+const TRANSPORTS: readonly { value: DeviceTransport; label: string }[] = [
+  { value: 'http', label: 'HTTP' },
+  { value: 'https', label: 'HTTPS' },
+];
+
 /**
  * Plain HTTP or HTTPS, and what each gives a phone. Shown whether the server
  * runs or not: a stopped one starts on what is chosen here.
+ *
+ * Two segments rather than a picker: there are two choices, and both stay in
+ * sight, so the one not taken is a click away instead of behind a list. Radios
+ * underneath, which gives them the arrow keys for nothing. Under them, only
+ * what the choice made gives and asks — and, under HTTPS alone, how to accept
+ * its certificate, which reads as the price of that choice where it hangs.
  */
-function ProtocolPicker({ view }: { view: DeviceView }) {
+function ProtocolRow({ view }: { view: DeviceView }) {
   return (
-    <label className="flex flex-col gap-1">
-      <span className="text-ink-muted">Protocol</span>
-      <select
-        value={view.transport}
-        onChange={(event) => {
-          const transport = event.target.value;
-          if (isDeviceTransport(transport)) void chooseDeviceTransport(transport);
-        }}
-        className={SELECT}
-      >
-        <option value="http">HTTP</option>
-        <option value="https">HTTPS</option>
-      </select>
-      <span className="text-ink-dim">{view.transportNote}</span>
-    </label>
+    <div className={ROW}>
+      <span className={ROW_LABEL}>Protocol</span>
+      <div className="flex min-w-0 flex-col gap-1">
+        <div
+          role="radiogroup"
+          aria-label="Protocol"
+          className="grid grid-cols-2 gap-0.5 rounded-sm border border-line-soft bg-surface-0 p-0.5"
+        >
+          {TRANSPORTS.map(({ value, label }) => (
+            <label
+              key={value}
+              className="rounded-xs py-0.5 text-center text-ink-muted hover:text-ink has-checked:bg-accent-dim has-checked:text-ink has-focus-visible:ring-1 has-focus-visible:ring-accent"
+            >
+              <input
+                type="radio"
+                name="device-transport"
+                value={value}
+                checked={view.transport === value}
+                onChange={() => void chooseDeviceTransport(value)}
+                className="sr-only"
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="text-ink-dim">{view.transportNote}</p>
+        {view.certificate !== null && <Certificate certificate={view.certificate} />}
+      </div>
+    </div>
   );
 }
 
@@ -223,22 +411,16 @@ function Option({
 function LaunchOptions({ view }: { view: DeviceView }) {
   const options = view.launchOptions;
   return (
-    <details className="text-ink-muted">
-      <summary className="cursor-default select-none hover:text-ink">
-        Launch options
-        {options.summary !== null && (
-          <span className="float-right text-ink-dim">{options.summary}</span>
-        )}
-      </summary>
-      <div className="mt-1.5 flex flex-col gap-2">
-        <Option
-          label="Force WebGL2"
-          checked={options.forceWebGL}
-          note="Every device restarts on it."
-          onChange={(forceWebGL) => void setLaunchOptions({ forceWebGL })}
-        />
-        <label className="flex flex-col gap-1">
-          <span className="text-ink">Pixel ratio</span>
+    <Disclosure title="Launch options" aside={options.summary}>
+      <Option
+        label="Force WebGL2"
+        checked={options.forceWebGL}
+        note="Every device restarts on it."
+        onChange={(forceWebGL) => void setLaunchOptions({ forceWebGL })}
+      />
+      <label className={ROW}>
+        <span className={ROW_LABEL}>Pixel ratio</span>
+        <span className="flex min-w-0 flex-col gap-1">
           <select
             value={options.pixelRatio}
             onChange={(event) => {
@@ -254,15 +436,15 @@ function LaunchOptions({ view }: { view: DeviceView }) {
             ))}
           </select>
           <span className="text-ink-dim">Every device restarts on it.</span>
-        </label>
-        <Option
-          label="Stats on screen"
-          checked={options.stats}
-          note="Each device draws its numbers in a corner, without restarting."
-          onChange={(stats) => void setLaunchOptions({ stats })}
-        />
-      </div>
-    </details>
+        </span>
+      </label>
+      <Option
+        label="Stats on screen"
+        checked={options.stats}
+        note="Each device draws its numbers in a corner, without restarting."
+        onChange={(stats) => void setLaunchOptions({ stats })}
+      />
+    </Disclosure>
   );
 }
 
@@ -281,69 +463,88 @@ function Certificate({ certificate }: { certificate: CertificateView }) {
     if (certificate.open) setOpen(true);
   }, [certificate.open]);
   return (
-    <details
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      className="text-ink-muted"
-    >
-      <summary className="cursor-default select-none hover:text-ink">
-        Accepting the certificate
-      </summary>
-      <div data-selectable className="mt-1.5 flex flex-col gap-1.5">
-        {certificate.renewedNote !== null && <p className="text-warn">{certificate.renewedNote}</p>}
-        <p>{certificate.lead}</p>
-        <ul className="flex list-disc flex-col gap-1 pl-4">
-          {certificate.steps.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ul>
-        {certificate.check !== null && <p>{certificate.check}</p>}
-        {certificate.fingerprint !== null && (
-          <p className="flex gap-2">
-            <span className="shrink-0">SHA-256</span>
-            <span data-selectable className="break-all font-mono text-ink">
-              {certificate.fingerprint}
-            </span>
-          </p>
-        )}
-        <p>{certificate.lifetime}</p>
-      </div>
-    </details>
+    <Disclosure title="Accepting the certificate" open={open} onOpenChange={setOpen} selectable>
+      {certificate.renewedNote !== null && <p className="text-warn">{certificate.renewedNote}</p>}
+      <p>{certificate.lead}</p>
+      <ul className="flex list-disc flex-col gap-1 pl-4">
+        {certificate.steps.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ul>
+      {certificate.check !== null && <p>{certificate.check}</p>}
+      {certificate.fingerprint !== null && (
+        <div className="flex items-start gap-2">
+          <span className="shrink-0 pt-1">SHA-256</span>
+          {/* It may wrap only between two groups: it is compared with the
+              phone's a group at a time, and a group cut in two reads as two.
+              `<wbr>` rather than a zero-width space, which a copy would keep. */}
+          <span
+            data-selectable
+            className="min-w-0 flex-1 break-words rounded-xs bg-surface-0 px-2 py-1 font-mono text-ink"
+          >
+            {certificate.fingerprint.split(':').map((group, index) => (
+              <Fragment key={index}>
+                {index > 0 && (
+                  <>
+                    :<wbr />
+                  </>
+                )}
+                {group}
+              </Fragment>
+            ))}
+          </span>
+        </div>
+      )}
+      <p>{certificate.lifetime}</p>
+    </Disclosure>
+  );
+}
+
+/** What to check when a phone cannot open the link, whichever the protocol. */
+function Help({ help }: { help: DeviceView['help'] }) {
+  return (
+    <Disclosure title="Can’t connect?" selectable>
+      <p>{help.lead}</p>
+      <ul className="flex list-disc flex-col gap-1 pl-4">
+        {help.items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </Disclosure>
   );
 }
 
 /** What a running server serves: the code beside the link, or why there is none. */
 function Served({ view }: { view: DeviceView }) {
   const open = (
-    <Action id="openDevicePage" label="Open in Browser" title={view.localUrl ?? undefined} />
+    <Action
+      id="openDevicePage"
+      label="Open in Browser"
+      title={view.localUrl ?? undefined}
+      tone="secondary"
+      icon={ExternalLink}
+    />
   );
-  const picker = view.addresses.length > 1 && <AddressPicker view={view} />;
 
   if (view.link === null) {
     return (
-      <div className="flex flex-col gap-2">
-        <p className="text-warn">No network address — only this computer can open the page.</p>
+      <Callout tone="warning">
+        <p>No network address — only this computer can open the page.</p>
         <div>{open}</div>
-        {picker}
-        <ProtocolPicker view={view} />
-        <PortLine view={view} />
-      </div>
+      </Callout>
     );
   }
   return (
     <div className="flex gap-3">
       <QrCode text={view.link} size={CODE_SIZE} label={`QR code of ${view.link}`} />
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <p data-selectable className="break-all font-mono text-ink">
+      <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+        <p data-selectable className={FIELD}>
           {view.link}
         </p>
-        <div className="-mx-1 flex flex-wrap gap-1">
-          <Action id="copyDeviceLink" label="Copy" />
+        <div className="flex flex-wrap gap-1.5">
+          <Action id="copyDeviceLink" label="Copy" tone="secondary" icon={Copy} />
           {open}
         </div>
-        {picker}
-        <ProtocolPicker view={view} />
-        <PortLine view={view} />
       </div>
     </div>
   );
@@ -359,7 +560,7 @@ function Served({ view }: { view: DeviceView }) {
 function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
   const why = row.insecure ? view.insecureNote : row.noWebGpu ? view.noWebGpuNote : null;
   return (
-    <li className="flex flex-col gap-0.5">
+    <li className={`${LIST_ROW} flex flex-col gap-0.5`}>
       <div className="flex items-center gap-2">
         <StateDot dot={row.tone} />
         <span title={row.tooltip} className="min-w-0 flex-1 truncate text-ink">
@@ -423,39 +624,36 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
 /**
  * Every device that opened the link, or how to get a first one — after the
  * addresses held at the certificate's warning, which have no row to restart
- * yet.
+ * yet. One list either way, so that its well is never empty.
  */
 function Devices({ view }: { view: DeviceView }) {
   return (
-    <section aria-label="Devices" className="flex flex-col gap-1.5">
-      <h3 className="text-ink-muted">Devices</h3>
-      {view.waiting.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {view.waiting.map((waiting) => (
-            <li key={waiting.address} className="flex items-center gap-2 text-warn">
-              <StateDot dot="slid" />
-              <span className="min-w-0 flex-1">{waiting.label}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {view.devicesNote !== null ? (
-        <p className="text-ink-dim">{view.devicesNote}</p>
-      ) : (
-        <ul className="flex flex-col gap-1">
-          {view.devices.map((row) => (
-            <DeviceItem key={row.id} row={row} view={view} />
-          ))}
-        </ul>
-      )}
+    <section aria-label="Devices" className={SECTION}>
+      <h3 className={SECTION_TITLE}>Devices</h3>
+      <ul className={LIST}>
+        {view.waiting.map((waiting) => (
+          <li key={waiting.address} className={`${LIST_ROW} flex items-center gap-2 text-warn`}>
+            <StateDot dot="slid" />
+            <span className="min-w-0 flex-1">{waiting.label}</span>
+          </li>
+        ))}
+        {view.devicesNote !== null ? (
+          <li className={`${LIST_ROW} text-ink-muted`}>{view.devicesNote}</li>
+        ) : (
+          view.devices.map((row) => <DeviceItem key={row.id} row={row} view={view} />)
+        )}
+      </ul>
     </section>
   );
 }
 
 /**
- * Where devices are served, and how to change it: the code a phone scans, the
- * link, the address and the port, and what to check when a phone cannot
- * connect. Everything it says comes from `deviceView`.
+ * Where devices are served, and how to change it, in the order a first launch
+ * goes through it: the code a phone scans and its link; under them, what the
+ * link is made of — the address, the protocol, the port — with the help for a
+ * phone that cannot get in; then the devices that did; and last what every
+ * launch carries, just above the button that launches. Everything it says
+ * comes from `deviceView`.
  */
 export function DevicePopover({
   anchor,
@@ -472,79 +670,74 @@ export function DevicePopover({
     void refreshDevices();
   }, []);
 
-  let body;
-  if (view.dot === 'running' || view.dot === 'slid') {
-    body = <Served view={view} />;
+  const running = view.dot === 'running' || view.dot === 'slid';
+
+  let hero;
+  if (running) {
+    hero = <Served view={view} />;
   } else if (view.error !== null) {
-    body = (
-      <div className="flex flex-col gap-2">
-        <p data-selectable className="text-error">
-          {view.error}
-        </p>
-        <ProtocolPicker view={view} />
-        <PortLine view={view} />
-      </div>
+    hero = (
+      <Callout tone="error">
+        <p data-selectable>{view.error}</p>
+      </Callout>
     );
   } else {
-    body = (
-      <div className="flex flex-col gap-2">
-        <p className="text-ink-muted">
-          Launch runs the scene on screen on every device that opens the link. Nothing is saved.
-        </p>
-        <ProtocolPicker view={view} />
-        <PortLine view={view} />
-      </div>
+    hero = (
+      <p className="text-ink-muted">
+        Launch runs the scene on screen on every device that opens the link. Nothing is saved.
+      </p>
     );
   }
 
   return (
     <Popover anchor={anchor} label="Run on Devices" width={WIDTH} onClose={onClose}>
-      <div className="flex flex-col gap-3 p-3 text-2xs">
-        <header className="flex flex-col gap-0.5">
-          <div className="flex items-center justify-between">
-            <h2 className="font-medium text-ink">Run on Devices</h2>
-            <span className="flex items-center gap-1.5 text-ink-muted">
-              <StateDot dot={view.dot} />
-              {view.stateLabel}
-            </span>
-          </div>
-          {(view.dot === 'running' || view.dot === 'slid') && (
-            <p className="text-ink-muted">
-              {view.sceneName === null
-                ? 'Nothing launched yet: devices show a waiting page.'
-                : `“${view.sceneName}”`}
-            </p>
-          )}
-        </header>
+      <div className="text-2xs">
+        <div className="flex flex-col gap-3 p-3">
+          <header className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="font-medium text-ink">Run on Devices</h2>
+              <StatusBadge dot={view.dot} label={view.stateLabel} />
+            </div>
+            {running && (
+              <p className="text-ink-muted">
+                {view.sceneName === null ? (
+                  'Nothing launched yet: devices show a waiting page.'
+                ) : (
+                  <>
+                    Scene <span className="text-ink">“{view.sceneName}”</span>
+                  </>
+                )}
+              </p>
+            )}
+          </header>
 
-        {body}
+          {hero}
+        </div>
 
-        {view.certificate !== null && <Certificate certificate={view.certificate} />}
+        <section aria-label="Connection" className={SECTION}>
+          <h3 className={SECTION_TITLE}>Connection</h3>
+          {running && view.addresses.length > 1 && <AddressRow view={view} />}
+          <ProtocolRow view={view} />
+          <PortRow view={view} />
+          <Help help={view.help} />
+        </section>
 
-        {(view.dot === 'running' || view.dot === 'slid') && <Devices view={view} />}
+        {running && <Devices view={view} />}
 
-        <details className="text-ink-muted">
-          <summary className="cursor-default select-none hover:text-ink">Can’t connect?</summary>
-          <div data-selectable className="mt-1.5 flex flex-col gap-1.5">
-            <p>{view.help.lead}</p>
-            <ul className="flex list-disc flex-col gap-1 pl-4">
-              {view.help.items.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-        </details>
+        <section aria-label="Launch" className={SECTION}>
+          <h3 className={SECTION_TITLE}>Launch</h3>
+          <LiveReload view={view} />
+          <LaunchOptions view={view} />
+        </section>
 
-        <LaunchOptions view={view} />
-
-        <LiveReload view={view} />
+        {/* Held at the bottom: on a short window the popover scrolls, and the
+            buttons went out of sight with the text above them. */}
+        <footer className="sticky bottom-0 flex items-center gap-2 border-t border-line-soft bg-surface-2 px-3 py-2">
+          <Action id="newDeviceLink" label="New Link…" className="-ml-2 mr-auto" />
+          <Action id="stopDeviceServer" label="Stop" tone="secondary" />
+          <Action id="launchOnDevices" label="Launch" tone="primary" />
+        </footer>
       </div>
-
-      <footer className="flex items-center gap-2 border-t border-line-soft px-3 py-2">
-        <Action id="newDeviceLink" label="New Link…" className="-ml-2 mr-auto" />
-        <Action id="stopDeviceServer" label="Stop" />
-        <Action id="launchOnDevices" label="Launch" primary />
-      </footer>
     </Popover>
   );
 }
