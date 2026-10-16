@@ -6,6 +6,13 @@ import type {
   AssetSettings,
 } from './assets/schema';
 import type { ImportPlanItem, ImportSessionState } from './assets/import/session';
+import type {
+  DeviceLogs,
+  DeviceScreenshot,
+  DeviceServerStatus,
+  DeviceSettingsPatch,
+  LaunchSnapshot,
+} from './devices/schema';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
@@ -298,8 +305,10 @@ export interface ScriptBuildResult {
   warnings: string[];
   scriptCount: number;
   /**
-   * No script source changed since the last build, so the classes already
-   * registered still match the code on disk and need not be re-imported.
+   * No script source changed since the main process last compiled — for
+   * whoever asked: any window, an export, a device launch. It says nothing of
+   * what one window has imported, so the editor compares `code` with the
+   * bundle it imported instead.
    */
   unchanged?: boolean;
 }
@@ -318,6 +327,78 @@ export interface PreferencesApi {
   /** Remapped key bindings, stored beside the layouts. */
   loadShortcuts: () => Promise<ShortcutPreferences>;
   saveShortcuts: (preferences: ShortcutPreferences) => Promise<void>;
+}
+
+/**
+ * The device server: a phone on the same network runs what is on screen.
+ *
+ * Every member but the screenshot's answers with the whole status, which is
+ * small, so a window never has to piece one together. Nothing here lets the
+ * renderer read a file or open a connection: it asks the main process to
+ * serve, and what is served is decided there. A screenshot is written where
+ * the person says, in a dialog the main process shows.
+ */
+export interface DevicesApi {
+  status: () => Promise<DeviceServerStatus>;
+  /** Listens, on the kept port or the next free one above it. */
+  start: () => Promise<DeviceServerStatus>;
+  /** Closes the server and every connection, and forgets the launch and every device, each told first. */
+  stop: () => Promise<DeviceServerStatus>;
+  /**
+   * Serves what is on screen: the snapshot Play would run, unsaved edits
+   * included, and restarts every connected device on it. Starts the server
+   * when it is stopped, once the launch is ready, so scripts that do not
+   * compile refuse it and leave the server as it was.
+   *
+   * Resolves the status in which this launch is current, or `null` when a
+   * newer launch — from any window — or a stop dropped it while it was
+   * prepared. That is how a window knows whether the devices run its launch,
+   * which a status of the moment cannot say.
+   */
+  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus | null>;
+  /**
+   * Writes what the renderer may change — the port, the address a link is made
+   * of, the transport, live reload — and moves a running server onto a new
+   * port, or under the other transport.
+   */
+  saveSettings: (patch: DeviceSettingsPatch) => Promise<DeviceServerStatus>;
+  /**
+   * Moves a server that slid back onto the kept port. When another Three
+   * Studio holds it, the main process asks in a native dialog before quitting
+   * it: no process id crosses the bridge, so a script calling this gets the
+   * dialog, never a kill.
+   */
+  reclaimPort: () => Promise<DeviceServerStatus>;
+  /**
+   * A new link: a new token, made and written in the main process. A running
+   * server answers it at once, and no longer the old one — every link a device
+   * saved stops working.
+   */
+  regenerateToken: () => Promise<DeviceServerStatus>;
+  /**
+   * Restarts one device on the current launch, as Launch restarts them all —
+   * without taking a new snapshot. Refused before anything is launched, and
+   * for a device with no stream to be told on.
+   */
+  restart: (device: string) => Promise<DeviceServerStatus>;
+  /**
+   * Takes the next frame a device running the current launch draws, then asks
+   * the person where to save it, in a native Save dialog, and saves it there.
+   * Resolves what was written once it is, or `null` when the person cancelled
+   * the dialog. Refused for a device that is not running the game, and when
+   * no frame comes back in time.
+   */
+  screenshot: (device: string) => Promise<DeviceScreenshot | null>;
+  /** Shows a screenshot in the file manager: only one this session saved. */
+  revealScreenshot: (path: string) => Promise<void>;
+  /** Every new status of the server, in order. Returns an unsubscribe. */
+  onChanged: (listener: (status: DeviceServerStatus) => void) => () => void;
+  /**
+   * Each batch of lines a device's page logged, as it arrives, with the
+   * device's name and browser. Every editor window hears every device.
+   * Returns an unsubscribe.
+   */
+  onLog: (listener: (logs: DeviceLogs) => void) => () => void;
 }
 
 export interface StudioBridge {
@@ -345,6 +426,7 @@ export interface StudioBridge {
   readonly scripts: ScriptApi;
   readonly build: BuildApi;
   readonly preferences: PreferencesApi;
+  readonly devices: DevicesApi;
 }
 
 /*
@@ -365,10 +447,11 @@ export interface StudioBridge {
 /**
  * The members of a namespace that cross as a call and a reply.
  *
- * Everything returning a promise. The four that do not are deliberate and each
- * has its reason: `setDirty` is fire-and-forget, `onProjectChanged` and
- * `onProgress` are subscriptions, and `pathForFile` never leaves the renderer —
- * `webUtils.getPathForFile` is synchronous and local.
+ * Everything returning a promise. The six that do not are deliberate and each
+ * has its reason: `setDirty` is fire-and-forget, `onProjectChanged`,
+ * `onProgress`, `onChanged` and `onLog` are subscriptions, and `pathForFile`
+ * never leaves the renderer — `webUtils.getPathForFile` is synchronous and
+ * local.
  */
 type Invocable<T> = {
   [K in keyof T as T[K] extends (...args: never[]) => Promise<unknown> ? K : never]: T[K];
@@ -467,20 +550,35 @@ export const IPC_INVOKE = {
     loadShortcuts: 'prefs:loadShortcuts',
     saveShortcuts: 'prefs:saveShortcuts',
   },
+  devices: {
+    status: 'devices:status',
+    start: 'devices:start',
+    stop: 'devices:stop',
+    launch: 'devices:launch',
+    saveSettings: 'devices:saveSettings',
+    reclaimPort: 'devices:reclaimPort',
+    regenerateToken: 'devices:regenerateToken',
+    restart: 'devices:restart',
+    screenshot: 'devices:screenshot',
+    revealScreenshot: 'devices:revealScreenshot',
+  },
 } as const satisfies InvokeChannels;
 
 /**
- * The three channels that are not a call and a reply.
+ * The five channels that are not a call and a reply.
  *
- * Two are the main process talking first — a project that changed under another
- * window, and an export reporting progress — and one is the renderer telling
- * and not asking. They are listed rather than derived because there are three
- * of them and no shape to derive from.
+ * Four are the main process talking first — a project that changed under
+ * another window, an export reporting progress, the device server's status,
+ * and the lines a device logged — and one is the renderer telling and not
+ * asking. They are listed rather than derived because there are five of them
+ * and no shape to derive from.
  */
 export const IPC_EVENTS = {
   projectChanged: 'project:changed',
   buildProgress: 'build:progress',
   setDirty: 'project:setDirty',
+  devicesChanged: 'devices:changed',
+  devicesLog: 'devices:log',
 } as const;
 
 /**

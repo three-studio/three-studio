@@ -13,9 +13,16 @@ files:
 # The prebuilt web player, which `File > Export for Web` copies. Without it a
 # packaged build can open projects but cannot export one, and `findTemplate`
 # looks here first.
+#
+# The device client beside it, never inside it: the device server adds it to
+# the pages it serves a phone, and an export copies the player's folder whole —
+# a published game must not carry a script that reports to an editor.
+# `findDeviceClient` looks here first.
 extraResources:
   - from: ../web-template/dist
     to: web-template
+  - from: ../web-template/dist-device
+    to: device-client
 # Icons are generated from build/icon.svg by `npm run icons`; see the header of
 # scripts/make-icons.sh for why macOS gets its own square-cornered artwork.
 # `win` names nothing because electron-builder finds `build/icons/` by itself —

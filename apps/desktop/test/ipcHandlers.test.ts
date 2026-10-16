@@ -1,17 +1,23 @@
-import { mkdtemp, readFile, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
+import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   IPC_EVENTS,
   IPC_INVOKE,
+  LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   createMaterial,
+  createPhysicsSettings,
+  createRenderingSettings,
+  deserializeScene,
   type AssetManifest,
+  type DeviceServerStatus,
   type ProjectContents,
   type ProjectFile,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
  * The handler table, driven.
@@ -34,6 +40,8 @@ const stub = vi.hoisted(() => ({
   /** Where `preferences.ts` writes. A temporary directory, made below. */
   userData: '',
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
+  /** What `shell.showItemInFolder` was asked to show. */
+  shown: [] as string[],
 }));
 
 vi.mock('electron', () => ({
@@ -45,19 +53,29 @@ vi.mock('electron', () => ({
     getAppPath: (): string => stub.userData,
   },
   BrowserWindow: { fromWebContents: () => null },
-  dialog: { showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }) },
+  dialog: {
+    showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    showSaveDialog: () => Promise.resolve({ canceled: true, filePath: '' }),
+    showMessageBox: () => Promise.resolve({ response: 0, checkboxChecked: false }),
+  },
   ipcMain: {
     on: () => undefined,
     handle: (channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => {
       stub.handlers.set(channel, handler);
     },
   },
-  shell: { showItemInFolder: () => undefined, openPath: () => Promise.resolve('') },
+  shell: {
+    showItemInFolder: (path: string) => {
+      stub.shown.push(path);
+    },
+    openPath: () => Promise.resolve(''),
+  },
 }));
 
 const { registerIpcHandlers } = await import('../src/main/ipc');
+const { DeviceServer } = await import('../src/main/devices/DeviceServer');
 const { createProject, discoverScenes, readProject } = await import('../src/main/project');
-const { adoptProject, releaseProject } = await import('../src/main/session');
+const { adoptProject, noteScreenshot, releaseProject } = await import('../src/main/session');
 
 /** An editor window, as `announce` uses one: an id, a mailbox, and a grave. */
 function editorWindow(id: number, destroyed = false) {
@@ -75,8 +93,44 @@ function editorWindow(id: number, destroyed = false) {
 let windows: ReturnType<typeof editorWindow>[] = [];
 let sceneOpenElsewhere = false;
 
+/** A port nothing holds, below the range the system hands out to every other test's sockets. */
+async function freePort(): Promise<number> {
+  for (;;) {
+    const port = 20000 + Math.floor(Math.random() * 20000);
+    const free = await new Promise<boolean>((resolve) => {
+      const probe = createNetServer();
+      probe.once('error', () => resolve(false));
+      probe.listen(port, '127.0.0.1', () => probe.close(() => resolve(true)));
+    });
+    if (free) return port;
+  }
+}
+
+/** The device server the handlers drive, on loopback, so a test wakes no firewall. */
+let devices: InstanceType<typeof DeviceServer>;
+const devicesFile = { path: '', contents: '' };
+
 beforeAll(async () => {
   stub.userData = await mkdtemp(join(tmpdir(), 'studio-ipc-prefs-'));
+  const templateRoot = await mkdtemp(join(tmpdir(), 'studio-ipc-template-'));
+  await mkdir(join(templateRoot, 'web-template'), { recursive: true });
+  await writeFile(join(templateRoot, 'web-template', 'index.html'), '<html></html>', 'utf8');
+  await mkdir(join(templateRoot, 'device-client'), { recursive: true });
+  await writeFile(join(templateRoot, 'device-client', 'client.js'), '// client', 'utf8');
+  devicesFile.path = join(stub.userData, 'devices.json');
+  devicesFile.contents = JSON.stringify({
+    version: 1,
+    port: await freePort(),
+    token: 'abcdefghijKLMNOPQRST01',
+    transport: 'http',
+  });
+  await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  devices = new DeviceServer({
+    settingsFile: devicesFile.path,
+    certificateFile: join(stub.userData, 'device-certificate.json'),
+    templateRoots: [templateRoot],
+    listenHost: '127.0.0.1',
+  });
   registerIpcHandlers({
     openEditor: () => undefined,
     switchScene: () => true,
@@ -84,7 +138,12 @@ beforeAll(async () => {
     noteScene: () => undefined,
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
     editorWindows: () => windows as unknown as BrowserWindow[],
+    devices,
   });
+});
+
+afterAll(async () => {
+  await devices.stop();
 });
 
 beforeEach(() => {
@@ -189,6 +248,112 @@ describe('the guards are reached, not merely written', () => {
     expect(Object.keys(after.settings.build.profiles)).toEqual(before);
   });
 
+  it('conforms a launch snapshot before a phone is served it', async () => {
+    const root = await project();
+    const [entry] = await discoverScenes(root);
+
+    const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: {
+        id: entry!.id,
+        name: entry!.name,
+        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+      },
+      materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
+      prefabs: {},
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      loadingScene: null,
+      trap: 1,
+    });
+
+    // Read back from the server, as a phone reads it: what is checked is what
+    // a device is given, not what the handler was handed.
+    const local = status.urls.find((url) => url.address === 'localhost')!.url;
+    const build = (await (await fetch(`${local.replace('localhost', '127.0.0.1')}build.json`)).json()) as {
+      materials: Record<string, Record<string, unknown>>;
+    };
+    expect(build.materials['stone']!.side).toBe('front');
+    expect(build.materials['stone']).not.toHaveProperty('trap');
+  });
+
+  it('never lets a settings patch choose the token or the version', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, {
+      token: 'ZYXWVUTSRQPONMLKJIHGFEDCBA',
+      version: 9,
+      port: 70000,
+    });
+
+    // The token is the one secret a phone's link carries; a script that could
+    // set it would hold a link it already knows.
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+  });
+
+  it('lets a settings patch choose an address, and nothing that is not one', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { address: 'en0' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { address: '192.168.1.42' });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      address: '192.168.1.42',
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
+  it('lets a settings patch choose a transport this build serves, and no other', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { transport: 'gopher' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { transport: 'https' });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      transport: 'https',
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
+  it('lets a settings patch turn live reload on, and nothing that is not a boolean', async () => {
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { liveReload: 'yes' });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { liveReload: true });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...JSON.parse(devicesFile.contents),
+      liveReload: true,
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
+  it('lets a settings patch change the launch options it names, and keeps the others', async () => {
+    // A string is what a `null` field takes anywhere else at the boundary; a
+    // cap has to be a number a project could choose.
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { launchOptions: { maxPixelRatio: '2' } });
+
+    expect(await readFile(devicesFile.path, 'utf8')).toBe(devicesFile.contents);
+
+    const found = { ...JSON.parse(devicesFile.contents), launchOptions: { maxPixelRatio: 2, stats: true } };
+    await writeFile(devicesFile.path, JSON.stringify(found), 'utf8');
+
+    await invoke(IPC_INVOKE.devices.saveSettings, 1, { launchOptions: { forceWebGL: true } });
+
+    expect(JSON.parse(await readFile(devicesFile.path, 'utf8'))).toEqual({
+      ...found,
+      launchOptions: { maxPixelRatio: 2, stats: true, forceWebGL: true },
+    });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
+  });
+
   it('conforms layout preferences before they reach the file', async () => {
     await invoke(IPC_INVOKE.preferences.saveLayouts, 1, {
       version: LAYOUT_PREFERENCES_VERSION,
@@ -205,6 +370,57 @@ describe('the guards are reached, not merely written', () => {
     expect(written.working).toBeNull();
     expect(written.templates).toEqual([]);
     expect(written).not.toHaveProperty('trap');
+  });
+});
+
+describe('restarting a device', () => {
+  it('names a device by its id, and nothing else', async () => {
+    await expect(invoke(IPC_INVOKE.devices.restart, 1, '../x')).rejects.toThrow('Unknown device.');
+    await expect(invoke(IPC_INVOKE.devices.restart, 1, { device: 'abc12345' })).rejects.toThrow(
+      'Unknown device.',
+    );
+  });
+});
+
+describe('a device’s screenshot', () => {
+  it('names a device by its id, and nothing else', async () => {
+    await expect(invoke(IPC_INVOKE.devices.screenshot, 1, '../x')).rejects.toThrow(
+      'Unknown device.',
+    );
+    await expect(invoke(IPC_INVOKE.devices.screenshot, 1, { device: 'abc12345' })).rejects.toThrow(
+      'Unknown device.',
+    );
+  });
+
+  it('is shown in the file manager only when this session saved it', async () => {
+    stub.shown.length = 0;
+    const saved = join(tmpdir(), 'Level 1 — iPhone · Safari — 2026-10-01 at 14.32.05.png');
+
+    await expect(invoke(IPC_INVOKE.devices.revealScreenshot, 1, saved)).rejects.toThrow(
+      'That file was not saved by this session.',
+    );
+    await expect(invoke(IPC_INVOKE.devices.revealScreenshot, 1, { path: saved })).rejects.toThrow(
+      'That file was not saved by this session.',
+    );
+    expect(stub.shown).toEqual([]);
+
+    noteScreenshot(saved);
+    await invoke(IPC_INVOKE.devices.revealScreenshot, 1, saved);
+    expect(stub.shown).toEqual([saved]);
+  });
+});
+
+describe('a new device link', () => {
+  it('changes nothing in the file but the token', async () => {
+    const found = JSON.parse(devicesFile.contents) as Record<string, unknown>;
+
+    await invoke(IPC_INVOKE.devices.regenerateToken, 1);
+
+    const written = JSON.parse(await readFile(devicesFile.path, 'utf8')) as Record<string, unknown>;
+    expect(written.token).not.toBe(found.token);
+    expect(written).toEqual({ ...found, token: written.token });
+    // Put back, so that every other test here finds the file it was given.
+    await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   });
 });
 

@@ -54,6 +54,29 @@ export const SCRIPT_API_VERSION = 2;
  * fills what is missing and rejects anything written by a newer build, rather
  * than silently loading a shape this code no longer understands.
  *
+ * 10 — `playerController.eyeHeight` is measured from the character's feet
+ * rather than from the entity's origin, and the controller gained a `fov`.
+ *
+ * **The first entry here that changes what a field means rather than adding
+ * one**, which is why it is also the first that cannot be migrated by filling
+ * from a factory: `migrateScene` raises every stored value by its collider's
+ * half height, so the camera stays exactly where its author put it while the
+ * number starts meaning what its name says. See `raiseEyeHeightToFeet`.
+ *
+ * That is what makes the bump load-bearing in both directions. An older build
+ * reading a format 10 scene does not lose a field — it reads the same number
+ * with the old meaning and puts the eye half a collider too high, which is a
+ * scene that opens, runs, and is quietly wrong. Refusing the file is far better
+ * than a camera that is 0.85 m out with nothing to point at.
+ *
+ * `fov` rides along rather than taking an 11 of its own: it defaults to the 70
+ * that was hard-coded in the controller, so it changes nothing by existing, and
+ * 10 is not released — it exists in this working tree and nowhere else.
+ *
+ * `touchControls` and `touchLookSpeed` — the on-screen sticks — ride along for
+ * the same two reasons: both default to what a build without them did, and 10
+ * is still unreleased. Same call `water.speed` got inside 9.
+ *
  * 9 — the `water` component. An older build has no system for it, so it opens
  * the scene, keeps the component byte for byte — `adoptComponentTables` files an
  * unknown type under its own table and never touches the body — and draws
@@ -123,7 +146,7 @@ export const SCRIPT_API_VERSION = 2;
  * opening a new one: without it that build ignores the fields it has never
  * heard of and erases them on the first save.
  */
-export const SCENE_FORMAT_VERSION = 9;
+export const SCENE_FORMAT_VERSION = 10;
 
 /**
  * Separates an instance from the entity it produced, in an expanded id.
@@ -137,6 +160,20 @@ export const PREFAB_ID_SEPARATOR = '/';
 
 /**
  * `assets/prefabs/*.prefab.json`.
+ *
+ * 7 — the eye height and field of view of scene format 10. A prefab holds the
+ * same `ComponentTables`, so it can hold a player controller — and this is the
+ * first format change that alters what a stored number *means*, so a prefab
+ * that missed the migration would place its camera half a collider too high
+ * with nothing to say so.
+ *
+ * That makes this number load-bearing in a way the ones below it are not.
+ * `migratePrefab` borrows `migrateScene`, and it used to hand it
+ * `SCENE_FORMAT_VERSION` — telling it the document was already current. For a
+ * migration that only fills missing fields that is harmless; for one gated on
+ * the version it would silently skip every prefab in the project. The
+ * correspondence recorded in each entry here is now read by code, not only by
+ * people: see `migratePrefab`.
  *
  * 6 — the water component of scene format 9. A prefab holds the same
  * `ComponentTables`, so it can hold a water surface an older build cannot draw.
@@ -155,7 +192,7 @@ export const PREFAB_ID_SEPARATOR = '/';
  * 2 — components carry an `id`, and prefab overrides name them by it rather
  * than by their position in the array.
  */
-export const PREFAB_FORMAT_VERSION = 6;
+export const PREFAB_FORMAT_VERSION = 7;
 
 /**
  * Project file format version, tracked separately from scenes.

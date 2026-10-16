@@ -28,6 +28,7 @@ import {
 import { useViewportStore } from '../state/viewportStore';
 import { MenuTrigger } from '../ui/Menu';
 import { ToolButton, ToolSplitToggle, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
+import { DeviceButton } from './DeviceButton';
 import { buildLayoutMenu } from './layoutMenu';
 
 interface TransformTool {
@@ -177,7 +178,7 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
 
       {/* Transport sits dead centre regardless of how wide the flanking groups get. */}
       <div className="app-no-drag pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5">
-        <div className="pointer-events-auto flex items-center gap-0.5">
+        <div className="pointer-events-auto relative flex items-center gap-0.5">
           {/* One button, and it still picks its own icon — an icon is not
               something the registry carries. What it no longer decides is the
               word and the gesture: `transport.label()` and `transport.run()`
@@ -202,6 +203,9 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
             disabled={playState !== 'paused'}
             onClick={requestStep}
           />
+          {/* Off the transport's right edge rather than inside it, so the
+              transport stays dead centre. */}
+          <DeviceButton className="absolute left-full top-0 ml-3" />
         </div>
       </div>
 

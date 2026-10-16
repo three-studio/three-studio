@@ -5,6 +5,7 @@ import {
   createEntity,
   createMeshEntity,
   createModelEntity,
+  findComponent,
   type AudioSourceComponent,
 } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -685,5 +686,60 @@ describe('components that cannot sit together', () => {
     addComponentWithDependencies(cube.entity.id, 'model');
 
     expect(componentsOf(scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
+  });
+});
+
+/*
+ * Adding a player controller brings a collider and a body with it, and what
+ * those two come out as is the difference between a character and a curiosity.
+ *
+ * The defect this pins: the companion collider was whatever
+ * `createColliderFor` returns with nothing to measure — a 1 m box, centred on
+ * the origin because that is where physics centres a shape. Paired with an eye
+ * height of 1.7 it put the camera at 2.2 m above the floor on a character one
+ * metre tall, and nothing in the Inspector accounted for the difference.
+ */
+describe('the companions a player controller brings', () => {
+  it('shapes a bare entity into a person rather than a metre cube', () => {
+    const empty = createEntity('Player');
+    addEntity(empty);
+
+    addComponentWithDependencies(empty.entity.id, 'playerController');
+
+    const collider = findComponent(scene(), empty.entity.id, 'collider');
+    // 0.3 + 0.55 + 0.55 + 0.3 is 1.70 m standing, so the origin sits 0.85 m up
+    // and the 1.6 m default eye height lands where an eye belongs.
+    expect(collider).toMatchObject({ shape: 'capsule', radius: 0.3, halfHeight: 0.55 });
+
+    const player = findComponent(scene(), empty.entity.id, 'playerController');
+    expect(player?.eyeHeight).toBe(1.6);
+    expect(player?.fov).toBe(70);
+    // Nothing is drawn until somebody touches the screen, so a desktop build
+    // is exactly what it always was and a phone gets sticks without a setting.
+    expect(player?.touchControls).toBe('auto');
+  });
+
+  it('keeps the shape guessed from a mesh the author can see', () => {
+    // A player built on a sphere is unusual, and it is still the author's
+    // sphere: a guess measured against something on screen beats a default.
+    const ball = createMeshEntity('sphere');
+    addEntity(ball);
+
+    addComponentWithDependencies(ball.entity.id, 'playerController');
+
+    expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({ shape: 'sphere' });
+  });
+
+  it('still gives the body a kinematic type', () => {
+    // Unchanged, and asserted beside the new rule because both live in the same
+    // loop: a character is moved by the controller, so forces must not fight it.
+    const empty = createEntity('Player');
+    addEntity(empty);
+
+    addComponentWithDependencies(empty.entity.id, 'playerController');
+
+    expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
+      bodyType: 'kinematicPosition',
+    });
   });
 });

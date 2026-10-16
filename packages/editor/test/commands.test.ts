@@ -127,6 +127,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
   it('keeps every family whole when they are spread together', async () => {
     const { COMMANDS } = await import('../src/commands/registry');
     const { ASSET_COMMANDS } = await import('../src/commands/assetCommands');
+    const { DEVICE_COMMANDS } = await import('../src/commands/deviceCommands');
     const { EDIT_COMMANDS } = await import('../src/commands/editCommands');
     const { EXPORT_COMMANDS } = await import('../src/commands/exportCommands');
     const { MODEL_COMMANDS } = await import('../src/commands/modelCommands');
@@ -153,6 +154,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
       MODEL_COMMANDS,
       EXPORT_COMMANDS,
       PLAY_COMMANDS,
+      DEVICE_COMMANDS,
     ];
     const declared = families.reduce((total, family) => total + Object.keys(family).length, 0);
     expect(Object.keys(COMMANDS)).toHaveLength(declared);
@@ -427,7 +429,27 @@ describe('the palette is a view over the table, not a feature', () => {
     // The palette itself always can, and it is the only one here that does not
     // need a document, a project or a selection.
     expect(offered).toContain('openCommandPalette');
-    for (const id of ['undo', 'delete', 'duplicate', 'newScene', 'runExport', 'deleteAsset'] as const) {
+    for (const id of [
+      'undo',
+      'delete',
+      'duplicate',
+      'newScene',
+      'runExport',
+      'deleteAsset',
+      // A launch serves the open project, and a server stops with it.
+      'launchOnDevices',
+      'stopDeviceServer',
+      // A link exists only while the server runs.
+      'copyDeviceLink',
+      'openDevicePage',
+      // Whether live reload is on is the server's to say, and so are the
+      // launch options.
+      'toggleLiveReload',
+      'toggleDeviceStats',
+      'toggleForceWebGL',
+      // A frame is a running device's, which only the server can name.
+      'captureDevices',
+    ] as const) {
       expect(offered, id).not.toContain(id);
     }
 

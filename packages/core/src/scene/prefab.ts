@@ -546,6 +546,34 @@ export function applyPrefabOverride(
 }
 
 /**
+ * The scene format a prefab of a given version was written alongside.
+ *
+ * Prefab 7 is scene 10 and everything before it is scene 9 or earlier, which is
+ * all a version-gated migration needs to know: it asks "is this older than the
+ * format that changed" and nothing finer. Each entry on `PREFAB_FORMAT_VERSION`
+ * already records the correspondence in prose; this is the one line of it that
+ * code reads.
+ *
+ * Returning 9 for everything below 7 rather than mapping each number is
+ * deliberate. The map would claim a precision nobody has — prefab 3 and scene 4
+ * were the same change, prefab 5 was scene 7 — and every pass in `migrateScene`
+ * except one is gated on the data, so a number that is merely *old enough* is
+ * the whole requirement. The day a second semantic migration lands between two
+ * prefab versions, this becomes a table and the tests here say so.
+ *
+ * Written `>= 7` rather than `< 7` so that a file whose `version` is missing or
+ * is not a number — which the type says cannot happen and a hand-edited file
+ * can — comes out as *old* and is migrated, instead of being waved through as
+ * current. `readPrefabAssets` casts the parsed JSON and checks only the upper
+ * bound, so this is the last place that can be wrong about a prefab's age, and
+ * against `undefined` the safe answer is the comparison that does the work
+ * rather than the one that skips it.
+ */
+function sceneFormatOfPrefab(version: number): number {
+  return version >= 7 ? SCENE_FORMAT_VERSION : 9;
+}
+
+/**
  * Fills in what a prefab written by an older editor lacks.
  *
  * It holds `EntityDoc`s, so it inherits every problem a scene has and the same
@@ -556,7 +584,14 @@ export function migratePrefab(prefab: PrefabDoc): PrefabDoc {
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
   const asScene = migrateScene({
-    version: SCENE_FORMAT_VERSION,
+    // Its **own** age, not the current format. This used to say
+    // `SCENE_FORMAT_VERSION`, which told `migrateScene` the document had
+    // nothing left to do. That was harmless for as long as every pass in there
+    // was gated on the data — and it stopped being harmless the moment one was
+    // gated on the version: a prefab holding a player controller would have
+    // kept an eye height at the old meaning, and placed its camera half a
+    // collider too high with nothing anywhere saying why.
+    version: sceneFormatOfPrefab(prefab.version),
     id: prefab.id,
     name: prefab.name,
     entities: prefab.entities,

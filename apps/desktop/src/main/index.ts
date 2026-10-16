@@ -1,13 +1,17 @@
+import { join } from 'node:path';
+import { IPC_EVENTS } from '@three-studio/core';
 import { BrowserWindow, app, session } from 'electron';
+import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
 import { handleAssetProtocol, handleImportProtocol, registerAssetScheme } from './protocol';
 import { applyContentSecurityPolicy } from './security';
-import { runSmokeTest } from './smoke';
+import { followWithSmokeDevice, runSmokeTest } from './smoke';
 import {
   editorWindows,
   isSceneOpenElsewhere,
   isTransitioning,
   noteScene,
+  onProjectLeft,
   openEditor,
   openLauncher,
   openSceneWindow,
@@ -45,6 +49,36 @@ void app.whenReady().then(() => {
   applyContentSecurityPolicy(session.defaultSession, isDev);
   handleAssetProtocol();
   handleImportProtocol();
+
+  // A hidden window standing in for a phone, for the smoke harness. See
+  // `followWithSmokeDevice`.
+  const smokeDevice = process.env['STUDIO_SMOKE_DEVICE'] ? followWithSmokeDevice() : null;
+
+  // What the device server says goes to every editor window alike: each one
+  // shows the server, and any of them may be the one whose Console is open.
+  const toEditors = (channel: string, payload: unknown): void => {
+    for (const win of editorWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(channel, payload);
+    }
+  };
+
+  // One per process, and idle until something asks it to serve: it listens on
+  // every interface, so it must never be listening without someone knowing.
+  const devices = new DeviceServer({
+    settingsFile: join(app.getPath('userData'), 'devices.json'),
+    certificateFile: join(app.getPath('userData'), 'device-certificate.json'),
+    // Where the exporter looks for the player: packaged, the app's resources;
+    // in development, the workspace build.
+    templateRoots: [process.resourcesPath, app.getAppPath()],
+    onChange: (status) => {
+      toEditors(IPC_EVENTS.devicesChanged, status);
+      smokeDevice?.(status);
+    },
+    onLog: (logs) => toEditors(IPC_EVENTS.devicesLog, logs),
+    trace: (line) => {
+      if (isDev) console.log(`[devices] ${line}`);
+    },
+  });
   registerIpcHandlers({
     openEditor,
     switchScene,
@@ -52,7 +86,12 @@ void app.whenReady().then(() => {
     noteScene,
     isSceneOpenElsewhere,
     editorWindows,
+    devices,
   });
+  // Stopped with the project: the server serves the project's files, and
+  // nothing else would close it once the last window showing them has gone.
+  onProjectLeft(() => void devices.stop());
+  app.on('will-quit', () => void devices.stop());
 
   // The check can start in either window. Given a project it boots straight
   // into the editor, because driving the launcher through a picker from a

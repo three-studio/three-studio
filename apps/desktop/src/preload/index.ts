@@ -1,6 +1,9 @@
 import type {
   AssetImportResult,
   AssetManifest,
+  DeviceLogs,
+  DeviceScreenshot,
+  DeviceServerStatus,
   ImportSessionState,
   ExportProgress,
   ExportResult,
@@ -151,6 +154,35 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.preferences.loadShortcuts),
     saveShortcuts: (preferences): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.preferences.saveShortcuts, preferences),
+  },
+  devices: {
+    status: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.status),
+    start: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.start),
+    stop: (): Promise<DeviceServerStatus> => ipcRenderer.invoke(IPC_INVOKE.devices.stop),
+    launch: (snapshot): Promise<DeviceServerStatus | null> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.launch, snapshot),
+    saveSettings: (patch): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.saveSettings, patch),
+    reclaimPort: (): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.reclaimPort),
+    regenerateToken: (): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.regenerateToken),
+    restart: (device): Promise<DeviceServerStatus> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.restart, device),
+    screenshot: (device): Promise<DeviceScreenshot | null> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.screenshot, device),
+    revealScreenshot: (path): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.devices.revealScreenshot, path),
+    onChanged: (listener) => {
+      const handler = (_event: unknown, status: DeviceServerStatus) => listener(status);
+      ipcRenderer.on(IPC_EVENTS.devicesChanged, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.devicesChanged, handler);
+    },
+    onLog: (listener) => {
+      const handler = (_event: unknown, logs: DeviceLogs) => listener(logs);
+      ipcRenderer.on(IPC_EVENTS.devicesLog, handler);
+      return () => ipcRenderer.off(IPC_EVENTS.devicesLog, handler);
+    },
   },
 };
 

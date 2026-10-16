@@ -1,15 +1,21 @@
 import {
+  PREFAB_FORMAT_VERSION,
   SCENE_FORMAT_VERSION,
   createComponent,
+  createEntity,
   createEnvironment,
   createMeshEntity,
   createSkySettings,
   deserializeScene,
   emptyComponentTables,
   findComponent,
+  migratePrefab,
   serializeScene,
   setComponentsOf,
+  type ColliderComponent,
+  type ComponentDoc,
   type MeshComponent,
+  type PrefabDoc,
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -126,7 +132,7 @@ describe('scene migration', () => {
     expect(body).toMatchObject({ gravityScale: 1, linearDamping: 0 });
     // A missing multiplier would reach the controller as NaN, and a character
     // whose speed is NaN does not move at all.
-    expect(player).toMatchObject({ sprintMultiplier: 1.8, eyeHeight: 1.7 });
+    expect(player).toMatchObject({ sprintMultiplier: 1.8, eyeHeight: 1.6 });
   });
 
   it('fills a light of format 4, which had no shadow settings at all', () => {
@@ -439,5 +445,128 @@ describe('scene migration', () => {
   it('refuses a scene written by a newer editor rather than mangling it', () => {
     const json = JSON.stringify({ ...createStarter(), version: SCENE_FORMAT_VERSION + 1 });
     expect(() => deserializeScene(json)).toThrow(/newer version/);
+  });
+});
+
+/*
+ * The first migration in this project that changes what a number **means**
+ * rather than supplying one that is missing — format 9 → 10, where `eyeHeight`
+ * stops being measured from the entity's origin and starts being measured from
+ * the character's feet.
+ *
+ * Every assertion below is really the same one: *the camera does not move*.
+ * That is the whole contract of a semantic migration, and it is the only thing
+ * an author would notice if it were got wrong — a player whose view has
+ * silently dropped by half a capsule since they last opened the project.
+ */
+
+/** A capsule 1.70 m tall, so its origin sits 0.85 m above the floor. */
+function personCapsule(): ColliderComponent {
+  return { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 };
+}
+
+/** One entity carrying a player controller, and whatever else is handed in. */
+function playerEntity(eyeHeight: number, extra: ComponentDoc[] = []) {
+  const player = { ...createComponent('playerController'), eyeHeight };
+  return createEntity('Player', [player, ...extra]);
+}
+
+function sceneAt(version: number, eyeHeight: number, extra: ComponentDoc[] = []): string {
+  const template = playerEntity(eyeHeight, extra);
+  const scene: SceneDoc = {
+    version,
+    id: 'scene-1',
+    name: 'Main',
+    entities: { [template.entity.id]: template.entity },
+    components: emptyComponentTables(),
+    rootOrder: [template.entity.id],
+    environment: createEnvironment(),
+  };
+  setComponentsOf(scene, template.entity.id, template.components);
+  return JSON.stringify(scene);
+}
+
+function eyeHeightOf(scene: SceneDoc): number {
+  const entityId = Object.keys(scene.entities)[0]!;
+  return findComponent(scene, entityId, 'playerController')!.eyeHeight;
+}
+
+describe('eye height, measured from the feet', () => {
+  it('raises a format 9 value by its collider, leaving the camera where it was', () => {
+    // Stored as 1.7 above the origin, and the origin is the middle of a capsule
+    // whose bottom is 0.85 m below it. 1.7 above the origin is 2.55 above the
+    // feet, and that is the number this has to come out with.
+    const migrated = deserializeScene(sceneAt(9, 1.7, [personCapsule()]));
+
+    expect(eyeHeightOf(migrated)).toBeCloseTo(2.55, 6);
+    expect(migrated.version).toBe(SCENE_FORMAT_VERSION);
+  });
+
+  it('measures a box from its half extent', () => {
+    // The shape the old default gave every bare entity, and the reason the
+    // default player's eye sat half a metre higher than anyone had asked for.
+    const box: ColliderComponent = { ...createComponent('collider'), size: [0.5, 0.9, 0.5] };
+    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.2, [box])))).toBeCloseTo(2.1, 6);
+  });
+
+  it('leaves a controller with no collider alone', () => {
+    // Nothing is centred on the origin, so the origin already was the feet —
+    // which is also exactly what fly mode does.
+    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7)))).toBeCloseTo(1.7, 6);
+  });
+
+  it('measures a mesh-derived shape as zero rather than guessing', () => {
+    // A triangle mesh is built from the entity's own geometry in its own local
+    // space, so the origin is wherever the author put it. Guessing here would
+    // also be a guess the runtime could not reproduce.
+    const trimesh: ColliderComponent = { ...createComponent('collider'), shape: 'trimesh' };
+    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [trimesh])))).toBeCloseTo(1.7, 6);
+  });
+
+  it('does not raise a document that already counts from the feet', () => {
+    // The gate is the version, because no amount of looking at `1.7` says which
+    // meaning it was written under. Migrating twice would lift the camera by
+    // another whole collider on every open.
+    const already = sceneAt(SCENE_FORMAT_VERSION, 1.7, [personCapsule()]);
+    expect(eyeHeightOf(deserializeScene(already))).toBeCloseTo(1.7, 6);
+  });
+
+  /*
+   * The prefab half, which is the one that would have gone wrong quietly.
+   *
+   * `migratePrefab` borrows `migrateScene`, and it used to hand it
+   * `SCENE_FORMAT_VERSION` — saying "already current" whatever the prefab's own
+   * age. Every pass but this one is gated on the data, so that was harmless
+   * until it was not: without `sceneFormatOfPrefab`, the two tests below both
+   * come back 1.7 and every prefab in a project keeps a stale meaning.
+   */
+  function prefabAt(version: number, eyeHeight: number): PrefabDoc {
+    const template = playerEntity(eyeHeight, [personCapsule()]);
+    const components = emptyComponentTables();
+    setComponentsOf({ components }, template.entity.id, template.components);
+    return {
+      version,
+      id: 'prefab-1',
+      name: 'Player',
+      entities: { [template.entity.id]: template.entity },
+      components,
+      root: template.entity.id,
+    };
+  }
+
+  function prefabEyeHeight(prefab: PrefabDoc): number {
+    const entityId = Object.keys(prefab.entities)[0]!;
+    return findComponent(prefab, entityId, 'playerController')!.eyeHeight;
+  }
+
+  it('raises a prefab written before the change, by its own age', () => {
+    const migrated = migratePrefab(prefabAt(6, 1.7));
+
+    expect(prefabEyeHeight(migrated)).toBeCloseTo(2.55, 6);
+    expect(migrated.version).toBe(PREFAB_FORMAT_VERSION);
+  });
+
+  it('leaves a prefab that already counts from the feet alone', () => {
+    expect(prefabEyeHeight(migratePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7)))).toBeCloseTo(1.7, 6);
   });
 });

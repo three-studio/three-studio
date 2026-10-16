@@ -462,12 +462,28 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
   mutate(`Add ${type}`, (draft) => {
     if (!draft.entities[id]) return;
 
+    // Whether `createColliderFor` had anything to shape a collider from. With a
+    // mesh or a model to measure, its guess is about the object the author can
+    // see and is the better answer; with neither, it falls back to a 1 m box.
+    const guessable = present.has('mesh') || present.has('model');
+
     for (const kind of toAdd) {
       const component = createComponentForEntity(kind, siblings);
       // A character is moved by the controller, not by forces, so its body has
       // to be kinematic or physics would fight the input.
       if (component.type === 'rigidbody' && type === 'playerController') {
         component.bodyType = 'kinematicPosition';
+      }
+      // A person, rather than the 1 m box a bare entity would otherwise get.
+      // That box is what made the default player incoherent: centred on the
+      // origin, it put a 1.6 m eye at 2.1 m above the floor on a character one
+      // metre tall, and nothing on screen said where the extra half metre came
+      // from. 0.30 + 0.55 + 0.55 + 0.30 is 1.70 m standing, which `eyeHeight`
+      // is chosen against — see `createPlayerController`.
+      if (component.type === 'collider' && type === 'playerController' && !guessable) {
+        component.shape = 'capsule';
+        component.radius = 0.3;
+        component.halfHeight = 0.55;
       }
       putComponent(draft, id, component);
     }

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
+import { watchLiveReload } from './shell/liveReload';
 import { loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
+import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
 import { selectDirty, useDocumentStore } from './state/documentStore';
 import { useProjectStore } from './state/projectStore';
@@ -68,6 +70,14 @@ function EditorWindow() {
   // Another window may add, rename or remove a scene at any moment, and this
   // window holds a copy of the project taken when it opened.
   useEffect(() => window.studio.project.onProjectChanged(adoptContents), [adoptContents]);
+
+  // The device server is the app's, not this window's: another window, or a
+  // project's script, may start or stop it at any moment.
+  useEffect(() => watchDevices(), []);
+
+  // Relaunches the devices a second after each change made here, while live
+  // reload is on and the devices run this window's launch.
+  useEffect(() => watchLiveReload(), []);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.

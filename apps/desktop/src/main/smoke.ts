@@ -1,7 +1,12 @@
+import { X509Certificate } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
-import { app, type BrowserWindow } from 'electron';
+import type { DeviceServerStatus } from '@three-studio/core';
+import { BrowserWindow, app } from 'electron';
 import { beginQuit } from './windows';
+
+/** How long after a device first runs `STUDIO_SMOKE_DEVICE_CRASH` ends the smoke device's page. */
+const CRASH_AFTER_MS = 4_000;
 
 const PROBE = `(() => ({
   text: document.body.innerText.trim(),
@@ -100,4 +105,110 @@ async function run(win: BrowserWindow, errors: string[]): Promise<void> {
     beginQuit();
     app.exit(1);
   }
+}
+
+/**
+ * A device of the harness's own: with `STUDIO_SMOKE_DEVICE=1`, a hidden window
+ * opens on the device server's `localhost` link as soon as the server runs, so
+ * that the real client, the real player and the real protocol run before
+ * anyone picks up a phone. What its page logs is printed as `[smoke device]`.
+ *
+ * In a session of its own, held in memory, with the sandbox and no preload: a
+ * phone gets neither the editor's content security policy nor its storage, and
+ * neither should the page standing in for one. It closes when the server
+ * stops — every window gone is how the app quits, and this one must never be
+ * what keeps it alive — and opens again when the server runs again.
+ *
+ * It proves the path, not the phones: Electron's Chromium, on this computer,
+ * over `localhost`, which a browser counts as a secure context.
+ *
+ * Under HTTPS it accepts the server's certificate the way a person pressing
+ * *Proceed* does: for this window alone, and only the certificate the server
+ * answers with, matched by its fingerprint. Trusting it instead, through
+ * `setCertificateVerifyProc`, would hide the state a phone is in after that
+ * press — Chromium keeps the error, and caches nothing received under it.
+ * Nothing else in the app ever accepts a certificate the system refuses.
+ *
+ * With `STUDIO_SMOKE_DEVICE_CRASH=1` too, its page is ended once, a few seconds
+ * after a device first runs, the way iOS ends a page for the memory it uses —
+ * no event reaches the page — then loaded again, as Safari does by itself and
+ * Chrome's *Reload* does: a smoke run then carries the detection of a reload
+ * nobody asked for from end to end.
+ */
+export function followWithSmokeDevice(): (status: DeviceServerStatus) => void {
+  let device: BrowserWindow | null = null;
+  let fingerprint: string | null = null;
+  const crash = process.env['STUDIO_SMOKE_DEVICE_CRASH'] === '1';
+  let crashing = false;
+  // Electron keeps no exception from one connection to the next, so the
+  // question comes back with each one: said once per certificate.
+  let accepted: string | null = null;
+  app.on('certificate-error', (event, webContents, _url, _error, certificate, callback) => {
+    if (device === null || device.isDestroyed() || webContents !== device.webContents) return;
+    let presented: string;
+    try {
+      presented = new X509Certificate(certificate.data).fingerprint256;
+    } catch {
+      return;
+    }
+    // Anything else is refused, as Chromium does when nobody answers.
+    if (fingerprint === null || presented !== fingerprint) return;
+    event.preventDefault();
+    callback(true);
+    if (accepted === fingerprint) return;
+    accepted = fingerprint;
+    console.log(`[smoke device] accepted the certificate ${fingerprint.slice(0, 23)}…`);
+  });
+  return (status) => {
+    fingerprint = status.certificate?.fingerprint ?? null;
+    if (status.state === 'stopped') {
+      if (device !== null && !device.isDestroyed()) device.destroy();
+      device = null;
+      return;
+    }
+    if (crash && !crashing && status.devices.some((entry) => entry.state === 'running')) {
+      // Once, and long enough after the game runs for its page to have marked
+      // itself alive and drawn a while.
+      crashing = true;
+      setTimeout(() => {
+        if (device === null || device.isDestroyed()) return;
+        console.log('[smoke device] crashed on purpose');
+        device.webContents.forcefullyCrashRenderer();
+      }, CRASH_AFTER_MS);
+    }
+    if (status.state !== 'running' || (device !== null && !device.isDestroyed())) return;
+    const url = status.urls.find((entry) => entry.address === 'localhost')?.url;
+    if (url === undefined) return;
+
+    const opened = new BrowserWindow({
+      show: false,
+      webPreferences: {
+        partition: 'smoke-device',
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        // A hidden window is a background page to Chromium, which would slow
+        // its timers to a crawl — the heartbeat among them.
+        backgroundThrottling: false,
+      },
+    });
+    device = opened;
+    opened.webContents.on('console-message', ({ level, message }) => {
+      console.log(`[smoke device] ${level} ${message}`);
+    });
+    opened.webContents.on('did-fail-load', (_event, code, description, failed) => {
+      console.log(`[smoke device] could not load ${failed}: ${description} (${code})`);
+    });
+    if (crash) {
+      opened.webContents.on('render-process-gone', () => {
+        if (opened.isDestroyed()) return;
+        console.log('[smoke device] reloaded');
+        opened.webContents.reload();
+      });
+    }
+    console.log('[smoke device] opening the localhost link');
+    opened.loadURL(url).catch(() => {
+      // Said by `did-fail-load`, with what failed.
+    });
+  };
 }

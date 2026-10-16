@@ -16,7 +16,12 @@ import {
   type AssetChange,
   type LayoutPreferences,
   type ShortcutPreferences,
+  type DeviceScreenshot,
+  type DeviceServerStatus,
+  type DeviceSettingsPatch,
+  type LaunchSnapshot,
   type OpenProject,
+  type PortHolder,
   type ProjectSummary,
   type SceneChange,
   type ScriptBuildResult,
@@ -26,6 +31,9 @@ import {
   conformShortcutPreferences,
   conformMaterial,
   conformSettingsPatch,
+  conformDeviceSettingsPatch,
+  conformLaunchSnapshot,
+  isDeviceId,
   migratePrefab,
   type BridgeHandlers,
 } from '@three-studio/core';
@@ -55,6 +63,7 @@ import {
   renameAssetFolder,
 } from './assetMutations';
 import { scanAssets, updateAssetSettings } from './assetScan';
+import type { DeviceServer } from './devices/DeviceServer';
 import { importSessions } from './import/ImportSession';
 import { resolveInside } from './paths';
 import {
@@ -80,10 +89,12 @@ import {
   adoptProject,
   currentProject,
   noteExport,
+  noteScreenshot,
   releaseProject,
   requireProject,
   setDirty,
   wasExported,
+  wasScreenshot,
 } from './session';
 
 /**
@@ -104,13 +115,15 @@ function adopt(opened: OpenProject): OpenProject {
  * anything reachable from the page has to be justified here.
  */
 /**
- * What the handlers need from the window layer.
+ * What the handlers need from outside themselves: the window layer, and the
+ * device server.
  *
  * Injected rather than imported. The cycle this used to avoid is gone —
  * `windows.ts` read `isDirty` from here, and now reads it from `session.ts` —
  * but the seam is worth more than the cycle was: what a window does when a
  * scene changes under it is a policy of its own, and the handlers are supposed
- * to ask for it rather than contain it.
+ * to ask for it rather than contain it. The device server is one per process,
+ * made where the app starts, so a test can hand in one listening on loopback.
  */
 export interface IpcDeps {
   openEditor: (projectPath: string) => void;
@@ -129,6 +142,65 @@ export interface IpcDeps {
   isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: string) => boolean;
   /** Every editor window, for broadcasting a project that has changed. */
   editorWindows: () => readonly BrowserWindow[];
+  devices: DeviceServer;
+}
+
+/**
+ * Asks, in a native dialog, before another Three Studio is quit to free a port.
+ *
+ * In the main process, and asynchronous: the renderer cannot answer it for
+ * itself, so a script calling the bridge gets this dialog and never a kill,
+ * and the server goes on answering phones while it is open.
+ */
+async function confirmQuit(
+  sender: Electron.WebContents,
+  holder: PortHolder,
+  port: number,
+): Promise<boolean> {
+  // Quitting a process is not undone, and a headless check has nobody to ask.
+  if (process.env['STUDIO_SMOKE']) return false;
+  const window = BrowserWindow.fromWebContents(sender);
+  const program = holder.program === null ? '' : `: ${holder.program}`;
+  const options: Electron.MessageBoxOptions = {
+    type: 'warning',
+    buttons: ['Cancel', 'Quit It'],
+    defaultId: 0,
+    cancelId: 0,
+    message: 'Quit the other Three Studio?',
+    detail:
+      `It holds port ${port} (process ${holder.pid}${program}). Quitting it closes its windows, ` +
+      'and whatever it has not saved is lost.',
+  };
+  const { response } = await (window
+    ? dialog.showMessageBox(window, options)
+    : dialog.showMessageBox(options));
+  return response === 1;
+}
+
+/**
+ * Where a device's screenshot goes, asked in a native Save dialog on the
+ * window that asked for it: the path chosen, or `null` when cancelled.
+ *
+ * Under the smoke harness, no dialog: the path offered, so that a run saves
+ * into its scratch copy of a project. `confirmQuit` answers no there because
+ * it would quit a process; this one only writes a file into that copy.
+ */
+async function chooseScreenshotPath(
+  sender: Electron.WebContents,
+  defaultPath: string,
+): Promise<string | null> {
+  if (process.env['STUDIO_SMOKE']) return defaultPath;
+  const window = BrowserWindow.fromWebContents(sender);
+  const options: Electron.SaveDialogOptions = {
+    title: 'Save Screenshot',
+    defaultPath,
+    filters: [{ name: 'PNG Image', extensions: ['png'] }],
+    properties: ['createDirectory', 'showOverwriteConfirmation'],
+  };
+  const { canceled, filePath } = await (window
+    ? dialog.showSaveDialog(window, options)
+    : dialog.showSaveDialog(options));
+  return canceled || filePath === '' ? null : filePath;
 }
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -498,6 +570,54 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     saveShortcuts: (_event, preferences: ShortcutPreferences): Promise<void> =>
       saveShortcutPreferences(conformShortcutPreferences(preferences)),
+  },
+  devices: {
+    status: (): Promise<DeviceServerStatus> => deps.devices.status(),
+
+    start: (): Promise<DeviceServerStatus> => deps.devices.start(),
+
+    stop: (): Promise<DeviceServerStatus> => deps.devices.stop(),
+
+    launch: (_event, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> =>
+      // Conformed here, where it arrives: it is whatever the renderer sent, and
+      // it becomes the files a phone downloads. See `conformLaunchSnapshot`.
+      deps.devices.launch(requireProject(), conformLaunchSnapshot(snapshot)),
+
+    saveSettings: (_event, patch: DeviceSettingsPatch): Promise<DeviceServerStatus> =>
+      // Never the token: a script that chose it would hold a link it knows.
+      deps.devices.saveSettings(conformDeviceSettingsPatch(patch)),
+
+    reclaimPort: (event): Promise<DeviceServerStatus> =>
+      deps.devices.reclaimPort((holder, port) => confirmQuit(event.sender, holder, port)),
+
+    // Nothing to conform: it takes nothing, and the token is made here.
+    regenerateToken: (): Promise<DeviceServerStatus> => deps.devices.regenerateToken(),
+
+    restart: (_event, device: string): Promise<DeviceServerStatus> => {
+      // The id goes into the trace and is matched against the link's: only
+      // what a device could have been given gets that far.
+      if (!isDeviceId(device)) throw new Error('Unknown device.');
+      return deps.devices.restart(device);
+    },
+
+    screenshot: async (event, device: string): Promise<DeviceScreenshot | null> => {
+      // As for a restart: only what a device could have been given gets as
+      // far as the link.
+      if (!isDeviceId(device)) throw new Error('Unknown device.');
+      const shot = await deps.devices.screenshot(device, (defaultPath) =>
+        chooseScreenshotPath(event.sender, defaultPath),
+      );
+      // The one file *Show in Finder* may now show.
+      if (shot !== null) noteScreenshot(shot.path);
+      return shot;
+    },
+
+    revealScreenshot: (_event, path: string): void => {
+      if (typeof path !== 'string' || !wasScreenshot(path)) {
+        throw new Error('That file was not saved by this session.');
+      }
+      shell.showItemInFolder(path);
+    },
   },
   };
 

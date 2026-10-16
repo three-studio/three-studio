@@ -151,3 +151,18 @@ export function leftWithNothing(
 export function needsDiscardPrompt(dirty: boolean, smokeTest: boolean): boolean {
   return dirty && !smokeTest;
 }
+
+/**
+ * Whether a link a window tried to open goes to the system browser.
+ *
+ * Web links only. `shell.openExternal` gives a link to whatever the system
+ * says handles its scheme — a `file:` link to a `.command` file runs it in
+ * Terminal on macOS — and links reach it from `window.open` and from a
+ * navigation, both of which a project's own script can make. Everything the
+ * editor opens on purpose is `http:` or `https:`; another scheme would have to
+ * be let through here, on purpose too.
+ */
+export function opensInBrowser(url: string): boolean {
+  const protocol = URL.parse(url)?.protocol;
+  return protocol === 'http:' || protocol === 'https:';
+}

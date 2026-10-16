@@ -23,6 +23,7 @@ import {
   type BuildManifest,
   type BuildProfile,
   type MeshComponent,
+  type PhysicsSettings,
   type ProjectFile,
   type RenderingSettings,
 } from '@three-studio/core';
@@ -74,6 +75,7 @@ async function writeAsset(
  */
 async function makeProject(
   rendering: RenderingSettings = createRenderingSettings(),
+  physics: PhysicsSettings = createPhysicsSettings(),
 ): Promise<{ projectPath: string; templateRoot: string }> {
   const root = await mkdtemp(join(tmpdir(), 'studio-export-'));
   const projectPath = join(root, 'project');
@@ -111,7 +113,7 @@ async function makeProject(
     settings: {
       loadingScene: null,
       rendering,
-      physics: createPhysicsSettings(),
+      physics,
       build: createBuildProfiles('Export Test'),
     },
   };
@@ -441,6 +443,24 @@ describe('web export', () => {
     // Still written beside it: a build is persisted data, and a player that
     // predates `rendering` reads this one.
     expect(build.forceWebGL).toBe(rendering.forceWebGL);
+  });
+
+  it('carries the physics settings, so the build falls the way the editor did', async () => {
+    /*
+     * Nothing about physics used to travel, and the player passed nothing to
+     * the engine, so every build ran on the factory's gravity and step: a
+     * project tuned for low gravity played it in the editor and lost it in the
+     * thing people download.
+     */
+    const physics: PhysicsSettings = { gravity: [0, -3, 0], fixedTimestep: 1 / 120, maxSubsteps: 5 };
+    const { projectPath, templateRoot } = await makeProject(createRenderingSettings(), physics);
+    const outputDir = join(projectPath, '..', 'out-physics');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8'));
+    expect(build.physics).toEqual(physics);
+    expect(build.formatVersion).toBe(6);
   });
 
   it('tells the player which images its file names do not describe', async () => {

@@ -13,6 +13,10 @@ apps/desktop/out/
 # Prebuilt web player. Produced by `npm run build:web`; the exporter copies it.
 apps/web-template/dist/
 
+# The device client, produced by the same command. The device server adds it to
+# the pages it serves; `dist/` above does not match this folder.
+apps/web-template/dist-device/
+
 # Working notes, plans and decision records. Local by design, never versioned:
 # a citation from the code to a document in here would resolve for nobody else,
 # so the reasoning goes in the comment beside the code instead.

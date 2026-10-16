@@ -1,4 +1,4 @@
-import { prefabToScene, sceneToPrefab, type SceneDoc } from '@three-studio/core';
+import { prefabToScene, sceneToPrefab, type PrefabDoc, type SceneDoc } from '@three-studio/core';
 import { create } from 'zustand';
 import { useAssetStore } from './assetStore';
 import { useDocumentStore, type HistoryStash } from './documentStore';
@@ -133,4 +133,35 @@ export function inPrefabMode(): boolean {
 /** The prefab being edited, deepest first open last. `null` in a scene. */
 export function currentPrefabFrame(): PrefabFrame | null {
   return usePrefabModeStore.getState().stack.at(-1) ?? null;
+}
+
+/**
+ * What Prefab Mode would leave behind, without leaving it: the scene it was
+ * entered from, and the prefab table with every open prefab's unsaved edits in
+ * it. `null` in a scene.
+ *
+ * For a launch, which runs what is on screen and may neither save nor change
+ * what the person is editing. Each open prefab is the document one frame above
+ * it — the live document for the deepest — written over the store's original,
+ * which is exactly what `closeTo` saves as it unwinds; a test holds the two
+ * together, so a change to one that the other misses fails there.
+ */
+export function composedPrefabMode(): {
+  scene: SceneDoc;
+  prefabs: Record<string, PrefabDoc>;
+} | null {
+  const { stack } = usePrefabModeStore.getState();
+  if (stack.length === 0) return null;
+
+  const stored = useAssetStore.getState().prefabs;
+  const prefabs = { ...stored };
+  stack.forEach((frame, index) => {
+    const original = stored[frame.assetId];
+    // `closeTo` saves nothing for a prefab gone from the store, so neither
+    // does this.
+    if (!original) return;
+    const document = stack[index + 1]?.scene ?? useDocumentStore.getState().scene;
+    prefabs[frame.assetId] = sceneToPrefab(document, original);
+  });
+  return { scene: stack[0]!.scene, prefabs };
 }

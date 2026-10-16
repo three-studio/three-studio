@@ -3,6 +3,7 @@ import { askForText, askToConfirm } from '../state/dialogStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useProjectStore } from '../state/projectStore';
 import { notify } from '../state/toastStore';
+import { ipcErrorMessage } from './ipcError';
 import { setSceneName } from './sceneCommands';
 
 /*
@@ -28,11 +29,7 @@ function report(cause: unknown): void {
   notify({
     kind: 'error',
     title: 'Could not do that to the scene',
-    // IPC wraps a thrown error's message; the useful half is after the colon.
-    description: (cause instanceof Error ? cause.message : String(cause)).replace(
-      /^Error invoking remote method '[^']+':\s*\w*Error:\s*/,
-      '',
-    ),
+    description: ipcErrorMessage(cause),
   });
 }
 

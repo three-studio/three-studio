@@ -13,6 +13,7 @@ export type {
   ProjectApi,
   ScriptApi,
   BuildApi,
+  DevicesApi,
   BuildSize,
   ExportProgress,
   ExportResult,
@@ -218,6 +219,7 @@ export {
   MATERIAL_SIDE_LABELS,
   PLAYER_CONTROLLER_MODE_LABELS,
   TEXTURE_WRAP_LABELS,
+  TOUCH_CONTROLS_LABELS,
 } from './scene/schema';
 export type {
   BackgroundMode,
@@ -227,6 +229,7 @@ export type {
   EnvironmentMode,
   FogMode,
   PlayerControllerMode,
+  TouchControlsMode,
 } from './scene/schema';
 
 export {
@@ -288,8 +291,18 @@ export {
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
 
+/*
+ * How far a collider hangs below the entity's origin, which is the middle of
+ * the shape rather than its base. Exported because the runtime needs the same
+ * answer the scene migration used, and two of them would put a camera and a
+ * capsule in different places.
+ */
+export { colliderHalfHeight } from './components/collider/defaults';
+
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';
+/* How a console call's arguments read: in the editor's Console, and on a device. */
+export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */
 export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 
@@ -350,3 +363,90 @@ export {
   unlinkEntity,
   validateHierarchy,
 } from './scene/graph';
+
+/* What a device launch runs: the editor's in-memory state, as Play would run it. */
+export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot } from './devices/schema';
+export type { LaunchSnapshot } from './devices/schema';
+/* The device server's settings: per machine, never in a project. */
+export {
+  DEFAULT_DEVICE_PORT,
+  DEVICE_SETTINGS_VERSION,
+  conformDeviceSettings,
+  conformDeviceSettingsPatch,
+  createDeviceLaunchOptions,
+  createDeviceSettings,
+  createDeviceToken,
+  isUsableDeviceToken,
+} from './devices/schema';
+export type {
+  DeviceCertificateStatus,
+  DeviceInfo,
+  DeviceLaunchOptions,
+  DeviceLogs,
+  DeviceScreenshot,
+  DeviceServerState,
+  DeviceServerStatus,
+  DeviceSettings,
+  DeviceSettingsPatch,
+  DeviceTransport,
+  DeviceUrl,
+  PortHolder,
+} from './devices/schema';
+/*
+ * What a device and the server say to each other. The client a phone runs
+ * imports `./devices/protocol` itself rather than this barrel, so that its
+ * bundle carries that one file.
+ */
+export {
+  DEVICE_BODY_LIMIT,
+  DEVICE_FORGET_MS,
+  DEVICE_HEARTBEAT_MS,
+  DEVICE_LIMIT,
+  DEVICE_LOG_BYTES,
+  DEVICE_LOG_FLUSH_MS,
+  DEVICE_LOG_LINES,
+  DEVICE_LOG_PENDING,
+  DEVICE_LOG_RATE,
+  DEVICE_LOG_TEXT,
+  DEVICE_PING_MS,
+  DEVICE_PROTOCOL_VERSION,
+  DEVICE_RATE,
+  DEVICE_RETRY_MS,
+  DEVICE_SCREENSHOT_LIMIT,
+  DEVICE_SCREENSHOT_RATE,
+  DEVICE_SCREENSHOT_WAIT_MS,
+  DEVICE_SILENCE_MS,
+  DEVICE_STATS_MS,
+  DEVICE_STATS_RATE,
+  DEVICE_STATS_WARMUP_MS,
+  DEVICE_STREAMS_PER_DEVICE,
+  DEVICE_STREAM_TIMEOUT_MS,
+  DEVICE_TRANSPORTS,
+  conformHello,
+  conformLogMessage,
+  conformStatsReport,
+  conformStatusReport,
+  cutLogText,
+  isDeviceId,
+  isDeviceTransport,
+  isRequestId,
+  parseServerMessage,
+} from './devices/protocol';
+export type {
+  DeviceBackend,
+  DeviceHello,
+  DeviceLogLevel,
+  DeviceLogLine,
+  DeviceLogMessage,
+  DeviceMessageType,
+  DeviceState,
+  DeviceStats,
+  DeviceStatsReport,
+  DeviceStatusReport,
+  ServerMessage,
+} from './devices/protocol';
+export { describeUserAgent, deviceLabel } from './devices/userAgent';
+export type { DescribedUserAgent } from './devices/userAgent';
+/* A device's numbers in words, as its row and its own overlay both write them. */
+export { describeDeviceStats, formatCount } from './devices/stats';
+export type { DescribedDeviceStats } from './devices/stats';

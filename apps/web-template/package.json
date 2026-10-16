@@ -4,9 +4,9 @@
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "The player an exported web build ships. Runs a scene document with no editor.",
+  "description": "The player an exported web build ships, which runs a scene document with no editor; and the device client the editor's device server adds to the pages it serves, built apart into dist-device/.",
   "scripts": {
-    "build": "vite build"
+    "build": "vite build && vite build --config vite.device.config.ts"
   },
   "dependencies": {
     "@three-studio/core": "0.3.0",

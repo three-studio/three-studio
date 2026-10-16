@@ -1,5 +1,5 @@
 import type { PrefabDoc } from '../scene/prefab';
-import { ASSETS_DIR, type RenderingSettings } from '../project/schema';
+import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
   | 'model'
@@ -47,8 +47,13 @@ export const MATERIAL_ASSET_VERSION = 1;
  * to be renamed to `scene.json` at the root while the rest went into `scenes/`,
  * and that asymmetry is what `sceneMap` — keyed by name *and* by id — existed
  * to undo.
+ *
+ * 6 — `build.json` carries `physics`, the project's gravity and step. Additive:
+ * a build without it runs on the factory's values, which is what every build
+ * before it ran on — the player never passed any, so a project with lunar
+ * gravity fell at Earth's in everything it shipped.
  */
-export const BUILD_FORMAT_VERSION = 5;
+export const BUILD_FORMAT_VERSION = 6;
 
 /**
  * Where a scene lives in a build, from its id alone.
@@ -103,6 +108,13 @@ export interface BuildManifest {
    * the defaults, and it went unnoticed because the defaults happened to agree.
    */
   rendering?: RenderingSettings;
+  /**
+   * The project's physics settings, whole.
+   *
+   * Format 6. Absent on a build written before it, and then the factory's —
+   * the values the player ran every earlier build on, since it passed none.
+   */
+  physics?: PhysicsSettings;
   /**
    * Every scene in the build **by id**, entry point first; the rest ship for a
    * script to load later.

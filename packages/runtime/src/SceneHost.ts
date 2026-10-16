@@ -185,7 +185,7 @@ export class SceneHost implements SceneApi {
     const engine = await Engine.create({
       ...this.options,
       scene: expandPrefabs(scene, { get: (id) => this.options.prefabs?.[id] }).scene,
-      scenes: this,
+      scenes: this.sceneApiFor(path),
       // Handed over rather than built per engine, so the clips outlive the
       // scene that first asked for them.
       audioCache: this.clips ?? undefined,
@@ -206,6 +206,27 @@ export class SceneHost implements SceneApi {
     this.engine = engine;
     this.current = path;
     this.onSceneChanged?.(path, engine);
+  }
+
+  /**
+   * This host as one scene's scripts see it: `current` is always that scene.
+   *
+   * The host itself names a scene only once it runs, after `Engine.create` — and
+   * every `onAwake` and `onStart` runs inside `Engine.create`. Handed the host,
+   * a script asking where it was read `null` in the first scene and the name of
+   * the scene just left in every later one, so a level restarting itself from
+   * `onStart` restarted the previous one, or failed on `No scene "null"`.
+   *
+   * Fixed per scene rather than by naming the scene before building it: a
+   * loading scene and the scene it stands in for can be built at the same time,
+   * and one name on the host would answer one of them with the other's.
+   */
+  private sceneApiFor(path: string): SceneApi {
+    return {
+      current: path,
+      load: (scene) => this.load(scene),
+      go: (scene) => this.go(scene),
+    };
   }
 
   read(path: string): Promise<SceneDoc> {

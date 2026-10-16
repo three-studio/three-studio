@@ -18,6 +18,43 @@ export function createCollider(): ColliderComponent {
 }
 
 /**
+ * How far the bottom of a collider sits below the entity's origin.
+ *
+ * Physics centres a shape on the body it hangs from — a capsule and a cuboid
+ * both straddle the origin — so an entity's origin is its *middle*, not its
+ * feet. Anything that wants to place something at ground level has to subtract
+ * this, and `PlayerController` is the one that taught us so: `eyeHeight` was
+ * measured from the origin, which put the default player's eye at 2.2 m for a
+ * character 1 m tall, with no way to work out the offset from the Inspector.
+ *
+ * **Zero for a mesh-derived shape is an answer, not a shrug.** A triangle mesh
+ * and a convex hull are built from the entity's own geometry in its own local
+ * space, so the origin is already wherever the author put it — usually the
+ * feet, for a model exported to stand on a floor. It is also the only answer
+ * the scene migration can give, having no geometry to measure, and the two must
+ * agree or a migrated scene and a running one would disagree about the ground.
+ *
+ * Unscaled, like `eyeHeight` itself: both are read in the entity's own units.
+ * Physics does scale the shape (see `describeCollider`), so a player entity at
+ * anything other than scale 1 keeps the mismatch it has always had — correcting
+ * one half of it here would be a second, invisible change of behaviour on top
+ * of the one that was wanted.
+ */
+export function colliderHalfHeight(collider: ColliderComponent): number {
+  switch (collider.shape) {
+    case 'box':
+      return collider.size[1];
+    case 'sphere':
+      return collider.radius;
+    case 'capsule':
+      return collider.halfHeight + collider.radius;
+    case 'trimesh':
+    case 'convexHull':
+      return 0;
+  }
+}
+
+/**
  * Enough of a sibling to recognise one by.
  *
  * `ComponentDoc` is what the caller actually holds, and this file may not name

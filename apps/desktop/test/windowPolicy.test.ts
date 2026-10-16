@@ -3,6 +3,7 @@ import {
   isSceneOpenElsewhere,
   leftWithNothing,
   needsDiscardPrompt,
+  opensInBrowser,
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
@@ -157,5 +158,25 @@ describe('confirming unsaved work away', () => {
 
   it('does not ask the smoke harness, which cannot answer', () => {
     expect(needsDiscardPrompt(true, true)).toBe(false);
+  });
+});
+
+describe('a link handed to the system', () => {
+  it.each(['http://localhost:7700/x/', 'HTTPS://example.com'])('opens %s in the browser', (url) => {
+    expect(opensInBrowser(url)).toBe(true);
+  });
+
+  it.each([
+    'file:///Applications/Calculator.app',
+    'smb://host/share',
+    'javascript:alert(1)',
+    'studio-asset://x',
+    'mailto:a@b.c',
+    'not a url',
+  ])('never hands over %s', (url) => {
+    // The system gives a link to whatever claims its scheme — a `file:` link
+    // to a `.command` file runs in Terminal — and a project's own script can
+    // ask for one with `window.open`.
+    expect(opensInBrowser(url)).toBe(false);
   });
 });

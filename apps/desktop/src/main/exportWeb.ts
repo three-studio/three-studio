@@ -1,13 +1,9 @@
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, posix, relative, resolve, sep } from 'node:path';
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, posix, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
   collectSceneAssets,
-  type TextureEncoding,
   findScene,
-  BUILD_FORMAT_VERSION,
-  type AssetSettings,
-  type BuildManifest,
   basePathProblem,
   buildScenePath,
   deserializeScene,
@@ -27,7 +23,10 @@ import { AssetError, hashFile } from './assetFiles';
 import { readMaterialAssets, readPrefabAssets } from './assetLibraries';
 import { companionsOf, scanAssets } from './assetScan';
 import { sizeOf, writeBuildFiles } from './buildFiles';
+import { assembleManifest, type ShippedAsset } from './buildManifest';
+import { escapeAttribute, insertIntoHead } from './html';
 import { resolveInside } from './paths';
+import { findTemplate } from './prebuilt';
 import { discoverScenes, readProject } from './project';
 import { buildScripts } from './scripts';
 
@@ -189,27 +188,8 @@ export async function exportBuild(
     ? new Set(manifest.assets.map((asset) => asset.id))
     : union(scenes.map(({ scene }) => new Set(collectSceneAssets(scene, materials, prefabs))));
 
-  const paths: Record<string, string> = {};
-  /**
-   * Only the images whose file name does not already say what they are.
-   *
-   * Which today means Ultra HDR and nothing else: it is a `.jpg`, so the player
-   * would send it through the ordinary image path and quietly lose every stop
-   * of range above white — a sky that casts no light rather than a visible
-   * failure. Radiance and OpenEXR are named by their extension and are not
-   * listed, so this map is empty for almost every build.
-   */
-  const textureEncodings: Record<string, TextureEncoding> = {};
-  /**
-   * What the author chose at import, for every asset that ships.
-   *
-   * The player has no sidecars — they stay in the project — so without this a
-   * model that is 2746 units in the file would be 2746 units in the build,
-   * while the editor showed it at the scale it was imported at. A build that
-   * does not look like the editor is the one bug an export must not have.
-   */
-  const assetSettings: Record<string, AssetSettings> = {};
-  let assetCount = 0;
+  // What `build.json` says about each one is `assembleManifest`'s to decide.
+  const shippedAssets: ShippedAsset[] = [];
   let copied = 0;
 
   /*
@@ -264,12 +244,7 @@ export async function exportBuild(
     const destination = join(outputDir, 'assets', ...relativeToAssets.split(posix.sep));
     await mkdir(dirname(destination), { recursive: true });
     await cp(source, destination);
-    paths[id] = relativeToAssets;
-    if (entry.settings.kind === 'texture' && entry.settings.encoding === 'ultrahdr') {
-      textureEncodings[id] = entry.settings.encoding;
-    }
-    assetSettings[id] = entry.settings;
-    assetCount += 1;
+    shippedAssets.push({ entry, path: relativeToAssets });
 
     /*
      * A `.gltf` names its buffer and its images in the file, not by asset id,
@@ -314,10 +289,6 @@ export async function exportBuild(
   // list written at the end would record it as part of this build.
   await rm(join(outputDir, 'scenes'), { recursive: true, force: true });
 
-  const shipped: string[] = [];
-  // An alias, not an address: a script may name a level, and the name is what
-  // an author reads in the editor. Nothing is found by it — see `sceneNames`.
-  const sceneNames: Record<string, string> = {};
   for (const { scene, entry } of scenes) {
     const file = buildScenePath(entry.id);
     // A scene file carrying no id of its own is addressed by its project path,
@@ -325,8 +296,6 @@ export async function exportBuild(
     // than to special-case.
     await mkdir(dirname(join(outputDir, file)), { recursive: true });
     await writeFile(join(outputDir, file), serializeScene(scene), 'utf8');
-    shipped.push(entry.id);
-    sceneNames[entry.name] = entry.id;
   }
 
   // --- scripts --------------------------------------------------------------
@@ -342,38 +311,23 @@ export async function exportBuild(
   /*
    * One file, and the only one the player reads before it knows anything.
    *
-   * Typed rather than written as a bare literal, and the type lives in core:
-   * the reader is a browser and the writer is the main process, so nothing but
-   * a shared declaration can keep them in step. What each field means is on
-   * `BuildManifest`; what is decided *here* is below.
-   *
    * The asset table, the materials and the prefabs used to be three files
    * beside this one — three more round trips before the first frame, for
    * documents that are small and always needed. See format 4.
    */
-  const build: BuildManifest = {
-    formatVersion: BUILD_FORMAT_VERSION,
+  const build = assembleManifest({
     title: profile.title,
-    // Kept beside `rendering`, which subsumes it: a build written before that
-    // field carries only this one, and a player from then still falls back to
-    // it. Persisted data gains fields; it does not lose them.
-    forceWebGL: project.settings.rendering.forceWebGL,
     rendering: project.settings.rendering,
-    scenes: shipped,
-    sceneNames,
-    // The id the project already holds, passed through. An id naming a scene
-    // this profile does not ship reaches the player as a loading scene it
-    // cannot read, which it says out loud — where dropping it here was silent.
+    physics: project.settings.physics,
+    scenes: scenes.map(({ entry }) => entry),
     loadingScene: project.settings.loadingScene,
-    assets: paths,
+    assets: shippedAssets,
     // Only what a shipped scene links to. An unused material or prefab asset is
     // no more part of the build than an unused texture is.
     materials: pick(materials, referenced),
     prefabs: pick(prefabs, referenced),
-    textureEncodings,
-    assetSettings,
     scripts: scriptFile,
-  };
+  });
   await writeFile(join(outputDir, 'build.json'), JSON.stringify(build, null, 2), 'utf8');
 
   // --- what was written -----------------------------------------------------
@@ -386,7 +340,7 @@ export async function exportBuild(
   return {
     outputDir,
     sceneCount: scenes.length,
-    assetCount,
+    assetCount: shippedAssets.length,
     scriptCount: scripts.scriptCount,
     // Off the list rather than counted along the way: the sizes are already
     // there, and a second tally is a second thing to keep in step.
@@ -448,66 +402,13 @@ function pick<T>(source: Readonly<Record<string, T>>, ids: ReadonlySet<string>):
  */
 async function applyBase(indexPath: string, base: string): Promise<void> {
   const html = await readFile(indexPath, 'utf8');
-  if (!/<head[^>]*>/i.test(html)) {
+  // Escaped though `basePathProblem` already refused the characters that
+  // would need it: see `escapeAttribute`.
+  const tagged = insertIntoHead(html, `<base href="${escapeAttribute(base)}" />`);
+  if (tagged === null) {
     throw new AssetError('The web player page has no <head>, so it cannot be given a base URL.');
   }
-  // A replacer function, not a replacement string: `String.replace` reads `$&`,
-  // "$`", `$1` and friends out of a string, so a base carrying `$1` would be
-  // written back with a captured group in place of itself.
-  const tag = `<base href="${escapeAttribute(base)}" />`;
-  const tagged = html.replace(
-    /<head([^>]*)>/i,
-    (_match, attributes: string) => `<head${attributes}>\n    ${tag}`,
-  );
   await writeFile(indexPath, tagged, 'utf8');
-}
-
-/**
- * Second net behind `basePathProblem`, which already refuses the characters
- * that would need it. Kept because the value lands in markup either way, and a
- * validator and an emitter that trust each other are how injections happen.
- */
-function escapeAttribute(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
-}
-
-/**
- * Locates the prebuilt player.
- *
- * Packaged it sits in the app's resources; in development it is the workspace
- * build, found by walking up from the app path so the answer does not depend on
- * which directory the dev server was started from.
- */
-async function findTemplate(searchRoots: readonly string[]): Promise<string> {
-  const candidates = searchRoots.flatMap((root) => [
-    join(root, 'web-template'),
-    ...ancestors(root).map((dir) => join(dir, 'apps', 'web-template', 'dist')),
-  ]);
-
-  for (const candidate of candidates) {
-    try {
-      const entries = await readdir(candidate);
-      if (entries.includes('index.html')) return candidate;
-    } catch {
-      // Not here; try the next one.
-    }
-  }
-
-  throw new AssetError(
-    'The web player has not been built. Run `npm run build --workspace @three-studio/web-template`.',
-  );
-}
-
-function ancestors(from: string): string[] {
-  const list: string[] = [];
-  let current = resolve(from);
-  for (let depth = 0; depth < 8; depth++) {
-    list.push(current);
-    const parent = dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return list;
 }
 
 function toPosix(path: string): string {
