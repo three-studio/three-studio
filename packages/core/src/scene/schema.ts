@@ -75,8 +75,12 @@ export { EMITTER_SHAPE_LABELS } from '../components/particleEmitter/schema';
 export type {
   PlayerControllerComponent,
   PlayerControllerMode,
+  TouchControlsMode,
 } from '../components/playerController/schema';
-export { PLAYER_CONTROLLER_MODE_LABELS } from '../components/playerController/schema';
+export {
+  PLAYER_CONTROLLER_MODE_LABELS,
+  TOUCH_CONTROLS_LABELS,
+} from '../components/playerController/schema';
 export type {
   PrefabInstanceComponent,
   PrefabOverride,

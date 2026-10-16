@@ -219,6 +219,7 @@ export {
   MATERIAL_SIDE_LABELS,
   PLAYER_CONTROLLER_MODE_LABELS,
   TEXTURE_WRAP_LABELS,
+  TOUCH_CONTROLS_LABELS,
 } from './scene/schema';
 export type {
   BackgroundMode,
@@ -228,6 +229,7 @@ export type {
   EnvironmentMode,
   FogMode,
   PlayerControllerMode,
+  TouchControlsMode,
 } from './scene/schema';
 
 export {
@@ -288,6 +290,14 @@ export {
   typesWithoutRuntime,
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
+
+/*
+ * How far a collider hangs below the entity's origin, which is the middle of
+ * the shape rather than its base. Exported because the runtime needs the same
+ * answer the scene migration used, and two of them would put a camera and a
+ * capsule in different places.
+ */
+export { colliderHalfHeight } from './components/collider/defaults';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';

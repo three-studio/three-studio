@@ -16,12 +16,21 @@
     "access": "public"
   },
   "description": "Game runtime: three.js rendering, Rapier physics, script host. Must never import @three-studio/editor.",
-  "keywords": ["three-studio", "threejs", "webgpu", "rapier", "physics", "game-engine"],
+  "keywords": [
+    "three-studio",
+    "threejs",
+    "webgpu",
+    "rapier",
+    "physics",
+    "game-engine"
+  ],
   "engines": {
     "node": ">=22.12.0"
   },
   "//sideEffects": "Deliberately absent. Both the component registry (core/src/components/index.ts) and the behaviour registry (runtime/src/Engine.ts) are populated by bare `import './x'` statements, and declaring the package side-effect-free tells every bundler it may drop exactly those — a scene then loads with components no one registered.",
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -39,7 +48,8 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.20.0",
-    "@three-studio/core": "0.3.0"
+    "@three-studio/core": "0.3.0",
+    "nipplejs": "1.0.4"
   },
   "//peerDependencies": "three is a peer and not a dependency: the whole package is built around `three/webgpu`, and a second copy of three in a consumer's tree makes every `instanceof` across the boundary fail. See the README for the bundler alias it also needs.",
   "peerDependencies": {

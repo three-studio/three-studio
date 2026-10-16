@@ -1,9 +1,11 @@
 import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
+import { colliderHalfHeight } from '../components/collider/defaults';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
   emptyComponentTables,
+  findComponent,
   isKnownComponentType,
   putComponent,
 } from './components';
@@ -48,9 +50,19 @@ export function deserializeScene(json: string): SceneDoc {
 /**
  * Accepts any previously written document version and returns the current one.
  *
- * There is only one version so far, so this is a validation gate — but the
- * branch point exists from day one so a future format change is a case
- * statement rather than a compatibility break for existing projects.
+ * Nearly all of it is version-blind on purpose: `fillMissingFields` merges each
+ * component from its own factory and `adoptComponentTables` reads the data, so
+ * a field added at any point in the past arrives filled without anyone writing
+ * a case for it. That is what has kept this function from becoming a ladder.
+ *
+ * `raiseEyeHeightToFeet` is the first pass that cannot work that way, and the
+ * difference is worth naming: it changes what a number **means** rather than
+ * supplying one that is absent, and no amount of looking at `1.7` says which of
+ * the two meanings it was written under. So it is gated on the version, and the
+ * incoming number has to be read before the stamp at the bottom overwrites it.
+ *
+ * The gate is also why `migratePrefab` may not pass `SCENE_FORMAT_VERSION`: see
+ * the note there.
  */
 export function migrateScene(input: unknown): SceneDoc {
   if (typeof input !== 'object' || input === null) {
@@ -70,16 +82,65 @@ export function migrateScene(input: unknown): SceneDoc {
     throw new SceneFormatError('Scene file is missing its entity table.');
   }
 
+  const writtenAs = doc.version;
   const scene = input as SceneDoc;
   repairHierarchy(scene);
   adoptComponentTables(scene);
   fillMissingFields(scene);
+  // After the fill, not before: a collider written before one of its fields
+  // existed carries `undefined` there until the fill has run, and the offset
+  // would come out `NaN` — which would travel into the camera silently.
+  if (writtenAs < EYE_HEIGHT_FROM_FEET) raiseEyeHeightToFeet(scene);
   // Stamped, so the document says which format it now conforms to. Without
   // this a migrated scene was saved back under its original number and the
   // "written by a newer editor" guard could never fire, however many formats
   // came later.
   scene.version = SCENE_FORMAT_VERSION;
   return scene;
+}
+
+/**
+ * The format in which `eyeHeight` changed meaning.
+ *
+ * A literal rather than `SCENE_FORMAT_VERSION`, and that is the whole point: it
+ * names the document that *already* holds feet-relative values, so it must stay
+ * at 10 while the current version goes on moving. Writing the current version
+ * here would make the pass run again on every later format and raise a camera
+ * by another collider each time.
+ */
+const EYE_HEIGHT_FROM_FEET = 10;
+
+/**
+ * Format 9 → 10: `eyeHeight` stops being measured from the entity's origin and
+ * starts being measured from the character's feet.
+ *
+ * Raising each stored value by its collider's half height is what makes the
+ * change invisible: the camera comes out at the height its author put it, and
+ * the number now means what it says. An entity with no collider is left alone,
+ * because with nothing centred on the origin the origin already *was* the
+ * reference — which is also exactly what fly mode does.
+ *
+ * **One case this cannot reach**, and it is better said than discovered: a
+ * prefab instance that overrides `eyeHeight`. The override lives in the scene,
+ * but the collider it would have to be measured against lives inside the prefab
+ * document, which this function does not have and must not go looking for —
+ * a scene migration that read other files would be a scene that fails to open
+ * because an asset is missing. Such an instance moves by its collider's half
+ * height, which is visible, is one number, and is fixable in the Inspector.
+ * Dropping the override instead would silently discard what its author wrote,
+ * which is the worse of the two.
+ */
+function raiseEyeHeightToFeet(scene: SceneDoc): void {
+  for (const [entityId, held] of Object.entries(scene.components.playerController)) {
+    const collider = findComponent(scene, entityId, 'collider');
+    if (collider === undefined) continue;
+
+    // The same collider the physics builds and the same one the controller
+    // measures from: all three go through `findComponent`, so an entity
+    // carrying two cannot have them disagree about which one is the body.
+    const half = colliderHalfHeight(collider);
+    for (const controller of Object.values(held)) controller.eyeHeight += half;
+  }
 }
 
 /**
