@@ -123,7 +123,7 @@ describe('the scene pane', () => {
   it('gives the three background modes three signatures', () => {
     const modes = ['color', 'texture', 'sky'] as const;
     const signatures = modes.map((backgroundMode) =>
-      sceneSignature({ ...createEnvironment(), backgroundMode }),
+      sceneSignature({ ...createEnvironment(), backgroundMode }, false),
     );
     expect(new Set(signatures).size).toBe(modes.length);
   });
@@ -140,6 +140,21 @@ describe('the scene pane', () => {
      */
     const sections = SCENE_SCHEMA.length;
     const fields = SCENE_SCHEMA.reduce((total, section) => total + section.fields.length, 0);
-    expect(sceneSignature(createEnvironment())).toHaveLength(sections + fields);
+    expect(sceneSignature(createEnvironment(), false)).toHaveLength(sections + fields);
+  });
+
+  it('leaves the scene name out while a prefab is open', () => {
+    /*
+     * In Prefab Mode the field named a scene that was not on screen, and
+     * leaving it renamed that scene's file. Scene ▸ Rename Scene… does that,
+     * after asking.
+     */
+    const section = SCENE_SCHEMA.find((candidate) => candidate.label === 'Scene');
+    const environment = createEnvironment();
+
+    expect(section?.visibleWhen?.({ environment, prefabOpen: true })).toBe(false);
+    expect(section?.visibleWhen?.({ environment, prefabOpen: false })).toBe(true);
+    // A shape of its own, or opening a prefab would only refresh the pane.
+    expect(sceneSignature(environment, true)).not.toBe(sceneSignature(environment, false));
   });
 });

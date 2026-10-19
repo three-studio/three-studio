@@ -63,8 +63,11 @@ export {
  * That only works while a predicate needs nothing else to answer, so the type
  * says so rather than a comment asking nicely: a predicate that reaches for
  * `scene.name` stops compiling instead of quietly making the signature a lie.
+ *
+ * `prefabOpen` is the one thing read from outside the document: with a prefab
+ * open, the document is the prefab, and the pane is the prefab's.
  */
-export type SceneSubject = Pick<SceneDoc, 'environment'>;
+export type SceneSubject = Pick<SceneDoc, 'environment'> & { prefabOpen: boolean };
 
 type SceneFieldBase = DistributiveOmit<FieldSpec<SceneSubject>, 'path'>;
 
@@ -164,6 +167,10 @@ const skyField = (
 export const SCENE_SCHEMA: readonly SceneSection[] = [
   {
     label: 'Scene',
+    // Not while a prefab is open. The field named the scene, which is not on
+    // screen then, and leaving it renamed the scene's file — from a blur, with
+    // nothing asked. Scene ▸ Rename Scene… does that, after asking.
+    visibleWhen: (scene) => !scene.prefabOpen,
     // The scene's *address*, not `SceneDoc.name`: writing it moves the file,
     // because the file name is the name. See the `on: 'scene'`
     // branch in `buildInspector`.
@@ -332,9 +339,10 @@ const SCENE_ENTRIES: readonly { visibleWhen?: (scene: SceneSubject) => boolean }
  * screen until something unrelated rebuilt the pane.
  *
  * Takes the environment rather than the whole document on purpose — see
- * `SceneSubject`, which is what keeps that honest.
+ * `SceneSubject`, which is what keeps that honest — and whether a prefab is
+ * open, which the Scene folder reads.
  */
-export function sceneSignature(environment: EnvironmentDef): string {
-  return shapeOf(SCENE_ENTRIES, { environment });
+export function sceneSignature(environment: EnvironmentDef, prefabOpen: boolean): string {
+  return shapeOf(SCENE_ENTRIES, { environment, prefabOpen });
 }
 

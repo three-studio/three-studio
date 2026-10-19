@@ -13,6 +13,7 @@ import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
+import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useScriptStore } from '../state/scriptStore';
 import { Menu } from '../ui/Menu';
 
@@ -36,6 +37,10 @@ export function InspectorPanel() {
   // The environment alone, not the document: immer keeps the identity of what a
   // mutation did not touch, so moving an entity does not re-key the scene pane.
   const environment = useDocumentStore((s) => s.scene.environment);
+  // The scene pane leaves out the scene's Name while a prefab is open, so
+  // opening or leaving one changes its shape. It was rebuilt then only because
+  // the selection happened to change identity on the way.
+  const prefabOpen = usePrefabModeStore((s) => s.stack.length > 0);
   // Named rather than recomputed: `isSingle` is one of the three cases nobody
   // had a word for, and the panel is where the missing word was most obvious.
   const selected = Selection.of(selection, expandedScene().scene);
@@ -103,7 +108,9 @@ export function InspectorPanel() {
      * can change which properties it declares without changing their number, and
      * a shape of the same width would say nothing had moved.
      */
-    if (selection.length === 0) return `${sceneSignature(environment)}#${assetRevision}`;
+    if (selection.length === 0) {
+      return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
+    }
     if (entityId !== undefined) {
       return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}`;
     }
@@ -125,6 +132,7 @@ export function InspectorPanel() {
     selection,
     entityId,
     environment,
+    prefabOpen,
     entity,
     scriptRevision,
     assetRevision,

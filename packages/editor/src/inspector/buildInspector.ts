@@ -29,6 +29,7 @@ import {
 } from './target';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
+import { inPrefabMode } from '../state/prefabModeStore';
 import { COMPONENT_PANES, paneEntriesFor } from '../components/panes';
 import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
@@ -123,14 +124,15 @@ export class InspectorBinding {
    * panel is what was missing, so this is a table walk and nothing more.
    */
   private buildScene(): void {
-    const scene = currentScene();
+    // In Prefab Mode the document is the prefab, and the pane is the prefab's.
+    const subject = { environment: currentScene().environment, prefabOpen: inPrefabMode() };
 
     for (const section of SCENE_SCHEMA) {
-      if (section.visibleWhen && !section.visibleWhen(scene)) continue;
+      if (section.visibleWhen && !section.visibleWhen(subject)) continue;
       const folder = this.binder.pane.addFolder({ title: section.label });
 
       for (const spec of section.fields) {
-        if (spec.visibleWhen && !spec.visibleWhen(scene)) continue;
+        if (spec.visibleWhen && !spec.visibleWhen(subject)) continue;
 
         const path = sceneFieldPath(spec);
         const coalesceBase = `inspector:scene:${spec.on}:${spec.key}`;
