@@ -1,5 +1,6 @@
 import type { AssetKind, BuildSize } from '@three-studio/core';
 import { formatBytes } from '../import/preview/facts';
+import { showInFileManagerLabel } from '../platform';
 import { useProjectStore } from '../state/projectStore';
 import { useToastStore } from '../state/toastStore';
 import { defineCommand } from './command';
@@ -119,7 +120,7 @@ function runExport(): void {
         detailsOpen: result.warnings.length > 0,
         actions: [
           {
-            label: 'Show in Finder',
+            label: showInFileManagerLabel(),
             primary: true,
             onClick: () => void window.studio.build.revealOutput(result.outputDir),
           },

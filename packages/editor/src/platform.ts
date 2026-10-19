@@ -1,3 +1,5 @@
+import type { Platform, StudioBridge } from '@three-studio/core';
+
 /**
  * The editor also has to render outside Electron (storybook-style harnesses,
  * and eventually a browser build), so the bridge is treated as optional here
@@ -17,6 +19,37 @@ export const shiftKey = isMac ? '⇧' : 'Shift+';
  */
 export function hasModifier(event: { metaKey: boolean; ctrlKey: boolean }): boolean {
   return isMac ? event.metaKey : event.ctrlKey;
+}
+
+/**
+ * The platform, read when asked rather than when this module loads: a test
+ * stubs the bridge after this module has loaded, the way the device commands
+ * read it when they need it.
+ */
+function currentPlatform(): Platform | undefined {
+  return typeof window === 'undefined'
+    ? undefined
+    : (window.studio as StudioBridge | undefined)?.platform;
+}
+
+/**
+ * The words for showing a file where it lives, in the platform's own: `Show in
+ * Finder`, `Show in Explorer`, and `Show in File Manager` where the desktop
+ * decides which one opens.
+ *
+ * Every menu entry, toast button and tooltip that does this reads it here. They
+ * said `Show in Finder` on every platform, beside two tooltips that said
+ * `Reveal in file manager` for the same gesture.
+ */
+export function showInFileManagerLabel(platform = currentPlatform()): string {
+  switch (platform) {
+    case 'darwin':
+      return 'Show in Finder';
+    case 'win32':
+      return 'Show in Explorer';
+    default:
+      return 'Show in File Manager';
+  }
 }
 
 /**

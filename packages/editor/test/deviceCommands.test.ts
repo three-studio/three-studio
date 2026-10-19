@@ -916,6 +916,16 @@ describe('a screenshot on one device', () => {
     });
   });
 
+  it("names the file manager in the platform's words", async () => {
+    // The same toast on Windows: the label follows the platform rather than a
+    // literal that said Finder everywhere.
+    install({ screenshot: async () => shot }, 'win32');
+
+    await captureDevice('abc12345');
+
+    expect(lastToast().actions).toMatchObject([{ label: 'Show in Explorer', primary: true }]);
+  });
+
   it('leaves nothing behind when the person cancels the dialog', async () => {
     install({ screenshot: async () => null });
 

@@ -3,6 +3,7 @@ import { Folder, FolderOpen, Pencil, Trash2 } from 'lucide-react';
 import { deleteFolder, renameFolder } from '../../commands/assetCommands';
 import { commandById, contextForAsset } from '../../commands/registry';
 import { setAssetDragPayload } from '../../assets/assetDrag';
+import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore, type AssetSortKey } from '../../state/assetStore';
 import { KIND_ICON, formatBytes } from './kinds';
 
@@ -105,7 +106,7 @@ export function AssetList({
             </span>
             <button
               type="button"
-              title="Reveal in file manager"
+              title={showInFileManagerLabel()}
               onClick={() => void window.studio.assets.revealInFileManager(asset.path)}
               className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
             >
