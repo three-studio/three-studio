@@ -1,5 +1,6 @@
 import { SCENES_DIR, findScene, type SceneEntry } from '@three-studio/core';
 import { contextForScene } from '../commands/registry';
+import { isStartScene } from '../commands/sceneFiles';
 import type { MenuEntry, MenuItem } from '../ui/Menu';
 import { commandEntry } from './commandEntry';
 
@@ -24,11 +25,13 @@ export interface SceneMenuInput {
   scenes: readonly SceneEntry[];
   /** The window's scene — `useProjectStore.sceneId`. */
   sceneId: string | null;
+  /** The scene a build starts on — `project.startScene`, or `null` with no project open. */
+  startScene: string | null;
 }
 
 /**
  * The Scene menu, grouped by what each entry acts on: opening a scene, the
- * document against its file, then the file.
+ * document against its file, the file, then what the scene is to the project.
  *
  * The separators are written by hand between the groups, as File and Edit
  * write theirs, because no group here can be empty: every entry is present in
@@ -36,7 +39,7 @@ export interface SceneMenuInput {
  * need the rule (never first, never last, never doubled) enforced in code.
  */
 export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
-  const { scenes, sceneId } = input;
+  const { scenes, sceneId, startScene } = input;
   // The file that wins the window's id, which is the one the title names. A
   // shadowed file carrying the same id is not checked: the id never opens it.
   const current = sceneId === null ? undefined : findScene(scenes, sceneId);
@@ -80,6 +83,15 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
     commandEntry('duplicateScene'),
     commandEntry('renameScene'),
     commandEntry('deleteScene'),
+    null,
+    // Aimed at the window's scene, the one the title names, and checked while
+    // it is the start one — greyed then too, by the command: there is nothing
+    // to set. Another scene becomes the start one by opening it, or from
+    // Project Settings, which lists them all.
+    {
+      ...commandEntry('setStartScene'),
+      checked: current !== undefined && isStartScene(current, startScene),
+    },
   ];
 }
 
@@ -91,12 +103,12 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
  * name, and two can share an id — while the gesture still aims at the id.
  */
 function sceneRows(
-  { scenes }: SceneMenuInput,
+  { scenes, startScene }: SceneMenuInput,
   command: 'openScene' | 'openSceneInNewWindow',
 ): MenuItem[] {
   const homonyms = repeatedNames(scenes);
   return scenes.map((entry) => {
-    const detail = rowDetail(entry, homonyms.has(entry.name));
+    const detail = rowDetail(entry, homonyms.has(entry.name), startScene);
     if (entry.shadowedBy !== null) {
       /*
        * The one row built by hand. An id names the first file that claims it,
@@ -128,9 +140,15 @@ function repeatedNames(scenes: readonly SceneEntry[]): Set<string> {
  * settles. Not even then at the top of `scenes/`: the other homonym's folder
  * already tells the two apart. `Boss` and `boss` are not homonyms, since they
  * already read differently.
+ *
+ * Then the state: `start` or `duplicate id`, never both, since a shadowed file
+ * is never the start scene. So a row says two things at most: `old · start`.
  */
-function rowDetail(entry: SceneEntry, homonym: boolean): string | undefined {
-  const folder = homonym ? entry.path.slice(`${SCENES_DIR}/`.length, entry.path.lastIndexOf('/')) : '';
-  const said = [folder, entry.shadowedBy === null ? '' : 'duplicate id'].filter((part) => part !== '');
+function rowDetail(entry: SceneEntry, homonym: boolean, startScene: string | null): string | undefined {
+  const said = [
+    homonym ? entry.path.slice(`${SCENES_DIR}/`.length, entry.path.lastIndexOf('/')) : '',
+    isStartScene(entry, startScene) ? 'start' : '',
+    entry.shadowedBy === null ? '' : 'duplicate id',
+  ].filter((part) => part !== '');
   return said.length > 0 ? said.join(' · ') : undefined;
 }

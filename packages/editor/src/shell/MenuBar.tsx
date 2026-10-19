@@ -69,6 +69,12 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   // Which row of Open Scene ▸ is checked, and what Duplicate, Rename, Delete and
   // Open in New Window ▸ ask before they offer themselves.
   const sceneId = useProjectStore((s) => s.sceneId);
+  // The start scene alone rather than the project: saving the settings replaces
+  // the project object (`adoptProject`) and nothing in the bar changes then. It
+  // moves from this menu, from Project Settings or from another window
+  // (`onProjectChanged`); the Scene menu marks it, and Set as Start Scene asks
+  // it before it offers itself.
+  const startScene = useProjectStore((s) => s.project?.startScene ?? null);
 
   const menus: Record<string, readonly MenuEntry[]> = {
     File: [
@@ -118,7 +124,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
     // Built in render, like the others, so its rows cannot go stale. After Add,
     // the way an object menu follows the insert menu on macOS — Keynote reads
     // File · Edit · Insert · Slide — so Add keeps the place people reach for.
-    Scene: buildSceneMenu({ scenes, sceneId }),
+    Scene: buildSceneMenu({ scenes, sceneId, startScene }),
     // Panels are closable, so the Window menu is the way back. Without it a
     // closed Game tab meant Play ran with nothing on screen and no obvious fix.
     Window: [

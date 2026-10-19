@@ -1,4 +1,14 @@
-import { createEmptyScene, createMeshEntity, sceneName, type SceneEntry } from '@three-studio/core';
+import {
+  PROJECT_FORMAT_VERSION,
+  createBuildProfiles,
+  createEmptyScene,
+  createMeshEntity,
+  createPhysicsSettings,
+  createRenderingSettings,
+  sceneName,
+  type ProjectFile,
+  type SceneEntry,
+} from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity } from '../src/commands/sceneCommands';
 import { commandEntry } from '../src/shell/commandEntry';
@@ -58,15 +68,37 @@ const HOMONYMS = [
 /** The homonyms, and a copy of Main in `old/` that keeps its id. */
 const BOTH = [...HOMONYMS, scene('scenes/old/Main.scene.json', 'a', 'scenes/Main.scene.json')];
 
-/** The project as an open window leaves it, and the builder's input for that window. */
-function open(scenes: readonly SceneEntry[], sceneId: string | null): SceneMenuInput {
+const startingOn = (startScene: string): ProjectFile => ({
+  version: PROJECT_FORMAT_VERSION,
+  name: 'Races',
+  engineVersion: '0.1.0',
+  startScene,
+  settings: {
+    loadingScene: null,
+    rendering: createRenderingSettings(),
+    physics: createPhysicsSettings(),
+    build: createBuildProfiles('Races'),
+  },
+});
+
+/**
+ * The project as an open window leaves it, and the builder's input for that
+ * window. With no start scene there is no project file either, so no file is
+ * the start one and Set as Start Scene is offered on any scene.
+ */
+function open(
+  scenes: readonly SceneEntry[],
+  sceneId: string | null,
+  startScene: string | null = null,
+): SceneMenuInput {
   useProjectStore.setState({
     summary: { name: 'Races', path: '/projects/Races', lastOpenedAt: 1 },
+    project: startScene === null ? null : startingOn(startScene),
     scenes: [...scenes],
     sceneId,
     saving: false,
   });
-  return { scenes, sceneId };
+  return { scenes, sceneId, startScene };
 }
 
 /** Edits the document, so that it has something to save. */
@@ -92,6 +124,9 @@ const STATES: Record<string, () => SceneMenuInput> = {
   },
   'a sceneId that names no entry': () => open([LEVEL_2, MAIN], 'gone'),
   'homonyms, and a copy that keeps its id': () => open(BOTH, 'a'),
+  'the window on the start scene': () => open(HOMONYMS, 'a', 'a'),
+  'another scene the start one': () => open(HOMONYMS, 'a', 'b'),
+  'a start scene that names no file': () => open(HOMONYMS, 'a', 'gone'),
 };
 
 /** What the menu reads, top to bottom, with `─` for a separator. */
@@ -130,7 +165,7 @@ afterEach(() => {
 });
 
 describe('the order', () => {
-  it('reads opening, then the document against its file, then the file', () => {
+  it('reads opening, then the document against its file, then the file, then the project', () => {
     expect(labels(buildSceneMenu(open([LEVEL_2, MAIN], 'main')))).toEqual([
       'New Scene…',
       'Open Scene',
@@ -142,6 +177,8 @@ describe('the order', () => {
       'Duplicate Scene…',
       'Rename Scene…',
       'Delete Scene',
+      '─',
+      'Set as Start Scene',
     ]);
   });
 
@@ -156,7 +193,15 @@ describe('the order', () => {
 });
 
 describe('no guard of its own', () => {
-  const BOUND = ['newScene', 'save', 'saveSceneAs', 'duplicateScene', 'renameScene', 'deleteScene'] as const;
+  const BOUND = [
+    'newScene',
+    'save',
+    'saveSceneAs',
+    'duplicateScene',
+    'renameScene',
+    'deleteScene',
+    'setStartScene',
+  ] as const;
 
   it.each(Object.keys(STATES))("carries each command's own label, key and verdict: %s", (state) => {
     const menu = buildSceneMenu(STATES[state]!());
@@ -344,5 +389,53 @@ describe('Open in New Window ▸', () => {
     // opened the copy.
     const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open in New Window');
     expect(rows.map((entry) => entry.key)).toEqual(['scenes/Boss copy.scene.json']);
+  });
+});
+
+describe('the start scene', () => {
+  /** What each row of a submenu says beside its name. */
+  const details = (input: SceneMenuInput, label = 'Open Scene') =>
+    rowsIn(buildSceneMenu(input), label).map((entry) => entry.detail);
+
+  it('says so on its row', () => {
+    expect(details(open(HOMONYMS, 'a', 'a'))).toEqual([undefined, 'start', 'old']);
+  });
+
+  it('is the file that wins the start id, never a shadowed copy carrying it', () => {
+    expect(details(open(COPY, 'a', 'b'))).toEqual(['start', 'duplicate id', undefined]);
+  });
+
+  it('is said nowhere when the start id names no file', () => {
+    expect(details(open(HOMONYMS, 'a', 'gone'))).toEqual([undefined, undefined, 'old']);
+  });
+
+  it('comes after the folder on one row', () => {
+    expect(details(open(BOTH, 'a', 'd'))).toEqual([undefined, undefined, 'old · start', 'old · duplicate id']);
+  });
+
+  it('is said in Open in New Window ▸ too', () => {
+    expect(details(open(HOMONYMS, 'a', 'd'), 'Open in New Window')).toEqual([undefined, 'old · start']);
+  });
+});
+
+describe('Set as Start Scene', () => {
+  // The verdict is the command's, which refuses the start scene itself; the
+  // check is all the builder adds.
+  it.each([
+    ['is checked and greyed on the start scene', 'a', 'a', { checked: true, disabled: true }],
+    ['is offered while another scene is the start one', 'a', 'b', { checked: false, disabled: false }],
+    ['is offered when the start id names no file', 'a', 'gone', { checked: false, disabled: false }],
+    ['is greyed when the window names no scene', 'gone', 'a', { checked: false, disabled: true }],
+  ])('%s', (_, sceneId, startScene, expected) => {
+    const entry = row(buildSceneMenu(open(HOMONYMS, sceneId, startScene)), 'Set as Start Scene');
+    expect({ checked: entry.checked, disabled: entry.disabled }).toEqual(expected);
+  });
+
+  it("makes the window's scene the start scene", () => {
+    const setStartScene = vi.fn(async (_sceneId: string) => ({ project: startingOn('a'), scenes: HOMONYMS }));
+    vi.stubGlobal('window', { studio: { project: { setStartScene } } });
+
+    row(buildSceneMenu(open(HOMONYMS, 'a', 'b')), 'Set as Start Scene').onSelect?.();
+    expect(setStartScene.mock.calls).toEqual([['a']]);
   });
 });
