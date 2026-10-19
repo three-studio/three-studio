@@ -14,6 +14,7 @@ import {
   renameCurrentSceneWithPrompt,
   revealCurrentScene,
   saveSceneAs,
+  showSceneSettings,
 } from './sceneFiles';
 
 /*
@@ -160,6 +161,22 @@ export const SCENE_FILE_COMMANDS = {
       const scene = targetOrCurrent(ctx);
       return scene === undefined ? undefined : chooseStartScene(scene.id);
     },
+  }),
+
+  /**
+   * The scene's own settings — its name, background, environment, sky and fog —
+   * in the Inspector.
+   *
+   * A command although it ends with a panel coming forward: it has a refusal to
+   * state, no scene open, and what it does is editor state — Prefab Mode left,
+   * the selection emptied, a request counted. The panel coming forward is
+   * `panelFocus`'s reaction to that request. So the palette offers it as the
+   * menu does.
+   */
+  sceneSettings: defineCommand({
+    label: () => 'Scene Settings…',
+    can: hasScene,
+    run: () => showSceneSettings(),
   }),
 
   /**

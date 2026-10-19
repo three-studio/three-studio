@@ -180,6 +180,7 @@ describe('the order', () => {
       'Delete Scene',
       '─',
       'Set as Start Scene',
+      'Scene Settings…',
       showInFileManagerLabel(),
     ]);
   });
@@ -203,6 +204,7 @@ describe('no guard of its own', () => {
     'renameScene',
     'deleteScene',
     'setStartScene',
+    'sceneSettings',
     'revealScene',
   ] as const;
 

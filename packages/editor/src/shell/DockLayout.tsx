@@ -106,8 +106,9 @@ export function DockLayout({ resetToken }: DockLayoutProps) {
 
 function DockviewHost() {
   // What the arrangement does about state: bring the Game panel forward when
-  // the game starts, the Project panel when an asset is revealed. It used to be
-  // `commands/` calling `showPanel` itself — see `panelFocus.ts`.
+  // the game starts, the Project panel when an asset is revealed, the Inspector
+  // when Scene Settings… is asked for. It used to be `commands/` calling
+  // `showPanel` itself — see `panelFocus.ts`.
   useEffect(() => watchPanelFocus(), []);
 
   const onReady = useCallback((event: DockviewReadyEvent) => {

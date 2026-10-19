@@ -24,6 +24,7 @@ import {
   renameCurrentSceneWithPrompt,
   revealCurrentScene,
   saveSceneAs,
+  showSceneSettings,
 } from '../src/commands/sceneFiles';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDialogStore } from '../src/state/dialogStore';
@@ -658,5 +659,73 @@ describe('showing a file', () => {
           'There is no file at assets/crate.glb: it was moved or deleted outside the editor.',
       },
     ]);
+  });
+});
+
+describe('Scene Settings', () => {
+  /*
+   * The scene's own pane is the Inspector with nothing selected. In Prefab Mode
+   * that pane is the prefab document's, so the mode is left first, saving the
+   * prefab; the game keeps running, since nothing here replaces the document.
+   */
+  const requests = () => editor().sceneSettingsRequests;
+
+  it('leaves Prefab Mode, saving the prefab, then empties the selection and asks for the pane', async () => {
+    // Something selected in the scene, which leaving the prefab puts back: the
+    // selection has to be emptied after leaving, not before.
+    editor().setSelection([wall]);
+    await openCrate();
+    const before = requests();
+
+    await showSceneSettings();
+
+    expect(log).toEqual([['savePrefab', CRATE]]);
+    expect(prefabMode().stack).toEqual([]);
+    expect(editor().selection).toEqual([]);
+    expect(requests()).toBe(before + 1);
+  });
+
+  it('leaves the game running', async () => {
+    editor().setSelection([wall]);
+    editor().play();
+    const before = requests();
+
+    await showSceneSettings();
+
+    expect(log).toEqual([]);
+    expect(editor().playState).toBe('playing');
+    expect(editor().selection).toEqual([]);
+    expect(requests()).toBe(before + 1);
+  });
+
+  it('asks again with nothing in the way: a second request is a request', async () => {
+    const before = requests();
+
+    await showSceneSettings();
+    await showSceneSettings();
+
+    expect(log).toEqual([]);
+    expect(requests()).toBe(before + 2);
+  });
+
+  it('stops at a prefab that fails to save, the pane not asked for', async () => {
+    useAssetStore.setState({
+      savePrefab: async (assetId) => {
+        log.push(['savePrefab', assetId]);
+        throw new Error('disk full');
+      },
+    });
+    await openCrate();
+    const selected = editor().selection;
+    const before = requests();
+
+    await showSceneSettings();
+
+    expect(prefabMode().stack).toHaveLength(1);
+    expect(editor().selection).toEqual(selected);
+    expect(requests()).toBe(before);
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
+      'Could not do that to the scene',
+    );
   });
 });

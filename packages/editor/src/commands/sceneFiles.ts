@@ -280,6 +280,29 @@ export async function deleteCurrentScene(): Promise<void> {
   }
 }
 
+/**
+ * Shows the scene's own settings: the Inspector's pane with nothing selected.
+ *
+ * Out of Prefab Mode first, saving the open prefabs: with a prefab open that
+ * pane belongs to the prefab's document, whose environment is scratch and
+ * whose Name field is gone. The game keeps running — nothing here replaces the
+ * document. The Inspector comes forward through `panelFocus`; this does not
+ * reach into the dock.
+ */
+export async function showSceneSettings(): Promise<void> {
+  try {
+    await backToTheScene({ stopPlay: false });
+  } catch (cause) {
+    report(cause);
+    return;
+  }
+  // Emptied once out of Prefab Mode, which puts back the selection the scene
+  // had when the prefab was opened.
+  const editor = useEditorStore.getState();
+  editor.clearSelection();
+  editor.requestSceneSettings();
+}
+
 export async function chooseStartScene(sceneId: string): Promise<void> {
   try {
     useProjectStore.getState().adoptContents(await window.studio.project.setStartScene(sceneId));

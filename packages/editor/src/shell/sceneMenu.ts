@@ -92,6 +92,9 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
       ...commandEntry('setStartScene'),
       checked: current !== undefined && isStartScene(current, startScene),
     },
+    // Its name, background, environment, sky and fog: the Inspector's pane with
+    // nothing selected, which nothing else in the bar leads to.
+    commandEntry('sceneSettings'),
     // The file this window saves to, in the file manager, in the platform's
     // words. Last, because it is the one entry that takes the person out of the
     // editor.

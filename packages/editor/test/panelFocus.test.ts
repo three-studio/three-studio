@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { panelForChange, type FocusInputs } from '../src/shell/panelFocus';
+import { describe, expect, it, vi } from 'vitest';
+import { showPanel } from '../src/shell/dockApi';
+import { panelForChange, watchPanelFocus, type FocusInputs } from '../src/shell/panelFocus';
+import { useEditorStore } from '../src/state/editorStore';
+
+vi.mock('../src/shell/dockApi', () => ({ showPanel: vi.fn() }));
 
 /*
  * Bringing a panel forward is a reaction to a change of state, and it used to be
@@ -14,6 +18,7 @@ import { panelForChange, type FocusInputs } from '../src/shell/panelFocus';
 const state = (over: Partial<FocusInputs> = {}): FocusInputs => ({
   playing: false,
   revealed: null,
+  sceneSettings: 0,
   ...over,
 });
 
@@ -51,5 +56,38 @@ describe('what a change of state brings forward', () => {
     // Cannot happen today, and settling it costs nothing: what was asked for
     // last is the game.
     expect(panelForChange(state(), state({ playing: true, revealed: 'tex1' }))).toBe('game');
+  });
+
+  it('shows the Inspector for a new Scene Settings request, and only a new one', () => {
+    expect(panelForChange(state(), state({ sceneSettings: 1 }))).toBe('inspector');
+    expect(panelForChange(state({ sceneSettings: 1 }), state({ sceneSettings: 2 }))).toBe('inspector');
+    expect(panelForChange(state({ sceneSettings: 2 }), state({ sceneSettings: 2 }))).toBeNull();
+  });
+
+  it('prefers the game over a Scene Settings request in the same change', () => {
+    // Cannot happen either — they are two gestures — and it is settled the same
+    // way.
+    expect(panelForChange(state(), state({ playing: true, sceneSettings: 1 }))).toBe('game');
+  });
+});
+
+describe('what the stores ask for', () => {
+  it('brings nothing forward when the selection empties, and the Inspector on a request', () => {
+    // The selection is no input, on purpose. Scene Settings… empties it, and so
+    // does every click into empty space: were "nothing selected" the request,
+    // the Inspector would come forward on every deselect, over whatever tab the
+    // author had in front. Through the watcher, since a field the decision does
+    // not read cannot be handed to it.
+    const stop = watchPanelFocus();
+    try {
+      useEditorStore.getState().setSelection(['crate']);
+      useEditorStore.getState().clearSelection();
+      expect(showPanel).not.toHaveBeenCalled();
+
+      useEditorStore.getState().requestSceneSettings();
+      expect(vi.mocked(showPanel).mock.calls).toEqual([['inspector']]);
+    } finally {
+      stop();
+    }
   });
 });
