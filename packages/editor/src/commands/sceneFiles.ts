@@ -84,10 +84,21 @@ export async function backToTheScene(options: { stopPlay: boolean }): Promise<vo
   }
 }
 
-/** Reloads this window on another scene, prompt included. */
+/**
+ * Reloads this window on another scene, prompt included.
+ *
+ * Neither Prefab Mode nor the game is ended here: the reload ends both, and
+ * the main process's unsaved-changes prompt comes with it, after anything done
+ * here — leaving first would leave the window out of its prefab, its game
+ * stopped, behind a Cancel. What the reload would lose is the open prefabs'
+ * edits, so those are saved where they stand; what is still unsaved then is the
+ * scene's work, which is what the prompt is about.
+ */
 export async function openScene(sceneId: string): Promise<void> {
+  // The checked row: nothing to open, so nothing to save either.
   if (sceneId === useProjectStore.getState().sceneId) return;
   try {
+    await usePrefabModeStore.getState().saveAll();
     await window.studio.project.switchScene(sceneId);
   } catch (cause) {
     report(cause);
@@ -113,6 +124,8 @@ export async function newScene(): Promise<void> {
   if (name === null) return;
 
   try {
+    // Saved and left open, as for Open Scene: the reload below ends them.
+    await usePrefabModeStore.getState().saveAll();
     const { scene } = await window.studio.project.createScene(name);
     // Switched to rather than merely created: an author who asks for a new
     // scene means to start working in it.
@@ -213,6 +226,8 @@ export async function duplicateCurrentScene(): Promise<void> {
   if (name === null) return;
 
   try {
+    // Saved and left open, as for Open Scene: the reload below ends them.
+    await usePrefabModeStore.getState().saveAll();
     const { scene } = await window.studio.project.duplicateScene(sceneId, name);
     await window.studio.project.switchScene(scene.id);
   } catch (cause) {

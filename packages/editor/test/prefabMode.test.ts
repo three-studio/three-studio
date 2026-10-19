@@ -7,6 +7,7 @@ import { selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { composedPrefabMode, usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useToastStore } from '../src/state/toastStore';
+import { sceneUnsaved, windowUnsaved } from '../src/state/unsaved';
 
 /*
  * Opening a prefab sets the scene aside; leaving it must give back everything
@@ -220,5 +221,66 @@ describe('Prefab Mode composed without being left', () => {
     // Innermost first, as leaving goes; each one the same as composed.
     expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
     for (const [id, prefab] of saved) expect(composed.prefabs[id]).toEqual(prefab);
+  });
+
+  describe('every open prefab saved, and left open', () => {
+    /*
+     * For a gesture about to reload the window, which ends Prefab Mode by
+     * itself. Leaving first would put the scene back for nothing — and leave it
+     * there when the main process's unsaved-changes prompt is cancelled.
+     */
+
+    /** A room with a crate opened inside it, both edited. */
+    async function inBothEdited(): Promise<void> {
+      givenAnOuterPrefab();
+      await usePrefabModeStore.getState().open(OUTER_ID);
+      addEntity(createMeshEntity('box'));
+      await usePrefabModeStore.getState().open(ASSET_ID);
+      addEntity(createMeshEntity('box'));
+    }
+
+    it('saves what leaving would save, innermost first, and moves nothing', async () => {
+      await inBothEdited();
+      const composed = composedPrefabMode()!;
+      const document = doc().scene;
+      const past = doc().past;
+      const selection = useEditorStore.getState().selection;
+
+      await usePrefabModeStore.getState().saveAll();
+
+      expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
+      for (const [id, prefab] of saved) expect(prefab).toEqual(composed.prefabs[id]);
+      expect(usePrefabModeStore.getState().stack).toHaveLength(2);
+      expect(doc().scene).toBe(document);
+      expect(doc().past).toBe(past);
+      expect(useEditorStore.getState().selection).toBe(selection);
+    });
+
+    it('leaves unsaved only what it did not save: the scene', async () => {
+      await inBothEdited();
+      await usePrefabModeStore.getState().saveAll();
+      expect(windowUnsaved()).toBe(false);
+
+      await usePrefabModeStore.getState().exit();
+      addEntity(createMeshEntity('box'));
+      await inBothEdited();
+      await usePrefabModeStore.getState().saveAll();
+      expect(windowUnsaved()).toBe(true);
+      expect(sceneUnsaved()).toBe(true);
+    });
+
+    it('lets leaving afterwards save the same again and give the scene back', async () => {
+      const scene = doc().scene;
+      await inBothEdited();
+      await usePrefabModeStore.getState().saveAll();
+      const first = saved.map(([, prefab]) => prefab);
+
+      await usePrefabModeStore.getState().exit();
+
+      expect(saved.slice(2).map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
+      expect(saved.slice(2).map(([, prefab]) => prefab)).toEqual(first);
+      expect(usePrefabModeStore.getState().stack).toEqual([]);
+      expect(doc().scene).toBe(scene);
+    });
   });
 });

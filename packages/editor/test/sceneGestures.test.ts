@@ -16,6 +16,9 @@ import { addEntity, renameEntity } from '../src/commands/sceneCommands';
 import {
   backToTheScene,
   deleteCurrentScene,
+  duplicateCurrentScene,
+  newScene,
+  openScene,
   renameCurrentScene,
   renameCurrentSceneWithPrompt,
   saveSceneAs,
@@ -103,6 +106,10 @@ function installBridge(): void {
           log.push(['saveScene', input.scenePath]);
           written.push(input.contents);
         },
+        duplicateScene: record('duplicateScene', (_sceneId: string, name: string) => {
+          const scene = entryFor('d', name);
+          return { project: startingOn('a'), scenes: [LEVEL_2, MAIN, scene], scene };
+        }),
         renameScene: record('renameScene', (sceneId: string, name: string) => {
           const scene = entryFor(sceneId, name);
           return { project: startingOn('a'), scenes: [LEVEL_2, scene], scene };
@@ -373,5 +380,90 @@ describe('Save As, Rename and Delete during Play', () => {
 
     expect(editor().playState).toBe('stopped');
     expect(doc().scene.name).toBe('Played');
+  });
+});
+
+describe('the gestures that reload the window, from Prefab Mode during Play', () => {
+  /*
+   * Open Scene, New Scene and Duplicate end with a reload, which ends Prefab
+   * Mode and the game by itself, and the main process's unsaved-changes prompt
+   * comes with that reload. Leaving or stopping before it would leave the
+   * window out of its prefab, its game stopped, behind a Cancel. What the
+   * reload would lose is the open prefabs' edits, so those are saved, where
+   * they stand.
+   */
+
+  /** A prefab open over the scene and edited, the game running, the main process told. */
+  async function inAnEditedPrefabWhilePlaying(): Promise<void> {
+    await openCrate();
+    renameEntity(crateRoot, 'Edited');
+    editor().play();
+    stops.push(watchUnsaved());
+    log.length = 0;
+  }
+
+  it('saves the prefab, says the window is clean, then opens the other scene', async () => {
+    await inAnEditedPrefabWhilePlaying();
+
+    await openScene('b');
+
+    expect(log).toEqual([
+      ['savePrefab', CRATE],
+      ['setDirty', false],
+      ['switchScene', 'b'],
+    ]);
+    // Left to the reload, which a Cancel at the main process's prompt stops.
+    expect(prefabMode().stack).toHaveLength(1);
+    expect(editor().playState).toBe('playing');
+  });
+
+  it("leaves the main process holding the scene's unsaved work, for its prompt", async () => {
+    renameEntity(wall, 'Edited wall');
+    await inAnEditedPrefabWhilePlaying();
+
+    await openScene('b');
+
+    expect(log).toEqual([
+      ['savePrefab', CRATE],
+      ['switchScene', 'b'],
+    ]);
+  });
+
+  it("does nothing for the window's own scene", async () => {
+    await inAnEditedPrefabWhilePlaying();
+
+    await openScene('a');
+
+    expect(log).toEqual([]);
+    expect(prefabMode().stack).toHaveLength(1);
+  });
+
+  it.each([
+    ['New Scene', () => newScene(), ['createScene', 'Fresh'], 'c'],
+    ['Duplicate', () => duplicateCurrentScene(), ['duplicateScene', 'a', 'Fresh'], 'd'],
+  ])('%s saves the prefab once it has its name', async (_, gesture, call, created) => {
+    await inAnEditedPrefabWhilePlaying();
+
+    const done = gesture();
+    expect(log).toEqual([]);
+    await answerName('Fresh');
+    await done;
+
+    expect(log).toEqual([['savePrefab', CRATE], ['setDirty', false], call, ['switchScene', created]]);
+  });
+
+  it.each([
+    ['New Scene', () => newScene()],
+    ['Duplicate', () => duplicateCurrentScene()],
+  ])('%s cancelled at its name leaves everything as it was', async (_, gesture) => {
+    await inAnEditedPrefabWhilePlaying();
+
+    const done = gesture();
+    await cancel();
+    await done;
+
+    expect(log).toEqual([]);
+    expect(prefabMode().stack).toHaveLength(1);
+    expect(editor().playState).toBe('playing');
   });
 });

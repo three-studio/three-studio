@@ -46,6 +46,14 @@ interface PrefabModeState {
   closeTo: (depth: number) => Promise<void>;
   /** Back to the scene, however deep. */
   exit: () => Promise<void>;
+  /**
+   * Saves every open prefab and leaves them all open.
+   *
+   * For a gesture about to reload the window, which ends Prefab Mode by itself:
+   * leaving first would put the scene back for nothing, and leave it there if
+   * the main process's unsaved-changes prompt is cancelled.
+   */
+  saveAll: () => Promise<void>;
 }
 
 export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
@@ -142,6 +150,36 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
   },
 
   exit: () => get().closeTo(0),
+
+  saveAll: async () => {
+    const composed = composedPrefabMode();
+    if (composed === null) return;
+    const assets = useAssetStore.getState();
+
+    // What leaving would save, in the order it would save it: a test holds
+    // `composedPrefabMode` equal to what `closeTo` writes.
+    const saved = new Set<string>();
+    for (const frame of [...get().stack].reverse()) {
+      if (!assets.prefabs[frame.assetId]) continue;
+      await assets.savePrefab(frame.assetId, composed.prefabs[frame.assetId]!);
+      saved.add(frame.assetId);
+    }
+
+    // Then clean whatever was just written, where each one's history lives: a
+    // frame holds the stack of the document open when it was pushed — the
+    // prefab of the frame below it — and the live document is the deepest
+    // prefab. Frame 0 holds the scene's, which was not saved, so the window
+    // reads unsaved for exactly what the reload would throw away.
+    const { stack } = get();
+    const cleaned = stack.map((frame, index) => {
+      const owner = stack[index - 1];
+      if (owner === undefined || !saved.has(owner.assetId)) return frame;
+      return { ...frame, history: { ...frame.history, savedRevision: frame.history.revision } };
+    });
+    if (cleaned.some((frame, index) => frame !== stack[index])) set({ stack: cleaned });
+    const deepest = stack.at(-1);
+    if (deepest && saved.has(deepest.assetId)) useDocumentStore.getState().markClean();
+  },
 }));
 
 /** True while a prefab is open, for anything that must behave differently. */

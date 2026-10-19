@@ -245,7 +245,7 @@ describe('Open Scene ▸', () => {
     expect(rows.map((entry) => entry?.label)).toEqual(['Main']);
   });
 
-  it('switches to the scene a row names, and not to the one already open', () => {
+  it('switches to the scene a row names, and not to the one already open', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
     const [level2, main] = submenu(buildSceneMenu(open([LEVEL_2, MAIN], 'main')), 'Open Scene');
@@ -253,11 +253,12 @@ describe('Open Scene ▸', () => {
     main?.onSelect?.();
     expect(switchScene).not.toHaveBeenCalled();
 
+    // Not at once: an open prefab is saved before the switch is asked for.
     level2?.onSelect?.();
-    expect(switchScene.mock.calls).toEqual([['level-2']]);
+    await vi.waitFor(() => expect(switchScene.mock.calls).toEqual([['level-2']]));
   });
 
-  it('gives a shadowed file a row of its own, greyed, under its own name', () => {
+  it('gives a shadowed file a row of its own, greyed, under its own name', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
     const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open Scene');
@@ -272,10 +273,10 @@ describe('Open Scene ▸', () => {
     expect(rows[1]!.onSelect).toBeUndefined();
 
     rows[0]!.onSelect?.();
-    expect(switchScene.mock.calls).toEqual([['b']]);
+    await vi.waitFor(() => expect(switchScene.mock.calls).toEqual([['b']]));
   });
 
-  it('names the folder of homonyms, and of them only', () => {
+  it('names the folder of homonyms, and of them only', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
     const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'a')), 'Open Scene');
@@ -290,7 +291,7 @@ describe('Open Scene ▸', () => {
 
     rows[0]!.onSelect?.();
     rows[2]!.onSelect?.();
-    expect(switchScene.mock.calls).toEqual([['b'], ['d']]);
+    await vi.waitFor(() => expect(switchScene.mock.calls).toEqual([['b'], ['d']]));
   });
 
   it('keys every row by its path, since names repeat', () => {
