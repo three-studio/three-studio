@@ -33,11 +33,6 @@ function report(cause: unknown): void {
   });
 }
 
-/** The scenes of the open project, in path order — see `discoverScenes`. */
-export function sceneList(): readonly SceneEntry[] {
-  return useProjectStore.getState().scenes;
-}
-
 /** The scene this window is on, or `null` before a project has opened. */
 export function currentScene(): SceneEntry | null {
   const { scenes, sceneId } = useProjectStore.getState();

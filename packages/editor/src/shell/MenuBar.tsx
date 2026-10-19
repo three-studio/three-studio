@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react';
-import { commandById, contextForScene } from '../commands/registry';
-import { sceneList } from '../commands/sceneFiles';
-import { isMac, modKey } from '../platform';
+import { isMac } from '../platform';
 import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
@@ -15,9 +13,16 @@ import { openPanelIds, togglePanel } from './dockApi';
 import { ProjectSettingsDialog } from './ProjectSettingsDialog';
 import { buildLayoutMenu } from './layoutMenu';
 import { PANEL_DEFS } from './panelDefs';
+import { buildSceneMenu } from './sceneMenu';
 
 interface MenuBarProps {
-  /** Scene name shown on the right of the bar, like Unity's title strip. */
+  /**
+   * `Project — Scene`, shown on the right of the bar as text, not as a control.
+   *
+   * `App` builds it from the project's summary, so the bar re-renders when a
+   * project opens. New Scene… and Save Scene As… ask `summary !== null`, and
+   * this bar subscribes to no summary of its own.
+   */
   title: string;
   onResetLayout: () => void;
 }
@@ -25,8 +30,6 @@ interface MenuBarProps {
 /**
  * The window's native menu is hidden (`titleBarStyle: 'hiddenInset'`), so this
  * bar is both the application menu and the window's drag handle.
- *
- * File entries stay disabled until projects land in M5.
  */
 export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
@@ -50,10 +53,8 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
    */
   useProjectStore((s) => s.saving);
 
-  const hasSelection = selection.length > 0;
-
   /*
-   * The context of every entry below, built here once per render from the
+   * The context of the Edit entries, built here once per render from the
    * selection this bar already subscribes to — so the entries cannot go stale,
    * and reading the registry adds no subscription of its own. Watching the
    * document from here would re-render the bar once per frame of a gizmo drag,
@@ -64,53 +65,18 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   // Subscribed to the list rather than to the project: the two used to be one
   // object, and the list is now replaced on its own whenever a scene appears or
   // goes — including when another window is what made it happen.
-  const storeScenes = useProjectStore((s) => s.scenes);
+  const scenes = useProjectStore((s) => s.scenes);
+  // Which row of Open Scene ▸ is checked, and what Duplicate, Rename, Delete and
+  // Open in New Window ▸ ask before they offer themselves.
   const sceneId = useProjectStore((s) => s.sceneId);
-  const scenes = useMemo(() => sceneList(), [storeScenes]);
-  const sceneMenu: readonly MenuEntry[] = [
-    // One gesture pointed at each scene in turn. The `shadowedBy` rule — two
-    // files claiming one id, where opening this one would open the other — is
-    // the command's now, and the submenu below reads the same one.
-    ...scenes.map((scene) => ({
-      ...commandEntry('openScene', contextForScene(scene.id)),
-      checked: scene.id === sceneId,
-    })),
-    null,
-    // Four entries that used to write their own guards here, or none at all:
-    // Duplicate and Rename had no `disabled` while both gestures open with
-    // `if (sceneId === null) return`, and Delete carried the last-scene rule in
-    // the menu rather than in the gesture. Each one is now the command's own
-    // label and the command's own verdict.
-    commandEntry('newScene', ctx),
-    commandEntry('duplicateScene', ctx),
-    commandEntry('renameScene', ctx),
-    commandEntry('deleteScene', ctx),
-    // Every window holds one scene, so a second scene means a second window.
-    // Left out entirely with one scene rather than shown disabled: a disabled
-    // row that opens an empty submenu on hover is worse than no row.
-    ...(scenes.length > 1
-      ? ([
-          null,
-          {
-            label: 'Open in New Window',
-            // Filtered on the command rather than on a `.filter` writing the
-            // same two conditions in its own words — which is where they were,
-            // beside a `disabled` that said only half of them.
-            submenu: scenes
-              .filter((scene) =>
-                commandById('openSceneInNewWindow').can(contextForScene(scene.id)),
-              )
-              .map((scene) => commandEntry('openSceneInNewWindow', contextForScene(scene.id))),
-          },
-        ] satisfies readonly MenuEntry[])
-      : []),
-  ];
 
   const menus: Record<string, readonly MenuEntry[]> = {
     File: [
       {
         label: 'Open Project…',
-        shortcut: `${modKey}O`,
+        // No ⌘O beside it: no key is bound to it, and a menu that prints a
+        // shortcut promises that the key works.
+        //
         // A window belongs to one project, so opening another replaces this
         // window rather than reloading inside it. The main process closes this
         // one — running the unsaved-changes prompt on the way — and opens the
@@ -128,13 +94,6 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
         label: 'Close Project',
         onSelect: () => window.close(),
       },
-      null,
-      commandEntry('newScene', ctx),
-      null,
-      commandEntry('save', ctx),
-      // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
-      // both, and this project has no Save All to be confused with yet.
-      commandEntry('saveSceneAs', ctx),
       null,
       { label: 'Package…', onSelect: () => setPackageOpen(true) },
     ],
@@ -156,6 +115,10 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
       { label: 'Project Settings…', onSelect: () => setSettingsOpen(true) },
     ],
     Add: buildAddMenu(),
+    // Built in render, like the others, so its rows cannot go stale. After Add,
+    // the way an object menu follows the insert menu on macOS — Keynote reads
+    // File · Edit · Insert · Slide — so Add keeps the place people reach for.
+    Scene: buildSceneMenu({ scenes, sceneId }),
     // Panels are closable, so the Window menu is the way back. Without it a
     // closed Game tab meant Play ran with nothing on screen and no obvious fix.
     Window: [
@@ -207,23 +170,16 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
       {packageOpen && <PackageDialog onClose={() => setPackageOpen(false)} />}
 
       <div className="flex-1" />
-      {/* The title was a label; it is the scene switcher now. The most
-          discoverable place for it, and it adds no seventh panel to a dock
-          that already has six. */}
-      <nav className="app-no-drag pr-2">
-        <MenuTrigger
-          open={openMenu === 'Scene'}
-          onToggle={() => setOpenMenu((current) => (current === 'Scene' ? null : 'Scene'))}
-          onHover={() => setOpenMenu((current) => (current === null ? null : 'Scene'))}
-          onClose={close}
-          items={sceneMenu}
-          align="right"
-          className="text-ink-dim hover:text-ink"
-        >
-          {title}
-          {dirty && <span className="ml-1 text-warn">•</span>}
-        </MenuTrigger>
-      </nav>
+      {/* A label, not a menu: the Scene menu is the one door to the scene
+          gestures, and this is the only place where the window says which
+          scene it holds, since `titleBarStyle: 'hiddenInset'` hides the native
+          title. Plain text inside the strip, so pressing on it drags the window
+          like any empty part of the bar. Not `data-selectable`: text that can
+          be selected cannot also drag. */}
+      <span className="pl-2 pr-4 text-ink-dim">
+        {title}
+        {dirty && <span className="ml-1 text-warn">•</span>}
+      </span>
     </div>
   );
 }
