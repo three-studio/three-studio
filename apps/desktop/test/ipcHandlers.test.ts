@@ -8,13 +8,16 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   createMaterial,
+  createNewScene,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  serializeScene,
   type AssetManifest,
   type DeviceServerStatus,
   type ProjectContents,
   type ProjectFile,
+  type SceneChange,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,6 +80,12 @@ const { DeviceServer } = await import('../src/main/devices/DeviceServer');
 const { createProject, discoverScenes, readProject } = await import('../src/main/project');
 const { adoptProject, noteScreenshot, releaseProject } = await import('../src/main/session');
 
+/**
+ * What the windows were sent and which scenes the table noted, in the order it
+ * happened: a Save As has to note its window before any other hears of the copy.
+ */
+const timeline: unknown[][] = [];
+
 /** An editor window, as `announce` uses one: an id, a mailbox, and a grave. */
 function editorWindow(id: number, destroyed = false) {
   const told: { channel: string; payload: unknown }[] = [];
@@ -85,7 +94,10 @@ function editorWindow(id: number, destroyed = false) {
     isDestroyed: (): boolean => destroyed,
     webContents: {
       id,
-      send: (channel: string, payload: unknown): void => void told.push({ channel, payload }),
+      send: (channel: string, payload: unknown): void => {
+        told.push({ channel, payload });
+        timeline.push(['told', id, channel]);
+      },
     },
   };
 }
@@ -135,7 +147,7 @@ beforeAll(async () => {
     openEditor: () => undefined,
     switchScene: () => true,
     openSceneWindow: () => undefined,
-    noteScene: () => undefined,
+    noteScene: (from, sceneId) => void timeline.push(['noted', from.id, sceneId]),
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
     editorWindows: () => windows as unknown as BrowserWindow[],
     devices,
@@ -148,6 +160,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   windows = [];
+  timeline.length = 0;
   sceneOpenElsewhere = false;
   releaseProject();
 });
@@ -471,6 +484,34 @@ describe('what the other windows are told', () => {
     await invoke(IPC_INVOKE.project.createScene, 1, 'Boss');
 
     expect(gone.told).toEqual([]);
+  });
+
+  it('notes the window a Save As moves onto the copy, before any other hears of it', async () => {
+    await project();
+    windows = [editorWindow(1), editorWindow(2)];
+
+    const { scene } = await invoke<SceneChange>(
+      IPC_INVOKE.project.createScene,
+      1,
+      'Copy',
+      serializeScene(createNewScene('Races')),
+    );
+
+    // Told first, window 2 could open the copy while the table says nobody
+    // shows it, and build a second window onto the file window 1 is editing.
+    expect(timeline).toEqual([
+      ['noted', 1, scene.id],
+      ['told', 2, IPC_EVENTS.projectChanged],
+    ]);
+  });
+
+  it('notes no window for a new scene, which its own switch moves onto', async () => {
+    await project();
+    windows = [editorWindow(1), editorWindow(2)];
+
+    await invoke(IPC_INVOKE.project.createScene, 1, 'Boss');
+
+    expect(timeline).toEqual([['told', 2, IPC_EVENTS.projectChanged]]);
   });
 
   it('broadcasts the scene list even when only the settings changed', async () => {

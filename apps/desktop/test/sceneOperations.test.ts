@@ -7,6 +7,7 @@ import {
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   createBuildProfiles,
+  createEntity,
   createNewScene,
   createPhysicsSettings,
   createRenderingSettings,
@@ -329,6 +330,60 @@ describe('what these operations write', () => {
     expect(copy.id).toBe(scene.id);
     expect(copy.name).toBe('Main Copy');
     expect(Object.keys(copy.entities)).toHaveLength(Object.keys(original.entities).length);
+  });
+
+  /*
+   * Save As: a window's document, handed over whole. It still carries the
+   * original's id and name, and written as it came, the copy and the original
+   * claimed one scene — under the default name the copy sorts first, so the
+   * original was the file that went out of reach.
+   */
+  describe('a scene made from a window’s document', () => {
+    async function savedAs(root: string): Promise<{ document: string; wall: string }> {
+      const document = deserializeScene(
+        await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
+      );
+      const wall = createEntity('Wall');
+      document.entities[wall.entity.id] = wall.entity;
+      document.rootOrder.push(wall.entity.id);
+      return { document: serializeScene(document), wall: wall.entity.id };
+    }
+
+    it('gets its own id and name, and the contents it was handed', async () => {
+      const root = await projectWith(['main']);
+      const main = await idOf(root, 'main');
+      const before = await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8');
+      const { document, wall } = await savedAs(root);
+
+      const { scene } = await createScene(root, 'Main Copy', document);
+
+      const copy = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
+      expect(copy.id).toBe(scene.id);
+      expect(copy.id).not.toBe(main);
+      expect(copy.name).toBe('Main Copy');
+      expect(copy.entities[wall]?.name).toBe('Wall');
+      expect(await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8')).toBe(before);
+    });
+
+    it('leaves no file shadowed', async () => {
+      const root = await projectWith(['main']);
+      const { document } = await savedAs(root);
+
+      await createScene(root, 'Main Copy', document);
+
+      const scenes = await discoverScenes(root);
+      expect(scenes.map((entry) => entry.name)).toEqual(['Main Copy', 'main']);
+      expect(scenes.map((entry) => entry.shadowedBy)).toEqual([null, null]);
+      expect(new Set(scenes.map((entry) => entry.id)).size).toBe(2);
+    });
+
+    it('writes nothing when the document does not read', async () => {
+      const root = await projectWith(['main']);
+
+      await expect(createScene(root, 'Broken', '{')).rejects.toThrow();
+
+      expect(await sceneFiles(root)).toEqual(['main.scene.json']);
+    });
   });
 
   /*

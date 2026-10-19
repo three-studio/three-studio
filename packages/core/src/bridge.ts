@@ -115,8 +115,16 @@ export interface ProjectApi {
    * Names are unique within a project and are what a script addresses, so a
    * name already taken is refused rather than made unique — see `sceneName`.
    */
-  /** Creates an empty scene with the root `Scene` entity. */
-  createScene: (name: string) => Promise<SceneChange>;
+  /**
+   * Creates a scene: empty, with the root `Scene` entity — or, given `contents`,
+   * holding this window's document, which is Save As.
+   *
+   * The file then carries the new scene's own id and name, never the ones in
+   * `contents`, and this window is the one showing it from then on — noted
+   * before any other window hears the scene exists. So `contents` is for a
+   * window moving onto the scene it creates, and for nothing else.
+   */
+  createScene: (name: string, contents?: string) => Promise<SceneChange>;
   /** Copies a scene under a new name, with its own document id. */
   duplicateScene: (sceneId: string, name: string) => Promise<SceneChange>;
   /**

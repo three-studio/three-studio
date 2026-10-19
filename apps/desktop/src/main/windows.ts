@@ -39,9 +39,10 @@ const isDev = !app.isPackaged;
  *
  * `sceneId` is null until the renderer says which scene it settled on: a window
  * opened without one lands on the project's start scene, and only the
- * renderer's `project:open` resolves which that is. `noteScene` fills it in —
- * it is what makes "open a scene that is already open" focus a window rather
- * than build a second one onto the same file.
+ * renderer's `project:open` resolves which that is. `noteScene` fills it in,
+ * and moves it after a Save As, which puts a window on another scene without a
+ * reload — it is what makes "open a scene that is already open" focus a window
+ * rather than build a second one onto the same file.
  */
 interface Editor extends OpenScene {
   win: BrowserWindow;
@@ -142,15 +143,24 @@ export function editorWindows(): readonly BrowserWindow[] {
 }
 
 /**
- * Records which scene a window settled on, from its own `project:open`.
+ * Records which scene a window is on: the one it settled on, from its own
+ * `project:open`, and the copy a Save As moved it onto.
  *
- * The main process cannot work it out: a window opened without a scene id
- * follows the project's start scene, and resolving that means reading the
- * project file the renderer has just read.
+ * The main process cannot work out the first: a window opened without a scene
+ * id follows the project's start scene, and resolving that means reading the
+ * project file the renderer has just read. The second changes a window's scene
+ * without a reload, so this call is the only way the table hears of it. Before
+ * it did, the table kept the original: opening the copy from another window
+ * built a second window onto it, and deleting it from there was allowed.
+ *
+ * Traced only when the scene changes, so a window reopening on its own scene
+ * adds nothing to the log, and one opened on the start scene says which.
  */
 export function noteScene(contents: Electron.WebContents, sceneId: string): void {
   const entry = editorFor(contents);
-  if (entry) entry.sceneId = sceneId;
+  if (!entry || entry.sceneId === sceneId) return;
+  trace(`editor now on ${sceneId}, was ${entry.sceneId ?? 'the start scene'}`);
+  entry.sceneId = sceneId;
 }
 
 interface WindowOptions {

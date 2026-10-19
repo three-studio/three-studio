@@ -72,7 +72,8 @@ const bridge: StudioBridge = {
     saveScene: (input): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.project.saveScene, input),
     readScene: (scenePath): Promise<string> =>
       ipcRenderer.invoke(IPC_INVOKE.project.readScene, scenePath),
-    createScene: (name): Promise<SceneChange> => ipcRenderer.invoke(IPC_INVOKE.project.createScene, name),
+    createScene: (name, contents): Promise<SceneChange> =>
+      ipcRenderer.invoke(IPC_INVOKE.project.createScene, name, contents),
     duplicateScene: (sceneId, name): Promise<SceneChange> =>
       ipcRenderer.invoke(IPC_INVOKE.project.duplicateScene, sceneId, name),
     renameScene: (sceneId, name): Promise<SceneChange> =>
