@@ -41,6 +41,10 @@ export interface EditorContext {
    * An id for the same reason `assetId` is one, and because the project says so
    * everywhere else: a scene is referred to by the id inside its own document,
    * never by its path or its name.
+   *
+   * So a shadowed file — one whose id an earlier file already claims — cannot be
+   * named this way: the id names the earlier file. The Scene menu builds that
+   * file's row itself.
    */
   readonly sceneId?: string;
 }

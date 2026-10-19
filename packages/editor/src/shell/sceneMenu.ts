@@ -1,6 +1,6 @@
-import type { SceneEntry } from '@three-studio/core';
+import { SCENES_DIR, findScene, type SceneEntry } from '@three-studio/core';
 import { contextForScene } from '../commands/registry';
-import type { MenuEntry } from '../ui/Menu';
+import type { MenuEntry, MenuItem } from '../ui/Menu';
 import { commandEntry } from './commandEntry';
 
 /*
@@ -14,8 +14,9 @@ import { commandEntry } from './commandEntry';
  * Pure in the sense `addMenu.ts` is: no React, no subscription, nothing run
  * while the menu is built, so it can be called in node. The rows are the
  * commands' own (label, key, verdict and body), read from the stores when the
- * menu is built. This file decides only which rows exist, which one is checked,
- * and the order.
+ * menu is built. This file decides which rows exist, which one is checked, what
+ * a scene's row says beside its name, and the order — and it builds the one row
+ * no command can: a shadowed file's.
  */
 
 export interface SceneMenuInput {
@@ -34,27 +35,30 @@ export interface SceneMenuInput {
  * every state, greyed when it cannot act. An entry that came and went would
  * need the rule (never first, never last, never doubled) enforced in code.
  */
-export function buildSceneMenu({ scenes, sceneId }: SceneMenuInput): MenuEntry[] {
-  // Every window holds one scene, so another scene means another window.
-  // Filtered on the command's verdict rather than in a `.filter` writing its two
-  // conditions in its own words, which is where they were, beside a `disabled`
-  // that said only half of them.
-  const elsewhere = scenes
-    .map((scene) => commandEntry('openSceneInNewWindow', contextForScene(scene.id)))
-    .filter((row) => !row.disabled);
+export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
+  const { scenes, sceneId } = input;
+  // The file that wins the window's id, which is the one the title names. A
+  // shadowed file carrying the same id is not checked: the id never opens it.
+  const current = sceneId === null ? undefined : findScene(scenes, sceneId);
+
+  // Every window holds one scene, so another scene means another window. The
+  // rows that can act there, filtered on the verdict each row already carries:
+  // the command's, which refuses this window's own scene, and the shadowed
+  // file's, which nothing can open. Not a `.filter` writing those conditions in
+  // its own words, which is where they were, beside a `disabled` that said only
+  // half of them.
+  const elsewhere = sceneRows(input, 'openSceneInNewWindow').filter((row) => !row.disabled);
 
   return [
     commandEntry('newScene'),
     {
       label: 'Open Scene',
-      // One gesture pointed at each scene in turn. The `shadowedBy` rule (two
-      // files claiming one id, where opening this one would open the other) is
-      // the command's, and the submenu below reads the same one. A submenu
+      // One row per file, the window's checked and still offered. A submenu
       // rather than rows at the top, so that the actions keep their places
       // however many scenes the project has; it is there with one scene too.
-      submenu: scenes.map((scene) => ({
-        ...commandEntry('openScene', contextForScene(scene.id)),
-        checked: scene.id === sceneId,
+      submenu: sceneRows(input, 'openScene').map((row) => ({
+        ...row,
+        checked: row.key === current?.path,
       })),
     },
     // Left out rather than greyed when it has no row to offer: a greyed heading
@@ -77,4 +81,56 @@ export function buildSceneMenu({ scenes, sceneId }: SceneMenuInput): MenuEntry[]
     commandEntry('renameScene'),
     commandEntry('deleteScene'),
   ];
+}
+
+/**
+ * One row per file under `scenes/`, in the list's order: the gesture aimed at
+ * each file in turn.
+ *
+ * Keyed by path, the one thing that is unique on disk — two files can share a
+ * name, and two can share an id — while the gesture still aims at the id.
+ */
+function sceneRows(
+  { scenes }: SceneMenuInput,
+  command: 'openScene' | 'openSceneInNewWindow',
+): MenuItem[] {
+  const homonyms = repeatedNames(scenes);
+  return scenes.map((entry) => {
+    const detail = rowDetail(entry, homonyms.has(entry.name));
+    if (entry.shadowedBy !== null) {
+      /*
+       * The one row built by hand. An id names the first file that claims it,
+       * so no context can aim at this one: the command's row for its id
+       * carried the winner's name and opened the winner, which showed one
+       * scene twice and this file nowhere. Listed all the same, greyed, under
+       * its own name: a file missing from the menu is far harder to find than
+       * one shown with the reason beside it.
+       */
+      return { key: entry.path, label: entry.name, detail, disabled: true };
+    }
+    return { ...commandEntry(command, contextForScene(entry.id)), key: entry.path, detail };
+  });
+}
+
+/** The names that two entries or more carry, compared exactly. */
+function repeatedNames(scenes: readonly SceneEntry[]): Set<string> {
+  const seen = new Set<string>();
+  const repeated = new Set<string>();
+  for (const { name } of scenes) (seen.has(name) ? repeated : seen).add(name);
+  return repeated;
+}
+
+/**
+ * What a scene's row says beside its name: `folder · state`.
+ *
+ * The folder first, because it completes the name, and only on a homonym —
+ * anywhere else it is noise, and two rows that read alike are the only case it
+ * settles. Not even then at the top of `scenes/`: the other homonym's folder
+ * already tells the two apart. `Boss` and `boss` are not homonyms, since they
+ * already read differently.
+ */
+function rowDetail(entry: SceneEntry, homonym: boolean): string | undefined {
+  const folder = homonym ? entry.path.slice(`${SCENES_DIR}/`.length, entry.path.lastIndexOf('/')) : '';
+  const said = [folder, entry.shadowedBy === null ? '' : 'duplicate id'].filter((part) => part !== '');
+  return said.length > 0 ? said.join(' · ') : undefined;
 }

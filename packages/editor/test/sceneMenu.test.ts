@@ -1,4 +1,4 @@
-import { createEmptyScene, createMeshEntity, type SceneEntry } from '@three-studio/core';
+import { createEmptyScene, createMeshEntity, sceneName, type SceneEntry } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity } from '../src/commands/sceneCommands';
 import { commandEntry } from '../src/shell/commandEntry';
@@ -25,6 +25,38 @@ const LEVEL_2: SceneEntry = {
   shadowedBy: null,
 };
 const MAIN: SceneEntry = { id: 'main', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null };
+
+/*
+ * Lists `discoverScenes` can produce, and only those: in path order by code
+ * unit, each name its file's, the first file claiming an id winning it. The
+ * test that let a shadowed file's row open another file held a list with none
+ * of these properties.
+ */
+const scene = (path: string, id: string, shadowedBy: string | null = null): SceneEntry => ({
+  id,
+  name: sceneName(path),
+  path,
+  shadowedBy,
+});
+
+/**
+ * A copy made in the Finder, which keeps the original's id. A space sorts
+ * before the dot, so the copy comes first and wins the id: the original is the
+ * shadowed file.
+ */
+const COPY = [
+  scene('scenes/Boss copy.scene.json', 'b'),
+  scene('scenes/Boss.scene.json', 'b', 'scenes/Boss copy.scene.json'),
+  scene('scenes/Main.scene.json', 'a'),
+];
+/** Two scenes called Boss, each with an id of its own. */
+const HOMONYMS = [
+  scene('scenes/Boss.scene.json', 'b'),
+  scene('scenes/Main.scene.json', 'a'),
+  scene('scenes/old/Boss.scene.json', 'd'),
+];
+/** The homonyms, and a copy of Main in `old/` that keeps its id. */
+const BOTH = [...HOMONYMS, scene('scenes/old/Main.scene.json', 'a', 'scenes/Main.scene.json')];
 
 /** The project as an open window leaves it, and the builder's input for that window. */
 function open(scenes: readonly SceneEntry[], sceneId: string | null): SceneMenuInput {
@@ -59,6 +91,7 @@ const STATES: Record<string, () => SceneMenuInput> = {
     return input;
   },
   'a sceneId that names no entry': () => open([LEVEL_2, MAIN], 'gone'),
+  'homonyms, and a copy that keeps its id': () => open(BOTH, 'a'),
 };
 
 /** What the menu reads, top to bottom, with `─` for a separator. */
@@ -73,8 +106,19 @@ function row(menu: readonly MenuEntry[], label: string): MenuItem {
 const submenu = (menu: readonly MenuEntry[], label: string): readonly MenuEntry[] =>
   row(menu, label).submenu ?? [];
 
+/** The rows of a scene submenu, which has no separators. */
+function rowsIn(menu: readonly MenuEntry[], label: string): MenuItem[] {
+  return submenu(menu, label).map((entry) => {
+    if (entry === null) throw new Error(`a separator in ${label}`);
+    return entry;
+  });
+}
+
 /** What a person sees of a row and whether it can be picked. */
 const shown = ({ label, shortcut, disabled }: MenuItem) => ({ label, shortcut, disabled });
+
+/** What a scene row says beside its name, and what tells it from its siblings. */
+const said = ({ key, label, detail, disabled }: MenuItem) => ({ key, label, detail, disabled });
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -167,6 +211,72 @@ describe('Open Scene ▸', () => {
     level2?.onSelect?.();
     expect(switchScene.mock.calls).toEqual([['level-2']]);
   });
+
+  it('gives a shadowed file a row of its own, greyed, under its own name', () => {
+    const switchScene = vi.fn(async (_sceneId: string) => {});
+    vi.stubGlobal('window', { studio: { project: { switchScene } } });
+    const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open Scene');
+
+    // The middle row used to read `Boss copy`, offered, and open the copy: it
+    // was the command aimed at `b`, and `b` names the copy.
+    expect(rows.map(said)).toEqual([
+      { key: 'scenes/Boss copy.scene.json', label: 'Boss copy', detail: undefined, disabled: false },
+      { key: 'scenes/Boss.scene.json', label: 'Boss', detail: 'duplicate id', disabled: true },
+      { key: 'scenes/Main.scene.json', label: 'Main', detail: undefined, disabled: false },
+    ]);
+    expect(rows[1]!.onSelect).toBeUndefined();
+
+    rows[0]!.onSelect?.();
+    expect(switchScene.mock.calls).toEqual([['b']]);
+  });
+
+  it('names the folder of homonyms, and of them only', () => {
+    const switchScene = vi.fn(async (_sceneId: string) => {});
+    vi.stubGlobal('window', { studio: { project: { switchScene } } });
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'a')), 'Open Scene');
+
+    // No folder for the Boss at the top of `scenes/`: the other one's is
+    // enough to tell them apart.
+    expect(rows.map((entry) => [entry.label, entry.detail])).toEqual([
+      ['Boss', undefined],
+      ['Main', undefined],
+      ['Boss', 'old'],
+    ]);
+
+    rows[0]!.onSelect?.();
+    rows[2]!.onSelect?.();
+    expect(switchScene.mock.calls).toEqual([['b'], ['d']]);
+  });
+
+  it('keys every row by its path, since names repeat', () => {
+    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene');
+    expect(rows.map((entry) => entry.label)).toEqual(['Boss', 'Main', 'Boss', 'Main']);
+    expect(rows.map((entry) => entry.key)).toEqual(BOTH.map((entry) => entry.path));
+  });
+
+  it('says the folder, then the state, on one row', () => {
+    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene');
+    expect(said(rows[3]!)).toEqual({
+      key: 'scenes/old/Main.scene.json',
+      label: 'Main',
+      detail: 'old · duplicate id',
+      disabled: true,
+    });
+  });
+
+  it("checks the file that wins the window's id, never a shadowed file carrying it", () => {
+    expect(rowsIn(buildSceneMenu(open(COPY, 'b')), 'Open Scene').map((entry) => entry.checked)).toEqual([
+      true,
+      false,
+      false,
+    ]);
+    expect(rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene').map((entry) => entry.checked)).toEqual([
+      false,
+      true,
+      false,
+      false,
+    ]);
+  });
 });
 
 describe('Open in New Window ▸', () => {
@@ -192,5 +302,47 @@ describe('Open in New Window ▸', () => {
       shadowedBy: 'scenes/Main.scene.json',
     };
     expect(labels(buildSceneMenu(open([MAIN, copy], 'main')))).not.toContain('Open in New Window');
+  });
+
+  it('holds the rows of Open Scene ▸ that can act, with their folder and their key', () => {
+    const openSceneWindow = vi.fn(async (_sceneId: string) => {});
+    vi.stubGlobal('window', { studio: { project: { openSceneWindow } } });
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'a')), 'Open in New Window');
+
+    expect(rows.map(said)).toEqual([
+      { key: 'scenes/Boss.scene.json', label: 'Boss', detail: undefined, disabled: false },
+      { key: 'scenes/old/Boss.scene.json', label: 'Boss', detail: 'old', disabled: false },
+    ]);
+
+    rows.forEach((entry) => entry.onSelect?.());
+    expect(openSceneWindow.mock.calls).toEqual([['b'], ['d']]);
+  });
+
+  it("names a homonym's folder even when its namesake is not listed", () => {
+    // The window is on the top-level Boss, so only the other one is listed. It
+    // still says `old`: Open Scene ▸ shows both, and one file has to read the
+    // same in both lists.
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'b')), 'Open in New Window');
+    expect(rows.map((entry) => [entry.label, entry.detail])).toEqual([
+      ['Main', undefined],
+      ['Boss', 'old'],
+    ]);
+  });
+
+  it("leaves out this window's scene and a shadowed file", () => {
+    // Main is this window's, and its namesake in `old/` carries an id that
+    // names Main: no window can be opened on that file.
+    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open in New Window');
+    expect(rows.map(said)).toEqual([
+      { key: 'scenes/Boss.scene.json', label: 'Boss', detail: undefined, disabled: false },
+      { key: 'scenes/old/Boss.scene.json', label: 'Boss', detail: 'old', disabled: false },
+    ]);
+  });
+
+  it('does not offer a shadowed file under the name of the file that wins its id', () => {
+    // The shadowed `Boss` used to be listed here as a second `Boss copy`, which
+    // opened the copy.
+    const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open in New Window');
+    expect(rows.map((entry) => entry.key)).toEqual(['scenes/Boss copy.scene.json']);
   });
 });

@@ -52,16 +52,20 @@ function target(ctx: EditorContext): SceneEntry | undefined {
 }
 
 /**
- * Whether a named scene can be opened at all.
+ * Whether a named scene can be opened at all: whether its id names a file.
  *
- * `shadowedBy` is the case worth stating: two files under `scenes/` can carry
- * one `SceneDoc.id` — duplicating one in the Finder is enough — and only the
- * first by path order answers to it. Opening the second would open the first,
- * so it is offered and refused rather than dropped from the list, where it would
- * be far harder to find.
+ * Two files under `scenes/` can carry one `SceneDoc.id` — duplicating one in
+ * the Finder is enough — and only the first by path order answers to it. That
+ * is the file an id names: `findScene` never returns the other one from a list
+ * `discoverScenes` made, so no context can aim at it, and there is nothing
+ * shadowed for this guard to refuse. It used to test `shadowedBy` all the same,
+ * and promise that such a file was offered and refused; that held only for a
+ * test's list the main process cannot produce, while the menu, on a real one,
+ * showed the shadowed file's row under the winner's name and opened the winner.
+ * The Scene menu builds that file's row itself, greyed, with `duplicate id`.
  */
 function openable(ctx: EditorContext): boolean {
-  return target(ctx)?.shadowedBy === null;
+  return target(ctx) !== undefined;
 }
 
 export const SCENE_FILE_COMMANDS = {

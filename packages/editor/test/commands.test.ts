@@ -332,34 +332,48 @@ describe('hiding is a target and nothing else, which is what makes it a command'
 });
 
 describe('a gesture aimed at a scene', () => {
-  it('refuses one that is shadowed, and one that names nothing', async () => {
+  it('acts on the file an id names, and refuses an id that names none', async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
     const { useProjectStore } = await import('../src/state/projectStore');
 
+    /*
+     * A list `discoverScenes` can produce. Two files under `scenes/` carrying
+     * one `SceneDoc.id` — duplicating one in the Finder is enough — and only
+     * the first by path order answers to it. A space sorts before the dot, so
+     * that is the copy: the original is the shadowed file.
+     *
+     * This test used to hold a shadowed file without the file that shadows it,
+     * under a name neither file has — a list `discoverScenes` cannot produce.
+     * On it, a `shadowedBy` check in the command refused, and the test passed
+     * while the menu, on a real list, offered the shadowed file's row under the
+     * winner's name and opened the winner.
+     */
     useProjectStore.setState({
       sceneId: 'a',
       scenes: [
-        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
-        // Two files under `scenes/` carrying one `SceneDoc.id` — duplicating one
-        // in the Finder is enough. Only the first by path order answers to it.
-        { id: 'b', name: 'Boss', path: 'scenes/Boss copy.scene.json', shadowedBy: 'scenes/Boss.scene.json' },
+        { id: 'b', name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
+        { id: 'b', name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
         { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
       ],
     } as never);
 
+    // `b` names the copy. No context can aim at `scenes/Boss.scene.json`: the
+    // Scene menu builds that file's row itself (`sceneMenu.test.ts`).
+    expect(commandById('openScene').can(contextForScene('b'))).toBe(true);
+    expect(commandById('openScene').label(contextForScene('b'))).toBe('Boss copy');
     expect(commandById('openScene').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openScene').can(contextForScene('b')), 'shadowed').toBe(false);
-    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
-    expect(commandById('openScene').can(), 'no target').toBe(false);
     // The label is the scene's name, which is what the menu row shows.
     expect(commandById('openScene').label(contextForScene('c'))).toBe('Level2');
+    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('openScene').can(), 'no target').toBe(false);
 
     // A second window on the scene this window already holds is not a second
     // window. The menu said this in a `.filter` and the shadow rule in a
     // `disabled`, in two different sets of words.
     expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
     expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(false);
+    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(true);
 
     expect(commandById('setStartScene').can(contextForScene('b'))).toBe(true);
     expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
