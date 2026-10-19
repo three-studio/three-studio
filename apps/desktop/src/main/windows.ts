@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, shell } from 'electron';
+import { BrowserWindow, app, dialog, screen, shell } from 'electron';
 import type { WindowRole } from '@three-studio/core';
 import { forgetWindow, isDirty } from './session';
 import {
@@ -7,6 +7,7 @@ import {
   leftWithNothing,
   needsDiscardPrompt,
   opensInBrowser,
+  placeBeside,
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
@@ -337,6 +338,9 @@ export function openSceneWindow(sceneId: string): BrowserWindow | null {
   return createEditor(plan.projectPath, sceneId);
 }
 
+/** The smallest an editor window may be; see `placeBeside`, which keeps to it too. */
+const EDITOR_MINIMUM = { width: 1100, height: 680 };
+
 function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
   const win = createWindow({
     role: 'editor',
@@ -344,8 +348,8 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
     sceneId,
     width: 1600,
     height: 1000,
-    minWidth: 1100,
-    minHeight: 680,
+    minWidth: EDITOR_MINIMUM.width,
+    minHeight: EDITOR_MINIMUM.height,
   });
   // Captured now: `closed` fires after the webContents is gone, and the
   // unsaved-state table has to be purged by the id it was filled under.
@@ -359,9 +363,12 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
   editors.push(entry);
 
   // Offset from the window it was opened beside, so a second scene does not
-  // land exactly on top of the first and look like nothing happened.
+  // land exactly on top of the first and look like nothing happened — and sized
+  // to fit what the screen has left, or the system puts it back on top.
   const beside = editors.at(-2)?.win.getBounds();
-  if (beside) win.setPosition(beside.x + 32, beside.y + 32);
+  if (beside) {
+    win.setBounds(placeBeside(beside, screen.getDisplayMatching(beside).workArea, EDITOR_MINIMUM));
+  }
   trace(`editor opened on ${sceneId ?? 'the start scene'}`);
 
   win.on('close', (event) => {

@@ -141,6 +141,48 @@ export function leftWithNothing(
   return editorCount === 0 && !flags.quitting && !flags.transitioning;
 }
 
+/** A window's place on screen, in points, as Electron gives bounds and work areas. */
+export interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Where a window opened beside another goes: one step down and to the right,
+ * so a second scene does not land exactly on the first and look like nothing
+ * happened.
+ *
+ * No larger than what the screen has left from there. An editor window asks
+ * for more than a laptop's screen holds, so the first one fills it, and the
+ * system puts a window that does not fit back on the screen: on a 1512×949
+ * work area the second came out exactly over the first, the one thing the
+ * step is for. Back at the work area's corner, at the size beside, once a step
+ * would leave less than the window's minimum — a cascade cannot go on for ever.
+ *
+ * @param area The work area of the screen `beside` is on.
+ */
+export function placeBeside(
+  beside: Box,
+  area: Box,
+  minimum: { width: number; height: number },
+  step = 32,
+): Box {
+  const x = beside.x + step;
+  const y = beside.y + step;
+  const width = Math.min(beside.width, area.x + area.width - x);
+  const height = Math.min(beside.height, area.y + area.height - y);
+  if (width >= minimum.width && height >= minimum.height) return { x, y, width, height };
+
+  return {
+    x: area.x,
+    y: area.y,
+    width: Math.min(beside.width, area.width),
+    height: Math.min(beside.height, area.height),
+  };
+}
+
 /**
  * Whether unsaved work has to be confirmed away before it is.
  *
