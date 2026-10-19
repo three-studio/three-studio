@@ -1,4 +1,5 @@
 import { findScene, type SceneEntry } from '@three-studio/core';
+import { showInFileManagerLabel } from '../platform';
 import { useProjectStore } from '../state/projectStore';
 import { defineCommand, type EditorContext } from './command';
 import {
@@ -11,6 +12,7 @@ import {
   openScene,
   openSceneInNewWindow,
   renameCurrentSceneWithPrompt,
+  revealCurrentScene,
   saveSceneAs,
 } from './sceneFiles';
 
@@ -158,6 +160,16 @@ export const SCENE_FILE_COMMANDS = {
       const scene = targetOrCurrent(ctx);
       return scene === undefined ? undefined : chooseStartScene(scene.id);
     },
+  }),
+
+  /**
+   * The window's scene file, in the file manager, in the platform's words. It
+   * touches no document, so Prefab Mode and the game are left as they are.
+   */
+  revealScene: defineCommand({
+    label: () => showInFileManagerLabel(),
+    can: hasScene,
+    run: () => revealCurrentScene(),
   }),
 
   deleteScene: defineCommand({

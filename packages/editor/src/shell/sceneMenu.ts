@@ -92,6 +92,10 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
       ...commandEntry('setStartScene'),
       checked: current !== undefined && isStartScene(current, startScene),
     },
+    // The file this window saves to, in the file manager, in the platform's
+    // words. Last, because it is the one entry that takes the person out of the
+    // editor.
+    commandEntry('revealScene'),
   ];
 }
 

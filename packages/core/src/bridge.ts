@@ -295,7 +295,13 @@ export interface AssetApi {
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   savePrefab: (assetPath: string, prefab: PrefabDoc) => Promise<void>;
-  /** Opens the containing folder in the OS file browser. */
+  /**
+   * Opens the containing folder in the OS file browser, the file selected.
+   *
+   * Takes a project-relative path — an asset's or a scene's — and is refused,
+   * in words, when nothing is there: the file manager itself says nothing
+   * either way.
+   */
   revealInFileManager: (assetPath: string) => Promise<void>;
   /**
    * Absolute path of a dropped `File`.

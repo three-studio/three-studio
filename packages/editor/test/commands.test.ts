@@ -184,7 +184,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // nothing with it is worse than a greyed entry.
     //
     // Set as Start Scene, aimed at no scene, acts on the window's — and there
-    // is none.
+    // is none. So does Show in Finder.
     for (const id of [
       'newScene',
       'saveSceneAs',
@@ -192,6 +192,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
       'renameScene',
       'deleteScene',
       'setStartScene',
+      'revealScene',
     ] as const) {
       expect(commandById(id).can(), id).toBe(false);
     }
@@ -534,6 +535,7 @@ describe('the palette is a view over the table, not a feature', () => {
       'delete',
       'duplicate',
       'newScene',
+      'revealScene',
       'runExport',
       'deleteAsset',
       // A launch serves the open project, and a server stops with it.

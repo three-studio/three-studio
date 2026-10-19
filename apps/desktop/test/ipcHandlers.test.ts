@@ -423,6 +423,40 @@ describe('a device’s screenshot', () => {
   });
 });
 
+describe('showing a file in the file manager', () => {
+  it("shows a file of the project, a scene's as much as an asset's", async () => {
+    const root = await project();
+    const scene = (await discoverScenes(root))[0]!;
+    stub.shown.length = 0;
+
+    await invoke(IPC_INVOKE.assets.revealInFileManager, 1, scene.path);
+
+    expect(stub.shown).toEqual([join(root, scene.path)]);
+  });
+
+  it('says so when nothing is there, and shows nothing', async () => {
+    // `showItemInFolder` answers nothing either way: a file moved away in the
+    // Finder opened nothing and said nothing.
+    await project();
+    stub.shown.length = 0;
+
+    await expect(
+      invoke(IPC_INVOKE.assets.revealInFileManager, 1, 'scenes/gone.scene.json'),
+    ).rejects.toThrow('There is no file at scenes/gone.scene.json');
+    expect(stub.shown).toEqual([]);
+  });
+
+  it('still refuses a path outside the project', async () => {
+    await project();
+    stub.shown.length = 0;
+
+    await expect(invoke(IPC_INVOKE.assets.revealInFileManager, 1, '../outside')).rejects.toThrow(
+      'outside the project',
+    );
+    expect(stub.shown).toEqual([]);
+  });
+});
+
 describe('a new device link', () => {
   it('changes nothing in the file but the token', async () => {
     const found = JSON.parse(devicesFile.contents) as Record<string, unknown>;

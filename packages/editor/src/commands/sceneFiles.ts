@@ -28,12 +28,8 @@ import { setSceneName } from './sceneCommands';
  *   way.
  */
 
-function report(cause: unknown): void {
-  notify({
-    kind: 'error',
-    title: 'Could not do that to the scene',
-    description: ipcErrorMessage(cause),
-  });
+function report(cause: unknown, title = 'Could not do that to the scene'): void {
+  notify({ kind: 'error', title, description: ipcErrorMessage(cause) });
 }
 
 /** The scene this window is on, or `null` before a project has opened. */
@@ -289,5 +285,22 @@ export async function chooseStartScene(sceneId: string): Promise<void> {
     useProjectStore.getState().adoptContents(await window.studio.project.setStartScene(sceneId));
   } catch (cause) {
     report(cause);
+  }
+}
+
+/**
+ * Shows this scene's file in the system's file manager.
+ *
+ * `scenePath`, the file this window saves to — the one a person goes looking
+ * for. Prefab Mode and the game are left alone: nothing here reads or replaces
+ * the document.
+ */
+export async function revealCurrentScene(): Promise<void> {
+  const { scenePath } = useProjectStore.getState();
+  if (scenePath === null) return;
+  try {
+    await window.studio.assets.revealInFileManager(scenePath);
+  } catch (cause) {
+    report(cause, 'Could not show the scene file');
   }
 }

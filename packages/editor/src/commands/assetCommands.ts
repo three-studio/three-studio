@@ -6,6 +6,7 @@ import {
   type AssetEntry,
 } from '@three-studio/core';
 import { defineCommand } from './command';
+import { ipcErrorMessage } from './ipcError';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
@@ -189,6 +190,21 @@ export async function createFolder(parent: string): Promise<string | null> {
 
   const wanted = parent === '' ? name.trim() : `${parent}/${name.trim()}`;
   return useAssetStore.getState().createFolder(wanted);
+}
+
+/**
+ * A tile's or a row's folder button: the asset's file, in the file manager.
+ *
+ * The buttons used to call the bridge with `void`, so the main process's
+ * refusal of a file moved away outside the editor went nowhere a person could
+ * see — and the file manager says nothing about it either.
+ */
+export async function showAssetFile(path: string): Promise<void> {
+  try {
+    await window.studio.assets.revealInFileManager(path);
+  } catch (cause) {
+    notify({ kind: 'error', title: 'Could not show the file', description: ipcErrorMessage(cause) });
+  }
 }
 
 /** One readable line per user, capped: a wall of ids helps nobody decide. */

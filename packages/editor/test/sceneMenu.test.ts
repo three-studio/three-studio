@@ -11,6 +11,7 @@ import {
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity } from '../src/commands/sceneCommands';
+import { showInFileManagerLabel } from '../src/platform';
 import { commandEntry } from '../src/shell/commandEntry';
 import { buildSceneMenu, type SceneMenuInput } from '../src/shell/sceneMenu';
 import { shortcutHint } from '../src/shell/shortcutBindings';
@@ -179,6 +180,7 @@ describe('the order', () => {
       'Delete Scene',
       '─',
       'Set as Start Scene',
+      showInFileManagerLabel(),
     ]);
   });
 
@@ -201,6 +203,7 @@ describe('no guard of its own', () => {
     'renameScene',
     'deleteScene',
     'setStartScene',
+    'revealScene',
   ] as const;
 
   it.each(Object.keys(STATES))("carries each command's own label, key and verdict: %s", (state) => {

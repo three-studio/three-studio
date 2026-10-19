@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   ASSET_KIND_INFO,
@@ -65,7 +66,7 @@ import {
 import { scanAssets, updateAssetSettings } from './assetScan';
 import type { DeviceServer } from './devices/DeviceServer';
 import { importSessions } from './import/ImportSession';
-import { resolveInside } from './paths';
+import { MissingFileError, isNotFound, resolveInside } from './paths';
 import {
   loadLayoutPreferences,
   loadShortcutPreferences,
@@ -512,9 +513,18 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
     },
 
-    revealInFileManager: (_event, assetPath: string) => {
+    revealInFileManager: async (_event, assetPath: string): Promise<void> => {
       // `showItemInFolder` takes an absolute path, so the guard still applies.
-      shell.showItemInFolder(resolveInside(requireProject(), assetPath));
+      const target = resolveInside(requireProject(), assetPath);
+      // Looked for first, because Electron answers nothing either way: a path
+      // with nothing at it — a file moved away in the Finder — opened nothing
+      // and said nothing, and the person clicked again.
+      try {
+        await stat(target);
+      } catch (cause) {
+        throw isNotFound(cause) ? new MissingFileError(assetPath) : cause;
+      }
+      shell.showItemInFolder(target);
     },
   },
   scripts: {

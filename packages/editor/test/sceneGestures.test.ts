@@ -12,6 +12,7 @@ import {
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
+import { showAssetFile } from '../src/commands/assetCommands';
 import { addEntity, renameEntity } from '../src/commands/sceneCommands';
 import {
   backToTheScene,
@@ -21,6 +22,7 @@ import {
   openScene,
   renameCurrentScene,
   renameCurrentSceneWithPrompt,
+  revealCurrentScene,
   saveSceneAs,
 } from '../src/commands/sceneFiles';
 import { useAssetStore } from '../src/state/assetStore';
@@ -127,6 +129,9 @@ function installBridge(): void {
         })),
         switchScene: record('switchScene', (_sceneId: string) => true),
         setDirty: (dirty: boolean) => void log.push(['setDirty', dirty]),
+      },
+      assets: {
+        revealInFileManager: record('revealInFileManager', (_path: string) => undefined),
       },
     },
   });
@@ -574,5 +579,84 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
     expect(log).toEqual([]);
     expect(prefabMode().stack).toHaveLength(1);
     expect(editor().playState).toBe('playing');
+  });
+});
+
+describe('showing a file', () => {
+  /*
+   * Nothing here reads or replaces the document, so Prefab Mode and the game are
+   * left as they are. What is shown is the file this window saves to.
+   */
+
+  it('shows the file this window saves to, not the one that wins its id', async () => {
+    // A copy made in the Finder keeps the id, and a space sorts before the dot,
+    // so the copy wins `a`. This window still saves to its own file, which is the
+    // one a person goes looking for.
+    const copy: SceneEntry = { ...MAIN, name: 'Main copy', path: 'scenes/Main copy.scene.json' };
+    useProjectStore.setState({ scenes: [LEVEL_2, copy, { ...MAIN, shadowedBy: copy.path }] });
+
+    await revealCurrentScene();
+
+    expect(log).toEqual([['revealInFileManager', MAIN.path]]);
+  });
+
+  it('leaves Prefab Mode open', async () => {
+    await openCrate();
+
+    await revealCurrentScene();
+
+    expect(log).toEqual([['revealInFileManager', MAIN.path]]);
+    expect(prefabMode().stack).toHaveLength(1);
+  });
+
+  it('leaves the game running', async () => {
+    editor().play();
+
+    await revealCurrentScene();
+
+    expect(log).toEqual([['revealInFileManager', MAIN.path]]);
+    expect(editor().playState).toBe('playing');
+  });
+
+  it('says what the main process said when the file has gone', async () => {
+    vi.spyOn(window.studio.assets, 'revealInFileManager').mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'assets:reveal': MissingFileError: There is no file at " +
+          'scenes/Main.scene.json: it was moved or deleted outside the editor.',
+      ),
+    );
+
+    await revealCurrentScene();
+
+    expect(useToastStore.getState().toasts).toMatchObject([
+      {
+        kind: 'error',
+        title: 'Could not show the scene file',
+        description:
+          'There is no file at scenes/Main.scene.json: it was moved or deleted outside the editor.',
+      },
+    ]);
+  });
+
+  it("says so for an asset's file too", async () => {
+    // The Project panel's folder buttons, which used to drop the refusal: their
+    // call was `void`, so a rejection went nowhere a person could see.
+    vi.spyOn(window.studio.assets, 'revealInFileManager').mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'assets:reveal': MissingFileError: There is no file at " +
+          'assets/crate.glb: it was moved or deleted outside the editor.',
+      ),
+    );
+
+    await showAssetFile('assets/crate.glb');
+
+    expect(useToastStore.getState().toasts).toMatchObject([
+      {
+        kind: 'error',
+        title: 'Could not show the file',
+        description:
+          'There is no file at assets/crate.glb: it was moved or deleted outside the editor.',
+      },
+    ]);
   });
 });
