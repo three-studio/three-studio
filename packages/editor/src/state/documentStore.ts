@@ -50,7 +50,7 @@ export interface MutationOptions {
  * `local` half no longer resolves — coarser, but wrong in the harmless
  * direction, where the alternative clears a selection the user can see.
  */
-function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
+export function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
   const kept = selection.filter((id) => {
     const parts = splitInstancedId(id);
     return scene.entities[parts === null ? id : parts.owner] !== undefined;
@@ -163,8 +163,9 @@ interface DocumentState {
    * Replace the document wholesale.
    *
    * `keepHistory` says which of two very different things this is. Without it,
-   * a new document is being loaded: history goes, and the result is clean
-   * because it is what the file holds. With it, a document that was set aside is
+   * a document is being loaded — opening a scene, or reverting it to its file:
+   * history goes, and the result is clean because it is what the file holds.
+   * With it, a document that was set aside is
    * being *restored* — Play/Stop, leaving Prefab Mode — and a restore decides
    * nothing about whether the work is saved. Forcing `dirty: false` in both
    * cases was the defect, and it lost unsaved work with no warning.

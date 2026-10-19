@@ -74,6 +74,8 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
     // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
     // both, and this project has no Save All to be confused with yet.
     commandEntry('saveSceneAs'),
+    // Greyed while the scene has no unsaved work: there is nothing to drop.
+    commandEntry('revertScene'),
     null,
     // Three entries that used to write their own guards in the menu, or none at
     // all: Duplicate and Rename had no `disabled` while both gestures open with

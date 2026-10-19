@@ -192,6 +192,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
       'renameScene',
       'deleteScene',
       'setStartScene',
+      'revertScene',
       'sceneSettings',
       'revealScene',
     ] as const) {
@@ -536,6 +537,7 @@ describe('the palette is a view over the table, not a feature', () => {
       'delete',
       'duplicate',
       'newScene',
+      'revertScene',
       'sceneSettings',
       'revealScene',
       'runExport',

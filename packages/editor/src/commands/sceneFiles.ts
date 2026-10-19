@@ -1,6 +1,7 @@
-import { findScene, serializeScene, type SceneEntry } from '@three-studio/core';
+import { deserializeScene, findScene, serializeScene, type SceneEntry } from '@three-studio/core';
+import { reportBrokenReferences } from '../state/brokenReport';
 import { askForText, askToConfirm } from '../state/dialogStore';
-import { useDocumentStore } from '../state/documentStore';
+import { pruneSelection, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
 import { useProjectStore } from '../state/projectStore';
@@ -17,7 +18,7 @@ import { setSceneName } from './sceneCommands';
  * the project's list of scenes — which is why they go through the main process,
  * and why this window is handed the list back rather than deducing it.
  *
- * Two different operations, easy to confuse:
+ * Three different operations, easy to confuse:
  *
  * - **Retarget** — same document, new file (Save As, and a rename). No reload:
  *   what is on screen has not changed, and reloading would throw away the undo
@@ -26,6 +27,8 @@ import { setSceneName } from './sceneCommands';
  * - **Switch** — different document (open another scene, delete this one). A
  *   reload, through the main process, with the unsaved-changes prompt on the
  *   way.
+ * - **Revert** — same file, read back into the document, in place. A load,
+ *   which drops the history and leaves the document clean, without the reload.
  */
 
 function report(cause: unknown, title = 'Could not do that to the scene'): void {
@@ -277,6 +280,59 @@ export async function deleteCurrentScene(): Promise<void> {
     if (next !== undefined && next !== '') await window.studio.project.switchScene(next);
   } catch (cause) {
     report(cause);
+  }
+}
+
+/**
+ * Drops the scene's unsaved work: the document becomes what its file holds.
+ *
+ * In place rather than through the main process's reload of this window,
+ * which it would offer for its own scene: that prompt speaks of opening another
+ * scene, the window goes blank for a second, and nothing a reload tears down
+ * belongs to the work being dropped. A load gives the document what a reload
+ * would — clean, with no history, the file's own id and name.
+ *
+ * The file is read before anything is left, so a file that is gone, that does
+ * not read, or that now holds another scene leaves the document, the open
+ * prefabs and the game as they were — and Save Scene can still write it.
+ */
+export async function revertCurrentScene(): Promise<void> {
+  const { sceneId, scenePath } = useProjectStore.getState();
+  if (sceneId === null || scenePath === null) return;
+
+  const confirmed = await askToConfirm({
+    title: `Revert "${currentSceneName()}"?`,
+    message:
+      'Its unsaved changes are discarded, and the scene is read again from its file. ' +
+      'Changes already written to materials and prefabs stay. This cannot be undone.',
+    confirmLabel: 'Revert',
+    destructive: true,
+  });
+  if (!confirmed) return;
+
+  try {
+    const saved = deserializeScene(await window.studio.project.readScene(scenePath));
+    // Since Save As writes a scene of its own, a file carries its window's id
+    // unless something outside the editor put another scene there. Loading it
+    // would leave this window — its URL, the main process's table — on an id
+    // the document no longer carries, and a reload would not find the file.
+    if (saved.id !== sceneId) {
+      throw new Error(`${scenePath} now holds another scene, "${saved.name}". Nothing was changed.`);
+    }
+    // The document is the scene from here on, and the game is stopped: Stop
+    // puts back the document Play started from, which would bring the dropped
+    // work back over the file's.
+    await backToTheScene({ stopPlay: true });
+    useDocumentStore.getState().replaceScene(saved);
+    // After the document, as an edit prunes. A load prunes nothing, and one
+    // selected id naming nothing leaves the Inspector blank.
+    const { selection, setSelection } = useEditorStore.getState();
+    setSelection(pruneSelection(saved, selection));
+    // Said again: the file can point at what the session had dealt with — an
+    // entity removed since, whose asset is gone, comes back with it.
+    reportBrokenReferences();
+  } catch (cause) {
+    report(cause, 'Could not revert the scene');
   }
 }
 

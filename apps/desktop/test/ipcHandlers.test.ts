@@ -446,6 +446,19 @@ describe('showing a file in the file manager', () => {
     expect(stub.shown).toEqual([]);
   });
 
+  it('reads a scene that is there, and names one that has gone', async () => {
+    // Revert reads the window's own file back; a game moving on reads the next
+    // scene's. Node's `ENOENT` and an absolute path told the person nothing.
+    const root = await project();
+    const scene = (await discoverScenes(root))[0]!;
+
+    const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
+    expect(deserializeScene(read).id).toBe(scene.id);
+    await expect(invoke(IPC_INVOKE.project.readScene, 1, 'scenes/gone.scene.json')).rejects.toThrow(
+      'There is no file at scenes/gone.scene.json',
+    );
+  });
+
   it('still refuses a path outside the project', async () => {
     await project();
     stub.shown.length = 0;

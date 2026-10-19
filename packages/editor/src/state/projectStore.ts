@@ -30,7 +30,7 @@ interface ProjectState {
   scenes: SceneEntry[];
   /** Id of the scene this window edits — what every reference uses. */
   sceneId: string | null;
-  /** Where its file is. Needed to save it, and for nothing else. */
+  /** Where its file is: what Save writes, Revert reads and Show in Finder shows. */
   scenePath: string | null;
   /** Set while a save is in flight, and after a save that failed. */
   saving: boolean;

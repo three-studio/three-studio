@@ -174,6 +174,7 @@ describe('the order', () => {
       '─',
       'Save Scene',
       'Save Scene As…',
+      'Revert Scene',
       '─',
       'Duplicate Scene…',
       'Rename Scene…',
@@ -200,6 +201,7 @@ describe('no guard of its own', () => {
     'newScene',
     'save',
     'saveSceneAs',
+    'revertScene',
     'duplicateScene',
     'renameScene',
     'deleteScene',
@@ -213,6 +215,14 @@ describe('no guard of its own', () => {
     // Every row that is not a submenu's heading runs a command.
     const rows = menu.filter((entry): entry is MenuItem => entry !== null && entry.submenu === undefined);
     expect(rows.map(shown)).toEqual(BOUND.map((id) => shown(commandEntry(id))));
+  });
+
+  it('greys Revert Scene on a clean scene, and offers it once edited', () => {
+    const input = open([LEVEL_2, MAIN], 'main');
+    expect(row(buildSceneMenu(input), 'Revert Scene').disabled).toBe(true);
+
+    edit();
+    expect(row(buildSceneMenu(input), 'Revert Scene').disabled).toBe(false);
   });
 
   it('greys Delete Scene with one scene, and offers it with two', () => {

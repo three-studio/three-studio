@@ -420,12 +420,16 @@ function closeAllEditors(): boolean {
 /**
  * Points a window at another scene by reloading it.
  *
- * A reload rather than a swap inside the running renderer: that path is
- * `replaceScene`, which is what prefab mode and leaving Play already use, and
- * it carries two open bugs — the unsaved flag is overwritten and the undo
- * history is destroyed. A reload gives a fresh document, a fresh history and a
- * teardown nobody can forget to write. The cost is about a second
- * of empty window, and it is accepted.
+ * A reload rather than a swap inside the running renderer, because another
+ * scene is another document with everything hung off it: the viewport's
+ * objects, the physics world, the scripts, the window's own idea of which scene
+ * it is on. A fresh renderer is a teardown nobody can forget to write. The cost
+ * is about a second of empty window, and it is accepted.
+ *
+ * Not because the renderer's `replaceScene` loses work: a load through it is
+ * clean and has no history, which is what a document just read from its file
+ * is, and a restore (`keepHistory`) keeps both. Revert Scene loads this
+ * window's own scene that way, in place, where none of the above changes.
  *
  * @param from The window asking. With several open, "the editor" is not a
  *   thing — the one that asked is the one that moves.

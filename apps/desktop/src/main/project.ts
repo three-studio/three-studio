@@ -26,7 +26,7 @@ import {
   type SceneEntry,
 } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
-import { resolveInside } from './paths';
+import { MissingFileError, isNotFound, resolveInside } from './paths';
 import { FileIndex, stampOf } from './projectIndex';
 import { remember } from './recentProjects';
 import { writeScriptTypings } from './scripts';
@@ -250,13 +250,21 @@ export async function saveScene(
  * Reads one scene of the open project.
  *
  * Separate from `openProject`, which hands back the starting scene: this is
- * what a running game asks for when it moves to the next one, and the renderer
- * names the path, so it goes through the same containment guard as everything
- * else it can name.
+ * what a running game asks for when it moves to the next one, and what Revert
+ * Scene reads back into the window's document. The renderer names the path, so
+ * it goes through the same containment guard as everything else it can name.
+ *
+ * A file that is not there is said in words, by its place in the project: it
+ * was moved or deleted outside the editor, and Node's `ENOENT` with an absolute
+ * path is not something a toast should show.
  */
 export async function readSceneFile(projectPath: string, scenePath: string): Promise<string> {
   await readProjectFile(projectPath);
-  return readFile(resolveInside(projectPath, scenePath), 'utf8');
+  try {
+    return await readFile(resolveInside(projectPath, scenePath), 'utf8');
+  } catch (cause) {
+    throw isNotFound(cause) ? new MissingFileError(scenePath) : cause;
+  }
 }
 
 /**

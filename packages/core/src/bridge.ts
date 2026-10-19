@@ -103,7 +103,11 @@ export interface ProjectApi {
     scenePath: string;
     contents: string;
   }) => Promise<void>;
-  /** Reads a scene of the open project, for a game moving to the next one. */
+  /**
+   * Reads a scene of the open project: for a game moving to the next one, and
+   * for Revert Scene, which reads the window's own file back. Refused, in
+   * words, when nothing is there.
+   */
   readScene: (scenePath: string) => Promise<string>;
 
   /*

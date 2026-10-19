@@ -6,6 +6,7 @@ import {
   createMeshEntity,
   createModelEntity,
   findComponent,
+  instancedId,
   type AudioSourceComponent,
 } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -20,7 +21,7 @@ import {
   setComponentNestedField,
   setTransform,
 } from '../src/commands/sceneCommands';
-import { selectDirty, useDocumentStore } from '../src/state/documentStore';
+import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { expandedScene } from '../src/state/expansion';
@@ -771,5 +772,33 @@ describe('the companions a player controller brings', () => {
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
     });
+  });
+});
+
+/*
+ * A load prunes nothing: it hands over a whole document and leaves the
+ * selection as it was. Revert puts the selection through the rule an edit uses,
+ * since one selected id naming nothing leaves the Inspector blank.
+ */
+describe('a selection after a scene swap', () => {
+  it("keeps an id whose entity is there, and one whose instance's owner is", () => {
+    const wall = addEntity(createEntity('Wall'));
+    const crate = addEntity(createEntity('Crate'));
+    const inside = instancedId(crate, 'lid');
+
+    expect(pruneSelection(scene(), [wall, inside])).toEqual([wall, inside]);
+  });
+
+  it('drops an id that names nothing', () => {
+    const wall = addEntity(createEntity('Wall'));
+
+    expect(pruneSelection(scene(), [wall, 'gone', instancedId('gone', 'lid')])).toEqual([wall]);
+  });
+
+  it('hands back the same array when nothing went, so no subscriber sees a change', () => {
+    const wall = addEntity(createEntity('Wall'));
+    const selected = [wall];
+
+    expect(pruneSelection(scene(), selected)).toBe(selected);
   });
 });

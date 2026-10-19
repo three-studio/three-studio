@@ -50,6 +50,11 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   // window's unsaved work rather than the document's: with a prefab open the
   // document is the prefab, and the dot went out while the scene's edits sat
   // unsaved behind it.
+  //
+  // Revert Scene's verdict reads `sceneUnsaved`, which needs no subscription of
+  // its own: it never moves without one of these two booleans. Outside Prefab
+  // Mode it is the document's; in it, nothing writes the scene's frame until
+  // Prefab Mode is left, which hands the answer back to the document.
   const unsaved = useWindowUnsaved();
   /*
    * Subscribed to but never read here: `saveCommand.can()` reads it, and this

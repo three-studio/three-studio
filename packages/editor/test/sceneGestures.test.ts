@@ -3,9 +3,11 @@ import {
   createBuildProfiles,
   createEmptyScene,
   createMeshEntity,
+  createModelEntity,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  serializeScene,
   type PrefabDoc,
   type ProjectFile,
   type SceneEntry,
@@ -13,9 +15,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import { showAssetFile } from '../src/commands/assetCommands';
-import { addEntity, renameEntity } from '../src/commands/sceneCommands';
+import { commandById } from '../src/commands/registry';
+import { addEntity, deleteSelection, renameEntity } from '../src/commands/sceneCommands';
 import {
   backToTheScene,
+  currentSceneName,
   deleteCurrentScene,
   duplicateCurrentScene,
   newScene,
@@ -23,17 +27,19 @@ import {
   renameCurrentScene,
   renameCurrentSceneWithPrompt,
   revealCurrentScene,
+  revertCurrentScene,
   saveSceneAs,
   showSceneSettings,
 } from '../src/commands/sceneFiles';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDialogStore } from '../src/state/dialogStore';
-import { useDocumentStore } from '../src/state/documentStore';
+import { selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
+import { Selection } from '../src/state/selection';
 import { useToastStore } from '../src/state/toastStore';
-import { watchUnsaved, windowUnsaved } from '../src/state/unsaved';
+import { sceneUnsaved, watchUnsaved, windowUnsaved } from '../src/state/unsaved';
 
 /*
  * The scene gestures act on the scene, whatever stands in front of it.
@@ -59,6 +65,12 @@ const savedPrefabs: PrefabDoc[] = [];
 const written: string[] = [];
 /** Each address `retarget` put in place of this window's, so a reload finds its scene. */
 const addresses: string[] = [];
+/**
+ * What the window's scene file holds, as `readScene` answers it: the document as
+ * it was saved, unless a test puts something else there — or an error, which
+ * the read rejects with.
+ */
+let file: string | Error = '';
 const sceneInAddress = (address: string) => new URL(address).searchParams.get('scene');
 
 const doc = () => useDocumentStore.getState();
@@ -130,6 +142,10 @@ function installBridge(): void {
         })),
         switchScene: record('switchScene', (_sceneId: string) => true),
         setDirty: (dirty: boolean) => void log.push(['setDirty', dirty]),
+        readScene: record('readScene', (_path: string) => {
+          if (file instanceof Error) throw file;
+          return file;
+        }),
       },
       assets: {
         revealInFileManager: record('revealInFileManager', (_path: string) => undefined),
@@ -184,6 +200,7 @@ beforeEach(async () => {
   doc().replaceScene({ ...createEmptyScene('Main'), id: MAIN.id });
   wall = addEntity(named('Wall'));
   doc().markClean();
+  file = serializeScene(doc().scene);
   editor().clearSelection();
 
   useProjectStore.setState({
@@ -727,5 +744,238 @@ describe('Scene Settings', () => {
     expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
       'Could not do that to the scene',
     );
+  });
+});
+
+describe('Revert Scene', () => {
+  /*
+   * In place: the document becomes what its file holds, through a load — clean,
+   * no history — as the window's reload would give it, without the reload. The
+   * file is read before anything is left, so a file that cannot be used leaves
+   * Prefab Mode and the game where they were.
+   */
+  const can = () => commandById('revertScene').can();
+
+  async function revert(): Promise<void> {
+    const done = revertCurrentScene();
+    await confirm();
+    await done;
+  }
+
+  /** What `PlaySession.endPlay` does at Stop, which is not running here. */
+  function restoreAtStop(): void {
+    const atPlay = doc().scene;
+    stops.push(
+      useEditorStore.subscribe((state, before) => {
+        if (state.playState === 'stopped' && before.playState !== 'stopped') {
+          doc().replaceScene(atPlay, { keepHistory: true });
+        }
+      }),
+    );
+  }
+
+  const titles = () => useToastStore.getState().toasts.map((toast) => toast.title);
+
+  describe('is offered only when there is scene work to drop', () => {
+    it('not on a clean scene, and once it is edited', () => {
+      expect(can()).toBe(false);
+      renameEntity(wall, 'Edited wall');
+      expect(can()).toBe(true);
+    });
+
+    it('with the scene edited behind an untouched prefab', async () => {
+      renameEntity(wall, 'Edited wall');
+      await openCrate();
+      expect(can()).toBe(true);
+    });
+
+    it('not for an edited prefab over a clean scene, which leaving saves', async () => {
+      await openCrate();
+      renameEntity(crateRoot, 'Edited');
+      expect(can()).toBe(false);
+    });
+  });
+
+  it('puts the document back the way its file has it, clean and with no history', async () => {
+    renameEntity(wall, 'Edited wall');
+    const added = addEntity(named('Barrel'));
+    editor().setSelection([wall, added]);
+    stops.push(watchUnsaved());
+    log.length = 0;
+
+    await revert();
+
+    // Read and loaded in place: nothing saved, no reload, and the main process
+    // told at once that nothing is unsaved.
+    expect(log).toEqual([
+      ['readScene', MAIN.path],
+      ['setDirty', false],
+    ]);
+    expect(doc().scene.entities[wall]?.name).toBe('Wall');
+    expect(doc().scene.entities[added]).toBeUndefined();
+    expect(doc().scene.id).toBe('a');
+    expect(selectDirty(doc())).toBe(false);
+    expect(doc().past).toEqual([]);
+    // What the file still holds stays selected.
+    expect(editor().selection).toEqual([wall]);
+  });
+
+  it('asks first, in words that say what stays', async () => {
+    renameEntity(wall, 'Edited wall');
+
+    const done = revertCurrentScene();
+    await vi.waitFor(() => expect(useDialogStore.getState().confirm).not.toBeNull());
+    const asked = useDialogStore.getState().confirm!;
+    useDialogStore.getState().cancel();
+    await done;
+
+    expect(asked).toMatchObject({ title: 'Revert "Main"?', confirmLabel: 'Revert', destructive: true });
+    expect(asked.message).toContain('Changes already written to materials and prefabs stay.');
+  });
+
+  describe('cancelled, leaves everything as it was', () => {
+    it('in Prefab Mode', async () => {
+      renameEntity(wall, 'Edited wall');
+      await openCrate();
+      log.length = 0;
+
+      const done = revertCurrentScene();
+      await cancel();
+      await done;
+
+      expect(log).toEqual([]);
+      expect(prefabMode().stack).toHaveLength(1);
+      expect(sceneUnsaved()).toBe(true);
+    });
+
+    it('during Play', async () => {
+      renameEntity(wall, 'Edited wall');
+      editor().play();
+
+      const done = revertCurrentScene();
+      await cancel();
+      await done;
+
+      expect(log).toEqual([]);
+      expect(editor().playState).toBe('playing');
+      expect(doc().scene.entities[wall]?.name).toBe('Edited wall');
+    });
+  });
+
+  it('reads the file, then leaves Prefab Mode, saving the prefab, then loads', async () => {
+    renameEntity(wall, 'Edited wall');
+    await openCrate();
+    renameEntity(crateRoot, 'Edited');
+    log.length = 0;
+
+    await revert();
+
+    expect(log).toEqual([
+      ['readScene', MAIN.path],
+      ['savePrefab', CRATE],
+    ]);
+    expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
+    expect(prefabMode().stack).toEqual([]);
+    expect(doc().scene.entities[wall]?.name).toBe('Wall');
+    expect(sceneUnsaved()).toBe(false);
+  });
+
+  it('stops the game before it loads, so Stop cannot put the edits back', async () => {
+    renameEntity(wall, 'Edited wall');
+    restoreAtStop();
+    editor().play();
+    log.length = 0;
+
+    await revert();
+
+    expect(log).toEqual([
+      ['readScene', MAIN.path],
+      ['stop', 'a'],
+    ]);
+    expect(editor().playState).toBe('stopped');
+    expect(doc().scene.entities[wall]?.name).toBe('Wall');
+    expect(selectDirty(doc())).toBe(false);
+  });
+
+  it.each([
+    [
+      'a file that has gone',
+      () =>
+        new Error(
+          "Error invoking remote method 'project:readScene': MissingFileError: There is no file at " +
+            'scenes/Main.scene.json: it was moved or deleted outside the editor.',
+        ),
+      'There is no file at scenes/Main.scene.json',
+    ],
+    ['a file that does not read', () => '{', undefined],
+    [
+      'a file holding another scene',
+      () => serializeScene({ ...deserializeScene(file as string), id: 'z', name: 'Intruder' }),
+      'another scene',
+    ],
+  ])('refuses %s, and nothing moves', async (_, contents, said) => {
+    renameEntity(wall, 'Edited wall');
+    await openCrate();
+    const before = doc().scene;
+    file = contents();
+    log.length = 0;
+
+    await revert();
+
+    expect(log).toEqual([['readScene', MAIN.path]]);
+    expect(prefabMode().stack).toHaveLength(1);
+    expect(doc().scene).toBe(before);
+    expect(sceneUnsaved()).toBe(true);
+    const toast = useToastStore.getState().toasts.find((t) => t.title === 'Could not revert the scene');
+    expect(toast?.kind).toBe('error');
+    if (said !== undefined) expect(toast?.description).toContain(said);
+  });
+
+  it('loads the file as it is now, changed outside the editor', async () => {
+    const outside = deserializeScene(file as string);
+    outside.entities[wall]!.name = 'Changed outside';
+    file = serializeScene(outside);
+    renameEntity(wall, 'Edited wall');
+
+    await revert();
+
+    expect(doc().scene.entities[wall]?.name).toBe('Changed outside');
+    expect(selectDirty(doc())).toBe(false);
+  });
+
+  it('gives the document the name its file holds, as a reload would', async () => {
+    // A rename moves the file and writes the new name into the document as an
+    // edit, which stays unsaved until the next save — so the file still holds
+    // the old one. What Cmd+Z of the rename would give, too.
+    await renameCurrentScene('Renamed');
+    log.length = 0;
+
+    await revert();
+
+    expect(log).toEqual([['readScene', 'scenes/Renamed.scene.json']]);
+    expect(doc().scene.name).toBe('Main');
+    expect(currentSceneName()).toBe('Renamed');
+  });
+
+  it('says again what the file points at and cannot find', async () => {
+    // An entity the session removed, whose model has gone since: the file still
+    // holds it, and the revert brings it back.
+    const barrel = addEntity(createModelEntity('gone-model', 'Barrel'));
+    doc().markClean();
+    file = serializeScene(doc().scene);
+    deleteSelection(Selection.of([barrel], doc().scene));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      await revert();
+
+      expect(doc().scene.entities[barrel]).toBeDefined();
+      expect(warn.mock.calls.map(([line]) => String(line).split(' to ')[0])).toEqual([
+        '[scene] 1 reference',
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(titles()).not.toContain('Could not revert the scene');
   });
 });

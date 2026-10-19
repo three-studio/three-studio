@@ -11,7 +11,9 @@ export function knownAssetIds(): ReadonlySet<string> {
 const SHOWN = 5;
 
 /**
- * Says once, on opening a scene, what it points at and cannot find.
+ * Says once, on opening a scene, what it points at and cannot find — and again
+ * on reverting it to its file, which can bring back what the session had dealt
+ * with.
  *
  * There was already a report: `ModelSystem` caught `Unknown model asset` and
  * printed it with a stack, once per entity, as an error. Three barrels from a

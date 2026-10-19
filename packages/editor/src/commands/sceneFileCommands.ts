@@ -1,6 +1,7 @@
 import { findScene, type SceneEntry } from '@three-studio/core';
 import { showInFileManagerLabel } from '../platform';
 import { useProjectStore } from '../state/projectStore';
+import { sceneUnsaved } from '../state/unsaved';
 import { defineCommand, type EditorContext } from './command';
 import {
   chooseStartScene,
@@ -13,6 +14,7 @@ import {
   openSceneInNewWindow,
   renameCurrentSceneWithPrompt,
   revealCurrentScene,
+  revertCurrentScene,
   saveSceneAs,
   showSceneSettings,
 } from './sceneFiles';
@@ -33,8 +35,10 @@ import {
  *   than in the gesture, so the rule lived where only one caller could see it.
  *
  * Every `can()` below is one of those conditions, moved to the one place that
- * every caller reads. Nothing here is undoable and nothing here touches the
- * document — see the note at the top of `sceneFiles.ts`.
+ * every caller reads. Nothing here is undoable — see the note at the top of
+ * `sceneFiles.ts`. Two of them reach past the file: Revert Scene replaces the
+ * document with what its file holds, and Scene Settings… empties the
+ * selection.
  */
 
 const project = () => useProjectStore.getState();
@@ -98,6 +102,15 @@ export const SCENE_FILE_COMMANDS = {
     label: () => 'Save Scene As…',
     can: () => project().summary !== null,
     run: () => saveSceneAs(),
+  }),
+
+  /** The document, put back the way its file has it — after asking. */
+  revertScene: defineCommand({
+    label: () => 'Revert Scene',
+    // `sceneUnsaved`, not `windowUnsaved`: an edited prefab is saved on the way
+    // out, not reverted, so an untouched scene behind it has nothing to go back to.
+    can: () => hasScene() && sceneUnsaved(),
+    run: () => revertCurrentScene(),
   }),
 
   duplicateScene: defineCommand({
