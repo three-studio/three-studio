@@ -442,7 +442,11 @@ function confirmDiscard(win: BrowserWindow, detail: string): boolean {
     buttons: ['Cancel', 'Discard Changes'],
     defaultId: 0,
     cancelId: 0,
-    message: 'This scene has unsaved changes.',
+    // The window's, not the scene's: the flag this reads is everything the
+    // window would lose — the scene's edits, set aside under Prefab Mode or
+    // not, and any open prefab's. "This scene has unsaved changes." was wrong
+    // whenever only a prefab was.
+    message: 'This window has unsaved changes.',
     detail,
   });
   return choice === 1;

@@ -76,10 +76,14 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
 
     // History is not kept across the boundary: an undo in Prefab Mode taking
     // back a scene edit made ten minutes ago is the kind of surprise that
-    // costs someone an afternoon. Taken rather than dropped, so leaving gives
-    // it back — the prefab starts with an empty stack either way.
-    const history = document.takeHistory();
+    // costs someone an afternoon. Set aside rather than dropped, so leaving
+    // gives it back — the prefab starts with an empty stack either way.
+    const history = document.historyStash();
 
+    // The frame goes on before the load empties the document's stack, so the
+    // unsaved work is in one place or both, never in neither: the main process
+    // is told what is unsaved from a subscription, as each store changes, and
+    // in between it would hear that the window had nothing to lose.
     set({
       stack: [...get().stack, { assetId, name: prefab.name, scene, selection, history }],
     });
@@ -112,12 +116,16 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
         );
       }
 
-      set({ stack: stack.slice(0, -1) });
       // `keepHistory`, because this is a restore and not a load: the scene comes
       // back exactly as unsaved as it was left. Then its own stack, which the
       // prefab's has been sitting on top of.
       useDocumentStore.getState().replaceScene(frame.scene, { keepHistory: true });
       useDocumentStore.getState().restoreHistory(frame.history);
+      // Off the stack only once its work is back in the document, for the
+      // reason `open` pushes before it loads: popping first told the main
+      // process, for an instant, that a window with an unsaved scene had
+      // nothing to lose.
+      set({ stack: stack.slice(0, -1) });
       useEditorStore.getState().setSelection([...frame.selection]);
     }
   },
@@ -134,6 +142,17 @@ export function inPrefabMode(): boolean {
 export function currentPrefabFrame(): PrefabFrame | null {
   return usePrefabModeStore.getState().stack.at(-1) ?? null;
 }
+
+/**
+ * Whether a document Prefab Mode has set aside holds work its file does not:
+ * the scene under frame 0, or a prefab with another one opened inside it.
+ *
+ * Here because the frames are this store's. A selector returning a boolean, so
+ * a component reading it re-renders when the answer moves and not on every
+ * frame pushed.
+ */
+export const selectSetAsideUnsaved = (state: Pick<PrefabModeState, 'stack'>): boolean =>
+  state.stack.some((frame) => frame.history.revision !== frame.history.savedRevision);
 
 /**
  * What Prefab Mode would leave behind, without leaving it: the scene it was

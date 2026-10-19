@@ -7,8 +7,8 @@ import { loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
-import { selectDirty, useDocumentStore } from './state/documentStore';
 import { useProjectStore } from './state/projectStore';
+import { watchUnsaved } from './state/unsaved';
 
 // Installed at module scope so nothing logged during start-up is missed.
 captureConsole();
@@ -33,7 +33,6 @@ function EditorWindow() {
   const adoptContents = useProjectStore((s) => s.adoptContents);
   const error = useProjectStore((s) => s.error);
   const setError = useProjectStore((s) => s.setError);
-  const dirty = useDocumentStore(selectDirty);
   const [layoutsReady, setLayoutsReady] = useState(layoutsLoaded());
 
   // Read once, up front. dockview builds its arrangement synchronously, so
@@ -81,9 +80,7 @@ function EditorWindow() {
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.
-  useEffect(() => {
-    window.studio.project.setDirty(dirty);
-  }, [dirty]);
+  useEffect(() => watchUnsaved(), []);
 
   if (error !== null && summary === null) {
     return (

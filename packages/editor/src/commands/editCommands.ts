@@ -1,6 +1,7 @@
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { useProjectStore } from '../state/projectStore';
+import { windowUnsaved } from '../state/unsaved';
 import { defineCommand, type EditorContext } from './command';
 import {
   deleteSelection,
@@ -61,11 +62,14 @@ export const EDIT_COMMANDS = {
      * The menu greyed this out on a clean document and Cmd+S wrote the file
      * anyway. Harmless, and exactly the shape of the divergence this table
      * exists to make impossible.
+     *
+     * The window's unsaved work, not the document's. With a prefab open the
+     * document is the prefab, and the scene's edits sat set aside where asking
+     * the document could not see them: Cmd+S did nothing, with the scene
+     * unsaved behind an untouched prefab. Save Scene writes both — leaving
+     * Prefab Mode saves the prefabs, then the scene is written.
      */
-    can: () => {
-      const state = documentStore();
-      return !useProjectStore.getState().saving && state.revision !== state.savedRevision;
-    },
+    can: () => !useProjectStore.getState().saving && windowUnsaved(),
     run: () => {
       void useProjectStore.getState().save();
     },

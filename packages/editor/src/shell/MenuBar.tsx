@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { isMac } from '../platform';
-import { selectDirty, useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
+import { useWindowUnsaved } from '../state/unsaved';
 import { MenuTrigger, type MenuEntry } from '../ui/Menu';
 import { buildAddMenu } from './addMenu';
 import { commandEntry } from './commandEntry';
@@ -45,7 +45,12 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   // Labels and booleans, not the `past`/`future` arrays: those get a new
   // identity on every mutation, so subscribing to them re-rendered this bar once
   // per frame of a gizmo drag. A coalesced drag keeps one label throughout.
-  const dirty = useDocumentStore(selectDirty);
+  //
+  // The dot, and Save Scene's verdict, which asks the same question. The
+  // window's unsaved work rather than the document's: with a prefab open the
+  // document is the prefab, and the dot went out while the scene's edits sat
+  // unsaved behind it.
+  const unsaved = useWindowUnsaved();
   /*
    * Subscribed to but never read here: `saveCommand.can()` reads it, and this
    * bar has to re-render when the answer changes. Deleting it as unused would
@@ -184,7 +189,7 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
           be selected cannot also drag. */}
       <span className="pl-2 pr-4 text-ink-dim">
         {title}
-        {dirty && <span className="ml-1 text-warn">•</span>}
+        {unsaved && <span className="ml-1 text-warn">•</span>}
       </span>
     </div>
   );

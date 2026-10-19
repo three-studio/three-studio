@@ -172,8 +172,12 @@ interface DocumentState {
   replaceScene: (scene: SceneDoc, options?: { keepHistory?: boolean }) => void;
   /** Records that what is in the document is now what is on disk. */
   markClean: () => void;
-  /** Takes the undo stack away, for a caller that will put it back. */
-  takeHistory: () => HistoryStash;
+  /**
+   * The undo stack and where the file stood, for a caller setting this document
+   * aside to put back later. Read, not taken: the caller's next load empties it
+   * here, and in between the work is in both places rather than in neither.
+   */
+  historyStash: () => HistoryStash;
   restoreHistory: (stash: HistoryStash) => void;
   /**
    * What has changed since `since`, and the revision that answer is good for.
@@ -375,16 +379,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
   markClean: () => set((state) => ({ savedRevision: state.revision })),
 
-  takeHistory: () => {
-    const state = get();
-    const stash: HistoryStash = {
-      past: state.past,
-      future: state.future,
-      revision: state.revision,
-      savedRevision: state.savedRevision,
-    };
-    set({ past: [], future: [], revision: 0, savedRevision: 0 });
-    return stash;
+  historyStash: () => {
+    const { past, future, revision, savedRevision } = get();
+    return { past, future, revision, savedRevision };
   },
 
   restoreHistory: (stash) =>
