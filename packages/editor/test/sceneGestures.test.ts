@@ -1,0 +1,377 @@
+import {
+  PROJECT_FORMAT_VERSION,
+  createBuildProfiles,
+  createEmptyScene,
+  createMeshEntity,
+  createPhysicsSettings,
+  createRenderingSettings,
+  deserializeScene,
+  type PrefabDoc,
+  type ProjectFile,
+  type SceneEntry,
+} from '@three-studio/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { prefabWith } from '../../core/test/fixtures';
+import { addEntity, renameEntity } from '../src/commands/sceneCommands';
+import {
+  backToTheScene,
+  deleteCurrentScene,
+  renameCurrentScene,
+  renameCurrentSceneWithPrompt,
+  saveSceneAs,
+} from '../src/commands/sceneFiles';
+import { useAssetStore } from '../src/state/assetStore';
+import { useDialogStore } from '../src/state/dialogStore';
+import { useDocumentStore } from '../src/state/documentStore';
+import { useEditorStore } from '../src/state/editorStore';
+import { usePrefabModeStore } from '../src/state/prefabModeStore';
+import { useProjectStore } from '../src/state/projectStore';
+import { useToastStore } from '../src/state/toastStore';
+import { watchUnsaved } from '../src/state/unsaved';
+
+/*
+ * The scene gestures act on the scene, whatever stands in front of it.
+ *
+ * In Prefab Mode the document is the prefab: Save As wrote the prefab out as a
+ * scene, Rename put the scene's name on the prefab, and Delete marked the
+ * prefab clean, so the main process went on to prompt about the deleted
+ * scene's edits. During Play, Stop puts back the document Play started from,
+ * and takes back what Save As and Rename had just written into it.
+ *
+ * Everything that reaches outside the renderer writes into one ordered log —
+ * the bridge, the prefab saves, and Stop — so each test reads what happened in
+ * the order it happened.
+ */
+
+type Call = [method: string, ...args: unknown[]];
+const log: Call[] = [];
+const methods = () => log.map(([method]) => method);
+
+/** What each prefab save wrote, beside the log, which only names it. */
+const savedPrefabs: PrefabDoc[] = [];
+/** What each scene save wrote. */
+const written: string[] = [];
+
+const doc = () => useDocumentStore.getState();
+const prefabMode = () => usePrefabModeStore.getState();
+const editor = () => useEditorStore.getState();
+
+// In path order, as `discoverScenes` hands them over.
+const LEVEL_2: SceneEntry = { id: 'b', name: 'Level 2', path: 'scenes/Level 2.scene.json', shadowedBy: null };
+const MAIN: SceneEntry = { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null };
+
+const startingOn = (startScene: string): ProjectFile => ({
+  version: PROJECT_FORMAT_VERSION,
+  name: 'Races',
+  engineVersion: '0.1.0',
+  startScene,
+  settings: {
+    loadingScene: null,
+    rendering: createRenderingSettings(),
+    physics: createPhysicsSettings(),
+    build: createBuildProfiles('Races'),
+  },
+});
+
+const entryFor = (id: string, name: string): SceneEntry => ({
+  id,
+  name,
+  path: `scenes/${name}.scene.json`,
+  shadowedBy: null,
+});
+
+/** `window`, with what these gestures reach, each call written into the log. */
+function installBridge(): void {
+  const record =
+    <A extends unknown[], R>(method: string, answer: (...args: A) => R) =>
+    async (...args: A): Promise<R> => {
+      log.push([method, ...args]);
+      return answer(...args);
+    };
+
+  vi.stubGlobal('window', {
+    // What `retarget` rewrites, so a reload lands on the file the window is on.
+    location: { href: 'file:///index.html?scene=a' },
+    history: { replaceState: () => undefined },
+    studio: {
+      project: {
+        createScene: record('createScene', (name: string) => {
+          const scene = entryFor('c', name);
+          return { project: startingOn('a'), scenes: [LEVEL_2, MAIN, scene], scene };
+        }),
+        saveScene: async (input: { scenePath: string; contents: string }) => {
+          log.push(['saveScene', input.scenePath]);
+          written.push(input.contents);
+        },
+        renameScene: record('renameScene', (sceneId: string, name: string) => {
+          const scene = entryFor(sceneId, name);
+          return { project: startingOn('a'), scenes: [LEVEL_2, scene], scene };
+        }),
+        // The main process moves the start scene off the one it deletes.
+        deleteScene: record('deleteScene', (_sceneId: string) => ({
+          project: startingOn('b'),
+          scenes: [LEVEL_2],
+        })),
+        switchScene: record('switchScene', (_sceneId: string) => true),
+        setDirty: (dirty: boolean) => void log.push(['setDirty', dirty]),
+      },
+    },
+  });
+}
+
+async function answerName(name: string): Promise<void> {
+  await vi.waitFor(() => expect(useDialogStore.getState().prompt).not.toBeNull());
+  useDialogStore.getState().submit(name);
+}
+
+async function confirm(): Promise<void> {
+  await vi.waitFor(() => expect(useDialogStore.getState().confirm).not.toBeNull());
+  useDialogStore.getState().accept();
+}
+
+async function cancel(): Promise<void> {
+  await vi.waitFor(() => {
+    const { prompt, confirm } = useDialogStore.getState();
+    expect(prompt ?? confirm).not.toBeNull();
+  });
+  useDialogStore.getState().cancel();
+}
+
+const CRATE = 'prefab-crate';
+let crateRoot = '';
+/** An entity of the scene's own, which no prefab holds. */
+let wall = '';
+
+function named(name: string) {
+  const template = createMeshEntity('box');
+  template.entity.name = name;
+  return template;
+}
+
+async function openCrate(): Promise<void> {
+  await prefabMode().open(CRATE);
+}
+
+const realSavePrefab = useAssetStore.getState().savePrefab;
+/** Subscriptions a test made, ended after it whether it passed or not. */
+const stops: (() => void)[] = [];
+
+beforeEach(async () => {
+  await prefabMode().exit();
+  usePrefabModeStore.setState({ stack: [] });
+  editor().stop();
+
+  doc().replaceScene(createEmptyScene('Main'));
+  wall = addEntity(named('Wall'));
+  doc().markClean();
+  editor().clearSelection();
+
+  useProjectStore.setState({
+    summary: { name: 'Races', path: '/projects/Races', lastOpenedAt: 1 },
+    project: startingOn('a'),
+    scenes: [LEVEL_2, MAIN],
+    sceneId: 'a',
+    scenePath: MAIN.path,
+  });
+
+  const root = named('Crate');
+  crateRoot = root.entity.id;
+  useAssetStore.setState({
+    prefabs: { [CRATE]: prefabWith('Crate', [root], crateRoot) },
+    savePrefab: async (assetId, prefab) => {
+      log.push(['savePrefab', assetId]);
+      savedPrefabs.push(prefab);
+    },
+  });
+
+  stops.push(
+    useEditorStore.subscribe((state, before) => {
+      if (state.playState === 'stopped' && before.playState !== 'stopped') log.push(['stop']);
+    }),
+  );
+
+  log.length = 0;
+  savedPrefabs.length = 0;
+  written.length = 0;
+  installBridge();
+});
+
+afterEach(() => {
+  for (const stop of stops.splice(0)) stop();
+  useDialogStore.getState().cancel();
+  useToastStore.getState().clear();
+  useAssetStore.setState({ savePrefab: realSavePrefab });
+  vi.unstubAllGlobals();
+});
+
+describe('back to the scene', () => {
+  it('leaves Prefab Mode before it stops the game', async () => {
+    await openCrate();
+    renameEntity(crateRoot, 'Edited');
+    editor().play();
+
+    await backToTheScene({ stopPlay: true });
+
+    // Stop puts back the scene Play started from, into whatever the document
+    // is. Stopped first, it put the scene into the prefab, and leaving then
+    // saved the scene into the prefab's file.
+    expect(log).toEqual([['savePrefab', CRATE], ['stop']]);
+    expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
+    expect(prefabMode().stack).toEqual([]);
+    expect(doc().scene.entities[wall]).toBeDefined();
+  });
+
+  it('leaves the game running when not asked to stop it', async () => {
+    await openCrate();
+    editor().play();
+
+    await backToTheScene({ stopPlay: false });
+
+    expect(log).toEqual([['savePrefab', CRATE]]);
+    expect(editor().playState).toBe('playing');
+  });
+});
+
+describe('Save As, Rename and Delete from Prefab Mode', () => {
+  it('saves the scene as a new file, not the prefab', async () => {
+    await openCrate();
+
+    const done = saveSceneAs();
+    await answerName('Copy');
+    await done;
+
+    expect(methods()).toEqual(['savePrefab', 'createScene', 'saveScene']);
+    const copy = deserializeScene(written[0]!);
+    expect(copy.entities[wall]).toBeDefined();
+    expect(copy.entities[crateRoot]).toBeUndefined();
+    expect(prefabMode().stack).toEqual([]);
+    expect(useProjectStore.getState().scenePath).toBe('scenes/Copy.scene.json');
+  });
+
+  it.each([
+    [
+      'the prompt',
+      async () => {
+        const done = renameCurrentSceneWithPrompt();
+        await answerName('Renamed');
+        await done;
+      },
+    ],
+    // The Inspector's Name field calls it on blur, with no prompt of its own.
+    ['the Inspector', () => renameCurrentScene('Renamed')],
+  ])('renames the scene, not the prefab, through %s', async (_, rename) => {
+    await openCrate();
+
+    await rename();
+
+    expect(log).toEqual([
+      ['savePrefab', CRATE],
+      ['renameScene', 'a', 'Renamed'],
+    ]);
+    expect(prefabMode().stack).toEqual([]);
+    expect(doc().scene.entities[wall]).toBeDefined();
+    expect(doc().scene.name).toBe('Renamed');
+    expect(doc().undoLabel()).toBe('Rename scene');
+    expect(savedPrefabs[0]?.name).toBe('Crate');
+    expect(useProjectStore.getState().scenePath).toBe('scenes/Renamed.scene.json');
+  });
+
+  it('marks the scene clean, and tells the main process, before it switches', async () => {
+    renameEntity(wall, 'Edited wall');
+    await openCrate();
+    stops.push(watchUnsaved());
+    log.length = 0;
+
+    const done = deleteCurrentScene();
+    await confirm();
+    await done;
+
+    // "Clean" reaches the main process before the switch, so it does not offer
+    // to discard the edits of a scene that has just been deleted.
+    expect(log).toEqual([
+      ['savePrefab', CRATE],
+      ['deleteScene', 'a'],
+      ['setDirty', false],
+      ['switchScene', 'b'],
+    ]);
+  });
+
+  it.each([
+    ['Save As', () => saveSceneAs()],
+    ['Rename', () => renameCurrentSceneWithPrompt()],
+    ['Delete', () => deleteCurrentScene()],
+  ])('leaves the prefab open and the game running when %s is cancelled', async (_, gesture) => {
+    await openCrate();
+    editor().play();
+
+    const done = gesture();
+    await cancel();
+    await done;
+
+    expect(log).toEqual([]);
+    expect(prefabMode().stack).toHaveLength(1);
+    expect(editor().playState).toBe('playing');
+  });
+
+  it.each([
+    ['Save As', () => saveSceneAs(), () => answerName('Copy')],
+    ['Rename', () => renameCurrentSceneWithPrompt(), () => answerName('Renamed')],
+    ['Delete', () => deleteCurrentScene(), confirm],
+  ])('stops at a prefab that fails to save, before %s asks anything else', async (_, gesture, answer) => {
+    useAssetStore.setState({
+      savePrefab: async (assetId) => {
+        log.push(['savePrefab', assetId]);
+        throw new Error('disk full');
+      },
+    });
+    await openCrate();
+
+    const done = gesture();
+    await answer();
+    await done;
+
+    expect(methods()).toEqual(['savePrefab']);
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
+      'Could not do that to the scene',
+    );
+  });
+});
+
+describe('Save As, Rename and Delete during Play', () => {
+  it.each([
+    ['Save As', () => saveSceneAs(), () => answerName('Copy'), ['createScene', 'saveScene']],
+    ['Rename', () => renameCurrentSceneWithPrompt(), () => answerName('Renamed'), ['renameScene']],
+    ['Delete', () => deleteCurrentScene(), confirm, ['deleteScene', 'switchScene']],
+  ])('stops the game once %s has its answer', async (_, gesture, answer, calls) => {
+    editor().play();
+
+    const done = gesture();
+    // Asking first: a cancel has to find the game still running.
+    expect(editor().playState).toBe('playing');
+    await answer();
+    await done;
+
+    // Stop puts back the document Play started from. After the gesture, it took
+    // back what Save As and Rename had written into it.
+    expect(methods()).toEqual(['stop', ...calls]);
+  });
+
+  it('keeps the new name in the document once the game has stopped', async () => {
+    // What `PlaySession.endPlay` does at Stop, which is not running here: the
+    // document Play started from goes back, as a restore.
+    const atPlay = doc().scene;
+    stops.push(
+      useEditorStore.subscribe((state, before) => {
+        if (state.playState === 'stopped' && before.playState !== 'stopped') {
+          doc().replaceScene(atPlay, { keepHistory: true });
+        }
+      }),
+    );
+    editor().play();
+
+    await renameCurrentScene('Played');
+
+    expect(editor().playState).toBe('stopped');
+    expect(doc().scene.name).toBe('Played');
+  });
+});

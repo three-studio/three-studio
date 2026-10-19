@@ -1,6 +1,8 @@
 import { findScene, serializeScene, type SceneEntry } from '@three-studio/core';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { useDocumentStore } from '../state/documentStore';
+import { useEditorStore } from '../state/editorStore';
+import { inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
 import { useProjectStore } from '../state/projectStore';
 import { notify } from '../state/toastStore';
 import { ipcErrorMessage } from './ipcError';
@@ -54,6 +56,32 @@ export function currentSceneName(): string {
  */
 export function isStartScene(entry: SceneEntry, startScene: string | null): boolean {
   return entry.shadowedBy === null && entry.id === startScene;
+}
+
+/**
+ * Ends what stands between this window and its scene: Prefab Mode, saving
+ * every open prefab on the way, then the game when asked. Resolves once the
+ * document is the scene.
+ *
+ * For a gesture that acts on the scene through the document — writes it, puts
+ * a name in it, marks it clean. In Prefab Mode the document is the prefab, and
+ * Save As wrote the prefab out as a scene.
+ *
+ * Prefab Mode goes first. Stop puts back the scene Play started from, into
+ * whatever the document is: stopped first, it would put the scene into the
+ * prefab, and leaving would then save every entity of the scene into the
+ * prefab's file — what Stop did to a prefab opened during Play. Both are on at
+ * once only while Play is still leaving Prefab Mode, since a prefab cannot be
+ * opened while the game runs; the order holds there too.
+ *
+ * The store's `stop`, not the `stop` command: this file importing the registry
+ * would close a cycle, since the registry imports the commands built on it.
+ */
+export async function backToTheScene(options: { stopPlay: boolean }): Promise<void> {
+  if (inPrefabMode()) await usePrefabModeStore.getState().exit();
+  if (options.stopPlay && useEditorStore.getState().playState !== 'stopped') {
+    useEditorStore.getState().stop();
+  }
 }
 
 /** Reloads this window on another scene, prompt included. */
@@ -114,6 +142,10 @@ export async function saveSceneAs(): Promise<void> {
   if (name === null) return;
 
   try {
+    // What gets written is the document, so it has to be the scene. And the
+    // game stops: Stop puts back the document Play started from, which would
+    // then read as saved against a file it does not match.
+    await backToTheScene({ stopPlay: true });
     const change = await window.studio.project.createScene(name);
     await window.studio.project.saveScene({
       projectPath: summary.path,
@@ -144,6 +176,10 @@ export async function renameCurrentScene(name: string): Promise<void> {
   if (sceneId === null) return;
 
   try {
+    // The document's copy of the name goes on the scene, not on a prefab open
+    // over it. And the game stops first: Stop puts back the document Play
+    // started from, old name included, while the file keeps the new one.
+    await backToTheScene({ stopPlay: true });
     const change = await window.studio.project.renameScene(sceneId, name);
     useProjectStore.getState().retarget(change, change.scene);
     // The name the file settled on, not the one that was typed: it may have
@@ -203,6 +239,13 @@ export async function deleteCurrentScene(): Promise<void> {
   if (!confirmed) return;
 
   try {
+    // The `markClean` below has to reach the scene. In Prefab Mode it marked
+    // the prefab clean, and the scene's edits, set aside, made the main
+    // process offer to discard them — the edits of a scene just deleted. The
+    // game stops too: the reload would end it, but when another window already
+    // shows the next scene the switch only brings that one forward, and this
+    // one would go on running a deleted scene.
+    await backToTheScene({ stopPlay: true });
     const { project, scenes } = await window.studio.project.deleteScene(sceneId);
     // Before the switch, or its guard would offer to save a document whose
     // file has just been removed.

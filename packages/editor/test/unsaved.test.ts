@@ -112,6 +112,8 @@ describe('what is unsaved', () => {
 
 describe('the main process, told as the answer changes', () => {
   const reports: boolean[] = [];
+  /** Watchers a test installed, stopped after it whether it passed or not. */
+  const stops: (() => void)[] = [];
 
   beforeEach(() => {
     reports.length = 0;
@@ -121,11 +123,13 @@ describe('the main process, told as the answer changes', () => {
   });
 
   afterEach(() => {
+    for (const stop of stops.splice(0)) stop();
     vi.unstubAllGlobals();
   });
 
   it('reports once when installed, then each change, before the next line runs', () => {
     const stop = watchUnsaved();
+    stops.push(stop);
     expect(reports).toEqual([false]);
 
     // A drag is many mutations, and the answer moves once.
@@ -144,7 +148,7 @@ describe('the main process, told as the answer changes', () => {
 
   it('says nothing while unsaved work moves in and out of Prefab Mode', async () => {
     edit();
-    const stop = watchUnsaved();
+    stops.push(watchUnsaved());
     expect(reports).toEqual([true]);
 
     // The work moves between the document and a frame, and is never in
@@ -154,7 +158,5 @@ describe('the main process, told as the answer changes', () => {
     await prefabMode().open(CRATE);
     await prefabMode().exit();
     expect(reports).toEqual([true]);
-
-    stop();
   });
 });
