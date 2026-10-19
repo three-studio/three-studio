@@ -21,7 +21,8 @@ import { setSceneName } from './sceneCommands';
  *
  * - **Retarget** — same document, new file (Save As, and a rename). No reload:
  *   what is on screen has not changed, and reloading would throw away the undo
- *   history.
+ *   history. After a Save As the document also takes the new scene's id and
+ *   name, which the file already holds.
  * - **Switch** — different document (open another scene, delete this one). A
  *   reload, through the main process, with the unsaved-changes prompt on the
  *   way.
@@ -138,9 +139,14 @@ export async function newScene(): Promise<void> {
 /**
  * Writes this document to a new scene file and points the window at it.
  *
- * Two calls rather than a dedicated handler: creating a scene is one operation
- * — a file appearing under `scenes/` — and a second way to do it would be a
- * second place for the name rules to be forgotten.
+ * One call, `createScene`'s, which New Scene makes too, so the name rules stay
+ * in one place. The main process writes the document under the new scene's own
+ * id and name, as it does for Duplicate's copy, and notes this window onto it
+ * in that same call; the document then takes them as well. It used to be a
+ * create and then a save of the document as it was, original id and name
+ * included: the next walk of `scenes/` found two files claiming one scene and
+ * hid one — the original, under the default name, which sorts after the copy —
+ * and left this window on an id no file carried.
  */
 export async function saveSceneAs(): Promise<void> {
   const { summary } = useProjectStore.getState();
@@ -157,14 +163,17 @@ export async function saveSceneAs(): Promise<void> {
   try {
     // What gets written is the document, so it has to be the scene. And the
     // game stops: Stop puts back the document Play started from, which would
-    // then read as saved against a file it does not match.
+    // then read as saved against a file it does not match — and would carry
+    // the original's id and name back over the copy's.
     await backToTheScene({ stopPlay: true });
-    const change = await window.studio.project.createScene(name);
-    await window.studio.project.saveScene({
-      projectPath: summary.path,
-      scenePath: change.scene.path,
-      contents: serializeScene(useDocumentStore.getState().scene),
-    });
+    const change = await window.studio.project.createScene(
+      name,
+      serializeScene(useDocumentStore.getState().scene),
+    );
+    // The copy's file holds this document under the copy's id and name; the
+    // document has to say so too, or the next save writes the original's back.
+    // The name the file settled on, as for a rename.
+    useDocumentStore.getState().adoptIdentity({ id: change.scene.id, name: change.scene.name });
     useDocumentStore.getState().markClean();
     useProjectStore.getState().retarget(change, change.scene);
   } catch (cause) {

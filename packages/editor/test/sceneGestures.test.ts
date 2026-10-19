@@ -30,7 +30,7 @@ import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { useToastStore } from '../src/state/toastStore';
-import { watchUnsaved } from '../src/state/unsaved';
+import { watchUnsaved, windowUnsaved } from '../src/state/unsaved';
 
 /*
  * The scene gestures act on the scene, whatever stands in front of it.
@@ -54,6 +54,9 @@ const methods = () => log.map(([method]) => method);
 const savedPrefabs: PrefabDoc[] = [];
 /** What each scene save wrote. */
 const written: string[] = [];
+/** Each address `retarget` put in place of this window's, so a reload finds its scene. */
+const addresses: string[] = [];
+const sceneInAddress = (address: string) => new URL(address).searchParams.get('scene');
 
 const doc = () => useDocumentStore.getState();
 const prefabMode = () => usePrefabModeStore.getState();
@@ -95,7 +98,10 @@ function installBridge(): void {
   vi.stubGlobal('window', {
     // What `retarget` rewrites, so a reload lands on the file the window is on.
     location: { href: 'file:///index.html?scene=a' },
-    history: { replaceState: () => undefined },
+    history: {
+      replaceState: (_state: unknown, _unused: string, url: URL | string) =>
+        void addresses.push(String(url)),
+    },
     studio: {
       project: {
         createScene: record('createScene', (name: string) => {
@@ -168,7 +174,8 @@ beforeEach(async () => {
   usePrefabModeStore.setState({ stack: [] });
   editor().stop();
 
-  doc().replaceScene(createEmptyScene('Main'));
+  // The document carries the id of the file it was read from, as a loaded one does.
+  doc().replaceScene({ ...createEmptyScene('Main'), id: MAIN.id });
   wall = addEntity(named('Wall'));
   doc().markClean();
   editor().clearSelection();
@@ -193,13 +200,18 @@ beforeEach(async () => {
 
   stops.push(
     useEditorStore.subscribe((state, before) => {
-      if (state.playState === 'stopped' && before.playState !== 'stopped') log.push(['stop']);
+      // With the document's id at that moment: Stop puts back the document Play
+      // started from, identity included.
+      if (state.playState === 'stopped' && before.playState !== 'stopped') {
+        log.push(['stop', doc().scene.id]);
+      }
     }),
   );
 
   log.length = 0;
   savedPrefabs.length = 0;
   written.length = 0;
+  addresses.length = 0;
   installBridge();
 });
 
@@ -222,7 +234,7 @@ describe('back to the scene', () => {
     // Stop puts back the scene Play started from, into whatever the document
     // is. Stopped first, it put the scene into the prefab, and leaving then
     // saved the scene into the prefab's file.
-    expect(log).toEqual([['savePrefab', CRATE], ['stop']]);
+    expect(log).toEqual([['savePrefab', CRATE], ['stop', 'a']]);
     expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
     expect(prefabMode().stack).toEqual([]);
     expect(doc().scene.entities[wall]).toBeDefined();
@@ -247,8 +259,8 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
     await answerName('Copy');
     await done;
 
-    expect(methods()).toEqual(['savePrefab', 'createScene', 'saveScene']);
-    const copy = deserializeScene(written[0]!);
+    expect(methods()).toEqual(['savePrefab', 'createScene']);
+    const copy = deserializeScene(log[1]![2] as string);
     expect(copy.entities[wall]).toBeDefined();
     expect(copy.entities[crateRoot]).toBeUndefined();
     expect(prefabMode().stack).toEqual([]);
@@ -346,7 +358,7 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
 
 describe('Save As, Rename and Delete during Play', () => {
   it.each([
-    ['Save As', () => saveSceneAs(), () => answerName('Copy'), ['createScene', 'saveScene']],
+    ['Save As', () => saveSceneAs(), () => answerName('Copy'), ['createScene']],
     ['Rename', () => renameCurrentSceneWithPrompt(), () => answerName('Renamed'), ['renameScene']],
     ['Delete', () => deleteCurrentScene(), confirm, ['deleteScene', 'switchScene']],
   ])('stops the game once %s has its answer', async (_, gesture, answer, calls) => {
@@ -380,6 +392,103 @@ describe('Save As, Rename and Delete during Play', () => {
 
     expect(editor().playState).toBe('stopped');
     expect(doc().scene.name).toBe('Played');
+  });
+
+  it("takes the copy's identity once the game has stopped, which Stop cannot then take back", async () => {
+    const atPlay = doc().scene;
+    stops.push(
+      useEditorStore.subscribe((state, before) => {
+        if (state.playState === 'stopped' && before.playState !== 'stopped') {
+          doc().replaceScene(atPlay, { keepHistory: true });
+        }
+      }),
+    );
+    editor().play();
+
+    const done = saveSceneAs();
+    await answerName('Copy');
+    await done;
+
+    expect(log[0]).toEqual(['stop', 'a']);
+    expect(doc().scene.id).toBe('c');
+    expect(doc().scene.name).toBe('Copy');
+  });
+});
+
+describe('Save As makes a scene of its own', () => {
+  /*
+   * The copy used to be written with the original's id and name still in the
+   * document: two files claiming one scene, the original the one the next walk
+   * of `scenes/` hid, and this window on an id no file carried. Every later
+   * Cmd+S wrote the original's id into the copy again.
+   */
+  beforeEach(() => {
+    renameEntity(wall, 'Edited wall');
+    stops.push(watchUnsaved());
+    log.length = 0;
+  });
+
+  async function saveAs(name: string): Promise<void> {
+    const done = saveSceneAs();
+    await answerName(name);
+    await done;
+  }
+
+  it('hands the main process its document, then takes the copy’s id and name', async () => {
+    const before = { length: doc().past.length, label: doc().undoLabel() };
+
+    await saveAs('Copy');
+
+    // One call, and "clean" told at once: the main process wrote the file.
+    expect(methods()).toEqual(['createScene', 'setDirty']);
+    expect(log[1]).toEqual(['setDirty', false]);
+    const [, name, contents] = log[0]!;
+    expect(name).toBe('Copy');
+    // As it stands, original id included: the main process is what replaces it.
+    const handed = deserializeScene(contents as string);
+    expect(handed.id).toBe('a');
+    expect(handed.entities[wall]?.name).toBe('Edited wall');
+
+    expect(doc().scene.id).toBe('c');
+    expect(doc().scene.name).toBe('Copy');
+    // No undo entry: one would put the original's id back into the copy.
+    expect({ length: doc().past.length, label: doc().undoLabel() }).toEqual(before);
+    expect(windowUnsaved()).toBe(false);
+
+    expect(useProjectStore.getState().sceneId).toBe('c');
+    expect(useProjectStore.getState().scenePath).toBe('scenes/Copy.scene.json');
+    expect(addresses.map(sceneInAddress)).toEqual(['c']);
+  });
+
+  it('is what the next save writes', async () => {
+    await saveAs('Copy');
+    renameEntity(wall, 'Edited after Save As');
+
+    await useProjectStore.getState().save();
+
+    expect(log.at(-2)).toEqual(['saveScene', 'scenes/Copy.scene.json']);
+    const saved = deserializeScene(written[0]!);
+    expect(saved.id).toBe('c');
+    expect(saved.name).toBe('Copy');
+    expect(saved.entities[wall]?.name).toBe('Edited after Save As');
+  });
+
+  it('leaves everything as it was when the main process refuses the name', async () => {
+    vi.spyOn(window.studio.project, 'createScene').mockRejectedValue(
+      new Error('This project already has a scene called "Copy".'),
+    );
+
+    await saveAs('Copy');
+
+    expect(doc().scene.id).toBe('a');
+    expect(doc().scene.name).toBe('Main');
+    expect(windowUnsaved()).toBe(true);
+    expect(useProjectStore.getState().sceneId).toBe('a');
+    expect(useProjectStore.getState().scenePath).toBe(MAIN.path);
+    expect(addresses).toEqual([]);
+    expect(useToastStore.getState().toasts.map((toast) => toast.title)).toContain(
+      'Could not do that to the scene',
+    );
   });
 });
 

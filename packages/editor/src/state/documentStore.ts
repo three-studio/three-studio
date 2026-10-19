@@ -173,6 +173,17 @@ interface DocumentState {
   /** Records that what is in the document is now what is on disk. */
   markClean: () => void;
   /**
+   * Makes the document another scene's: its id and name, and nothing else.
+   *
+   * For Save As, once the copy's file holds this document under those two. Not
+   * an edit: an undo entry would put the original's id back into the copy's
+   * file, two files claiming one scene. Not unsaved work: the file already holds
+   * it. And not a change any consumer reads — the viewport, the hierarchy and the
+   * Inspector draw neither field — so the revision log hears nothing either,
+   * where `replaceScene` would have every one of them re-read the whole document.
+   */
+  adoptIdentity: (identity: Pick<SceneDoc, 'id' | 'name'>) => void;
+  /**
    * The undo stack and where the file stood, for a caller setting this document
    * aside to put back later. Read, not taken: the caller's next load empties it
    * here, and in between the work is in both places rather than in neither.
@@ -378,6 +389,8 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     }),
 
   markClean: () => set((state) => ({ savedRevision: state.revision })),
+
+  adoptIdentity: ({ id, name }) => set((state) => ({ scene: { ...state.scene, id, name } })),
 
   historyStash: () => {
     const { past, future, revision, savedRevision } = get();
