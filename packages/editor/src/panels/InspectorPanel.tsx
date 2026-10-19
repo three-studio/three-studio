@@ -1,4 +1,4 @@
-import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
+import { addableTypes, componentsOf, findScene, splitInstancedId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
@@ -14,6 +14,7 @@ import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
+import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { Menu } from '../ui/Menu';
 
@@ -41,6 +42,13 @@ export function InspectorPanel() {
   // opening or leaving one changes its shape. It was rebuilt then only because
   // the selection happened to change identity on the way.
   const prefabOpen = usePrefabModeStore((s) => s.stack.length > 0);
+  // The scene pane's Name reads the window's entry in the scene list, not the
+  // document — the file name is the name — so nothing else here moves when Save
+  // As or Rename Scene… changes it, and the field went on naming the scene the
+  // window had just left. A string, so walking the list again re-renders nothing.
+  const sceneName = useProjectStore((s) =>
+    s.sceneId === null ? null : (findScene(s.scenes, s.sceneId)?.name ?? null),
+  );
   // Named rather than recomputed: `isSingle` is one of the three cases nobody
   // had a word for, and the panel is where the missing word was most obvious.
   const selected = Selection.of(selection, expandedScene().scene);
@@ -176,9 +184,11 @@ export function InspectorPanel() {
   // And `componentRevision`, for the half of the same problem that was not the
   // pane's shape but its values: every field the panel shows below the transform
   // reads a component, and no dependency here could move when one changed.
+  //
+  // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, prefabs, componentRevision]);
+  }, [watched, environment, materials, prefabs, componentRevision, sceneName]);
 
 
 
