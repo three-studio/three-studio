@@ -40,7 +40,7 @@ import {
 } from '../commands/sceneCommands';
 import { hasModifier } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
-import { shortcutHint } from '../shell/shortcutBindings';
+import { commandEntry } from '../shell/commandEntry';
 import { knownAssetIds } from '../state/brokenReport';
 import { expandedScene } from '../state/expansion';
 import { isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
@@ -265,15 +265,7 @@ export function HierarchyPanel() {
     // selection — the reason a command's context can be supplied rather than
     // only read. Labels, verdicts and bodies all come from the registry.
     const ctx = { selection: targets };
-    const entry = (id: CommandId): MenuEntry => {
-      const command = commandById(id);
-      return {
-        label: command.label(ctx),
-        shortcut: shortcutHint(id),
-        disabled: !command.can(ctx),
-        onSelect: () => command.run(ctx),
-      };
-    };
+    const entry = (id: CommandId): MenuEntry => commandEntry(id, ctx);
 
     // A produced entity belongs to a prefab, not to the scene. Renaming it is an
     // override and works; adding or removing one is a change to the asset, and
