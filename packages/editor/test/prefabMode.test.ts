@@ -6,6 +6,7 @@ import { useAssetStore } from '../src/state/assetStore';
 import { selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { composedPrefabMode, usePrefabModeStore } from '../src/state/prefabModeStore';
+import { useToastStore } from '../src/state/toastStore';
 
 /*
  * Opening a prefab sets the scene aside; leaving it must give back everything
@@ -105,6 +106,41 @@ describe('a round trip through Prefab Mode', () => {
 
     await usePrefabModeStore.getState().exit();
     expect(doc().scene.entities[cube.entity.id]).toBeDefined();
+  });
+});
+
+describe('a prefab while the game runs', () => {
+  /*
+   * Stop puts back the scene Play started from, into whatever the document is.
+   * With a prefab open that was the prefab: its edits went, its undo stack sat
+   * over the scene, and leaving saved every entity of the scene into the
+   * prefab's file.
+   */
+  const toastTitles = () => useToastStore.getState().toasts.map((toast) => toast.title);
+
+  afterEach(() => {
+    useEditorStore.getState().stop();
+    useToastStore.getState().clear();
+  });
+
+  it('is refused until the game stops', async () => {
+    const scene = doc().scene;
+    useEditorStore.getState().play();
+
+    await usePrefabModeStore.getState().open(ASSET_ID);
+
+    expect(usePrefabModeStore.getState().stack).toEqual([]);
+    expect(doc().scene).toBe(scene);
+    expect(toastTitles()).toContain('Stop the game to open a prefab');
+
+    // Paused is still a game Stop will end.
+    useEditorStore.getState().togglePause();
+    await usePrefabModeStore.getState().open(ASSET_ID);
+    expect(usePrefabModeStore.getState().stack).toEqual([]);
+
+    useEditorStore.getState().stop();
+    await usePrefabModeStore.getState().open(ASSET_ID);
+    expect(usePrefabModeStore.getState().stack).toHaveLength(1);
   });
 });
 
