@@ -1,11 +1,17 @@
 import {
+  PROJECT_FORMAT_VERSION,
+  createBuildProfiles,
   createEmptyScene,
   createMeshEntity,
+  createPhysicsSettings,
   createPrefabInstance,
+  createRenderingSettings,
   emptyComponentTables,
   putComponent,
+  type ProjectFile,
+  type SceneEntry,
 } from '@three-studio/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity, groupSelection } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
@@ -176,7 +182,17 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // `disabled` at all, against gestures that open with
     // `if (sceneId === null) return`. A dialog that takes a name and does
     // nothing with it is worse than a greyed entry.
-    for (const id of ['newScene', 'saveSceneAs', 'duplicateScene', 'renameScene', 'deleteScene'] as const) {
+    //
+    // Set as Start Scene, aimed at no scene, acts on the window's — and there
+    // is none.
+    for (const id of [
+      'newScene',
+      'saveSceneAs',
+      'duplicateScene',
+      'renameScene',
+      'deleteScene',
+      'setStartScene',
+    ] as const) {
       expect(commandById(id).can(), id).toBe(false);
     }
   });
@@ -374,9 +390,79 @@ describe('a gesture aimed at a scene', () => {
     expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
     expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
     expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(true);
+  });
+});
 
-    expect(commandById('setStartScene').can(contextForScene('b'))).toBe(true);
+describe('Set as Start Scene', () => {
+  const SCENES: SceneEntry[] = [
+    { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+    { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+  ];
+
+  const startingOn = (startScene: string): ProjectFile => ({
+    version: PROJECT_FORMAT_VERSION,
+    name: 'Races',
+    engineVersion: '0.1.0',
+    startScene,
+    settings: {
+      loadingScene: null,
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      build: createBuildProfiles('Races'),
+    },
+  });
+
+  /** A window on Main, in a project that starts on `startScene`. */
+  async function onMain(startScene: string): Promise<void> {
+    const { useProjectStore } = await import('../src/state/projectStore');
+    useProjectStore.setState({ sceneId: 'a', scenes: SCENES, project: startingOn(startScene) });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("acts on the window's scene when it is aimed at none", async () => {
+    const { commandById } = await import('../src/commands/registry');
+    await onMain('c');
+
+    // What the menu and the palette ask. The palette used to leave it out —
+    // with no scene named, it had nothing to act on.
+    expect(commandById('setStartScene').label()).toBe('Set as Start Scene');
+    expect(commandById('setStartScene').can()).toBe(true);
+  });
+
+  it('refuses the scene that already is the start scene', async () => {
+    const { commandById, contextForScene } = await import('../src/commands/registry');
+    await onMain('c');
+    expect(commandById('setStartScene').can(contextForScene('c'))).toBe(false);
+
+    await onMain('a');
+    expect(commandById('setStartScene').can()).toBe(false);
+  });
+
+  it("refuses a scene that is gone, rather than falling back on the window's", async () => {
+    const { commandById, contextForScene } = await import('../src/commands/registry');
+    await onMain('c');
+
+    // A radio was clicked for that scene; Main is not what anyone picked.
     expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
+  });
+
+  it("makes the window's scene the start scene", async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const { useProjectStore } = await import('../src/state/projectStore');
+    await onMain('c');
+    const setStartScene = vi.fn(async (startScene: string) => ({
+      project: startingOn(startScene),
+      scenes: SCENES,
+    }));
+    vi.stubGlobal('window', { studio: { project: { setStartScene } } });
+
+    commandById('setStartScene').run();
+
+    expect(setStartScene.mock.calls).toEqual([['a']]);
+    await vi.waitFor(() => expect(useProjectStore.getState().project?.startScene).toBe('a'));
   });
 });
 

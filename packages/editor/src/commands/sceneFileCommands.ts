@@ -3,8 +3,10 @@ import { useProjectStore } from '../state/projectStore';
 import { defineCommand, type EditorContext } from './command';
 import {
   chooseStartScene,
+  currentScene,
   deleteCurrentScene,
   duplicateCurrentScene,
+  isStartScene,
   newScene,
   openScene,
   openSceneInNewWindow,
@@ -68,6 +70,17 @@ function openable(ctx: EditorContext): boolean {
   return target(ctx) !== undefined;
 }
 
+/**
+ * The scene this context names, or this window's when it names none.
+ *
+ * A context naming a scene that is gone does not fall back on the window's: the
+ * gesture was aimed at that scene — a row in Project Settings — and acting on
+ * the one on screen would act on a scene nobody picked.
+ */
+function targetOrCurrent(ctx: EditorContext): SceneEntry | undefined {
+  return ctx.sceneId === undefined ? (currentScene() ?? undefined) : target(ctx);
+}
+
 export const SCENE_FILE_COMMANDS = {
   newScene: defineCommand({
     label: () => 'New Scene…',
@@ -119,14 +132,32 @@ export const SCENE_FILE_COMMANDS = {
     run: (ctx) => (ctx.sceneId === undefined ? undefined : openSceneInNewWindow(ctx.sceneId)),
   }),
 
-  /** Which scene the project — and a build — starts on. */
+  /**
+   * Which scene the project — and a build — starts on: the one the context
+   * names, or this window's. The menu and the palette name none, so they set
+   * the scene on screen, the one the title names; a Project Settings radio
+   * names its own row's.
+   *
+   * It touches no document, so prefab mode and the game are left as they are.
+   */
   setStartScene: defineCommand({
-    label: (ctx) => {
-      const scene = target(ctx);
-      return scene ? `Start On "${scene.name}"` : 'Set Start Scene';
+    label: () => 'Set as Start Scene',
+    /*
+     * Refused for the scene that already is the start scene. In the menu the
+     * entry, greyed beside its check, says "already"; the palette leaves out a
+     * gesture that would do nothing; and the main process writes whatever
+     * project it is handed, so a click would put `project.json` in someone's
+     * diff for nothing. A radio never meets the refusal: the start scene's is
+     * the checked one, and a checked radio fires no change.
+     */
+    can: (ctx) => {
+      const scene = targetOrCurrent(ctx);
+      return scene !== undefined && !isStartScene(scene, project().project?.startScene ?? null);
     },
-    can: (ctx) => target(ctx) !== undefined,
-    run: (ctx) => (ctx.sceneId === undefined ? undefined : chooseStartScene(ctx.sceneId)),
+    run: (ctx) => {
+      const scene = targetOrCurrent(ctx);
+      return scene === undefined ? undefined : chooseStartScene(scene.id);
+    },
   }),
 
   deleteScene: defineCommand({

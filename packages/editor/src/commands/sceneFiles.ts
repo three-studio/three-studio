@@ -44,6 +44,18 @@ export function currentSceneName(): string {
   return currentScene()?.name ?? 'Scene';
 }
 
+/**
+ * Whether this file is the one a build starts on: the first that claims the
+ * start id. A shadowed file carrying the same id is not — every lookup lands
+ * on the first (`findScene`) — so comparing ids alone would mark it too.
+ *
+ * One rule for every place that marks or sets the start scene: Project
+ * Settings, the Scene menu and Set as Start Scene.
+ */
+export function isStartScene(entry: SceneEntry, startScene: string | null): boolean {
+  return entry.shadowedBy === null && entry.id === startScene;
+}
+
 /** Reloads this window on another scene, prompt included. */
 export async function openScene(sceneId: string): Promise<void> {
   if (sceneId === useProjectStore.getState().sceneId) return;

@@ -1,6 +1,7 @@
 import type { ProjectSettings } from '@three-studio/core';
 import { useState } from 'react';
 import { commandById, contextForScene } from '../commands/registry';
+import { isStartScene } from '../commands/sceneFiles';
 import { notify } from '../state/toastStore';
 import { useProjectStore } from '../state/projectStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
@@ -120,7 +121,7 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
                   <input
                     type="radio"
                     name="startScene"
-                    checked={scene.shadowedBy === null && scene.id === project.startScene}
+                    checked={isStartScene(scene, project.startScene)}
                     // Nothing can start on a file whose id another file already
                     // claims: the reference would resolve to that other one.
                     disabled={scene.shadowedBy !== null}
