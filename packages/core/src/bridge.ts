@@ -120,8 +120,8 @@ export interface ProjectApi {
    * name already taken is refused rather than made unique — see `sceneName`.
    */
   /**
-   * Creates a scene: empty, with the root `Scene` entity — or, given `contents`,
-   * holding this window's document, which is Save As.
+   * Creates a scene: empty — or, given `contents`, holding this window's
+   * document, which is Save As.
    *
    * The file then carries the new scene's own id and name, never the ones in
    * `contents`, and this window is the one showing it from then on — noted

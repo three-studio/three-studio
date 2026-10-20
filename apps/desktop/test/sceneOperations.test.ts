@@ -7,8 +7,8 @@ import {
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   createBuildProfiles,
+  createEmptyScene,
   createEntity,
-  createNewScene,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
@@ -44,7 +44,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
 
   const ids: string[] = [];
   for (const name of names) {
-    const document = createNewScene(name);
+    const document = createEmptyScene(name);
     await writeFile(
       join(root, SCENES_DIR, `${name}.scene.json`),
       serializeScene(document),
@@ -307,12 +307,19 @@ describe('a project always has a scene', () => {
 });
 
 describe('what these operations write', () => {
-  it('gives a new scene the root Scene entity, where global scripts go', async () => {
+  /*
+   * A new scene used to start with an empty entity called `Scene`, for the
+   * scripts that belong to the level. In the Hierarchy it read as the scene
+   * itself, and deleting it changed nothing. The Hierarchy names the scene in a
+   * line of its own now, and a level script goes on an Empty.
+   */
+  it('gives a new scene no entity, not even one standing for the scene', async () => {
     const root = await projectWith(['main']);
     const { scene } = await createScene(root, 'Arena');
 
     const document = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
-    expect(document.entities[document.rootOrder[0]!]?.name).toBe('Scene');
+    expect(document.rootOrder).toEqual([]);
+    expect(document.entities).toEqual({});
     expect(document.name).toBe('Arena');
   });
 

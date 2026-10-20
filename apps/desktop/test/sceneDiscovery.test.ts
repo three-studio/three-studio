@@ -6,7 +6,7 @@ import {
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   createBuildProfiles,
-  createNewScene,
+  createEmptyScene,
   createPhysicsSettings,
   createRenderingSettings,
   serializeScene,
@@ -35,7 +35,7 @@ async function projectWith(paths: readonly string[]): Promise<string> {
 
   const ids: string[] = [];
   for (const path of paths) {
-    const document = createNewScene(path);
+    const document = createEmptyScene(path);
     await mkdir(join(root, SCENES_DIR, ...path.split('/').slice(0, -1)), { recursive: true });
     await writeFile(join(root, SCENES_DIR, `${path}.scene.json`), serializeScene(document), 'utf8');
     ids.push(document.id);
@@ -70,7 +70,7 @@ describe('the scenes of a project are the files under scenes/', () => {
     // the case pinned further down.
     await writeFile(
       join(root, SCENES_DIR, 'Arena.scene.json'),
-      serializeScene(createNewScene('Arena')),
+      serializeScene(createEmptyScene('Arena')),
       'utf8',
     );
 

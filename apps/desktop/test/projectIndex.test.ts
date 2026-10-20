@@ -7,7 +7,7 @@ import {
   ASSET_META_VERSION,
   CACHE_DIR,
   SCENES_DIR,
-  createNewScene,
+  createEmptyScene,
   deserializeScene,
   serializeScene,
   type AssetMeta,
@@ -38,7 +38,7 @@ async function projectWith(assets: number, scenes: number): Promise<string> {
   for (let i = 0; i < scenes; i++) {
     await writeFile(
       join(root, SCENES_DIR, `Level${i}.scene.json`),
-      serializeScene(createNewScene(`Level${i}`)),
+      serializeScene(createEmptyScene(`Level${i}`)),
       'utf8',
     );
   }
@@ -189,7 +189,7 @@ describe('what the index declines to answer for', () => {
     const before = await discoverScenes(root);
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
 
-    const replacement = createNewScene('Level0');
+    const replacement = createEmptyScene('Level0');
     await writeFile(file, serializeScene(replacement), 'utf8');
 
     const after = await discoverScenes(root);
