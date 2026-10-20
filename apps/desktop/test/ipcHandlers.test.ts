@@ -7,8 +7,8 @@ import {
   IPC_INVOKE,
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
+  createEmptyScene,
   createMaterial,
-  createNewScene,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
@@ -541,7 +541,7 @@ describe('what the other windows are told', () => {
       IPC_INVOKE.project.createScene,
       1,
       'Copy',
-      serializeScene(createNewScene('Races')),
+      serializeScene(createEmptyScene('Races')),
     );
 
     // Told first, window 2 could open the copy while the table says nobody

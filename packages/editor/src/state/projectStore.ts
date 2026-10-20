@@ -1,5 +1,6 @@
 import {
   deserializeScene,
+  findScene,
   serializeScene,
   type OpenProject,
   type ProjectContents,
@@ -148,3 +149,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   setError: (error) => set({ error }),
 }));
+
+/**
+ * The name of the scene this window is on, or `null` before a project has
+ * opened.
+ *
+ * From the scene list, not the document: the file is called what the scene is
+ * called, so Save As and Rename Scene… change it without touching an entity. A
+ * string, so a component reading it re-renders when the name moves and not
+ * each time the list is replaced around it, which any window's scene write does.
+ *
+ * Here once. The menu bar's title and the Inspector's scene pane each wrote it
+ * out for themselves, and the Hierarchy's header would have been a third copy.
+ */
+export const selectSceneName = (state: Pick<ProjectState, 'scenes' | 'sceneId'>): string | null =>
+  state.sceneId === null ? null : (findScene(state.scenes, state.sceneId)?.name ?? null);

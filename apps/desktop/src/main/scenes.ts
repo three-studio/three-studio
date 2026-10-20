@@ -3,8 +3,8 @@ import { dirname, posix } from 'node:path';
 import {
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
+  createEmptyScene,
   createId,
-  createNewScene,
   deserializeScene,
   findScene,
   safeFileName,
@@ -175,8 +175,8 @@ function repointStartScene(
 }
 
 /**
- * A new scene: empty, with the root `Scene` entity — or, given `contents`, a
- * window's document, which is how Save As writes its copy.
+ * A new scene: empty — or, given `contents`, a window's document, which is how
+ * Save As writes its copy.
  *
  * `project.json` is not written at all: the file under `scenes/` **is** the
  * addition. That is the whole of what this task bought — a scene created here
@@ -215,7 +215,7 @@ export async function createScene(
   // The document is authored first so it carries the id, rather than an id
   // being minted beside it that could drift from the one in the file.
   const document =
-    from === undefined ? createNewScene(newName) : { ...from, id: createId(), name: newName };
+    from === undefined ? createEmptyScene(newName) : { ...from, id: createId(), name: newName };
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
   await writeSceneFile(projectPath, path, serializeScene(document));
 

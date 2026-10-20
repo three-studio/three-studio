@@ -18,6 +18,7 @@ import {
   Camera,
   ChevronDown,
   ChevronRight,
+  Clapperboard,
   Eye,
   EyeOff,
   FileCode,
@@ -51,6 +52,7 @@ import { useAssetStore } from '../state/assetStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
+import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { ContextMenu, type MenuEntry } from '../ui/Menu';
 import { PanelToolbar } from './PanelShell';
 
@@ -367,6 +369,8 @@ export function HierarchyPanel() {
         />
       </PanelToolbar>
 
+      <SceneHeader onDrop={(event) => onDrop(event, null)} />
+
       <div
         ref={scrollRef}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
@@ -550,6 +554,72 @@ export function HierarchyPanel() {
           onClose={() => setMenu(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * The scene, above everything in it: the one line of the tree that is not an
+ * entity.
+ *
+ * A row is an entity, with a trash button, a context menu and a drag handle,
+ * and the scene is none of those. Scenes have long carried an empty entity
+ * called `Scene` at the top of the list: it read as the scene itself, and
+ * deleting it changed nothing, because the scene was never in the list. What
+ * the scene has of its own is the Inspector's pane with nothing selected, so
+ * that is what a click here asks for, and nothing here deletes or renames.
+ *
+ * Not a row the others are nested under either, the way Unity draws its scene:
+ * that costs every line of the tree one indent step to say what this one line
+ * already says. The icon sits in the rows' chevron column instead, which puts
+ * the name where a root row draws its icon, and the rows read as inside it
+ * without moving.
+ *
+ * Outside the scrolled list, so it stays on screen however long the list grows.
+ * It is the way to the scene's settings, and the place to drop an object to
+ * bring it back to the root — which the empty space under the rows does too,
+ * until the list is long enough to leave none. And `rowWindow` goes on counting
+ * rows and nothing else.
+ */
+function SceneHeader({ onDrop }: { onDrop: (event: DragEvent) => void }) {
+  const sceneName = useProjectStore(selectSceneName);
+  // With a prefab open the document is the prefab, and so is the list under
+  // this line: naming the scene there would name something not on screen.
+  const prefabName = usePrefabModeStore((s) => s.stack.at(-1)?.name ?? null);
+  // Lit exactly when the Inspector shows the scene's pane — the test
+  // `InspectorPanel` makes — so the two cannot disagree about what is in front.
+  const isSubject = useEditorStore((s) => s.selection.length === 0);
+  const clearSelection = useEditorStore((s) => s.clearSelection);
+  const [dropping, setDropping] = useState(false);
+
+  const Icon = prefabName === null ? Clapperboard : Boxes;
+
+  return (
+    <div
+      // Stable hook for automated checks, beside the rows' `data-entity-id`.
+      data-scene-header
+      title={prefabName === null ? 'Scene settings' : undefined}
+      onClick={() => clearSelection()}
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDropping(true);
+      }}
+      onDragLeave={() => setDropping(false)}
+      onDrop={(event) => {
+        setDropping(false);
+        onDrop(event);
+      }}
+      style={{ height: ROW_HEIGHT }}
+      className={`flex shrink-0 items-center gap-1 border-b border-line pl-1 pr-1 text-2xs text-ink ${
+        isSubject ? 'bg-accent-dim' : 'hover:bg-surface-2'
+      } ${dropping ? 'outline outline-1 -outline-offset-1 outline-accent' : ''}`}
+    >
+      {/* The size of a row's chevron button, which is what puts the name over
+          the root rows' icons. */}
+      <span className="flex h-4 w-4 shrink-0 items-center justify-center">
+        <Icon size={12} className={prefabName === null ? undefined : 'text-prefab'} />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{prefabName ?? sceneName ?? 'Scene'}</span>
     </div>
   );
 }

@@ -235,7 +235,6 @@ export type {
 export {
   createEmptyScene,
   createEnvironment,
-  createNewScene,
   createSkySettings,
   createStarterScene,
 } from './scene/defaults';

@@ -5,7 +5,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
-  createNewScene,
+  createEmptyScene,
   serializeScene,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -23,7 +23,7 @@ async function projectWith(fields: Record<string, unknown>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-project-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
 
-  const document = createNewScene('main');
+  const document = createEmptyScene('main');
   const path = `${SCENES_DIR}/main.scene.json`;
   await writeFile(join(root, path), serializeScene(document), 'utf8');
 
@@ -121,7 +121,7 @@ async function formatOneProject(
 
   const ids: Record<string, string> = {};
   for (const name of ['main', 'Loading']) {
-    const document = createNewScene(name);
+    const document = createEmptyScene(name);
     const path = `${SCENES_DIR}/${name}.scene.json`;
     await writeFile(join(root, path), serializeScene(document), 'utf8');
     ids[name] = document.id;

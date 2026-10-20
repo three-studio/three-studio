@@ -10,7 +10,7 @@ import { createBoxGeometry } from './geometry';
 /*
  * What is left once every component type owns its own factories: the sky and
  * the environment, which belong to a scene rather than to anything in it, and
- * the three ways to make a whole scene.
+ * the two ways to make a whole scene.
  *
  * No rule here is about a particular type any more. `createStarterScene` still
  * names three of them, and has to: a starter scene *is* a ground, a sun, a sky
@@ -86,6 +86,25 @@ export function createEnvironment(): EnvironmentDef {
   };
 }
 
+/**
+ * A scene as the editor creates one: nothing in it but its environment.
+ *
+ * New scenes used to start with an empty entity called `Scene` at the root,
+ * where scripts that belong to the level rather than to a thing in it were
+ * meant to go. It read as the scene itself, and it was an ordinary entity that
+ * nothing protected, so deleting it changed nothing at all. The Hierarchy now
+ * names the scene in a line of its own, which is not an entity. A level script
+ * goes on an Empty, the way Unity puts one on a GameManager: still an entity,
+ * so `this.entity` and `this.transform` are never null for it, which is what
+ * letting the scene itself carry scripts would cost.
+ *
+ * Scenes that have one keep it, untouched. It is the author's entity: it may
+ * carry scripts, a script property may name it by id, and nothing could find
+ * it but its name.
+ *
+ * It has to stay empty: the prefab migration borrows it, and a stray entity
+ * here would appear inside every prefab.
+ */
 export function createEmptyScene(name = 'Main'): SceneDoc {
   return {
     version: SCENE_FORMAT_VERSION,
@@ -98,30 +117,9 @@ export function createEmptyScene(name = 'Main'): SceneDoc {
   };
 }
 
-/**
- * A scene as the editor creates one: empty, plus the root `Scene` entity.
- *
- * That entity is where scripts that belong to the level rather than to a thing
- * in it are attached — Unity puts them on a GameObject and Godot on the root
- * node, and both do it because the alternative, letting the scene itself carry
- * scripts, makes `this.entity` and `this.transform` null for those alone. It is
- * an ordinary entity: a convention, not a feature, and nothing protects it.
- *
- * Separate from `createEmptyScene`, which must stay genuinely empty — the
- * prefab migration borrows it, and a stray entity there would appear inside
- * every prefab.
- */
-export function createNewScene(name = 'Main'): SceneDoc {
-  const scene = createEmptyScene(name);
-  const root = createEntity('Scene');
-  scene.entities[root.entity.id] = root.entity;
-  scene.rootOrder.push(root.entity.id);
-  return scene;
-}
-
 /** Scene a brand new project opens with: a ground plane, a light and a camera. */
 export function createStarterScene(): SceneDoc {
-  const scene = createNewScene();
+  const scene = createEmptyScene();
 
   // A slab rather than a rotated plane. A plane would look the same, but its
   // entity carries a -90° rotation, and a rotated static body makes the
