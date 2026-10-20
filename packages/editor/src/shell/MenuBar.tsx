@@ -176,6 +176,9 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
             onHover={() => setOpenMenu((current) => (current === null ? null : label))}
             onClose={close}
             items={items}
+            // The bar's small type. The lists used to hang inside the bar and
+            // took it from there; floating, they would take the body's.
+            menuClassName="text-2xs"
           >
             {label}
           </MenuTrigger>

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useOverlay } from '../state/overlayStore';
 import { useDialogStore } from '../state/dialogStore';
+import { Floating } from './Floating';
 
 /**
  * The single text prompt for the whole editor, driven by `askForText`.
  *
  * Rendered once near the root so any part of the UI can ask for a name without
- * owning a dialog of its own.
+ * owning a dialog of its own. Both prompts are drawn by `Floating`, scrim
+ * included: they are modals, and the topmost of them.
  */
 export function PromptDialog() {
   return (
@@ -36,8 +38,9 @@ function TextPrompt() {
   const canConfirm = value.trim() !== '' && error === null;
 
   return (
-    <div
-      className="fixed inset-0 z-prompt flex items-start justify-center bg-black/50 pt-32"
+    <Floating
+      layer="prompt"
+      className="inset-0 flex items-start justify-center bg-black/50 pt-32"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) cancel();
       }}
@@ -80,7 +83,7 @@ function TextPrompt() {
           </button>
         </div>
       </form>
-    </div>
+    </Floating>
   );
 }
 
@@ -100,8 +103,9 @@ function ConfirmPrompt() {
   if (!confirm) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-prompt flex items-start justify-center bg-black/50 pt-32"
+    <Floating
+      layer="prompt"
+      className="inset-0 flex items-start justify-center bg-black/50 pt-32"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) cancel();
       }}
@@ -141,6 +145,6 @@ function ConfirmPrompt() {
           </button>
         </div>
       </div>
-    </div>
+    </Floating>
   );
 }

@@ -1,7 +1,7 @@
 import { ChevronRight, Trash2, type LucideIcon } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useOverlay } from '../state/overlayStore';
+import { Floating, useAnchorRect } from './Floating';
 
 export interface MenuItem {
   label: string;
@@ -31,42 +31,75 @@ export interface MenuItem {
 /** A `null` entry renders a separator, which keeps menu definitions terse. */
 export type MenuEntry = MenuItem | null;
 
+type MenuAlign = 'left' | 'right';
+type MenuPlacement = 'below' | 'above';
+
 interface MenuProps {
   items: readonly MenuEntry[];
   onClose: () => void;
-  /** Horizontal alignment relative to the trigger. */
-  align?: 'left' | 'right';
-  /** Which side of the trigger the list opens on. */
-  placement?: 'below' | 'above';
+  /** What the menu hangs from. A press on it is left to it. */
+  anchor?: RefObject<HTMLElement | null>;
+  /** Horizontal alignment against the box it hangs from. */
+  align?: MenuAlign;
+  /** Which side of that box the list opens on. */
+  placement?: MenuPlacement;
+  /** A submenu, drawn inside its parent: the parent listens for both. */
+  nested?: boolean;
 }
 
 /**
- * Dropdown body. Positioning is the caller's job (the trigger must be
- * `relative`); this component only owns the list, dismissal and item chrome.
+ * The list itself: rows, separators, submenus, dismissal.
+ *
+ * Not exported. A list drawn where it was declared sat inside whatever declared
+ * it, and the Scene menu, declared inside the menu bar, lost the pointer to the
+ * toolbar's drag region — `Floating` tells that story. What leaves this file is
+ * a placed menu: under an element (`DropdownMenu`, `MenuTrigger`) or at the
+ * pointer (`ContextMenu`), both floating.
+ *
+ * Its own box opts out of the drag region, and not only the box it hangs from:
+ * that box is no bigger than a point, a submenu hangs outside its parent, and
+ * the region is made of each box's own rectangle.
  */
-export function Menu({ items, onClose, align = 'left', placement = 'below' }: MenuProps) {
+function Menu({
+  items,
+  onClose,
+  anchor,
+  align = 'left',
+  placement = 'below',
+  nested = false,
+}: MenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null);
 
   // Escape is the stack's, not the menu's: a menu opened from inside a dialog
   // has to close alone, and its own listener could not know it was not the only
   // thing open.
-  useOverlay('popover', onClose);
+  useOverlay('popover', onClose, !nested);
 
   useEffect(() => {
+    // A submenu is drawn inside its parent's element, so the parent's listener
+    // already sees every press in it. One of its own took a press on the row it
+    // hangs from for a press outside, and closed the whole menu.
+    if (nested) return;
     function onPointerDown(event: PointerEvent) {
-      if (!ref.current?.contains(event.target as Node)) onClose();
+      const target = event.target as Node;
+      // A press on the anchor is the anchor's to answer, as it is for
+      // `Popover`. Closing here as well meant the title's own click opened the
+      // menu again straight after this closed it, so a menu could not be
+      // closed from its title.
+      if (ref.current?.contains(target) || anchor?.current?.contains(target)) return;
+      onClose();
     }
     // `capture` so the menu closes before the click lands on whatever is behind it.
     document.addEventListener('pointerdown', onPointerDown, true);
     return () => document.removeEventListener('pointerdown', onPointerDown, true);
-  }, [onClose]);
+  }, [anchor, nested, onClose]);
 
   return (
     <div
       ref={ref}
       role="menu"
-      className={`absolute z-menu min-w-56 border border-line-soft bg-surface-2 py-1 shadow-lg shadow-black/50 ${
+      className={`app-no-drag absolute min-w-56 border border-line-soft bg-surface-2 py-1 shadow-lg shadow-black/50 ${
         placement === 'above' ? 'bottom-full mb-1' : 'top-full mt-px'
       } ${align === 'right' ? 'right-0' : 'left-0'}`}
     >
@@ -110,7 +143,7 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
 
             {item.submenu && openSubmenu === id && (
               <div className="absolute left-full top-0 z-10 -mt-1 pl-px">
-                <Menu items={item.submenu} onClose={onClose} />
+                <Menu items={item.submenu} onClose={onClose} nested />
               </div>
             )}
             {item.onDelete && (
@@ -147,25 +180,66 @@ interface ContextMenuProps {
 const ESTIMATED_ROW_HEIGHT = 24;
 const MENU_WIDTH = 224;
 
-/**
- * A menu at the pointer, for right-click.
- *
- * Rendered into `document.body` rather than in place. `position: fixed` is
- * relative to the viewport only while no ancestor has a transform — and
- * dockview positions its panels with one, which made the menu appear offset by
- * the panel's own origin. A portal leaves that ancestor chain entirely, and
- * incidentally escapes the panel's scroll container too.
- */
+/** A menu at the pointer, for right-click. */
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   const height = items.length * ESTIMATED_ROW_HEIGHT;
   const flipUp = y + height > window.innerHeight;
   const left = Math.min(x, window.innerWidth - MENU_WIDTH);
 
-  return createPortal(
-    <div className="fixed z-menu h-0 w-0" style={{ left, top: y }}>
+  return (
+    <Floating layer="menu" className="h-0 w-0" style={{ left, top: y }}>
       <Menu items={items} onClose={onClose} placement={flipUp ? 'above' : 'below'} />
-    </div>,
-    document.body,
+    </Floating>
+  );
+}
+
+interface DropdownMenuProps {
+  /** What it hangs from: placed against it, and a press on it is left to it. */
+  anchor: RefObject<HTMLElement | null>;
+  items: readonly MenuEntry[];
+  onClose: () => void;
+  align?: MenuAlign;
+  placement?: MenuPlacement;
+  /**
+   * For the box the list floats from — its type, say. Drawn inside its anchor,
+   * a list took the anchor's; floating, it takes the body's.
+   */
+  className?: string;
+}
+
+/**
+ * A menu hanging from an element: under it, or above it for a button at the
+ * foot of a panel.
+ *
+ * It floats from a box as wide as the anchor and of no height, laid on the
+ * anchor's bottom edge — its top edge when above. The list's own `top-full` or
+ * `bottom-full`, `left-0` or `right-0`, then put it exactly where it hung when
+ * it was drawn inside the anchor. Nothing is drawn until the anchor has been
+ * measured, which happens before the first paint.
+ */
+export function DropdownMenu({
+  anchor,
+  items,
+  onClose,
+  align,
+  placement = 'below',
+  className = '',
+}: DropdownMenuProps) {
+  const rect = useAnchorRect(anchor);
+  if (rect === null) return null;
+
+  return (
+    <Floating
+      layer="menu"
+      className={`h-0 ${className}`}
+      style={{
+        left: rect.left,
+        width: rect.width,
+        top: placement === 'above' ? rect.top : rect.bottom,
+      }}
+    >
+      <Menu items={items} onClose={onClose} anchor={anchor} align={align} placement={placement} />
+    </Floating>
   );
 }
 
@@ -177,8 +251,10 @@ interface MenuTriggerProps {
   onHover: () => void;
   items: readonly MenuEntry[];
   onClose: () => void;
-  align?: 'left' | 'right';
+  align?: MenuAlign;
   className?: string;
+  /** For the box its menu floats from; see `DropdownMenu`. */
+  menuClassName?: string;
 }
 
 export function MenuTrigger({
@@ -190,9 +266,14 @@ export function MenuTrigger({
   onClose,
   align,
   className = '',
+  menuClassName,
 }: MenuTriggerProps) {
+  // The wrapper rather than the button: the list used to hang from this box,
+  // and anchoring to the same one keeps every menu exactly where it was.
+  const anchor = useRef<HTMLDivElement>(null);
+
   return (
-    <div className="relative">
+    <div ref={anchor}>
       <button
         type="button"
         onClick={onToggle}
@@ -201,7 +282,15 @@ export function MenuTrigger({
       >
         {children}
       </button>
-      {open && <Menu items={items} onClose={onClose} align={align} />}
+      {open && (
+        <DropdownMenu
+          anchor={anchor}
+          items={items}
+          onClose={onClose}
+          align={align}
+          className={menuClassName}
+        />
+      )}
     </div>
   );
 }

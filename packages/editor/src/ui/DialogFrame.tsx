@@ -1,7 +1,7 @@
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import { useOverlay } from '../state/overlayStore';
+import { Floating } from './Floating';
 
 interface DialogFrameProps {
   title: string;
@@ -31,9 +31,10 @@ const PANEL_CHROME = 'rounded-sm border border-line-soft shadow-2xl shadow-black
  * The shell every large dialog shares: the backdrop, the title bar, the footer,
  * Escape, and click-outside-to-close.
  *
- * Rendered into `document.body`: `position: fixed` is relative to the viewport
- * only while no ancestor carries a transform, and dockview gives its panels
- * one — the trap the context menu, the asset preview and the toasts all hit.
+ * Drawn by `Floating`, scrim included. The modal owns the window until it is
+ * answered, so the scrim covers the menu bar and the toolbar as well, and a
+ * press anywhere on it closes the dialog — over the chrome too, where a drag
+ * region underneath used to take the press and move the window.
  *
  * It holds no state and decides nothing about the body. That is what lets the
  * settings dialogs put a section list down the left and the import dialog put a
@@ -53,12 +54,13 @@ export function DialogFrame({
   // top of the stack, which is the only place that can know.
   useOverlay('modal', onClose);
 
-  return createPortal(
-    <div
+  return (
+    <Floating
+      layer="dialog"
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className={`fixed inset-0 z-dialog flex items-center justify-center bg-black/50 ${
+      className={`inset-0 flex items-center justify-center bg-black/50 ${
         fillsWindow ? 'p-9' : 'p-8'
       }`}
       onPointerDown={(event) => {
@@ -90,8 +92,7 @@ export function DialogFrame({
           </footer>
         )}
       </div>
-    </div>,
-    document.body,
+    </Floating>
   );
 }
 

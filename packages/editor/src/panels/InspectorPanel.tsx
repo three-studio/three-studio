@@ -16,7 +16,7 @@ import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
-import { Menu } from '../ui/Menu';
+import { DropdownMenu } from '../ui/Menu';
 
 /**
  * What the Inspector's asset slots cannot reach for themselves.
@@ -88,6 +88,7 @@ export function InspectorPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const bindingRef = useRef<InspectorBinding | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const addButton = useRef<HTMLButtonElement>(null);
 
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
@@ -206,8 +207,9 @@ export function InspectorPanel() {
 
       {/* The scene pane has nothing to add a component to. */}
       {entity && (
-        <div className="relative shrink-0 border-t border-line p-2">
+        <div className="shrink-0 border-t border-line p-2">
           <button
+            ref={addButton}
             type="button"
             disabled={instance !== null}
             onClick={() => setAddOpen((open) => !open)}
@@ -216,23 +218,24 @@ export function InspectorPanel() {
             <Plus size={13} />
             Add Component
           </button>
+          {/* Above the button rather than over it, and no longer cut short by
+              the panel: it floats, so the panel's edges do not hold it. */}
           {addOpen && (
-            <div className="absolute inset-x-2 bottom-2">
-              <Menu
-                placement="above"
-                onClose={() => setAddOpen(false)}
-                items={addableTypes().map((type) => ({
-                  label: COMPONENT_PANES[type].label,
-                  // A second mesh or camera on one entity has no meaning here —
-                  // and neither does a mesh on something already drawing a
-                  // model, which `componentFits` is what answers.
-                  disabled:
-                    (existing.has(type) && type !== 'collider' && type !== 'script') ||
-                    !componentFits(type, existing),
-                  onSelect: () => addComponentWithDependencies(entity.id, type),
-                }))}
-              />
-            </div>
+            <DropdownMenu
+              anchor={addButton}
+              placement="above"
+              onClose={() => setAddOpen(false)}
+              items={addableTypes().map((type) => ({
+                label: COMPONENT_PANES[type].label,
+                // A second mesh or camera on one entity has no meaning here —
+                // and neither does a mesh on something already drawing a
+                // model, which `componentFits` is what answers.
+                disabled:
+                  (existing.has(type) && type !== 'collider' && type !== 'script') ||
+                  !componentFits(type, existing),
+                onSelect: () => addComponentWithDependencies(entity.id, type),
+              }))}
+            />
           )}
         </div>
       )}
