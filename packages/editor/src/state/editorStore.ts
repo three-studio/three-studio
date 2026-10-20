@@ -74,6 +74,17 @@ interface EditorState {
    * which is exactly what T-064 removed.
    */
   paletteOpen: boolean;
+  /**
+   * How many times Scene Settings… has been asked for.
+   *
+   * A request to the dock, which `shell/panelFocus.ts` answers by bringing the
+   * Inspector forward — a field a command writes and the shell reads, like
+   * `assetStore.revealed`. A count rather than a flag: nothing has to clear it,
+   * and a second request while a flag was still set would be no change at all.
+   * Not "the selection became empty" either: that happens on every click into
+   * empty space, and would pull the Inspector forward each time.
+   */
+  sceneSettingsRequests: number;
 
   setTransformMode: (mode: TransformMode) => void;
   /** Steps to the next space in `TRANSFORM_SPACES`, wrapping. */
@@ -90,6 +101,7 @@ interface EditorState {
   endRename: () => void;
   openPalette: () => void;
   closePalette: () => void;
+  requestSceneSettings: () => void;
 
   play: () => void;
   togglePause: () => void;
@@ -110,11 +122,13 @@ export const useEditorStore = create<EditorState>()((set) => ({
   selection: [],
   renaming: null,
   paletteOpen: false,
+  sceneSettingsRequests: 0,
 
   beginRename: (renaming) => set({ renaming }),
   endRename: () => set({ renaming: null }),
   openPalette: () => set({ paletteOpen: true }),
   closePalette: () => set({ paletteOpen: false }),
+  requestSceneSettings: () => set((s) => ({ sceneSettingsRequests: s.sceneSettingsRequests + 1 })),
 
   setTransformMode: (transformMode) => set({ transformMode }),
   cycleTransformSpace: () =>

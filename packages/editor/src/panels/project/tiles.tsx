@@ -8,12 +8,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { memo, useEffect, useRef, useState } from 'react';
-import { deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { deleteFolder, renameFolder, showAssetFile } from '../../commands/assetCommands';
 import { commandById, contextForAsset } from '../../commands/registry';
 import { ASSET_PATH_MIME, setAssetDragPayload } from '../../assets/assetDrag';
 import { clipPeaks } from '../../audio/peaks';
 import { audioPreview } from '../../audio/preview';
 import { drawPeaks } from '../../audio/waveform';
+import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore } from '../../state/assetStore';
 import { usePrefabModeStore } from '../../state/prefabModeStore';
 import { KIND_ICON, audioLine, formatBytes } from './kinds';
@@ -250,8 +251,8 @@ export const AssetTile = memo(function AssetTile({
       </button>
       <button
         type="button"
-        title="Reveal in file manager"
-        onClick={() => void window.studio.assets.revealInFileManager(asset.path)}
+        title={showInFileManagerLabel()}
+        onClick={() => void showAssetFile(asset.path)}
         className="absolute left-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
       >
         {/* Same icon as the list row: one action, one look, wherever it appears. */}

@@ -2,13 +2,11 @@ import { createEntity, type EntityTemplate } from '@three-studio/core';
 import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView } from '../commands/placeEntity';
-import { commandById } from '../commands/registry';
-import { shortcutHint } from './shortcutBindings';
 import type { MenuEntry } from '../ui/Menu';
+import { commandEntry } from './commandEntry';
 
 /*
- * What "Add" can create, shared by the menu bar and the hierarchy context menu
- * so the two can never drift apart.
+ * What "Add" can create, as the menu bar's Add menu lists it.
  *
  * Grouped into submenus rather than one flat list: the primitives alone make a
  * list long enough to run off the bottom of a short window, and the three.js
@@ -33,18 +31,13 @@ export function buildAddMenu(): MenuEntry[] {
     // label because someone who wants a group looks for the word "group", and
     // one that only said "Empty" reads as "there is no group in this editor".
     { label: 'Empty (Group)', onSelect: add(() => createEntity('Empty')) },
-    {
-      // The other half, and the one that is actually asked for: an empty is
-      // trivial to make, and dragging five objects into it one at a time is not.
-      //
-      // Through the registry since phase 12. This entry asked
-      // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
-      // object was refused by the shortcut and grouped by the menu.
-      label: commandById('group').label(),
-      shortcut: shortcutHint('group'),
-      disabled: !commandById('group').can(),
-      onSelect: () => commandById('group').run(),
-    },
+    // The other half, and the one that is actually asked for: an empty is
+    // trivial to make, and dragging five objects into it one at a time is not.
+    //
+    // Through the registry since phase 12. This entry asked
+    // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
+    // object was refused by the shortcut and grouped by the menu.
+    commandEntry('group'),
     null,
     ...addMenuGroups().map((group) => ({
       label: group.label,

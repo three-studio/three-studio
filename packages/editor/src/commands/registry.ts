@@ -33,7 +33,9 @@ export type { Command, EditorContext } from './command';
  *
  * **What is not here**, and deliberately. Opening a panel and changing the
  * layout: neither is a gesture on the document and neither has a `can()` to
- * state. And every mutation whose argument is a **value** rather than a target —
+ * state. Scene Settings… is here all the same, because what it does is editor
+ * state — the selection emptied, a request counted — and the Inspector coming
+ * forward is `panelFocus`'s reaction to it. And every mutation whose argument is a **value** rather than a target —
  * the name that was typed, the point a drop landed on, the component type picked
  * from a menu — because only the caller that produced the value could dispatch
  * it, so an entry here would be a wrapper around one call site. The line is

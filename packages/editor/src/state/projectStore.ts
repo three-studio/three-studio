@@ -30,7 +30,7 @@ interface ProjectState {
   scenes: SceneEntry[];
   /** Id of the scene this window edits — what every reference uses. */
   sceneId: string | null;
-  /** Where its file is. Needed to save it, and for nothing else. */
+  /** Where its file is: what Save writes, Revert reads and Show in Finder shows. */
   scenePath: string | null;
   /** Set while a save is in flight, and after a save that failed. */
   saving: boolean;
@@ -54,7 +54,9 @@ interface ProjectState {
    * No reload — nothing about what is on screen has changed, and reloading
    * would cost the undo history. The URL is rewritten in place so that a later
    * reload still finds the scene this window is on; see `windows.ts` for why the
-   * scene lives in the URL at all.
+   * scene lives in the URL at all. By the time Save As calls this, the document
+   * has taken the copy's id, so the URL and the document name the same scene,
+   * and the file a reload opens is the copy.
    *
    * Renaming comes through here too, now that the file name is the name: the
    * document on screen has not changed, but its file has moved, and a window

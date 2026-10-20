@@ -1,15 +1,22 @@
 import { findScene, type SceneEntry } from '@three-studio/core';
+import { showInFileManagerLabel } from '../platform';
 import { useProjectStore } from '../state/projectStore';
+import { sceneUnsaved } from '../state/unsaved';
 import { defineCommand, type EditorContext } from './command';
 import {
   chooseStartScene,
+  currentScene,
   deleteCurrentScene,
   duplicateCurrentScene,
+  isStartScene,
   newScene,
   openScene,
   openSceneInNewWindow,
   renameCurrentSceneWithPrompt,
+  revealCurrentScene,
+  revertCurrentScene,
   saveSceneAs,
+  showSceneSettings,
 } from './sceneFiles';
 
 /*
@@ -28,8 +35,10 @@ import {
  *   than in the gesture, so the rule lived where only one caller could see it.
  *
  * Every `can()` below is one of those conditions, moved to the one place that
- * every caller reads. Nothing here is undoable and nothing here touches the
- * document — see the note at the top of `sceneFiles.ts`.
+ * every caller reads. Nothing here is undoable — see the note at the top of
+ * `sceneFiles.ts`. Two of them reach past the file: Revert Scene replaces the
+ * document with what its file holds, and Scene Settings… empties the
+ * selection.
  */
 
 const project = () => useProjectStore.getState();
@@ -52,16 +61,31 @@ function target(ctx: EditorContext): SceneEntry | undefined {
 }
 
 /**
- * Whether a named scene can be opened at all.
+ * Whether a named scene can be opened at all: whether its id names a file.
  *
- * `shadowedBy` is the case worth stating: two files under `scenes/` can carry
- * one `SceneDoc.id` — duplicating one in the Finder is enough — and only the
- * first by path order answers to it. Opening the second would open the first,
- * so it is offered and refused rather than dropped from the list, where it would
- * be far harder to find.
+ * Two files under `scenes/` can carry one `SceneDoc.id` — duplicating one in
+ * the Finder is enough — and only the first by path order answers to it. That
+ * is the file an id names: `findScene` never returns the other one from a list
+ * `discoverScenes` made, so no context can aim at it, and there is nothing
+ * shadowed for this guard to refuse. It used to test `shadowedBy` all the same,
+ * and promise that such a file was offered and refused; that held only for a
+ * test's list the main process cannot produce, while the menu, on a real one,
+ * showed the shadowed file's row under the winner's name and opened the winner.
+ * The Scene menu builds that file's row itself, greyed, with `duplicate id`.
  */
 function openable(ctx: EditorContext): boolean {
-  return target(ctx)?.shadowedBy === null;
+  return target(ctx) !== undefined;
+}
+
+/**
+ * The scene this context names, or this window's when it names none.
+ *
+ * A context naming a scene that is gone does not fall back on the window's: the
+ * gesture was aimed at that scene — a row in Project Settings — and acting on
+ * the one on screen would act on a scene nobody picked.
+ */
+function targetOrCurrent(ctx: EditorContext): SceneEntry | undefined {
+  return ctx.sceneId === undefined ? (currentScene() ?? undefined) : target(ctx);
 }
 
 export const SCENE_FILE_COMMANDS = {
@@ -78,6 +102,15 @@ export const SCENE_FILE_COMMANDS = {
     label: () => 'Save Scene As…',
     can: () => project().summary !== null,
     run: () => saveSceneAs(),
+  }),
+
+  /** The document, put back the way its file has it — after asking. */
+  revertScene: defineCommand({
+    label: () => 'Revert Scene',
+    // `sceneUnsaved`, not `windowUnsaved`: an edited prefab is saved on the way
+    // out, not reverted, so an untouched scene behind it has nothing to go back to.
+    can: () => hasScene() && sceneUnsaved(),
+    run: () => revertCurrentScene(),
   }),
 
   duplicateScene: defineCommand({
@@ -115,14 +148,58 @@ export const SCENE_FILE_COMMANDS = {
     run: (ctx) => (ctx.sceneId === undefined ? undefined : openSceneInNewWindow(ctx.sceneId)),
   }),
 
-  /** Which scene the project — and a build — starts on. */
+  /**
+   * Which scene the project — and a build — starts on: the one the context
+   * names, or this window's. The menu and the palette name none, so they set
+   * the scene on screen, the one the title names; a Project Settings radio
+   * names its own row's.
+   *
+   * It touches no document, so prefab mode and the game are left as they are.
+   */
   setStartScene: defineCommand({
-    label: (ctx) => {
-      const scene = target(ctx);
-      return scene ? `Start On "${scene.name}"` : 'Set Start Scene';
+    label: () => 'Set as Start Scene',
+    /*
+     * Refused for the scene that already is the start scene. In the menu the
+     * entry, greyed beside its check, says "already"; the palette leaves out a
+     * gesture that would do nothing; and the main process writes whatever
+     * project it is handed, so a click would put `project.json` in someone's
+     * diff for nothing. A radio never meets the refusal: the start scene's is
+     * the checked one, and a checked radio fires no change.
+     */
+    can: (ctx) => {
+      const scene = targetOrCurrent(ctx);
+      return scene !== undefined && !isStartScene(scene, project().project?.startScene ?? null);
     },
-    can: (ctx) => target(ctx) !== undefined,
-    run: (ctx) => (ctx.sceneId === undefined ? undefined : chooseStartScene(ctx.sceneId)),
+    run: (ctx) => {
+      const scene = targetOrCurrent(ctx);
+      return scene === undefined ? undefined : chooseStartScene(scene.id);
+    },
+  }),
+
+  /**
+   * The scene's own settings — its name, background, environment, sky and fog —
+   * in the Inspector.
+   *
+   * A command although it ends with a panel coming forward: it has a refusal to
+   * state, no scene open, and what it does is editor state — Prefab Mode left,
+   * the selection emptied, a request counted. The panel coming forward is
+   * `panelFocus`'s reaction to that request. So the palette offers it as the
+   * menu does.
+   */
+  sceneSettings: defineCommand({
+    label: () => 'Scene Settings…',
+    can: hasScene,
+    run: () => showSceneSettings(),
+  }),
+
+  /**
+   * The window's scene file, in the file manager, in the platform's words. It
+   * touches no document, so Prefab Mode and the game are left as they are.
+   */
+  revealScene: defineCommand({
+    label: () => showInFileManagerLabel(),
+    can: hasScene,
+    run: () => revealCurrentScene(),
   }),
 
   deleteScene: defineCommand({

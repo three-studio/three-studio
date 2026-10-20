@@ -6,6 +6,7 @@ import {
   createMeshEntity,
   createModelEntity,
   findComponent,
+  instancedId,
   type AudioSourceComponent,
 } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -20,7 +21,7 @@ import {
   setComponentNestedField,
   setTransform,
 } from '../src/commands/sceneCommands';
-import { selectDirty, useDocumentStore } from '../src/state/documentStore';
+import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { expandedScene } from '../src/state/expansion';
@@ -351,6 +352,36 @@ describe('knowing whether the work is saved', () => {
     addEntity(createMeshEntity('box'));
     doc().replaceScene(createEmptyScene());
     expect(dirty()).toBe(false);
+  });
+
+  /*
+   * What Save As does once the copy's file holds the document under the copy's
+   * id and name. An undo entry would put the original's id back into that file
+   * at a later save — two files claiming one scene — and none of the counters
+   * may move: the work is exactly as saved as it was, and nothing on screen
+   * draws either field.
+   */
+  it("takes a scene's identity as no edit, and as no change to what is saved", () => {
+    addEntity(createMeshEntity('box'));
+    const seen = doc().changesSince(0).revision;
+    const { past, revision, savedRevision, structureRevision, componentRevision } = doc();
+
+    doc().adoptIdentity({ id: 'c', name: 'Copy' });
+
+    expect(scene().id).toBe('c');
+    expect(scene().name).toBe('Copy');
+    expect(doc().past).toBe(past);
+    expect(doc()).toMatchObject({ revision, savedRevision, structureRevision, componentRevision });
+    expect(dirty()).toBe(true);
+    const changes = doc().changesSince(seen);
+    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect(changes.environment).toBe(false);
+    expect(changes.revision).toBe(seen);
+
+    doc().undo();
+    expect(Object.keys(scene().entities)).toEqual([]);
+    expect(scene().id).toBe('c');
+    expect(scene().name).toBe('Copy');
   });
 });
 
@@ -741,5 +772,33 @@ describe('the companions a player controller brings', () => {
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
     });
+  });
+});
+
+/*
+ * A load prunes nothing: it hands over a whole document and leaves the
+ * selection as it was. Revert puts the selection through the rule an edit uses,
+ * since one selected id naming nothing leaves the Inspector blank.
+ */
+describe('a selection after a scene swap', () => {
+  it("keeps an id whose entity is there, and one whose instance's owner is", () => {
+    const wall = addEntity(createEntity('Wall'));
+    const crate = addEntity(createEntity('Crate'));
+    const inside = instancedId(crate, 'lid');
+
+    expect(pruneSelection(scene(), [wall, inside])).toEqual([wall, inside]);
+  });
+
+  it('drops an id that names nothing', () => {
+    const wall = addEntity(createEntity('Wall'));
+
+    expect(pruneSelection(scene(), [wall, 'gone', instancedId('gone', 'lid')])).toEqual([wall]);
+  });
+
+  it('hands back the same array when nothing went, so no subscriber sees a change', () => {
+    const wall = addEntity(createEntity('Wall'));
+    const selected = [wall];
+
+    expect(pruneSelection(scene(), selected)).toBe(selected);
   });
 });

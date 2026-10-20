@@ -1,8 +1,9 @@
 import type { AssetEntry } from '@three-studio/core';
 import { Folder, FolderOpen, Pencil, Trash2 } from 'lucide-react';
-import { deleteFolder, renameFolder } from '../../commands/assetCommands';
+import { deleteFolder, renameFolder, showAssetFile } from '../../commands/assetCommands';
 import { commandById, contextForAsset } from '../../commands/registry';
 import { setAssetDragPayload } from '../../assets/assetDrag';
+import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore, type AssetSortKey } from '../../state/assetStore';
 import { KIND_ICON, formatBytes } from './kinds';
 
@@ -105,8 +106,8 @@ export function AssetList({
             </span>
             <button
               type="button"
-              title="Reveal in file manager"
-              onClick={() => void window.studio.assets.revealInFileManager(asset.path)}
+              title={showInFileManagerLabel()}
+              onClick={() => void showAssetFile(asset.path)}
               className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
             >
               <FolderOpen size={11} />

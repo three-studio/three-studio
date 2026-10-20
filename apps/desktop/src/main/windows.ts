@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { BrowserWindow, app, dialog, shell } from 'electron';
+import { BrowserWindow, app, dialog, screen, shell } from 'electron';
 import type { WindowRole } from '@three-studio/core';
 import { forgetWindow, isDirty } from './session';
 import {
@@ -7,6 +7,7 @@ import {
   leftWithNothing,
   needsDiscardPrompt,
   opensInBrowser,
+  placeBeside,
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
@@ -39,9 +40,10 @@ const isDev = !app.isPackaged;
  *
  * `sceneId` is null until the renderer says which scene it settled on: a window
  * opened without one lands on the project's start scene, and only the
- * renderer's `project:open` resolves which that is. `noteScene` fills it in —
- * it is what makes "open a scene that is already open" focus a window rather
- * than build a second one onto the same file.
+ * renderer's `project:open` resolves which that is. `noteScene` fills it in,
+ * and moves it after a Save As, which puts a window on another scene without a
+ * reload — it is what makes "open a scene that is already open" focus a window
+ * rather than build a second one onto the same file.
  */
 interface Editor extends OpenScene {
   win: BrowserWindow;
@@ -142,15 +144,24 @@ export function editorWindows(): readonly BrowserWindow[] {
 }
 
 /**
- * Records which scene a window settled on, from its own `project:open`.
+ * Records which scene a window is on: the one it settled on, from its own
+ * `project:open`, and the copy a Save As moved it onto.
  *
- * The main process cannot work it out: a window opened without a scene id
- * follows the project's start scene, and resolving that means reading the
- * project file the renderer has just read.
+ * The main process cannot work out the first: a window opened without a scene
+ * id follows the project's start scene, and resolving that means reading the
+ * project file the renderer has just read. The second changes a window's scene
+ * without a reload, so this call is the only way the table hears of it. Before
+ * it did, the table kept the original: opening the copy from another window
+ * built a second window onto it, and deleting it from there was allowed.
+ *
+ * Traced only when the scene changes, so a window reopening on its own scene
+ * adds nothing to the log, and one opened on the start scene says which.
  */
 export function noteScene(contents: Electron.WebContents, sceneId: string): void {
   const entry = editorFor(contents);
-  if (entry) entry.sceneId = sceneId;
+  if (!entry || entry.sceneId === sceneId) return;
+  trace(`editor now on ${sceneId}, was ${entry.sceneId ?? 'the start scene'}`);
+  entry.sceneId = sceneId;
 }
 
 interface WindowOptions {
@@ -327,6 +338,9 @@ export function openSceneWindow(sceneId: string): BrowserWindow | null {
   return createEditor(plan.projectPath, sceneId);
 }
 
+/** The smallest an editor window may be; see `placeBeside`, which keeps to it too. */
+const EDITOR_MINIMUM = { width: 1100, height: 680 };
+
 function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
   const win = createWindow({
     role: 'editor',
@@ -334,8 +348,8 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
     sceneId,
     width: 1600,
     height: 1000,
-    minWidth: 1100,
-    minHeight: 680,
+    minWidth: EDITOR_MINIMUM.width,
+    minHeight: EDITOR_MINIMUM.height,
   });
   // Captured now: `closed` fires after the webContents is gone, and the
   // unsaved-state table has to be purged by the id it was filled under.
@@ -349,9 +363,12 @@ function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
   editors.push(entry);
 
   // Offset from the window it was opened beside, so a second scene does not
-  // land exactly on top of the first and look like nothing happened.
+  // land exactly on top of the first and look like nothing happened — and sized
+  // to fit what the screen has left, or the system puts it back on top.
   const beside = editors.at(-2)?.win.getBounds();
-  if (beside) win.setPosition(beside.x + 32, beside.y + 32);
+  if (beside) {
+    win.setBounds(placeBeside(beside, screen.getDisplayMatching(beside).workArea, EDITOR_MINIMUM));
+  }
   trace(`editor opened on ${sceneId ?? 'the start scene'}`);
 
   win.on('close', (event) => {
@@ -403,12 +420,16 @@ function closeAllEditors(): boolean {
 /**
  * Points a window at another scene by reloading it.
  *
- * A reload rather than a swap inside the running renderer: that path is
- * `replaceScene`, which is what prefab mode and leaving Play already use, and
- * it carries two open bugs — the unsaved flag is overwritten and the undo
- * history is destroyed. A reload gives a fresh document, a fresh history and a
- * teardown nobody can forget to write. The cost is about a second
- * of empty window, and it is accepted.
+ * A reload rather than a swap inside the running renderer, because another
+ * scene is another document with everything hung off it: the viewport's
+ * objects, the physics world, the scripts, the window's own idea of which scene
+ * it is on. A fresh renderer is a teardown nobody can forget to write. The cost
+ * is about a second of empty window, and it is accepted.
+ *
+ * Not because the renderer's `replaceScene` loses work: a load through it is
+ * clean and has no history, which is what a document just read from its file
+ * is, and a restore (`keepHistory`) keeps both. Revert Scene loads this
+ * window's own scene that way, in place, where none of the above changes.
  *
  * @param from The window asking. With several open, "the editor" is not a
  *   thing — the one that asked is the one that moves.
@@ -442,7 +463,11 @@ function confirmDiscard(win: BrowserWindow, detail: string): boolean {
     buttons: ['Cancel', 'Discard Changes'],
     defaultId: 0,
     cancelId: 0,
-    message: 'This scene has unsaved changes.',
+    // The window's, not the scene's: the flag this reads is everything the
+    // window would lose — the scene's edits, set aside under Prefab Mode or
+    // not, and any open prefab's. "This scene has unsaved changes." was wrong
+    // whenever only a prefab was.
+    message: 'This window has unsaved changes.',
     detail,
   });
   return choice === 1;

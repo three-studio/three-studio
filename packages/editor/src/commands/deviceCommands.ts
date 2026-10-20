@@ -7,6 +7,7 @@ import {
   type LaunchSnapshot,
 } from '@three-studio/core';
 import { formatBytes } from '../import/preview/facts';
+import { showInFileManagerLabel } from '../platform';
 import { useConsoleStore, type LogLevel } from '../state/consoleStore';
 import {
   canCapture,
@@ -308,7 +309,7 @@ export async function captureDevice(id: string): Promise<void> {
       detailsOpen: false,
       actions: [
         {
-          label: 'Show in Finder',
+          label: showInFileManagerLabel(),
           primary: true,
           onClick: () => {
             window.studio.devices

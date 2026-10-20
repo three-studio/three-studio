@@ -50,7 +50,7 @@ export interface MutationOptions {
  * `local` half no longer resolves — coarser, but wrong in the harmless
  * direction, where the alternative clears a selection the user can see.
  */
-function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
+export function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
   const kept = selection.filter((id) => {
     const parts = splitInstancedId(id);
     return scene.entities[parts === null ? id : parts.owner] !== undefined;
@@ -163,8 +163,9 @@ interface DocumentState {
    * Replace the document wholesale.
    *
    * `keepHistory` says which of two very different things this is. Without it,
-   * a new document is being loaded: history goes, and the result is clean
-   * because it is what the file holds. With it, a document that was set aside is
+   * a document is being loaded — opening a scene, or reverting it to its file:
+   * history goes, and the result is clean because it is what the file holds.
+   * With it, a document that was set aside is
    * being *restored* — Play/Stop, leaving Prefab Mode — and a restore decides
    * nothing about whether the work is saved. Forcing `dirty: false` in both
    * cases was the defect, and it lost unsaved work with no warning.
@@ -172,8 +173,23 @@ interface DocumentState {
   replaceScene: (scene: SceneDoc, options?: { keepHistory?: boolean }) => void;
   /** Records that what is in the document is now what is on disk. */
   markClean: () => void;
-  /** Takes the undo stack away, for a caller that will put it back. */
-  takeHistory: () => HistoryStash;
+  /**
+   * Makes the document another scene's: its id and name, and nothing else.
+   *
+   * For Save As, once the copy's file holds this document under those two. Not
+   * an edit: an undo entry would put the original's id back into the copy's
+   * file, two files claiming one scene. Not unsaved work: the file already holds
+   * it. And not a change any consumer reads — the viewport, the hierarchy and the
+   * Inspector draw neither field — so the revision log hears nothing either,
+   * where `replaceScene` would have every one of them re-read the whole document.
+   */
+  adoptIdentity: (identity: Pick<SceneDoc, 'id' | 'name'>) => void;
+  /**
+   * The undo stack and where the file stood, for a caller setting this document
+   * aside to put back later. Read, not taken: the caller's next load empties it
+   * here, and in between the work is in both places rather than in neither.
+   */
+  historyStash: () => HistoryStash;
   restoreHistory: (stash: HistoryStash) => void;
   /**
    * What has changed since `since`, and the revision that answer is good for.
@@ -375,16 +391,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
 
   markClean: () => set((state) => ({ savedRevision: state.revision })),
 
-  takeHistory: () => {
-    const state = get();
-    const stash: HistoryStash = {
-      past: state.past,
-      future: state.future,
-      revision: state.revision,
-      savedRevision: state.savedRevision,
-    };
-    set({ past: [], future: [], revision: 0, savedRevision: 0 });
-    return stash;
+  adoptIdentity: ({ id, name }) => set((state) => ({ scene: { ...state.scene, id, name } })),
+
+  historyStash: () => {
+    const { past, future, revision, savedRevision } = get();
+    return { past, future, revision, savedRevision };
   },
 
   restoreHistory: (stash) =>

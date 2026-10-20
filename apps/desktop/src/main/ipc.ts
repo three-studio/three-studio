@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
   ASSET_KIND_INFO,
@@ -65,7 +66,7 @@ import {
 import { scanAssets, updateAssetSettings } from './assetScan';
 import type { DeviceServer } from './devices/DeviceServer';
 import { importSessions } from './import/ImportSession';
-import { resolveInside } from './paths';
+import { MissingFileError, isNotFound, resolveInside } from './paths';
 import {
   loadLayoutPreferences,
   loadShortcutPreferences,
@@ -136,7 +137,7 @@ export interface IpcDeps {
   switchScene: (from: Electron.WebContents, sceneId: string) => boolean;
   /** Opens a scene of the same project in a window of its own. */
   openSceneWindow: (sceneId: string) => void;
-  /** Records which scene a window's renderer settled on. */
+  /** Records which scene a window's renderer settled on, and after a Save As. */
   noteScene: (from: Electron.WebContents, sceneId: string) => void;
   /** True when a scene is open in a window other than the one asking. */
   isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: string) => boolean;
@@ -362,8 +363,15 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * file system — and because a window that could write there could add a scene
    * to a project it cannot read.
    */
-    createScene: async (event, name: string): Promise<SceneChange> => {
-      const change = await createScene(requireProject(), name);
+    createScene: async (event, name: string, contents?: string): Promise<SceneChange> => {
+      const change = await createScene(requireProject(), name, contents);
+      // A Save As: the asking window goes on editing this document under the
+      // new id. Noted before `announce`, with nothing awaited in between, so no
+      // other window hears of the scene while the table says nobody shows it —
+      // it would open it a second time. A new scene is not noted: its window
+      // switches to it next, `switchScene` notes that, and a Cancel at the
+      // prompt leaves the window where it was.
+      if (contents !== undefined) deps.noteScene(event.sender, change.scene.id);
       return announce(change, event.sender, change);
     },
 
@@ -505,9 +513,18 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
     },
 
-    revealInFileManager: (_event, assetPath: string) => {
+    revealInFileManager: async (_event, assetPath: string): Promise<void> => {
       // `showItemInFolder` takes an absolute path, so the guard still applies.
-      shell.showItemInFolder(resolveInside(requireProject(), assetPath));
+      const target = resolveInside(requireProject(), assetPath);
+      // Looked for first, because Electron answers nothing either way: a path
+      // with nothing at it — a file moved away in the Finder — opened nothing
+      // and said nothing, and the person clicked again.
+      try {
+        await stat(target);
+      } catch (cause) {
+        throw isNotFound(cause) ? new MissingFileError(assetPath) : cause;
+      }
+      shell.showItemInFolder(target);
     },
   },
   scripts: {

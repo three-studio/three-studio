@@ -8,6 +8,26 @@ export class PathEscapeError extends Error {
 }
 
 /**
+ * A file the editor was asked about is not there.
+ *
+ * Node says `ENOENT: no such file or directory, open '/Users/…'`: an errno and
+ * an absolute path. The person reading the toast knows the file by its place in
+ * the project, and needs to know it has gone — the editor never leaves one of
+ * its own paths empty, so something outside it moved or deleted the file.
+ */
+export class MissingFileError extends Error {
+  constructor(target: string) {
+    super(`There is no file at ${target}: it was moved or deleted outside the editor.`);
+    this.name = 'MissingFileError';
+  }
+}
+
+/** Node saying nothing is at a path, and only that: `ENOENT`. */
+export function isNotFound(cause: unknown): boolean {
+  return typeof cause === 'object' && cause !== null && 'code' in cause && cause.code === 'ENOENT';
+}
+
+/**
  * Resolves a project-relative path and proves it stayed inside the project.
  *
  * The renderer is sandboxed, but the paths it sends come from scene and asset

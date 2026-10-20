@@ -15,6 +15,17 @@ export interface MenuItem {
   onDelete?: () => void;
   /** Nested entries, opened to the side on hover. */
   submenu?: readonly MenuEntry[];
+  /**
+   * What tells this row from its siblings: its React key, and the name the open
+   * submenu is remembered by. `label` when absent.
+   *
+   * For lists whose labels can repeat. Two scenes called `Boss`, in two
+   * folders, are two rows with one label: keyed by it, React reports a repeated
+   * key, and hovering either would open the submenu of both.
+   */
+  key?: string;
+  /** Dim text on the right, in the shortcut's column: a state or a reason. */
+  detail?: string;
 }
 
 /** A `null` entry renders a separator, which keeps menu definitions terse. */
@@ -59,14 +70,14 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
         placement === 'above' ? 'bottom-full mb-1' : 'top-full mt-px'
       } ${align === 'right' ? 'right-0' : 'left-0'}`}
     >
-      {items.map((item, index) =>
-        item === null ? (
-          <div key={`separator-${index}`} className="my-1 h-px bg-line-soft" />
-        ) : (
+      {items.map((item, index) => {
+        if (item === null) return <div key={`separator-${index}`} className="my-1 h-px bg-line-soft" />;
+        const id = item.key ?? item.label;
+        return (
           <div
-            key={item.label}
+            key={id}
             className="group/row relative flex items-center"
-            onPointerEnter={() => setOpenSubmenu(item.submenu ? item.label : null)}
+            onPointerEnter={() => setOpenSubmenu(item.submenu ? id : null)}
           >
             <button
               type="button"
@@ -75,7 +86,7 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
               onClick={() => {
                 // A row that only opens a submenu must not dismiss the menu.
                 if (item.submenu) {
-                  setOpenSubmenu(item.label);
+                  setOpenSubmenu(id);
                   return;
                 }
                 onClose();
@@ -86,13 +97,18 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
               <span className="w-3 text-2xs text-ink-muted">{item.checked ? '✓' : ''}</span>
               {item.icon && <item.icon size={13} strokeWidth={1.75} className="shrink-0 text-ink-muted" />}
               <span className="flex-1 truncate whitespace-nowrap">{item.label}</span>
+              {/* Neither capped nor cut. The list has no width of its own, so it
+                  is as wide as its widest row: a long folder widens the menu
+                  rather than cutting the name beside it short — and a folder cut
+                  short would no longer tell two scenes of one name apart. */}
+              {item.detail && <span className="whitespace-nowrap text-2xs text-ink-dim">{item.detail}</span>}
               {item.shortcut && (
                 <span className="whitespace-nowrap text-2xs text-ink-dim">{item.shortcut}</span>
               )}
               {item.submenu && <ChevronRight size={11} className="shrink-0 text-ink-dim" />}
             </button>
 
-            {item.submenu && openSubmenu === item.label && (
+            {item.submenu && openSubmenu === id && (
               <div className="absolute left-full top-0 z-10 -mt-1 pl-px">
                 <Menu items={item.submenu} onClose={onClose} />
               </div>
@@ -113,8 +129,8 @@ export function Menu({ items, onClose, align = 'left', placement = 'below' }: Me
               </button>
             )}
           </div>
-        ),
-      )}
+        );
+      })}
     </div>
   );
 }

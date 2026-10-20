@@ -103,7 +103,11 @@ export interface ProjectApi {
     scenePath: string;
     contents: string;
   }) => Promise<void>;
-  /** Reads a scene of the open project, for a game moving to the next one. */
+  /**
+   * Reads a scene of the open project: for a game moving to the next one, and
+   * for Revert Scene, which reads the window's own file back. Refused, in
+   * words, when nothing is there.
+   */
   readScene: (scenePath: string) => Promise<string>;
 
   /*
@@ -115,8 +119,16 @@ export interface ProjectApi {
    * Names are unique within a project and are what a script addresses, so a
    * name already taken is refused rather than made unique — see `sceneName`.
    */
-  /** Creates an empty scene with the root `Scene` entity. */
-  createScene: (name: string) => Promise<SceneChange>;
+  /**
+   * Creates a scene: empty, with the root `Scene` entity — or, given `contents`,
+   * holding this window's document, which is Save As.
+   *
+   * The file then carries the new scene's own id and name, never the ones in
+   * `contents`, and this window is the one showing it from then on — noted
+   * before any other window hears the scene exists. So `contents` is for a
+   * window moving onto the scene it creates, and for nothing else.
+   */
+  createScene: (name: string, contents?: string) => Promise<SceneChange>;
   /** Copies a scene under a new name, with its own document id. */
   duplicateScene: (sceneId: string, name: string) => Promise<SceneChange>;
   /**
@@ -287,7 +299,13 @@ export interface AssetApi {
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   savePrefab: (assetPath: string, prefab: PrefabDoc) => Promise<void>;
-  /** Opens the containing folder in the OS file browser. */
+  /**
+   * Opens the containing folder in the OS file browser, the file selected.
+   *
+   * Takes a project-relative path — an asset's or a scene's — and is refused,
+   * in words, when nothing is there: the file manager itself says nothing
+   * either way.
+   */
   revealInFileManager: (assetPath: string) => Promise<void>;
   /**
    * Absolute path of a dropped `File`.

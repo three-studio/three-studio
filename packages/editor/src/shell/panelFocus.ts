@@ -9,7 +9,9 @@ import { showPanel } from './dockApi';
  * `revealAsset` called `showPanel('project')`, so the command layer imported the
  * shell and reached into the dock. **Starting the game and showing a panel are
  * two things** — the second is a reaction to the first, and a reaction belongs
- * on the side that owns the arrangement.
+ * on the side that owns the arrangement. Scene Settings… is the third: the
+ * command empties the selection and counts a request, and the Inspector coming
+ * forward is decided here.
  *
  * It is the same shape as `editorStore.renaming` and `paletteOpen`: a command
  * writes state, a view reads it. The difference is that a panel cannot bring
@@ -23,6 +25,8 @@ export interface FocusInputs {
   playing: boolean;
   /** The asset `assetStore.reveal` last pointed at, or `null`. */
   revealed: string | null;
+  /** How many times Scene Settings… was asked for: `editorStore.sceneSettingsRequests`. */
+  sceneSettings: number;
 }
 
 /**
@@ -33,8 +37,9 @@ export interface FocusInputs {
  * yank the tab back every time the selection moved, and would do it once at
  * startup over whichever tab the author had left in front.
  *
- * Play wins over a reveal in the same change, which cannot happen today and
- * costs nothing to settle: what the author asked for last is the game.
+ * Play wins over a reveal or a Scene Settings request in the same change, which
+ * cannot happen today and costs nothing to settle: what the author asked for
+ * last is the game.
  */
 export function panelForChange(before: FocusInputs, after: FocusInputs): string | null {
   /*
@@ -45,6 +50,13 @@ export function panelForChange(before: FocusInputs, after: FocusInputs): string 
    * merely a nicety.
    */
   if (after.playing !== before.playing) return after.playing ? 'game' : 'viewport';
+
+  /*
+   * Scene Settings… asks for the scene's own pane, which is the Inspector with
+   * nothing selected: behind another tab, the gesture would empty the selection
+   * and show nothing. Every request moves the count, a second one included.
+   */
+  if (after.sceneSettings !== before.sceneSettings) return 'inspector';
 
   /*
    * Revealing an asset is a request to look at it, and looking at it is not
@@ -61,6 +73,7 @@ function inputs(): FocusInputs {
   return {
     playing: useEditorStore.getState().playState !== 'stopped',
     revealed: useAssetStore.getState().revealed,
+    sceneSettings: useEditorStore.getState().sceneSettingsRequests,
   };
 }
 
@@ -68,9 +81,9 @@ function inputs(): FocusInputs {
  * Watches for those changes while the dock is mounted.
  *
  * Two subscriptions rather than a selector each, because the decision reads both
- * stores and has to see them together. Every store change recomputes two
- * booleans and compares three fields, which is nothing beside what a store
- * change already costs in React.
+ * stores and has to see them together. Every store change reads three fields and
+ * compares them, which is nothing beside what a store change already costs in
+ * React.
  */
 export function watchPanelFocus(): () => void {
   let previous = inputs();

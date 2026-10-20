@@ -20,8 +20,9 @@ import { resolveInside } from './paths';
 import { ProjectError, discoverScenes, readProject, updateProject } from './project';
 
 /*
- * The five things that can be done to the scenes of a project: create one,
- * duplicate one, rename one, delete one, and choose the one a project opens on.
+ * The five things that can be done to the scenes of a project: create one —
+ * empty, or holding a window's document, which is Save As — duplicate one,
+ * rename one, delete one, and choose the one a project opens on.
  *
  * **Everything here addresses a scene by id** — `SceneDoc.id`, written into the
  * document when the scene is created.
@@ -174,13 +175,35 @@ function repointStartScene(
 }
 
 /**
- * A new, empty scene with the root `Scene` entity.
+ * A new scene: empty, with the root `Scene` entity — or, given `contents`, a
+ * window's document, which is how Save As writes its copy.
  *
  * `project.json` is not written at all: the file under `scenes/` **is** the
  * addition. That is the whole of what this task bought — a scene created here
  * and a scene copied in the Finder are now the same event.
+ *
+ * `contents` is written under the new scene's own id and name, never the ones
+ * it carries, which are the original's. Two files claiming one id hide one of
+ * them (`SceneEntry.shadowedBy`), and under the default name `Main Copy` the
+ * copy sorts first: Save As, writing the document as it came over an empty
+ * scene made here, put the original out of reach and left the window on an id
+ * no file carried. It is Duplicate's reason for a fresh id, and it holds as
+ * much for a copy made from a window as for one made from a file.
+ *
+ * Here rather than in a handler of its own, so the name rules stay in one
+ * place; and one call rather than a create and a save, so a Save As that is
+ * refused or fails leaves no empty scene behind in every window's menu.
  */
-export async function createScene(projectPath: string, name: string): Promise<SceneChange> {
+export async function createScene(
+  projectPath: string,
+  name: string,
+  contents?: string,
+): Promise<SceneChange> {
+  // Read before anything is written, so a document that does not parse leaves
+  // no file behind. Read as Duplicate reads its source: migrated, and with a
+  // component type this build does not know filed away untouched, so the round
+  // trip loses nothing.
+  const from = contents === undefined ? undefined : deserializeScene(contents);
   const project = await readProject(projectPath);
   const scenes = await discoverScenes(projectPath);
 
@@ -191,7 +214,8 @@ export async function createScene(projectPath: string, name: string): Promise<Sc
 
   // The document is authored first so it carries the id, rather than an id
   // being minted beside it that could drift from the one in the file.
-  const document = createNewScene(newName);
+  const document =
+    from === undefined ? createNewScene(newName) : { ...from, id: createId(), name: newName };
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
   await writeSceneFile(projectPath, path, serializeScene(document));
 
@@ -204,7 +228,8 @@ export async function createScene(projectPath: string, name: string): Promise<Sc
  * The copy gets its own document id: two files claiming one identity is the
  * kind of aliasing that surfaces much later, and it is now the identity the
  * whole project references. `SceneEntry.shadowedBy` exists because the Finder
- * will make one of those anyway, and this is the one place that will not.
+ * will make one of those anyway; the editor will not, here or in a Save As,
+ * which `createScene` gives a fresh id for the same reason.
  */
 export async function duplicateScene(
   projectPath: string,

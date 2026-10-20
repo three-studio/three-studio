@@ -4,6 +4,7 @@ import {
   leftWithNothing,
   needsDiscardPrompt,
   opensInBrowser,
+  placeBeside,
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
@@ -144,6 +145,45 @@ describe('being left with nothing', () => {
     // A switch has a moment with no window at all, because a close may still be
     // cancelled and so has to finish before the replacement is built.
     expect(leftWithNothing(0, { ...calm, transitioning: true })).toBe(false);
+  });
+});
+
+describe('a window opened beside another', () => {
+  const minimum = { width: 1100, height: 680 };
+  // A 14-inch MacBook's screen, below the menu bar.
+  const laptop = { x: 0, y: 33, width: 1512, height: 949 };
+
+  it('lands one step down and to the right, at the same size, where the screen has room', () => {
+    const area = { x: 0, y: 25, width: 2560, height: 1415 };
+
+    expect(placeBeside({ x: 480, y: 220, width: 1600, height: 1000 }, area, minimum)).toEqual({
+      x: 512,
+      y: 252,
+      width: 1600,
+      height: 1000,
+    });
+  });
+
+  it('is no larger than what is left of a screen the first one fills', () => {
+    // Asked for at the same size, the system put it back exactly over the first.
+    expect(placeBeside(laptop, laptop, minimum)).toEqual({ x: 32, y: 65, width: 1480, height: 917 });
+  });
+
+  it('starts again at the corner once a step would leave less than the minimum', () => {
+    const late = { x: 400, y: 280, width: 1112, height: 702 };
+
+    expect(placeBeside(late, laptop, minimum)).toEqual({ x: 0, y: 33, width: 1112, height: 702 });
+  });
+
+  it('goes by the screen it is on, wherever that one is', () => {
+    const left = { x: -1920, y: 0, width: 1920, height: 1055 };
+
+    expect(placeBeside({ x: -1920, y: 0, width: 1600, height: 1000 }, left, minimum)).toEqual({
+      x: -1888,
+      y: 32,
+      width: 1600,
+      height: 1000,
+    });
   });
 });
 

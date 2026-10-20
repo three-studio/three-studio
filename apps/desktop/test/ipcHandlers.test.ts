@@ -8,13 +8,16 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   createMaterial,
+  createNewScene,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  serializeScene,
   type AssetManifest,
   type DeviceServerStatus,
   type ProjectContents,
   type ProjectFile,
+  type SceneChange,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -77,6 +80,12 @@ const { DeviceServer } = await import('../src/main/devices/DeviceServer');
 const { createProject, discoverScenes, readProject } = await import('../src/main/project');
 const { adoptProject, noteScreenshot, releaseProject } = await import('../src/main/session');
 
+/**
+ * What the windows were sent and which scenes the table noted, in the order it
+ * happened: a Save As has to note its window before any other hears of the copy.
+ */
+const timeline: unknown[][] = [];
+
 /** An editor window, as `announce` uses one: an id, a mailbox, and a grave. */
 function editorWindow(id: number, destroyed = false) {
   const told: { channel: string; payload: unknown }[] = [];
@@ -85,7 +94,10 @@ function editorWindow(id: number, destroyed = false) {
     isDestroyed: (): boolean => destroyed,
     webContents: {
       id,
-      send: (channel: string, payload: unknown): void => void told.push({ channel, payload }),
+      send: (channel: string, payload: unknown): void => {
+        told.push({ channel, payload });
+        timeline.push(['told', id, channel]);
+      },
     },
   };
 }
@@ -135,7 +147,7 @@ beforeAll(async () => {
     openEditor: () => undefined,
     switchScene: () => true,
     openSceneWindow: () => undefined,
-    noteScene: () => undefined,
+    noteScene: (from, sceneId) => void timeline.push(['noted', from.id, sceneId]),
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
     editorWindows: () => windows as unknown as BrowserWindow[],
     devices,
@@ -148,6 +160,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   windows = [];
+  timeline.length = 0;
   sceneOpenElsewhere = false;
   releaseProject();
 });
@@ -410,6 +423,53 @@ describe('a device’s screenshot', () => {
   });
 });
 
+describe('showing a file in the file manager', () => {
+  it("shows a file of the project, a scene's as much as an asset's", async () => {
+    const root = await project();
+    const scene = (await discoverScenes(root))[0]!;
+    stub.shown.length = 0;
+
+    await invoke(IPC_INVOKE.assets.revealInFileManager, 1, scene.path);
+
+    expect(stub.shown).toEqual([join(root, scene.path)]);
+  });
+
+  it('says so when nothing is there, and shows nothing', async () => {
+    // `showItemInFolder` answers nothing either way: a file moved away in the
+    // Finder opened nothing and said nothing.
+    await project();
+    stub.shown.length = 0;
+
+    await expect(
+      invoke(IPC_INVOKE.assets.revealInFileManager, 1, 'scenes/gone.scene.json'),
+    ).rejects.toThrow('There is no file at scenes/gone.scene.json');
+    expect(stub.shown).toEqual([]);
+  });
+
+  it('reads a scene that is there, and names one that has gone', async () => {
+    // Revert reads the window's own file back; a game moving on reads the next
+    // scene's. Node's `ENOENT` and an absolute path told the person nothing.
+    const root = await project();
+    const scene = (await discoverScenes(root))[0]!;
+
+    const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
+    expect(deserializeScene(read).id).toBe(scene.id);
+    await expect(invoke(IPC_INVOKE.project.readScene, 1, 'scenes/gone.scene.json')).rejects.toThrow(
+      'There is no file at scenes/gone.scene.json',
+    );
+  });
+
+  it('still refuses a path outside the project', async () => {
+    await project();
+    stub.shown.length = 0;
+
+    await expect(invoke(IPC_INVOKE.assets.revealInFileManager, 1, '../outside')).rejects.toThrow(
+      'outside the project',
+    );
+    expect(stub.shown).toEqual([]);
+  });
+});
+
 describe('a new device link', () => {
   it('changes nothing in the file but the token', async () => {
     const found = JSON.parse(devicesFile.contents) as Record<string, unknown>;
@@ -471,6 +531,34 @@ describe('what the other windows are told', () => {
     await invoke(IPC_INVOKE.project.createScene, 1, 'Boss');
 
     expect(gone.told).toEqual([]);
+  });
+
+  it('notes the window a Save As moves onto the copy, before any other hears of it', async () => {
+    await project();
+    windows = [editorWindow(1), editorWindow(2)];
+
+    const { scene } = await invoke<SceneChange>(
+      IPC_INVOKE.project.createScene,
+      1,
+      'Copy',
+      serializeScene(createNewScene('Races')),
+    );
+
+    // Told first, window 2 could open the copy while the table says nobody
+    // shows it, and build a second window onto the file window 1 is editing.
+    expect(timeline).toEqual([
+      ['noted', 1, scene.id],
+      ['told', 2, IPC_EVENTS.projectChanged],
+    ]);
+  });
+
+  it('notes no window for a new scene, which its own switch moves onto', async () => {
+    await project();
+    windows = [editorWindow(1), editorWindow(2)];
+
+    await invoke(IPC_INVOKE.project.createScene, 1, 'Boss');
+
+    expect(timeline).toEqual([['told', 2, IPC_EVENTS.projectChanged]]);
   });
 
   it('broadcasts the scene list even when only the settings changed', async () => {

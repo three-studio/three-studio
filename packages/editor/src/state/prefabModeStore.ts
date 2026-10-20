@@ -46,12 +46,31 @@ interface PrefabModeState {
   closeTo: (depth: number) => Promise<void>;
   /** Back to the scene, however deep. */
   exit: () => Promise<void>;
+  /**
+   * Saves every open prefab and leaves them all open.
+   *
+   * For a gesture about to reload the window, which ends Prefab Mode by itself:
+   * leaving first would put the scene back for nothing, and leave it there if
+   * the main process's unsaved-changes prompt is cancelled.
+   */
+  saveAll: () => Promise<void>;
 }
 
 export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
   stack: [],
 
   open: async (assetId) => {
+    // Not while the game runs, for two reasons. Stop puts back the scene Play
+    // started from, into whatever the document is: a prefab opened meanwhile
+    // lost its edits to the scene, kept its undo stack over it, and leaving
+    // then saved every entity of the scene into the prefab's file. And a
+    // prefab edited now would not reach the running game anyway — Play hands
+    // the game the prefab table it read when it started.
+    if (useEditorStore.getState().playState !== 'stopped') {
+      notify({ kind: 'warning', title: 'Stop the game to open a prefab' });
+      return;
+    }
+
     const prefab = useAssetStore.getState().prefabs[assetId];
     if (!prefab) {
       notify({ kind: 'warning', title: 'That prefab is not in the project' });
@@ -76,10 +95,14 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
 
     // History is not kept across the boundary: an undo in Prefab Mode taking
     // back a scene edit made ten minutes ago is the kind of surprise that
-    // costs someone an afternoon. Taken rather than dropped, so leaving gives
-    // it back — the prefab starts with an empty stack either way.
-    const history = document.takeHistory();
+    // costs someone an afternoon. Set aside rather than dropped, so leaving
+    // gives it back — the prefab starts with an empty stack either way.
+    const history = document.historyStash();
 
+    // The frame goes on before the load empties the document's stack, so the
+    // unsaved work is in one place or both, never in neither: the main process
+    // is told what is unsaved from a subscription, as each store changes, and
+    // in between it would hear that the window had nothing to lose.
     set({
       stack: [...get().stack, { assetId, name: prefab.name, scene, selection, history }],
     });
@@ -112,17 +135,51 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
         );
       }
 
-      set({ stack: stack.slice(0, -1) });
       // `keepHistory`, because this is a restore and not a load: the scene comes
       // back exactly as unsaved as it was left. Then its own stack, which the
       // prefab's has been sitting on top of.
       useDocumentStore.getState().replaceScene(frame.scene, { keepHistory: true });
       useDocumentStore.getState().restoreHistory(frame.history);
+      // Off the stack only once its work is back in the document, for the
+      // reason `open` pushes before it loads: popping first told the main
+      // process, for an instant, that a window with an unsaved scene had
+      // nothing to lose.
+      set({ stack: stack.slice(0, -1) });
       useEditorStore.getState().setSelection([...frame.selection]);
     }
   },
 
   exit: () => get().closeTo(0),
+
+  saveAll: async () => {
+    const composed = composedPrefabMode();
+    if (composed === null) return;
+    const assets = useAssetStore.getState();
+
+    // What leaving would save, in the order it would save it: a test holds
+    // `composedPrefabMode` equal to what `closeTo` writes.
+    const saved = new Set<string>();
+    for (const frame of [...get().stack].reverse()) {
+      if (!assets.prefabs[frame.assetId]) continue;
+      await assets.savePrefab(frame.assetId, composed.prefabs[frame.assetId]!);
+      saved.add(frame.assetId);
+    }
+
+    // Then clean whatever was just written, where each one's history lives: a
+    // frame holds the stack of the document open when it was pushed — the
+    // prefab of the frame below it — and the live document is the deepest
+    // prefab. Frame 0 holds the scene's, which was not saved, so the window
+    // reads unsaved for exactly what the reload would throw away.
+    const { stack } = get();
+    const cleaned = stack.map((frame, index) => {
+      const owner = stack[index - 1];
+      if (owner === undefined || !saved.has(owner.assetId)) return frame;
+      return { ...frame, history: { ...frame.history, savedRevision: frame.history.revision } };
+    });
+    if (cleaned.some((frame, index) => frame !== stack[index])) set({ stack: cleaned });
+    const deepest = stack.at(-1);
+    if (deepest && saved.has(deepest.assetId)) useDocumentStore.getState().markClean();
+  },
 }));
 
 /** True while a prefab is open, for anything that must behave differently. */
@@ -134,6 +191,17 @@ export function inPrefabMode(): boolean {
 export function currentPrefabFrame(): PrefabFrame | null {
   return usePrefabModeStore.getState().stack.at(-1) ?? null;
 }
+
+/**
+ * Whether a document Prefab Mode has set aside holds work its file does not:
+ * the scene under frame 0, or a prefab with another one opened inside it.
+ *
+ * Here because the frames are this store's. A selector returning a boolean, so
+ * a component reading it re-renders when the answer moves and not on every
+ * frame pushed.
+ */
+export const selectSetAsideUnsaved = (state: Pick<PrefabModeState, 'stack'>): boolean =>
+  state.stack.some((frame) => frame.history.revision !== frame.history.savedRevision);
 
 /**
  * What Prefab Mode would leave behind, without leaving it: the scene it was

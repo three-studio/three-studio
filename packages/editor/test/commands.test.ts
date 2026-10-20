@@ -1,11 +1,17 @@
 import {
+  PROJECT_FORMAT_VERSION,
+  createBuildProfiles,
   createEmptyScene,
   createMeshEntity,
+  createPhysicsSettings,
   createPrefabInstance,
+  createRenderingSettings,
   emptyComponentTables,
   putComponent,
+  type ProjectFile,
+  type SceneEntry,
 } from '@three-studio/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity, groupSelection } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
@@ -176,7 +182,20 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // `disabled` at all, against gestures that open with
     // `if (sceneId === null) return`. A dialog that takes a name and does
     // nothing with it is worse than a greyed entry.
-    for (const id of ['newScene', 'saveSceneAs', 'duplicateScene', 'renameScene', 'deleteScene'] as const) {
+    //
+    // Set as Start Scene, aimed at no scene, acts on the window's — and there
+    // is none. So do Scene Settings… and Show in Finder.
+    for (const id of [
+      'newScene',
+      'saveSceneAs',
+      'duplicateScene',
+      'renameScene',
+      'deleteScene',
+      'setStartScene',
+      'revertScene',
+      'sceneSettings',
+      'revealScene',
+    ] as const) {
       expect(commandById(id).can(), id).toBe(false);
     }
   });
@@ -332,37 +351,121 @@ describe('hiding is a target and nothing else, which is what makes it a command'
 });
 
 describe('a gesture aimed at a scene', () => {
-  it('refuses one that is shadowed, and one that names nothing', async () => {
+  it('acts on the file an id names, and refuses an id that names none', async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
     const { useProjectStore } = await import('../src/state/projectStore');
 
+    /*
+     * A list `discoverScenes` can produce. Two files under `scenes/` carrying
+     * one `SceneDoc.id` — duplicating one in the Finder is enough — and only
+     * the first by path order answers to it. A space sorts before the dot, so
+     * that is the copy: the original is the shadowed file.
+     *
+     * This test used to hold a shadowed file without the file that shadows it,
+     * under a name neither file has — a list `discoverScenes` cannot produce.
+     * On it, a `shadowedBy` check in the command refused, and the test passed
+     * while the menu, on a real list, offered the shadowed file's row under the
+     * winner's name and opened the winner.
+     */
     useProjectStore.setState({
       sceneId: 'a',
       scenes: [
-        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
-        // Two files under `scenes/` carrying one `SceneDoc.id` — duplicating one
-        // in the Finder is enough. Only the first by path order answers to it.
-        { id: 'b', name: 'Boss', path: 'scenes/Boss copy.scene.json', shadowedBy: 'scenes/Boss.scene.json' },
+        { id: 'b', name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
+        { id: 'b', name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
         { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
       ],
     } as never);
 
+    // `b` names the copy. No context can aim at `scenes/Boss.scene.json`: the
+    // Scene menu builds that file's row itself (`sceneMenu.test.ts`).
+    expect(commandById('openScene').can(contextForScene('b'))).toBe(true);
+    expect(commandById('openScene').label(contextForScene('b'))).toBe('Boss copy');
     expect(commandById('openScene').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openScene').can(contextForScene('b')), 'shadowed').toBe(false);
-    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
-    expect(commandById('openScene').can(), 'no target').toBe(false);
     // The label is the scene's name, which is what the menu row shows.
     expect(commandById('openScene').label(contextForScene('c'))).toBe('Level2');
+    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('openScene').can(), 'no target').toBe(false);
 
     // A second window on the scene this window already holds is not a second
     // window. The menu said this in a `.filter` and the shadow rule in a
     // `disabled`, in two different sets of words.
     expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
     expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(false);
+    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(true);
+  });
+});
 
-    expect(commandById('setStartScene').can(contextForScene('b'))).toBe(true);
+describe('Set as Start Scene', () => {
+  const SCENES: SceneEntry[] = [
+    { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+    { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+  ];
+
+  const startingOn = (startScene: string): ProjectFile => ({
+    version: PROJECT_FORMAT_VERSION,
+    name: 'Races',
+    engineVersion: '0.1.0',
+    startScene,
+    settings: {
+      loadingScene: null,
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      build: createBuildProfiles('Races'),
+    },
+  });
+
+  /** A window on Main, in a project that starts on `startScene`. */
+  async function onMain(startScene: string): Promise<void> {
+    const { useProjectStore } = await import('../src/state/projectStore');
+    useProjectStore.setState({ sceneId: 'a', scenes: SCENES, project: startingOn(startScene) });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("acts on the window's scene when it is aimed at none", async () => {
+    const { commandById } = await import('../src/commands/registry');
+    await onMain('c');
+
+    // What the menu and the palette ask. The palette used to leave it out —
+    // with no scene named, it had nothing to act on.
+    expect(commandById('setStartScene').label()).toBe('Set as Start Scene');
+    expect(commandById('setStartScene').can()).toBe(true);
+  });
+
+  it('refuses the scene that already is the start scene', async () => {
+    const { commandById, contextForScene } = await import('../src/commands/registry');
+    await onMain('c');
+    expect(commandById('setStartScene').can(contextForScene('c'))).toBe(false);
+
+    await onMain('a');
+    expect(commandById('setStartScene').can()).toBe(false);
+  });
+
+  it("refuses a scene that is gone, rather than falling back on the window's", async () => {
+    const { commandById, contextForScene } = await import('../src/commands/registry');
+    await onMain('c');
+
+    // A radio was clicked for that scene; Main is not what anyone picked.
     expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
+  });
+
+  it("makes the window's scene the start scene", async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const { useProjectStore } = await import('../src/state/projectStore');
+    await onMain('c');
+    const setStartScene = vi.fn(async (startScene: string) => ({
+      project: startingOn(startScene),
+      scenes: SCENES,
+    }));
+    vi.stubGlobal('window', { studio: { project: { setStartScene } } });
+
+    commandById('setStartScene').run();
+
+    expect(setStartScene.mock.calls).toEqual([['a']]);
+    await vi.waitFor(() => expect(useProjectStore.getState().project?.startScene).toBe('a'));
   });
 });
 
@@ -434,6 +537,9 @@ describe('the palette is a view over the table, not a feature', () => {
       'delete',
       'duplicate',
       'newScene',
+      'revertScene',
+      'sceneSettings',
+      'revealScene',
       'runExport',
       'deleteAsset',
       // A launch serves the open project, and a server stops with it.
