@@ -1,4 +1,3 @@
-import { findScene } from '@three-studio/core';
 import { useCallback, useState } from 'react';
 import { DockLayout } from './shell/DockLayout';
 import { MenuBar } from './shell/MenuBar';
@@ -7,7 +6,7 @@ import { StatusBar } from './shell/StatusBar';
 import { Toolbar } from './shell/Toolbar';
 import { clearLayout } from './shell/layoutStorage';
 import { useShortcuts } from './shell/useShortcuts';
-import { useProjectStore } from './state/projectStore';
+import { selectSceneName, useProjectStore } from './state/projectStore';
 import { useViewportStore } from './state/viewportStore';
 import { ErrorBoundary } from './ui/ErrorBoundary';
 import { ImportDialog } from './import/ImportDialog';
@@ -17,8 +16,7 @@ import { ToastHost } from './ui/ToastHost';
 export function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
   const summary = useProjectStore((s) => s.summary);
-  const scenes = useProjectStore((s) => s.scenes);
-  const sceneId = useProjectStore((s) => s.sceneId);
+  const sceneName = useProjectStore(selectSceneName);
   const saveError = useProjectStore((s) => s.error);
 
   useShortcuts();
@@ -30,7 +28,7 @@ export function App() {
 
   // From the list found on disk, which is where a scene's name comes from now:
   // the file is called what the scene is called.
-  const title = (sceneId === null ? undefined : findScene(scenes, sceneId)?.name) ?? 'Scene';
+  const title = sceneName ?? 'Scene';
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-0">
