@@ -234,6 +234,25 @@
 }
 
 /*
+ * A floating group keeps its tabs over the chrome.
+ *
+ * Dockview lets a floating group rise until only 100px of it is left inside
+ * the dock, and `App` leaves the dock unclipped so that it can. Its tabs then
+ * sit over the toolbar or the menu bar, which drag the window, and over a drag
+ * region the OS takes the pointer whatever is painted on top: the group could
+ * be seen and not grabbed. It opts out the way every floating surface does —
+ * `ui/Floating.tsx` tells the whole story — and the dock comes after the chrome
+ * in the document, which is what lets its `no-drag` outweigh their `drag`.
+ *
+ * Not under `.studio-dock`: dockview hosts floating groups in its shell, beside
+ * the element that carries the class rather than inside it, as it does the
+ * render overlay. The selector is dockview's own for them.
+ */
+.dv-floating-overlay-host > .dv-resize-container {
+  -webkit-app-region: no-drag;
+}
+
+/*
  * Tweakpane ships a blue-grey theme of its own. Re-point its variables at the
  * studio palette so the inspector reads as part of the editor rather than as an
  * embedded widget.
