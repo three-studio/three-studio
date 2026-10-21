@@ -37,7 +37,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const transport = commandById(isStopped ? 'play' : 'stop');
 
   return (
-    <div className="relative flex h-10 shrink-0 items-center gap-0.5 bg-surface-1 px-2">
+    <div className="relative flex shrink-0 items-center gap-0.5 bg-surface-0 px-2">
       {menuSlot}
 
       {/* Transport sits dead centre regardless of how wide the flanking groups get. */}
