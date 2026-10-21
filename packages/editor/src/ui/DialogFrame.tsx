@@ -32,9 +32,9 @@ const PANEL_CHROME = 'rounded-sm border border-line-soft shadow-2xl shadow-black
  * Escape, and click-outside-to-close.
  *
  * Drawn by `Floating`, scrim included. The modal owns the window until it is
- * answered, so the scrim covers the menu bar and the toolbar as well, and a
- * press anywhere on it closes the dialog — over the chrome too, where a drag
- * region underneath used to take the press and move the window.
+ * answered, so the scrim covers the title bar and the toolbar as well, and a
+ * press anywhere on it closes the dialog — over the title bar too, where the
+ * drag region underneath would otherwise take the press and move the window.
  *
  * It holds no state and decides nothing about the body. That is what lets the
  * settings dialogs put a section list down the left and the import dialog put a

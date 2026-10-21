@@ -9,11 +9,21 @@ import { buildLayoutMenu } from './layoutMenu';
 
 interface ToolbarProps {
   onResetLayout: () => void;
+  /** Rendered on the left: the menus. */
+  menuSlot?: ReactNode;
   /** Rendered on the right; the viewport fills it in once the renderer exists (M2). */
   statusSlot?: ReactNode;
 }
 
-export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
+/**
+ * The row under the title bar: the menus on the left, the transport in the
+ * middle, the layouts on the right.
+ *
+ * It does not drag the window. It used to, and a press on it went to the
+ * system rather than to the page, so a menu left open above it stayed open.
+ * Only the title bar drags now.
+ */
+export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   // Saved layouts live in localStorage, not in React state, so the menu is
   // rebuilt on demand after a save or a delete.
@@ -27,9 +37,11 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
   const transport = commandById(isStopped ? 'play' : 'stop');
 
   return (
-    <div className="app-drag relative flex h-10 shrink-0 items-center gap-0.5 border-b border-line bg-surface-2 px-2">
+    <div className="relative flex h-10 shrink-0 items-center gap-0.5 border-b border-line bg-surface-2 px-2">
+      {menuSlot}
+
       {/* Transport sits dead centre regardless of how wide the flanking groups get. */}
-      <div className="app-no-drag pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5">
+      <div className="pointer-events-none absolute left-1/2 flex -translate-x-1/2 items-center gap-0.5">
         <div className="pointer-events-auto relative flex items-center gap-0.5">
           {/* One button, and it still picks its own icon — an icon is not
               something the registry carries. What it no longer decides is the
@@ -63,7 +75,7 @@ export function Toolbar({ onResetLayout, statusSlot }: ToolbarProps) {
 
       <div className="flex-1" />
 
-      <div className="app-no-drag flex items-center gap-2">
+      <div className="flex items-center gap-2">
         {statusSlot}
         <MenuTrigger
           open={layoutMenuOpen}

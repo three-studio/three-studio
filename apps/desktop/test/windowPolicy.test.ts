@@ -8,6 +8,7 @@ import {
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
+  windowChrome,
   type OpenScene,
 } from '../src/main/windowPolicy';
 
@@ -218,5 +219,31 @@ describe('a link handed to the system', () => {
     // to a `.command` file runs in Terminal — and a project's own script can
     // ask for one with `window.open`.
     expect(opensInBrowser(url)).toBe(false);
+  });
+});
+
+describe("a window's title bar", () => {
+  it('is drawn by the editor on macOS, around lights whose box the page can read', () => {
+    // The overlay is what puts the lights' box into `env(titlebar-area-*)`: the
+    // page sizes its title bar from it, which is how the title stays level with
+    // the lights whatever the page zoom.
+    expect(windowChrome('darwin', 'editor')).toEqual({
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 12, y: 10 },
+      titleBarOverlay: true,
+    });
+  });
+
+  it('leaves the launcher as it was', () => {
+    expect(windowChrome('darwin', 'launcher')).toEqual({
+      titleBarStyle: 'hiddenInset',
+      trafficLightPosition: { x: 12, y: 13 },
+    });
+  });
+
+  it.each(['win32', 'linux'] as const)('keeps the frame the system draws on %s', (platform) => {
+    // The frame shows the title the editor sets, and drags the window itself.
+    expect(windowChrome(platform, 'editor')).toEqual({ titleBarStyle: 'default' });
+    expect(windowChrome(platform, 'launcher')).toEqual({ titleBarStyle: 'default' });
   });
 });

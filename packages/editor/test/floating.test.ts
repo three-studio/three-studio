@@ -7,13 +7,13 @@ import { describe, expect, it } from 'vitest';
  * Everything that floats above the editor is drawn by `ui/Floating`, asserted
  * rather than documented.
  *
- * The window has no title bar of its own: the menu bar and the toolbar drag it,
- * and over a drag region the OS takes the pointer whatever is painted on top. A
- * surface gets the pointer back only by subtracting itself from the region, from
- * a place in the document after every box that drags. `Floating` does both, and
- * nothing else knows to. The Scene menu was drawn in place — an absolute list on
- * the menu scale, inside the menu bar — and its rows went dead wherever they lay
- * over the toolbar.
+ * On macOS the page's own title bar drags the window, and over a drag region the
+ * OS takes the pointer whatever is painted on top. A surface gets the pointer
+ * back only by subtracting itself from the region, from a place in the document
+ * after every box that drags. `Floating` does both, and nothing else knows to.
+ * The Scene menu was drawn in place — an absolute list on the menu scale, inside
+ * the menu bar, back when the menu bar and the toolbar both dragged — and its
+ * rows went dead wherever they lay over the toolbar.
  *
  * So the three ways something floats are allowed in that one file: a portal, an
  * element appended to the body, and a place on the z-index scale.

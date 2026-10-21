@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { isMac } from '../platform';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
@@ -16,22 +15,17 @@ import { PANEL_DEFS } from './panelDefs';
 import { buildSceneMenu } from './sceneMenu';
 
 interface MenuBarProps {
-  /**
-   * `Project — Scene`, shown on the right of the bar as text, not as a control.
-   *
-   * `App` builds it from the project's summary, so the bar re-renders when a
-   * project opens. New Scene… and Save Scene As… ask `summary !== null`, and
-   * this bar subscribes to no summary of its own.
-   */
-  title: string;
   onResetLayout: () => void;
 }
 
 /**
- * The window's native menu is hidden (`titleBarStyle: 'hiddenInset'`), so this
- * bar is both the application menu and the window's drag handle.
+ * The editor's menus, on the left of the toolbar.
+ *
+ * Not a drag handle any more: only the title bar moves the window. A press
+ * anywhere in this row reaches the page, which is what closes a menu left
+ * open.
  */
-export function MenuBar({ title, onResetLayout }: MenuBarProps) {
+export function MenuBar({ onResetLayout }: MenuBarProps) {
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [packageOpen, setPackageOpen] = useState(false);
@@ -46,22 +40,31 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   // identity on every mutation, so subscribing to them re-rendered this bar once
   // per frame of a gizmo drag. A coalesced drag keeps one label throughout.
   //
-  // The dot, and Save Scene's verdict, which asks the same question. The
+  // Save Scene's verdict, which reads the window's unsaved work. Subscribed to
+  // but never read here, like `saving` below: the dot that used to sit beside
+  // the title asked the same question, and it is the title bar's now. The
   // window's unsaved work rather than the document's: with a prefab open the
-  // document is the prefab, and the dot went out while the scene's edits sat
-  // unsaved behind it.
+  // document is the prefab, and the scene's edits sat unsaved behind it where
+  // asking the document could not see them.
   //
   // Revert Scene's verdict reads `sceneUnsaved`, which needs no subscription of
   // its own: it never moves without one of these two booleans. Outside Prefab
   // Mode it is the document's; in it, nothing writes the scene's frame until
   // Prefab Mode is left, which hands the answer back to the document.
-  const unsaved = useWindowUnsaved();
+  useWindowUnsaved();
   /*
    * Subscribed to but never read here: `saveCommand.can()` reads it, and this
    * bar has to re-render when the answer changes. Deleting it as unused would
    * leave "Save Scene" greyed out for the rest of the session after one save.
    */
   useProjectStore((s) => s.saving);
+  /*
+   * The same again, for New Scene… and Save Scene As…, which ask
+   * `summary !== null`. The title used to come in as a prop built from the
+   * summary, and that prop was what re-rendered this bar when a project
+   * opened. The title is the title bar's now, so the bar asks for itself.
+   */
+  useProjectStore((s) => s.summary !== null);
 
   /*
    * The context of the Edit entries, built here once per render from the
@@ -162,12 +165,8 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
   };
 
   return (
-    <div
-      // The whole strip drags the window; the buttons opt back out below.
-      className="app-drag flex h-9 shrink-0 items-center border-b border-line bg-surface-2 text-2xs"
-      style={{ paddingLeft: isMac ? 78 : 8 }}
-    >
-      <nav className="app-no-drag flex items-center gap-px">
+    <>
+      <nav className="flex items-center gap-px text-2xs">
         {Object.entries(menus).map(([label, items]) => (
           <MenuTrigger
             key={label}
@@ -187,18 +186,6 @@ export function MenuBar({ title, onResetLayout }: MenuBarProps) {
 
       {settingsOpen && <ProjectSettingsDialog onClose={() => setSettingsOpen(false)} />}
       {packageOpen && <PackageDialog onClose={() => setPackageOpen(false)} />}
-
-      <div className="flex-1" />
-      {/* A label, not a menu: the Scene menu is the one door to the scene
-          gestures, and this is the only place where the window says which
-          scene it holds, since `titleBarStyle: 'hiddenInset'` hides the native
-          title. Plain text inside the strip, so pressing on it drags the window
-          like any empty part of the bar. Not `data-selectable`: text that can
-          be selected cannot also drag. */}
-      <span className="pl-2 pr-4 text-ink-dim">
-        {title}
-        {unsaved && <span className="ml-1 text-warn">•</span>}
-      </span>
-    </div>
+    </>
   );
 }

@@ -35,18 +35,19 @@ interface FloatingProps extends ComponentProps<'div'> {
  *   that ancestor chain, and every scroll container in it, entirely.
  * - **On one scale.** Which surface covers which is `layer`, the order
  *   `styles.css` declares; nothing here picks a number of its own.
- * - **Out of the window's drag region.** The window has no title bar of its
- *   own: the menu bar and the toolbar drag it (`app-drag`), and over a drag
- *   region the OS takes the pointer before the page sees it — no hover, no
- *   click, no enter or leave, whatever is painted on top. Chromium builds that
- *   region from the boxes in document order, each `drag` box adding its
+ * - **Out of the window's drag region.** On macOS the window has no title bar
+ *   of the system's: the page's own title bar drags it (`app-drag`), and over
+ *   a drag region the OS takes the pointer before the page sees it — no hover,
+ *   no click, no enter or leave, whatever is painted on top. Chromium builds
+ *   that region from the boxes in document order, each `drag` box adding its
  *   rectangle and each `no-drag` box removing its own, the later one winning.
  *   So a surface has to remove itself (`app-no-drag`), and from after every
- *   box that drags: the end of the body. The Scene menu was drawn inside the
- *   menu bar and removed nothing — and could not have won anyway, since the
- *   toolbar comes after the menu bar and added its band back over every row
- *   that hung across it. Those rows lost the pointer wherever they did not lie
- *   over one of the toolbar's groups of buttons.
+ *   box that drags: the end of the body. When the menu bar and the toolbar
+ *   both dragged, the Scene menu was drawn inside the menu bar and removed
+ *   nothing — and could not have won anyway, since the toolbar came after the
+ *   menu bar and added its band back over every row that hung across it. Those
+ *   rows lost the pointer wherever they did not lie over one of the toolbar's
+ *   groups of buttons.
  *
  * The third is also why a modal's scrim is a floating box like any other: it
  * covers the chrome as well, and a press on it now closes the dialog wherever it

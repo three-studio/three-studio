@@ -11,6 +11,7 @@ import {
   planOpenEditor,
   planSceneWindow,
   planSwitchScene,
+  windowChrome,
   type OpenScene,
 } from './windowPolicy';
 
@@ -211,10 +212,9 @@ function createWindow(options: WindowOptions): BrowserWindow {
     show: false,
     backgroundColor: '#1b1b1b',
     autoHideMenuBar: true,
-    // The editor draws its own menu bar, so the native chrome is reduced to the
-    // traffic lights on macOS.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 12, y: 13 },
+    // A title bar the page draws around the traffic lights on macOS, and the
+    // system's own frame on Windows and Linux. The rules are in `windowChrome`.
+    ...windowChrome(process.platform, options.role),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: true,
