@@ -3,7 +3,7 @@ import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
 import { watchLiveReload } from './shell/liveReload';
-import { loadShortcutBindings } from './shell/shortcutBindings';
+import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
@@ -42,11 +42,17 @@ function EditorWindow() {
   // same moment, and a menu drawn before them would show the default key beside
   // a gesture the author has rebound. Failure on either side leaves the
   // product's own defaults, which is why neither is awaited separately.
+  //
+  // So does the keyboard's layout, for the same reason: the tool keys match by
+  // position, and their tooltips name the key engraved there — A for Select on
+  // AZERTY. Read late, the first tooltip would have said Q.
   useEffect(() => {
     if (layoutsReady) return;
-    void Promise.allSettled([loadLayoutPreferences(), loadShortcutBindings()]).finally(() =>
-      setLayoutsReady(true),
-    );
+    void Promise.allSettled([
+      loadLayoutPreferences(),
+      loadShortcutBindings(),
+      loadKeyboardLayout(),
+    ]).finally(() => setLayoutsReady(true));
   }, [layoutsReady]);
 
   // The window is created for one project and opens it itself. The launcher

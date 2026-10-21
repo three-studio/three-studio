@@ -14,12 +14,19 @@ import { peekViewport } from '../viewport/viewportHost';
  * what Unity and Blender do, and it keeps the tools under the same fingers on
  * every layout.
  */
-const TOOL_KEYS: Record<string, TransformMode> = {
+export const TOOL_KEYS: Readonly<Record<string, TransformMode>> = {
   KeyQ: 'select',
   KeyW: 'translate',
   KeyE: 'rotate',
   KeyR: 'scale',
 };
+
+/**
+ * The handle space's key, matched by position like the tool keys. Exported with
+ * them, so the toolbar names the keys this handler listens to rather than a
+ * second list of letters.
+ */
+export const SPACE_KEY = 'KeyX';
 
 /** What the decision below needs, so it can be taken without a `KeyboardEvent`. */
 export interface ShortcutContext {
@@ -121,7 +128,7 @@ export function useShortcuts(): void {
        * state to let someone into. Flipping it invisibly here would surface
        * two tools later, which is worse than a key that does nothing.
        */
-      if (event.code === 'KeyX') {
+      if (event.code === SPACE_KEY) {
         if (!event.repeat && store.transformMode !== 'scale') store.cycleTransformSpace();
         return;
       }

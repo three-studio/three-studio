@@ -22,21 +22,32 @@ import {
   type TransformSpace,
 } from '../state/editorStore';
 import { useViewportStore } from '../state/viewportStore';
+import { positionalKeyLabel } from '../shell/shortcutBindings';
+import { SPACE_KEY, TOOL_KEYS } from '../shell/useShortcuts';
 import { ToolButton, ToolSplitToggle, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
 
 interface TransformTool {
   mode: TransformMode;
   icon: LucideIcon;
   label: string;
-  key: string;
 }
 
 const TRANSFORM_TOOLS: readonly TransformTool[] = [
-  { mode: 'select', icon: MousePointer2, label: 'Select', key: 'Q' },
-  { mode: 'translate', icon: Move, label: 'Move', key: 'W' },
-  { mode: 'rotate', icon: RotateCw, label: 'Rotate', key: 'E' },
-  { mode: 'scale', icon: Scale3d, label: 'Scale', key: 'R' },
+  { mode: 'select', icon: MousePointer2, label: 'Select' },
+  { mode: 'translate', icon: Move, label: 'Move' },
+  { mode: 'rotate', icon: RotateCw, label: 'Rotate' },
+  { mode: 'scale', icon: Scale3d, label: 'Scale' },
 ];
+
+/**
+ * The key that picks a tool, as the keyboard in use engraves it: read from the
+ * table the key handler listens with, so the two cannot drift, and named by
+ * `positionalKeyLabel` — A for Select on AZERTY, where the key sits.
+ */
+function toolKey(mode: TransformMode): string | undefined {
+  const code = Object.keys(TOOL_KEYS).find((key) => TOOL_KEYS[key] === mode);
+  return code === undefined ? undefined : positionalKeyLabel(code);
+}
 
 /**
  * What each handle space is called, drawn as, and does.
@@ -126,7 +137,7 @@ export function SceneToolbar() {
           key={tool.mode}
           icon={tool.icon}
           label={tool.label}
-          shortcut={tool.key}
+          shortcut={toolKey(tool.mode)}
           active={transformMode === tool.mode}
           onClick={() => setTransformMode(tool.mode)}
         />
@@ -154,7 +165,7 @@ export function SceneToolbar() {
         label={SPACE_LABELS[shownSpace]}
         hint={scaleForcesLocal ? SCALE_SPACE_HINT : SPACE_HINTS[shownSpace]}
         icon={SPACE_ICONS[shownSpace]}
-        shortcut="X"
+        shortcut={positionalKeyLabel(SPACE_KEY)}
         active={shownSpace !== 'world'}
         disabled={scaleForcesLocal}
         onCycle={cycleTransformSpace}

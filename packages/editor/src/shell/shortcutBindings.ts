@@ -183,3 +183,54 @@ export function shortcutHint(id: CommandId): string | undefined {
   const binding = bindingForCommand(id);
   return binding === null ? undefined : formatBinding(binding);
 }
+
+/*
+ * The positional keys, named as the keyboard in front of the author names them.
+ *
+ * The tool keys and X match on `event.code` — a key's place, named after the
+ * letter a US keyboard prints there — so that they stay under the same fingers
+ * on every layout (`useShortcuts`). Printing that name was right on a US
+ * keyboard only: on AZERTY the Select tool's key is engraved A, and a tooltip
+ * saying Q sent the author to a key that does nothing.
+ *
+ * Module state, like the overrides above, and for the same reasons.
+ */
+let keyboardLayout: ReadonlyMap<string, string> | null = null;
+
+/** Puts a layout in force: what each key position types, keyed by `event.code`. */
+export function applyKeyboardLayout(layout: ReadonlyMap<string, string> | null): void {
+  keyboardLayout = layout;
+}
+
+/** The Keyboard API's one call, which the DOM's types do not carry. */
+interface KeyboardLayoutSource {
+  getLayoutMap(): Promise<ReadonlyMap<string, string>>;
+}
+
+/**
+ * Reads what each key types on the keyboard in use. Called once at startup,
+ * beside the bindings, so the first tooltip already says the right letter.
+ *
+ * Chromium answers in a secure context, which the dev server and a `file:`
+ * page both are. Anything else — a browser without the API, a refusal — leaves
+ * the US names, which are right on a US keyboard.
+ */
+export async function loadKeyboardLayout(): Promise<void> {
+  const keyboard = (navigator as { keyboard?: KeyboardLayoutSource }).keyboard;
+  if (keyboard === undefined) return;
+  try {
+    applyKeyboardLayout(await keyboard.getLayoutMap());
+  } catch {
+    // The US names stay.
+  }
+}
+
+/**
+ * A key named by its place, as its keycap shows it: `KeyQ` is `A` on AZERTY and
+ * `Q` on QWERTY, and `Q` while the layout is unknown.
+ */
+export function positionalKeyLabel(code: string): string {
+  const typed = keyboardLayout?.get(code);
+  if (typed !== undefined && typed.length === 1) return typed.toUpperCase();
+  return code.startsWith('Key') ? code.slice('Key'.length) : code;
+}

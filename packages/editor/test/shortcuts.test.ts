@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  applyKeyboardLayout,
   applyShortcutOverrides,
   bindingForCommand,
   bindingOf,
   commandForBinding,
   formatBinding,
+  positionalKeyLabel,
 } from '../src/shell/shortcutBindings';
-import { shortcutsApply } from '../src/shell/useShortcuts';
+import { SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
 
 /** A key press, as the handler sees one. */
 const press = (key: string, options: { mod?: boolean; shift?: boolean } = {}) => ({
@@ -115,6 +117,44 @@ describe('what a menu shows', () => {
  * because the single question that used to be asked — "is the user typing" —
  * let Cmd+Z through an open dialog and undid an edit in the scene behind it.
  */
+/*
+ * The tool keys and X match by position, so the letter a tooltip prints for them
+ * has to be the one engraved at that position on the keyboard in use — not the
+ * US name of the position, which sent an AZERTY user to Q for Select.
+ */
+describe('naming a key by its place', () => {
+  afterEach(() => applyKeyboardLayout(null));
+
+  /** What an AZERTY keyboard types at the positions the editor listens to. */
+  const AZERTY = new Map([
+    ['KeyQ', 'a'],
+    ['KeyW', 'z'],
+    ['KeyE', 'e'],
+    ['KeyR', 'r'],
+    ['KeyX', 'x'],
+  ]);
+
+  it('says the US letter while the layout is unknown', () => {
+    expect(positionalKeyLabel('KeyQ')).toBe('Q');
+    expect(positionalKeyLabel(SPACE_KEY)).toBe('X');
+  });
+
+  it('says the letter the keyboard in use engraves there', () => {
+    applyKeyboardLayout(AZERTY);
+    const tools = Object.fromEntries(
+      Object.entries(TOOL_KEYS).map(([code, mode]) => [mode, positionalKeyLabel(code)]),
+    );
+    expect(tools).toEqual({ select: 'A', translate: 'Z', rotate: 'E', scale: 'R' });
+    expect(positionalKeyLabel(SPACE_KEY)).toBe('X');
+  });
+
+  it('falls back to the US letter for a position the layout leaves out', () => {
+    applyKeyboardLayout(new Map([['KeyQ', 'a'], ['KeyW', '']]));
+    expect(positionalKeyLabel('KeyW')).toBe('W');
+    expect(positionalKeyLabel('KeyE')).toBe('E');
+  });
+});
+
 describe('shortcutsApply', () => {
   it('acts when the editor has the window to itself', () => {
     expect(shortcutsApply({ typing: false, covered: false })).toBe(true);
