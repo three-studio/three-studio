@@ -166,14 +166,14 @@
  */
 .studio-dock {
   --dv-group-view-background-color: var(--color-surface-1);
-  --dv-tabs-and-actions-container-background-color: var(--color-surface-2);
+  --dv-tabs-and-actions-container-background-color: var(--color-surface-1);
   --dv-tabs-and-actions-container-height: 28px;
   --dv-tabs-and-actions-container-font-size: 11px;
 
   --dv-activegroup-visiblepanel-tab-background-color: var(--color-surface-1);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-surface-1);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-surface-1);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-surface-1);
 
   --dv-activegroup-visiblepanel-tab-color: var(--color-ink);
   --dv-activegroup-hiddenpanel-tab-color: var(--color-ink-muted);
