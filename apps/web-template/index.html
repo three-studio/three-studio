@@ -2,7 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      The page holds still, like an app: no pinch, no double-tap zoom, no pull
+      to refresh, no magnifier or callout under a long press. A game's page
+      zoomed by two thumbs on the touch sticks is cropped and off-centre, with
+      no way back but the same gesture.
+
+      This tag is Android's half. iOS has ignored `user-scalable=no` since
+      iOS 10, so the page also asks through CSS (`touch-action` below) and
+      through script, where WebKit's pinch events are refused
+      (`src/pageZoom.ts`).
+
+      Keyboard zoom (⌘+ / Ctrl+) is left alone: it is the one zoom a person asks
+      for on purpose.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Studio Build</title>
     <!--
       A real file, not the default `/favicon.ico` the browser asks for on its
@@ -11,6 +25,25 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <style>
       html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+      /*
+        No gesture of the browser's on the page: `touch-action: none` refuses
+        panning and every zoom, double-tap included; `overscroll-behavior`
+        refuses the bounce and Android's pull to refresh. A long press selects
+        nothing and brings up no callout. A scroll container a game adds to the
+        page keeps a `touch-action` of its own: what applies to a touch stops
+        at the nearest scroll container above it.
+      */
+      html, body {
+        touch-action: none;
+        overscroll-behavior: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      /* Again on what the fingers land on: iOS has been seen to read it there
+         and nowhere else. */
+      canvas, #overlay { touch-action: none; }
       canvas { display: block; width: 100%; height: 100%; }
       #overlay {
         position: fixed; inset: 0; display: grid; place-items: center;

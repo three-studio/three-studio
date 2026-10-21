@@ -14,6 +14,7 @@ import {
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { announce } from './announce';
 import { unlockAudioOnGesture } from './audioGesture';
+import { blockPageZoom } from './pageZoom';
 import { entrySceneName, sceneIdOf } from './scenes';
 import { runSettingsOf } from './settings';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
@@ -53,6 +54,10 @@ import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
  * fourth declaration of a manifest this commit reduced to one.
  */
 type BuildDocuments = Required<Pick<BuildManifest, 'assets' | 'materials' | 'prefabs'>>;
+
+// Before anything loads: the loading screen and the Play screen are pinched
+// too, and a page zoomed there opens the game zoomed.
+blockPageZoom(document);
 
 const canvas = document.querySelector<HTMLCanvasElement>('#view');
 const overlay = document.querySelector<HTMLElement>('#overlay');
