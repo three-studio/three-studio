@@ -12,22 +12,24 @@ import { windowTitle } from './windowTitle';
  * The main process turns the Window Controls Overlay on (`windowChrome`), and on
  * macOS `titlebar-area-height` is then the height of the box the lights are
  * centred in. A bar of exactly that height has its middle on theirs, whatever
- * size this macOS draws them. The variable is in CSS pixels, so that holds at
- * any page zoom. The fixed 36 px this replaces held neither: at a 0.91 page
- * zoom it came out 33 points tall, with the lights below its middle.
+ * size this macOS draws them. The variable is in CSS pixels, so this holds at
+ * any page zoom, within half a pixel: Chromium hands the box over in whole CSS
+ * pixels, so at a 1.095 page zoom the bar's middle came out 0.5 points off
+ * the lights', and at 100 % exactly on. The fixed 36 px this replaces held neither: at a
+ * 0.91 page zoom it came out 33 points tall, with the lights below its middle.
  *
- * The floor is for full screen, where the lights go away and the reported area
- * is empty: the title stays readable there.
+ * In full screen the lights go away, and the variables go with them: the floor
+ * keeps the title readable there.
  */
 const HEIGHT = 'max(env(titlebar-area-height, 0px), 28px)';
 
 /**
  * Where the title starts: past the lights, at the right edge of their box,
- * which the system puts one margin after the last button. 78 px, the inset this
- * bar used to hard-code, stands in should the variable be missing; the 12 px
- * floor is for full screen, where the box is empty and starts at the edge.
+ * which the system puts one margin after the last button. In full screen the
+ * variable is gone with the lights, and the title starts at the bar's own
+ * margin.
  */
-const INSET = 'max(env(titlebar-area-x, 78px), 12px)';
+const INSET = 'max(env(titlebar-area-x, 0px), 12px)';
 
 interface TitleBarProps {
   project: string;
