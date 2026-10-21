@@ -1,4 +1,4 @@
-import { ChevronDown, Pause, Play, SkipForward, Square } from 'lucide-react';
+import { ChevronDown, MonitorPlay, Pause, Play, SkipForward, Square } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { commandById } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
@@ -35,6 +35,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
 
   const isStopped = playState === 'stopped';
   const transport = commandById(isStopped ? 'play' : 'stop');
+  const fullScreen = commandById('playFullScreen');
 
   return (
     <div className="relative flex shrink-0 items-center gap-0.5 bg-surface-0 px-2">
@@ -54,19 +55,35 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
             activeClassName="bg-play/15 text-play"
             onClick={() => transport.run()}
           />
-          <ToolButton
-            icon={Pause}
-            label="Pause"
-            active={playState === 'paused'}
-            disabled={isStopped}
-            onClick={togglePause}
-          />
-          <ToolButton
-            icon={SkipForward}
-            label="Step one frame"
-            disabled={playState !== 'paused'}
-            onClick={requestStep}
-          />
+          {/*
+            Three slots, filled differently stopped and running, and always
+            three wide. Stop has to land exactly where Play was: the pointer is
+            still there, and the next click is often the one that stops.
+            Centring two buttons stopped and three running would have moved it
+            15 px, and the Device button with it. Pause and Step only exist
+            while something runs; stopped, the third slot is kept empty.
+          */}
+          {isStopped ? (
+            <>
+              <ToolButton icon={MonitorPlay} label={fullScreen.label()} onClick={() => fullScreen.run()} />
+              <span aria-hidden className="h-7 w-7" />
+            </>
+          ) : (
+            <>
+              <ToolButton
+                icon={Pause}
+                label="Pause"
+                active={playState === 'paused'}
+                onClick={togglePause}
+              />
+              <ToolButton
+                icon={SkipForward}
+                label="Step one frame"
+                disabled={playState !== 'paused'}
+                onClick={requestStep}
+              />
+            </>
+          )}
           {/* Off the transport's right edge rather than inside it, so the
               transport stays dead centre. */}
           <DeviceButton className="absolute left-full top-0 ml-3" />

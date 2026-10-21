@@ -49,6 +49,13 @@ describe('resolving a key to a command', () => {
     expect(commandFor('S', { mod: true })).toBe('save');
   });
 
+  it('stops a test on Shift+Escape, and leaves plain Escape to the rest', () => {
+    // Unreal's stop is Esc; here it is Shift+Esc, so the game keeps Esc. Plain
+    // Escape is no binding: it closes what is on top, then clears the selection.
+    expect(commandFor('Escape', { shift: true })).toBe('stop');
+    expect(bindingOf(press('Escape'))).toBeNull();
+  });
+
   it('ignores keys with no command, and bare letters entirely', () => {
     expect(commandFor('q', { mod: true })).toBeNull();
     expect(commandFor('Escape')).toBeNull();
@@ -84,6 +91,9 @@ describe('what a menu shows', () => {
   it('formats a binding the way the platform writes it', () => {
     expect(formatBinding('Mod+Z')).toBe('Ctrl+Z');
     expect(formatBinding('Mod+Shift+Z')).toBe('Ctrl+Shift+Z');
+    // Spelled out, since the Game panel prints it inside a sentence.
+    expect(formatBinding('Shift+Escape')).toBe('Shift+Esc');
+    expect(bindingForCommand('stop')).toBe('Shift+Escape');
   });
 
   it('finds the key for a command, so no menu types one by hand', () => {

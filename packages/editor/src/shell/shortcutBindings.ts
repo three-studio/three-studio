@@ -49,6 +49,13 @@ export const DEFAULT_BINDINGS: Readonly<Record<ShortcutBinding, CommandId>> = {
   // file" in most of them, and this project has no files to go to.
   'Mod+Shift+P': 'openCommandPalette',
   /*
+   * Ends a test, in the Game panel or full screen. Unreal stops Play on Esc,
+   * and teams whose games use Esc for a menu move it to Shift+Esc, as Lyra
+   * does. That is the key here from the start: plain Esc frees the mouse in the
+   * panel, and in full screen it is the game's.
+   */
+  'Shift+Escape': 'stop',
+  /*
    * Both keys delete, and their order is not cosmetic: `bindingForCommand`
    * returns the first, and that is the one a menu draws. A Mac keyboard's
    * delete key *is* Backspace and every Mac menu shows `⌫` for it; a PC has a
@@ -110,7 +117,10 @@ function effective(): Record<ShortcutBinding, string | null> {
  * The binding a key press makes, or `null` for one this layer does not name.
  *
  * Shift is part of the binding only alongside the modifier: a bare Shift+D is
- * `D` as far as this is concerned, because the character *is* the shift.
+ * `D` as far as this is concerned, because the character *is* the shift. Escape
+ * has no shifted character, so Shift+Escape is a key of its own. Escape alone
+ * is not a binding at all: it belongs to whatever is open on top, and then to
+ * the selection (`useShortcuts`).
  *
  * Structurally typed rather than taking a `KeyboardEvent`, for the reason
  * `hasModifier` is: React's synthetic events pass, and so does a plain object in
@@ -125,6 +135,7 @@ export function bindingOf(event: {
   const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
   if (hasModifier(event)) return `Mod+${event.shiftKey ? 'Shift+' : ''}${key}`;
   if (key === 'Delete' || key === 'Backspace') return key;
+  if (key === 'Escape' && event.shiftKey) return 'Shift+Escape';
   return null;
 }
 
@@ -161,7 +172,10 @@ export function formatBinding(binding: ShortcutBinding): string {
   const withoutMod = binding.startsWith('Mod+') ? binding.slice('Mod+'.length) : binding;
   const shifted = withoutMod.startsWith('Shift+');
   const key = shifted ? withoutMod.slice('Shift+'.length) : withoutMod;
-  return `${binding.startsWith('Mod+') ? modKey : ''}${shifted ? shiftKey : ''}${key}`;
+  // `Esc`, as the key is engraved, rather than the `⎋` glyph: the Game panel
+  // prints this inside a sentence, where a glyph few people know is a riddle.
+  const shown = key === 'Escape' ? 'Esc' : key;
+  return `${binding.startsWith('Mod+') ? modKey : ''}${shifted ? shiftKey : ''}${shown}`;
 }
 
 /** What a menu puts beside a command, or `undefined` when it has no key. */

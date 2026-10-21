@@ -57,6 +57,12 @@ interface EditorState {
    */
   showStats: boolean;
   playState: PlayState;
+  /**
+   * Whether the running session asked for the whole screen: Play Full Screen
+   * sets it, Stop clears it. The Game panel holds the screen while it is set,
+   * and leaving the screen ends the session, as it does in Unreal.
+   */
+  fullScreen: boolean;
   stepRequested: boolean;
   selection: readonly string[];
   /**
@@ -117,7 +123,7 @@ interface EditorState {
   closePalette: () => void;
   requestSceneSettings: () => void;
 
-  play: () => void;
+  play: (options?: { fullScreen?: boolean }) => void;
   togglePause: () => void;
   stop: () => void;
   /** Advances one frame while paused. Consumed by the viewport's loop. */
@@ -134,6 +140,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   showGrid: true,
   showStats: true,
   playState: 'stopped',
+  fullScreen: false,
   stepRequested: false,
   selection: [],
   renaming: null,
@@ -161,12 +168,12 @@ export const useEditorStore = create<EditorState>()((set) => ({
   setSelection: (selection) => set({ selection }),
   clearSelection: () => set({ selection: [] }),
 
-  play: () => set({ playState: 'playing' }),
+  play: (options) => set({ playState: 'playing', fullScreen: options?.fullScreen ?? false }),
   togglePause: () =>
     set((s) => ({
       playState: s.playState === 'playing' ? 'paused' : s.playState === 'paused' ? 'playing' : s.playState,
     })),
-  stop: () => set({ playState: 'stopped' }),
+  stop: () => set({ playState: 'stopped', fullScreen: false }),
   requestStep: () => set({ stepRequested: true }),
   consumeStep: () => {
     if (!useEditorStore.getState().stepRequested) return false;

@@ -589,6 +589,26 @@ describe('transport', () => {
     expect(useEditorStore.getState().playState).toBe('stopped');
   });
 
+  it('plays full screen through a command of its own, which Stop ends', async () => {
+    const { commandById } = await import('../src/commands/registry');
+
+    expect(commandById('playFullScreen').label()).toBe('Play Full Screen');
+    expect(commandById('playFullScreen').can()).toBe(true);
+    commandById('playFullScreen').run();
+    expect(useEditorStore.getState()).toMatchObject({ playState: 'playing', fullScreen: true });
+    // One session at a time, whichever way it was started.
+    expect(commandById('playFullScreen').can()).toBe(false);
+    expect(commandById('play').can()).toBe(false);
+
+    commandById('stop').run();
+    expect(useEditorStore.getState()).toMatchObject({ playState: 'stopped', fullScreen: false });
+
+    // Play is the panel, not the screen, even right after a full-screen run.
+    commandById('play').run();
+    expect(useEditorStore.getState().fullScreen).toBe(false);
+    commandById('stop').run();
+  });
+
   it('says the word the toolbar shows', async () => {
     const { commandById } = await import('../src/commands/registry');
     // The toolbar wrote `isStopped ? 'Play' : 'Stop'` for itself; the palette
