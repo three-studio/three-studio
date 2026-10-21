@@ -134,12 +134,15 @@
     cursor: text;
   }
 
+  /* A label holding a checkbox or a radio toggles it from anywhere in it, words
+     included — `Field` nests the box a level down, beside its words. A label
+     holding a text field or a select only focuses it, and keeps the arrow. */
   button,
   [role='button'],
   summary,
   select,
   input:is([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']),
-  label:has(> input:is([type='checkbox'], [type='radio'])) {
+  label:has(input:is([type='checkbox'], [type='radio'])) {
     cursor: pointer;
   }
 
@@ -147,7 +150,7 @@
      promises a press that does nothing. */
   :is(button, input, select, textarea):disabled,
   [aria-disabled='true'],
-  label:has(> input:disabled) {
+  label:has(input:is([type='checkbox'], [type='radio']):disabled) {
     cursor: default;
   }
 
