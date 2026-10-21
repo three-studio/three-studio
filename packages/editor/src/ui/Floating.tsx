@@ -10,6 +10,7 @@ const LAYER_CLASS = {
   menu: 'z-menu',
   toast: 'z-toast',
   prompt: 'z-prompt',
+  tooltip: 'z-tooltip',
 } as const;
 
 export type FloatingLayer = keyof typeof LAYER_CLASS;
@@ -24,8 +25,8 @@ interface FloatingProps extends ComponentProps<'div'> {
 
 /**
  * Everything that floats above the editor — a menu, a popover, a dialog, a
- * prompt, a toast — is drawn here, for three reasons that each bit before there
- * was a here.
+ * prompt, a toast, a tooltip — is drawn here, for three reasons that each bit
+ * before there was a here.
  *
  * - **At the end of `document.body`.** `position: fixed` is relative to the
  *   viewport only while no ancestor carries a transform, and dockview places
@@ -61,7 +62,10 @@ interface FloatingProps extends ComponentProps<'div'> {
  */
 export function Floating({ layer, className = '', ...props }: FloatingProps) {
   return createPortal(
-    <div {...props} className={`${floatingClass(layer)} ${className}`} />,
+    // `data-layer` marks the box as floating for whoever needs to tell: a
+    // tooltip asks it, so that with a menu open only the menu's own controls
+    // show one (`ui/Tooltip`).
+    <div {...props} data-layer={layer} className={`${floatingClass(layer)} ${className}`} />,
     document.body,
   );
 }
@@ -72,6 +76,7 @@ export function Floating({ layer, className = '', ...props }: FloatingProps) {
  */
 export function floatElement(element: HTMLElement, layer: FloatingLayer): void {
   element.classList.add(...floatingClass(layer).split(' '));
+  element.dataset.layer = layer;
   document.body.appendChild(element);
 }
 

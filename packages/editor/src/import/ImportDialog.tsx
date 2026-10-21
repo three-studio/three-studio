@@ -26,6 +26,7 @@ import { summarise } from './plan';
 import { describeFacts, formatBytes, formatUnits, hasPreview } from './preview/facts';
 import { previewFor, type PreviewSurface } from './preview/PreviewSurface';
 import { ImportSettingsPane, type SettingsDraft } from './settingsPane';
+import { tooltip } from '../ui/Tooltip';
 
 const KIND_ICON: Record<AssetKind, LucideIcon> = {
   model: Box,
@@ -85,7 +86,7 @@ function ImportDialogBody({ sessionId }: { sessionId: string }) {
             type="button"
             className={`${BUTTON} mr-auto`}
             disabled={!canApplyToAll}
-            title="Copies these settings onto every other file of the same format"
+            {...tooltip('Copies these settings onto every other file of the same format')}
             onClick={() => selected && store.getState().applyToAll(selected.file.id)}
           >
             Apply to all {selected?.file.formatLabel.toLowerCase()}
@@ -219,7 +220,7 @@ function FileRow({ row, selected }: { row: ImportRow; selected: boolean }) {
 function RowBadge({ file }: { file: StagedFile }) {
   if (file.importerId === null) {
     return (
-      <span title="Nothing imports this format" className="text-ink-dim">
+      <span {...tooltip('Nothing imports this format')} className="text-ink-dim">
         <AlertTriangle size={11} />
       </span>
     );
@@ -227,7 +228,7 @@ function RowBadge({ file }: { file: StagedFile }) {
   if (file.conflict?.kind === 'duplicate') {
     return (
       <span
-        title={`Already in the project as ${file.conflict.existingPath}`}
+        {...tooltip(`Already in the project as ${file.conflict.existingPath}`)}
         className="text-warn"
       >
         <Copy size={11} />
@@ -237,7 +238,7 @@ function RowBadge({ file }: { file: StagedFile }) {
   if (file.conflict?.kind === 'name') {
     return (
       <span
-        title={`${file.conflict.existingPath} has this name; the copy will be numbered`}
+        {...tooltip(`${file.conflict.existingPath} has this name; the copy will be numbered`)}
         className="text-ink-dim"
       >
         <AlertTriangle size={11} />
@@ -372,7 +373,7 @@ function FactsLine({ row }: { row: ImportRow }) {
         </p>
       )}
       {row.file.companions.length > 0 && (
-        <p className="truncate text-2xs text-ink-dim" title={row.file.companions.join('\n')}>
+        <p className="truncate text-2xs text-ink-dim" {...tooltip(row.file.companions.join('\n'))}>
           brings {row.file.companions.length} file
           {row.file.companions.length === 1 ? '' : 's'} with it
         </p>

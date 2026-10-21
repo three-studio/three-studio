@@ -6,6 +6,7 @@ import { setAssetDragPayload } from '../../assets/assetDrag';
 import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore, type AssetSortKey } from '../../state/assetStore';
 import { KIND_ICON, formatBytes } from './kinds';
+import { tooltip } from '../../ui/Tooltip';
 
 /**
  * The same assets as a table, for the times a name and a size matter more than
@@ -66,7 +67,8 @@ export function AssetList({
           </button>
           <button
             type="button"
-            title="Rename folder"
+            aria-label="Rename folder"
+            {...tooltip('Rename folder')}
             onClick={() => void renameFolder(path)}
             className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
           >
@@ -74,7 +76,8 @@ export function AssetList({
           </button>
           <button
             type="button"
-            title="Delete folder"
+            aria-label="Delete folder"
+            {...tooltip('Delete folder')}
             onClick={() => void deleteFolder(path)}
             className="w-5 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
           >
@@ -106,7 +109,8 @@ export function AssetList({
             </span>
             <button
               type="button"
-              title={showInFileManagerLabel()}
+              aria-label={showInFileManagerLabel()}
+              {...tooltip(showInFileManagerLabel())}
               onClick={() => void showAssetFile(asset.path)}
               className="w-5 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
             >
@@ -114,7 +118,8 @@ export function AssetList({
             </button>
             <button
               type="button"
-              title="Delete asset"
+              aria-label="Delete asset"
+              {...tooltip('Delete asset')}
               onClick={() => onRemove(asset)}
               className="w-5 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
             >

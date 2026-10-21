@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useOverlay } from '../state/overlayStore';
 import { Floating } from './Floating';
+import { tooltip } from './Tooltip';
 
 interface DialogFrameProps {
   title: string;
@@ -76,7 +77,8 @@ export function DialogFrame({
           <h2 className="flex-1 text-2xs font-medium text-ink">{title}</h2>
           <button
             type="button"
-            title="Close"
+            aria-label="Close"
+            {...tooltip('Close')}
             onClick={onClose}
             className="flex h-6 w-6 items-center justify-center rounded-sm text-ink-dim hover:bg-surface-3 hover:text-ink"
           >

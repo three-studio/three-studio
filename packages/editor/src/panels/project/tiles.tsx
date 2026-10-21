@@ -18,6 +18,7 @@ import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore } from '../../state/assetStore';
 import { usePrefabModeStore } from '../../state/prefabModeStore';
 import { KIND_ICON, audioLine, formatBytes } from './kinds';
+import { tooltip } from '../../ui/Tooltip';
 
 /**
  * One folder in the grid, and a drop target for an asset dragged onto it.
@@ -67,7 +68,8 @@ export const FolderTile = memo(function FolderTile({ path }: { path: string }) {
 
       <button
         type="button"
-        title="Delete folder"
+        aria-label="Delete folder"
+        {...tooltip('Delete folder')}
         onClick={() => void deleteFolder(path)}
         className="absolute right-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
       >
@@ -75,7 +77,8 @@ export const FolderTile = memo(function FolderTile({ path }: { path: string }) {
       </button>
       <button
         type="button"
-        title="Rename folder"
+        aria-label="Rename folder"
+        {...tooltip('Rename folder')}
         onClick={() => void renameFolder(path)}
         className="absolute left-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
       >
@@ -194,7 +197,9 @@ export const AssetTile = memo(function AssetTile({
         // action worth guessing at.
         if (asset.kind === 'prefab') void usePrefabModeStore.getState().open(asset.id);
       }}
-      title={`${asset.path}\n${formatBytes(asset.sizeBytes)} · imported ${new Date(asset.importedAt).toLocaleDateString()}`}
+      {...tooltip(
+        `${asset.path}\n${formatBytes(asset.sizeBytes)} · imported ${new Date(asset.importedAt).toLocaleDateString()}`,
+      )}
       // The hand although a single click does nothing yet: the tile is dragged
       // into the scene and opened with a double-click, and the folder tile
       // beside it, a button, shows the hand too.
@@ -229,7 +234,8 @@ export const AssetTile = memo(function AssetTile({
       {asset.kind === 'audio' && (
         <button
           type="button"
-          title="Audition this clip"
+          aria-label="Audition this clip"
+          {...tooltip('Audition this clip')}
           // On a button and not on the tile itself: a panel that plays whatever
           // the pointer passes over is unbearable within three minutes, and a
           // panel that plays on selection makes arrow-key browsing a cacophony.
@@ -246,7 +252,8 @@ export const AssetTile = memo(function AssetTile({
 
       <button
         type="button"
-        title="Delete asset"
+        aria-label="Delete asset"
+        {...tooltip('Delete asset')}
         onClick={onRemove}
         className="absolute right-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-error group-hover:opacity-100"
       >
@@ -254,7 +261,8 @@ export const AssetTile = memo(function AssetTile({
       </button>
       <button
         type="button"
-        title={showInFileManagerLabel()}
+        aria-label={showInFileManagerLabel()}
+        {...tooltip(showInFileManagerLabel())}
         onClick={() => void showAssetFile(asset.path)}
         className="absolute left-0.5 top-0.5 rounded-sm bg-surface-2/80 p-1 text-ink-dim opacity-0 hover:text-ink group-hover:opacity-100"
       >

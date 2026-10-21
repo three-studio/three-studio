@@ -13,6 +13,7 @@ import { ErrorBoundary } from './ui/ErrorBoundary';
 import { ImportDialog } from './import/ImportDialog';
 import { PromptDialog } from './ui/PromptDialog';
 import { ToastHost } from './ui/ToastHost';
+import { TooltipHost, tooltip } from './ui/Tooltip';
 
 export function App() {
   const [layoutResetToken, setLayoutResetToken] = useState(0);
@@ -72,6 +73,7 @@ export function App() {
       <PromptDialog />
       <ImportDialog />
       <ToastHost />
+      <TooltipHost />
     </div>
   );
 }
@@ -87,11 +89,11 @@ function BackendChip() {
 
   return (
     <span
-      title={
+      {...tooltip(
         backend === 'webgpu'
           ? 'Rendering through the WebGPU backend'
-          : 'WebGPU was unavailable — running on the WebGL2 fallback'
-      }
+          : 'WebGPU was unavailable — running on the WebGL2 fallback',
+      )}
       className={`rounded-sm px-1.5 py-0.5 font-mono text-2xs ${
         backend === 'webgpu' ? 'bg-play/15 text-play' : 'bg-warn/15 text-warn'
       }`}

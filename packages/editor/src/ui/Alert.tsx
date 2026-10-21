@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, ChevronRight, Info, X, XCircle } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
+import { tooltip } from './Tooltip';
 
 /**
  * A message with a severity, a title and optionally a way to act on it.
@@ -139,7 +140,8 @@ export function Alert({
         {onDismiss && (
           <button
             type="button"
-            title="Dismiss"
+            aria-label="Dismiss"
+            {...tooltip('Dismiss')}
             onClick={onDismiss}
             className="-mr-0.5 -mt-0.5 h-4 w-4 shrink-0 rounded-xs text-ink-dim hover:bg-surface-3 hover:text-ink"
           >

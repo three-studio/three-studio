@@ -2,6 +2,7 @@ import { ChevronRight, Trash2, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useOverlay } from '../state/overlayStore';
 import { Floating, useAnchorRect } from './Floating';
+import { tooltip } from './Tooltip';
 
 export interface MenuItem {
   label: string;
@@ -149,7 +150,8 @@ function Menu({
             {item.onDelete && (
               <button
                 type="button"
-                title={`Delete ${item.label}`}
+                aria-label={`Delete ${item.label}`}
+                {...tooltip(`Delete ${item.label}`)}
                 // Deliberately does not close the menu: deleting several saved
                 // items in a row is the normal case.
                 onClick={(event) => {

@@ -2,6 +2,7 @@ import { ENGINE_NAME, ENGINE_VERSION, type ProjectSummary } from '@three-studio/
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isMac } from '../platform';
+import { TooltipHost, tooltip } from '../ui/Tooltip';
 import { LauncherScene } from './LauncherScene';
 import { StudioLogo } from './StudioLogo';
 
@@ -67,7 +68,7 @@ export function LauncherApp() {
             <StudioLogo className="h-8 w-auto text-ink" />
             {/* Named, because it is not the installer's number and may differ
                 from it — see the note on `ENGINE_VERSION`. */}
-            <span className="pb-0.5 text-2xs text-ink-dim" title="Engine version">
+            <span className="pb-0.5 text-2xs text-ink-dim" {...tooltip('Engine version')}>
               v{ENGINE_VERSION}
             </span>
           </header>
@@ -143,7 +144,8 @@ export function LauncherApp() {
                     </button>
                     <button
                       type="button"
-                      title="Remove from list"
+                      aria-label="Remove from list"
+                      {...tooltip('Remove from list')}
                       onClick={() =>
                         run(async () => {
                           await window.studio.project.forget(entry.path);
@@ -163,6 +165,8 @@ export function LauncherApp() {
       </section>
 
       <Illustration />
+      {/* A window of its own, so a host of its own. */}
+      <TooltipHost />
     </div>
   );
 }

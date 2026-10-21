@@ -1,11 +1,14 @@
 import { ChevronDown, type LucideIcon } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { DropdownMenu, type MenuEntry } from './Menu';
+import { tooltip } from './Tooltip';
 
 interface ToolButtonProps {
   icon: LucideIcon;
   label: string;
   shortcut?: string;
+  /** The tooltip's second line: why the button is off, say. */
+  hint?: string;
   active?: boolean;
   disabled?: boolean;
   /** Overrides the icon colour when active — used for the green Play button. */
@@ -17,6 +20,7 @@ export function ToolButton({
   icon: Icon,
   label,
   shortcut,
+  hint,
   active = false,
   disabled = false,
   activeClassName = 'bg-accent-dim text-ink',
@@ -25,7 +29,7 @@ export function ToolButton({
   return (
     <button
       type="button"
-      title={shortcut ? `${label}  (${shortcut})` : label}
+      {...tooltip(label, { keys: shortcut, hint })}
       aria-label={label}
       aria-pressed={active}
       disabled={disabled}
@@ -50,6 +54,7 @@ export function ToolButton({
  */
 export function ToolToggle({
   label,
+  hint,
   icon: Icon,
   shortcut,
   active = false,
@@ -57,6 +62,8 @@ export function ToolToggle({
   onClick,
 }: {
   label: string;
+  /** The tooltip's second line: what this value does. */
+  hint?: string;
   icon: LucideIcon;
   shortcut?: string;
   active?: boolean;
@@ -66,7 +73,7 @@ export function ToolToggle({
   return (
     <button
       type="button"
-      title={shortcut ? `${label}  (${shortcut})` : label}
+      {...tooltip(label, { keys: shortcut, hint })}
       aria-pressed={active}
       disabled={disabled}
       onClick={onClick}
@@ -116,7 +123,7 @@ export function ToolSplitToggle({
   onCycle,
 }: {
   label: string;
-  /** Appended to the tooltip: what this value actually does. */
+  /** The tooltip's second line: what this value actually does. */
   hint?: string;
   icon: LucideIcon;
   shortcut?: string;
@@ -130,14 +137,13 @@ export function ToolSplitToggle({
   // the body steps the value and leaves the list open, its tick following.
   const anchor = useRef<HTMLDivElement>(null);
 
-  const title = [hint ? `${label} — ${hint}` : label, shortcut ? `  (${shortcut})` : ''].join('');
   const tone = toolTone(active);
 
   return (
     <div ref={anchor} className="flex items-center">
       <button
         type="button"
-        title={title}
+        {...tooltip(label, { keys: shortcut, hint })}
         aria-pressed={active}
         disabled={disabled}
         onClick={onCycle}
@@ -148,7 +154,7 @@ export function ToolSplitToggle({
       </button>
       <button
         type="button"
-        title={`${label}: pick a mode`}
+        {...tooltip(`${label}: pick a mode`)}
         aria-label={`${label}: pick a mode`}
         aria-haspopup="menu"
         aria-expanded={open}

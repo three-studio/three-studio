@@ -2,6 +2,7 @@ import { Ban, CircleAlert, Info, Search, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConsoleStore, type LogEntry, type LogLevel } from '../state/consoleStore';
 import { PanelToolbar } from './PanelShell';
+import { tooltip } from '../ui/Tooltip';
 
 const LEVEL_STYLE: Record<LogLevel, { icon: typeof Info; className: string; label: string }> = {
   log: { icon: Info, className: 'text-ink-muted', label: 'Messages' },
@@ -55,7 +56,6 @@ export function ConsolePanel() {
         <button
           type="button"
           onClick={clear}
-          title="Clear"
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
           <Ban size={11} />
@@ -84,7 +84,7 @@ export function ConsolePanel() {
             <button
               key={level}
               type="button"
-              title={style.label}
+              {...tooltip(style.label)}
               onClick={() => toggleLevel(level)}
               className={`flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs ${
                 levels[level] ? `bg-surface-3 ${style.className}` : 'text-ink-dim'
@@ -122,7 +122,7 @@ export function ConsolePanel() {
                 <Icon size={11} className={`mt-0.5 shrink-0 ${style.className}`} />
                 {entry.source !== null && (
                   <span
-                    title={`Logged on ${entry.source.label}`}
+                    {...tooltip(`Logged on ${entry.source.label}`)}
                     className="shrink-0 rounded-sm bg-surface-3 px-1 text-ink-muted"
                   >
                     {entry.source.label}

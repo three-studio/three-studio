@@ -17,6 +17,7 @@ import {
 import {
   TRANSFORM_SPACES,
   useEditorStore,
+  type PivotMode,
   type TransformMode,
   type TransformSpace,
 } from '../state/editorStore';
@@ -59,9 +60,25 @@ const SPACE_ICONS: Record<TransformSpace, LucideIcon> = {
 };
 
 const SPACE_HINTS: Record<TransformSpace, string> = {
-  world: 'handles on the world axes',
-  local: "handles on the object's own axes",
-  parent: "handles on the parent's axes, the world's at the root",
+  world: 'Handles on the world axes',
+  local: "Handles on the object's own axes",
+  parent: "Handles on the parent's axes, the world's at the root",
+};
+
+/**
+ * Why the space button is greyed out in Scale, said where the question comes
+ * up: on the button itself. The comment on the button, in the markup below,
+ * gives the reason at length.
+ */
+const SCALE_SPACE_HINT = "Scale always works along the object's own axes";
+
+/**
+ * What Pivot and Center do, for the same reason as `SPACE_HINTS`: the word on
+ * the button names the mode, and the tooltip says what the handles will do.
+ */
+const PIVOT_HINTS: Record<PivotMode, string> = {
+  pivot: "Handles on the active object's origin",
+  center: "Handles on the centre of the selection's bounds",
 };
 
 /**
@@ -119,6 +136,7 @@ export function SceneToolbar() {
 
       <ToolToggle
         label={pivotMode === 'center' ? 'Center' : 'Pivot'}
+        hint={PIVOT_HINTS[pivotMode]}
         icon={Box}
         active={pivotMode === 'center'}
         onClick={togglePivotMode}
@@ -134,7 +152,7 @@ export function SceneToolbar() {
       */}
       <ToolSplitToggle
         label={SPACE_LABELS[shownSpace]}
-        hint={SPACE_HINTS[shownSpace]}
+        hint={scaleForcesLocal ? SCALE_SPACE_HINT : SPACE_HINTS[shownSpace]}
         icon={SPACE_ICONS[shownSpace]}
         shortcut="X"
         active={shownSpace !== 'world'}

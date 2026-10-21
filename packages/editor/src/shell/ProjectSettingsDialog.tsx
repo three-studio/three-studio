@@ -5,6 +5,7 @@ import { isStartScene } from '../commands/sceneFiles';
 import { notify } from '../state/toastStore';
 import { useProjectStore } from '../state/projectStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
+import { tooltip } from '../ui/Tooltip';
 
 /**
  * What the project is and how it behaves, as against what is in it.
@@ -135,7 +136,7 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
                       path is the only thing that tells them apart. */}
                   <span className="text-ink-muted">{scene.path}</span>
                   {scene.shadowedBy !== null && (
-                    <span className="text-warn" title={`Same id as ${scene.shadowedBy}`}>
+                    <span className="text-warn" {...tooltip(`Same id as ${scene.shadowedBy}`)}>
                       duplicate id
                     </span>
                   )}

@@ -4,6 +4,7 @@ import { commandById } from '../commands/registry';
 import { setDevicePopoverOpen, useDeviceStore } from '../state/deviceStore';
 import { useProjectStore } from '../state/projectStore';
 import { toolTone } from '../ui/ToolButton';
+import { tooltip } from '../ui/Tooltip';
 import { DevicePopover, StateCount, StateDot } from './DevicePopover';
 import { deviceView } from './deviceView';
 
@@ -46,7 +47,7 @@ export function DeviceButton({ className = '' }: { className?: string }) {
       <button
         type="button"
         aria-label="Launch on Devices"
-        title={view.title}
+        {...tooltip(view.title)}
         disabled={!launch.can()}
         onClick={() => launch.run()}
         className={`relative flex h-7 w-7 items-center justify-center rounded-l-sm transition-colors ${toolTone(false)} disabled:text-ink-dim disabled:hover:bg-transparent`}
@@ -60,7 +61,7 @@ export function DeviceButton({ className = '' }: { className?: string }) {
       </button>
       <button
         type="button"
-        title="Run on Devices"
+        {...tooltip('Run on Devices')}
         aria-label="Run on Devices"
         aria-haspopup="dialog"
         aria-expanded={open}

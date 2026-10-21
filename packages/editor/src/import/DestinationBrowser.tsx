@@ -5,6 +5,7 @@ import { createFolder, deleteFolder, renameFolder } from '../commands/assetComma
 import { childFolders, useAssetStore } from '../state/assetStore';
 import { useImportStore } from './importStore';
 import type { ImportRow } from './plan';
+import { tooltip } from '../ui/Tooltip';
 
 const ACTION = 'w-5 shrink-0 text-ink-dim opacity-0 group-hover:opacity-100';
 
@@ -63,7 +64,7 @@ export function DestinationBrowser({ rows }: { rows: readonly ImportRow[] }) {
         ))}
         <button
           type="button"
-          title="New folder here"
+          {...tooltip('New folder here')}
           onClick={() => void newFolder(browsePath)}
           className="ml-auto flex items-center gap-1 text-ink-dim hover:text-ink"
         >
@@ -99,11 +100,11 @@ export function DestinationBrowser({ rows }: { rows: readonly ImportRow[] }) {
           return (
             <div
               key={asset.id}
-              title={
+              {...tooltip(
                 collides
                   ? `An incoming file is called ${fileName} too, so it will be imported under a suffixed name`
-                  : undefined
-              }
+                  : undefined,
+              )}
               className="flex cursor-default items-center gap-2 px-2 py-1 text-2xs text-ink-dim"
             >
               <span className="w-3 shrink-0" />
@@ -189,7 +190,8 @@ function FolderRow({
       </button>
       <button
         type="button"
-        title="Rename folder"
+        aria-label="Rename folder"
+        {...tooltip('Rename folder')}
         onClick={() => void rename(path)}
         className={`${ACTION} hover:text-ink`}
       >
@@ -197,7 +199,8 @@ function FolderRow({
       </button>
       <button
         type="button"
-        title="Delete folder"
+        aria-label="Delete folder"
+        {...tooltip('Delete folder')}
         onClick={() => void remove(path)}
         className={`${ACTION} hover:text-error`}
       >

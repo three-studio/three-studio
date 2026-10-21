@@ -63,13 +63,17 @@
    *
    * The order is the whole content: a menu opens from inside a dialog, a toast
    * has to clear both, and the prompt is what a dialog itself asks a question
-   * with — so it covers everything.
+   * with — so it covers everything but a tooltip. A tooltip names whatever is
+   * under the pointer, a button in the prompt included, and never takes the
+   * pointer itself, so it can sit above all of them without hiding anything
+   * from a press.
    */
   --z-index-panel-overlay: 10;
   --z-index-dialog: 20;
   --z-index-menu: 30;
   --z-index-toast: 40;
   --z-index-prompt: 50;
+  --z-index-tooltip: 60;
 }
 
 @layer base {

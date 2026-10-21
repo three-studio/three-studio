@@ -26,8 +26,8 @@ const FLOATS: readonly RegExp[] = [
   /\bcreatePortal\s*\(/,
   /\bdocument\.body\.(?:append|appendChild|prepend|insertBefore)\s*\(/,
   // The scale's utilities, and the variables behind them for inline styles.
-  /\bz-(?:dialog|menu|toast|prompt)\b/,
-  /--z-index-(?:dialog|menu|toast|prompt)\b/,
+  /\bz-(?:dialog|menu|toast|prompt|tooltip)\b/,
+  /--z-index-(?:dialog|menu|toast|prompt|tooltip)\b/,
 ];
 
 function sourceFiles(dir: string): string[] {

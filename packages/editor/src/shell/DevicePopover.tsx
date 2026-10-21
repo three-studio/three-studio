@@ -22,6 +22,7 @@ import { commandById, type CommandId } from '../commands/registry';
 import { refreshDevices } from '../state/deviceStore';
 import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
+import { tooltip } from '../ui/Tooltip';
 import type { CertificateView, DeviceDot, DeviceRow, DeviceView } from './deviceView';
 
 /**
@@ -176,7 +177,7 @@ function Action({
   return (
     <button
       type="button"
-      title={title}
+      {...tooltip(title)}
       disabled={!command.can()}
       onClick={() => command.run()}
       className={`${BUTTON_TONES[tone]} ${className}`}
@@ -242,7 +243,7 @@ function Disclosure({
         />
         <span className="shrink-0">{title}</span>
         {aside !== null && (
-          <span title={aside} className="ml-auto min-w-0 truncate pl-2 text-ink-dim">
+          <span {...tooltip(aside)} className="ml-auto min-w-0 truncate pl-2 text-ink-dim">
             {aside}
           </span>
         )}
@@ -364,7 +365,7 @@ function LiveReload({ view }: { view: DeviceView }) {
   const { on, note, tone, title } = view.liveReload;
   return (
     <div className="flex flex-col gap-0.5">
-      <label title={title} className="flex items-center gap-2 self-start text-ink">
+      <label {...tooltip(title)} className="flex items-center gap-2 self-start text-ink">
         <input
           type="checkbox"
           checked={on}
@@ -563,16 +564,16 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
     <li className={`${LIST_ROW} flex flex-col gap-0.5`}>
       <div className="flex items-center gap-2">
         <StateDot dot={row.tone} />
-        <span title={row.tooltip} className="min-w-0 flex-1 truncate text-ink">
+        <span {...tooltip(row.tooltip)} className="min-w-0 flex-1 truncate text-ink">
           {row.label}
         </span>
         <span
-          title={row.backendTitle ?? undefined}
+          {...tooltip(row.backendTitle)}
           className="flex shrink-0 items-center gap-1 text-ink-muted"
         >
           {row.state}
           {row.backend !== null && why !== null && (
-            <span title={why} className="text-warn">
+            <span {...tooltip(why)} className="text-warn">
               <TriangleAlert size={12} strokeWidth={2} aria-label={why} />
             </span>
           )}
@@ -581,7 +582,7 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
         <button
           type="button"
           aria-label={`Take a screenshot on ${row.label}`}
-          title={`Take a screenshot on ${row.label}`}
+          {...tooltip(`Take a screenshot on ${row.label}`)}
           disabled={!row.canCapture || row.capturing}
           onClick={() => void captureDevice(row.id)}
           className={`shrink-0 rounded-sm p-1 text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40 ${row.capturing ? 'animate-pulse' : ''}`}
@@ -591,7 +592,7 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
         <button
           type="button"
           aria-label={`Restart ${row.label}`}
-          title={`Restart ${row.label}`}
+          {...tooltip(`Restart ${row.label}`)}
           disabled={!row.canRestart}
           onClick={() => void restartDevice(row.id)}
           className="-mr-1 shrink-0 rounded-sm p-1 text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-40"
@@ -600,7 +601,7 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
         </button>
       </div>
       {row.stats !== null ? (
-        <p title={row.statsTitle ?? undefined} className="truncate pl-3.5 tabular-nums text-ink-muted">
+        <p {...tooltip(row.statsTitle)} className="truncate pl-3.5 tabular-nums text-ink-muted">
           {row.stats}
         </p>
       ) : (
@@ -613,7 +614,7 @@ function DeviceItem({ row, view }: { row: DeviceRow; view: DeviceView }) {
         </p>
       ))}
       {row.error !== null && (
-        <p data-selectable title={row.error} className="line-clamp-3 pl-3.5 text-error">
+        <p data-selectable {...tooltip(row.error)} className="line-clamp-3 pl-3.5 text-error">
           {row.error}
         </p>
       )}

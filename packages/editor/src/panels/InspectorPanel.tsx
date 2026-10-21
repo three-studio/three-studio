@@ -17,6 +17,7 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { DropdownMenu } from '../ui/Menu';
+import { tooltip } from '../ui/Tooltip';
 
 /**
  * What the Inspector's asset slots cannot reach for themselves.
@@ -260,7 +261,7 @@ function PrefabBanner({ id, depth }: { id: string; depth: number }) {
       {(
         <button
           type="button"
-          title="Revert to the prefab"
+          {...tooltip('Revert to the prefab')}
           onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim hover:bg-surface-3 hover:text-ink"
         >

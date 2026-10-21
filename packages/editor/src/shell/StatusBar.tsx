@@ -1,5 +1,6 @@
 import { ENGINE_VERSION } from '@three-studio/core';
 import { useEditorStore } from '../state/editorStore';
+import { tooltip } from '../ui/Tooltip';
 
 export function StatusBar() {
   const selection = useEditorStore((s) => s.selection);
@@ -20,7 +21,7 @@ export function StatusBar() {
       )}
       {/* Named, because it is not the installer's number and may differ from
           it — see the note on `ENGINE_VERSION`. */}
-      <span title="Engine version">v{ENGINE_VERSION}</span>
+      <span {...tooltip('Engine version')}>v{ENGINE_VERSION}</span>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { commandById } from '../commands/registry';
 import { useProjectStore } from '../state/projectStore';
 import { notify } from '../state/toastStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
+import { tooltip } from '../ui/Tooltip';
 
 /**
  * Configures and starts a build.
@@ -141,7 +142,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
           <button
             type="button"
             onClick={duplicate}
-            title="Duplicate this profile"
+            {...tooltip('Duplicate this profile')}
             className="mr-auto flex items-center gap-1 rounded-sm px-2 py-1 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
           >
             <Copy size={11} />
@@ -151,7 +152,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={remove}
             disabled={ids.length <= 1}
-            title={ids.length <= 1 ? 'A project needs at least one profile' : 'Delete this profile'}
+            {...tooltip(ids.length <= 1 ? 'A project needs at least one profile' : 'Delete this profile')}
             className="flex items-center gap-1 rounded-sm px-2 py-1 text-2xs text-ink-muted hover:bg-surface-3 hover:text-error disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-ink-muted"
           >
             <Trash2 size={11} />
@@ -172,9 +173,9 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             // asks for anything, and a label promising a question it will not
             // ask is worse than a disabled one.
             disabled={busy || !profile?.outputDir || baseProblem !== null}
-            title={
-              baseProblem ?? (profile?.outputDir ? undefined : 'Choose an output folder first')
-            }
+            {...tooltip(
+              baseProblem ?? (profile?.outputDir ? undefined : 'Choose an output folder first'),
+            )}
             className="rounded-sm bg-accent-dim px-3 py-1 text-2xs text-ink hover:bg-accent/40 disabled:opacity-50"
           >
             Build
@@ -235,7 +236,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             ) : (
               // The resolved example, so a missing trailing slash is visible
               // here rather than as a folder of 404s after the export.
-              <p className="mt-1 truncate text-2xs text-ink-dim" title={`${base}assets/…`}>
+              <p className="mt-1 truncate text-2xs text-ink-dim" {...tooltip(`${base}assets/…`)}>
                 {base === '' ? 'Resolved against the page address.' : `→ ${base}assets/…`}
               </p>
             )}
@@ -303,7 +304,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
                 className={`min-w-0 flex-1 truncate py-1 text-2xs ${
                   profile.outputDir ? 'text-ink' : 'text-ink-dim'
                 }`}
-                title={profile.outputDir ?? undefined}
+                {...tooltip(profile.outputDir)}
               >
                 {profile.outputDir ?? 'No folder chosen'}
               </p>

@@ -11,6 +11,7 @@ import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { instantiatePrefab } from '../commands/prefabCommands';
 import { SceneToolbar } from './SceneToolbar';
+import { tooltip } from '../ui/Tooltip';
 
 export function ViewportPanel(props: IDockviewPanelProps) {
   // What the box cannot say: dockview parks an inactive tab at full size, so a
@@ -202,7 +203,7 @@ function PrefabModeBar() {
       <button
         type="button"
         onClick={() => void closeTo(0)}
-        title="Back to the scene — every prefab is saved on the way out"
+        {...tooltip('Back to the scene — every prefab is saved on the way out')}
         className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
       >
         <ChevronLeft size={12} />

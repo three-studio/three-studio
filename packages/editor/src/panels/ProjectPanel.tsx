@@ -23,8 +23,10 @@ import { AssetList } from './project/AssetList';
 import { Breadcrumbs } from './project/Breadcrumbs';
 import { KIND_FILTERS, SORT_LABELS } from './project/kinds';
 import { AssetTile, FolderTile } from './project/tiles';
+import { tooltip } from '../ui/Tooltip';
 
-
+/** What the two view buttons are called: their tooltips, and their names, since they show only an icon. */
+const VIEW_LABELS = { grid: 'Grid view', list: 'List view' } as const;
 
 /*
  * One selector per field, and it used to be `useAssetStore()` — the whole
@@ -110,7 +112,8 @@ export function ProjectPanel() {
 
         <button
           type="button"
-          title="New folder"
+          aria-label="New folder"
+          {...tooltip('New folder')}
           onClick={() => void createFolder(folder)}
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
@@ -119,7 +122,8 @@ export function ProjectPanel() {
 
         <button
           type="button"
-          title="New script"
+          aria-label="New script"
+          {...tooltip('New script')}
           onClick={() => {
             void askForText({
               title: 'New Script',
@@ -163,7 +167,7 @@ export function ProjectPanel() {
 
         <button
           type="button"
-          title={`Sort by ${SORT_LABELS[sortKey]}`}
+          {...tooltip(`Sort by ${SORT_LABELS[sortKey]}`)}
           onClick={() => setSort(sortKey)}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
@@ -177,10 +181,11 @@ export function ProjectPanel() {
           means it governs the Inspector's ▶ Play just as much as this panel's
           tiles.
         */}
-        <div className="flex shrink-0 items-center gap-1" title="Audition volume">
+        <div className="flex shrink-0 items-center gap-1" {...tooltip('Audition volume')}>
           <Volume2 size={12} className="text-ink-muted" />
           <input
             type="range"
+            aria-label="Audition volume"
             min={0}
             max={1}
             step={0.01}
@@ -201,7 +206,8 @@ export function ProjectPanel() {
             <button
               key={mode}
               type="button"
-              title={`${mode} view`}
+              aria-label={VIEW_LABELS[mode]}
+              {...tooltip(VIEW_LABELS[mode])}
               onClick={() => setViewMode(mode)}
               className={`flex h-5 w-5 items-center justify-center rounded-sm ${
                 viewMode === mode ? 'bg-accent-dim text-ink' : 'text-ink-muted hover:text-ink'

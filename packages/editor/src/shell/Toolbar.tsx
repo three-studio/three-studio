@@ -6,6 +6,7 @@ import { MenuTrigger } from '../ui/Menu';
 import { ToolButton } from '../ui/ToolButton';
 import { DeviceButton } from './DeviceButton';
 import { buildLayoutMenu } from './layoutMenu';
+import { shortcutHint } from './shortcutBindings';
 
 interface ToolbarProps {
   onResetLayout: () => void;
@@ -34,7 +35,8 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const requestStep = useEditorStore((s) => s.requestStep);
 
   const isStopped = playState === 'stopped';
-  const transport = commandById(isStopped ? 'play' : 'stop');
+  const transportId = isStopped ? 'play' : 'stop';
+  const transport = commandById(transportId);
   const fullScreen = commandById('playFullScreen');
 
   return (
@@ -47,10 +49,13 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
           {/* One button, and it still picks its own icon — an icon is not
               something the registry carries. What it no longer decides is the
               word and the gesture: `transport.label()` and `transport.run()`
-              are the command's, and a palette says the same word. */}
+              are the command's, and a palette says the same word. The key
+              in its tooltip is the binding table's, the one the menus print:
+              Stop says ⇧Esc, and a rebound key moves with it. */}
           <ToolButton
             icon={isStopped ? Play : Square}
             label={transport.label()}
+            shortcut={shortcutHint(transportId)}
             active={!isStopped}
             activeClassName="bg-play/15 text-play"
             onClick={() => transport.run()}
@@ -65,7 +70,12 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
           */}
           {isStopped ? (
             <>
-              <ToolButton icon={MonitorPlay} label={fullScreen.label()} onClick={() => fullScreen.run()} />
+              <ToolButton
+                icon={MonitorPlay}
+                label={fullScreen.label()}
+                shortcut={shortcutHint('playFullScreen')}
+                onClick={() => fullScreen.run()}
+              />
               <span aria-hidden className="h-7 w-7" />
             </>
           ) : (
@@ -79,6 +89,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
               <ToolButton
                 icon={SkipForward}
                 label="Step one frame"
+                hint={playState === 'paused' ? undefined : 'Pause first'}
                 disabled={playState !== 'paused'}
                 onClick={requestStep}
               />

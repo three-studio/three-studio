@@ -54,6 +54,7 @@ import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { ContextMenu, type MenuEntry } from '../ui/Menu';
+import { tooltip } from '../ui/Tooltip';
 import { PanelToolbar } from './PanelShell';
 
 const DRAG_MIME = 'application/x-studio-entity';
@@ -492,9 +493,7 @@ export function HierarchyPanel() {
                 />
               ) : (
                 <span
-                  title={
-                    missing ? `Not in this project: ${missing.join(', ')}` : undefined
-                  }
+                  {...tooltip(missing ? `Not in this project: ${missing.join(', ')}` : undefined)}
                   className={`min-w-0 flex-1 truncate ${entity.visible ? '' : 'opacity-45'} ${
                     missing ? 'text-error' : ''
                   }`}
@@ -506,7 +505,8 @@ export function HierarchyPanel() {
               <button
                 type="button"
                 tabIndex={-1}
-                title={entity.visible ? 'Hide' : 'Show'}
+                aria-label={entity.visible ? 'Hide' : 'Show'}
+                {...tooltip(entity.visible ? 'Hide' : 'Show')}
                 onClick={(event) => {
                   event.stopPropagation();
                   // Through the command, like the delete button below it. The
@@ -522,7 +522,8 @@ export function HierarchyPanel() {
               <button
                 type="button"
                 tabIndex={-1}
-                title="Delete object"
+                aria-label="Delete object"
+                {...tooltip('Delete object')}
                 // Hover-only, like the asset rows. Deleting is undoable, so the
                 // cost of a mis-click is one Cmd+Z.
                 onClick={(event) => {
@@ -598,7 +599,7 @@ function SceneHeader({ onDrop }: { onDrop: (event: DragEvent) => void }) {
     <div
       // Stable hook for automated checks, beside the rows' `data-entity-id`.
       data-scene-header
-      title={prefabName === null ? 'Scene settings' : undefined}
+      {...tooltip(prefabName === null ? 'Scene settings' : undefined)}
       onClick={() => clearSelection()}
       onDragOver={(event) => {
         event.preventDefault();
