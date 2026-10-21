@@ -194,7 +194,7 @@ function FileRow({ row, selected }: { row: ImportRow; selected: boolean }) {
 
   return (
     <div
-      className={`flex cursor-default items-center gap-2 px-2.5 py-1 ${
+      className={`flex cursor-pointer items-center gap-2 px-2.5 py-1 ${
         selected ? 'bg-accent-dim' : 'hover:bg-surface-2'
       }`}
       onPointerDown={() => store.getState().select(row.file.id)}

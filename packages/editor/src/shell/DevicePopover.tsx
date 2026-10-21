@@ -233,7 +233,7 @@ function Disclosure({
       onToggle={(event) => onOpenChange?.(event.currentTarget.open)}
       className="group/disclosure"
     >
-      <summary className="-mx-1.5 flex cursor-default select-none list-none items-center gap-1 rounded-sm px-1.5 py-1 text-ink-muted hover:bg-surface-3 hover:text-ink group-open/disclosure:text-ink">
+      <summary className="-mx-1.5 flex select-none list-none items-center gap-1 rounded-sm px-1.5 py-1 text-ink-muted hover:bg-surface-3 hover:text-ink group-open/disclosure:text-ink">
         <ChevronRight
           size={12}
           strokeWidth={2}

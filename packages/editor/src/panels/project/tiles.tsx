@@ -195,7 +195,10 @@ export const AssetTile = memo(function AssetTile({
         if (asset.kind === 'prefab') void usePrefabModeStore.getState().open(asset.id);
       }}
       title={`${asset.path}\n${formatBytes(asset.sizeBytes)} · imported ${new Date(asset.importedAt).toLocaleDateString()}`}
-      className={`group relative flex aspect-square flex-col items-center justify-center gap-1.5 overflow-hidden rounded-sm border bg-surface-2 p-1 hover:border-accent/60 ${
+      // The hand although a single click does nothing yet: the tile is dragged
+      // into the scene and opened with a double-click, and the folder tile
+      // beside it, a button, shows the hand too.
+      className={`group relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 overflow-hidden rounded-sm border bg-surface-2 p-1 hover:border-accent/60 ${
         revealed ? 'border-accent ring-1 ring-accent' : 'border-line-soft/60'
       }`}
     >

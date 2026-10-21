@@ -93,7 +93,7 @@ export function AssetList({
             ref={(element) => {
               if (asset.id === revealed) element?.scrollIntoView({ block: 'nearest' });
             }}
-            className={`group flex items-center gap-2 px-2 py-1 hover:bg-surface-2 ${
+            className={`group flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-surface-2 ${
               asset.id === revealed ? 'bg-accent-dim' : ''
             }`}
           >

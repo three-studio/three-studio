@@ -450,7 +450,7 @@ export function HierarchyPanel() {
               // and the arithmetic is *on* that number — the two parting would
               // not break a layout, it would scroll to the wrong rows.
               style={{ height: ROW_HEIGHT, paddingLeft: 4 + depth * INDENT_PX }}
-              className={`group flex items-center gap-1 pr-1 text-2xs ${
+              className={`group flex cursor-pointer items-center gap-1 pr-1 text-2xs ${
                 isSelected
                   ? 'bg-accent-dim text-ink'
                   : `${instance ? 'text-prefab/75' : 'text-ink-muted'} hover:bg-surface-2`
@@ -610,7 +610,7 @@ function SceneHeader({ onDrop }: { onDrop: (event: DragEvent) => void }) {
         onDrop(event);
       }}
       style={{ height: ROW_HEIGHT }}
-      className={`flex shrink-0 items-center gap-1 border-b border-line pl-1 pr-1 text-2xs text-ink ${
+      className={`flex shrink-0 cursor-pointer items-center gap-1 border-b border-line pl-1 pr-1 text-2xs text-ink ${
         isSubject ? 'bg-accent-dim' : 'hover:bg-surface-2'
       } ${dropping ? 'outline outline-1 -outline-offset-1 outline-accent' : ''}`}
     >

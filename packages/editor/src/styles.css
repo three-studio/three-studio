@@ -106,10 +106,45 @@
     cursor: default;
   }
 
+  /*
+   * What a press would do, said by the pointer before the press: the hand over
+   * whatever answers one, the arrow over what does not, the I-beam over text
+   * that can be selected.
+   *
+   * Nothing said it before. The body sets the arrow, and Tailwind 4's preflight
+   * no longer gives buttons the hand — it follows the browser, which draws the
+   * arrow — so every button, menu row and toolbar control in the editor showed
+   * the arrow, while dockview's tabs and Tweakpane's controls, styled by their
+   * own sheets, showed the hand. One window, two conventions, and the editor's
+   * own controls read as the inert ones.
+   *
+   * In the base layer, so a `cursor-*` utility still overrides it where an
+   * element knows better, and so do dockview's and Tweakpane's unlayered rules.
+   * A row or a tile that answers a press without being a button carries
+   * `cursor-pointer` itself: nothing here can tell a clickable `div` apart.
+   */
   input,
   textarea,
   [data-selectable] {
     user-select: text;
+    cursor: text;
+  }
+
+  button,
+  [role='button'],
+  summary,
+  select,
+  input:is([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file']),
+  label:has(> input:is([type='checkbox'], [type='radio'])) {
+    cursor: pointer;
+  }
+
+  /* After the hand, and as specific: a hand on a control that is switched off
+     promises a press that does nothing. */
+  :is(button, input, select, textarea):disabled,
+  [aria-disabled='true'],
+  label:has(> input:disabled) {
+    cursor: default;
   }
 
   ::-webkit-scrollbar {
