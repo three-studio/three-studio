@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { commandById, commandIds, currentContext } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
 import { useOverlay } from '../state/overlayStore';
+import { Floating } from '../ui/Floating';
 import { shortcutHint } from './shortcutBindings';
 
 /**
@@ -15,9 +15,8 @@ import { shortcutHint } from './shortcutBindings';
  * — adding one to any family puts it in this list with no change to this file,
  * which is the point of the whole batch.
  *
- * Rendered into `document.body` for the reason `DialogFrame` is: `position:
- * fixed` is relative to the viewport only while no ancestor carries a transform,
- * and dockview gives its panels one.
+ * Drawn by `Floating`, scrim included, as `DialogFrame` is: it is a modal, and
+ * owns the window while it is open.
  */
 export function CommandPalette() {
   const open = useEditorStore((s) => s.paletteOpen);
@@ -86,12 +85,13 @@ export function CommandPalette() {
     entry.run();
   };
 
-  return createPortal(
-    <div
+  return (
+    <Floating
+      layer="dialog"
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
-      className="fixed inset-0 z-dialog flex justify-center bg-black/50 pt-[12vh]"
+      className="inset-0 flex justify-center bg-black/50 pt-[12vh]"
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) close();
       }}
@@ -149,7 +149,6 @@ export function CommandPalette() {
           )}
         </div>
       </div>
-    </div>,
-    document.body,
+    </Floating>
   );
 }

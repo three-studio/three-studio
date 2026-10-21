@@ -6,7 +6,7 @@ export function StatusBar() {
   const playState = useEditorStore((s) => s.playState);
 
   return (
-    <div className="flex h-6 shrink-0 items-center gap-3 border-t border-line bg-surface-2 px-3 text-2xs text-ink-dim">
+    <div className="flex h-6 shrink-0 items-center gap-3 bg-surface-0 px-3 text-2xs text-ink-dim">
       <span>
         {selection.length === 0
           ? 'No selection'

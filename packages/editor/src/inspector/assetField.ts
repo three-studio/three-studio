@@ -19,6 +19,7 @@ import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import type { AssetSlotParams } from './fields';
 import { useAssetStore } from '../state/assetStore';
 import { useOverlayStore } from '../state/overlayStore';
+import { floatElement } from '../ui/Floating';
 
 /**
  * A Tweakpane control for referencing a project asset.
@@ -108,10 +109,8 @@ function iconButton(document: Document, name: keyof typeof ICONS, title: string)
 /**
  * Larger preview shown after hovering the thumbnail.
  *
- * Appended to `document.body`: `position: fixed` is relative to the viewport
- * only while no ancestor has a transform, and dockview positions its panels
- * with one — the same trap the context menu fell into. Capped on both axes so
- * a non-square texture keeps its proportions.
+ * It floats through `floatElement`, like every surface above the editor. Capped
+ * on both axes so a non-square texture keeps its proportions.
  */
 class PreviewTooltip {
   private element: HTMLElement | null = null;
@@ -132,16 +131,15 @@ class PreviewTooltip {
     const element = document.createElement('div');
     element.className = 'studio-asset-preview';
     element.style.cssText =
-      'position:fixed;z-index:var(--z-index-menu);padding:4px;border:1px solid var(--color-line-soft);' +
-      'border-radius:4px;background:var(--color-surface-0);' +
-      'box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;';
+      'padding:4px;border:1px solid var(--color-line-soft);border-radius:4px;' +
+      'background:var(--color-surface-0);box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;';
 
     const image = document.createElement('img');
     image.src = url;
     image.style.cssText = `display:block;max-width:${PREVIEW_SIZE}px;max-height:${PREVIEW_SIZE}px;`;
     element.appendChild(image);
 
-    document.body.appendChild(element);
+    floatElement(element, 'menu');
     this.element = element;
 
     const place = () => {
@@ -175,7 +173,7 @@ class AssetPicker {
 
     const element = document.createElement('div');
     element.style.cssText =
-      'position:fixed;z-index:var(--z-index-menu);width:240px;max-height:280px;display:flex;flex-direction:column;' +
+      'width:240px;max-height:280px;display:flex;flex-direction:column;' +
       'border:1px solid var(--color-line-soft);border-radius:4px;background:var(--color-surface-2);' +
       'box-shadow:0 8px 24px rgba(0,0,0,.5);overflow:hidden;';
 
@@ -243,7 +241,7 @@ class AssetPicker {
     search.addEventListener('input', render);
     render();
 
-    document.body.appendChild(element);
+    floatElement(element, 'menu');
     this.element = element;
 
     const rect = anchor.getBoundingClientRect();

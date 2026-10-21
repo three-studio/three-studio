@@ -1,13 +1,6 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useLayoutEffect, useRef, type ReactNode, type RefObject } from 'react';
 import { useOverlay } from '../state/overlayStore';
+import { Floating, useAnchorRect } from './Floating';
 
 /** How close to the window's edges a popover may come, in pixels. */
 const MARGIN = 8;
@@ -29,10 +22,7 @@ interface PopoverProps {
  * A surface anchored to an element, for content a list cannot hold — a code to
  * scan, a select, a disclosure. `Menu` draws rows and nothing else.
  *
- * Rendered into `document.body`: `position: fixed` is relative to the viewport
- * only while no ancestor carries a transform, and the toolbar's transport is
- * centred with one — which would also trap the popover's stacking beneath the
- * dock. The context menu, the dialogs and the toasts document the same trap.
+ * Drawn by `Floating`, like everything that floats above the editor.
  *
  * Escape closes it through the overlay stack, as it does a menu. So does a
  * press outside both the popover and its anchor, but only while the popover is
@@ -42,25 +32,22 @@ interface PopoverProps {
 export function Popover({ anchor, label, width, onClose, children }: PopoverProps) {
   const ref = useRef<HTMLDivElement>(null);
   const isTopmost = useOverlay('popover', onClose);
-  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  const box = useAnchorRect(anchor);
 
   // Placed before the first paint, so it never shows at the window's corner —
   // and never hidden meanwhile, since a hidden element cannot take the focus
-  // given to it below.
-  useLayoutEffect(() => {
-    const measure = (): void => {
-      const box = anchor.current?.getBoundingClientRect();
-      if (box === undefined) return;
-      const centred = box.left + box.width / 2 - width / 2;
-      setPlace({
-        left: Math.max(MARGIN, Math.min(centred, window.innerWidth - width - MARGIN)),
-        top: box.bottom + GAP,
-      });
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [anchor, width]);
+  // given to it below. Until the anchor is measured it sits at the corner,
+  // unseen.
+  const place =
+    box === null
+      ? null
+      : {
+          left: Math.max(
+            MARGIN,
+            Math.min(box.left + box.width / 2 - width / 2, window.innerWidth - width - MARGIN),
+          ),
+          top: box.bottom + GAP,
+        };
 
   useEffect(() => {
     function onPointerDown(event: PointerEvent): void {
@@ -88,13 +75,14 @@ export function Popover({ anchor, label, width, onClose, children }: PopoverProp
     };
   }, []);
 
-  return createPortal(
-    <div
+  return (
+    <Floating
+      layer="menu"
       ref={ref}
       role="dialog"
       aria-label={label}
       tabIndex={-1}
-      className="fixed z-menu overflow-y-auto rounded-sm border border-line-soft bg-surface-2 shadow-lg shadow-black/50 outline-none"
+      className="overflow-y-auto rounded-sm border border-line-soft bg-surface-2 shadow-lg shadow-black/50 outline-none"
       style={{
         width,
         left: place?.left ?? 0,
@@ -103,7 +91,6 @@ export function Popover({ anchor, label, width, onClose, children }: PopoverProp
       }}
     >
       {children}
-    </div>,
-    document.body,
+    </Floating>
   );
 }

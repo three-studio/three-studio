@@ -14,6 +14,8 @@
  * still attached.
  */
 
+import type { WindowRole } from '@three-studio/core';
+
 /** One open scene, as the rules need to see it: an `Editor` without its window. */
 export interface OpenScene {
   projectPath: string;
@@ -207,4 +209,40 @@ export function needsDiscardPrompt(dirty: boolean, smokeTest: boolean): boolean 
 export function opensInBrowser(url: string): boolean {
   const protocol = URL.parse(url)?.protocol;
   return protocol === 'http:' || protocol === 'https:';
+}
+
+/** The options that decide a window's title bar, as `BrowserWindow` takes them. */
+export interface WindowChrome {
+  titleBarStyle: 'default' | 'hiddenInset';
+  /** Where the traffic lights sit, in points from the window's top left. macOS only. */
+  trafficLightPosition?: { x: number; y: number };
+  /** Turns on the Window Controls Overlay, and the `env(titlebar-area-*)` variables with it. */
+  titleBarOverlay?: boolean;
+}
+
+/**
+ * What a window's title bar is: drawn by the page around the traffic lights on
+ * macOS, the system's own frame elsewhere.
+ *
+ * On macOS the editor's title bar has to sit level with the lights, and the
+ * page cannot know where they are. The Window Controls Overlay tells it. With it
+ * on, `env(titlebar-area-height)` is the height of the box the lights are
+ * centred in (the buttons' height plus twice `y`) and `env(titlebar-area-x)` is
+ * that box's right edge. The page sizes its bar from them, so the title is level
+ * with the lights whatever size this macOS draws them. A bar of a fixed height
+ * in CSS pixels was not: page zoom shrank it and left the lights where they
+ * were. `y: 10` keeps the bar compact; it was 13 when the bar was fixed.
+ *
+ * The launcher keeps its lights where they were, and no overlay: its drag strip
+ * holds nothing to line up with them.
+ *
+ * Windows and Linux keep the frame the system draws, with its own title. The
+ * editor sets that title through `document.title`.
+ */
+export function windowChrome(platform: NodeJS.Platform, role: WindowRole): WindowChrome {
+  if (platform !== 'darwin') return { titleBarStyle: 'default' };
+  if (role === 'launcher') {
+    return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 13 } };
+  }
+  return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 10 }, titleBarOverlay: true };
 }

@@ -64,6 +64,12 @@ export interface EditorProjection {
    */
   readonly transformGizmo: Group;
   readonly fallbackLighting: Group;
+  /**
+   * Held on to, unlike the other overlays the scene owns outright, for the Scene
+   * view's Grid toggle. Hiding it is a choice about the view and leaves the
+   * projection as it was: the group is still there, still on the list.
+   */
+  readonly grid: Group;
 }
 
 export function createEditorProjection(options: EditorProjectionOptions): EditorProjection {
@@ -81,6 +87,7 @@ export function createEditorProjection(options: EditorProjectionOptions): Editor
   const transformGizmo = new Group();
   transformGizmo.name = 'TransformGizmo';
   const fallbackLighting = buildFallbackLighting();
+  const grid = buildGrid();
 
   /*
    * Children of the `Scene` itself, whose matrix is the identity — and that is
@@ -91,7 +98,7 @@ export function createEditorProjection(options: EditorProjectionOptions): Editor
    * with one fewer node, and one that cannot be given a transform by accident.
    */
   scene.add(
-    buildGrid(),
+    grid,
     overlay.markers,
     overlay.annotations,
     outline.root,
@@ -99,7 +106,7 @@ export function createEditorProjection(options: EditorProjectionOptions): Editor
     fallbackLighting,
   );
 
-  return { scene, binder, overlay, outline, transformGizmo, fallbackLighting };
+  return { scene, binder, overlay, outline, transformGizmo, fallbackLighting, grid };
 }
 
 function buildGrid(): Group {

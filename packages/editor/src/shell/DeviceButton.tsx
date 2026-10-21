@@ -41,10 +41,8 @@ export function DeviceButton({ className = '' }: { className?: string }) {
 
   return (
     // The popover anchors to the whole button, so a click on the body launches
-    // without dismissing it. `app-no-drag` is on the button itself: it hangs
-    // outside the transport's box, and on macOS the toolbar's drag region
-    // would otherwise take its clicks and move the window.
-    <div ref={anchor} className={`app-no-drag flex items-center ${className}`}>
+    // without dismissing it.
+    <div ref={anchor} className={`flex items-center ${className}`}>
       <button
         type="button"
         aria-label="Launch on Devices"

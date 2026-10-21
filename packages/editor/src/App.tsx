@@ -3,6 +3,7 @@ import { DockLayout } from './shell/DockLayout';
 import { MenuBar } from './shell/MenuBar';
 import { CommandPalette } from './shell/CommandPalette';
 import { StatusBar } from './shell/StatusBar';
+import { TitleBar } from './shell/TitleBar';
 import { Toolbar } from './shell/Toolbar';
 import { clearLayout } from './shell/layoutStorage';
 import { useShortcuts } from './shell/useShortcuts';
@@ -28,20 +29,25 @@ export function App() {
 
   // From the list found on disk, which is where a scene's name comes from now:
   // the file is called what the scene is called.
-  const title = sceneName ?? 'Scene';
+  const scene = sceneName ?? 'Scene';
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-0">
       {/* Each region is isolated: a failure in one must not blank the window,
           and must say which one it was. */}
-      <ErrorBoundary area="Menu bar">
-        <MenuBar
-          title={`${summary?.name ?? 'Untitled'} — ${title}`}
-          onResetLayout={resetLayout}
-        />
+      <ErrorBoundary area="Title bar">
+        <TitleBar project={summary?.name ?? 'Untitled'} scene={scene} />
       </ErrorBoundary>
       <ErrorBoundary area="Toolbar">
-        <Toolbar onResetLayout={resetLayout} statusSlot={<BackendChip />} />
+        <Toolbar
+          onResetLayout={resetLayout}
+          menuSlot={
+            <ErrorBoundary area="Menu bar">
+              <MenuBar onResetLayout={resetLayout} />
+            </ErrorBoundary>
+          }
+          statusSlot={<BackendChip />}
+        />
       </ErrorBoundary>
       {/* Deliberately not clipped. Dockview's render overlay does park hidden
           panels below the window, but `overflow: clip` on #root already hides

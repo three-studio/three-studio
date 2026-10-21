@@ -1,3 +1,5 @@
+import { seenOnScreen } from './fullScreen';
+
 /**
  * One dock panel's view of what the single renderer drew.
  *
@@ -76,9 +78,18 @@ export class Presentation {
     this.canvas.dataset['view'] = view;
   }
 
-  /** Whether anyone is looking at this view. */
+  /**
+   * Whether anyone is looking at this view.
+   *
+   * The dock answers while nothing holds the full screen; the screen answers
+   * while something does. See `seenOnScreen`.
+   */
   get visible(): boolean {
-    return this.width > 0 && this.height > 0 && this.onScreen;
+    return (
+      this.width > 0 &&
+      this.height > 0 &&
+      seenOnScreen(document.fullscreenElement, this.host, this.onScreen)
+    );
   }
 
   /** Reads the host's box. True when it moved. */

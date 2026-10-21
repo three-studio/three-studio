@@ -2,6 +2,7 @@ import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type DockviewTheme,
   type IDockviewPanelProps,
 } from 'dockview-react';
 import { useCallback, useEffect, type FunctionComponent } from 'react';
@@ -31,6 +32,23 @@ const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> =
   inspector: InspectorPanel,
   project: ProjectPanel,
   console: ConsolePanel,
+};
+
+/** The gutter between two panels, and between the panels and the rest of the window, in pixels. */
+const DOCK_GAP = 4;
+
+/**
+ * dockview's dark theme, with the panels set apart by gutters rather than lines.
+ *
+ * The class is the one the dock already carried, so the gap is all that is new.
+ * The theme also goes on dockview's shell, where the floating groups live. With
+ * no theme passed, the shell wore dockview's default, `abyss`.
+ */
+const DOCK_THEME: DockviewTheme = {
+  name: 'studio',
+  className: 'dockview-theme-dark',
+  colorScheme: 'dark',
+  gap: DOCK_GAP,
 };
 
 /**
@@ -138,14 +156,21 @@ function DockviewHost() {
   }, []);
 
   return (
-    <DockviewReact
-      components={PANEL_COMPONENTS}
-      onReady={onReady}
-      className="dockview-theme-dark studio-dock h-full w-full"
-      // Panels own GPU resources and DOM that is expensive to rebuild, so hidden
-      // tabs keep their DOM instead of being unmounted.
-      defaultRenderer="always"
-      disableFloatingGroups={false}
-    />
+    // The same gutter around the outside, so the bars above and below are set
+    // apart from the panels the way the panels are from each other.
+    <div className="h-full w-full" style={{ padding: DOCK_GAP }}>
+      <DockviewReact
+        components={PANEL_COMPONENTS}
+        onReady={onReady}
+        className="dockview-theme-dark studio-dock h-full w-full"
+        theme={DOCK_THEME}
+        // The separator lines go; the gap is the separation now.
+        hideBorders
+        // Panels own GPU resources and DOM that is expensive to rebuild, so hidden
+        // tabs keep their DOM instead of being unmounted.
+        defaultRenderer="always"
+        disableFloatingGroups={false}
+      />
+    </div>
   );
 }

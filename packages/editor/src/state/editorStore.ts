@@ -44,7 +44,25 @@ interface EditorState {
    * make an author unable to judge the lighting they are setting up.
    */
   showGizmos: boolean;
+  /**
+   * The ground grid, the Scene view's own. Blender's Floor overlay: on until
+   * the author wants to see the scene with nothing of the editor's laid over it.
+   * Only the view changes; the scene file never hears of it.
+   */
+  showGrid: boolean;
+  /**
+   * The counters at the top right of the Scene view — backend, frame rate, draw
+   * calls, triangles. Blender's Statistics overlay, and on by default because
+   * that box has always been there.
+   */
+  showStats: boolean;
   playState: PlayState;
+  /**
+   * Whether the running session asked for the whole screen: Play Full Screen
+   * sets it, Stop clears it. The Game panel holds the screen while it is set,
+   * and leaving the screen ends the session, as it does in Unreal.
+   */
+  fullScreen: boolean;
   stepRequested: boolean;
   selection: readonly string[];
   /**
@@ -93,6 +111,8 @@ interface EditorState {
   togglePivotMode: () => void;
   toggleSnap: () => void;
   toggleGizmos: () => void;
+  toggleGrid: () => void;
+  toggleStats: () => void;
   setSelection: (ids: readonly string[]) => void;
   clearSelection: () => void;
   /** Asks whichever view holds this entity to edit its name in place. */
@@ -103,7 +123,7 @@ interface EditorState {
   closePalette: () => void;
   requestSceneSettings: () => void;
 
-  play: () => void;
+  play: (options?: { fullScreen?: boolean }) => void;
   togglePause: () => void;
   stop: () => void;
   /** Advances one frame while paused. Consumed by the viewport's loop. */
@@ -117,7 +137,10 @@ export const useEditorStore = create<EditorState>()((set) => ({
   pivotMode: 'pivot',
   snapEnabled: false,
   showGizmos: true,
+  showGrid: true,
+  showStats: true,
   playState: 'stopped',
+  fullScreen: false,
   stepRequested: false,
   selection: [],
   renaming: null,
@@ -140,15 +163,17 @@ export const useEditorStore = create<EditorState>()((set) => ({
   togglePivotMode: () => set((s) => ({ pivotMode: s.pivotMode === 'center' ? 'pivot' : 'center' })),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   toggleGizmos: () => set((s) => ({ showGizmos: !s.showGizmos })),
+  toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+  toggleStats: () => set((s) => ({ showStats: !s.showStats })),
   setSelection: (selection) => set({ selection }),
   clearSelection: () => set({ selection: [] }),
 
-  play: () => set({ playState: 'playing' }),
+  play: (options) => set({ playState: 'playing', fullScreen: options?.fullScreen ?? false }),
   togglePause: () =>
     set((s) => ({
       playState: s.playState === 'playing' ? 'paused' : s.playState === 'paused' ? 'playing' : s.playState,
     })),
-  stop: () => set({ playState: 'stopped' }),
+  stop: () => set({ playState: 'stopped', fullScreen: false }),
   requestStep: () => set({ stepRequested: true }),
   consumeStep: () => {
     if (!useEditorStore.getState().stepRequested) return false;

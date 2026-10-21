@@ -166,14 +166,14 @@
  */
 .studio-dock {
   --dv-group-view-background-color: var(--color-surface-1);
-  --dv-tabs-and-actions-container-background-color: var(--color-surface-2);
+  --dv-tabs-and-actions-container-background-color: var(--color-surface-0);
   --dv-tabs-and-actions-container-height: 28px;
   --dv-tabs-and-actions-container-font-size: 11px;
 
   --dv-activegroup-visiblepanel-tab-background-color: var(--color-surface-1);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--color-surface-0);
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--color-surface-1);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-surface-2);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--color-surface-0);
 
   --dv-activegroup-visiblepanel-tab-color: var(--color-ink);
   --dv-activegroup-hiddenpanel-tab-color: var(--color-ink-muted);
@@ -181,7 +181,6 @@
   --dv-inactivegroup-hiddenpanel-tab-color: var(--color-ink-dim);
 
   --dv-tab-divider-color: var(--color-line);
-  --dv-separator-border: var(--color-line);
   --dv-paneview-active-outline-color: var(--color-accent);
   --dv-drag-over-background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
   --dv-icon-hover-background-color: var(--color-surface-3);
@@ -193,10 +192,17 @@
   box-shadow: inset 0 2px 0 var(--color-accent);
 }
 
-/* Default sashes are invisible until hover; a permanent hairline reads better
-   against flat panels of nearly the same value. */
-.studio-dock .dv-sash {
-  background-color: var(--color-line);
+/*
+ * Gutters between the panels rather than lines, as in Blender.
+ *
+ * The groups sit `theme.gap` apart (`DockLayout`), and what shows between them
+ * is the grid behind, which dockview paints in the group colour: a gap would
+ * read as more panel. Painted in the window's own colour here, it reads as a
+ * gutter. The sashes sit in the gaps, invisible, and the grab area below still
+ * reaches past them.
+ */
+.studio-dock .dv-dockview {
+  background-color: var(--color-surface-0);
 }
 
 /*
@@ -205,7 +211,7 @@
  * dockview draws one 4px wide and widens it to 24 only under
  * `@media (pointer: coarse)` — so a mouse gets four pixels and a finger gets
  * twenty-four, which is backwards for a desktop editor. The same trick, applied
- * unconditionally: the grab area grows, the hairline does not move.
+ * unconditionally: the grab area grows past the gutter it sits in.
  */
 .studio-dock .dv-split-view-container > .dv-sash-container > .dv-sash:not(.dv-disabled)::before {
   content: '';
@@ -231,6 +237,26 @@
    is removed; panels are still rearrangeable by drag. */
 .studio-dock .dv-default-tab-action {
   display: none;
+}
+
+/*
+ * A floating group keeps its tabs over the chrome.
+ *
+ * Dockview lets a floating group rise until only 100px of it is left inside
+ * the dock, and `App` leaves the dock unclipped so that it can. Its tabs can
+ * then sit over the title bar, which drags the window on macOS, and over a
+ * drag region the OS takes the pointer whatever is painted on top: the group
+ * could be seen and not grabbed. It opts out the way every floating surface
+ * does — `ui/Floating.tsx` tells the whole story — and the dock comes after the
+ * title bar in the document, which is what lets its `no-drag` outweigh the
+ * bar's `drag`.
+ *
+ * Not under `.studio-dock`: dockview hosts floating groups in its shell, beside
+ * the element that carries the class rather than inside it, as it does the
+ * render overlay. The selector is dockview's own for them.
+ */
+.dv-floating-overlay-host > .dv-resize-container {
+  -webkit-app-region: no-drag;
 }
 
 /*

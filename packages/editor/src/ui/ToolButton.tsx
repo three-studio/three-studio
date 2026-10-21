@@ -1,6 +1,6 @@
 import { ChevronDown, type LucideIcon } from 'lucide-react';
-import { useState } from 'react';
-import { Menu, type MenuEntry } from './Menu';
+import { useRef, useState } from 'react';
+import { DropdownMenu, type MenuEntry } from './Menu';
 
 interface ToolButtonProps {
   icon: LucideIcon;
@@ -126,12 +126,15 @@ export function ToolSplitToggle({
   onCycle: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  // The whole split button, as `DeviceButton`'s popover hangs from: a press on
+  // the body steps the value and leaves the list open, its tick following.
+  const anchor = useRef<HTMLDivElement>(null);
 
   const title = [hint ? `${label} — ${hint}` : label, shortcut ? `  (${shortcut})` : ''].join('');
   const tone = toolTone(active);
 
   return (
-    <div className="relative flex items-center">
+    <div ref={anchor} className="flex items-center">
       <button
         type="button"
         title={title}
@@ -155,7 +158,7 @@ export function ToolSplitToggle({
       >
         <ChevronDown size={11} strokeWidth={2} />
       </button>
-      {open && <Menu items={items} onClose={() => setOpen(false)} />}
+      {open && <DropdownMenu anchor={anchor} items={items} onClose={() => setOpen(false)} />}
     </div>
   );
 }

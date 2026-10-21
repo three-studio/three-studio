@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { defaultDuration, useToastStore, type Toast } from '../state/toastStore';
 import { Alert } from './Alert';
+import { Floating } from './Floating';
 
 /**
- * Where transient messages appear: bottom right, newest at the bottom.
- *
- * Rendered into `document.body`. `position: fixed` is relative to the viewport
- * only while no ancestor carries a transform, and dockview gives its panels
- * one — the same trap the context menu and the asset preview fell into.
+ * Where transient messages appear: bottom right, newest at the bottom. Drawn by
+ * `Floating`, like everything that floats above the editor.
  */
 export function ToastHost() {
   const toasts = useToastStore((s) => s.toasts);
@@ -18,13 +15,14 @@ export function ToastHost() {
 
   if (toasts.length === 0) return null;
 
-  return createPortal(
-    <div
+  return (
+    <Floating
+      layer="toast"
       // Hovering the stack stops the clock: reading a message should not be a
       // race against it, and reaching for its action even less so.
       onPointerEnter={() => setPaused(true)}
       onPointerLeave={() => setPaused(false)}
-      className="pointer-events-none fixed bottom-3 right-3 z-toast flex flex-col items-end gap-2"
+      className="pointer-events-none bottom-3 right-3 flex flex-col items-end gap-2"
     >
       {toasts.length > 1 && (
         <button
@@ -41,8 +39,7 @@ export function ToastHost() {
           <TimedToast toast={toast} paused={paused} onDismiss={() => dismiss(toast.id)} />
         </div>
       ))}
-    </div>,
-    document.body,
+    </Floating>
   );
 }
 
