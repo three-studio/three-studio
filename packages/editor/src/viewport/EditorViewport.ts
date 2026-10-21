@@ -100,6 +100,7 @@ export class EditorViewport {
 
   private readonly outline: SelectionOutline;
   private readonly fallbackLighting: Group;
+  private readonly grid: Group;
 
   /** Who gets the pointer: the camera, the gizmo, or the selection. */
   private readonly input: ViewportInput;
@@ -161,6 +162,7 @@ export class EditorViewport {
     this.overlay = projection.overlay;
     this.outline = projection.outline;
     this.fallbackLighting = projection.fallbackLighting;
+    this.grid = projection.grid;
 
     this.camera = new PerspectiveCamera(60, 1, 0.1, 5000);
     this.camera.position.set(8, 6, 12);
@@ -529,8 +531,10 @@ export class EditorViewport {
 
 
   private syncSelection(): void {
-    const { selection, transformMode, showGizmos } = useEditorStore.getState();
+    const { selection, transformMode, showGizmos, showGrid } = useEditorStore.getState();
     const resolve = (id: string) => this.binder.getObject(id);
+
+    this.grid.visible = showGrid;
 
     this.outline.update(selection, resolve);
 

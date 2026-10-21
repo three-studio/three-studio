@@ -4,11 +4,13 @@ import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { addEntity } from '../commands/sceneCommands';
 import { useAssetStore } from '../state/assetStore';
+import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { instantiatePrefab } from '../commands/prefabCommands';
+import { SceneToolbar } from './SceneToolbar';
 
 export function ViewportPanel(props: IDockviewPanelProps) {
   // What the box cannot say: dockview parks an inactive tab at full size, so a
@@ -23,6 +25,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
 
   const hostRef = useRef<HTMLDivElement>(null);
   const error = useViewportStore((s) => s.error);
+  const showStats = useEditorStore((s) => s.showStats);
   const [dropping, setDropping] = useState(false);
 
   useEffect(() => {
@@ -98,25 +101,32 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   };
 
   return (
-    <div
-      className="relative h-full w-full overflow-hidden bg-surface-0"
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME)) return;
-        event.preventDefault();
-        event.dataTransfer.dropEffect = 'copy';
-        setDropping(true);
-      }}
-      onDragLeave={() => setDropping(false)}
-      onDrop={onDrop}
-    >
-      <PrefabModeBar />
-      {/* The canvas is inserted here by `EditorViewport.attachScene`, and
-          outlives this component, so it is never rendered by React. */}
-      <div ref={hostRef} className="absolute inset-0" />
-      <ViewportStats />
-      {dropping && (
-        <div className="pointer-events-none absolute inset-2 rounded-sm border-2 border-dashed border-accent" />
-      )}
+    <div className="flex h-full w-full flex-col overflow-hidden bg-surface-0">
+      <SceneToolbar />
+      {/* The drop target is the canvas's box, not the panel's. `dropPoint`
+          measures the pointer against the canvas, and a drop on the toolbar
+          above it would be a ray above the view: the entity would land far
+          off, nowhere near where it was let go. */}
+      <div
+        className="relative min-h-0 flex-1"
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME)) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = 'copy';
+          setDropping(true);
+        }}
+        onDragLeave={() => setDropping(false)}
+        onDrop={onDrop}
+      >
+        <PrefabModeBar />
+        {/* The canvas is inserted here by `EditorViewport.attachScene`, and
+            outlives this component, so it is never rendered by React. */}
+        <div ref={hostRef} className="absolute inset-0" />
+        {showStats && <ViewportStats />}
+        {dropping && (
+          <div className="pointer-events-none absolute inset-2 rounded-sm border-2 border-dashed border-accent" />
+        )}
+      </div>
     </div>
   );
 }

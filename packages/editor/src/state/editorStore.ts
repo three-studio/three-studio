@@ -44,6 +44,18 @@ interface EditorState {
    * make an author unable to judge the lighting they are setting up.
    */
   showGizmos: boolean;
+  /**
+   * The ground grid, the Scene view's own. Blender's Floor overlay: on until
+   * the author wants to see the scene with nothing of the editor's laid over it.
+   * Only the view changes; the scene file never hears of it.
+   */
+  showGrid: boolean;
+  /**
+   * The counters at the top right of the Scene view — backend, frame rate, draw
+   * calls, triangles. Blender's Statistics overlay, and on by default because
+   * that box has always been there.
+   */
+  showStats: boolean;
   playState: PlayState;
   stepRequested: boolean;
   selection: readonly string[];
@@ -93,6 +105,8 @@ interface EditorState {
   togglePivotMode: () => void;
   toggleSnap: () => void;
   toggleGizmos: () => void;
+  toggleGrid: () => void;
+  toggleStats: () => void;
   setSelection: (ids: readonly string[]) => void;
   clearSelection: () => void;
   /** Asks whichever view holds this entity to edit its name in place. */
@@ -117,6 +131,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   pivotMode: 'pivot',
   snapEnabled: false,
   showGizmos: true,
+  showGrid: true,
+  showStats: true,
   playState: 'stopped',
   stepRequested: false,
   selection: [],
@@ -140,6 +156,8 @@ export const useEditorStore = create<EditorState>()((set) => ({
   togglePivotMode: () => set((s) => ({ pivotMode: s.pivotMode === 'center' ? 'pivot' : 'center' })),
   toggleSnap: () => set((s) => ({ snapEnabled: !s.snapEnabled })),
   toggleGizmos: () => set((s) => ({ showGizmos: !s.showGizmos })),
+  toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+  toggleStats: () => set((s) => ({ showStats: !s.showStats })),
   setSelection: (selection) => set({ selection }),
   clearSelection: () => set({ selection: [] }),
 
