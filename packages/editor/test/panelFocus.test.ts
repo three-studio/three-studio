@@ -19,6 +19,7 @@ const state = (over: Partial<FocusInputs> = {}): FocusInputs => ({
   playing: false,
   revealed: null,
   sceneSettings: 0,
+  console: 0,
   ...over,
 });
 
@@ -74,6 +75,18 @@ describe('what a change of state brings forward', () => {
     // way.
     expect(panelForChange(state(), state({ playing: true, sceneSettings: 1 }))).toBe('viewport');
   });
+
+  it('shows the Console for a new request, and only a new one', () => {
+    // A failed Play's toast asks for it: the details of a compile error or of a
+    // start that threw are there, and nowhere else.
+    expect(panelForChange(state(), state({ console: 1 }))).toBe('console');
+    expect(panelForChange(state({ console: 1 }), state({ console: 2 }))).toBe('console');
+    expect(panelForChange(state({ console: 2 }), state({ console: 2 }))).toBeNull();
+  });
+
+  it('prefers the game over a Console request in the same change', () => {
+    expect(panelForChange(state(), state({ playing: true, console: 1 }))).toBe('viewport');
+  });
 });
 
 describe('what the stores ask for', () => {
@@ -91,6 +104,17 @@ describe('what the stores ask for', () => {
 
       useEditorStore.getState().requestSceneSettings();
       expect(vi.mocked(showPanel).mock.calls).toEqual([['inspector']]);
+    } finally {
+      stop();
+    }
+  });
+
+  it('brings the Console forward on a request', () => {
+    vi.mocked(showPanel).mockClear();
+    const stop = watchPanelFocus();
+    try {
+      useEditorStore.getState().requestConsole();
+      expect(vi.mocked(showPanel).mock.calls).toEqual([['console']]);
     } finally {
       stop();
     }

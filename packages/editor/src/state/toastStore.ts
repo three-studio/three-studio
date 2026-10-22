@@ -81,4 +81,33 @@ export function notify(toast: ToastInput): string {
   return useToastStore.getState().push(toast);
 }
 
+/**
+ * One toast at a time for one subject. `show` replaces the slot's toast where
+ * it stands, or pushes a new one when the person has dismissed it; it never
+ * stacks a second.
+ *
+ * For a message that can be said again before it has been read: a failed Play
+ * pressed again, a gesture refused at each try. Stacked, the copies say nothing
+ * more than one, and they push everything else off the five.
+ *
+ * Whether the toast is up is read from the store, never remembered: a toast the
+ * person closed, or that Clear all or the cap took, is gone, and updating it
+ * would say nothing to anyone. A replacement goes through `update`, which keeps
+ * the fields the new toast leaves out — so callers give the whole toast.
+ */
+export function toastSlot(): { show(toast: ToastInput): void; dismiss(): void } {
+  let id: string | null = null;
+  return {
+    show(toast) {
+      const store = useToastStore.getState();
+      if (id !== null && store.toasts.some((shown) => shown.id === id)) store.update(id, toast);
+      else id = store.push(toast);
+    },
+    dismiss() {
+      if (id !== null) useToastStore.getState().dismiss(id);
+      id = null;
+    },
+  };
+}
+
 export { defaultDuration };

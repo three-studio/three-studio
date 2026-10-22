@@ -11,7 +11,8 @@ import { showPanel } from './dockApi';
  * two things** — the second is a reaction to the first, and a reaction belongs
  * on the side that owns the arrangement. Scene Settings… is the third: the
  * command empties the selection and counts a request, and the Inspector coming
- * forward is decided here.
+ * forward is decided here. A failed Play's Show Console is the fourth, counted
+ * the same way.
  *
  * It is the same shape as `editorStore.renaming` and `paletteOpen`: a command
  * writes state, a view reads it. The difference is that a panel cannot bring
@@ -27,6 +28,8 @@ export interface FocusInputs {
   revealed: string | null;
   /** How many times Scene Settings… was asked for: `editorStore.sceneSettingsRequests`. */
   sceneSettings: number;
+  /** How many times the Console was asked for: `editorStore.consoleRequests`. */
+  console: number;
 }
 
 /**
@@ -37,9 +40,9 @@ export interface FocusInputs {
  * running, an asset revealed — would be yanked back in front every time
  * anything else moved.
  *
- * Play wins over a reveal or a Scene Settings request in the same change, which
- * cannot happen today and costs nothing to settle: what the author asked for
- * last is the game.
+ * Play wins over a reveal, a Scene Settings request or a Console request in the
+ * same change, which cannot happen today and costs nothing to settle: what the
+ * author asked for last is the game.
  */
 export function panelForChange(before: FocusInputs, after: FocusInputs): string | null {
   /*
@@ -61,6 +64,13 @@ export function panelForChange(before: FocusInputs, after: FocusInputs): string 
   if (after.sceneSettings !== before.sceneSettings) return 'inspector';
 
   /*
+   * A failed Play's toast offers the Console, where the compile errors or the
+   * start's error are written out in full. A count, like Scene Settings, and
+   * `showPanel` reopens a Console that was closed.
+   */
+  if (after.console !== before.console) return 'console';
+
+  /*
    * Revealing an asset is a request to look at it, and looking at it is not
    * possible with the Project panel behind another tab. Only a *new* reveal
    * counts: the panel clears `revealed` once it has drawn the highlight, and
@@ -76,6 +86,7 @@ function inputs(): FocusInputs {
     playing: useEditorStore.getState().playState !== 'stopped',
     revealed: useAssetStore.getState().revealed,
     sceneSettings: useEditorStore.getState().sceneSettingsRequests,
+    console: useEditorStore.getState().consoleRequests,
   };
 }
 
@@ -83,7 +94,7 @@ function inputs(): FocusInputs {
  * Watches for those changes while the dock is mounted.
  *
  * Two subscriptions rather than a selector each, because the decision reads both
- * stores and has to see them together. Every store change reads three fields and
+ * stores and has to see them together. Every store change reads four fields and
  * compares them, which is nothing beside what a store change already costs in
  * React.
  */

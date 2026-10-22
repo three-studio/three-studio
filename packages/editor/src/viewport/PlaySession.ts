@@ -3,6 +3,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  formatLogArgs,
   resolveScene,
   type LaunchSnapshot,
   type RenderingSettings,
@@ -18,6 +19,7 @@ import { useEditorStore } from '../state/editorStore';
 import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
+import { toastSlot } from '../state/toastStore';
 import { useViewportStore } from '../state/viewportStore';
 import type { Presentation } from './Presentation';
 
@@ -139,6 +141,21 @@ export class PlaySession {
   /** The document as it was when Play was pressed, restored on Stop. */
   private playSnapshot: SceneDoc | null = null;
   private unsubscribePlayState: (() => void) | null = null;
+  /**
+   * Which start is the one somebody waits for: bumped at every press, every
+   * Stop and `dispose`. A start that finds it moved after an await has been
+   * replaced — by a Stop, or by a Stop and another Play — and goes no further,
+   * saying nothing.
+   *
+   * A count, because asking whether something is stopped, which is what each
+   * await used to ask, cannot tell one Play from the next: with Play, Stop and
+   * Play again during one compile, the first start saw a game running, so its
+   * compile failure stopped the second Play, and a host it went on to build ran
+   * beside the second's.
+   */
+  private session = 0;
+  /** A failed Play, said once and never stacked; the next press takes it away. */
+  private readonly failure = toastSlot();
 
   constructor(private readonly host: PlayHost) {}
 
@@ -171,48 +188,71 @@ export class PlaySession {
       previous = next;
 
       if (next === 'stopped') this.endPlay();
-      else if (wasStopped) void this.beginPlay();
+      else if (wasStopped) {
+        // Taken away at the press, before anything is awaited: it is about the
+        // Play this one replaces, whether or not this one goes any better.
+        this.failure.dismiss();
+        this.session += 1;
+        void this.beginPlay(this.session);
+      }
     });
   }
 
-  private async beginPlay(): Promise<void> {
-    // Play means run the game, and a prefab on its own is not one — it usually
-    // has no camera and no light, so it would come up black and warn about it.
-    // Closing saves the prefab, so nothing is lost by leaving on the way.
-    if (inPrefabMode()) await usePrefabModeStore.getState().exit();
-
-    // Read at the press, before anything runs: physics and scripts mutate the
-    // world, and Stop has to put the scene back exactly as it was authored.
-    // The materials, prefabs and settings used to be read after the compile;
-    // they are read here with the scene, so a launch made during Play sends
-    // exactly what Play started from.
-    const inputs = readPlayInputs();
-    this.playSnapshot = structuredClone(inputs.entry.scene);
-    // The entry as Play keeps it: what Stop restores, what a restarted level is
-    // answered with, and what a launch made during Play sends.
-    const entry = { ...inputs.entry, scene: this.playSnapshot };
-    // Unless Stop came while Prefab Mode was being left: `endPlay` has run
-    // already, nothing after it would clear this, and every launch would send
-    // a scene the person has since gone on editing.
-    if (useEditorStore.getState().playState !== 'stopped') running = { ...inputs, entry };
-
-    // Compiled fresh on every Play, so editing a script and pressing Play is
-    // the whole loop — no build step to remember.
-    const compiled = await useScriptStore.getState().build();
-    if (!compiled) {
-      // Refused rather than started, as Unity refuses to enter play mode on a
-      // compile error. Starting anyway means playing a build that does not
-      // match the code on screen.
-      // Stopped first: leaving play clears the warning list, so the message has
-      // to be written after that or it is wiped the instant it appears.
-      useEditorStore.getState().stop();
-      useViewportStore
-        .getState()
-        .setPlayWarnings(['Scripts did not compile — see the Console.']);
-      return;
-    }
-
+  /**
+   * One start, from the press to the first engine.
+   *
+   * Every await is followed by asking whether this start is still the one
+   * somebody waits for (`session`), and one `try` holds the whole of it, leaving
+   * Prefab Mode included. That first await used to sit outside the `try`: a
+   * prefab that failed to save rejected out of `void this.beginPlay()` as an
+   * unhandled rejection, the transport left on Play with no game ever to come.
+   */
+  private async beginPlay(session: number): Promise<void> {
+    const current = () => this.session === session;
     try {
+      // Play means run the game, and a prefab on its own is not one — it usually
+      // has no camera and no light, so it would come up black and warn about it.
+      // Closing saves the prefab, so nothing is lost by leaving on the way.
+      if (inPrefabMode()) await usePrefabModeStore.getState().exit();
+      // Stopped while Prefab Mode was being left: `endPlay` has run already, and
+      // nothing after it would clear what is taken below — every launch would
+      // send a scene the person has since gone on editing.
+      if (!current()) return;
+
+      // Read at the press, before anything runs: physics and scripts mutate the
+      // world, and Stop has to put the scene back exactly as it was authored.
+      // The materials, prefabs and settings used to be read after the compile;
+      // they are read here with the scene, so a launch made during Play sends
+      // exactly what Play started from.
+      const inputs = readPlayInputs();
+      this.playSnapshot = structuredClone(inputs.entry.scene);
+      // The entry as Play keeps it: what Stop restores, what a restarted level is
+      // answered with, and what a launch made during Play sends.
+      const entry = { ...inputs.entry, scene: this.playSnapshot };
+      running = { ...inputs, entry };
+
+      // Compiled fresh on every Play, so editing a script and pressing Play is
+      // the whole loop — no build step to remember.
+      const compiled = await useScriptStore.getState().build();
+      if (!current()) return;
+      if (!compiled) {
+        // Refused rather than started, as Unity refuses to enter play mode on a
+        // compile error. Starting anyway means playing a build that does not
+        // match the code on screen.
+        //
+        // Said in a toast, where the person is looking. It used to go into the
+        // problems laid over the running game — and there is no running game
+        // after a refusal, so nothing was ever said. The errors themselves are
+        // in the Console already: the build writes them there.
+        useEditorStore.getState().stop();
+        const count = useScriptStore.getState().errors.length;
+        this.sayFailure(
+          'Scripts did not compile',
+          `${count} ${count === 1 ? 'error' : 'errors'}, listed in the Console.`,
+        );
+        return;
+      }
+
       // Hosted rather than created directly, so a script can move to another
       // scene while playing in the editor — a menu that starts a level has to
       // be testable without exporting a build first. The scene it starts on is
@@ -254,6 +294,11 @@ export class PlaySession {
       // is the indicative half of a scene's identity — and a
       // script that wants the stable half can name the id instead.
       await host.adopt(inputs.entry.name, inputs.entry.scene);
+      // Stopped while the engine was being built — the physics module and every
+      // model the scene needs. That Stop took this host down, since it was
+      // `this.sceneHost` by then, and `swap`, finding the host disposed, threw
+      // the engine away: there is nothing left to hand over.
+      if (!current()) return;
       const engine = host.engine;
       if (!engine) return;
 
@@ -266,15 +311,6 @@ export class PlaySession {
         };
         this.syncAspect(next);
       };
-      if (useEditorStore.getState().playState === 'stopped') {
-        // Stopped again while the physics module was loading. The host goes
-        // too, and `this.sceneHost` is cleared: `endPlay` may already have run —
-        // `this.sceneHost` was still null when it did, because the assignment above
-        // happens after two awaits — and it would then never be taken down.
-        host.dispose();
-        if (this.sceneHost === host) this.sceneHost = null;
-        return;
-      }
       // A copy, and a live subscription: warnings raised later must reach the
       // panel, and React only redraws on a new reference.
       engine.onWarning = (warnings) => {
@@ -291,14 +327,41 @@ export class PlaySession {
       // The camera, the handles and the size, none of which is this class's.
       this.host.onPlayStarted();
     } catch (cause) {
-      useViewportStore
-        .getState()
-        .setError(cause instanceof Error ? cause.message : String(cause));
+      // A start nobody waits for any more says nothing: whatever it would say is
+      // about a Play the person has already stopped or pressed again.
+      if (!current()) return;
+      // The message for the Console, the stack for devtools — the Console writes
+      // an error as its name and message.
+      console.error('[play] The game could not start:', cause);
+      // Said in a toast, and the edit view kept. A throw here used to be
+      // written as the renderer's failure, which took the whole Viewport over
+      // with "The renderer failed to start." for good, over a renderer that
+      // worked.
       useEditorStore.getState().stop();
+      this.sayFailure('The game could not start', formatLogArgs([cause]).split('\n')[0] ?? '');
     }
   }
 
+  /**
+   * Says why Play stopped as soon as it was pressed, in one error toast: it
+   * stays until it is dismissed, or until the next press replaces the Play it
+   * is about. The details are in the Console, which it offers — the Console is
+   * also in the Window menu, so the toast is never the only way there.
+   */
+  private sayFailure(title: string, description: string): void {
+    this.failure.show({
+      kind: 'error',
+      title,
+      description,
+      actions: [
+        { label: 'Show Console', primary: true, onClick: () => useEditorStore.getState().requestConsole() },
+      ],
+    });
+  }
+
   private endPlay(): void {
+    // Whatever start is still under way is one nobody waits for now.
+    this.session += 1;
     // The host owns the engine once playing; disposing both would tear the
     // same one down twice.
     this.sceneHost?.dispose();
@@ -323,6 +386,7 @@ export class PlaySession {
   /** Stops the game and unsubscribes. The session is not usable afterwards. */
   dispose(): void {
     this.unsubscribePlayState?.();
+    this.session += 1;
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on
     // a canvas that is about to go away.

@@ -58,7 +58,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const editHostRef = useRef<HTMLDivElement>(null);
   const gameHostRef = useRef<HTMLDivElement>(null);
-  const error = useViewportStore((s) => s.error);
+  const rendererError = useViewportStore((s) => s.rendererError);
   const showStats = useEditorStore((s) => s.showStats);
   const playState = useEditorStore((s) => s.playState);
   const [dropping, setDropping] = useState(false);
@@ -76,7 +76,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
       .catch((cause: unknown) => {
         useViewportStore
           .getState()
-          .setError(cause instanceof Error ? cause.message : String(cause));
+          .setRendererError(cause instanceof Error ? cause.message : String(cause));
       });
 
     return () => {
@@ -91,12 +91,14 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     // moved, re-parented or resized at the press.
   }, []);
 
-  if (error) {
+  // The only failure that takes the view: without a renderer there is no view
+  // to keep. A Play that fails is said in a toast, over the edit view.
+  if (rendererError) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-surface-1 px-6 text-center">
         <p className="text-error">The renderer failed to start.</p>
         <p className="text-2xs text-ink-muted" data-selectable>
-          {error}
+          {rendererError}
         </p>
       </div>
     );

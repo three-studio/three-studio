@@ -9,8 +9,17 @@ interface ViewportStats {
 
 interface ViewportState extends ViewportStats {
   backend: RendererBackend | null;
-  /** Non-null when the renderer failed to initialise, so the panel can explain why. */
-  error: string | null;
+  /**
+   * Non-null when the renderer failed to start, so the Viewport can explain why.
+   *
+   * The one failure that takes the whole view, because without a renderer there
+   * is no view to keep. Written by the Viewport's own start and by nothing else:
+   * a Play that threw used to write here too, and the Viewport became "The
+   * renderer failed to start." for good — over a renderer that worked, for a
+   * game that would have started at the next press. A failed Play is said in a
+   * toast now, and the edit view stays.
+   */
+  rendererError: string | null;
   /** Metres per second of the editor fly camera, surfaced while navigating. */
   flySpeed: number;
   /** Problems the engine found when starting, e.g. a scene with no camera. */
@@ -38,7 +47,7 @@ interface ViewportState extends ViewportStats {
   toggleAnimated: () => void;
 
   setBackend: (backend: RendererBackend) => void;
-  setError: (error: string) => void;
+  setRendererError: (error: string) => void;
   setStats: (stats: ViewportStats) => void;
   setFlySpeed: (speed: number) => void;
 }
@@ -50,7 +59,7 @@ interface ViewportState extends ViewportStats {
  */
 export const useViewportStore = create<ViewportState>()((set) => ({
   backend: null,
-  error: null,
+  rendererError: null,
   fps: 0,
   drawCalls: 0,
   triangles: 0,
@@ -62,7 +71,7 @@ export const useViewportStore = create<ViewportState>()((set) => ({
   setPlayWarnings: (playWarnings) => set({ playWarnings }),
   setFallbackLighting: (fallbackLighting) => set({ fallbackLighting }),
   setBackend: (backend) => set({ backend }),
-  setError: (error) => set({ error }),
+  setRendererError: (rendererError) => set({ rendererError }),
   setStats: (stats) => set(stats),
   setFlySpeed: (flySpeed) => set({ flySpeed }),
   toggleAnimated: () => set((state) => ({ animated: !state.animated })),
