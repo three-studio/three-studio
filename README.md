@@ -51,7 +51,8 @@ thing as a static web build** that runs in any browser.
 
 ### Viewport
 - **Play where you edit** — the game runs in the Viewport, in place of the edit view, and Stop puts the
-  edit view back as it was left; Play Full Screen gives the game the whole screen.
+  edit view back as it was left; Play Full Screen gives the game the whole screen. While it runs, a play
+  bar names the scene it runs, and the whole editor is tinted — green, amber while paused.
 - **Fly camera** (`RMB` + `WASD`), orbit, pan, dolly, **frame selection**.
 - **Transform gizmos** — select / move / rotate / scale, world or local space.
 - **GPU picking**, selection outline, drop plane for drag-and-drop placement.

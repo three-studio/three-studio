@@ -95,7 +95,8 @@ const PIVOT_HINTS: Record<PivotMode, string> = {
 
 /**
  * The edit view's own header: what the handles do on the left, what the view
- * shows on the right.
+ * shows on the right. From the press of Play to Stop the play bar takes its
+ * place, in the same strip.
  *
  * In the panel rather than in the window's toolbar, because every control here
  * is about this view and no other — Blender heads each 3D view the same way. A

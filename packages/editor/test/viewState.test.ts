@@ -21,6 +21,7 @@ describe('what the view shows', () => {
       canvas: 'edit',
       drawn: 'edit',
       input: 'editor',
+      header: 'edit',
       gameHolds: 'nothing',
       overlays: {
         prefabBar: true,
@@ -44,6 +45,7 @@ describe('what the view shows', () => {
       canvas: 'edit',
       drawn: 'game',
       input: 'none',
+      header: 'play',
       gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
@@ -63,6 +65,7 @@ describe('what the view shows', () => {
       canvas: 'game',
       drawn: 'game',
       input: 'game',
+      header: 'play',
       gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
@@ -82,6 +85,7 @@ describe('what the view shows', () => {
       canvas: 'game',
       drawn: 'game',
       input: 'game',
+      header: 'play',
       gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
@@ -134,6 +138,20 @@ describe('what the view shows', () => {
     expect(viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING }).input).toBe('none');
     expect(viewState({ playState: 'playing', gameShown: true, ...HOLDS_NOTHING }).input).toBe('game');
     expect(viewState({ playState: 'paused', gameShown: true, ...HOLDS_NOTHING }).input).toBe('game');
+  });
+
+  it('heads the view with the edit tools while stopped, and with the play bar from the press', () => {
+    // From the press rather than from the first frame: while the game starts
+    // the edit image is a picture, and its tools would be buttons over it.
+    const header = (playState: PlayState, gameShown: boolean) =>
+      viewState({ playState, gameShown, ...HOLDS_NOTHING }).header;
+    expect(header('stopped', false)).toBe('edit');
+    expect(header('stopped', true)).toBe('edit');
+    // Starting, from Play and from a Pause pressed before the first frame.
+    expect(header('playing', false)).toBe('play');
+    expect(header('paused', false)).toBe('play');
+    expect(header('playing', true)).toBe('play');
+    expect(header('paused', true)).toBe('play');
   });
 
   it('says how the editor camera flies, and how the edit view is lit, only while the scene is edited', () => {

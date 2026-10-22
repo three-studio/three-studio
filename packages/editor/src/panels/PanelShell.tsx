@@ -1,5 +1,6 @@
-import { Play, type LucideIcon } from 'lucide-react';
+import { Pause, Play, type LucideIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
+import { useEditorStore } from '../state/editorStore';
 import { STOP_TO_EDIT, useSceneLocked } from '../state/sceneLock';
 
 /** Panel body with the standard background and scroll behaviour. */
@@ -39,13 +40,12 @@ export function PanelToolbar({ children }: { children: ReactNode }) {
 }
 
 /**
- * The Viewport's header strip: whatever heads the view is drawn in it.
+ * The Viewport's header strip, which the edit tools and the play bar share.
  *
- * One strip, because its height is where the stage starts. A header of any
- * other height would move the stage as it took over — both canvases resized, at
- * the press of Play the edit image held under Starting… among them, the
- * renderer's frame buffer retired, and the game's first aspect read from a box
- * about to change.
+ * One strip, because its height is where the stage starts. A play bar of any
+ * other height would move the stage at the press of Play — both canvases
+ * resized, the edit image held under Starting… among them, the renderer's frame
+ * buffer retired, and the game's first aspect read from a box about to change.
  */
 export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) {
   return (
@@ -57,6 +57,19 @@ export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) 
       className={`flex h-8 shrink-0 items-center gap-0.5 overflow-clip bg-surface-1 px-1 ${className}`}
     />
   );
+}
+
+/**
+ * The game's state as a glyph: ▶ in the play green while it starts or runs,
+ * ❚❚ in the pause amber while paused.
+ *
+ * Read from the play state, as the editor's tint is, so that the two say Pause
+ * together from the moment it is pressed — before the game's first frame too.
+ */
+export function PlayGlyph() {
+  const paused = useEditorStore((s) => s.playState === 'paused');
+  const Glyph = paused ? Pause : Play;
+  return <Glyph size={12} aria-hidden className={`shrink-0 fill-current ${paused ? 'text-pause' : 'text-play'}`} />;
 }
 
 /**
@@ -76,7 +89,7 @@ export function StopToEditStrip() {
       data-scene-locked
       className="flex h-6 shrink-0 items-center gap-1.5 border-b border-line bg-surface-2 px-2 text-2xs text-ink-muted"
     >
-      <Play size={11} className="shrink-0 fill-current text-play" />
+      <PlayGlyph />
       <span className="truncate">{STOP_TO_EDIT}</span>
     </div>
   );

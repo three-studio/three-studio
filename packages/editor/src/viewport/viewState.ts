@@ -67,6 +67,15 @@ export interface ViewState {
    * takes no pointer.
    */
   input: 'editor' | 'game' | 'none';
+  /**
+   * The view's header: the edit tools, or the play bar from the press of Play
+   * to Stop.
+   *
+   * From the press rather than from the game's first frame, as the input is:
+   * while the game starts, the edit image is a picture, and the edit tools
+   * would be buttons over it.
+   */
+  header: 'edit' | 'play';
   /** What the game holds of the person's input; see `GameHold`. */
   gameHolds: GameHold;
   /** What is laid over the stage. */
@@ -112,6 +121,7 @@ export function viewState(inputs: ViewInputs): ViewState {
       canvas: 'edit',
       drawn: 'edit',
       input: 'editor',
+      header: 'edit',
       gameHolds,
       overlays: {
         prefabBar: true,
@@ -133,6 +143,7 @@ export function viewState(inputs: ViewInputs): ViewState {
       canvas: 'edit',
       drawn: 'game',
       input: 'none',
+      header: 'play',
       gameHolds,
       overlays: {
         prefabBar: false,
@@ -153,6 +164,7 @@ export function viewState(inputs: ViewInputs): ViewState {
     canvas: 'game',
     drawn: 'game',
     input: 'game',
+    header: 'play',
     gameHolds,
     overlays: {
       prefabBar: false,
