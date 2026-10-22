@@ -32,7 +32,7 @@ import {
 import './behaviour/audio';
 import './controllers/PlayerController';
 import './scripting/ScriptHost';
-import { Input } from './input/Input';
+import { Input, type InputOptions } from './input/Input';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -53,6 +53,12 @@ export interface EngineOptions {
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
   domElement: HTMLElement;
+  /**
+   * How the game's `Input` listens. Omitted, keys are heard window-wide, which
+   * is the exported player's choice; the editor hears them on `domElement`
+   * alone, so that a key typed in one of its panels never reaches the game.
+   */
+  input?: InputOptions;
   /**
    * The audio context this engine mixes into.
    *
@@ -177,7 +183,7 @@ export class Engine {
       materials: options.materials,
       renderer: options.renderer,
     });
-    this.input = new Input(options.domElement);
+    this.input = new Input(options.domElement, options.input);
     this.physics = physics;
 
     this.audio =
