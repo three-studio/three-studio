@@ -114,10 +114,16 @@ export function instantiatePrefab(
   const template = createEntity(prefab?.name ?? 'Prefab', [createPrefabInstance(assetId)]);
   template.entity.transform.position = position;
 
-  useDocumentStore.getState().mutate('Add prefab', (draft) => {
-    insertEntity(draft, template, parentId);
-  });
-  useEditorStore.getState().setSelection([template.entity.id]);
+  useDocumentStore.getState().mutate(
+    'Add prefab',
+    (draft) => {
+      insertEntity(draft, template, parentId);
+    },
+    // Inside the transaction, as `addEntity` does. Set after `mutate`, the
+    // selection was in no entry: Redo brought the instance back unselected, and
+    // a refused `mutate` would have selected an entity that did not exist.
+    { select: [template.entity.id] },
+  );
 }
 
 /**

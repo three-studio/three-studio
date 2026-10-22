@@ -1,8 +1,8 @@
-import { createAudioSourceEntity, createModelEntity, variantBaseOf } from '@three-studio/core';
+import { variantBaseOf } from '@three-studio/core';
 import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-react';
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
-import { addEntity } from '../commands/sceneCommands';
+import { DROPPABLE_KINDS, placeDroppedAsset } from '../commands/placeEntity';
 import { commandById } from '../commands/registry';
 import { shortcutHint } from '../shell/shortcutBindings';
 import { useAssetStore } from '../state/assetStore';
@@ -12,7 +12,6 @@ import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { viewState } from '../viewport/viewState';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
-import { instantiatePrefab } from '../commands/prefabCommands';
 import { SceneToolbar } from './SceneToolbar';
 import { tooltip } from '../ui/Tooltip';
 
@@ -107,10 +106,11 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     );
   }
 
-  /** Dropping a model from the Project panel places it where the cursor is. */
+  /**
+   * Dropping an asset from the Project panel places it where the cursor is.
+   * What it becomes, and whether the game lets it in, is `placeDroppedAsset`'s.
+   */
   const onDrop = (event: DragEvent) => {
-    // A prefab and a model both arrive as an asset id; which one it is decides
-    // whether the scene gets an instance or a mesh.
     const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME);
     setDropping(false);
     if (!assetId) return;
@@ -118,28 +118,9 @@ export function ViewportPanel(props: IDockviewPanelProps) {
 
     const viewport = peekViewport();
     if (!viewport) return;
+    // Measured on the edit canvas, which keeps its box on the stage during Play.
     const point = viewport.dropPoint(event.clientX, event.clientY);
-
-    // A prefab and a model both arrive as an asset id; which one it is decides
-    // whether the scene gets an instance or a mesh.
-    if (event.dataTransfer.types.includes(assetKindMime('prefab'))) {
-      instantiatePrefab(assetId, [point.x, point.y, point.z]);
-      return;
-    }
-
-    const asset = useAssetStore.getState().byId(assetId);
-    if (!asset) return;
-
-    // Every kind that is not a prefab used to fall through to a model, so a
-    // `.wav` dropped here produced a model entity pointing at a sound — an
-    // entity that could never load anything and said nothing about why.
-    const template =
-      asset.kind === 'audio'
-        ? createAudioSourceEntity(assetId, asset.name)
-        : createModelEntity(assetId, asset.name);
-    // Positioned before insertion so the drop is a single undo step.
-    template.entity.transform.position = [point.x, point.y, point.z];
-    addEntity(template);
+    placeDroppedAsset(assetId, [point.x, point.y, point.z]);
   };
 
   return (
@@ -157,12 +138,21 @@ export function ViewportPanel(props: IDockviewPanelProps) {
         // then, so the stage under it is what the pointer is over.
         className={`relative min-h-0 flex-1 overflow-hidden bg-surface-0 ${view.overlays.starting ? 'cursor-progress' : ''}`}
         onDragOver={(event) => {
-          // A drop places into the scene at a point measured on the edit canvas,
-          // so only while that canvas is on top. Leaving the event uncancelled is
-          // how the browser is told the drop is refused.
-          if (!view.overlays.dropTarget) return;
-          if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME)) return;
+          // Cancelled for what the view can place, in every mode, so that its
+          // drop arrives here even during Play, where `placeDroppedAsset` says
+          // the refusal in the toast: a drop the browser refused on its own would
+          // say nothing at all. Today the dock cancels every `dragover` over a
+          // group anyway, in the capture phase, so that a panel can be docked
+          // there — which is why a texture's drop arrives too, and why what a
+          // drop does is decided at the drop, not here.
+          //
+          // What is decided here is the promise: a copy and the dashed border,
+          // only for what can be placed and only while the edit view is on top,
+          // where a drop places.
+          const types = event.dataTransfer.types;
+          if (!DROPPABLE_KINDS.some((kind) => types.includes(assetKindMime(kind)))) return;
           event.preventDefault();
+          if (!view.overlays.dropTarget) return;
           event.dataTransfer.dropEffect = 'copy';
           setDropping(true);
         }}
