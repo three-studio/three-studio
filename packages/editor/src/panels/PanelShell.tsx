@@ -1,5 +1,5 @@
 import { Play, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { STOP_TO_EDIT, useSceneLocked } from '../state/sceneLock';
 
 /** Panel body with the standard background and scroll behaviour. */
@@ -35,6 +35,27 @@ export function PanelToolbar({ children }: { children: ReactNode }) {
     <div className="flex h-7 shrink-0 items-center gap-1 border-b border-line bg-surface-2 px-1.5">
       {children}
     </div>
+  );
+}
+
+/**
+ * The Viewport's header strip: whatever heads the view is drawn in it.
+ *
+ * One strip, because its height is where the stage starts. A header of any
+ * other height would move the stage as it took over — both canvases resized, at
+ * the press of Play the edit image held under Starting… among them, the
+ * renderer's frame buffer retired, and the game's first aspect read from a box
+ * about to change.
+ */
+export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) {
+  return (
+    // `overflow-clip` rather than `hidden`, for the reason `#root` gives in
+    // `styles.css`: a panel too narrow for the strip cuts its last buttons off
+    // instead of becoming a box that focusing a button can scroll.
+    <div
+      {...props}
+      className={`flex h-8 shrink-0 items-center gap-0.5 overflow-clip bg-surface-1 px-1 ${className}`}
+    />
   );
 }
 

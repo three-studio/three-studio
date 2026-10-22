@@ -12,7 +12,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
-import { SceneToolbar } from './SceneToolbar';
+import { EditToolbar } from './EditToolbar';
 import { tooltip } from '../ui/Tooltip';
 
 /**
@@ -136,7 +136,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface-0">
-      <SceneToolbar />
+      <EditToolbar />
       {/* The stage: what Play Full Screen takes, the header left behind, and
           the drop target. The drop target is the canvas's box, not the
           panel's. `dropPoint` measures the pointer against the canvas, and a

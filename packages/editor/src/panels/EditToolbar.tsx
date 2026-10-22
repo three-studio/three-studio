@@ -25,6 +25,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { positionalKeyLabel } from '../shell/shortcutBindings';
 import { SPACE_KEY, TOOL_KEYS } from '../shell/useShortcuts';
 import { ToolButton, ToolSplitToggle, ToolToggle, ToolbarSeparator } from '../ui/ToolButton';
+import { ViewHeader } from './PanelShell';
 
 interface TransformTool {
   mode: TransformMode;
@@ -101,7 +102,7 @@ const PIVOT_HINTS: Record<PivotMode, string> = {
  * strip of the panel's own rather than buttons laid over the canvas: the canvas
  * starts below it, so no part of the scene is ever under a button.
  */
-export function SceneToolbar() {
+export function EditToolbar() {
   const transformMode = useEditorStore((s) => s.transformMode);
   const transformSpace = useEditorStore((s) => s.transformSpace);
   const pivotMode = useEditorStore((s) => s.pivotMode);
@@ -128,10 +129,7 @@ export function SceneToolbar() {
   const shownSpace: TransformSpace = scaleForcesLocal ? 'local' : transformSpace;
 
   return (
-    // `overflow-clip` rather than `hidden`, for the reason `#root` gives in
-    // `styles.css`: a panel too narrow for the strip cuts its last buttons off
-    // instead of becoming a box that focusing a button can scroll.
-    <div className="flex h-8 shrink-0 items-center gap-0.5 overflow-clip bg-surface-1 px-1">
+    <ViewHeader>
       {TRANSFORM_TOOLS.map((tool) => (
         <ToolButton
           key={tool.mode}
@@ -193,6 +191,6 @@ export function SceneToolbar() {
         />
         <ToolButton icon={ChartNoAxesColumn} label="Stats" active={showStats} onClick={toggleStats} />
       </div>
-    </div>
+    </ViewHeader>
   );
 }
