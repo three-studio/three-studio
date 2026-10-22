@@ -88,7 +88,7 @@ export interface EngineOptions {
    * engine answered `shadowMapSize` with the binder's own 2048 whatever the
    * project said, and answered `batching` with a default of its own that
    * happened to match the editor's. Being required means the three modes — the
-   * Scene view, Play, and an exported build — cannot each quietly answer this
+   * edit view, Play, and an exported build — cannot each quietly answer this
    * for themselves; `npm run typecheck` names any that tries.
    */
   rendering: RenderingSettings;
@@ -132,7 +132,7 @@ export interface EngineOptions {
  * the exposure inside it is a `rendererReference` — so ACES and
  * `rendering.exposure` still arrive. What would drop them is composing with
  * `outputColorTransform = false` and no `renderOutput()` of one's own, and it
- * would drop them in an exported build while the Scene view carried on looking
+ * would drop them in an exported build while the edit view carried on looking
  * right: the same shape of divergence that `EngineOptions.rendering` was made
  * required to end.
  */
@@ -284,7 +284,7 @@ export class Engine {
   private checkLighting(scene: SceneDoc): void {
     if (entitiesWith(scene, 'light').length > 0) return;
     this.warnings.push(
-      'This scene has no lights, so it renders black. The Scene view shows a default light that a build will not have.',
+      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
     );
   }
 

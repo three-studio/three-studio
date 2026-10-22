@@ -49,7 +49,7 @@ export const DEFAULT_BINDINGS: Readonly<Record<ShortcutBinding, CommandId>> = {
   // file" in most of them, and this project has no files to go to.
   'Mod+Shift+P': 'openCommandPalette',
   /*
-   * Ends a test, in the Game panel or full screen. Unreal stops Play on Esc,
+   * Ends a test, in the Viewport or full screen. Unreal stops Play on Esc,
    * and teams whose games use Esc for a menu move it to Shift+Esc, as Lyra
    * does. That is the key here from the start: plain Esc frees the mouse in the
    * panel, and in full screen it is the game's.
@@ -172,8 +172,9 @@ export function formatBinding(binding: ShortcutBinding): string {
   const withoutMod = binding.startsWith('Mod+') ? binding.slice('Mod+'.length) : binding;
   const shifted = withoutMod.startsWith('Shift+');
   const key = shifted ? withoutMod.slice('Shift+'.length) : withoutMod;
-  // `Esc`, as the key is engraved, rather than the `⎋` glyph: the Game panel
-  // prints this inside a sentence, where a glyph few people know is a riddle.
+  // `Esc`, as the key is engraved, rather than the `⎋` glyph: the Viewport's
+  // capture hint prints this inside a sentence, where a glyph few people know
+  // is a riddle.
   const shown = key === 'Escape' ? 'Esc' : key;
   return `${binding.startsWith('Mod+') ? modKey : ''}${shifted ? shiftKey : ''}${shown}`;
 }

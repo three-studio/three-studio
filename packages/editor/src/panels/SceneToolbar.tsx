@@ -93,7 +93,7 @@ const PIVOT_HINTS: Record<PivotMode, string> = {
 };
 
 /**
- * The Scene view's own header: what the handles do on the left, what the view
+ * The edit view's own header: what the handles do on the left, what the view
  * shows on the right.
  *
  * In the panel rather than in the window's toolbar, because every control here

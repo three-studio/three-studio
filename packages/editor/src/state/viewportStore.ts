@@ -17,7 +17,7 @@ interface ViewportState extends ViewportStats {
   playWarnings: readonly string[];
   setPlayWarnings: (warnings: readonly string[]) => void;
   /**
-   * Whether the Scene view is lighting the scene itself, because the document
+   * Whether the edit view is lighting the scene itself, because the document
    * names no light of its own.
    *
    * Said out loud rather than left to be found out. The pair `EditorViewport`

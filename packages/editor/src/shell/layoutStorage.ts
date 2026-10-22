@@ -81,7 +81,7 @@ async function persist(): Promise<void> {
  * construct is removed from its group but stays in the `panels` map, so the
  * serialised layout looks complete while every group is empty:
  *
- *     panels: { viewport, game, hierarchy, ... }        // all six
+ *     panels: { viewport, hierarchy, inspector, ... }   // all five
  *     grid:   leaves with `views: []`                   // none of them placed
  *
  * dockview restores that without complaint, into a window with the right

@@ -54,9 +54,10 @@ export interface TouchControlsOptions {
    * Where the controls are drawn. Normally the canvas's parent.
    *
    * The overlay is `position: absolute; inset: 0`, so it resolves against the
-   * nearest positioned ancestor — the Game panel's own box in the editor, and
-   * the viewport in an exported build, whose `<body>` is not positioned. Both
-   * land where they should without this package touching a host's styles.
+   * nearest positioned ancestor — the game's host on the Viewport's stage in the
+   * editor, and the viewport in an exported build, whose `<body>` is not
+   * positioned. Both land where they should without this package touching a
+   * host's styles.
    */
   zone: HTMLElement;
   /** Presses and releases the virtual `Space`. */

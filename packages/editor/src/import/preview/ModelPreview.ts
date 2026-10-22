@@ -62,8 +62,8 @@ export class ModelPreview implements PreviewSurface {
   async open(container: HTMLElement, url: string): Promise<ModelFacts | null> {
     // The one viewport of this window, created if the dock has not asked for it
     // yet. Nothing here needs it to be showing anything: a viewport with no
-    // panel measures a zero box for the Scene view and sizes its surface to
-    // whatever else is asking, which is this.
+    // panel measures a zero box for the edit view and the game's canvas, and
+    // sizes its surface to whatever else is asking, which is this.
     const viewport = await acquireViewport();
     if (this.disposed) return null;
     this.viewport = viewport;

@@ -45,13 +45,13 @@ interface EditorState {
    */
   showGizmos: boolean;
   /**
-   * The ground grid, the Scene view's own. Blender's Floor overlay: on until
+   * The ground grid, the edit view's own. Blender's Floor overlay: on until
    * the author wants to see the scene with nothing of the editor's laid over it.
    * Only the view changes; the scene file never hears of it.
    */
   showGrid: boolean;
   /**
-   * The counters at the top right of the Scene view — backend, frame rate, draw
+   * The counters at the top right of the Viewport — backend, frame rate, draw
    * calls, triangles. Blender's Statistics overlay, and on by default because
    * that box has always been there.
    */

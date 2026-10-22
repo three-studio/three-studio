@@ -93,7 +93,7 @@ describe('what a menu shows', () => {
   it('formats a binding the way the platform writes it', () => {
     expect(formatBinding('Mod+Z')).toBe('Ctrl+Z');
     expect(formatBinding('Mod+Shift+Z')).toBe('Ctrl+Shift+Z');
-    // Spelled out, since the Game panel prints it inside a sentence.
+    // Spelled out, since the Viewport's capture hint prints it inside a sentence.
     expect(formatBinding('Shift+Escape')).toBe('Shift+Esc');
     expect(bindingForCommand('stop')).toBe('Shift+Escape');
   });

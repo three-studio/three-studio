@@ -44,12 +44,14 @@ thing as a static web build** that runs in any browser.
 
 ### Editor shell
 - **Two windows** — a launcher that picks a project, an editor that edits one.
-- **Dockable panels** (dockview): Viewport, Game, Hierarchy, Inspector, Project, Console.
+- **Dockable panels** (dockview): Viewport, Hierarchy, Inspector, Project, Console.
 - **Saved layouts** — name a layout, restore it, reset to default.
 - **Command registry** driving the menu bar, the toolbar and the keyboard shortcuts from one place.
 - Toasts, modal/overlay stack, project settings, recent projects.
 
 ### Viewport
+- **Play where you edit** — the game runs in the Viewport, in place of the edit view, and Stop puts the
+  edit view back as it was left; Play Full Screen gives the game the whole screen.
 - **Fly camera** (`RMB` + `WASD`), orbit, pan, dolly, **frame selection**.
 - **Transform gizmos** — select / move / rotate / scale, world or local space.
 - **GPU picking**, selection outline, drop plane for drag-and-drop placement.

@@ -17,9 +17,9 @@ import { digestProjection, type ProjectionDigest } from '../../runtime/test/scen
 import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorProjection';
 
 /*
- * The Scene view and Play project the same document, and this is what says so.
+ * The edit view and Play project the same document, and this is what says so.
  *
- * Three modes read one `SceneDoc` — the Scene view, Play, and an exported build
+ * Three modes read one `SceneDoc` — the edit view, Play, and an exported build
  * — and until this file nothing compared any two of them. That is how a project
  * asking for 4096 shadow maps got 4096 in the viewport, 2048 the moment Play was
  * pressed, and 2048 in the build: three answers, no test that could hold them up
@@ -112,8 +112,8 @@ function settings(overrides: Partial<RenderingSettings> = {}): RenderingSettings
   return { ...createRenderingSettings(), shadowMapSize: 4096, ...overrides };
 }
 
-/** What the Scene view holds, with no canvas and no device under it. */
-async function sceneView(
+/** What the edit view holds, with no canvas and no device under it. */
+async function editView(
   scene: SceneDoc,
   rendering: RenderingSettings,
 ): Promise<ProjectionDigest> {
@@ -149,12 +149,12 @@ async function play(scene: SceneDoc, rendering: RenderingSettings): Promise<Proj
   return digest;
 }
 
-describe('the Scene view and Play project a scene the same way', () => {
+describe('the edit view and Play project a scene the same way', () => {
   it('differ by the editor overlays and by nothing else', async () => {
     const scene = fixture();
     const rendering = settings();
 
-    const view = await sceneView(scene, rendering);
+    const view = await editView(scene, rendering);
     const running = await play(scene, rendering);
 
     // The overlays are the whole of the editor's addition, and they are stated
@@ -176,7 +176,7 @@ describe('the Scene view and Play project a scene the same way', () => {
     // the pair is an overlay, and the projection holds no light at all. A build
     // has no such pair, so a light that leaked into `binder.root` here would be
     // a scene that looked lit in the editor and unlit once exported.
-    const view = await sceneView(sceneWith([createMeshEntity('box')]), settings());
+    const view = await editView(sceneWith([createMeshEntity('box')]), settings());
 
     expect(view.lights).toEqual([]);
     expect(view.overlays).toContain('FallbackLighting');
@@ -189,7 +189,7 @@ describe('the Scene view and Play project a scene the same way', () => {
     // while the game does not. It used to be two defaults written separately in
     // two files, one of them commented as the opposite of what it did — they
     // agreed by accident, and nothing would have said so when they stopped.
-    const view = await sceneView(scene, settings({ batching: true }));
+    const view = await editView(scene, settings({ batching: true }));
     const running = await play(scene, settings({ batching: false }));
 
     expect({ ...view, overlays: [] }).not.toEqual(running);

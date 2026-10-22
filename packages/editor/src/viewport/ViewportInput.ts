@@ -122,7 +122,7 @@ export class ViewportInput {
      * and reparents it, and a reparent drops the pointer capture that was
      * bringing the release back. A release the canvas never saw left the
      * camera disabled and the gizmo hidden with no path back — the state the
-     * user could only clear by closing the Scene tab.
+     * user could only clear by closing the Viewport.
      */
     const endGesture = () => {
       this.navigating = false;
@@ -143,7 +143,10 @@ export class ViewportInput {
       (event) => {
         const down = this.pointerDownAt;
         this.pointerDownAt = null;
-        // Clicking in the game view captures the mouse; it must not also select.
+        // Not while the game runs. The edit canvas is hidden under the game's
+        // then, and no press lands on it; what can still reach it is the release
+        // of a press made before Play, which the camera's pointer capture brings
+        // back here. That release must not select.
         if (this.subjects.playing) return;
 
         if (!down || down.button !== 0 || event.button !== 0) return;
