@@ -172,9 +172,9 @@ export class EditorViewport {
     // element run in registration order, so this is the only way the
     // arbitration actually arbitrates. Which is why it is handed `this` — the
     // fields it reads are filled in on the lines below. See `InputSubjects`.
-    this.input = new ViewportInput(this.view.sceneView.canvas, this);
+    this.input = new ViewportInput(this.view.editView.canvas, this);
 
-    this.controls = new FlyControls(this.camera, this.view.sceneView.canvas);
+    this.controls = new FlyControls(this.camera, this.view.editView.canvas);
     // `locked` was documented as "excluded from picking" and read by
     // nobody. One rule, `capabilitiesOf`, answers here and at the gizmo below.
     this.picker = new Picker(
@@ -190,7 +190,7 @@ export class EditorViewport {
       // their marker. Tested before the scene — see `Picker.pickOverlay`.
       this.overlay.markers,
     );
-    this.gizmo = new GizmoController(this.camera, this.view.sceneView.canvas);
+    this.gizmo = new GizmoController(this.camera, this.view.editView.canvas);
     // Into the group the projection reserved for it, because `TransformControls`
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
@@ -212,7 +212,7 @@ export class EditorViewport {
 
   /** Show the Scene view in this panel. Safe to call repeatedly. */
   attachScene(host: HTMLElement): void {
-    this.view.attach(this.view.sceneView, host);
+    this.view.attach(this.view.editView, host);
   }
 
   /**
@@ -224,7 +224,7 @@ export class EditorViewport {
    * draw calls a frame instead of 9 006, 20.1 ms instead of 10.8.
    */
   setSceneOnScreen(onScreen: boolean): void {
-    this.view.setOnScreen(this.view.sceneView, onScreen);
+    this.view.setOnScreen(this.view.editView, onScreen);
   }
 
   setGameOnScreen(onScreen: boolean): void {
@@ -232,7 +232,7 @@ export class EditorViewport {
   }
 
   detachScene(): void {
-    this.view.detach(this.view.sceneView);
+    this.view.detach(this.view.editView);
   }
 
   /** Show the running game in this panel. Safe to call repeatedly. */
@@ -356,7 +356,7 @@ export class EditorViewport {
    * fallback is at the floor's own height.
    */
   dropPoint(clientX: number, clientY: number): Vector3 {
-    const rect = this.view.sceneView.canvas.getBoundingClientRect();
+    const rect = this.view.editView.canvas.getBoundingClientRect();
     const hit = this.picker.raycast(clientX, clientY, rect, this.camera);
     if (hit) return hit;
 
@@ -378,7 +378,7 @@ export class EditorViewport {
    * same reason.
    */
   placementPoint(): Vector3 {
-    const rect = this.view.sceneView.canvas.getBoundingClientRect();
+    const rect = this.view.editView.canvas.getBoundingClientRect();
     return this.dropPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
@@ -431,9 +431,9 @@ export class EditorViewport {
     // without its panel moving either, leaving a camera that has never heard a
     // box at the 1:1 aspect it was constructed with.
     if (this.view.resizePending) {
-      const sceneMoved = this.view.applyResize();
-      if (sceneMoved && this.view.sceneView.visible) {
-        this.camera.aspect = this.view.sceneView.width / this.view.sceneView.height;
+      const editMoved = this.view.applyResize();
+      if (editMoved && this.view.editView.visible) {
+        this.camera.aspect = this.view.editView.width / this.view.editView.height;
         this.camera.updateProjectionMatrix();
       }
       if (this.play.playEngine) this.play.syncAspect(this.play.playEngine);
@@ -485,7 +485,7 @@ export class EditorViewport {
       // Only while the Scene view is in a panel: the loop keeps running once it
       // is detached, and integrating a gesture nobody can see is how a stuck key
       // used to travel while the Scene tab was closed.
-      if (this.view.sceneView.host) this.controls.update(raw);
+      if (this.view.editView.host) this.controls.update(raw);
       // The ear rides the editor camera while nothing is running, which is what
       // makes an audition of a positional source worth anything: fly toward the
       // source and it gets louder. A no-op until something has actually been
@@ -499,7 +499,7 @@ export class EditorViewport {
     // whole point of being able to see it next to the game. It used to be that
     // pressing Play took the canvas away from this panel, so none of this ran
     // and none of it had to.
-    if (this.view.sceneView.visible) {
+    if (this.view.editView.visible) {
       this.syncDocument();
       this.syncSelection();
     }
@@ -524,7 +524,7 @@ export class EditorViewport {
     // a dialog opened would be a different decision, and not one to take here.
     if (covered) return;
 
-    this.view.draw(this.scene, this.camera, this.view.sceneView);
+    this.view.draw(this.scene, this.camera, this.view.editView);
     if (engine) this.view.draw(engine.scene, engine.activeCamera, this.view.gameView);
     this.view.reportStats(time, this.controls.moveSpeed);
   }
@@ -577,7 +577,7 @@ export class EditorViewport {
       expandedScene().scene,
       current.ids,
       this.camera,
-      this.view.sceneView.height,
+      this.view.editView.height,
       showGizmos,
     );
 

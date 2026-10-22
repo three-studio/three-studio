@@ -42,10 +42,10 @@ export class ViewportRenderer {
   private readonly surface: HTMLCanvasElement;
 
   /**
-   * The Scene view's panel, and what the editor's pointer and keyboard work
-   * against — the canvas of the panel the handles are actually drawn in.
+   * The edit view, and what the editor's pointer and keyboard work against —
+   * the canvas the handles are actually drawn in.
    */
-  readonly sceneView = new Presentation('scene');
+  readonly editView = new Presentation('edit');
   /** The running game's panel. The engine's `Input` listens on its canvas. */
   readonly gameView = new Presentation('game');
   /**
@@ -144,13 +144,13 @@ export class ViewportRenderer {
 
   /** First thing in a frame, so a destroy reported later can be attributed. */
   probe(): void {
-    probeFrame(this.renderer, this.sceneView.host);
+    probeFrame(this.renderer, this.editView.host);
   }
 
   /**
    * Takes every view's box, and sizes the one surface to hold the largest.
    *
-   * @returns Whether the Scene view's own box moved, which is the one thing the
+   * @returns Whether the edit view's own box moved, which is the one thing the
    *   caller cannot measure for itself and the one camera aspect that is only
    *   worth recomputing when it did.
    *
@@ -163,7 +163,7 @@ export class ViewportRenderer {
    */
   applyResize(): boolean {
     this.sizeDirty = false;
-    const sceneMoved = this.sceneView.measure();
+    const editMoved = this.editView.measure();
     // Measured for the side effect, and the answer is not needed by anyone: the
     // game's and the preview's aspects are pushed by the viewport whether or
     // not their panel is the thing that moved.
@@ -173,7 +173,7 @@ export class ViewportRenderer {
     // The largest *visible* view, not the largest box. A parked tab keeps its
     // full size, so counting it kept the surface at 3024 × 1698 while the game
     // drew into a 1904 × 1202 corner of it.
-    const shown = [this.sceneView, this.gameView, this.previewView].filter((view) => view.visible);
+    const shown = [this.editView, this.gameView, this.previewView].filter((view) => view.visible);
     const width = Math.max(0, ...shown.map((view) => view.width));
     const height = Math.max(0, ...shown.map((view) => view.height));
 
@@ -186,18 +186,18 @@ export class ViewportRenderer {
     // has to live here.
     const changed = width !== this.lastWidth || height !== this.lastHeight;
     probeResize(width, height, changed);
-    if (!changed) return sceneMoved;
+    if (!changed) return editMoved;
     // Nothing is showing a view at all — every panel closed, or every one of
     // them parked. Resizing to zero would destroy the swap chain and hand back a
     // black canvas when a tab comes forward again, so the surface keeps its
     // size and the frame loop simply draws nothing.
-    if (width === 0 || height === 0) return sceneMoved;
+    if (width === 0 || height === 0) return editMoved;
 
     this.lastWidth = width;
     this.lastHeight = height;
     this.renderer.setSize(width, height, false);
     retireFrameBufferTarget(this.renderer);
-    return sceneMoved;
+    return editMoved;
   }
 
   /**
@@ -279,7 +279,7 @@ export class ViewportRenderer {
     this.disposed = true;
     void this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
-    this.detach(this.sceneView);
+    this.detach(this.editView);
     this.detach(this.gameView);
     this.detach(this.previewView);
     this.renderer.dispose();

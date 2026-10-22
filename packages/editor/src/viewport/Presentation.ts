@@ -58,7 +58,7 @@ export class Presentation {
 
   private readonly context: CanvasRenderingContext2D;
 
-  constructor(view: 'scene' | 'game' | 'preview') {
+  constructor(view: 'edit' | 'game' | 'preview') {
     // `alpha: false` because what arrives is opaque — the scene clears to its
     // own background — and an opaque 2D canvas is the cheaper composite.
     const context = this.canvas.getContext('2d', { alpha: false });
@@ -69,7 +69,7 @@ export class Presentation {
 
     this.canvas.className = 'block h-full w-full outline-none';
     // Focusable, because this is the element the panel's input works against:
-    // the editor's pointer and keyboard on the Scene view, the game's `Input`
+    // the editor's pointer and keyboard on the edit view, the game's `Input`
     // on the Game view, the preview's `OrbitControls` on its own. The first two
     // used to be the same element and had to take turns.
     this.canvas.tabIndex = 0;
