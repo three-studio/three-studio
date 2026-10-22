@@ -54,6 +54,16 @@ export const SCRIPT_API_VERSION = 2;
  * fills what is missing and rejects anything written by a newer build, rather
  * than silently loading a shape this code no longer understands.
  *
+ * **A number takes more changes only while no release carries it.** Three
+ * entries below fold fields into a number instead of taking the next one, and
+ * each leans on that number not having shipped: no build outside this tree
+ * could read it and miss them. Once a release carries it, such a build exists,
+ * and only the next number makes it refuse the file rather than open it and be
+ * quietly wrong. Ask the latest release tag whether the current number has
+ * shipped (`git show <tag>:packages/core/src/constants.ts`), not these notes:
+ * they went on calling 9 and 10 unreleased after each had shipped. The same
+ * holds for every format number in this file.
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -71,11 +81,11 @@ export const SCRIPT_API_VERSION = 2;
  *
  * `fov` rides along rather than taking an 11 of its own: it defaults to the 70
  * that was hard-coded in the controller, so it changes nothing by existing, and
- * 10 is not released — it exists in this working tree and nowhere else.
+ * 10 was not released yet — it existed in this working tree and nowhere else.
  *
  * `touchControls` and `touchLookSpeed` — the on-screen sticks — ride along for
  * the same two reasons: both default to what a build without them did, and 10
- * is still unreleased. Same call `water.speed` got inside 9.
+ * was still unreleased. Same call `water.speed` got inside 9.
  *
  * 9 — the `water` component. An older build has no system for it, so it opens
  * the scene, keeps the component byte for byte — `adoptComponentTables` files an
@@ -85,10 +95,11 @@ export const SCRIPT_API_VERSION = 2;
  * same call 8 and 5 made.
  *
  * `water.speed`, `water.direction` and `water.choppiness` were added to that
- * same 9 rather than under a 10 of their own, because 9 was never released: it
- * exists in this working tree and nowhere else. `fillComponent` merges a water
- * component from its factory, so a scene already saved as 9 picks the three up
- * on opening — the same reasoning `sky.cloudSpeed` was folded into 6 with.
+ * same 9 rather than under a 10 of their own, because 9 was not released yet:
+ * it existed in this working tree and nowhere else. `fillComponent` merges a
+ * water component from its factory, so a scene already saved as 9 picks the
+ * three up on opening — the same reasoning `sky.cloudSpeed` was folded into 6
+ * with.
  *
  * 7 — a `model` says which node of its file it draws (`nodePath`, `nodeName`)
  * and which shared material it draws with (`materialId`). The first is what
