@@ -25,6 +25,7 @@ describe('what the view shows', () => {
         problems: false,
         captureHint: false,
         starting: false,
+        editStats: true,
       },
     });
   });
@@ -46,6 +47,7 @@ describe('what the view shows', () => {
         problems: false,
         captureHint: false,
         starting: true,
+        editStats: false,
       },
     });
   });
@@ -63,6 +65,7 @@ describe('what the view shows', () => {
         problems: true,
         captureHint: true,
         starting: false,
+        editStats: false,
       },
     });
   });
@@ -80,6 +83,7 @@ describe('what the view shows', () => {
         problems: true,
         captureHint: true,
         starting: false,
+        editStats: false,
       },
     });
   });
@@ -123,5 +127,15 @@ describe('what the view shows', () => {
     expect(viewState({ playState: 'playing', gameShown: false }).input).toBe('none');
     expect(viewState({ playState: 'playing', gameShown: true }).input).toBe('game');
     expect(viewState({ playState: 'paused', gameShown: true }).input).toBe('game');
+  });
+
+  it('says how the editor camera flies, and how the edit view is lit, only while the scene is edited', () => {
+    // The fly speed is the editor camera's, and "Lighting: Editor default" is a
+    // light Play and a build do not have: over the game, or over the edit image
+    // held while it starts, both describe something not on screen.
+    const cases = (['stopped', 'playing', 'paused'] as PlayState[]).flatMap((playState) =>
+      [false, true].map((gameShown) => viewState({ playState, gameShown })),
+    );
+    expect(cases.filter((view) => view.overlays.editStats).map((view) => view.mode)).toEqual(['edit', 'edit']);
   });
 });

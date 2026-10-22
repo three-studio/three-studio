@@ -270,6 +270,10 @@ export class ViewportRenderer {
 
     // Everything the frame drew: three resets `info` once per animation frame,
     // not per render, so a frame that drew more than one view counts them all.
+    // The Viewport draws one view a frame, the one `viewState` names as drawn —
+    // the edit view, or the game — and the import dialog's preview adds its own
+    // while it is open. While the game starts, nothing is drawn until its
+    // first frame, and the counters say so: zero.
     const { render } = this.renderer.info;
     useViewportStore.getState().setStats({
       fps: Math.round((this.framesSinceReport * 1000) / elapsed),

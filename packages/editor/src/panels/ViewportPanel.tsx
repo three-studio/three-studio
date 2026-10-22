@@ -193,7 +193,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
         {view.overlays.prefabBar && <PrefabModeBar />}
         {/* Not while the stage holds the screen: full screen is the game as a
             player sees it. */}
-        {showStats && !holdingScreen && <ViewportStats />}
+        {showStats && !holdingScreen && <ViewportStats editStats={view.overlays.editStats} />}
         {view.overlays.dropTarget && dropping && (
           <div className="pointer-events-none absolute inset-2 rounded-sm border-2 border-dashed border-accent" />
         )}
@@ -362,7 +362,12 @@ function CaptureHint({ holdingScreen }: { holdingScreen: boolean }) {
   );
 }
 
-function ViewportStats() {
+/**
+ * @param editStats Whether the lines about the edit view show: the fly speed,
+ *   and the fallback light. Not over the game, nor over the edit image held
+ *   while it starts — the counters above them follow whatever is drawn.
+ */
+function ViewportStats({ editStats }: { editStats: boolean }) {
   const backend = useViewportStore((s) => s.backend);
   const fps = useViewportStore((s) => s.fps);
   const drawCalls = useViewportStore((s) => s.drawCalls);
@@ -390,15 +395,18 @@ function ViewportStats() {
         <span>Tris</span>
         <span className="text-ink">{triangles.toLocaleString()}</span>
       </div>
-      <div className="flex justify-between gap-4">
-        <span>Fly</span>
-        <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
-      </div>
+      {editStats && (
+        <div className="flex justify-between gap-4">
+          <span>Fly</span>
+          <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
+        </div>
+      )}
       {/* Only while it is on, and last, so it reads as a note about this scene
           rather than as one more counter — and so the numbers above it do not
           move when it appears. What it says is that this view is lit by
-          something Play and a build do not have. */}
-      {fallbackLighting && (
+          something Play and a build do not have, which over the game is not
+          true of anything on screen. */}
+      {editStats && fallbackLighting && (
         <div className="flex justify-between gap-4">
           <span>Lighting</span>
           <span className="text-warn">Editor default</span>

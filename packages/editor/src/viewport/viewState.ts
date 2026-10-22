@@ -75,6 +75,14 @@ export interface ViewState {
     captureHint: boolean;
     /** The pill that says the game is starting, over the edit image it holds. */
     starting: boolean;
+    /**
+     * The stats lines about the edit view: Fly, and Lighting while its
+     * fallback is on. The fly speed is the editor camera's, and "Lighting:
+     * Editor default" is a light Play and a build do not have — over the game,
+     * both described something not on screen. The counters above them follow
+     * whatever is drawn.
+     */
+    editStats: boolean;
   };
 }
 
@@ -92,6 +100,7 @@ export function viewState(inputs: ViewInputs): ViewState {
         problems: false,
         captureHint: false,
         starting: false,
+        editStats: true,
       },
     };
   }
@@ -111,6 +120,7 @@ export function viewState(inputs: ViewInputs): ViewState {
         problems: false,
         captureHint: false,
         starting: true,
+        editStats: false,
       },
     };
   }
@@ -129,6 +139,7 @@ export function viewState(inputs: ViewInputs): ViewState {
       problems: true,
       captureHint: true,
       starting: false,
+      editStats: false,
     },
   };
 }
