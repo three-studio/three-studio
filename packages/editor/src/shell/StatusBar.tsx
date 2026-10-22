@@ -4,7 +4,6 @@ import { tooltip } from '../ui/Tooltip';
 
 export function StatusBar() {
   const selection = useEditorStore((s) => s.selection);
-  const playState = useEditorStore((s) => s.playState);
 
   return (
     <div className="flex h-6 shrink-0 items-center gap-3 bg-surface-0 px-3 text-2xs text-ink-dim">
@@ -16,8 +15,8 @@ export function StatusBar() {
             : `${selection.length} objects selected`}
       </span>
       <div className="flex-1" />
-      {playState === 'playing' && <span className="text-play">Playing</span>}
-      {playState === 'paused' && <span className="text-pause">Paused</span>}
+      {/* No word for Play or Pause here: the transport lights its button, and
+          the Viewport's play bar and badge say it where the game is. */}
       {/* Named, because it is not the installer's number and may differ from
           it — see the note on `ENGINE_VERSION`. */}
       <span {...tooltip('Engine version')}>v{ENGINE_VERSION}</span>

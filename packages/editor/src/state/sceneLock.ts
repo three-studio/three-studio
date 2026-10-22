@@ -36,7 +36,7 @@ export function useSceneLocked(): boolean {
   return useEditorStore((state) => sceneLocked(state.playState));
 }
 
-/** What a greyed control says: a menu row's detail, a tooltip's hint, a panel's strip. */
+/** What a greyed control says: a menu row's detail, a tooltip's hint. */
 export const STOP_TO_EDIT = 'Stop to edit';
 
 /**

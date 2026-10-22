@@ -1,7 +1,5 @@
-import { Pause, Play, type LucideIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
-import { useEditorStore } from '../state/editorStore';
-import { STOP_TO_EDIT, useSceneLocked } from '../state/sceneLock';
 
 /** Panel body with the standard background and scroll behaviour. */
 export function PanelBody({ children }: { children: ReactNode }) {
@@ -56,41 +54,5 @@ export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) 
       {...props}
       className={`flex h-8 shrink-0 items-center gap-0.5 overflow-clip bg-surface-1 px-1 ${className}`}
     />
-  );
-}
-
-/**
- * The game's state as a glyph: ▶ in the play green while it starts or runs,
- * ❚❚ in the pause amber while paused.
- *
- * Read from the play state, so that it says Pause from the moment Pause is
- * pressed — before the game's first frame too.
- */
-export function PlayGlyph() {
-  const paused = useEditorStore((s) => s.playState === 'paused');
-  const Glyph = paused ? Pause : Play;
-  return <Glyph size={12} aria-hidden className={`shrink-0 fill-current ${paused ? 'text-pause' : 'text-play'}`} />;
-}
-
-/**
- * Says, at the top of a panel the game has made read-only, why it cannot edit
- * and what gives the editing back. Nothing while stopped.
- *
- * A line above the content rather than a placeholder in its place: during Play
- * the Hierarchy and the Inspector still select, fold and show every value, and
- * the scene being played is exactly what someone wants to read.
- */
-export function StopToEditStrip() {
-  const locked = useSceneLocked();
-  if (!locked) return null;
-  return (
-    <div
-      // Stable hook for automated checks.
-      data-scene-locked
-      className="flex h-6 shrink-0 items-center gap-1.5 border-b border-line bg-surface-2 px-2 text-2xs text-ink-muted"
-    >
-      <PlayGlyph />
-      <span className="truncate">{STOP_TO_EDIT}</span>
-    </div>
   );
 }

@@ -56,7 +56,7 @@ import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { STOP_TO_EDIT, isSceneLocked, refuseWhileLocked, useSceneLocked } from '../state/sceneLock';
 import { ContextMenu, type MenuEntry } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
-import { PanelToolbar, StopToEditStrip } from './PanelShell';
+import { PanelToolbar } from './PanelShell';
 
 const DRAG_MIME = 'application/x-studio-entity';
 const INDENT_PX = 12;
@@ -384,8 +384,6 @@ export function HierarchyPanel() {
           className="min-w-0 flex-1 bg-transparent px-1 text-2xs text-ink outline-none placeholder:text-ink-dim"
         />
       </PanelToolbar>
-
-      <StopToEditStrip />
 
       <SceneHeader onDrop={(event) => onDrop(event, null)} />
 

@@ -1,11 +1,11 @@
 import { findScene } from '@three-studio/core';
-import { ChartNoAxesColumn } from 'lucide-react';
+import { ChartNoAxesColumn, Pause, Play } from 'lucide-react';
 import { useEditorStore } from '../state/editorStore';
 import { useProjectStore } from '../state/projectStore';
 import { useViewportStore } from '../state/viewportStore';
 import { ToolButton } from '../ui/ToolButton';
 import { tooltip } from '../ui/Tooltip';
-import { PlayGlyph, ViewHeader } from './PanelShell';
+import { ViewHeader } from './PanelShell';
 
 /**
  * The Viewport's header from the press of Play to Stop, in place of the edit
@@ -52,6 +52,19 @@ export function PlayBar() {
       </div>
     </ViewHeader>
   );
+}
+
+/**
+ * The game's state as a glyph: ▶ in the play green while it starts or runs,
+ * ❚❚ in the pause amber while paused.
+ *
+ * Read from the play state, so that it says Pause from the moment Pause is
+ * pressed — before the game's first frame too.
+ */
+function PlayGlyph() {
+  const paused = useEditorStore((s) => s.playState === 'paused');
+  const Glyph = paused ? Pause : Play;
+  return <Glyph size={12} aria-hidden className={`shrink-0 fill-current ${paused ? 'text-pause' : 'text-play'}`} />;
 }
 
 /**

@@ -19,7 +19,6 @@ import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock'
 import { useScriptStore } from '../state/scriptStore';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
-import { StopToEditStrip } from './PanelShell';
 
 /**
  * What the Inspector's asset slots cannot reach for themselves.
@@ -222,8 +221,7 @@ export function InspectorPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-1">
-      <StopToEditStrip />
-      {instance && <PrefabBanner id={entityId!} depth={instance.depth} locked={locked} />}
+      {instance &&<PrefabBanner id={entityId!} depth={instance.depth} locked={locked} />}
       <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-1.5" />
 
       {/* The scene pane has nothing to add a component to. */}
