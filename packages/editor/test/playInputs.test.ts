@@ -149,10 +149,13 @@ describe('what a launch sends while the editor plays', () => {
     useEditorStore.getState().play();
     await Promise.resolve();
     const atPress = launchSnapshot();
+    // The document itself, with no copy taken at the press: the scene lock
+    // holds it still until Stop.
+    const scene = doc().scene;
+    expect(atPress.entry.scene).toBe(scene);
 
     // The scene is locked during Play: an entity added now is refused, and the
     // document stays the one Play started from.
-    const scene = doc().scene;
     const refused = vi.spyOn(console, 'error').mockImplementation(() => {});
     addEntity(createMeshEntity('box'));
     refused.mockRestore();

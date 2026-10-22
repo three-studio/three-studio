@@ -28,10 +28,10 @@ import type { Presentation } from './Presentation';
  *
  * The renderer and the game's canvas, because the engine draws through the one
  * renderer this document is allowed. And two announcements, because from the
- * press of Play the edit view is no longer the editor's to drive — flying it or
- * dragging a handle would edit a document that Stop is about to put back — and
- * deciding which of the viewport's parts that touches is the viewport's
- * business, not this one's.
+ * press of Play the edit view is no longer the editor's to drive — flying it
+ * over a frozen picture, or dragging a handle into an edit the scene lock
+ * refuses — and deciding which of the viewport's parts that touches is the
+ * viewport's business, not this one's.
  */
 export interface PlayHost {
   readonly renderer: WebGPURenderer;
@@ -60,8 +60,9 @@ export interface PlayHost {
  * anything, which Play does on its way in but a launch may not.
  *
  * `entry.scene` is the document itself, not a copy: immer never changes a
- * published document in place, so whoever keeps it longer copies it — Play for
- * Stop, the main process across IPC.
+ * published document in place, and from the press of Play the scene lock holds
+ * it still, so Play keeps it as it is. Whoever hands it on copies it — the
+ * scene source for the game, the main process across IPC.
  *
  * Here rather than in a module of its own: a module that reads the project
  * store and that this one imports would join the import cycle this file is
@@ -112,8 +113,9 @@ export function launchSnapshot(): LaunchSnapshot {
  * for, not only the first: a script that restarts the level asks for the scene
  * it is in, and the saved file used to answer, so a restart dropped every
  * unsaved edit. A device answers the same way, from the launch it holds.
- * A fresh copy each time, because the game mutates the world it is handed and
- * the next restart has to begin from the scene as authored.
+ * A fresh copy each time, the game's first scene included: the game mutates
+ * the world it is handed, the next restart has to begin from the scene as
+ * authored, and the entry's scene is the editor's own document.
  *
  * Every other scene is read from its file, as it always was.
  */
@@ -143,8 +145,16 @@ export class PlaySession {
   private engine: Engine | null = null;
   /** Owns the engine while playing, and moves between scenes. */
   private sceneHost: SceneHost | null = null;
-  /** The document as it was when Play was pressed, restored on Stop. */
-  private playSnapshot: SceneDoc | null = null;
+  /**
+   * The document as it was at the press, once Prefab Mode is left; `null` while
+   * stopped. Stop asks whether the document is still this object.
+   *
+   * Nothing moves it in between, and that is what makes asking by identity
+   * enough: the scene lock refuses every write from the press, immer never
+   * changes a published document in place, and the game is handed a copy,
+   * never this.
+   */
+  private startedFrom: SceneDoc | null = null;
   private unsubscribePlayState: (() => void) | null = null;
   /**
    * Which start is the one somebody waits for: bumped at every press, every
@@ -222,17 +232,18 @@ export class PlaySession {
       // send a scene the person has since gone on editing.
       if (!current()) return;
 
-      // Read at the press, before anything runs: physics and scripts mutate the
-      // world, and Stop has to put the scene back exactly as it was authored.
-      // The materials, prefabs and settings used to be read after the compile;
-      // they are read here with the scene, so a launch made during Play sends
-      // exactly what Play started from.
+      // Read at the press, before anything runs. The materials, prefabs and
+      // settings used to be read after the compile; they are read here with
+      // the scene, so a launch made during Play sends exactly what Play
+      // started from.
+      //
+      // The entry keeps the document itself, with no copy taken: the scene
+      // lock holds it still until Stop. It is what Stop checks the document
+      // against, what a restarted level is answered with — copied by the scene
+      // source at every read — and what a launch made during Play sends.
       const inputs = readPlayInputs();
-      this.playSnapshot = structuredClone(inputs.entry.scene);
-      // The entry as Play keeps it: what Stop restores, what a restarted level is
-      // answered with, and what a launch made during Play sends.
-      const entry = { ...inputs.entry, scene: this.playSnapshot };
-      running = { ...inputs, entry };
+      this.startedFrom = inputs.entry.scene;
+      running = inputs;
 
       // Compiled fresh on every Play, so editing a script and pressing Play is
       // the whole loop — no build step to remember.
@@ -261,8 +272,9 @@ export class PlaySession {
       // be testable without exporting a build first. The scene it starts on is
       // the document being edited, not `startScene`: pressing Play means "run
       // what is on screen".
+      const source = playSceneSource(inputs.entry, (path) => window.studio.project.readScene(path));
       const host = new SceneHost({
-        source: playSceneSource(entry, (path) => window.studio.project.readScene(path)),
+        source,
         loadingScene: inputs.loadingScene,
         resolver: editorAssetResolver,
         physicsSettings: inputs.physics,
@@ -291,12 +303,21 @@ export class PlaySession {
       });
       this.sceneHost = host;
 
-      // The document, not the expansion: the host expands every scene it runs,
-      // and handing it one already expanded would do the work twice.
-      // The name, which is what a script comparing `scenes.current` reads. It
-      // is the indicative half of a scene's identity — and a
-      // script that wants the stable half can name the id instead.
-      await host.adopt(inputs.entry.name, inputs.entry.scene);
+      // A copy of the document, through the door a restart takes — never the
+      // document. A script's `this.entity` is the entity the game is handed,
+      // and a property's value is the scene's own (a `vec3` is an array):
+      // handed the document, a script wrote the editor's scene, silently while
+      // it had not been edited since it was opened, and with a `TypeError` that
+      // disabled the script once immer had frozen it, where the same script
+      // works in the exported player. Still one copy per Play: it used to be
+      // taken for Stop, and is taken for the game.
+      //
+      // Not the expansion: the host expands every scene it runs, and handing
+      // it one already expanded would do the work twice. Under its name, which
+      // is what a script comparing `scenes.current` reads. It is the indicative
+      // half of a scene's identity — and a script that wants the stable half
+      // can name the id instead.
+      await host.adopt(inputs.entry.name, await source.read(inputs.entry.name));
       // Stopped while the engine was being built — the physics module and every
       // model the scene needs. That Stop took this host down, since it was
       // `this.sceneHost` by then, and `swap`, finding the host disposed, threw
@@ -392,10 +413,23 @@ export class PlaySession {
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);
 
-    if (this.playSnapshot) {
-      useDocumentStore.getState().replaceScene(this.playSnapshot, { keepHistory: true });
-      this.playSnapshot = null;
+    // The document Stop finds is the one Play started from: the lock held it
+    // still and the game played a copy. Putting it back anyway, as Stop did
+    // with a copy taken at the press, made every entity a new object and had
+    // the edit view, the Hierarchy and the Inspector re-read the whole
+    // document, at every Stop.
+    const startedFrom = this.startedFrom;
+    this.startedFrom = null;
+    if (startedFrom === null || useDocumentStore.getState().scene === startedFrom) return;
+    // Something wrote the scene round the lock. Put back what Play started
+    // from, as Stop always did, and name it in development: it is a hole in
+    // the lock, and the fix belongs where the write came from.
+    if (import.meta.env.DEV) {
+      console.error(
+        '[play] The scene changed while the game ran, round the lock; Stop put back the document Play started from.',
+      );
     }
+    useDocumentStore.getState().replaceScene(startedFrom, { keepHistory: true });
   }
 
   /** Hands the running game the shape of the canvas it is drawn in. */

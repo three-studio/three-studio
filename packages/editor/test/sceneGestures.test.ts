@@ -47,8 +47,10 @@ import { sceneUnsaved, watchUnsaved, windowUnsaved } from '../src/state/unsaved'
  * In Prefab Mode the document is the prefab: Save As wrote the prefab out as a
  * scene, Rename put the scene's name on the prefab, and Delete marked the
  * prefab clean, so the main process went on to prompt about the deleted
- * scene's edits. During Play, Stop puts back the document Play started from,
- * and takes back what Save As and Rename had just written into it.
+ * scene's edits. During Play the scene is locked, and Stop puts back the
+ * document Play started from whenever it finds another — its safety net, for a
+ * write that went round the lock: Rename's name would be refused and Save As's
+ * identity taken back, so both stop the game first.
  *
  * Everything that reaches outside the renderer writes into one ordered log —
  * the bridge, the prefab saves, and Stop — so each test reads what happened in
@@ -224,7 +226,7 @@ beforeEach(async () => {
   stops.push(
     useEditorStore.subscribe((state, before) => {
       // With the document's id at that moment: Stop puts back the document Play
-      // started from, identity included.
+      // started from when it finds another, identity included.
       if (state.playState === 'stopped' && before.playState !== 'stopped') {
         log.push(['stop', doc().scene.id]);
       }
@@ -254,8 +256,9 @@ describe('back to the scene', () => {
 
     await backToTheScene({ stopPlay: true });
 
-    // Stop puts back the scene Play started from, into whatever the document
-    // is. Stopped first, it put the scene into the prefab, and leaving then
+    // The order Play itself follows: out of the prefab, then the game. An older
+    // Stop put back the scene Play started from into whatever the document
+    // was; stopped first, it put the scene into the prefab, and leaving then
     // saved the scene into the prefab's file.
     expect(log).toEqual([['savePrefab', CRATE], ['stop', 'a']]);
     expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
@@ -393,14 +396,17 @@ describe('Save As, Rename and Delete during Play', () => {
     await answer();
     await done;
 
-    // Stop puts back the document Play started from. After the gesture, it took
-    // back what Save As and Rename had written into it.
+    // During Play the scene is locked, and Stop puts back the document Play
+    // started from whenever it finds another: written during Play, Rename's
+    // name would be refused and Save As's identity taken back.
     expect(methods()).toEqual(['stop', ...calls]);
   });
 
   it('keeps the new name in the document once the game has stopped', async () => {
-    // What `PlaySession.endPlay` does at Stop, which is not running here: the
-    // document Play started from goes back, as a restore.
+    // Stands in for `PlaySession.endPlay`'s safety net, which is not running
+    // here, and made unconditional: the document Play started from goes back,
+    // as a restore, whatever Stop finds. What the gesture writes after Stop
+    // has to be out of its reach.
     const atPlay = doc().scene;
     stops.push(
       useEditorStore.subscribe((state, before) => {
@@ -762,7 +768,11 @@ describe('Revert Scene', () => {
     await done;
   }
 
-  /** What `PlaySession.endPlay` does at Stop, which is not running here. */
+  /**
+   * Stands in for `PlaySession.endPlay`'s safety net, which is not running
+   * here, and made unconditional: what the gesture writes after Stop has to be
+   * out of its reach.
+   */
   function restoreAtStop(): void {
     const atPlay = doc().scene;
     stops.push(

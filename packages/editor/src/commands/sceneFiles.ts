@@ -67,12 +67,12 @@ export function isStartScene(entry: SceneEntry, startScene: string | null): bool
  * a name in it, marks it clean. In Prefab Mode the document is the prefab, and
  * Save As wrote the prefab out as a scene.
  *
- * Prefab Mode goes first. Stop puts back the scene Play started from, into
- * whatever the document is: stopped first, it would put the scene into the
- * prefab, and leaving would then save every entity of the scene into the
- * prefab's file — what Stop did to a prefab opened during Play. Both are on at
- * once only while Play is still leaving Prefab Mode, since a prefab cannot be
- * opened while the game runs; the order holds there too.
+ * Prefab Mode goes first, then the game: the order Play itself follows on its
+ * way in. Both are on at once only while Play is still leaving Prefab Mode,
+ * since a prefab cannot be opened while the game runs. The order was chosen
+ * when Stop put back the scene Play started from into whatever the document
+ * was: stopped first, it put the scene into the prefab, and leaving then saved
+ * every entity of the scene into the prefab's file.
  *
  * The store's `stop`, not the `stop` command: this file importing the registry
  * would close a cycle, since the registry imports the commands built on it.
@@ -161,9 +161,10 @@ export async function saveSceneAs(): Promise<void> {
 
   try {
     // What gets written is the document, so it has to be the scene. And the
-    // game stops: Stop puts back the document Play started from, which would
-    // then read as saved against a file it does not match — and would carry
-    // the original's id and name back over the copy's.
+    // game stops first: Stop puts back the document Play started from when it
+    // finds another, so the copy's identity adopted during Play would be taken
+    // back — the original's id and name over the copy's, read as saved against
+    // a file they do not match.
     await backToTheScene({ stopPlay: true });
     const change = await window.studio.project.createScene(
       name,
@@ -198,8 +199,9 @@ export async function renameCurrentScene(name: string): Promise<void> {
 
   try {
     // The document's copy of the name goes on the scene, not on a prefab open
-    // over it. And the game stops first: Stop puts back the document Play
-    // started from, old name included, while the file keeps the new one.
+    // over it. And the game stops first: during Play the scene lock refuses the
+    // name, and the document would keep the old one while the file took the
+    // new.
     await backToTheScene({ stopPlay: true });
     const change = await window.studio.project.renameScene(sceneId, name);
     useProjectStore.getState().retarget(change, change.scene);
@@ -320,8 +322,8 @@ export async function revertCurrentScene(): Promise<void> {
       throw new Error(`${scenePath} now holds another scene, "${saved.name}". Nothing was changed.`);
     }
     // The document is the scene from here on, and the game is stopped: Stop
-    // puts back the document Play started from, which would bring the dropped
-    // work back over the file's.
+    // puts back the document Play started from when it finds another, which
+    // would bring the dropped work back over the file's.
     await backToTheScene({ stopPlay: true });
     useDocumentStore.getState().replaceScene(saved);
     // After the document, as an edit prunes. A load prunes nothing, and one

@@ -480,7 +480,7 @@ describe('watching the window', () => {
       ['a selection', () => useEditorStore.getState().setSelection([cube])],
       ['a save', () => doc().markClean()],
       [
-        'the scene put back as a copy, as Stop puts it back',
+        'the scene replaced by an equal copy',
         () => doc().replaceScene(structuredClone(doc().scene), { keepHistory: true }),
       ],
       [

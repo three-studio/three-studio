@@ -49,9 +49,10 @@ export interface ViewState {
    *
    * The editor's only while stopped, and it leaves at the press of Play rather
    * than when the game arrives: while the game starts, the edit image on top is
-   * a picture, and flying the camera or dragging a handle there would edit a
-   * document Stop puts back. The game's `Input` hears it exactly while its
-   * canvas is on top, since a hidden element takes no pointer.
+   * a picture, and flying the camera would move a view nobody is shown, and a
+   * handle dragged there would try an edit the scene lock refuses. The game's
+   * `Input` hears it exactly while its canvas is on top, since a hidden element
+   * takes no pointer.
    */
   input: 'editor' | 'game' | 'none';
   /** What is laid over the stage. */

@@ -91,7 +91,8 @@ and entity references.
 - **One clock** for the simulation and every shader: three's TSL `time` node is re-pointed at it, so
   Pause and the timescale stop the water and the sky along with the physics.
 - **Rapier physics**: rigid bodies, colliders, character-style player controller.
-- **Play mode in-editor** with a document snapshot restored on stop — playing never dirties a scene.
+- **Play mode in-editor**: the scene is locked while the game runs, on a copy of its own, so Stop
+  finds it exactly as it was — playing never dirties a scene.
 - **Scripting**: user TypeScript compiled in-app by esbuild, with lifecycle hooks
   (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared
   editable properties (numbers, colours, vec3, enums, entity and asset pickers), and APIs for

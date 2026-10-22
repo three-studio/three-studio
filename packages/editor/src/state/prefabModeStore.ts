@@ -62,9 +62,10 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
 
   open: async (assetId) => {
     // Not while the game runs, for two reasons. Stop puts back the scene Play
-    // started from, into whatever the document is: a prefab opened meanwhile
-    // lost its edits to the scene, kept its undo stack over it, and leaving
-    // then saved every entity of the scene into the prefab's file. And a
+    // started from whenever it finds another document, and a prefab opened
+    // meanwhile is one: it lost its edits to the scene, kept its undo stack
+    // over it, and leaving then saved every entity of the scene into the
+    // prefab's file. And a
     // prefab edited now would not reach the running game anyway — Play hands
     // the game the prefab table it read when it started.
     //

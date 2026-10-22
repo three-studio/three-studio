@@ -120,9 +120,9 @@ describe('what the view shows', () => {
 
   it('gives the editor the view’s pointer only while stopped, and the game only once it shows', () => {
     // From the press of Play the view is not the editor's: a press on it must
-    // neither fly the editor camera nor drag a handle, both of which would edit
-    // a document Stop puts back. While starting, it is nobody's: the edit image
-    // is a picture.
+    // neither fly the editor camera nor drag a handle into an edit the scene
+    // lock refuses. While starting, it is nobody's: the edit image is a
+    // picture.
     expect(viewState({ playState: 'stopped', gameShown: false }).input).toBe('editor');
     expect(viewState({ playState: 'playing', gameShown: false }).input).toBe('none');
     expect(viewState({ playState: 'playing', gameShown: true }).input).toBe('game');

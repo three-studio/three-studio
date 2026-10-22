@@ -1,4 +1,5 @@
 import {
+  ASSET_MANIFEST_VERSION,
   PROJECT_FORMAT_VERSION,
   createBuildProfiles,
   createComponent,
@@ -7,17 +8,26 @@ import {
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  defaultSettings,
+  deserializeScene,
   serializeScene,
   type ProjectFile,
+  type SceneDoc,
   type ScriptComponent,
+  type Vec3,
 } from '@three-studio/core';
 import { Behaviour, clearScripts, registerScript } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
+import { addEntityInView, placeDroppedAsset } from '../src/commands/placeEntity';
+import { commandById } from '../src/commands/registry';
+import { reparentSelection } from '../src/commands/sceneCommands';
 import { useAssetStore } from '../src/state/assetStore';
-import { useDocumentStore } from '../src/state/documentStore';
+import { selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
+import { expandedScene } from '../src/state/expansion';
+import { Selection } from '../src/state/selection';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { useScriptStore } from '../src/state/scriptStore';
@@ -462,5 +472,267 @@ describe('what the game has shown', () => {
     await until(() => playState() === 'stopped', 'the stop');
 
     expect(gameShown()).toBe(false);
+  });
+});
+
+const doc = () => useDocumentStore.getState();
+
+describe('Stop, by the document’s identity', () => {
+  /*
+   * Stop used to put back a copy of the document taken at the press, every
+   * time: every entity a new object, and the edit view, the Hierarchy and the
+   * Inspector all told the whole document had changed. With the scene locked
+   * from the press the document Stop finds is the one Play started from, so
+   * Stop asks whether it is — and puts it back only if something wrote the
+   * scene round the lock.
+   */
+  it('leaves the document it finds alone, and nothing re-reads it', async () => {
+    const compiles = compilesHeld();
+    watching();
+    const scene = doc().scene;
+    const since = doc().changesSince(0).revision;
+    const structure = doc().structureRevision;
+
+    play();
+    stop();
+    await compiles.finish(0, false);
+
+    expect(doc().scene).toBe(scene);
+    const changes = doc().changesSince(since);
+    expect(changes.entities).not.toBe('*');
+    expect(changes.entities).toEqual(new Set());
+    expect(changes.environment).toBe(false);
+    expect(doc().structureRevision).toBe(structure);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it('puts back the document Play started from when something wrote round the lock, and says so', async () => {
+    const compiles = compilesHeld();
+    watching();
+    const scene = doc().scene;
+    const past = doc().past;
+
+    play();
+    // Nothing in the editor can do this; a write that did would be found here.
+    useDocumentStore.setState({ scene: sceneWith([createMeshEntity('box')]) });
+    stop();
+    await compiles.finish(0, false);
+
+    expect(doc().scene).toBe(scene);
+    expect(doc().past).toBe(past);
+    expect(consoleError).toHaveBeenCalledTimes(1);
+    expect(String(consoleError.mock.calls[0]![0])).toMatch(/^\[play\] The scene changed while the game ran, round the lock/);
+  });
+});
+
+describe('the scene the game plays', () => {
+  /*
+   * A copy, never the document. A script's `this.entity` is the entity the game
+   * was handed, and a property's value is the scene's own — a `vec3` is an
+   * array. Handed the document, a script wrote the editor's scene: silently
+   * while it had not been edited since it was opened, and with a `TypeError`
+   * that disabled the script once immer had frozen it, where the same script
+   * works in the exported player.
+   */
+  const MOVER = 'script-mover';
+  /** What the script saw itself do. */
+  const record = { started: false, name: '', frames: 0, offset: [] as number[] };
+
+  /** Renames its entity as it starts, and moves its own offset every frame. */
+  class Mover extends Behaviour {
+    static override properties = { offset: { type: 'vec3' as const, default: [0, 0, 0] as Vec3 } };
+    offset: Vec3 = [0, 0, 0];
+
+    override onStart() {
+      this.entity.name = 'Renamed by the game';
+      record.started = true;
+      record.name = this.entity.name;
+    }
+
+    override onUpdate() {
+      this.offset[0] += 1;
+      record.frames += 1;
+      record.offset = [...this.offset];
+    }
+  }
+
+  beforeAll(() => standInForTheBrowser());
+  afterAll(takeTheBrowserBack);
+
+  beforeEach(() => {
+    useScriptStore.setState({ build: async () => true });
+    registerScript(MOVER, Mover);
+    Object.assign(record, { started: false, name: '', frames: 0, offset: [] });
+  });
+
+  afterEach(() => {
+    clearScripts();
+  });
+
+  /** The scene as a file opens it — read, so never produced by immer and not frozen — and a copy of it. */
+  function opened(): SceneDoc {
+    const script: ScriptComponent = { ...createComponent('script'), assetId: MOVER, props: { offset: [1, 2, 3] } };
+    const scene = sceneWith([createEntity('Mover', [script])]);
+    doc().replaceScene(deserializeScene(serializeScene(scene)));
+    return structuredClone(doc().scene);
+  }
+
+  async function playThreeFrames(): Promise<void> {
+    watching();
+    play();
+    await until(() => session!.playEngine !== null, 'the engine');
+    const engine = session!.playEngine!;
+    for (let frame = 0; frame < 3; frame += 1) engine.update(1 / 60);
+  }
+
+  it('is a copy: what a script writes stays in the game', async () => {
+    const authored = opened();
+    const scene = doc().scene;
+    expect(Object.isFrozen(scene.entities)).toBe(false);
+
+    await playThreeFrames();
+
+    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(record.frames).toBeGreaterThan(0);
+    expect(record.offset[0]).toBe(1 + record.frames);
+    expect(doc().scene).toBe(scene);
+    expect(doc().scene).toEqual(authored);
+
+    stop();
+    expect(doc().scene).toBe(scene);
+    expect(doc().scene).toEqual(authored);
+  });
+
+  it('is a copy a script can write, even of a document immer has frozen', async () => {
+    opened();
+    const [id] = Object.keys(doc().scene.entities);
+    doc().mutate('Move', (draft) => void (draft.entities[id!]!.transform.position[0] = 5));
+    expect(Object.isFrozen(doc().scene.entities[id!])).toBe(true);
+
+    await playThreeFrames();
+
+    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(useViewportStore.getState().playWarnings.some((warning) => warning.includes('failed in'))).toBe(false);
+    expect(doc().scene.entities[id!]!.name).toBe('Mover');
+  });
+});
+
+describe('an edit tried during Play, then Stop', () => {
+  /*
+   * What the scene lock is for. Every surface used to edit the scene while the
+   * game ran, and Stop put back the copy taken at the press while keeping the
+   * history: an Undo after Stop applied patches made against a document the
+   * copy never was, and the scene read as unsaved, or saved, for edits nobody
+   * could see any more.
+   */
+  const realManifest = useAssetStore.getState().manifest;
+
+  afterEach(() => {
+    useAssetStore.setState({ manifest: realManifest });
+  });
+
+  it('leaves the history, the revision and the unsaved state exactly as they were before Play', async () => {
+    const compiles = compilesHeld();
+    const a = createMeshEntity('box');
+    const b = createMeshEntity('sphere');
+    doc().replaceScene(sceneWith([a, b]));
+    doc().mutate('Move', (draft) => void (draft.entities[a.entity.id]!.transform.position[0] = 3));
+    useEditorStore.getState().setSelection([a.entity.id]);
+    useAssetStore.setState({
+      manifest: {
+        version: ASSET_MANIFEST_VERSION,
+        folders: [],
+        assets: [
+          {
+            id: PREFAB_ID,
+            name: 'Crate',
+            kind: 'prefab',
+            path: 'assets/Crate.prefab.json',
+            folder: '',
+            sizeBytes: 1,
+            modifiedAt: 0,
+            importedAt: 0,
+            hash: '',
+            settings: defaultSettings('prefab'),
+            importedPath: null,
+          },
+        ],
+      },
+    });
+    const { scene, past, future, revision, savedRevision } = doc();
+    const dirty = selectDirty(doc());
+    watching();
+
+    play();
+    commandById('delete').run();
+    commandById('duplicate').run();
+    commandById('undo').run();
+    doc().mutate('Probe', (draft) => void (draft.entities[a.entity.id]!.name = 'Probed'));
+    addEntityInView(createMeshEntity('box'));
+    placeDroppedAsset(PREFAB_ID, [0, 0, 0]);
+    reparentSelection(Selection.of([b.entity.id], expandedScene().scene), a.entity.id);
+    expect(toasts().map((toast) => toast.title)).toEqual(['Stop the game to edit the scene']);
+
+    stop();
+    await compiles.finish(0, false);
+
+    expect(doc().scene).toBe(scene);
+    expect(doc().past).toBe(past);
+    expect(doc().future).toBe(future);
+    expect(doc().revision).toBe(revision);
+    expect(doc().savedRevision).toBe(savedRevision);
+    expect(selectDirty(doc())).toBe(dirty);
+    expect(toasts()).toEqual([]);
+
+    doc().undo();
+    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(0);
+    doc().redo();
+    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(3);
+  });
+});
+
+describe('Save during Play', () => {
+  const written: string[] = [];
+
+  beforeEach(() => {
+    written.length = 0;
+    vi.stubGlobal('window', {
+      studio: {
+        project: {
+          saveScene: async ({ contents }: { contents: string }) => {
+            written.push(contents);
+          },
+        },
+      },
+    });
+    useProjectStore.setState({
+      summary: { name: 'Session', path: '/projects/Session', lastOpenedAt: 1 },
+      scenePath: 'scenes/level-one.scene.json',
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useProjectStore.setState({ summary: null, scenePath: null });
+  });
+
+  it('writes the document Play started from, which reads as saved after Stop', async () => {
+    const compiles = compilesHeld();
+    doc().mutate('Add', (draft) => void (draft.name = 'Edited before Play'));
+    expect(selectDirty(doc())).toBe(true);
+    const scene = doc().scene;
+    watching();
+
+    play();
+    commandById('save').run();
+    await until(() => written.length === 1 && !useProjectStore.getState().saving, 'the save');
+
+    expect(written).toEqual([serializeScene(scene)]);
+
+    stop();
+    await compiles.finish(0, false);
+
+    expect(selectDirty(doc())).toBe(false);
+    expect(doc().scene).toBe(scene);
   });
 });

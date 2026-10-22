@@ -10,7 +10,7 @@ import { ViewportInput } from '../src/viewport/ViewportInput';
  * Who gets the edit view's pointer: the camera, the gizmo, or the selection —
  * and, from the press of Play, none of them. The edit image stays on screen
  * while the game starts, and a press on it must neither fly the camera nor drag
- * a handle, both of which would edit a document Stop puts back. The release is
+ * a handle into an edit the scene lock refuses. The release is
  * heard on the window, so a click anywhere — the toolbar's Pause included —
  * used to give the camera back to a view the game was starting in.
  */

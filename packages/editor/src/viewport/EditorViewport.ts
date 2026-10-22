@@ -338,10 +338,11 @@ export class EditorViewport {
     // From the press the view's pointer is not the editor's. The start lasts as
     // long as the compile and the load, the edit image stays on screen for all
     // of it, held still under its pill, and nothing may drive the edit view in
-    // the meantime: flying the camera or dragging a handle would edit a
-    // document Stop puts back the way it was. These used to go only once the
-    // engine had arrived, and until then a held key still flew the camera, and
-    // a release anywhere on the window switched it back on.
+    // the meantime: flying the camera would move a view nobody is shown, and
+    // dragging a handle would try an edit the scene lock refuses. These used
+    // to go only once the engine had arrived, and until then a held key still
+    // flew the camera, and a release anywhere on the window switched it back
+    // on.
     this.controls.setEnabled(false);
     this.gizmo.setEnabled(false);
   }
