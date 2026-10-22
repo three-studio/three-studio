@@ -275,11 +275,12 @@ export class Engine {
   /**
    * A scene with no light at all renders black, and nothing else says so.
    *
-   * Silent at runtime like the rest of these, and worse than silent: the Scene
-   * view lights such a scene with a default pair of its own, so the author has
-   * already seen it lit. What is named here is therefore the difference, not
-   * the absence — the same condition that switches the editor's pair on, said
-   * from the side that does not have it. See `viewport/editorProjection`.
+   * Silent at runtime like the rest of these, and worse than silent: while it
+   * is edited, the Viewport lights such a scene with a default pair of its own,
+   * so the author has already seen it lit. What is named here is therefore the
+   * difference, not the absence — the same condition that switches the
+   * editor's pair on, said from the side that does not have it. See
+   * `viewport/editorProjection`.
    */
   private checkLighting(scene: SceneDoc): void {
     if (entitiesWith(scene, 'light').length > 0) return;

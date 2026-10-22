@@ -304,26 +304,12 @@ export class PlaySession {
 
       // A script may swap scenes at any point; the viewport renders through
       // whatever is current rather than the one it started with.
-      host.onSceneChanged = (_path, next) => {
-        this.engine = next;
-        next.onWarning = (warnings) => {
-          useViewportStore.getState().setPlayWarnings(warnings);
-        };
-        this.syncAspect(next);
-      };
-      // A copy, and a live subscription: warnings raised later must reach the
-      // panel, and React only redraws on a new reference.
-      engine.onWarning = (warnings) => {
-        useViewportStore.getState().setPlayWarnings(warnings);
-      };
-      this.engine = engine;
+      host.onSceneChanged = (_path, next) => this.run(next);
+      this.run(engine);
       // Pressing Play is the user gesture, which is the only moment a browser
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
       void engine.audio?.unlock();
-      // What the engine found while it was built, which it does not announce
-      // through `onWarning`.
-      useViewportStore.getState().setPlayWarnings([...engine.warnings]);
       // The camera, the handles and the size, none of which is this class's.
       this.host.onPlayStarted();
     } catch (cause) {
@@ -340,6 +326,29 @@ export class PlaySession {
       useEditorStore.getState().stop();
       this.sayFailure('The game could not start', formatLogArgs([cause]).split('\n')[0] ?? '');
     }
+  }
+
+  /**
+   * Makes `engine` the one the viewport draws: the first, and each one a
+   * script moves to.
+   *
+   * Its problems are published here, at each activation: what it found while it
+   * was built — no camera, no light, a body with no collider — which goes into
+   * `warnings` without `onWarning` hearing of it, then whatever it raises later.
+   * A script's change of scene used to wire the next engine's `onWarning` and
+   * stop there, so the scene left behind went on listing its problems over the
+   * next one, whose own were never shown. The exported player says them again
+   * at every scene; so does this.
+   */
+  private run(engine: Engine): void {
+    this.engine = engine;
+    // A copy, and a live subscription: warnings raised later must reach the
+    // panel, and React only redraws on a new reference.
+    engine.onWarning = (warnings) => {
+      useViewportStore.getState().setPlayWarnings(warnings);
+    };
+    useViewportStore.getState().setPlayWarnings([...engine.warnings]);
+    this.syncAspect(engine);
   }
 
   /**
@@ -389,10 +398,12 @@ export class PlaySession {
     this.session += 1;
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on
-    // a canvas that is about to go away.
+    // a canvas that is about to go away. And the host alone: the engine is the
+    // host's, and disposing it again freed its physics world a second time,
+    // which Rapier answers by throwing — out of a teardown with the renderer
+    // and the rest of the viewport still to go.
     this.sceneHost?.dispose();
     this.sceneHost = null;
-    this.engine?.dispose();
     this.engine = null;
     running = null;
   }

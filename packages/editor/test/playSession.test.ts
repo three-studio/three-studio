@@ -1,15 +1,20 @@
 import {
   PROJECT_FORMAT_VERSION,
   createBuildProfiles,
+  createComponent,
   createEmptyScene,
+  createEntity,
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  serializeScene,
   type ProjectFile,
+  type ScriptComponent,
 } from '@three-studio/core';
+import { Behaviour, clearScripts, registerScript } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prefabWith } from '../../core/test/fixtures';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
@@ -53,9 +58,12 @@ const play = () => useEditorStore.getState().play();
 const stop = () => useEditorStore.getState().stop();
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-/** A start goes through a few awaits, none of which waits on anything real here. */
+/**
+ * A start goes through a few awaits. The longest is the physics module, which
+ * Rapier's `-compat` build loads under Node in well under a second.
+ */
 async function until(condition: () => boolean, what: string): Promise<void> {
-  for (let turn = 0; turn < 200; turn += 1) {
+  for (let turn = 0; turn < 400; turn += 1) {
     if (condition()) return;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -265,5 +273,118 @@ describe('a Play that fails', () => {
     toasts()[0]!.actions![0]!.onClick();
 
     expect(useEditorStore.getState().consoleRequests).toBe(before + 1);
+  });
+});
+
+describe('the problems over the game', () => {
+  /*
+   * The starts below run to a real engine: `Input` listens on `window`, on
+   * `document` and on the game's canvas, which event targets stand in for, and
+   * the window answers the one scene a script reads from its file. Physics is
+   * on, as in Play: Rapier's `-compat` build loads under Node.
+   */
+  const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+  const GO_TO_BOSS = 'script-go-to-boss';
+  const reads: string[] = [];
+
+  /** A body nothing can touch: its own problem, which the first scene does not have. */
+  function bossScene() {
+    const scene = sceneWith([createEntity('Crate', [createComponent('rigidbody')])]);
+    scene.name = 'Boss';
+    return scene;
+  }
+
+  /** Moves to Boss from its first frame, as a menu's Start button would. */
+  class GoToBoss extends Behaviour {
+    private asked = false;
+
+    override onUpdate() {
+      if (this.asked) return;
+      this.asked = true;
+      void this.scenes?.go('Boss');
+    }
+  }
+
+  beforeAll(() => {
+    const readScene = async (path: string) => {
+      reads.push(path);
+      return serializeScene(bossScene());
+    };
+    Object.assign(globalThis, {
+      // `performance` too: Rapier times each step with the window's clock once
+      // there is a window, and a window without one makes `world.step()` panic
+      // with nothing but `unreachable` to say why.
+      window: Object.assign(new EventTarget(), { performance, studio: { project: { readScene } } }),
+      document: new EventTarget(),
+    });
+  });
+
+  afterAll(() => {
+    // Taken back down: a global left behind is one this file wrote for another
+    // file to find.
+    Reflect.deleteProperty(globalThis, 'window');
+    Reflect.deleteProperty(globalThis, 'document');
+  });
+
+  beforeEach(() => {
+    useProjectStore.setState({
+      scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
+    });
+    // Compiled, with nothing to import: the classes are registered here.
+    useScriptStore.setState({ build: async () => true });
+    reads.length = 0;
+  });
+
+  afterEach(() => {
+    clearScripts();
+  });
+
+  it('are the running scene’s from its first frame, and gone at Stop', async () => {
+    // The document is an empty scene: no camera, no light.
+    watching();
+
+    play();
+    await until(() => session!.playEngine !== null, 'the engine');
+    const engine = session!.playEngine!;
+
+    expect(engine.warnings.length).toBeGreaterThan(0);
+    expect(useViewportStore.getState().playWarnings).toEqual(engine.warnings);
+
+    stop();
+
+    expect(useViewportStore.getState().playWarnings).toEqual([]);
+  });
+
+  it('follow a script to the scene it moves to', async () => {
+    registerScript(GO_TO_BOSS, GoToBoss);
+    const director: ScriptComponent = { ...createComponent('script'), assetId: GO_TO_BOSS };
+    useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
+    watching();
+    play();
+    await until(() => session!.playEngine !== null, 'the first engine');
+    const first = session!.playEngine!;
+
+    // The frame loop's own call, which runs the script's first update.
+    first.update(1 / 60);
+    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+    const boss = session!.playEngine!;
+
+    expect(reads).toEqual([BOSS.path]);
+    expect(boss.warnings.some((warning) => warning.includes('"Crate" has a Rigid Body but no Collider'))).toBe(true);
+    // What Boss found while it was built, which its `onWarning` never hears —
+    // and none of the first scene's.
+    expect(useViewportStore.getState().playWarnings).toEqual(boss.warnings);
+  });
+
+  it('takes a running game down once when the session goes', async () => {
+    // The host owns the engine: taking both down freed its physics world twice,
+    // and Rapier throws on the second.
+    watching();
+    play();
+    await until(() => session!.playEngine !== null, 'the engine');
+
+    expect(() => session!.dispose()).not.toThrow();
+    expect(session!.playEngine).toBeNull();
+    session = null;
   });
 });

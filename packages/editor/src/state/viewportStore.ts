@@ -22,7 +22,12 @@ interface ViewportState extends ViewportStats {
   rendererError: string | null;
   /** Metres per second of the editor fly camera, surfaced while navigating. */
   flySpeed: number;
-  /** Problems the engine found when starting, e.g. a scene with no camera. */
+  /**
+   * The running scene's set-up problems, e.g. a scene with no camera: published
+   * anew each time a scene starts running — a script's change of scene
+   * included — and empty while stopped. Nothing else goes here: a Play that
+   * fails to start never runs a scene, and says so in a toast.
+   */
   playWarnings: readonly string[];
   setPlayWarnings: (warnings: readonly string[]) => void;
   /**
