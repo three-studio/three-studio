@@ -26,8 +26,9 @@ interface ToolbarProps {
  */
 export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
-  // Saved layouts live in localStorage, not in React state, so the menu is
-  // rebuilt on demand after a save or a delete.
+  // Saved layouts are kept in the preferences file and served from memory by
+  // `layoutStorage`, not by React state, so the menu is rebuilt on demand after
+  // a save or a delete.
   const [, setLayoutVersion] = useState(0);
 
   const playState = useEditorStore((s) => s.playState);
@@ -58,6 +59,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
             shortcut={shortcutHint(transportId)}
             active={!isStopped}
             activeClassName="bg-play/15 text-play"
+            takesNoFocus
             onClick={() => transport.run()}
           />
           {/*
@@ -74,6 +76,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 icon={MonitorPlay}
                 label={fullScreen.label()}
                 shortcut={shortcutHint('playFullScreen')}
+                takesNoFocus
                 onClick={() => fullScreen.run()}
               />
               <span aria-hidden className="h-7 w-7" />
@@ -87,6 +90,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 label={pause.label()}
                 shortcut={shortcutHint('togglePause')}
                 active={playState === 'paused'}
+                takesNoFocus
                 onClick={() => pause.run()}
               />
               <ToolButton
@@ -95,6 +99,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 shortcut={shortcutHint('stepFrame')}
                 hint={step.can() ? undefined : 'Pause first'}
                 disabled={!step.can()}
+                takesNoFocus
                 onClick={() => step.run()}
               />
             </>
