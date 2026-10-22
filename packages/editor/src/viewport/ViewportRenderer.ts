@@ -230,9 +230,13 @@ export class ViewportRenderer {
    * which is why the launcher's pipeline and an exported build's would both be
    * straightforward. Whoever writes this one decides what size the pass runs at;
    * the seam does not decide it for them.
+   *
+   * @returns Whether it drew. For the game's canvas, the first `true` of a
+   *   session is its first frame: the moment it has something of its own to
+   *   show, which is when it comes on top.
    */
-  draw(scene: Scene, camera: Camera, view: Presentation): void {
-    if (!view.visible) return;
+  draw(scene: Scene, camera: Camera, view: Presentation): boolean {
+    if (!view.visible) return false;
 
     // The surface is at least this big — `resize` sized it to the largest
     // visible panel — so the view fits in its corner. `setSize` resets this,
@@ -253,6 +257,7 @@ export class ViewportRenderer {
      */
     this.renderer.render(scene, camera);
     view.show(this.surface, this.renderer.getPixelRatio());
+    return true;
   }
 
   /** @param flySpeed The camera's, which is not this class's to read. */

@@ -128,4 +128,18 @@ export class Presentation {
 
     this.context.drawImage(surface, 0, 0, width, height, 0, 0, width, height);
   }
+
+  /**
+   * Empties the canvas: its bitmap goes to nothing, and `show` sizes it again
+   * at the next frame drawn.
+   *
+   * The game's, at Stop. Emptied rather than painted black, so that nothing of
+   * a session outlives it — neither its last frame, which the next Play used to
+   * show while it started, nor a bitmap the size of the screen kept for a view
+   * nobody is looking at.
+   */
+  clear(): void {
+    this.canvas.width = 0;
+    this.canvas.height = 0;
+  }
 }

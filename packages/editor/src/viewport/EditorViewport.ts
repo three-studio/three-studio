@@ -309,7 +309,10 @@ export class EditorViewport {
 
   /** What the Viewport shows now, read the way the panel reads it. */
   private viewNow(): ViewState {
-    return viewState({ playState: useEditorStore.getState().playState });
+    return viewState({
+      playState: useEditorStore.getState().playState,
+      gameShown: useViewportStore.getState().gameShown,
+    });
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
@@ -333,17 +336,21 @@ export class EditorViewport {
 
   onPlayPressed(): void {
     // From the press the view's pointer is not the editor's. The start lasts as
-    // long as the compile and the load, and nothing may drive the edit view for
-    // any of it: flying the camera or dragging a handle would edit a document
-    // Stop puts back the way it was. These used to go only once the engine had
-    // arrived, and until then a held key still flew the camera, and a release
-    // anywhere on the window switched it back on.
+    // long as the compile and the load, the edit image stays on screen for all
+    // of it, held still under its pill, and nothing may drive the edit view in
+    // the meantime: flying the camera or dragging a handle would edit a
+    // document Stop puts back the way it was. These used to go only once the
+    // engine had arrived, and until then a held key still flew the camera, and
+    // a release anywhere on the window switched it back on.
     this.controls.setEnabled(false);
     this.gizmo.setEnabled(false);
   }
 
   onPlayStopped(): void {
     this.controls.setEnabled(true);
+    // Nothing of this session is kept for the next. Its canvas comes on top
+    // again only once the next session has drawn into it.
+    this.view.gameView.clear();
   }
 
   /** Frame a world-space sphere; used by the F shortcut and by selection. */
@@ -513,14 +520,13 @@ export class EditorViewport {
       audioPreview.setListener(...cameraPose(this.camera));
     }
 
-    // What the Viewport shows: the edit view, or the game in its place.
-    const shown = view.canvas;
     // The document and the selection are pulled into the edit view only while
-    // it is the one on screen. Nothing reads them while the game is in front,
-    // and the first sync after Stop catches up on all of it at once: this
-    // consumer keeps its own place in the document's log, so a frame skipped
-    // is a change deferred, never one lost.
-    if (shown === 'edit' && this.view.editView.visible) {
+    // it is the one drawn. Nothing reads them while the game is in front, nor
+    // while the game starts — the edit image on screen then is held still, as
+    // it was at the press — and the first sync after Stop catches up on all of
+    // it at once: this consumer keeps its own place in the document's log, so a
+    // frame skipped is a change deferred, never one lost.
+    if (view.drawn === 'edit' && this.view.editView.visible) {
       this.syncDocument();
       this.syncSelection();
     }
@@ -545,12 +551,15 @@ export class EditorViewport {
     // a dialog opened would be a different decision, and not one to take here.
     if (covered) return;
 
-    // Only the canvas on top is drawn: the one under it is hidden, and a view
-    // nobody sees is not drawn. During Play that is the game alone — 9 006 draw
-    // calls a frame, measured, where drawing the edit view behind it as well
-    // made 18 016.
-    if (shown === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (engine) this.view.draw(engine.scene, engine.activeCamera, this.view.gameView);
+    // One canvas is drawn, the one `viewState` names: a view nobody sees is not
+    // drawn. During Play that is the game alone — 9 006 draw calls a frame,
+    // measured, where drawing the edit view behind it as well made 18 016.
+    // While the game starts it is the game too, unseen under the edit image
+    // until its first frame is in, which is what brings it on top.
+    if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
+    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView)) {
+      this.play.gameDrawn();
+    }
     this.view.reportStats(time, this.controls.moveSpeed);
   }
 

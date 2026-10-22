@@ -194,6 +194,7 @@ export class PlaySession {
         // Play this one replaces, whether or not this one goes any better.
         this.failure.dismiss();
         this.session += 1;
+        useViewportStore.getState().setGameShown(false);
         this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
@@ -329,6 +330,16 @@ export class PlaySession {
   }
 
   /**
+   * The frame loop has just drawn the running game. The first time, the game
+   * has a frame of its own to take the edit image's place with; before there
+   * is an engine there was nothing to draw, and this says nothing.
+   */
+  gameDrawn(): void {
+    if (this.engine === null || useViewportStore.getState().gameShown) return;
+    useViewportStore.getState().setGameShown(true);
+  }
+
+  /**
    * Makes `engine` the one the viewport draws: the first, and each one a
    * script moves to.
    *
@@ -379,6 +390,7 @@ export class PlaySession {
     running = null;
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
+    useViewportStore.getState().setGameShown(false);
 
     if (this.playSnapshot) {
       useDocumentStore.getState().replaceScene(this.playSnapshot, { keepHistory: true });

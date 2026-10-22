@@ -31,6 +31,18 @@ interface ViewportState extends ViewportStats {
   playWarnings: readonly string[];
   setPlayWarnings: (warnings: readonly string[]) => void;
   /**
+   * Whether the running game has drawn a frame: false from the press of Play
+   * and at Stop.
+   *
+   * What puts the game's canvas on top. Until then the Viewport holds the edit
+   * image under "Starting…" while the game draws its first frame unseen: the
+   * game's canvas used to come on top at the press, showing whatever the last
+   * session had left in it — the last frame of another scene, for the whole of
+   * the start. Written by the play session, when the frame loop says it drew.
+   */
+  gameShown: boolean;
+  setGameShown: (shown: boolean) => void;
+  /**
    * Whether the edit view is lighting the scene itself, because the document
    * names no light of its own.
    *
@@ -70,10 +82,12 @@ export const useViewportStore = create<ViewportState>()((set) => ({
   triangles: 0,
   flySpeed: 10,
   playWarnings: [],
+  gameShown: false,
   fallbackLighting: false,
   animated: false,
 
   setPlayWarnings: (playWarnings) => set({ playWarnings }),
+  setGameShown: (gameShown) => set({ gameShown }),
   setFallbackLighting: (fallbackLighting) => set({ fallbackLighting }),
   setBackend: (backend) => set({ backend }),
   setRendererError: (rendererError) => set({ rendererError }),

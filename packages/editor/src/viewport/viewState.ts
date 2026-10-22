@@ -19,37 +19,49 @@ import type { PlayState } from '../state/editorStore';
 export interface ViewInputs {
   /** `editorStore.playState`. */
   playState: PlayState;
+  /** The running game has drawn a frame: `viewportStore.gameShown`. */
+  gameShown: boolean;
 }
 
-export type ViewMode = 'edit' | 'playing' | 'paused';
+export type ViewMode = 'edit' | 'starting' | 'playing' | 'paused';
 
 export interface ViewState {
   mode: ViewMode;
-  /**
-   * The canvas on top of the stage: the one a person sees, and the only one
-   * drawn — a view nobody sees is not drawn, which is what keeps Play at one
-   * render a frame.
-   */
+  /** The canvas on top of the stage: the one a person sees. */
   canvas: 'edit' | 'game';
   /**
+   * The canvas the frame loop draws. The one on top — a view nobody sees is not
+   * drawn, which is what keeps Play at one render a frame — except while the
+   * game starts: the edit image is held on top, undrawn, while the game's first
+   * frame is drawn underneath, unseen.
+   *
+   * A field of its own rather than a rule in the loop, because that difference
+   * is the whole of the start: the game's canvas comes on top with a frame of
+   * this session in it, so neither the last frame of the session before — of
+   * another scene, as like as not — nor a blank one can show. "The game" means
+   * the game once there is one: until the engine exists nothing is drawn, which
+   * is the loop's fact, since it has nothing to draw.
+   */
+  drawn: 'edit' | 'game';
+  /**
    * Who hears the view's pointer: the editor's arbitration — the camera, the
-   * handles, the selection — or the game's `Input`.
+   * handles, the selection — the game's `Input`, or nobody.
    *
    * The editor's only while stopped, and it leaves at the press of Play rather
-   * than when the game arrives: until then the edit image is what is pressed
-   * on, and flying the camera or dragging a handle there would edit a document
-   * Stop puts back. The game's `Input` hears it exactly while its canvas is on
-   * top, since a hidden element takes no pointer.
+   * than when the game arrives: while the game starts, the edit image on top is
+   * a picture, and flying the camera or dragging a handle there would edit a
+   * document Stop puts back. The game's `Input` hears it exactly while its
+   * canvas is on top, since a hidden element takes no pointer.
    */
-  input: 'editor' | 'game';
+  input: 'editor' | 'game' | 'none';
   /** What is laid over the stage. */
   overlays: {
     /** Prefab Mode's bar: it is about what is being edited. */
     prefabBar: boolean;
     /**
      * Whether an asset can be dropped on the view. A drop places into the edit
-     * view's scene, at a point measured on the edit canvas, which is hidden
-     * while the game runs.
+     * view's scene, at a point measured on the edit canvas, which is not the
+     * editor's from the press of Play.
      */
     dropTarget: boolean;
     /** The badge that says the game is paused. */
@@ -61,6 +73,8 @@ export interface ViewState {
     problems: boolean;
     /** How to give the game the mouse, and how to stop it. */
     captureHint: boolean;
+    /** The pill that says the game is starting, over the edit image it holds. */
+    starting: boolean;
   };
 }
 
@@ -69,8 +83,35 @@ export function viewState(inputs: ViewInputs): ViewState {
     return {
       mode: 'edit',
       canvas: 'edit',
+      drawn: 'edit',
       input: 'editor',
-      overlays: { prefabBar: true, dropTarget: true, paused: false, problems: false, captureHint: false },
+      overlays: {
+        prefabBar: true,
+        dropTarget: true,
+        paused: false,
+        problems: false,
+        captureHint: false,
+        starting: false,
+      },
+    };
+  }
+  // Until the game's first frame, paused or not: a Paused badge over an edit
+  // image would describe a picture that is not the game, and the transport
+  // already shows the pause.
+  if (!inputs.gameShown) {
+    return {
+      mode: 'starting',
+      canvas: 'edit',
+      drawn: 'game',
+      input: 'none',
+      overlays: {
+        prefabBar: false,
+        dropTarget: false,
+        paused: false,
+        problems: false,
+        captureHint: false,
+        starting: true,
+      },
     };
   }
   // Paused is still the game: the picture stays, and a badge says why it does
@@ -79,7 +120,15 @@ export function viewState(inputs: ViewInputs): ViewState {
   return {
     mode: paused ? 'paused' : 'playing',
     canvas: 'game',
+    drawn: 'game',
     input: 'game',
-    overlays: { prefabBar: false, dropTarget: false, paused, problems: true, captureHint: true },
+    overlays: {
+      prefabBar: false,
+      dropTarget: false,
+      paused,
+      problems: true,
+      captureHint: true,
+      starting: false,
+    },
   };
 }

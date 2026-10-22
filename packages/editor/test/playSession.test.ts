@@ -301,13 +301,30 @@ describe('what the session tells the viewport', () => {
   });
 });
 
+/**
+ * What a start that runs to a real engine needs of the browser: `Input` listens
+ * on `window`, on `document` and on the game's canvas, which event targets stand
+ * in for. Physics is on, as in Play: Rapier's `-compat` build loads under Node.
+ *
+ * `performance` too: Rapier times each step with the window's clock once there
+ * is a window, and a window without one makes `world.step()` panic with nothing
+ * but `unreachable` to say why.
+ */
+function standInForTheBrowser(studio: object = {}): void {
+  Object.assign(globalThis, {
+    window: Object.assign(new EventTarget(), { performance, studio }),
+    document: new EventTarget(),
+  });
+}
+
+/** Taken back down: a global left behind is one this file wrote for another file to find. */
+function takeTheBrowserBack(): void {
+  Reflect.deleteProperty(globalThis, 'window');
+  Reflect.deleteProperty(globalThis, 'document');
+}
+
 describe('the problems over the game', () => {
-  /*
-   * The starts below run to a real engine: `Input` listens on `window`, on
-   * `document` and on the game's canvas, which event targets stand in for, and
-   * the window answers the one scene a script reads from its file. Physics is
-   * on, as in Play: Rapier's `-compat` build loads under Node.
-   */
+  // The window answers the one scene a script reads from its file.
   const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
   const GO_TO_BOSS = 'script-go-to-boss';
   const reads: string[] = [];
@@ -335,21 +352,10 @@ describe('the problems over the game', () => {
       reads.push(path);
       return serializeScene(bossScene());
     };
-    Object.assign(globalThis, {
-      // `performance` too: Rapier times each step with the window's clock once
-      // there is a window, and a window without one makes `world.step()` panic
-      // with nothing but `unreachable` to say why.
-      window: Object.assign(new EventTarget(), { performance, studio: { project: { readScene } } }),
-      document: new EventTarget(),
-    });
+    standInForTheBrowser({ project: { readScene } });
   });
 
-  afterAll(() => {
-    // Taken back down: a global left behind is one this file wrote for another
-    // file to find.
-    Reflect.deleteProperty(globalThis, 'window');
-    Reflect.deleteProperty(globalThis, 'document');
-  });
+  afterAll(takeTheBrowserBack);
 
   beforeEach(() => {
     useProjectStore.setState({
@@ -411,5 +417,50 @@ describe('the problems over the game', () => {
     expect(() => session!.dispose()).not.toThrow();
     expect(session!.playEngine).toBeNull();
     session = null;
+  });
+});
+
+describe('what the game has shown', () => {
+  beforeAll(() => standInForTheBrowser());
+  afterAll(takeTheBrowserBack);
+
+  beforeEach(() => {
+    // What a session before this one left: the press is what clears it.
+    useViewportStore.setState({ gameShown: true });
+  });
+
+  const gameShown = () => useViewportStore.getState().gameShown;
+
+  it('is nothing from the press until the frame loop has drawn the game, and nothing at Stop', async () => {
+    const compiles = compilesHeld();
+    watching();
+
+    play();
+    expect(gameShown()).toBe(false);
+
+    // Drawn before there is an engine: the loop had nothing to draw.
+    session!.gameDrawn();
+    expect(gameShown()).toBe(false);
+
+    await compiles.finish(0, true);
+    await until(() => session!.playEngine !== null, 'the engine');
+    expect(gameShown()).toBe(false);
+
+    session!.gameDrawn();
+    expect(gameShown()).toBe(true);
+
+    stop();
+    expect(gameShown()).toBe(false);
+  });
+
+  it('is nothing after a start that failed', async () => {
+    compilesFail(['Player.ts(3,1): error TS1005']);
+    watching();
+
+    play();
+    session!.gameDrawn();
+    await until(() => playState() === 'stopped', 'the stop');
+
+    expect(gameShown()).toBe(false);
   });
 });

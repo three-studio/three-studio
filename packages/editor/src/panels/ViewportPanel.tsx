@@ -61,8 +61,11 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   const rendererError = useViewportStore((s) => s.rendererError);
   const showStats = useEditorStore((s) => s.showStats);
   const playState = useEditorStore((s) => s.playState);
+  // A boolean, so the panel renders when the game's first frame is in and at
+  // Stop, never per frame.
+  const gameShown = useViewportStore((s) => s.gameShown);
   const [dropping, setDropping] = useState(false);
-  const view = viewState({ playState });
+  const view = viewState({ playState, gameShown });
   const holdingScreen = usePlayFullScreen(stageRef);
 
   useEffect(() => {
@@ -150,7 +153,9 @@ export function ViewportPanel(props: IDockviewPanelProps) {
       <div
         ref={stageRef}
         data-viewport-stage
-        className="relative min-h-0 flex-1 overflow-hidden bg-surface-0"
+        // The progress cursor while the game starts: the edit host is inert
+        // then, so the stage under it is what the pointer is over.
+        className={`relative min-h-0 flex-1 overflow-hidden bg-surface-0 ${view.overlays.starting ? 'cursor-progress' : ''}`}
         onDragOver={(event) => {
           // A drop places into the scene at a point measured on the edit canvas,
           // so only while that canvas is on top. Leaving the event uncancelled is
@@ -195,7 +200,28 @@ export function ViewportPanel(props: IDockviewPanelProps) {
         {view.overlays.paused && <PausedBadge />}
         {view.overlays.problems && <SceneProblems />}
         {view.overlays.captureHint && <CaptureHint holdingScreen={holdingScreen} />}
+        {view.overlays.starting && <StartingPill />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Over the edit image, held still from the press of Play until the game's first
+ * frame takes its place. It says that the picture is not the game yet, and not
+ * a frozen editor either: the compile and the load are under way.
+ */
+function StartingPill() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <span className="flex items-center gap-1.5 rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-ink-muted">
+        {/* The progress toast's spinner: one way of saying "under way". */}
+        <span
+          className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent text-accent"
+          aria-hidden
+        />
+        Starting…
+      </span>
     </div>
   );
 }
