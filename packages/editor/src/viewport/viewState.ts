@@ -31,6 +31,17 @@ export interface ViewState {
    * render a frame.
    */
   canvas: 'edit' | 'game';
+  /**
+   * Who hears the view's pointer: the editor's arbitration — the camera, the
+   * handles, the selection — or the game's `Input`.
+   *
+   * The editor's only while stopped, and it leaves at the press of Play rather
+   * than when the game arrives: until then the edit image is what is pressed
+   * on, and flying the camera or dragging a handle there would edit a document
+   * Stop puts back. The game's `Input` hears it exactly while its canvas is on
+   * top, since a hidden element takes no pointer.
+   */
+  input: 'editor' | 'game';
   /** What is laid over the stage. */
   overlays: {
     /** Prefab Mode's bar: it is about what is being edited. */
@@ -58,6 +69,7 @@ export function viewState(inputs: ViewInputs): ViewState {
     return {
       mode: 'edit',
       canvas: 'edit',
+      input: 'editor',
       overlays: { prefabBar: true, dropTarget: true, paused: false, problems: false, captureHint: false },
     };
   }
@@ -67,6 +79,7 @@ export function viewState(inputs: ViewInputs): ViewState {
   return {
     mode: paused ? 'paused' : 'playing',
     canvas: 'game',
+    input: 'game',
     overlays: { prefabBar: false, dropTarget: false, paused, problems: true, captureHint: true },
   };
 }

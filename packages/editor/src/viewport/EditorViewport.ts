@@ -35,7 +35,7 @@ import type { Presentation } from './Presentation';
 import { ViewportInput } from './ViewportInput';
 import { PlaySession } from './PlaySession';
 import { ViewportRenderer } from './ViewportRenderer';
-import { viewState } from './viewState';
+import { viewState, type ViewState } from './viewState';
 import type { SelectionOutline } from './SelectionOutline';
 import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -299,9 +299,17 @@ export class EditorViewport {
     this.view.dispose();
   }
 
-  /** True while the game is running; see `InputSubjects`. */
-  get playing(): boolean {
-    return this.play.playing;
+  /**
+   * Whether the view's pointer is the editor's, asked at event time by the
+   * arbitration; see `InputSubjects`.
+   */
+  get editorInput(): boolean {
+    return this.viewNow().input === 'editor';
+  }
+
+  /** What the Viewport shows now, read the way the panel reads it. */
+  private viewNow(): ViewState {
+    return viewState({ playState: useEditorStore.getState().playState });
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
@@ -323,15 +331,15 @@ export class EditorViewport {
     return this.view.gameView;
   }
 
-  onPlayStarted(): void {
-    // The edit view is hidden under the game's canvas while the game runs, and
-    // these are off so that nothing drives a camera or a handle nobody can see
-    // — nor edits a document that Stop is about to put back the way it was.
+  onPlayPressed(): void {
+    // From the press the view's pointer is not the editor's. The start lasts as
+    // long as the compile and the load, and nothing may drive the edit view for
+    // any of it: flying the camera or dragging a handle would edit a document
+    // Stop puts back the way it was. These used to go only once the engine had
+    // arrived, and until then a held key still flew the camera, and a release
+    // anywhere on the window switched it back on.
     this.controls.setEnabled(false);
     this.gizmo.setEnabled(false);
-    // The engine needs the viewport aspect; the frame loop hands it over on the
-    // next tick rather than resizing the renderer from here.
-    this.view.markResized();
   }
 
   onPlayStopped(): void {
@@ -428,12 +436,12 @@ export class EditorViewport {
     //
     // The surface is the renderer's to size; the cameras that answer to a panel
     // are not, so they are corrected here. Two of the three unconditionally,
-    // and each for its own reason: the engine may have *arrived* since the last
-    // resize — `beginPlay` raises the flag precisely so that it is handed the
-    // shape of its panel, which has usually not moved a pixel — and selecting
-    // another file in the import dialog swaps one preview camera for another
-    // without its panel moving either, leaving a camera that has never heard a
-    // box at the 1:1 aspect it was constructed with.
+    // and each for its own reason: the running game is handed the shape of its
+    // canvas at every resize, whichever box moved — it arrives with one, from
+    // `PlaySession.run`, and this keeps it current — and selecting another file
+    // in the import dialog swaps one preview camera for another without its
+    // panel moving, leaving a camera that has never heard a box at the 1:1
+    // aspect it was constructed with.
     if (this.view.resizePending) {
       const editMoved = this.view.applyResize();
       if (editMoved && this.view.editView.visible) {
@@ -460,6 +468,9 @@ export class EditorViewport {
     this.lastFrameTime = time;
 
     const { playState, consumeStep } = useEditorStore.getState();
+    // What the Viewport shows, and who has its input: read once, for the whole
+    // frame.
+    const view = this.viewNow();
     // Before anything reads a delta, and before anything draws: every node
     // material in the document is about to sample this. Written here rather
     // than on the transport commands because this is where the state is
@@ -488,8 +499,11 @@ export class EditorViewport {
       //
       // Only while the edit view is in a panel: the loop keeps running once it
       // is detached, and integrating a gesture nobody can see is how a stuck key
-      // used to travel while the edit view's tab was closed.
-      if (this.view.editView.host) this.controls.update(raw);
+      // used to travel while the edit view's tab was closed. And only while the
+      // view's input is the editor's: from the press of Play there is no engine
+      // yet, for as long as the start takes, and the camera must not move under
+      // a scene Stop brings back as it was left.
+      if (this.view.editView.host && view.input === 'editor') this.controls.update(raw);
       // The ear rides the editor camera while nothing is running, which is what
       // makes an audition of a positional source worth anything: fly toward the
       // source and it gets louder. A no-op until something has actually been
@@ -500,7 +514,7 @@ export class EditorViewport {
     }
 
     // What the Viewport shows: the edit view, or the game in its place.
-    const shown = viewState({ playState }).canvas;
+    const shown = view.canvas;
     // The document and the selection are pulled into the edit view only while
     // it is the one on screen. Nothing reads them while the game is in front,
     // and the first sync after Stop catches up on all of it at once: this
@@ -566,7 +580,7 @@ export class EditorViewport {
     // `isNavigating` only covers the fly gesture; `navigating` covers pan and
     // orbit too, and it is what keeps the handles away for the whole press.
     // Never reached during Play: this runs only while the edit view is the one
-    // drawn, so the handles `onPlayStarted` switched off stay off until Stop.
+    // drawn, so the handles `onPlayPressed` switched off stay off until Stop.
     this.gizmo.setEnabled(!this.controls.isNavigating && !this.input.navigating);
     this.gizmo.update(current, resolve, bounds, transformMode);
 

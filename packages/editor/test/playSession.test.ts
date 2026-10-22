@@ -84,7 +84,7 @@ function stubHost(): StubHost {
     renderer: null as unknown as WebGPURenderer,
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
     rendering: createRenderingSettings(),
-    onPlayStarted: () => calls.push('started'),
+    onPlayPressed: () => calls.push('pressed'),
     onPlayStopped: () => calls.push('stopped'),
   };
 }
@@ -172,7 +172,7 @@ describe('a Play that fails', () => {
     // problems box over a game that never came.
     expect(useViewportStore.getState().rendererError).toBeNull();
     expect(useViewportStore.getState().playWarnings).toEqual([]);
-    expect(host.calls).toEqual(['stopped']);
+    expect(host.calls).toEqual(['pressed', 'stopped']);
   });
 
   it('counts one error as one', async () => {
@@ -209,7 +209,7 @@ describe('a Play that fails', () => {
     expect(consoleError).toHaveBeenCalledWith('[play] The game could not start:', cause);
     expect(useViewportStore.getState().rendererError).toBeNull();
     expect(useViewportStore.getState().playWarnings).toEqual([]);
-    expect(host.calls).toEqual(['stopped']);
+    expect(host.calls).toEqual(['pressed', 'stopped']);
   });
 
   it('keeps one failure toast, and the next press takes it away at once', async () => {
@@ -273,6 +273,31 @@ describe('a Play that fails', () => {
     toasts()[0]!.actions![0]!.onClick();
 
     expect(useEditorStore.getState().consoleRequests).toBe(before + 1);
+  });
+});
+
+describe('what the session tells the viewport', () => {
+  it('tells it of the press before anything is awaited, once a press, and of the stop', async () => {
+    // From the press the view's pointer is the game's: the fly controls and the
+    // handles go then, not once the engine has arrived — the edit image is
+    // still on screen for the whole start, to be pressed on.
+    const compiles = compilesHeld();
+    const host = watching();
+
+    play();
+    expect(host.calls).toEqual(['pressed']);
+
+    // Pausing and resuming is no press.
+    useEditorStore.getState().togglePause();
+    useEditorStore.getState().togglePause();
+    expect(host.calls).toEqual(['pressed']);
+
+    stop();
+    play();
+    expect(host.calls).toEqual(['pressed', 'stopped', 'pressed']);
+
+    await compiles.finish(0, false);
+    await compiles.finish(1, false);
   });
 });
 

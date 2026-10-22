@@ -27,10 +27,10 @@ import type { Presentation } from './Presentation';
  * What running a game needs from the viewport, and it is deliberately little.
  *
  * The renderer and the game's canvas, because the engine draws through the one
- * renderer this document is allowed. And two announcements, because the edit
- * view is hidden while the game runs — flying it or dragging a handle would
- * move what nobody sees, and edit a document that Stop is about to put back —
- * and deciding which of the viewport's parts that touches is the viewport's
+ * renderer this document is allowed. And two announcements, because from the
+ * press of Play the edit view is no longer the editor's to drive — flying it or
+ * dragging a handle would edit a document that Stop is about to put back — and
+ * deciding which of the viewport's parts that touches is the viewport's
  * business, not this one's.
  */
 export interface PlayHost {
@@ -39,7 +39,12 @@ export interface PlayHost {
   readonly gameView: Presentation;
   /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
-  onPlayStarted(): void;
+  /**
+   * Play was pressed. Called before anything is awaited: the start takes as
+   * long as the compile and the load, and the view is not the editor's for any
+   * of it.
+   */
+  onPlayPressed(): void;
   onPlayStopped(): void;
 }
 
@@ -164,10 +169,6 @@ export class PlaySession {
     return this.engine;
   }
 
-  get playing(): boolean {
-    return this.engine !== null;
-  }
-
   /**
    * Starts and stops the game in response to the transport buttons.
    *
@@ -193,6 +194,7 @@ export class PlaySession {
         // Play this one replaces, whether or not this one goes any better.
         this.failure.dismiss();
         this.session += 1;
+        this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
     });
@@ -310,8 +312,6 @@ export class PlaySession {
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
       void engine.audio?.unlock();
-      // The camera, the handles and the size, none of which is this class's.
-      this.host.onPlayStarted();
     } catch (cause) {
       // A start nobody waits for any more says nothing: whatever it would say is
       // about a Play the person has already stopped or pressed again.

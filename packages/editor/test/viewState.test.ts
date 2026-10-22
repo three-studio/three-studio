@@ -15,6 +15,7 @@ describe('what the view shows', () => {
     expect(viewState({ playState: 'stopped' })).toEqual({
       mode: 'edit',
       canvas: 'edit',
+      input: 'editor',
       overlays: { prefabBar: true, dropTarget: true, paused: false, problems: false, captureHint: false },
     });
   });
@@ -23,6 +24,7 @@ describe('what the view shows', () => {
     expect(viewState({ playState: 'playing' })).toEqual({
       mode: 'playing',
       canvas: 'game',
+      input: 'game',
       overlays: { prefabBar: false, dropTarget: false, paused: false, problems: true, captureHint: true },
     });
   });
@@ -31,6 +33,7 @@ describe('what the view shows', () => {
     expect(viewState({ playState: 'paused' })).toEqual({
       mode: 'paused',
       canvas: 'game',
+      input: 'game',
       overlays: { prefabBar: false, dropTarget: false, paused: true, problems: true, captureHint: true },
     });
   });
@@ -38,5 +41,14 @@ describe('what the view shows', () => {
   it('puts the edit canvas on top only while stopped', () => {
     const states: PlayState[] = ['stopped', 'playing', 'paused'];
     expect(states.filter((playState) => viewState({ playState }).canvas === 'edit')).toEqual(['stopped']);
+  });
+
+  it('gives the editor the view’s pointer only while stopped', () => {
+    // From the press of Play the view is the game's: a press on it must neither
+    // fly the editor camera nor drag a handle, both of which would edit a
+    // document Stop puts back.
+    expect(viewState({ playState: 'stopped' }).input).toBe('editor');
+    expect(viewState({ playState: 'playing' }).input).toBe('game');
+    expect(viewState({ playState: 'paused' }).input).toBe('game');
   });
 });

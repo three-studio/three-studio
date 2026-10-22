@@ -131,7 +131,7 @@ describe('what a launch sends while the editor plays', () => {
       renderer: {} as WebGPURenderer,
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
       rendering,
-      onPlayStarted: () => {},
+      onPlayPressed: () => {},
       onPlayStopped: () => {},
     };
   }

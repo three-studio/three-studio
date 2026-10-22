@@ -176,7 +176,14 @@ export function ViewportPanel(props: IDockviewPanelProps) {
             neither the pointer nor the focus, so each canvas keeps to the input
             that listens on it: the edit canvas cannot be pressed or tabbed to
             while the game plays, nor the game's while the scene is edited. */}
-        <div ref={editHostRef} className={`absolute inset-0 ${view.canvas === 'edit' ? '' : 'invisible'}`} />
+        <div
+          ref={editHostRef}
+          // No pointer and no focus at the DOM from the press of Play, over the
+          // guards in the code: the edit view is not the editor's to drive
+          // until Stop.
+          inert={view.input !== 'editor'}
+          className={`absolute inset-0 ${view.canvas === 'edit' ? '' : 'invisible'}`}
+        />
         <div ref={gameHostRef} className={`absolute inset-0 ${view.canvas === 'game' ? '' : 'invisible'}`} />
         {view.overlays.prefabBar && <PrefabModeBar />}
         {/* Not while the stage holds the screen: full screen is the game as a

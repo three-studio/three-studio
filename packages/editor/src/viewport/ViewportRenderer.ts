@@ -134,13 +134,8 @@ export class ViewportRenderer {
    * A flag rather than an action, and the frame loop is what acts on it.
    * Resizing a WebGPU renderer retires its output target and its swap chain,
    * and doing that from an observer callback puts it at a point in the turn
-   * this side does not choose. `beginPlay` raises it too, so that the engine
-   * that has just appeared is handed the shape of its panel.
+   * this side does not choose.
    */
-  markResized(): void {
-    this.sizeDirty = true;
-  }
-
   get resizePending(): boolean {
     return this.sizeDirty;
   }
