@@ -43,6 +43,7 @@ export const EDIT_COMMANDS = {
       const entry = documentStore().undoLabel();
       return entry === null ? 'Undo' : `Undo ${entry}`;
     },
+    writesScene: true,
     can: () => documentStore().canUndo(),
     run: () => undo(),
   }),
@@ -52,6 +53,7 @@ export const EDIT_COMMANDS = {
       const entry = documentStore().redoLabel();
       return entry === null ? 'Redo' : `Redo ${entry}`;
     },
+    writesScene: true,
     can: () => documentStore().canRedo(),
     run: () => redo(),
   }),
@@ -92,12 +94,14 @@ export const EDIT_COMMANDS = {
   duplicate: defineCommand({
     label: (ctx) =>
       ctx.selection.isMultiple ? `Duplicate ${ctx.selection.size} Objects` : 'Duplicate',
+    writesScene: true,
     can: (ctx) => ctx.selection.can('duplicate'),
     run: (ctx) => duplicateSelection(ctx.selection),
   }),
 
   delete: defineCommand({
     label: (ctx) => (ctx.selection.isMultiple ? `Delete ${ctx.selection.size} Objects` : 'Delete'),
+    writesScene: true,
     can: (ctx) => ctx.selection.can('delete'),
     run: (ctx) => deleteSelection(ctx.selection),
   }),
@@ -116,6 +120,7 @@ export const EDIT_COMMANDS = {
    */
   toggleVisibility: defineCommand({
     label: (ctx) => (visibleIn(ctx) ? 'Hide' : 'Show'),
+    writesScene: true,
     can: (ctx) => ctx.selection.isSingle && ctx.selection.can('toggleVisible'),
     run: (ctx) => {
       const id = ctx.selection.primary;
@@ -125,6 +130,7 @@ export const EDIT_COMMANDS = {
 
   group: defineCommand({
     label: () => 'Group Selection',
+    writesScene: true,
     can: (ctx) => ctx.selection.can('group'),
     run: (ctx) => {
       groupSelection(ctx.selection);
@@ -148,6 +154,10 @@ export const EDIT_COMMANDS = {
    */
   rename: defineCommand({
     label: () => 'Rename',
+    // It writes nothing itself, but it opens a row's name, and the only end of
+    // that field is a scene write: opened during Play, its Enter would be
+    // refused after the typing.
+    writesScene: true,
     can: (ctx) => !ctx.selection.isMultiple && ctx.selection.can('rename'),
     run: (ctx) => {
       const id = ctx.selection.primary;

@@ -1,9 +1,26 @@
-import { createMeshEntity } from '@three-studio/core';
+import {
+  createEntity,
+  createMeshEntity,
+  createModelEntity,
+  createPrefabInstance,
+  instancedId,
+} from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
-import { sceneWith } from '../../core/test/fixtures';
+import { prefabWith, sceneWith } from '../../core/test/fixtures';
+import {
+  commandById,
+  commandIds,
+  contextFor,
+  currentContext,
+  type CommandId,
+  type EditorContext,
+} from '../src/commands/registry';
+import { commandEntry } from '../src/shell/commandEntry';
+import { useAssetStore } from '../src/state/assetStore';
+import { useDialogStore } from '../src/state/dialogStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
-import { isSceneLocked, sceneLocked } from '../src/state/sceneLock';
+import { STOP_TO_EDIT, isSceneLocked, sceneLocked } from '../src/state/sceneLock';
 import { useToastStore } from '../src/state/toastStore';
 
 /*
@@ -31,21 +48,65 @@ interface Spied {
 }
 const spied = (): Spied => ({ apply: vi.fn(), revert: vi.fn() });
 
+const PREFAB_ID = 'crate-prefab';
+const real = (({ savePrefab, saveMaterial, createPrefab, createMaterial }) => ({
+  savePrefab,
+  saveMaterial,
+  createPrefab,
+  createMaterial,
+}))(useAssetStore.getState());
+
 let first = '';
 let second = '';
+/** A prefab instance carrying an override. */
+let crate = '';
+/** The entity that instance produces, by its expanded id. */
+let produced = '';
+/** A model entity that still draws its whole file. */
+let chair = '';
 /** The external edits riding the two entries, the one Undo would take and the one Redo would. */
 let undoable: Spied;
 let redoable: Spied;
+/** The asset writes a scene-writing gesture can make before it reaches the document. */
+let recorded: {
+  savePrefab: Mock<() => Promise<void>>;
+  saveMaterial: Mock<() => Promise<void>>;
+  createPrefab: Mock<() => Promise<string>>;
+  createMaterial: Mock<() => Promise<string>>;
+};
 let consoleError: MockInstance<typeof console.error>;
 
 beforeEach(() => {
   stop();
   useToastStore.getState().clear();
+  useDialogStore.getState().cancel();
+  useEditorStore.getState().endRename();
+  useEditorStore.getState().clearSelection();
+
+  const inside = createMeshEntity('box');
+  recorded = {
+    savePrefab: vi.fn(async () => {}),
+    saveMaterial: vi.fn(async () => {}),
+    createPrefab: vi.fn(async () => 'new-prefab'),
+    createMaterial: vi.fn(async () => 'new-material'),
+  };
+  useAssetStore.setState({
+    prefabs: { [PREFAB_ID]: prefabWith('Crate', [inside], inside.entity.id) },
+    ...recorded,
+  });
+
   const a = createMeshEntity('box');
   const b = createMeshEntity('sphere');
+  const instance = createEntity('Crate', [
+    { ...createPrefabInstance(PREFAB_ID), overrides: { [inside.entity.id]: { name: 'Renamed' } } },
+  ]);
+  const model = createModelEntity('chair-model', 'Chair');
   first = a.entity.id;
   second = b.entity.id;
-  doc().replaceScene(sceneWith([a, b]));
+  crate = instance.entity.id;
+  produced = instancedId(crate, inside.entity.id);
+  chair = model.entity.id;
+  doc().replaceScene(sceneWith([a, b, instance, model]));
   // Two edits, the second undone: Undo and Redo both have something to act on.
   undoable = spied();
   redoable = spied();
@@ -62,6 +123,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stop();
+  useAssetStore.setState(real);
   vi.restoreAllMocks();
 });
 
@@ -249,5 +311,170 @@ describe('the toast that says it', () => {
 
     expect(toasts()).toHaveLength(1);
     expect(toasts()[0]!.id).not.toBe(closed);
+  });
+});
+
+/*
+ * The commands. A gesture that writes the scene is refused by its `can()`,
+ * before anything is asked or written: Create Prefab asks for a name and writes
+ * the prefab, Apply Overrides writes the prefab, Unpack Model loads the file
+ * and may ask to confirm — all before they reach the document, whose refusal
+ * would come too late for any of it.
+ */
+
+/** Each command that writes the scene, in a context of the fixture where it acts. */
+const WRITERS: Readonly<Record<string, () => EditorContext>> = {
+  undo: () => currentContext(),
+  redo: () => currentContext(),
+  duplicate: () => contextFor([first]),
+  delete: () => contextFor([first]),
+  toggleVisibility: () => contextFor([first]),
+  group: () => contextFor([first]),
+  rename: () => contextFor([first]),
+  createPrefab: () => contextFor([first]),
+  applyPrefabOverrides: () => contextFor([crate]),
+  revertPrefabOverrides: () => contextFor([crate]),
+  unpackPrefab: () => contextFor([crate]),
+  revertEntityOverride: () => contextFor([produced]),
+  unpackModel: () => contextFor([chair]),
+};
+
+/**
+ * Every other command. A command added later joins one of the two lists, or
+ * the first test below fails: which side it is on is a decision, not a default.
+ */
+const OTHERS: readonly CommandId[] = [
+  'save',
+  'openCommandPalette',
+  'createPrefabVariant',
+  'selectPrefabInstances',
+  'newScene',
+  'saveSceneAs',
+  'revertScene',
+  'duplicateScene',
+  'renameScene',
+  'openScene',
+  'openSceneInNewWindow',
+  'setStartScene',
+  'sceneSettings',
+  'revealScene',
+  'deleteScene',
+  'revealAsset',
+  'deleteAsset',
+  'runExport',
+  'play',
+  'playFullScreen',
+  'stop',
+  'launchOnDevices',
+  'stopDeviceServer',
+  'deviceServerPort',
+  'reclaimDevicePort',
+  'copyDeviceLink',
+  'openDevicePage',
+  'newDeviceLink',
+  'toggleLiveReload',
+  'toggleDeviceStats',
+  'captureDevices',
+  'toggleForceWebGL',
+];
+
+/** The writers with their contexts, read now: a context is never kept. */
+const writers = (): [CommandId, EditorContext][] =>
+  Object.entries(WRITERS).map(([id, context]) => [id as CommandId, context()]);
+
+describe('the commands that write the scene', () => {
+  it('are thirteen, and every other command is listed as one that does not', () => {
+    expect(Object.keys(WRITERS)).toHaveLength(13);
+    expect(OTHERS).toHaveLength(32);
+    expect([...Object.keys(WRITERS), ...OTHERS].sort()).toEqual([...commandIds()].sort());
+  });
+
+  it('wait for Stop: refused before anything is asked or written, and said in one toast', () => {
+    for (const [id, context] of writers()) expect(commandById(id).can(context), id).toBe(true);
+
+    play();
+    const before = held();
+    for (const [id, context] of writers()) {
+      const command = commandById(id);
+      expect(command.can(context), id).toBe(false);
+      expect(command.waitsForStop(context), id).toBe(true);
+      command.run(context);
+    }
+
+    expect(held()).toEqual(before);
+    expect(doc().scene).toBe(before.scene);
+    expect(doc().past).toBe(before.past);
+    expect(doc().future).toBe(before.future);
+    for (const [name, recorder] of Object.entries(recorded)) expect(recorder, name).not.toHaveBeenCalled();
+    expect(useDialogStore.getState().prompt).toBeNull();
+    expect(useDialogStore.getState().confirm).toBeNull();
+    expect(useEditorStore.getState().renaming).toBeNull();
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]!.title).toBe('Stop the game to edit the scene');
+    // Refused by their `can()`: nothing reached the document's backstop.
+    expect(consoleError).not.toHaveBeenCalled();
+
+    stop();
+    for (const [id, context] of writers()) expect(commandById(id).can(context), id).toBe(true);
+  });
+
+  it('say nothing during Play when they would not act anyway', () => {
+    play();
+    const nothing = contextFor([]);
+    const remove = commandById('delete');
+
+    expect(remove.can(nothing)).toBe(false);
+    expect(remove.waitsForStop(nothing)).toBe(false);
+    expect(commandEntry('delete', nothing).detail).toBeUndefined();
+    remove.run(nothing);
+
+    expect(toasts()).toEqual([]);
+  });
+
+  it('grey their menu rows during Play, beside Stop to edit', () => {
+    for (const [id, context] of writers()) {
+      const row = commandEntry(id, context);
+      expect(row.disabled, id).toBe(false);
+      expect(row.detail, id).toBeUndefined();
+    }
+
+    play();
+    for (const [id, context] of writers()) {
+      const row = commandEntry(id, context);
+      expect(row.disabled, id).toBe(true);
+      expect(row.detail, id).toBe(STOP_TO_EDIT);
+    }
+
+    stop();
+    for (const [id, context] of writers()) expect(commandEntry(id, context).detail, id).toBeUndefined();
+  });
+
+  it('leave every other command as it was, Save offered', () => {
+    const context = () => contextFor([first]);
+    const stopped = OTHERS.map((id) => commandById(id).can(context()));
+
+    play();
+    const playing = OTHERS.map((id) => commandById(id).can(context()));
+
+    for (const id of OTHERS) expect(commandById(id).waitsForStop(context()), id).toBe(false);
+    expect(OTHERS.filter((_, index) => stopped[index] !== playing[index])).toEqual([
+      'play',
+      'playFullScreen',
+      'stop',
+    ]);
+    // The document during Play is the one Play started from, and it is unsaved.
+    expect(commandById('save').can()).toBe(true);
+  });
+
+  it('drop out of the palette during Play, which keeps Save and Stop', () => {
+    useEditorStore.getState().setSelection([first]);
+    const palette = () => commandIds().filter((id) => commandById(id).can());
+    expect(palette()).toEqual(expect.arrayContaining(['undo', 'redo', 'duplicate', 'delete', 'save']));
+
+    play();
+    const listed = palette();
+
+    for (const id of Object.keys(WRITERS)) expect(listed, id).not.toContain(id);
+    expect(listed).toEqual(expect.arrayContaining(['save', 'stop']));
   });
 });

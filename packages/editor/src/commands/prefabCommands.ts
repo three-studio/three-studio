@@ -454,6 +454,7 @@ function hasOverrides(ctx: EditorContext): boolean {
 export const PREFAB_COMMANDS = {
   createPrefab: defineCommand({
     label: () => 'Create Prefab…',
+    writesScene: true,
     // One entity and its children. A prefab of several unrelated roots would
     // need a wrapper nobody asked for.
     can: (ctx) => only(ctx) !== undefined,
@@ -489,6 +490,7 @@ export const PREFAB_COMMANDS = {
 
   applyPrefabOverrides: defineCommand({
     label: () => 'Apply Overrides to Prefab',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
     run: async (ctx) => {
       const entityId = only(ctx);
@@ -498,6 +500,7 @@ export const PREFAB_COMMANDS = {
 
   revertPrefabOverrides: defineCommand({
     label: () => 'Revert All Overrides',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
     run: (ctx) => {
       const entityId = only(ctx);
@@ -507,6 +510,7 @@ export const PREFAB_COMMANDS = {
 
   unpackPrefab: defineCommand({
     label: () => 'Unpack Prefab',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null,
     run: (ctx) => {
       const entityId = only(ctx);
@@ -522,6 +526,7 @@ export const PREFAB_COMMANDS = {
    */
   revertEntityOverride: defineCommand({
     label: () => 'Revert to Prefab',
+    writesScene: true,
     can: (ctx) => {
       const entityId = only(ctx);
       return entityId !== undefined && splitInstancedId(entityId) !== null;

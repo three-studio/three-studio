@@ -321,8 +321,9 @@ export function HierarchyPanel() {
       // Left out rather than greyed, because it applies to almost nothing: the
       // entry belongs to an entity that still draws a whole file. Asked of the
       // command rather than recomputed here — this row used to carry its own
-      // copy of the three conditions.
-      ...(commandById('unpackModel').can(ctx)
+      // copy of the three conditions. Kept, greyed, while it only waits for
+      // Stop: a row that vanished at Play would say nothing about why.
+      ...(commandById('unpackModel').can(ctx) || commandById('unpackModel').waitsForStop(ctx)
         ? ([
             // Unity's "Unpack Prefab", for a file: one entity per node, each
             // movable, hideable and re-materialable on its own.

@@ -90,8 +90,10 @@ export function useShortcuts(): void {
         // act — Cmd+S must not open the browser's save dialog on a clean
         // document. A bare one is only swallowed when something will happen: a
         // preventDefault on a refusal makes Backspace feel broken everywhere
-        // else.
-        if (hasModifier(event) || command.can()) event.preventDefault();
+        // else. A command that waits for Stop counts as something happening:
+        // its refusal is answered, in the toast `run` raises, so the key was
+        // the editor's.
+        if (hasModifier(event) || command.can() || command.waitsForStop()) event.preventDefault();
 
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
