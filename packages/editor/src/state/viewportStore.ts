@@ -43,6 +43,20 @@ interface ViewportState extends ViewportStats {
   gameShown: boolean;
   setGameShown: (shown: boolean) => void;
   /**
+   * The scene the game runs, by id: from the press of Play the one it starts
+   * from, then each one it moves to — a script's change of scene, and the
+   * project's loading scene while it shows. `null` while stopped.
+   *
+   * An id whatever the game was asked for. The runtime knows a scene by what it
+   * was asked for — Play's first scene by its name, the loading scene by the
+   * id the settings hold, a script's by whatever the script named — so the play
+   * session resolves each one into an id as it activates, and whoever shows it
+   * looks the name up in the scene list: a scene renamed meanwhile is shown by
+   * its new name.
+   */
+  runningScene: string | null;
+  setRunningScene: (id: string | null) => void;
+  /**
    * Whether the game's canvas holds the focus, in a window that has it: the
    * game hears keys only then. Written by the viewport from the canvas's own
    * focus and blur.
@@ -93,6 +107,7 @@ export const useViewportStore = create<ViewportState>()((set) => ({
   flySpeed: 10,
   playWarnings: [],
   gameShown: false,
+  runningScene: null,
   gameHasKeys: false,
   gameHasMouse: false,
   fallbackLighting: false,
@@ -100,6 +115,7 @@ export const useViewportStore = create<ViewportState>()((set) => ({
 
   setPlayWarnings: (playWarnings) => set({ playWarnings }),
   setGameShown: (gameShown) => set({ gameShown }),
+  setRunningScene: (runningScene) => set({ runningScene }),
   setGameHasKeys: (gameHasKeys) => set({ gameHasKeys }),
   setGameHasMouse: (gameHasMouse) => set({ gameHasMouse }),
   setFallbackLighting: (fallbackLighting) => set({ fallbackLighting }),

@@ -8,6 +8,7 @@ import {
   type LaunchSnapshot,
   type RenderingSettings,
   type SceneDoc,
+  type SceneEntry,
 } from '@three-studio/core';
 import { Engine, SceneHost, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -125,12 +126,37 @@ export function playSceneSource(
 ): SceneSource {
   return {
     read: async (idOrName) => {
-      if (idOrName === entry.id || idOrName === entry.name) return structuredClone(entry.scene);
+      if (namesEntry(entry, idOrName)) return structuredClone(entry.scene);
       const scene = resolveScene(useProjectStore.getState().scenes, idOrName);
       if (!scene) throw new Error(`No scene "${idOrName}" in this project.`);
       return deserializeScene(await readFile(scene.path));
     },
   };
+}
+
+/**
+ * The id of the scene a running game asked for, by the rule `playSceneSource`
+ * reads it with: the entry by its id or its name, then the project's scenes by
+ * id, then by name. `null` when the project has no such scene.
+ *
+ * A game asks for a scene by whatever it was given — Play adopts its first
+ * scene by its name, the loading scene setting holds an id, a script names
+ * either — and what the editor keeps of a scene is its id. By the source's own
+ * rule, so that the id is the one of the scene the game was handed: the entry's
+ * name finds the entry even where another folder holds a file of that name.
+ */
+export function playSceneId(
+  entry: LaunchSnapshot['entry'],
+  scenes: readonly SceneEntry[],
+  idOrName: string,
+): string | null {
+  if (namesEntry(entry, idOrName)) return entry.id;
+  return resolveScene(scenes, idOrName)?.id ?? null;
+}
+
+/** Whether a game asking for `idOrName` asks for the scene Play started from. */
+function namesEntry(entry: LaunchSnapshot['entry'], idOrName: string): boolean {
+  return idOrName === entry.id || idOrName === entry.name;
 }
 
 /**
@@ -205,6 +231,9 @@ export class PlaySession {
         this.failure.dismiss();
         this.session += 1;
         useViewportStore.getState().setGameShown(false);
+        // Named from the press, before the compile and the load: what starts
+        // is the window's scene, from Prefab Mode too.
+        useViewportStore.getState().setRunningScene(useProjectStore.getState().sceneId);
         this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
@@ -332,9 +361,12 @@ export class PlaySession {
       if (!engine) return;
 
       // A script may swap scenes at any point; the viewport renders through
-      // whatever is current rather than the one it started with.
-      host.onSceneChanged = (_path, next) => this.run(next);
-      this.run(engine);
+      // whatever is current rather than the one it started with. Each one by
+      // its id, whatever the game asked for it by; the scene list is read as
+      // it is at each change, a scene added meanwhile included.
+      const sceneIdOf = (asked: string) => playSceneId(inputs.entry, useProjectStore.getState().scenes, asked);
+      host.onSceneChanged = (asked, next) => this.run(next, sceneIdOf(asked));
+      this.run(engine, sceneIdOf(inputs.entry.name));
       // Pressing Play is the user gesture, which is the only moment a browser
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
@@ -367,7 +399,7 @@ export class PlaySession {
 
   /**
    * Makes `engine` the one the viewport draws: the first, and each one a
-   * script moves to.
+   * script moves to. And publishes which scene it runs, `sceneId`.
    *
    * Its problems are published here, at each activation: what it found while it
    * was built — no camera, no light, a body with no collider — which goes into
@@ -377,8 +409,9 @@ export class PlaySession {
    * next one, whose own were never shown. The exported player says them again
    * at every scene; so does this.
    */
-  private run(engine: Engine): void {
+  private run(engine: Engine, sceneId: string | null): void {
     this.engine = engine;
+    useViewportStore.getState().setRunningScene(sceneId);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
     engine.onWarning = (warnings) => {
@@ -417,6 +450,7 @@ export class PlaySession {
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);
+    useViewportStore.getState().setRunningScene(null);
 
     // The document Stop finds is the one Play started from: the lock held it
     // still and the game played a copy. Putting it back anyway, as Stop did
@@ -457,5 +491,6 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine = null;
     running = null;
+    useViewportStore.getState().setRunningScene(null);
   }
 }

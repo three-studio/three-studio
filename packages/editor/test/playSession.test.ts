@@ -33,7 +33,7 @@ import { useProjectStore } from '../src/state/projectStore';
 import { useScriptStore } from '../src/state/scriptStore';
 import { useToastStore } from '../src/state/toastStore';
 import { useViewportStore } from '../src/state/viewportStore';
-import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
+import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 
 /*
@@ -346,12 +346,14 @@ function bossScene() {
 
 /** Moves to Boss from its first frame, as a menu's Start button would. */
 class GoToBoss extends Behaviour {
+  /** What the script names Boss by: its name, unless a test hands it the id. */
+  static target = 'Boss';
   private asked = false;
 
   override onUpdate() {
     if (this.asked) return;
     this.asked = true;
-    void this.scenes?.go('Boss');
+    void this.scenes?.go(GoToBoss.target);
   }
 }
 
@@ -384,6 +386,7 @@ function withBoss(): string[] {
 
   afterEach(() => {
     clearScripts();
+    GoToBoss.target = 'Boss';
   });
 
   return reads;
@@ -493,6 +496,94 @@ describe('the keys the game hears', () => {
     await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
 
     hearsItsCanvasAlone(session!.playEngine!, host.gameView.canvas);
+  });
+});
+
+describe('the id of the scene a running game asked for', () => {
+  /*
+   * What the runtime calls a scene is whatever it was asked for: Play adopts its
+   * first scene by its name, the project's loading scene is an id, and a
+   * script's `go` passes on what the script named. Published as it was asked
+   * for, the play bar would print an id for some scenes and a name for others.
+   * It is resolved into an id by the rule the scene source reads with, and the
+   * name comes from the scene list.
+   */
+  const LEVEL_ONE = { id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null };
+  const entry = { id: SCENE_ID, name: 'Level One', scene: createEmptyScene() };
+
+  it('is the entry’s by its id or its name, and another scene’s by its id or its name', () => {
+    const scenes = [LEVEL_ONE, BOSS];
+
+    expect(playSceneId(entry, scenes, SCENE_ID)).toBe(SCENE_ID);
+    expect(playSceneId(entry, scenes, 'Level One')).toBe(SCENE_ID);
+    expect(playSceneId(entry, scenes, BOSS.id)).toBe(BOSS.id);
+    expect(playSceneId(entry, scenes, 'Boss')).toBe(BOSS.id);
+  });
+
+  it('is nothing for a scene the project does not have', () => {
+    expect(playSceneId(entry, [LEVEL_ONE, BOSS], 'Nowhere')).toBeNull();
+  });
+
+  it('is the entry’s for its name, as the source answers from the entry, with another file of that name first', () => {
+    // Two folders under `scenes/` can each hold a file of one name; the source
+    // reads the entry for it all the same.
+    const elsewhere = { id: 'elsewhere', name: 'Level One', path: 'scenes/old/level-one.scene.json', shadowedBy: null };
+
+    expect(playSceneId(entry, [elsewhere, LEVEL_ONE, BOSS], 'Level One')).toBe(SCENE_ID);
+  });
+});
+
+describe('the scene the game runs', () => {
+  withBoss();
+
+  const runningScene = () => useViewportStore.getState().runningScene;
+
+  it('is the window’s from the press, then each scene the game moves to, and nothing at Stop', async () => {
+    directedToBoss();
+    const compiles = compilesHeld();
+    watching();
+    expect(runningScene()).toBeNull();
+
+    // Before anything is awaited: what starts is named while it starts.
+    play();
+    expect(runningScene()).toBe(SCENE_ID);
+
+    await compiles.finish(0, true);
+    await until(() => session!.playEngine !== null, 'the first engine');
+    const first = session!.playEngine!;
+    expect(runningScene()).toBe(SCENE_ID);
+
+    // The frame loop's own call, which runs the script's first update: Boss, by its name.
+    first.update(1 / 60);
+    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+    expect(runningScene()).toBe(BOSS.id);
+
+    stop();
+    expect(runningScene()).toBeNull();
+  });
+
+  it('is Boss’s id when a script names Boss by its id', async () => {
+    GoToBoss.target = BOSS.id;
+    directedToBoss();
+    watching();
+    play();
+    await until(() => session!.playEngine !== null, 'the first engine');
+    const first = session!.playEngine!;
+
+    first.update(1 / 60);
+    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+
+    expect(runningScene()).toBe(BOSS.id);
+  });
+
+  it('is nothing after a start that failed', async () => {
+    compilesFail(['Player.ts(3,1): error TS1005']);
+    watching();
+
+    play();
+    await until(() => playState() === 'stopped', 'the stop');
+
+    expect(runningScene()).toBeNull();
   });
 });
 
