@@ -43,6 +43,16 @@ interface ViewportState extends ViewportStats {
   gameShown: boolean;
   setGameShown: (shown: boolean) => void;
   /**
+   * Whether the game's canvas holds the focus, in a window that has it: the
+   * game hears keys only then. Written by the viewport from the canvas's own
+   * focus and blur.
+   */
+  gameHasKeys: boolean;
+  setGameHasKeys: (has: boolean) => void;
+  /** Whether the pointer is locked to the game's canvas. Written by the viewport. */
+  gameHasMouse: boolean;
+  setGameHasMouse: (has: boolean) => void;
+  /**
    * Whether the edit view is lighting the scene itself, because the document
    * names no light of its own.
    *
@@ -83,11 +93,15 @@ export const useViewportStore = create<ViewportState>()((set) => ({
   flySpeed: 10,
   playWarnings: [],
   gameShown: false,
+  gameHasKeys: false,
+  gameHasMouse: false,
   fallbackLighting: false,
   animated: false,
 
   setPlayWarnings: (playWarnings) => set({ playWarnings }),
   setGameShown: (gameShown) => set({ gameShown }),
+  setGameHasKeys: (gameHasKeys) => set({ gameHasKeys }),
+  setGameHasMouse: (gameHasMouse) => set({ gameHasMouse }),
   setFallbackLighting: (fallbackLighting) => set({ fallbackLighting }),
   setBackend: (backend) => set({ backend }),
   setRendererError: (rendererError) => set({ rendererError }),

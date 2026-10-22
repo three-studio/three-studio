@@ -35,7 +35,7 @@ import type { Presentation } from './Presentation';
 import { ViewportInput } from './ViewportInput';
 import { PlaySession } from './PlaySession';
 import { ViewportRenderer } from './ViewportRenderer';
-import { viewState, type ViewState } from './viewState';
+import { gameTakesFocus, viewState, type ViewState } from './viewState';
 import type { SelectionOutline } from './SelectionOutline';
 import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -109,6 +109,14 @@ export class EditorViewport {
 
   /** Play, Pause and Stop, and everything that has to happen around them. */
   private readonly play: PlaySession;
+
+  /**
+   * Whether the game is still owed the keyboard, and where the focus was at the
+   * press that owes it. Its canvas can take the focus only once it shows, at
+   * the game's first frame; see `gameCameOnTop`.
+   */
+  private focusOwed = false;
+  private focusAtPress: Element | null = null;
 
   private lastFrameTime = 0;
   private disposed = false;
@@ -205,6 +213,11 @@ export class EditorViewport {
     useViewportStore.getState().setBackend(view.backend);
     this.play = new PlaySession(this);
     this.play.watch();
+    // Who holds the keys and the mouse, said for the Viewport: the game hears
+    // keys only while its canvas holds the focus.
+    this.view.gameView.canvas.addEventListener('focus', this.publishGameKeys);
+    this.view.gameView.canvas.addEventListener('blur', this.publishGameKeys);
+    document.addEventListener('pointerlockchange', this.publishGameMouse);
     // Owning the loop is what earns the right to own the clock: this is where
     // three's `time` node stops reading `performance.now()` and starts reading
     // the simulation. Once per viewport, and the viewport is once per document.
@@ -287,6 +300,9 @@ export class EditorViewport {
 
   dispose(): void {
     this.disposed = true;
+    this.view.gameView.canvas.removeEventListener('focus', this.publishGameKeys);
+    this.view.gameView.canvas.removeEventListener('blur', this.publishGameKeys);
+    document.removeEventListener('pointerlockchange', this.publishGameMouse);
     this.input.dispose();
     this.play.dispose();
     this.controls.dispose();
@@ -345,6 +361,11 @@ export class EditorViewport {
     // on.
     this.controls.setEnabled(false);
     this.gizmo.setEnabled(false);
+    // And the game is owed the keyboard, which its canvas can take only once it
+    // shows. Where the focus is now is what tells, then, whether the person has
+    // put it somewhere since.
+    this.focusOwed = true;
+    this.focusAtPress = document.activeElement;
   }
 
   onPlayStopped(): void {
@@ -352,7 +373,52 @@ export class EditorViewport {
     // Nothing of this session is kept for the next. Its canvas comes on top
     // again only once the next session has drawn into it.
     this.view.gameView.clear();
+    // The keyboard goes back to the editor with the view. The canvas is hidden
+    // from Stop, and nothing promises that the browser takes the focus from a
+    // hidden element at once: keys would go on landing on a canvas nobody sees,
+    // and the store would go on saying the game has them.
+    this.focusOwed = false;
+    this.focusAtPress = null;
+    const canvas = this.view.gameView.canvas;
+    if (document.activeElement === canvas) canvas.blur();
   }
+
+  /**
+   * The game's canvas has just come on top: Play gives it the keyboard, once per
+   * Play, unless the person has put the focus somewhere since the press.
+   *
+   * Called by the Viewport once it has made the canvas's host visible, the
+   * first moment the canvas can take the focus — a hidden element takes none —
+   * and the game hears keys only while its canvas holds it. A Reset Layout or a
+   * template during Play remounts the Viewport, which calls this again; the
+   * keyboard was given once, and is not taken a second time.
+   */
+  gameCameOnTop(): void {
+    if (!this.focusOwed) return;
+    this.focusOwed = false;
+    const atPress = this.focusAtPress;
+    this.focusAtPress = null;
+    if (gameTakesFocus(atPress, document.activeElement, document.body)) {
+      this.view.gameView.canvas.focus({ preventScroll: true });
+    }
+  }
+
+  /**
+   * Whether the game has the keyboard, read afresh from the document at each of
+   * its canvas's focus and blur rather than from which of the two arrived. And
+   * whether the window has it: one sent to the background blurs the canvas but
+   * leaves it the active element, and no key reaches the game there; coming
+   * back focuses the canvas again, and the flag comes back with it.
+   */
+  private readonly publishGameKeys = () => {
+    const canvas = this.view.gameView.canvas;
+    useViewportStore.getState().setGameHasKeys(document.hasFocus() && document.activeElement === canvas);
+  };
+
+  /** Whether the pointer is locked to the game's canvas, read afresh at each change. */
+  private readonly publishGameMouse = () => {
+    useViewportStore.getState().setGameHasMouse(document.pointerLockElement === this.view.gameView.canvas);
+  };
 
   /** Frame a world-space sphere; used by the F shortcut and by selection. */
   focus(target: Vector3, radius: number): void {

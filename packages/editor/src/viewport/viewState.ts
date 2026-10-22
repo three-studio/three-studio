@@ -144,3 +144,20 @@ export function viewState(inputs: ViewInputs): ViewState {
     },
   };
 }
+
+/**
+ * Whether Play gives the game's canvas the keyboard as it comes on top: when the
+ * focus is nowhere — `null`, or the body — or still where it was at the press.
+ *
+ * The game hears keys only while its canvas holds the focus, and a hidden
+ * canvas cannot take it, so the moment is the game's first frame — seconds
+ * after the press. A field or a row the person has clicked into meanwhile keeps
+ * the focus: taking it would throw away what they were typing. The body counts
+ * as nowhere, because it is where `inert` sends a focus the edit canvas held at
+ * the press, and where a press on bare panel space leaves it.
+ *
+ * Plain objects rather than elements, so that the rule is tested in node.
+ */
+export function gameTakesFocus(atPress: object | null, now: object | null, body: object | null): boolean {
+  return now === null || now === body || now === atPress;
+}

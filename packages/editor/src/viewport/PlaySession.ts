@@ -296,6 +296,11 @@ export class PlaySession {
         // could be drawn separately, and sharing it is what made pressing Play
         // hand the editor's pointer handling over to the game's.
         domElement: this.host.gameView.canvas,
+        // And the keys typed into it alone, while it holds the focus. The
+        // editor is the same page: heard window-wide, a space typed in the
+        // Console during Play made the player jump, and never reached the
+        // field, since the game keeps Space and the arrows from the browser.
+        input: { keys: 'element' },
         // The editor's one context, shared with the preview and kept apart from
         // it by a root gain each. `undefined` where there is no Web
         // Audio, which makes the game silent rather than broken.

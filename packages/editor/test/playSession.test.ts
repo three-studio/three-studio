@@ -16,7 +16,7 @@ import {
   type ScriptComponent,
   type Vec3,
 } from '@three-studio/core';
-import { Behaviour, clearScripts, registerScript } from '@three-studio/runtime';
+import { Behaviour, clearScripts, registerScript, type Engine } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -333,29 +333,35 @@ function takeTheBrowserBack(): void {
   Reflect.deleteProperty(globalThis, 'document');
 }
 
-describe('the problems over the game', () => {
-  // The window answers the one scene a script reads from its file.
-  const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
-  const GO_TO_BOSS = 'script-go-to-boss';
+// The window answers the one scene a script reads from its file.
+const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+const GO_TO_BOSS = 'script-go-to-boss';
+
+/** A body nothing can touch: its own problem, which the first scene does not have. */
+function bossScene() {
+  const scene = sceneWith([createEntity('Crate', [createComponent('rigidbody')])]);
+  scene.name = 'Boss';
+  return scene;
+}
+
+/** Moves to Boss from its first frame, as a menu's Start button would. */
+class GoToBoss extends Behaviour {
+  private asked = false;
+
+  override onUpdate() {
+    if (this.asked) return;
+    this.asked = true;
+    void this.scenes?.go('Boss');
+  }
+}
+
+/**
+ * A browser whose project holds Boss beside the window's scene, for the
+ * describe that calls this: the hooks are its own. What comes back fills with
+ * every path the window is asked to read.
+ */
+function withBoss(): string[] {
   const reads: string[] = [];
-
-  /** A body nothing can touch: its own problem, which the first scene does not have. */
-  function bossScene() {
-    const scene = sceneWith([createEntity('Crate', [createComponent('rigidbody')])]);
-    scene.name = 'Boss';
-    return scene;
-  }
-
-  /** Moves to Boss from its first frame, as a menu's Start button would. */
-  class GoToBoss extends Behaviour {
-    private asked = false;
-
-    override onUpdate() {
-      if (this.asked) return;
-      this.asked = true;
-      void this.scenes?.go('Boss');
-    }
-  }
 
   beforeAll(() => {
     const readScene = async (path: string) => {
@@ -380,6 +386,19 @@ describe('the problems over the game', () => {
     clearScripts();
   });
 
+  return reads;
+}
+
+/** The document becomes one entity whose script moves to Boss from its first frame. */
+function directedToBoss(): void {
+  registerScript(GO_TO_BOSS, GoToBoss);
+  const director: ScriptComponent = { ...createComponent('script'), assetId: GO_TO_BOSS };
+  useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
+}
+
+describe('the problems over the game', () => {
+  const reads = withBoss();
+
   it('are the running scene’s from its first frame, and gone at Stop', async () => {
     // The document is an empty scene: no camera, no light.
     watching();
@@ -397,9 +416,7 @@ describe('the problems over the game', () => {
   });
 
   it('follow a script to the scene it moves to', async () => {
-    registerScript(GO_TO_BOSS, GoToBoss);
-    const director: ScriptComponent = { ...createComponent('script'), assetId: GO_TO_BOSS };
-    useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
+    directedToBoss();
     watching();
     play();
     await until(() => session!.playEngine !== null, 'the first engine');
@@ -427,6 +444,55 @@ describe('the problems over the game', () => {
     expect(() => session!.dispose()).not.toThrow();
     expect(session!.playEngine).toBeNull();
     session = null;
+  });
+});
+
+describe('the keys the game hears', () => {
+  /*
+   * Only those typed into its canvas. The game used to hear every key the page
+   * received, and the editor is the same page: a space typed in the Console
+   * during Play made the player jump, and never reached the field, since the
+   * game keeps Space from the browser.
+   */
+  withBoss();
+
+  /** A key pressed, as `Input` reads it — cancelable, so what the game keeps from the page shows. */
+  function press(code: string): Event {
+    return Object.assign(new Event('keydown', { cancelable: true }), {
+      code,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+    });
+  }
+
+  function hearsItsCanvasAlone(engine: Engine, canvas: EventTarget): void {
+    const space = press('Space');
+    window.dispatchEvent(press('KeyW'));
+    window.dispatchEvent(space);
+    expect(engine.input.isDown('KeyW')).toBe(false);
+    expect(engine.input.isDown('Space')).toBe(false);
+    expect(space.defaultPrevented).toBe(false);
+
+    canvas.dispatchEvent(press('KeyW'));
+    expect(engine.input.isDown('KeyW')).toBe(true);
+  }
+
+  it('are the ones typed into its canvas, in every scene it plays', async () => {
+    directedToBoss();
+    const host = watching();
+    play();
+    await until(() => session!.playEngine !== null, 'the first engine');
+    const first = session!.playEngine!;
+
+    hearsItsCanvasAlone(first, host.gameView.canvas);
+
+    // The frame loop's own call, which runs the script's first update.
+    first.update(1 / 60);
+    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+
+    hearsItsCanvasAlone(session!.playEngine!, host.gameView.canvas);
   });
 });
 

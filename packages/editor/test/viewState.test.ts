@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayState } from '../src/state/editorStore';
-import { viewState } from '../src/viewport/viewState';
+import { gameTakesFocus, viewState } from '../src/viewport/viewState';
 
 /*
  * What the Viewport shows. One panel holds the edit view and the game, their two
@@ -137,5 +137,32 @@ describe('what the view shows', () => {
       [false, true].map((gameShown) => viewState({ playState, gameShown })),
     );
     expect(cases.filter((view) => view.overlays.editStats).map((view) => view.mode)).toEqual(['edit', 'edit']);
+  });
+});
+
+describe('whether Play gives the game the keyboard as its canvas comes on top', () => {
+  /*
+   * The game hears keys only while its canvas holds the focus, and the canvas
+   * can take it only once it shows, at the game's first frame — seconds after
+   * the press. Taking it then from wherever the person has since put it would
+   * throw away what they were typing.
+   */
+  const body = { is: 'the body' };
+  const play = { is: 'the Play button' };
+  const field = { is: 'the Console’s filter' };
+
+  it('takes it when the focus is nowhere, or still where Play left it', () => {
+    expect(gameTakesFocus(play, null, body)).toBe(true);
+    // Where `inert` sends a focus the edit canvas held at the press, and where a
+    // press on bare panel space leaves it.
+    expect(gameTakesFocus(play, body, body)).toBe(true);
+    expect(gameTakesFocus(play, play, body)).toBe(true);
+    expect(gameTakesFocus(null, null, body)).toBe(true);
+  });
+
+  it('leaves it where the person has put it since the press', () => {
+    expect(gameTakesFocus(play, field, body)).toBe(false);
+    expect(gameTakesFocus(null, field, body)).toBe(false);
+    expect(gameTakesFocus(body, field, body)).toBe(false);
   });
 });

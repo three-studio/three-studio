@@ -1,7 +1,7 @@
 import { variantBaseOf } from '@three-studio/core';
 import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-react';
 import type { IDockviewPanelProps } from 'dockview-react';
-import { useEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
 import { DROPPABLE_KINDS, placeDroppedAsset } from '../commands/placeEntity';
 import { commandById } from '../commands/registry';
 import { shortcutHint } from '../shell/shortcutBindings';
@@ -92,6 +92,13 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     // the panel lives, and Play changes only which one is on top. Nothing is
     // moved, re-parented or resized at the press.
   }, []);
+
+  // The game has just come on top, and Play gives it the keyboard. A layout
+  // effect, so that its host has been made visible: a hidden element takes no
+  // focus, and the game hears keys only while its canvas holds it.
+  useLayoutEffect(() => {
+    if (view.canvas === 'game') peekViewport()?.gameCameOnTop();
+  }, [view.canvas]);
 
   // The only failure that takes the view: without a renderer there is no view
   // to keep. A Play that fails is said in a toast, over the edit view.
