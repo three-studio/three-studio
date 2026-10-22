@@ -15,9 +15,11 @@ import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
+import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock';
 import { useScriptStore } from '../state/scriptStore';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
+import { StopToEditStrip } from './PanelShell';
 
 /**
  * What the Inspector's asset slots cannot reach for themselves.
@@ -90,6 +92,13 @@ export function InspectorPanel() {
   const bindingRef = useRef<InspectorBinding | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const addButton = useRef<HTMLButtonElement>(null);
+  /*
+   * Read-only while the game runs, all of it: every field, the linked material
+   * ones included, and every action. A material edited during Play would show
+   * nowhere — the game keeps the table it started with, and the edit view is
+   * behind it — and its undo would wait for Stop with the rest.
+   */
+  const locked = useSceneLocked();
 
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
@@ -162,6 +171,12 @@ export function InspectorPanel() {
           : { kind: 'scene' },
       ASSET_FIELD_ACTIONS,
     );
+    // Read now rather than from `locked`, so that the lock is not one of this
+    // effect's dependencies: Play and Stop would rebuild the pane and lose its
+    // folds. A pane rebuilt during Play — an asset imported, a script
+    // recompiled — comes up read-only from here; the effect below follows Play
+    // and Stop on the pane that stays.
+    binding.setReadOnly(isSceneLocked());
     bindingRef.current = binding;
     return () => {
       bindingRef.current = null;
@@ -190,6 +205,10 @@ export function InspectorPanel() {
     bindingRef.current?.refresh();
   }, [watched, environment, materials, prefabs, componentRevision, sceneName]);
 
+  useEffect(() => {
+    bindingRef.current?.setReadOnly(locked);
+  }, [locked]);
+
 
 
   // Selected, but gone from the expansion — a prefab that no longer produces it.
@@ -203,7 +222,8 @@ export function InspectorPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-1">
-      {instance && <PrefabBanner id={entityId!} depth={instance.depth} />}
+      <StopToEditStrip />
+      {instance && <PrefabBanner id={entityId!} depth={instance.depth} locked={locked} />}
       <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-1.5" />
 
       {/* The scene pane has nothing to add a component to. */}
@@ -212,9 +232,10 @@ export function InspectorPanel() {
           <button
             ref={addButton}
             type="button"
-            disabled={instance !== null}
+            disabled={instance !== null || locked}
+            {...tooltip(locked ? 'Add Component' : undefined, { hint: STOP_TO_EDIT })}
             onClick={() => setAddOpen((open) => !open)}
-            className="flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-surface-3 text-2xs text-ink hover:bg-surface-4"
+            className="flex h-7 w-full items-center justify-center gap-1.5 rounded-sm bg-surface-3 text-2xs text-ink enabled:hover:bg-surface-4 disabled:text-ink-dim"
           >
             <Plus size={13} />
             Add Component
@@ -249,7 +270,7 @@ export function InspectorPanel() {
  * that lands somewhere unexpected — on the instance, not on the prefab — is
  * indistinguishable from one that did nothing.
  */
-function PrefabBanner({ id, depth }: { id: string; depth: number }) {
+function PrefabBanner({ id, depth, locked }: { id: string; depth: number; locked: boolean }) {
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-prefab/10 px-2 py-1.5">
       <Boxes size={12} className="shrink-0 text-prefab" />
@@ -261,9 +282,10 @@ function PrefabBanner({ id, depth }: { id: string; depth: number }) {
       {(
         <button
           type="button"
-          {...tooltip('Revert to the prefab')}
+          disabled={locked}
+          {...tooltip('Revert to the prefab', { hint: locked ? STOP_TO_EDIT : undefined })}
           onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
-          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim hover:bg-surface-3 hover:text-ink"
+          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-50"
         >
           <RotateCcw size={11} />
           Revert

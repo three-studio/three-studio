@@ -1,5 +1,5 @@
 import type { TpPluginBundle } from '@tweakpane/core';
-import { Pane, type FolderApi } from 'tweakpane';
+import { Pane, type BladeApi, type FolderApi } from 'tweakpane';
 import { declaredControl } from './declaredFields';
 import type { BoundSpec } from './fields';
 
@@ -177,6 +177,28 @@ export class PaneBinder {
     } finally {
       this.writing = false;
     }
+  }
+
+  /**
+   * Greys every control of the pane, or gives them back: the game is running,
+   * and nothing edits the scene until Stop.
+   *
+   * The leaves only. A disabled folder disables everything under it through
+   * Tweakpane's own state, its title button included, so a section folded at
+   * the press could no longer be opened and its values no longer read. The walk
+   * therefore goes into every container and disables what is not one — fields,
+   * asset slots, buttons, monitors. And a disabled blade takes no pointer at all
+   * (`.tp-v-disabled { pointer-events: none }`), so a greyed slider cannot be
+   * dragged by its knob either.
+   */
+  setReadOnly(readOnly: boolean): void {
+    const walk = (blades: readonly BladeApi[]): void => {
+      for (const blade of blades) {
+        if ('children' in blade) walk((blade as FolderApi).children);
+        else blade.disabled = readOnly;
+      }
+    };
+    walk(this.pane.children);
   }
 
   refresh(): void {

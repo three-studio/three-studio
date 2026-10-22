@@ -84,6 +84,11 @@ export class InspectorBinding {
     this.binder.refresh();
   }
 
+  /** Every control greyed while the game runs; see `PaneBinder.setReadOnly`. */
+  setReadOnly(readOnly: boolean): void {
+    this.binder.setReadOnly(readOnly);
+  }
+
   dispose(): void {
     this.binder.dispose();
   }

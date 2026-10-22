@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import { useAssetStore } from './assetStore';
 import { useDocumentStore, type HistoryStash } from './documentStore';
 import { useEditorStore } from './editorStore';
+import { isSceneLocked } from './sceneLock';
 import { notify } from './toastStore';
 
 /**
@@ -66,7 +67,10 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
     // then saved every entity of the scene into the prefab's file. And a
     // prefab edited now would not reach the running game anyway — Play hands
     // the game the prefab table it read when it started.
-    if (useEditorStore.getState().playState !== 'stopped') {
+    //
+    // The scene lock's rule, asked of the lock, in words of its own: what is
+    // refused here is a mode, not an edit of the scene.
+    if (isSceneLocked()) {
       notify({ kind: 'warning', title: 'Stop the game to open a prefab' });
       return;
     }

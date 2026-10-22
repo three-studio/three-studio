@@ -302,7 +302,7 @@ class AssetFieldView implements View {
     document: Document,
     kind: AssetKind,
     private readonly emptyLabel: string,
-    viewProps: ViewProps,
+    private readonly viewProps: ViewProps,
   ) {
     this.kind = kind;
 
@@ -333,9 +333,9 @@ class AssetFieldView implements View {
     this.clear = iconButton(document, 'clear', 'Clear');
     this.element.append(this.browse, this.locate, this.clear);
 
-    for (const control of [this.name, this.browse, this.locate, this.clear]) {
-      viewProps.bindDisabled(control);
-    }
+    // Locate and Clear are left to `render`, which weighs the row's state
+    // against what each has to act on.
+    for (const control of [this.name, this.browse]) viewProps.bindDisabled(control);
   }
 
   render(assetId: string): void {
@@ -351,8 +351,14 @@ class AssetFieldView implements View {
     this.preview.style.backgroundImage = url === null ? '' : `url("${url}")`;
     this.preview.style.cursor = url === null ? '' : 'zoom-in';
 
-    this.locate.disabled = entry === undefined;
-    this.clear.disabled = empty;
+    // Off while the row is, or while there is nothing to act on, neither reason
+    // overriding the other. Set from the value alone, they came back on when a
+    // value arrived in a greyed row — which blocks the pointer, not the keyboard
+    // — and bound to the row alone, a row enabled again turned on a Locate with
+    // nothing to locate and a Clear with nothing to clear.
+    const rowDisabled = this.viewProps.globalDisabled.rawValue;
+    this.locate.disabled = rowDisabled || entry === undefined;
+    this.clear.disabled = rowDisabled || empty;
     for (const control of [this.locate, this.clear]) {
       control.style.opacity = control.disabled ? '0.35' : '';
     }
@@ -417,6 +423,9 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
     });
 
     this.value.emitter.on('change', () => this.view.render(this.value.rawValue));
+    // The row's own state too, since Locate and Clear weigh it: the Inspector
+    // greys every row at Play and gives them back at Stop.
+    this.viewProps.globalDisabled.emitter.on('change', () => this.view.render(this.value.rawValue));
     this.view.render(this.value.rawValue);
   }
 

@@ -53,9 +53,10 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
+import { STOP_TO_EDIT, isSceneLocked, refuseWhileLocked, useSceneLocked } from '../state/sceneLock';
 import { ContextMenu, type MenuEntry } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
-import { PanelToolbar } from './PanelShell';
+import { PanelToolbar, StopToEditStrip } from './PanelShell';
 
 const DRAG_MIME = 'application/x-studio-entity';
 const INDENT_PX = 12;
@@ -168,6 +169,13 @@ export function HierarchyPanel() {
   /** The row a between-rows drop would land above, for the insertion line. */
   const [dropBetween, setDropBetween] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; entityId: string } | null>(null);
+  /*
+   * Read-only while the game runs: nothing edits the scene until Stop. What
+   * stays is everything that only reads it — the search, folding, selecting,
+   * the scene's settings, the context menu, whose scene-writing rows grey
+   * themselves through their commands.
+   */
+  const locked = useSceneLocked();
 
   const rows = useMemo(
     () => buildRows(expandedScene(), collapsed, filter),
@@ -349,6 +357,12 @@ export function HierarchyPanel() {
 
     const dragged = event.dataTransfer.getData(DRAG_MIME);
     if (!dragged) return;
+    // A drag begun before the press of Play, let go after it: no row can start
+    // one during Play, and this one is refused where it lands, and said.
+    if (isSceneLocked()) {
+      refuseWhileLocked();
+      return;
+    }
 
     // The whole selection travels, not just the row under the pointer — which is
     // what dragging one of several highlighted rows plainly means.
@@ -370,6 +384,8 @@ export function HierarchyPanel() {
           className="min-w-0 flex-1 bg-transparent px-1 text-2xs text-ink outline-none placeholder:text-ink-dim"
         />
       </PanelToolbar>
+
+      <StopToEditStrip />
 
       <SceneHeader onDrop={(event) => onDrop(event, null)} />
 
@@ -395,8 +411,9 @@ export function HierarchyPanel() {
           const Icon = entityIcon(expanded, entity.id);
           const isSelected = selected.has(entity.id);
           // Reparenting an entity a prefab produced would have to move it in the
-          // asset, which is not what dropping it here means.
-          const draggable = instance === null && renaming !== entity.id;
+          // asset, which is not what dropping it here means. And nothing is
+          // reparented during Play.
+          const draggable = !locked && instance === null && renaming !== entity.id;
           // A row naming anything the project does not have — a prefab, a model,
           // a texture in a material slot. It used to be prefabs only, and the
           // reason applies to all of them: an entity that draws nothing reads as
@@ -452,10 +469,13 @@ export function HierarchyPanel() {
               // and the arithmetic is *on* that number — the two parting would
               // not break a layout, it would scroll to the wrong rows.
               style={{ height: ROW_HEIGHT, paddingLeft: 4 + depth * INDENT_PX }}
+              // During Play the rows that are not selected go to the dim ink, so
+              // the tree reads as one to look at; the selection keeps its
+              // highlight, since selecting is still what a click does.
               className={`group flex cursor-pointer items-center gap-1 pr-1 text-2xs ${
                 isSelected
                   ? 'bg-accent-dim text-ink'
-                  : `${instance ? 'text-prefab/75' : 'text-ink-muted'} hover:bg-surface-2`
+                  : `${instance ? (locked ? 'text-prefab/50' : 'text-prefab/75') : locked ? 'text-ink-dim' : 'text-ink-muted'} hover:bg-surface-2`
               } ${dropTarget === entity.id ? 'outline outline-1 -outline-offset-1 outline-accent' : ''} ${
                 dropBetween === entity.id ? 'border-t border-accent' : ''
               }`}
@@ -503,11 +523,14 @@ export function HierarchyPanel() {
                 </span>
               )}
 
+              {/* Greyed during Play, not hidden: a hidden entity's eye is how
+                  the row says it is hidden. */}
               <button
                 type="button"
                 tabIndex={-1}
+                disabled={locked}
                 aria-label={entity.visible ? 'Hide' : 'Show'}
-                {...tooltip(entity.visible ? 'Hide' : 'Show')}
+                {...tooltip(entity.visible ? 'Hide' : 'Show', { hint: locked ? STOP_TO_EDIT : undefined })}
                 onClick={(event) => {
                   event.stopPropagation();
                   // Through the command, like the delete button below it. The
@@ -515,7 +538,7 @@ export function HierarchyPanel() {
                   // this line.
                   commandById('toggleVisibility').run(contextFor([entity.id]));
                 }}
-                className={`shrink-0 ${entity.visible ? 'opacity-0 group-hover:opacity-60' : 'opacity-60'} hover:opacity-100`}
+                className={`shrink-0 ${entity.visible ? 'opacity-0 group-hover:opacity-60' : 'opacity-60'} enabled:hover:opacity-100`}
               >
                 {entity.visible ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
@@ -523,8 +546,9 @@ export function HierarchyPanel() {
               <button
                 type="button"
                 tabIndex={-1}
+                disabled={locked}
                 aria-label="Delete object"
-                {...tooltip('Delete object')}
+                {...tooltip('Delete object', { hint: locked ? STOP_TO_EDIT : undefined })}
                 // Hover-only, like the asset rows. Deleting is undoable, so the
                 // cost of a mis-click is one Cmd+Z.
                 onClick={(event) => {
@@ -537,7 +561,7 @@ export function HierarchyPanel() {
                     ),
                   );
                 }}
-                className="shrink-0 opacity-0 hover:text-error group-hover:opacity-60"
+                className="shrink-0 opacity-0 enabled:hover:text-error group-hover:opacity-60"
               >
                 <Trash2 size={12} />
               </button>
