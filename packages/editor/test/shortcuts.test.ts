@@ -9,7 +9,7 @@ import {
   isFunctionKey,
   positionalKeyLabel,
 } from '../src/shell/shortcutBindings';
-import { SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
+import { KEPT_FROM_THE_GAME, SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
 
 /** A key press, as the handler sees one. */
 const press = (key: string, options: { mod?: boolean; shift?: boolean } = {}) => ({
@@ -185,23 +185,51 @@ describe('naming a key by its place', () => {
 });
 
 describe('shortcutsApply', () => {
+  const editor = (typing: boolean, covered: boolean) => ({ typing, covered, gameHasKeys: false });
+
   it('acts when the editor has the window to itself', () => {
-    expect(shortcutsApply({ typing: false, covered: false })).toBe(true);
+    expect(shortcutsApply(editor(false, false), 'undo')).toBe(true);
+    // A tool key, X or Esc: no command, the same answer.
+    expect(shortcutsApply(editor(false, false), null)).toBe(true);
   });
 
   it('stands aside for a text field, with nothing open', () => {
     // Renaming an entity in the Inspector: Delete has to delete a character.
-    expect(shortcutsApply({ typing: true, covered: false })).toBe(false);
+    expect(shortcutsApply(editor(true, false), 'delete')).toBe(false);
+    expect(shortcutsApply(editor(true, false), null)).toBe(false);
   });
 
   it('stands aside for a surface on top, even with no text field under the key', () => {
     // The reported bug. Tweakpane commits a field and hands focus back to the
     // body, so the next Cmd+Z had no input under it — and a button in a dialog
     // never was one.
-    expect(shortcutsApply({ typing: false, covered: true })).toBe(false);
+    expect(shortcutsApply(editor(false, true), 'undo')).toBe(false);
+    expect(shortcutsApply(editor(false, true), null)).toBe(false);
   });
 
   it('needs both to be clear, not either', () => {
-    expect(shortcutsApply({ typing: true, covered: true })).toBe(false);
+    expect(shortcutsApply(editor(true, true), 'undo')).toBe(false);
+    expect(shortcutsApply(editor(true, true), null)).toBe(false);
+  });
+
+  it('is silent while the game has the keyboard, but for Stop, Pause and Step', () => {
+    // A key typed into the game is the game's: no tool key, no X, no Esc
+    // emptying the selection, no Delete answered by the scene lock's toast.
+    // Stop, Pause and Step drive the game rather than the scene, so the editor
+    // keeps them, typing and covered or not.
+    for (const typing of [false, true]) {
+      for (const covered of [false, true]) {
+        const game = { typing, covered, gameHasKeys: true };
+        for (const id of ['stop', 'togglePause', 'stepFrame'] as const) expect(shortcutsApply(game, id), id).toBe(true);
+        for (const id of ['delete', 'undo', 'save', 'openCommandPalette'] as const) {
+          expect(shortcutsApply(game, id), id).toBe(false);
+        }
+        expect(shortcutsApply(game, null)).toBe(false);
+      }
+    }
+  });
+
+  it('keeps three commands from the game, by command, so a key rebound moves with them', () => {
+    expect([...KEPT_FROM_THE_GAME].sort()).toEqual(['stepFrame', 'stop', 'togglePause']);
   });
 });
