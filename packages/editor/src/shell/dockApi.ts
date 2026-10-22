@@ -71,7 +71,9 @@ export function captureLayout(): SerializedDockview | null {
 export function applyLayout(layout: SerializedDockview): boolean {
   if (!api) return false;
   // An empty layout deserialises without complaint and leaves nothing on
-  // screen, so it is rejected here rather than by the try/catch.
+  // screen, and one naming a panel this build lacks throws only once it has
+  // mounted the panels before it: both are rejected here rather than by the
+  // try/catch.
   if (!isUsableLayout(layout)) return false;
   try {
     api.fromJSON(layout);

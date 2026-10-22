@@ -24,9 +24,11 @@ import { watchViewportClose } from './viewportClose';
  * `applyDefaultLayout`.
  *
  * Ids are persisted inside every saved layout, the working one and the
- * templates, and nothing migrates them. A layout naming an id this table lacks
- * makes `fromJSON` throw, and the default takes its place — so renaming or
- * removing an id resets every stored layout.
+ * templates, and nothing migrates them. A layout naming an id `PANEL_DEFS`
+ * lacks is refused before dockview sees it (`isUsableLayout`), and the default
+ * takes its place — so renaming or removing an id resets every stored layout.
+ * Not left to `fromJSON` to refuse: it throws only after mounting the panels
+ * before the unknown one, and its revert leaves them mounted.
  */
 const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = {
   hierarchy: HierarchyPanel,
@@ -145,8 +147,9 @@ function DockviewHost() {
         event.api.fromJSON(stored);
         return;
       } catch {
-        // A layout saved against an older panel set is unusable; start over
-        // rather than leaving the user with an empty window.
+        // Anything else dockview refuses; start over rather than leaving the
+        // user with an empty window. A layout saved against an older panel set
+        // never gets here: `loadLayout` does not hand it back.
         event.api.clear();
       }
     }
