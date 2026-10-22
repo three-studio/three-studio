@@ -35,6 +35,7 @@ import type { Presentation } from './Presentation';
 import { ViewportInput } from './ViewportInput';
 import { PlaySession } from './PlaySession';
 import { ViewportRenderer } from './ViewportRenderer';
+import { gameTakesFocus, viewState, type ViewState } from './viewState';
 import type { SelectionOutline } from './SelectionOutline';
 import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -50,13 +51,14 @@ const SCRATCH_DIRECTION = new Vector3();
  *
  * It owns the one renderer this document is allowed — a second `WebGPURenderer`
  * drawing in the same frame destroys this one's output target — and draws every
- * view through it, into a surface no panel holds. What a panel shows is a copy
- * of its own corner of that surface; see `Presentation`. That is what lets the
- * Scene and the Game be on screen together.
+ * view through it, into a surface no panel holds. What a canvas shows is a copy
+ * of its own corner of that surface; see `Presentation`. That is how the
+ * Viewport's two canvases, the edit view's and the game's, and the import
+ * dialog's preview are all drawn by the one renderer.
  */
 export class EditorViewport {
   /**
-   * The Scene view's projection, built by `createEditorProjection`: the scene
+   * The edit view's projection, built by `createEditorProjection`: the scene
    * graph, the binder that fills it and the overlays laid over it. Everything
    * on the four lines below is that call's, held here for the frame loop.
    */
@@ -65,9 +67,9 @@ export class EditorViewport {
   readonly controls: FlyControls;
 
   /**
-   * The device, the off-screen surface, and the three panels showing corners of
-   * it. Everything on screen goes through here; nothing else in the editor owns
-   * a renderer, and `ViewportRenderer` says why.
+   * The device, the off-screen surface, and the three canvases showing corners
+   * of it. Everything on screen goes through here; nothing else in the editor
+   * owns a renderer, and `ViewportRenderer` says why.
    */
   private readonly view: ViewportRenderer;
 
@@ -108,6 +110,14 @@ export class EditorViewport {
   /** Play, Pause and Stop, and everything that has to happen around them. */
   private readonly play: PlaySession;
 
+  /**
+   * Whether the game is still owed the keyboard, and where the focus was at the
+   * press that owes it. Its canvas can take the focus only once it shows, at
+   * the game's first frame; see `gameCameOnTop`.
+   */
+  private focusOwed = false;
+  private focusAtPress: Element | null = null;
+
   private lastFrameTime = 0;
   private disposed = false;
 
@@ -116,7 +126,7 @@ export class EditorViewport {
      * The project's own settings, so the viewport shows what a build will —
      * read once, here, and carried from here to everything this viewport
      * builds. Play mode reads the same object rather than the store again, so
-     * pressing Play cannot pick up a different answer than the Scene view is
+     * pressing Play cannot pick up a different answer than the edit view is
      * already showing. That is the whole of this task: one reading, one answer.
      */
     const rendering =
@@ -172,9 +182,9 @@ export class EditorViewport {
     // element run in registration order, so this is the only way the
     // arbitration actually arbitrates. Which is why it is handed `this` — the
     // fields it reads are filled in on the lines below. See `InputSubjects`.
-    this.input = new ViewportInput(this.view.sceneView.canvas, this);
+    this.input = new ViewportInput(this.view.editView.canvas, this);
 
-    this.controls = new FlyControls(this.camera, this.view.sceneView.canvas);
+    this.controls = new FlyControls(this.camera, this.view.editView.canvas);
     // `locked` was documented as "excluded from picking" and read by
     // nobody. One rule, `capabilitiesOf`, answers here and at the gizmo below.
     this.picker = new Picker(
@@ -190,7 +200,7 @@ export class EditorViewport {
       // their marker. Tested before the scene — see `Picker.pickOverlay`.
       this.overlay.markers,
     );
-    this.gizmo = new GizmoController(this.camera, this.view.sceneView.canvas);
+    this.gizmo = new GizmoController(this.camera, this.view.editView.canvas);
     // Into the group the projection reserved for it, because `TransformControls`
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
@@ -203,6 +213,11 @@ export class EditorViewport {
     useViewportStore.getState().setBackend(view.backend);
     this.play = new PlaySession(this);
     this.play.watch();
+    // Who holds the keys and the mouse, said for the Viewport: the game hears
+    // keys only while its canvas holds the focus.
+    this.view.gameView.canvas.addEventListener('focus', this.publishGameKeys);
+    this.view.gameView.canvas.addEventListener('blur', this.publishGameKeys);
+    document.addEventListener('pointerlockchange', this.publishGameMouse);
     // Owning the loop is what earns the right to own the clock: this is where
     // three's `time` node stops reading `performance.now()` and starts reading
     // the simulation. Once per viewport, and the viewport is once per document.
@@ -210,38 +225,41 @@ export class EditorViewport {
     void this.view.renderer.setAnimationLoop((time) => this.tick(time));
   }
 
-  /** Show the Scene view in this panel. Safe to call repeatedly. */
-  attachScene(host: HTMLElement): void {
-    this.view.attach(this.view.sceneView, host);
+  /**
+   * Puts both canvases on the Viewport's stage: the edit view's and the game's,
+   * stacked, the one on top chosen by `viewState`. Safe to call again.
+   *
+   * Both, for as long as the panel lives, rather than the game's only while it
+   * runs: nothing has to be moved in or out at Play or Stop, so nothing is
+   * resized at the press, and each canvas keeps the input that listens on it —
+   * the editor's arbitration on one, the game's `Input` on the other.
+   */
+  attach(hosts: { edit: HTMLElement; game: HTMLElement }): void {
+    this.view.attach(this.view.editView, hosts.edit);
+    this.view.attach(this.view.gameView, hosts.game);
   }
 
   /**
-   * Whether the Scene panel is on a tab someone can see.
-   *
-   * Separate from `attachScene`, because a panel stays attached while it is
-   * hidden — that is the whole case: with the Game tab forward, the Scene panel
-   * kept its host, kept its box, and went on being drawn behind the game. 18 016
-   * draw calls a frame instead of 9 006, 20.1 ms instead of 10.8.
+   * Takes both canvases off the stage. They outlive the panel: a Reset Layout
+   * or a template remounts it, and the new one attaches them again.
    */
-  setSceneOnScreen(onScreen: boolean): void {
-    this.view.setOnScreen(this.view.sceneView, onScreen);
-  }
-
-  setGameOnScreen(onScreen: boolean): void {
-    this.view.setOnScreen(this.view.gameView, onScreen);
-  }
-
-  detachScene(): void {
-    this.view.detach(this.view.sceneView);
-  }
-
-  /** Show the running game in this panel. Safe to call repeatedly. */
-  attachGame(host: HTMLElement): void {
-    this.view.attach(this.view.gameView, host);
-  }
-
-  detachGame(): void {
+  detach(): void {
+    this.view.detach(this.view.editView);
     this.view.detach(this.view.gameView);
+  }
+
+  /**
+   * Whether the Viewport is on a tab someone can see. Both views follow it.
+   *
+   * Separate from `attach`, because a panel stays attached while it is hidden —
+   * that is the whole case: dockview parks a tab behind another at full size,
+   * and a view parked that way kept its host, kept its box, and went on being
+   * drawn for nobody. 18 016 draw calls a frame instead of 9 006, 20.1 ms
+   * instead of 10.8.
+   */
+  setOnScreen(onScreen: boolean): void {
+    this.view.setOnScreen(this.view.editView, onScreen);
+    this.view.setOnScreen(this.view.gameView, onScreen);
   }
 
   /**
@@ -254,8 +272,8 @@ export class EditorViewport {
    * — so the viewport counted the renderers on the page and stood down for as
    * long as it was not alone. On screen that read as the viewport freezing the
    * moment the import dialog opened. One renderer with several presentations is
-   * the answer to both, and the mechanism already existed for the Scene and the
-   * Game; this is a third caller of it.
+   * the answer to both, and the mechanism already existed for the edit view and
+   * the game; this is a third caller of it.
    *
    * The canvas comes back because a preview builds its own `OrbitControls`, and
    * controls need an element. `onFrame` runs once per frame immediately before
@@ -282,6 +300,9 @@ export class EditorViewport {
 
   dispose(): void {
     this.disposed = true;
+    this.view.gameView.canvas.removeEventListener('focus', this.publishGameKeys);
+    this.view.gameView.canvas.removeEventListener('blur', this.publishGameKeys);
+    document.removeEventListener('pointerlockchange', this.publishGameMouse);
     this.input.dispose();
     this.play.dispose();
     this.controls.dispose();
@@ -289,14 +310,23 @@ export class EditorViewport {
     this.outline.dispose();
     this.overlay.dispose();
     this.binder.dispose();
-    // Last, and it takes the loop, the observer, the three panels' canvases and
-    // the device with it.
+    // Last, and it takes the loop, the observer, the three canvases and the
+    // device with it.
     this.view.dispose();
   }
 
-  /** True while the game is running; see `InputSubjects`. */
-  get playing(): boolean {
-    return this.play.playing;
+  /**
+   * Whether the view's pointer is the editor's, asked at event time by the
+   * arbitration; see `InputSubjects`.
+   */
+  get editorInput(): boolean {
+    return this.viewNow().input === 'editor';
+  }
+
+  /** What the Viewport shows now, read the way the panel reads it. */
+  private viewNow(): ViewState {
+    const { gameShown, gameHasKeys, gameHasMouse } = useViewportStore.getState();
+    return viewState({ playState: useEditorStore.getState().playState, gameShown, gameHasKeys, gameHasMouse });
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
@@ -305,7 +335,7 @@ export class EditorViewport {
   }
 
   /*
-   * `PlayHost`. The renderer and the Game panel come from the one device this
+   * `PlayHost`. The renderer and the game's canvas come from the one device this
    * document is allowed; the two announcements are the parts of the viewport a
    * running game touches and that a play session has no business holding.
    */
@@ -318,21 +348,75 @@ export class EditorViewport {
     return this.view.gameView;
   }
 
-  onPlayStarted(): void {
-    // Not because they would fight the game for the pointer — each view has its
-    // own canvas now — but because the Scene view is a *view* while the game
-    // runs: flying it or dragging a handle would edit a document that Stop is
-    // about to put back the way it was.
+  onPlayPressed(): void {
+    // From the press the view's pointer is not the editor's. The start lasts as
+    // long as the compile and the load, the edit image stays on screen for all
+    // of it, held still under its pill, and nothing may drive the edit view in
+    // the meantime: flying the camera would move a view nobody is shown, and
+    // dragging a handle would try an edit the scene lock refuses. These used
+    // to go only once the engine had arrived, and until then a held key still
+    // flew the camera, and a release anywhere on the window switched it back
+    // on.
     this.controls.setEnabled(false);
     this.gizmo.setEnabled(false);
-    // The engine needs the viewport aspect; the frame loop hands it over on the
-    // next tick rather than resizing the renderer from here.
-    this.view.markResized();
+    // And the game is owed the keyboard, which its canvas can take only once it
+    // shows. Where the focus is now is what tells, then, whether the person has
+    // put it somewhere since.
+    this.focusOwed = true;
+    this.focusAtPress = document.activeElement;
   }
 
   onPlayStopped(): void {
     this.controls.setEnabled(true);
+    // Nothing of this session is kept for the next. Its canvas comes on top
+    // again only once the next session has drawn into it.
+    this.view.gameView.clear();
+    // The keyboard goes back to the editor with the view. The canvas is hidden
+    // from Stop, and nothing promises that the browser takes the focus from a
+    // hidden element at once: keys would go on landing on a canvas nobody sees,
+    // and the store would go on saying the game has them.
+    this.focusOwed = false;
+    this.focusAtPress = null;
+    const canvas = this.view.gameView.canvas;
+    if (document.activeElement === canvas) canvas.blur();
   }
+
+  /**
+   * The game's canvas has just come on top: Play gives it the keyboard, once per
+   * Play, unless the person has put the focus somewhere since the press.
+   *
+   * Called by the Viewport once it has made the canvas's host visible, the
+   * first moment the canvas can take the focus — a hidden element takes none —
+   * and the game hears keys only while its canvas holds it. A Reset Layout or a
+   * template during Play remounts the Viewport, which calls this again; the
+   * keyboard was given once, and is not taken a second time.
+   */
+  gameCameOnTop(): void {
+    if (!this.focusOwed) return;
+    this.focusOwed = false;
+    const atPress = this.focusAtPress;
+    this.focusAtPress = null;
+    if (gameTakesFocus(atPress, document.activeElement, document.body)) {
+      this.view.gameView.canvas.focus({ preventScroll: true });
+    }
+  }
+
+  /**
+   * Whether the game has the keyboard, read afresh from the document at each of
+   * its canvas's focus and blur rather than from which of the two arrived. And
+   * whether the window has it: one sent to the background blurs the canvas but
+   * leaves it the active element, and no key reaches the game there; coming
+   * back focuses the canvas again, and the flag comes back with it.
+   */
+  private readonly publishGameKeys = () => {
+    const canvas = this.view.gameView.canvas;
+    useViewportStore.getState().setGameHasKeys(document.hasFocus() && document.activeElement === canvas);
+  };
+
+  /** Whether the pointer is locked to the game's canvas, read afresh at each change. */
+  private readonly publishGameMouse = () => {
+    useViewportStore.getState().setGameHasMouse(document.pointerLockElement === this.view.gameView.canvas);
+  };
 
   /** Frame a world-space sphere; used by the F shortcut and by selection. */
   focus(target: Vector3, radius: number): void {
@@ -356,7 +440,7 @@ export class EditorViewport {
    * fallback is at the floor's own height.
    */
   dropPoint(clientX: number, clientY: number): Vector3 {
-    const rect = this.view.sceneView.canvas.getBoundingClientRect();
+    const rect = this.view.editView.canvas.getBoundingClientRect();
     const hit = this.picker.raycast(clientX, clientY, rect, this.camera);
     if (hit) return hit;
 
@@ -378,7 +462,7 @@ export class EditorViewport {
    * same reason.
    */
   placementPoint(): Vector3 {
-    const rect = this.view.sceneView.canvas.getBoundingClientRect();
+    const rect = this.view.editView.canvas.getBoundingClientRect();
     return this.dropPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
   }
 
@@ -394,7 +478,7 @@ export class EditorViewport {
    * 50%-black backdrop holds still. For a scene it is indistinguishable; for one
    * with moving clouds it is a frozen frame in a nine-pixel margin.
    *
-   * **It answers for the Scene and the Game, and not for the preview**, which is
+   * **It answers for the Viewport's views, and not for the preview**, which is
    * *inside* the modal — see `tick`.
    *
    * There used to be a second condition here, `rendererCount() > 1`, and it was
@@ -424,16 +508,16 @@ export class EditorViewport {
     //
     // The surface is the renderer's to size; the cameras that answer to a panel
     // are not, so they are corrected here. Two of the three unconditionally,
-    // and each for its own reason: the engine may have *arrived* since the last
-    // resize — `beginPlay` raises the flag precisely so that it is handed the
-    // shape of its panel, which has usually not moved a pixel — and selecting
-    // another file in the import dialog swaps one preview camera for another
-    // without its panel moving either, leaving a camera that has never heard a
-    // box at the 1:1 aspect it was constructed with.
+    // and each for its own reason: the running game is handed the shape of its
+    // canvas at every resize, whichever box moved — it arrives with one, from
+    // `PlaySession.run`, and this keeps it current — and selecting another file
+    // in the import dialog swaps one preview camera for another without its
+    // panel moving, leaving a camera that has never heard a box at the 1:1
+    // aspect it was constructed with.
     if (this.view.resizePending) {
-      const sceneMoved = this.view.applyResize();
-      if (sceneMoved && this.view.sceneView.visible) {
-        this.camera.aspect = this.view.sceneView.width / this.view.sceneView.height;
+      const editMoved = this.view.applyResize();
+      if (editMoved && this.view.editView.visible) {
+        this.camera.aspect = this.view.editView.width / this.view.editView.height;
         this.camera.updateProjectionMatrix();
       }
       if (this.play.playEngine) this.play.syncAspect(this.play.playEngine);
@@ -456,6 +540,9 @@ export class EditorViewport {
     this.lastFrameTime = time;
 
     const { playState, consumeStep } = useEditorStore.getState();
+    // What the Viewport shows, and who has its input: read once, for the whole
+    // frame.
+    const view = this.viewNow();
     // Before anything reads a delta, and before anything draws: every node
     // material in the document is about to sample this. Written here rather
     // than on the transport commands because this is where the state is
@@ -482,10 +569,13 @@ export class EditorViewport {
       // `raw`, not the simulated delta: flying the editor camera is not part of
       // the simulation, and a timescale of zero must not nail it to the spot.
       //
-      // Only while the Scene view is in a panel: the loop keeps running once it
+      // Only while the edit view is in a panel: the loop keeps running once it
       // is detached, and integrating a gesture nobody can see is how a stuck key
-      // used to travel while the Scene tab was closed.
-      if (this.view.sceneView.host) this.controls.update(raw);
+      // used to travel while the edit view's tab was closed. And only while the
+      // view's input is the editor's: from the press of Play there is no engine
+      // yet, for as long as the start takes, and the camera must not move under
+      // a scene Stop brings back as it was left.
+      if (this.view.editView.host && view.input === 'editor') this.controls.update(raw);
       // The ear rides the editor camera while nothing is running, which is what
       // makes an audition of a positional source worth anything: fly toward the
       // source and it gets louder. A no-op until something has actually been
@@ -495,11 +585,13 @@ export class EditorViewport {
       audioPreview.setListener(...cameraPose(this.camera));
     }
 
-    // The Scene view is a view of the *document*, playing or not — which is the
-    // whole point of being able to see it next to the game. It used to be that
-    // pressing Play took the canvas away from this panel, so none of this ran
-    // and none of it had to.
-    if (this.view.sceneView.visible) {
+    // The document and the selection are pulled into the edit view only while
+    // it is the one drawn. Nothing reads them while the game is in front, nor
+    // while the game starts — the edit image on screen then is held still, as
+    // it was at the press — and the first sync after Stop catches up on all of
+    // it at once: this consumer keeps its own place in the document's log, so a
+    // frame skipped is a change deferred, never one lost.
+    if (view.drawn === 'edit' && this.view.editView.visible) {
       this.syncDocument();
       this.syncSelection();
     }
@@ -524,8 +616,15 @@ export class EditorViewport {
     // a dialog opened would be a different decision, and not one to take here.
     if (covered) return;
 
-    this.view.draw(this.scene, this.camera, this.view.sceneView);
-    if (engine) this.view.draw(engine.scene, engine.activeCamera, this.view.gameView);
+    // One canvas is drawn, the one `viewState` names: a view nobody sees is not
+    // drawn. During Play that is the game alone — 9 006 draw calls a frame,
+    // measured, where drawing the edit view behind it as well made 18 016.
+    // While the game starts it is the game too, unseen under the edit image
+    // until its first frame is in, which is what brings it on top.
+    if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
+    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView)) {
+      this.play.gameDrawn();
+    }
     this.view.reportStats(time, this.controls.moveSpeed);
   }
 
@@ -552,21 +651,12 @@ export class EditorViewport {
      * the same rule that greys the menu entry.
      */
     const current = Selection.of(selection, expandedScene().scene);
-    /*
-     * Not while the game runs, which is new: this used to be reached only when
-     * nothing was playing, because Play took the canvas away from this panel.
-     * The Scene view is drawn every frame of Play now, and handles that cannot
-     * be dragged — `beginPlay` switches them off, and a drag would edit a
-     * document Stop is about to put back — must not be drawn either. Leaving
-     * `update` to run would draw them: it ends by showing the helper.
-     *
-     * `isNavigating` only covers the fly gesture; `navigating` covers pan and
-     * orbit too, and it is what keeps the handles away for the whole press.
-     */
-    if (!this.playing) {
-      this.gizmo.setEnabled(!this.controls.isNavigating && !this.input.navigating);
-      this.gizmo.update(current, resolve, bounds, transformMode);
-    }
+    // `isNavigating` only covers the fly gesture; `navigating` covers pan and
+    // orbit too, and it is what keeps the handles away for the whole press.
+    // Never reached during Play: this runs only while the edit view is the one
+    // drawn, so the handles `onPlayPressed` switched off stay off until Stop.
+    this.gizmo.setEnabled(!this.controls.isNavigating && !this.input.navigating);
+    this.gizmo.update(current, resolve, bounds, transformMode);
 
     // `current.ids` rather than the store's: an id naming nothing has already
     // been dropped there, and a marker for it would sit at the origin forever.
@@ -577,7 +667,7 @@ export class EditorViewport {
       expandedScene().scene,
       current.ids,
       this.camera,
-      this.view.sceneView.height,
+      this.view.editView.height,
       showGizmos,
     );
 

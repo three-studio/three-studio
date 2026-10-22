@@ -247,7 +247,7 @@ export class FlyControls {
    * Hover decides where the wheel goes, and nothing else.
    *
    * It used to clear the held keys too, which was the accidental reset the
-   * whole bug hid behind: closing the Scene tab removes the canvas, the
+   * whole bug hid behind: closing the Viewport removes the canvas, the
    * browser fires `pointerleave` on it, and that was the one path that
    * unstuck the camera.
    */

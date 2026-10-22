@@ -21,6 +21,10 @@
   --color-ink-muted: #8b8b8b;
   --color-ink-dim: #6a6a6a;
 
+  /* The chrome's greys, the same during Play. An editor-wide Play tint, Unity's
+     way, was tried — every grey mixed toward the play green, the pause amber
+     while paused — and read as a glow over the whole window. The play bar, the
+     transport and the status bar say that the game runs. */
   --color-surface-0: #1b1b1b;
   --color-surface-1: #242424;
   --color-surface-2: #2d2d2d;
@@ -38,6 +42,9 @@
   --color-axis-z: #4a8cff;
 
   --color-play: #4ade80;
+  /* Pause's colour, wherever the editor says the game is paused: the warn
+     amber, named for what it says, as `ok` shares Play's green. */
+  --color-pause: #f0b429;
 
   /* Prefab instances and their contents. Blue in Unity, and worth keeping
      recognisable rather than inventing a colour nobody has seen before. */

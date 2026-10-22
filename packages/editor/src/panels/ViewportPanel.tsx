@@ -1,75 +1,128 @@
-import { createAudioSourceEntity, createModelEntity, variantBaseOf } from '@three-studio/core';
-import { Boxes, ChevronLeft } from 'lucide-react';
+import { variantBaseOf } from '@three-studio/core';
+import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-react';
 import type { IDockviewPanelProps } from 'dockview-react';
-import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { addEntity } from '../commands/sceneCommands';
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
+import { DROPPABLE_KINDS, placeDroppedAsset } from '../commands/placeEntity';
+import { commandById } from '../commands/registry';
+import { shortcutHint } from '../shell/shortcutBindings';
 import { useAssetStore } from '../state/assetStore';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
+import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
-import { instantiatePrefab } from '../commands/prefabCommands';
-import { SceneToolbar } from './SceneToolbar';
+import { EditToolbar } from './EditToolbar';
+import { PlayBar } from './PlayBar';
 import { tooltip } from '../ui/Tooltip';
 
+/**
+ * The Keyboard Lock API, which TypeScript's DOM library does not carry: only
+ * Chromium ships it, and Electron is Chromium.
+ */
+interface KeyboardLock {
+  lock(keyCodes?: string[]): Promise<void>;
+  unlock(): void;
+}
+
+function keyboardLock(): KeyboardLock | undefined {
+  return (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+}
+
+/** How long the full-screen hint stays before it fades, in milliseconds. */
+const FULL_SCREEN_HINT_MS = 4000;
+
+/**
+ * Where the scene is edited and the game is played.
+ *
+ * One panel for both, as Unreal plays in the level viewport: the edit view
+ * while stopped, the game during Play, in the same place. Each has a canvas of
+ * its own, stacked on the stage, and `viewState` says which one is on top. Their
+ * own canvas, but not their own renderer: a second `WebGPURenderer` in the same
+ * document would destroy this one's output target every frame. The one renderer
+ * draws whichever view is on top and hands its canvas a copy — see
+ * `Presentation`.
+ */
 export function ViewportPanel(props: IDockviewPanelProps) {
   // What the box cannot say: dockview parks an inactive tab at full size, so a
   // hidden panel goes on being drawn unless something tells the viewport. The
-  // dock is the only thing that knows, and it publishes it here.
+  // dock is the only thing that knows, and it publishes it here, for both of
+  // the views this tab holds.
   useEffect(() => {
-    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setSceneOnScreen(onScreen));
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setOnScreen(onScreen));
     push(props.api.isVisible);
     const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
     return () => sub.dispose();
   }, [props.api]);
 
-  const hostRef = useRef<HTMLDivElement>(null);
-  const error = useViewportStore((s) => s.error);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const editHostRef = useRef<HTMLDivElement>(null);
+  const gameHostRef = useRef<HTMLDivElement>(null);
+  const rendererError = useViewportStore((s) => s.rendererError);
   const showStats = useEditorStore((s) => s.showStats);
+  const playState = useEditorStore((s) => s.playState);
+  // A boolean, so the panel renders when the game's first frame is in and at
+  // Stop, never per frame.
+  const gameShown = useViewportStore((s) => s.gameShown);
+  // Booleans too: the panel renders when the game takes or loses the keyboard
+  // or the mouse, which the capture hint says.
+  const gameHasKeys = useViewportStore((s) => s.gameHasKeys);
+  const gameHasMouse = useViewportStore((s) => s.gameHasMouse);
   const [dropping, setDropping] = useState(false);
+  const view = viewState({ playState, gameShown, gameHasKeys, gameHasMouse });
+  const holdingScreen = usePlayFullScreen(stageRef);
 
   useEffect(() => {
     let cancelled = false;
 
     void acquireViewport()
       .then((viewport) => {
-        if (cancelled || !hostRef.current) return;
-        viewport.attachScene(hostRef.current);
+        if (cancelled || !editHostRef.current || !gameHostRef.current) return;
+        viewport.attach({ edit: editHostRef.current, game: gameHostRef.current });
       })
       .catch((cause: unknown) => {
         useViewportStore
           .getState()
-          .setError(cause instanceof Error ? cause.message : String(cause));
+          .setRendererError(cause instanceof Error ? cause.message : String(cause));
       });
 
     return () => {
       cancelled = true;
-      // The canvas outlives this component, so hand it back rather than leaving
-      // it parented to a container React is about to drop.
-      peekViewport()?.detachScene();
+      // The canvases outlive this component — a Reset Layout or a template
+      // remounts the panel — so hand them back rather than leaving them
+      // parented to containers React is about to drop.
+      peekViewport()?.detach();
     };
-    // Play state is not in here any more: the Scene view keeps its own canvas
-    // while the game runs, which is what lets the two panels be read side by
-    // side. It used to have to stand down so the Game panel could take the one
-    // canvas there was.
+    // Play state is not in here: both canvases stay on the stage for as long as
+    // the panel lives, and Play changes only which one is on top. Nothing is
+    // moved, re-parented or resized at the press.
   }, []);
 
-  if (error) {
+  // The game has just come on top, and Play gives it the keyboard. A layout
+  // effect, so that its host has been made visible: a hidden element takes no
+  // focus, and the game hears keys only while its canvas holds it.
+  useLayoutEffect(() => {
+    if (view.canvas === 'game') peekViewport()?.gameCameOnTop();
+  }, [view.canvas]);
+
+  // The only failure that takes the view: without a renderer there is no view
+  // to keep. A Play that fails is said in a toast, over the edit view.
+  if (rendererError) {
     return (
       <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-surface-1 px-6 text-center">
         <p className="text-error">The renderer failed to start.</p>
         <p className="text-2xs text-ink-muted" data-selectable>
-          {error}
+          {rendererError}
         </p>
       </div>
     );
   }
 
-  /** Dropping a model from the Project panel places it where the cursor is. */
+  /**
+   * Dropping an asset from the Project panel places it where the cursor is.
+   * What it becomes, and whether the game lets it in, is `placeDroppedAsset`'s.
+   */
   const onDrop = (event: DragEvent) => {
-    // A prefab and a model both arrive as an asset id; which one it is decides
-    // whether the scene gets an instance or a mesh.
     const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME);
     setDropping(false);
     if (!assetId) return;
@@ -77,62 +130,242 @@ export function ViewportPanel(props: IDockviewPanelProps) {
 
     const viewport = peekViewport();
     if (!viewport) return;
+    // Measured on the edit canvas, which keeps its box on the stage during Play.
     const point = viewport.dropPoint(event.clientX, event.clientY);
-
-    // A prefab and a model both arrive as an asset id; which one it is decides
-    // whether the scene gets an instance or a mesh.
-    if (event.dataTransfer.types.includes(assetKindMime('prefab'))) {
-      instantiatePrefab(assetId, [point.x, point.y, point.z]);
-      return;
-    }
-
-    const asset = useAssetStore.getState().byId(assetId);
-    if (!asset) return;
-
-    // Every kind that is not a prefab used to fall through to a model, so a
-    // `.wav` dropped here produced a model entity pointing at a sound — an
-    // entity that could never load anything and said nothing about why.
-    const template =
-      asset.kind === 'audio'
-        ? createAudioSourceEntity(assetId, asset.name)
-        : createModelEntity(assetId, asset.name);
-    // Positioned before insertion so the drop is a single undo step.
-    template.entity.transform.position = [point.x, point.y, point.z];
-    addEntity(template);
+    placeDroppedAsset(assetId, [point.x, point.y, point.z]);
   };
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface-0">
-      <SceneToolbar />
-      {/* The drop target is the canvas's box, not the panel's. `dropPoint`
-          measures the pointer against the canvas, and a drop on the toolbar
-          above it would be a ray above the view: the entity would land far
-          off, nowhere near where it was let go. */}
+      {view.header === 'play' ? <PlayBar /> : <EditToolbar />}
+      {/* The stage: what Play Full Screen takes, the header left behind, and
+          the drop target. The drop target is the canvas's box, not the
+          panel's. `dropPoint` measures the pointer against the canvas, and a
+          drop on the toolbar above it would be a ray above the view: the entity
+          would land far off, nowhere near where it was let go. */}
       <div
-        className="relative min-h-0 flex-1"
+        ref={stageRef}
+        data-viewport-stage
+        // The progress cursor while the game starts: the edit host is inert
+        // then, so the stage under it is what the pointer is over.
+        className={`relative min-h-0 flex-1 overflow-hidden bg-surface-0 ${view.overlays.starting ? 'cursor-progress' : ''}`}
         onDragOver={(event) => {
-          if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME)) return;
+          // Cancelled for what the view can place, in every mode, so that its
+          // drop arrives here even during Play, where `placeDroppedAsset` says
+          // the refusal in the toast: a drop the browser refused on its own would
+          // say nothing at all. Today the dock cancels every `dragover` over a
+          // group anyway, in the capture phase, so that a panel can be docked
+          // there — which is why a texture's drop arrives too, and why what a
+          // drop does is decided at the drop, not here.
+          //
+          // What is decided here is the promise: a copy and the dashed border,
+          // only for what can be placed and only while the edit view is on top,
+          // where a drop places.
+          const types = event.dataTransfer.types;
+          if (!DROPPABLE_KINDS.some((kind) => types.includes(assetKindMime(kind)))) return;
           event.preventDefault();
+          if (!view.overlays.dropTarget) return;
           event.dataTransfer.dropEffect = 'copy';
           setDropping(true);
         }}
         onDragLeave={() => setDropping(false)}
         onDrop={onDrop}
       >
-        <PrefabModeBar />
-        {/* The canvas is inserted here by `EditorViewport.attachScene`, and
-            outlives this component, so it is never rendered by React. */}
-        <div ref={hostRef} className="absolute inset-0" />
-        {showStats && <ViewportStats />}
-        {dropping && (
+        {/* The two canvases, stacked, the one on top chosen by `viewState`.
+            Inserted by `EditorViewport.attach` and outliving this component,
+            so neither is rendered by React.
+
+            The one underneath is `invisible` — `visibility: hidden` — and never
+            `display: none`. Both keep their box: nothing is resized when Play
+            starts or stops, the game's aspect and a drop's point are measured
+            against a real box, and a canvas can be drawn into before it is
+            shown, which a box of zero cannot. And a hidden element takes
+            neither the pointer nor the focus, so each canvas keeps to the input
+            that listens on it: the edit canvas cannot be pressed or tabbed to
+            while the game plays, nor the game's while the scene is edited. */}
+        <div
+          ref={editHostRef}
+          // No pointer and no focus at the DOM from the press of Play, over the
+          // guards in the code: the edit view is not the editor's to drive
+          // until Stop.
+          inert={view.input !== 'editor'}
+          className={`absolute inset-0 ${view.canvas === 'edit' ? '' : 'invisible'}`}
+        />
+        <div ref={gameHostRef} className={`absolute inset-0 ${view.canvas === 'game' ? '' : 'invisible'}`} />
+        {view.overlays.prefabBar && <PrefabModeBar />}
+        {/* Not while the stage holds the screen: full screen is the game as a
+            player sees it. */}
+        {showStats && !holdingScreen && <ViewportStats editStats={view.overlays.editStats} />}
+        {view.overlays.dropTarget && dropping && (
           <div className="pointer-events-none absolute inset-2 rounded-sm border-2 border-dashed border-accent" />
         )}
+        {view.overlays.paused && <PausedBadge />}
+        {view.overlays.problems && <SceneProblems />}
+        {view.overlays.captureHint && <CaptureHint holds={view.gameHolds} holdingScreen={holdingScreen} />}
+        {view.overlays.starting && <StartingPill />}
       </div>
     </div>
   );
 }
 
-function ViewportStats() {
+/**
+ * Over the edit image, held still from the press of Play until the game's first
+ * frame takes its place. It says that the picture is not the game yet, and not
+ * a frozen editor either: the compile and the load are under way.
+ */
+function StartingPill() {
+  return (
+    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      <span className="flex items-center gap-1.5 rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-ink-muted">
+        {/* The progress toast's spinner: one way of saying "under way". */}
+        <span
+          className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent text-accent"
+          aria-hidden
+        />
+        Starting…
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Play Full Screen: the stage takes the whole screen, and leaving the screen
+ * ends the test. Unreal's way, which is Esc there and Shift+Esc here: the stop
+ * is a binding (`shortcutBindings`), and plain Esc stays the game's.
+ *
+ * Plain Esc would otherwise be Chromium's: it leaves full screen before the
+ * page hears it. The keyboard lock hands it to the page instead, and holding it
+ * for about two seconds still gets out — Chromium's own way out of a lock,
+ * which lands in `onChange` like any other exit and stops the game.
+ *
+ * The request is made from an effect, after the click that ran Play Full Screen
+ * has brought the Viewport forward — reopening it if it was closed. Chromium
+ * accepts a full-screen request for a few seconds after a click, which is what
+ * lets it come from an effect.
+ *
+ * @returns Whether the stage holds the screen right now, as the document
+ *   reports it. `fullScreen` is what was asked for; this is what happened.
+ */
+function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean {
+  const isRunning = useEditorStore((s) => s.playState !== 'stopped');
+  const fullScreen = useEditorStore((s) => s.fullScreen);
+  const [holdingScreen, setHoldingScreen] = useState(false);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!isRunning || !fullScreen || stage === null) return;
+    let ended = false;
+
+    const onChange = () => {
+      const holding = document.fullscreenElement === stage;
+      setHoldingScreen(holding);
+      if (!holding && useEditorStore.getState().playState !== 'stopped') commandById('stop').run();
+    };
+    document.addEventListener('fullscreenchange', onChange);
+
+    stage
+      .requestFullscreen()
+      .then(() => {
+        // Granted after the session ended: a Play that failed within the
+        // request's time, which a compile error answered from cache can do in
+        // milliseconds. The stage is still in the document to be granted it,
+        // and nothing would give the screen back, Escape locked.
+        if (ended) {
+          if (document.fullscreenElement === stage) void document.exitFullscreen();
+          return;
+        }
+        return keyboardLock()?.lock(['Escape']);
+      })
+      .catch((cause: unknown) => {
+        // Refused: the game goes on in the Viewport, where it still plays.
+        console.error('[play] full screen was refused, so the game stays in the Viewport:', cause);
+      });
+
+    return () => {
+      ended = true;
+      document.removeEventListener('fullscreenchange', onChange);
+      keyboardLock()?.unlock();
+      // How the screen is given back at Stop. The game used to have a panel of
+      // its own, whose root went away with the game and took the full screen
+      // with it; the stage stays, so it has to let go here.
+      if (document.fullscreenElement === stage) void document.exitFullscreen();
+      setHoldingScreen(false);
+    };
+  }, [isRunning, fullScreen, stageRef]);
+
+  return holdingScreen;
+}
+
+/** The picture holds still while the game is paused, and this says why. */
+function PausedBadge() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+      <span className="rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-pause">Paused</span>
+    </div>
+  );
+}
+
+/**
+ * The running scene's set-up problems, placed where the eye lands rather than
+ * tucked away: every one of them fails silently in the simulation.
+ */
+function SceneProblems() {
+  const warnings = useViewportStore((s) => s.playWarnings);
+  if (warnings.length === 0) return null;
+
+  return (
+    <div className="absolute left-2 top-2 max-w-md rounded-sm border border-warn/40 bg-surface-0/90 p-2">
+      <div className="mb-1 flex items-center gap-1.5 text-2xs font-medium text-warn">
+        <TriangleAlert size={12} />
+        {warnings.length === 1 ? 'Scene problem' : `${warnings.length} scene problems`}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {warnings.map((warning) => (
+          <li key={warning} className="text-2xs leading-snug text-ink-muted" data-selectable>
+            {warning}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** What a click, or Esc, will do now, and how to stop: `captureHintText`'s words. */
+function CaptureHint({ holds, holdingScreen }: { holds: GameHold; holdingScreen: boolean }) {
+  const text = captureHintText(holds, { fullScreen: holdingScreen, stopKey: shortcutHint('stop') });
+  const [shown, setShown] = useState(true);
+
+  // Full screen is the game as a player sees it, so the hint goes after a
+  // moment — and comes back each time its words change: a game that has lost
+  // the keyboard full screen says so.
+  useEffect(() => {
+    setShown(true);
+    if (!holdingScreen) return;
+    const timer = setTimeout(() => setShown(false), FULL_SCREEN_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [holdingScreen, text]);
+
+  if (text === '') return null;
+  return (
+    <div
+      className={`pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity duration-700 ${
+        shown ? 'opacity-100' : 'opacity-0'
+      }`}
+    >
+      <span className="flex items-center gap-1.5 rounded-sm bg-surface-0/70 px-2 py-1 text-2xs text-ink-muted">
+        <MousePointerClick size={11} />
+        {text}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * @param editStats Whether the lines about the edit view show: the fly speed,
+ *   and the fallback light. Not over the game, nor over the edit image held
+ *   while it starts — the counters above them follow whatever is drawn.
+ */
+function ViewportStats({ editStats }: { editStats: boolean }) {
   const backend = useViewportStore((s) => s.backend);
   const fps = useViewportStore((s) => s.fps);
   const drawCalls = useViewportStore((s) => s.drawCalls);
@@ -160,15 +393,18 @@ function ViewportStats() {
         <span>Tris</span>
         <span className="text-ink">{triangles.toLocaleString()}</span>
       </div>
-      <div className="flex justify-between gap-4">
-        <span>Fly</span>
-        <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
-      </div>
+      {editStats && (
+        <div className="flex justify-between gap-4">
+          <span>Fly</span>
+          <span className="text-ink">{flySpeed.toFixed(1)} m/s</span>
+        </div>
+      )}
       {/* Only while it is on, and last, so it reads as a note about this scene
           rather than as one more counter — and so the numbers above it do not
           move when it appears. What it says is that this view is lit by
-          something Play and a build do not have. */}
-      {fallbackLighting && (
+          something Play and a build do not have, which over the game is not
+          true of anything on screen. */}
+      {editStats && fallbackLighting && (
         <div className="flex justify-between gap-4">
           <span>Lighting</span>
           <span className="text-warn">Editor default</span>

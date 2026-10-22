@@ -56,7 +56,8 @@ const DEVELOPMENT_CSP = [
  * everything left the camera unable to turn, with no error anywhere — the
  * request simply never resolved.
  *
- * `fullscreen` is here so a game can go fullscreen from the Game view.
+ * `fullscreen` serves Play Full Screen, which gives the Viewport's stage the
+ * whole screen, and a game's own request for it.
  *
  * `clipboard-sanitized-write` is `navigator.clipboard.writeText`, which *Copy
  * Device Link* uses: refused, the copy fails with nothing on the clipboard.

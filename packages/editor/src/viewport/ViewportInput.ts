@@ -19,8 +19,12 @@ export interface InputSubjects {
   readonly controls: FlyControls;
   readonly gizmo: GizmoController;
   readonly picker: Picker;
-  /** True while the game is running, which changes what a click means. */
-  readonly playing: boolean;
+  /**
+   * Whether the view's pointer is the editor's: `viewState`'s `input`. It
+   * leaves at the press of Play, not when the game arrives, and comes back at
+   * Stop.
+   */
+  readonly editorInput: boolean;
 }
 
 /**
@@ -97,7 +101,7 @@ export class ViewportInput {
     this.canvas.addEventListener(
       'pointerdown',
       (event) => {
-        if (this.subjects.playing) return;
+        if (!this.subjects.editorInput) return;
 
         // Right, middle and Alt+left move the camera. The gizmo has no business
         // with any of them, and letting it capture the pointer is what threw.
@@ -122,11 +126,16 @@ export class ViewportInput {
      * and reparents it, and a reparent drops the pointer capture that was
      * bringing the release back. A release the canvas never saw left the
      * camera disabled and the gizmo hidden with no path back — the state the
-     * user could only clear by closing the Scene tab.
+     * user could only clear by closing the Viewport.
+     *
+     * And only while the pointer is the editor's. On the window, a release is
+     * every release: a click on the toolbar's Pause during a start used to
+     * switch the camera back on under the edit image, for the next press on it
+     * to fly.
      */
     const endGesture = () => {
       this.navigating = false;
-      if (!this.subjects.playing) this.subjects.controls.setEnabled(true);
+      if (this.subjects.editorInput) this.subjects.controls.setEnabled(true);
     };
     window.addEventListener('pointerup', endGesture, { signal });
     window.addEventListener('pointercancel', endGesture, { signal });
@@ -143,8 +152,10 @@ export class ViewportInput {
       (event) => {
         const down = this.pointerDownAt;
         this.pointerDownAt = null;
-        // Clicking in the game view captures the mouse; it must not also select.
-        if (this.subjects.playing) return;
+        // Not once Play is pressed. A press on the edit image while the game
+        // starts selects nothing, and neither does the release of a press made
+        // before Play, which the camera's pointer capture brings back here.
+        if (!this.subjects.editorInput) return;
 
         if (!down || down.button !== 0 || event.button !== 0) return;
         if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return;

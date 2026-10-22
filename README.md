@@ -44,12 +44,15 @@ thing as a static web build** that runs in any browser.
 
 ### Editor shell
 - **Two windows** — a launcher that picks a project, an editor that edits one.
-- **Dockable panels** (dockview): Viewport, Game, Hierarchy, Inspector, Project, Console.
+- **Dockable panels** (dockview): Viewport, Hierarchy, Inspector, Project, Console.
 - **Saved layouts** — name a layout, restore it, reset to default.
 - **Command registry** driving the menu bar, the toolbar and the keyboard shortcuts from one place.
 - Toasts, modal/overlay stack, project settings, recent projects.
 
 ### Viewport
+- **Play where you edit** — the game runs in the Viewport, in place of the edit view, and Stop puts the
+  edit view back as it was left; Play Full Screen gives the game the whole screen. While it runs, a play
+  bar names the scene it runs.
 - **Fly camera** (`RMB` + `WASD`), orbit, pan, dolly, **frame selection**.
 - **Transform gizmos** — select / move / rotate / scale, world or local space.
 - **GPU picking**, selection outline, drop plane for drag-and-drop placement.
@@ -89,7 +92,9 @@ and entity references.
 - **One clock** for the simulation and every shader: three's TSL `time` node is re-pointed at it, so
   Pause and the timescale stop the water and the sky along with the physics.
 - **Rapier physics**: rigid bodies, colliders, character-style player controller.
-- **Play mode in-editor** with a document snapshot restored on stop — playing never dirties a scene.
+- **Play mode in-editor**: the scene is locked while the game runs, on a copy of its own, so Stop
+  finds it exactly as it was — playing never dirties a scene. The game hears the keyboard while its
+  view has the focus, so typing in a panel never reaches it; ⇧Esc, F9 and F10 stop, pause and step it.
 - **Scripting**: user TypeScript compiled in-app by esbuild, with lifecycle hooks
   (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared
   editable properties (numbers, colours, vec3, enums, entity and asset pickers), and APIs for

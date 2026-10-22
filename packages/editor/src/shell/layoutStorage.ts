@@ -1,5 +1,6 @@
 import { emptyLayoutPreferences, type LayoutPreferences } from '@three-studio/core';
 import type { SerializedDockview } from 'dockview-react';
+import { PANEL_DEFS } from './panelDefs';
 
 export interface LayoutTemplate {
   id: string;
@@ -74,22 +75,55 @@ async function persist(): Promise<void> {
 
 // --- working layout ---------------------------------------------------------
 
+/** The panels this build can show, by the component key a serialised panel names. */
+const KNOWN_COMPONENTS: ReadonlySet<string> = new Set(PANEL_DEFS.map((def) => def.component));
+
 /**
- * True when a layout would actually put something on screen.
+ * The component a serialised panel names, read where dockview's deserializer
+ * reads it: its view's content when it has a view, else `contentComponent`.
+ */
+function componentOf(panel: unknown): unknown {
+  const { view, contentComponent } = (panel ?? {}) as {
+    view?: { content?: { id?: unknown } };
+    contentComponent?: unknown;
+  };
+  return view ? view.content?.id : contentComponent;
+}
+
+/**
+ * True when a layout would actually put something on screen, and only panels
+ * this build has.
  *
- * The check has to be on the grid, not on `panels`. A panel that fails to
- * construct is removed from its group but stays in the `panels` map, so the
- * serialised layout looks complete while every group is empty:
+ * The first half has to be checked on the grid, not on `panels`. A panel that
+ * fails to construct is removed from its group but stays in the `panels` map,
+ * so the serialised layout looks complete while every group is empty:
  *
- *     panels: { viewport, game, hierarchy, ... }        // all six
+ *     panels: { viewport, hierarchy, inspector, ... }   // all five
  *     grid:   leaves with `views: []`                   // none of them placed
  *
  * dockview restores that without complaint, into a window with the right
  * groups, no tabs, no content and no way back except the Window menu. One
  * broken render used to be enough to persist it and break every later start.
+ *
+ * The second half is checked here rather than left to dockview to refuse, and
+ * the refusal is what went wrong. A layout naming a panel this build lacks —
+ * every one saved before the Game panel went names `game`, beside the Viewport
+ * — makes `fromJSON` throw, but only after it has created and mounted the
+ * panels before it in the same group, and its revert removes the panels it
+ * had opened, which those were not yet. The Viewport it mounted stayed mounted,
+ * off the document, for as long as the dock lived, and nothing remounts the
+ * dock at startup: that orphan stopped every Play Full Screen the moment the
+ * real stage took the screen, its own having been refused it.
  */
 export function isUsableLayout(layout: SerializedDockview | null): layout is SerializedDockview {
   if (layout === null) return false;
+
+  // Every panel the layout carries, placed or not: dockview writes only the
+  // panels it holds, so a layout it wrote carries none it does not place.
+  for (const panel of Object.values(layout.panels ?? {})) {
+    const component = componentOf(panel);
+    if (typeof component !== 'string' || !KNOWN_COMPONENTS.has(component)) return false;
+  }
 
   let views = 0;
   const walk = (node: unknown): void => {

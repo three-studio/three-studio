@@ -25,13 +25,13 @@ export const LIVE_RELOAD_PAUSE_MS = 1_000;
  *
  * By content, not by reference: the stores hand out new objects holding
  * nothing new, and often — a refresh of the asset store makes every material
- * and prefab anew, Stop puts back a clone of the scene, opening a prefab and
- * leaving it rebuilds the scene, a project adopted again is a new object. Each
- * would restart every phone for nothing, Stop after every Play above all.
+ * and prefab anew, opening a prefab and leaving it rebuilds the scene, a
+ * project adopted again is a new object. Each would restart every phone for
+ * nothing.
  *
  * Cheap where it is common: an edit keeps every branch it did not touch, so
- * equal references end the walk at once, and the full walk comes only after a
- * Stop or a refresh, once per pause.
+ * equal references end the walk at once, and the full walk comes only after
+ * one of those, once per pause.
  */
 export function sameLaunchInputs(a: LaunchSnapshot, b: LaunchSnapshot): boolean {
   return (

@@ -32,7 +32,7 @@ import {
 import './behaviour/audio';
 import './controllers/PlayerController';
 import './scripting/ScriptHost';
-import { Input } from './input/Input';
+import { Input, type InputOptions } from './input/Input';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -53,6 +53,12 @@ export interface EngineOptions {
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
   domElement: HTMLElement;
+  /**
+   * How the game's `Input` listens. Omitted, keys are heard window-wide, which
+   * is the exported player's choice; the editor hears them on `domElement`
+   * alone, so that a key typed in one of its panels never reaches the game.
+   */
+  input?: InputOptions;
   /**
    * The audio context this engine mixes into.
    *
@@ -88,7 +94,7 @@ export interface EngineOptions {
    * engine answered `shadowMapSize` with the binder's own 2048 whatever the
    * project said, and answered `batching` with a default of its own that
    * happened to match the editor's. Being required means the three modes — the
-   * Scene view, Play, and an exported build — cannot each quietly answer this
+   * edit view, Play, and an exported build — cannot each quietly answer this
    * for themselves; `npm run typecheck` names any that tries.
    */
   rendering: RenderingSettings;
@@ -132,7 +138,7 @@ export interface EngineOptions {
  * the exposure inside it is a `rendererReference` — so ACES and
  * `rendering.exposure` still arrive. What would drop them is composing with
  * `outputColorTransform = false` and no `renderOutput()` of one's own, and it
- * would drop them in an exported build while the Scene view carried on looking
+ * would drop them in an exported build while the edit view carried on looking
  * right: the same shape of divergence that `EngineOptions.rendering` was made
  * required to end.
  */
@@ -177,7 +183,7 @@ export class Engine {
       materials: options.materials,
       renderer: options.renderer,
     });
-    this.input = new Input(options.domElement);
+    this.input = new Input(options.domElement, options.input);
     this.physics = physics;
 
     this.audio =
@@ -275,16 +281,17 @@ export class Engine {
   /**
    * A scene with no light at all renders black, and nothing else says so.
    *
-   * Silent at runtime like the rest of these, and worse than silent: the Scene
-   * view lights such a scene with a default pair of its own, so the author has
-   * already seen it lit. What is named here is therefore the difference, not
-   * the absence — the same condition that switches the editor's pair on, said
-   * from the side that does not have it. See `viewport/editorProjection`.
+   * Silent at runtime like the rest of these, and worse than silent: while it
+   * is edited, the Viewport lights such a scene with a default pair of its own,
+   * so the author has already seen it lit. What is named here is therefore the
+   * difference, not the absence — the same condition that switches the
+   * editor's pair on, said from the side that does not have it. See
+   * `viewport/editorProjection`.
    */
   private checkLighting(scene: SceneDoc): void {
     if (entitiesWith(scene, 'light').length > 0) return;
     this.warnings.push(
-      'This scene has no lights, so it renders black. The Scene view shows a default light that a build will not have.',
+      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
     );
   }
 

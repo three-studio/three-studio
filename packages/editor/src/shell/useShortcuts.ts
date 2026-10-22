@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { commandById } from '../commands/registry';
-import { bindingOf, commandForBinding } from './shortcutBindings';
+import { commandById, type CommandId } from '../commands/registry';
+import { bindingOf, commandForBinding, isFunctionKey } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { topOverlay } from '../state/overlayStore';
@@ -34,10 +34,21 @@ export interface ShortcutContext {
   typing: boolean;
   /** Something is open on top of the editor — a dialog, a menu, a picker. */
   covered: boolean;
+  /** The event landed on the game's canvas: the game has the keyboard. */
+  gameHasKeys: boolean;
 }
 
 /**
- * Whether an editor shortcut may act on this key press.
+ * The commands whose keys the editor keeps while the game has the keyboard:
+ * they drive the game, not the scene, and a game that heard them would stop,
+ * pause or step itself in the editor and in no build. By command rather than
+ * by key, so that a Stop rebound to another key is kept on that key.
+ */
+export const KEPT_FROM_THE_GAME: ReadonlySet<CommandId> = new Set<CommandId>(['stop', 'togglePause', 'stepFrame']);
+
+/**
+ * Whether an editor shortcut may act on this key press. `command` is what its
+ * binding runs, `null` for a tool key, X or Esc.
  *
  * Two questions, and both have to be asked, because neither answers the other:
  *
@@ -49,9 +60,32 @@ export interface ShortcutContext {
  * to the body, so the very next `Cmd+Z` had no text field under it and undid an
  * edit in the scene behind an open dialog. A button in a dialog was never a
  * text field to begin with. Both were reported, and both are this.
+ *
+ * Unless the game has the keyboard, and then neither is asked: a key typed into
+ * the game is the game's — no tool key, no X, no Esc emptying the selection,
+ * no Delete answered by the scene lock's toast — but for the few the editor
+ * keeps from it.
  */
-export function shortcutsApply({ typing, covered }: ShortcutContext): boolean {
+export function shortcutsApply({ typing, covered, gameHasKeys }: ShortcutContext, command: CommandId | null): boolean {
+  if (gameHasKeys) return command !== null && KEPT_FROM_THE_GAME.has(command);
   return !typing && !covered;
+}
+
+/** Whether a key was typed into the running game: it landed on the game's canvas. */
+function landedInGame(event: KeyboardEvent): boolean {
+  const game = peekViewport()?.gameView.canvas;
+  return game !== undefined && event.target === game;
+}
+
+/**
+ * Runs what a key's binding names. A toggle runs once a press, whatever the
+ * key's repeats: F9 held would otherwise pause and resume at the repeat rate,
+ * landing wherever the key happened to be let go. Step, held, steps at that
+ * rate, which is what holding it is for.
+ */
+function runBound(id: CommandId, event: KeyboardEvent): void {
+  if (event.repeat && id === 'togglePause') return;
+  commandById(id).run();
 }
 
 /**
@@ -62,10 +96,36 @@ export function shortcutsApply({ typing, covered }: ShortcutContext): boolean {
  * text field, so typing in a rename box does not switch tools or delete the
  * selection, and anything covering the editor, so a dialog's own keys are its
  * own. See `shortcutsApply`.
+ *
+ * And the game's canvas, whose keys are the game's but for Stop, Pause and
+ * Step. Two listeners, one decision: the game's `Input` listens on its canvas,
+ * so it hears a key at its target, before anything on `window` sees it bubble.
+ * A listener on `window` in the capture phase runs before it, and takes the
+ * keys the editor keeps — cancelled, and stopped there, so the game never hears
+ * them. Every other key typed into the game goes on to the game, and the
+ * listener of the bubble phase leaves it alone.
  */
 export function useShortcuts(): void {
   useEffect(() => {
+    function onKeyDownBeforeTheGame(event: KeyboardEvent) {
+      if (!landedInGame(event)) return;
+      const binding = bindingOf(event);
+      const action = binding === null ? null : commandForBinding(binding);
+      const context = { typing: isTypingTarget(event.target), covered: topOverlay() !== null, gameHasKeys: true };
+      if (action === null || !shortcutsApply(context, action)) return;
+      // Cancelled even when the command refuses — Step while the game plays:
+      // the key is the editor's for as long as a game runs. Stopped at
+      // `window`, the key still reaches the other listeners there, the
+      // tooltips' among them; only the page below never sees it.
+      event.preventDefault();
+      event.stopPropagation();
+      runBound(action, event);
+    }
+
     function onKeyDown(event: KeyboardEvent) {
+      // Typed into the game: the game's, but for what the capture listener
+      // above has already taken.
+      if (landedInGame(event)) return;
       const top = topOverlay();
 
       // Escape belongs to whatever is on top, and to it alone. Every surface
@@ -77,26 +137,35 @@ export function useShortcuts(): void {
         return;
       }
 
-      if (!shortcutsApply({ typing: isTypingTarget(event.target), covered: top !== null })) {
+      const binding = bindingOf(event);
+      const action = binding === null ? null : commandForBinding(binding);
+      // A bound function key is the editor's whether or not its command acts,
+      // in a text field or behind a dialog too. On Windows a key the page leaves
+      // alone goes on to the window, and F10 there opens the window's menu bar,
+      // which Electron keeps hidden: the editor would seem to stop answering
+      // until something else was pressed.
+      if (binding !== null && action !== null && isFunctionKey(binding)) event.preventDefault();
+
+      if (!shortcutsApply({ typing: isTypingTarget(event.target), covered: top !== null, gameHasKeys: false }, action)) {
         return;
       }
       const store = useEditorStore.getState();
 
-      const binding = bindingOf(event);
-      const action = binding === null ? null : commandForBinding(binding);
       if (action !== null) {
         const command = commandById(action);
         // A modifier binding is the editor's whether or not the command will
         // act — Cmd+S must not open the browser's save dialog on a clean
         // document. A bare one is only swallowed when something will happen: a
         // preventDefault on a refusal makes Backspace feel broken everywhere
-        // else.
-        if (hasModifier(event) || command.can()) event.preventDefault();
+        // else. A command that waits for Stop counts as something happening:
+        // its refusal is answered, in the toast `run` raises, so the key was
+        // the editor's.
+        if (hasModifier(event) || command.can() || command.waitsForStop()) event.preventDefault();
 
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        command.run();
+        runBound(action, event);
         return;
       }
       // A modifier chord this table does not name belongs to the browser, not
@@ -136,7 +205,11 @@ export function useShortcuts(): void {
       if (event.key === 'Escape') store.clearSelection();
     }
 
+    window.addEventListener('keydown', onKeyDownBeforeTheGame, true);
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDownBeforeTheGame, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 }

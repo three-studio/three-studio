@@ -1,4 +1,5 @@
 import { expandedScene } from '../state/expansion';
+import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
 
 /*
@@ -74,11 +75,31 @@ export interface Command {
   /** Blender's `poll()`, Unreal's `CanEditChange`. */
   can(ctx?: EditorContext): boolean;
   run(ctx?: EditorContext): void;
+  /**
+   * Refused only because the game is running: a command that writes the scene,
+   * and would act otherwise. A menu says `Stop to edit` beside its greyed row,
+   * and `run` says it in the toast — where a command that would not act anyway
+   * says nothing, playing or not.
+   */
+  waitsForStop(ctx?: EditorContext): boolean;
 }
 
 /** What a gesture is declared as, before `run` is wrapped in its own guard. */
 interface CommandSpec {
   label: (ctx: EditorContext) => string;
+  /**
+   * The command writes the scene document, so it waits for Stop: from the press
+   * of Play its `can()` refuses before anything is asked or written. Asked here
+   * rather than by the document, because some write an asset or open a dialog
+   * first — Create Prefab writes the prefab before the scene — and a refusal
+   * there would come after that.
+   *
+   * Optional, against the rule `can` follows: a command that writes nothing has
+   * nothing to say about the scene. Forgetting it on one that does is caught
+   * twice — by the test that files every command as a writer or not, and by
+   * the document, which refuses the write all the same.
+   */
+  writesScene?: true;
   can: (ctx: EditorContext) => boolean;
   /**
    * May be asynchronous, and most of the gestures still to arrive are: creating
@@ -110,9 +131,11 @@ interface CommandSpec {
  * shortcut came to disagree.
  */
 export function defineCommand(spec: CommandSpec): Command {
+  const locked = (): boolean => spec.writesScene === true && isSceneLocked();
   return {
     label: (ctx) => spec.label(ctx ?? currentContext()),
-    can: (ctx) => spec.can(ctx ?? currentContext()),
+    can: (ctx) => !locked() && spec.can(ctx ?? currentContext()),
+    waitsForStop: (ctx) => locked() && spec.can(ctx ?? currentContext()),
     /**
      * Checked here as well as by the caller.
      *
@@ -120,10 +143,18 @@ export function defineCommand(spec: CommandSpec): Command {
      * *showing* a refusal — the refusal itself belongs to the command. Without
      * this, a fifth caller that forgets to ask puts the divergence back one
      * level down, where nothing would notice.
+     *
+     * A refusal for the game's sake is said; any other is silent, as it was. A
+     * key or a double-click reaching a command that waits for Stop would
+     * otherwise do nothing with nothing to say why.
      */
     run: (ctx) => {
       const context = ctx ?? currentContext();
       if (!spec.can(context)) return;
+      if (locked()) {
+        refuseWhileLocked();
+        return;
+      }
       void spec.run(context);
     },
   };

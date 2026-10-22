@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 
 /** Panel body with the standard background and scroll behaviour. */
 export function PanelBody({ children }: { children: ReactNode }) {
@@ -34,5 +34,25 @@ export function PanelToolbar({ children }: { children: ReactNode }) {
     <div className="flex h-7 shrink-0 items-center gap-1 border-b border-line bg-surface-2 px-1.5">
       {children}
     </div>
+  );
+}
+
+/**
+ * The Viewport's header strip, which the edit tools and the play bar share.
+ *
+ * One strip, because its height is where the stage starts. A play bar of any
+ * other height would move the stage at the press of Play — both canvases
+ * resized, the edit image held under Starting… among them, the renderer's frame
+ * buffer retired, and the game's first aspect read from a box about to change.
+ */
+export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) {
+  return (
+    // `overflow-clip` rather than `hidden`, for the reason `#root` gives in
+    // `styles.css`: a panel too narrow for the strip cuts its last buttons off
+    // instead of becoming a box that focusing a button can scroll.
+    <div
+      {...props}
+      className={`flex h-8 shrink-0 items-center gap-0.5 overflow-clip bg-surface-1 px-1 ${className}`}
+    />
   );
 }

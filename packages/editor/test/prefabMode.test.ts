@@ -112,10 +112,10 @@ describe('a round trip through Prefab Mode', () => {
 
 describe('a prefab while the game runs', () => {
   /*
-   * Stop puts back the scene Play started from, into whatever the document is.
-   * With a prefab open that was the prefab: its edits went, its undo stack sat
-   * over the scene, and leaving saved every entity of the scene into the
-   * prefab's file.
+   * Stop puts back the scene Play started from whenever it finds another
+   * document, and a prefab open is one: its edits went, its undo stack sat over
+   * the scene, and leaving saved every entity of the scene into the prefab's
+   * file.
    */
   const toastTitles = () => useToastStore.getState().toasts.map((toast) => toast.title);
 

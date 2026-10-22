@@ -93,6 +93,6 @@ export { clearScripts, registerScript, scriptClassFor } from './scripting/Script
 export type { ScriptClass } from './scripting/ScriptHost';
 
 /* Input and the built-in character controller. */
-export { Input } from './input/Input';
+export { Input, type InputOptions } from './input/Input';
 export { PressedKeys, type KeyEventLike } from './input/PressedKeys';
 export { PlayerController } from './controllers/PlayerController';

@@ -6,11 +6,14 @@
  * a view inside the element that holds it is seen, and every other view is
  * behind it, whatever the dock says.
  *
- * The second half is Play Full Screen. Its Game panel goes in front of
- * everything, and the Scene view went on being drawn behind it: the cost
- * `onScreen` was written to stop, 18 016 draw calls a frame instead of 9 006,
- * in the one mode meant to show the frame rate a player gets. The dock cannot
- * tell, since to it both panels are still showing.
+ * The second half is Play Full Screen. The Viewport's stage goes in front of
+ * everything, and the dock cannot tell that a view outside it is now behind
+ * it, since to the dock every panel is still showing. Drawing such a view
+ * anyway is the cost `onScreen` was written to stop — measured when the game
+ * had a panel of its own, 18 016 draw calls a frame instead of 9 006 — in the
+ * one mode meant to show the frame rate a player gets. Both of the Viewport's
+ * canvases are inside the stage; which of them is drawn is `viewState`'s to
+ * say.
  *
  * Structurally typed so that a test without a DOM can ask it.
  */

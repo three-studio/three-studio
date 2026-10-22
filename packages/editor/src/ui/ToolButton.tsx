@@ -13,6 +13,14 @@ interface ToolButtonProps {
   disabled?: boolean;
   /** Overrides the icon colour when active — used for the green Play button. */
   activeClassName?: string;
+  /**
+   * A press leaves the focus where it was: the transport's. A press on a button
+   * moves the focus to it, and the game hears keys only while its canvas holds
+   * the focus, so pressing Pause took the keyboard from the game it paused, and
+   * Play gave it to a button. The click still comes, as on the palette's rows;
+   * Tab still reaches the button, and Enter and Space still press it.
+   */
+  takesNoFocus?: boolean;
   onClick?: () => void;
 }
 
@@ -24,6 +32,7 @@ export function ToolButton({
   active = false,
   disabled = false,
   activeClassName = 'bg-accent-dim text-ink',
+  takesNoFocus = false,
   onClick,
 }: ToolButtonProps) {
   return (
@@ -33,6 +42,7 @@ export function ToolButton({
       aria-label={label}
       aria-pressed={active}
       disabled={disabled}
+      onPointerDown={takesNoFocus ? (event) => event.preventDefault() : undefined}
       onClick={onClick}
       className={`flex h-7 w-7 items-center justify-center rounded-sm transition-colors ${
         active ? activeClassName : 'text-ink-muted enabled:hover:bg-surface-3 enabled:hover:text-ink'

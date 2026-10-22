@@ -156,7 +156,7 @@ export class SceneBinder {
    * viewport assigned it in its constructor and nothing ever wrote it again.
    * `readonly` only says so. It was also the one setting nothing outside the
    * editor ever wrote at all, which is how a project asking for 4096 got 4096 in
-   * the Scene view, 2048 the moment Play was pressed, and 2048 in the build.
+   * the edit view, 2048 the moment Play was pressed, and 2048 in the build.
    */
   readonly shadowMapSize: number;
   /**

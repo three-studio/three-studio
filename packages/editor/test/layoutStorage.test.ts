@@ -1,5 +1,5 @@
 import { emptyLayoutPreferences, type LayoutPreferences } from '@three-studio/core';
-import type { SerializedDockview } from 'dockview-react';
+import type { DockviewApi, SerializedDockview } from 'dockview-react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
@@ -34,7 +34,11 @@ function install(stored: LayoutPreferences, seed: Record<string, string> = {}): 
   return { storage, saved };
 }
 
-/** Smallest layout that would actually render: one group holding one panel. */
+/**
+ * Smallest layout that would actually render: one group holding one panel. The
+ * Viewport's component, so that this build can show it, under the tag as its id,
+ * so that two of them tell apart.
+ */
 function validLayout(tag: string): unknown {
   return {
     grid: {
@@ -43,7 +47,7 @@ function validLayout(tag: string): unknown {
       height: 100,
       orientation: 'HORIZONTAL',
     },
-    panels: { [tag]: { id: tag, contentComponent: tag, title: tag } },
+    panels: { [tag]: { id: tag, contentComponent: 'viewport', title: tag } },
   };
 }
 
@@ -163,8 +167,8 @@ describe('layout validity', () => {
   it('rejects a layout whose groups are all empty', async () => {
     const { isUsableLayout } = await freshModule();
     const orphaned = layout({ type: 'branch', data: [leaf([]), leaf([])] }, {
-      viewport: { id: 'viewport' },
-      hierarchy: { id: 'hierarchy' },
+      viewport: { id: 'viewport', contentComponent: 'viewport' },
+      hierarchy: { id: 'hierarchy', contentComponent: 'hierarchy' },
     });
     expect(isUsableLayout(orphaned)).toBe(false);
   });
@@ -178,11 +182,69 @@ describe('layout validity', () => {
   it('does not hand back a stored layout that would render nothing', async () => {
     install({
       ...emptyLayoutPreferences(),
-      working: { grid: { root: { type: 'branch', data: [] } }, panels: { a: {} } },
+      working: { grid: { root: { type: 'branch', data: [] } }, panels: { a: { id: 'a', contentComponent: 'viewport' } } },
     });
     const storage = await freshModule();
     await storage.loadLayoutPreferences();
 
     expect(storage.loadLayout()).toBeNull();
+  });
+
+  /*
+   * Every layout saved before the Game panel went names it, beside the
+   * Viewport. Handed to dockview, `fromJSON` mounted the Viewport, threw on
+   * `game`, and its revert left that Viewport mounted off the document for as
+   * long as the dock lived — where it stopped every Play Full Screen. Such a
+   * layout gives way to the default as it always did, only without dockview
+   * ever seeing it.
+   */
+  const withGame = () =>
+    layout({ type: 'branch', data: [leaf(['viewport', 'game'])] }, {
+      viewport: { id: 'viewport', contentComponent: 'viewport', title: 'Scene' },
+      game: { id: 'game', contentComponent: 'game', title: 'Game' },
+    });
+
+  it('rejects a layout naming a panel this build does not have', async () => {
+    const { isUsableLayout } = await freshModule();
+    const editorsOwn = layout({ type: 'branch', data: [leaf(['viewport', 'console'])] }, {
+      viewport: { id: 'viewport', contentComponent: 'viewport' },
+      console: { id: 'console', contentComponent: 'console' },
+    });
+
+    expect(isUsableLayout(withGame())).toBe(false);
+    expect(isUsableLayout(editorsOwn)).toBe(true);
+  });
+
+  it('reads a panel’s component where dockview does: its view’s content first', async () => {
+    const { isUsableLayout } = await freshModule();
+    const panel = (view: unknown) =>
+      layout({ type: 'branch', data: [leaf(['a'])] }, { a: { id: 'a', contentComponent: 'viewport', view } });
+
+    expect(isUsableLayout(panel({ content: { id: 'game' } }))).toBe(false);
+    expect(isUsableLayout(panel({ content: { id: 'inspector' } }))).toBe(true);
+  });
+
+  it('does not hand back a stored layout naming a panel this build does not have', async () => {
+    install({ ...emptyLayoutPreferences(), working: withGame() });
+    const storage = await freshModule();
+    await storage.loadLayoutPreferences();
+
+    expect(storage.loadLayout()).toBeNull();
+  });
+
+  it('does not hand dockview a template naming a panel this build does not have', async () => {
+    await freshModule();
+    const { applyLayout, setDockApi } = await import('../src/shell/dockApi');
+    const fromJSON = vi.fn();
+    setDockApi({ fromJSON } as unknown as DockviewApi);
+    try {
+      expect(applyLayout(withGame())).toBe(false);
+      expect(fromJSON).not.toHaveBeenCalled();
+
+      expect(applyLayout(validLayout('kept') as SerializedDockview)).toBe(true);
+      expect(fromJSON).toHaveBeenCalledTimes(1);
+    } finally {
+      setDockApi(null);
+    }
   });
 });

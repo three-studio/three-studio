@@ -4,6 +4,7 @@ import {
   type CommandId,
   type EditorContext,
 } from '../commands/registry';
+import { STOP_TO_EDIT } from '../state/sceneLock';
 import type { MenuItem } from '../ui/Menu';
 import { shortcutHint } from './shortcutBindings';
 
@@ -33,6 +34,9 @@ export function commandEntry(id: CommandId, ctx?: EditorContext): MenuItem {
     // `useShortcuts` that actually decided.
     shortcut: shortcutHint(id),
     disabled: !command.can(context),
+    // Why a row is greyed when it is greyed only because the game runs: a menu
+    // of greyed edits during Play otherwise reads as an editor that broke.
+    detail: command.waitsForStop(context) ? STOP_TO_EDIT : undefined,
     onSelect: () => command.run(context),
   };
 }

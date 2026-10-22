@@ -140,6 +140,7 @@ export async function unpackModel(entityId: string): Promise<void> {
 export const MODEL_COMMANDS = {
   unpackModel: defineCommand({
     label: () => 'Unpack Model',
+    writesScene: true,
     /**
      * Three conditions the hierarchy was computing for itself, under the name
      * `unpackable`. The last one is the one nobody would guess: a piece of an

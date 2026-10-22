@@ -9,7 +9,7 @@ import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 const STATS_INTERVAL_MS = 500;
 
 /**
- * One renderer, one off-screen canvas, three panels showing corners of it.
+ * One renderer, one off-screen canvas, three canvases showing corners of it.
  *
  * Lifted out of `EditorViewport`, which was 1170 lines and seven jobs. This is
  * the one that owns a device: the `WebGPURenderer`, the surface it draws into,
@@ -42,11 +42,14 @@ export class ViewportRenderer {
   private readonly surface: HTMLCanvasElement;
 
   /**
-   * The Scene view's panel, and what the editor's pointer and keyboard work
-   * against — the canvas of the panel the handles are actually drawn in.
+   * The edit view, and what the editor's pointer and keyboard work against —
+   * the canvas the handles are actually drawn in.
    */
-  readonly sceneView = new Presentation('scene');
-  /** The running game's panel. The engine's `Input` listens on its canvas. */
+  readonly editView = new Presentation('edit');
+  /**
+   * The running game's canvas, stacked with the edit view's on the Viewport's
+   * stage. The engine's `Input` listens on it.
+   */
   readonly gameView = new Presentation('game');
   /**
    * The third view: a scene of somebody else's, drawn through this renderer.
@@ -131,26 +134,21 @@ export class ViewportRenderer {
    * A flag rather than an action, and the frame loop is what acts on it.
    * Resizing a WebGPU renderer retires its output target and its swap chain,
    * and doing that from an observer callback puts it at a point in the turn
-   * this side does not choose. `beginPlay` raises it too, so that the engine
-   * that has just appeared is handed the shape of its panel.
+   * this side does not choose.
    */
-  markResized(): void {
-    this.sizeDirty = true;
-  }
-
   get resizePending(): boolean {
     return this.sizeDirty;
   }
 
   /** First thing in a frame, so a destroy reported later can be attributed. */
   probe(): void {
-    probeFrame(this.renderer, this.sceneView.host);
+    probeFrame(this.renderer, this.editView.host);
   }
 
   /**
    * Takes every view's box, and sizes the one surface to hold the largest.
    *
-   * @returns Whether the Scene view's own box moved, which is the one thing the
+   * @returns Whether the edit view's own box moved, which is the one thing the
    *   caller cannot measure for itself and the one camera aspect that is only
    *   worth recomputing when it did.
    *
@@ -163,7 +161,7 @@ export class ViewportRenderer {
    */
   applyResize(): boolean {
     this.sizeDirty = false;
-    const sceneMoved = this.sceneView.measure();
+    const editMoved = this.editView.measure();
     // Measured for the side effect, and the answer is not needed by anyone: the
     // game's and the preview's aspects are pushed by the viewport whether or
     // not their panel is the thing that moved.
@@ -173,7 +171,7 @@ export class ViewportRenderer {
     // The largest *visible* view, not the largest box. A parked tab keeps its
     // full size, so counting it kept the surface at 3024 × 1698 while the game
     // drew into a 1904 × 1202 corner of it.
-    const shown = [this.sceneView, this.gameView, this.previewView].filter((view) => view.visible);
+    const shown = [this.editView, this.gameView, this.previewView].filter((view) => view.visible);
     const width = Math.max(0, ...shown.map((view) => view.width));
     const height = Math.max(0, ...shown.map((view) => view.height));
 
@@ -186,28 +184,34 @@ export class ViewportRenderer {
     // has to live here.
     const changed = width !== this.lastWidth || height !== this.lastHeight;
     probeResize(width, height, changed);
-    if (!changed) return sceneMoved;
+    if (!changed) return editMoved;
     // Nothing is showing a view at all — every panel closed, or every one of
     // them parked. Resizing to zero would destroy the swap chain and hand back a
     // black canvas when a tab comes forward again, so the surface keeps its
     // size and the frame loop simply draws nothing.
-    if (width === 0 || height === 0) return sceneMoved;
+    if (width === 0 || height === 0) return editMoved;
 
     this.lastWidth = width;
     this.lastHeight = height;
     this.renderer.setSize(width, height, false);
     retireFrameBufferTarget(this.renderer);
-    return sceneMoved;
+    return editMoved;
   }
 
   /**
-   * Renders one view into its corner of the surface, and hands its panel a copy.
+   * Renders one view into its corner of the surface, and hands its canvas a
+   * copy.
    *
-   * A panel nobody is looking at — a closed tab, or one behind another — is not
-   * drawn at all. A closed one has a zero-sized box; one behind another keeps
-   * its box and fails `onScreen` instead. That is the same answer a hidden
-   * dock panel gave before by being the panel the canvas was not in, arrived at
-   * by measuring rather than by which panel happened to hold the canvas.
+   * A view nobody is looking at — on a closed tab, or one behind another — is
+   * not drawn at all. A closed one has a zero-sized box; one behind another
+   * keeps its box and fails `onScreen` instead. That is the same answer a
+   * hidden dock panel gave before by being the panel the canvas was not in,
+   * arrived at by measuring rather than by which panel happened to hold the
+   * canvas.
+   *
+   * What it cannot see is which of the Viewport's two canvases is on top: both
+   * have the stage's box, and both are on screen with their tab. That is
+   * `viewState`'s to say, and the frame loop asks it before calling this.
    *
    * **This is where a post-processing pipeline enters on this side**, and it
    * enters *per view*: a `RenderPipeline` is made from `pass(scene, camera)`, so
@@ -226,9 +230,13 @@ export class ViewportRenderer {
    * which is why the launcher's pipeline and an exported build's would both be
    * straightforward. Whoever writes this one decides what size the pass runs at;
    * the seam does not decide it for them.
+   *
+   * @returns Whether it drew. For the game's canvas, the first `true` of a
+   *   session is its first frame: the moment it has something of its own to
+   *   show, which is when it comes on top.
    */
-  draw(scene: Scene, camera: Camera, view: Presentation): void {
-    if (!view.visible) return;
+  draw(scene: Scene, camera: Camera, view: Presentation): boolean {
+    if (!view.visible) return false;
 
     // The surface is at least this big — `resize` sized it to the largest
     // visible panel — so the view fits in its corner. `setSize` resets this,
@@ -249,6 +257,7 @@ export class ViewportRenderer {
      */
     this.renderer.render(scene, camera);
     view.show(this.surface, this.renderer.getPixelRatio());
+    return true;
   }
 
   /** @param flySpeed The camera's, which is not this class's to read. */
@@ -259,10 +268,12 @@ export class ViewportRenderer {
     const elapsed = time - this.lastReportTime;
     if (elapsed < STATS_INTERVAL_MS) return;
 
-    // Everything the frame drew, both views included: three resets `info` once
-    // per animation frame, not per render. That is the honest number for a frame
-    // that drew the Scene and the Game, and it is unchanged for the frames that
-    // drew only one.
+    // Everything the frame drew: three resets `info` once per animation frame,
+    // not per render, so a frame that drew more than one view counts them all.
+    // The Viewport draws one view a frame, the one `viewState` names as drawn —
+    // the edit view, or the game — and the import dialog's preview adds its own
+    // while it is open. While the game starts, nothing is drawn until its
+    // first frame, and the counters say so: zero.
     const { render } = this.renderer.info;
     useViewportStore.getState().setStats({
       fps: Math.round((this.framesSinceReport * 1000) / elapsed),
@@ -279,20 +290,20 @@ export class ViewportRenderer {
     this.disposed = true;
     void this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
-    this.detach(this.sceneView);
+    this.detach(this.editView);
     this.detach(this.gameView);
     this.detach(this.previewView);
     this.renderer.dispose();
   }
 
   /**
-   * Moves one view's canvas into a dock panel.
+   * Moves one view's canvas into its host.
    *
-   * Two of these rather than one shared canvas handed back and forth, which is
-   * what the Scene and Game panels used to do: whichever unmounted last took
-   * the canvas away from the one that had just claimed it, so they each had to
-   * know about play state to keep out of each other's way. A panel now owns its
-   * own element and says nothing about the other.
+   * A canvas per view rather than one shared canvas handed back and forth,
+   * which is what the editor's Scene and Game panels once did: whichever
+   * unmounted last took the canvas away from the one that had just claimed it,
+   * so each had to know about play state to keep out of the other's way. Each
+   * view now owns its own element, and the input that listens on it.
    */
   attach(view: Presentation, host: HTMLElement): void {
     if (this.disposed || view.host === host) return;

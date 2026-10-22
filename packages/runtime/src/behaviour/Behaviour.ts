@@ -70,7 +70,7 @@ export interface BehaviourContext {
    * declines, so the component is inert rather than throwing once a frame.
    */
   readonly audio: AudioEngine | null;
-  /** Surfaces a problem in the editor's game view. */
+  /** Surfaces a problem in the editor, laid over the game in the Viewport. */
   warn: (message: string) => void;
 }
 

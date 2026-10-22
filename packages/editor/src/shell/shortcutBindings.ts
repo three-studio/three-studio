@@ -49,12 +49,19 @@ export const DEFAULT_BINDINGS: Readonly<Record<ShortcutBinding, CommandId>> = {
   // file" in most of them, and this project has no files to go to.
   'Mod+Shift+P': 'openCommandPalette',
   /*
-   * Ends a test, in the Game panel or full screen. Unreal stops Play on Esc,
+   * Ends a test, in the Viewport or full screen. Unreal stops Play on Esc,
    * and teams whose games use Esc for a menu move it to Shift+Esc, as Lyra
    * does. That is the key here from the start: plain Esc frees the mouse in the
    * panel, and in full screen it is the game's.
    */
   'Shift+Escape': 'stop',
+  /*
+   * Pause and Step, on Godot's keys. On a Mac keyboard F9 and F10 are media keys
+   * unless fn is held or the system's setting gives the function keys back — as
+   * for VS Code's F9 and F10 — and the tooltips name them as engraved.
+   */
+  F9: 'togglePause',
+  F10: 'stepFrame',
   /*
    * Both keys delete, and their order is not cosmetic: `bindingForCommand`
    * returns the first, and that is the one a menu draws. A Mac keyboard's
@@ -113,14 +120,17 @@ function effective(): Record<ShortcutBinding, string | null> {
   return { ...DEFAULT_BINDINGS, ...overrides };
 }
 
+/** F1 to F24, as `KeyboardEvent.key` names them — never a bare F, nor F25. */
+const FUNCTION_KEY = /^F([1-9]|1[0-9]|2[0-4])$/;
+
 /**
  * The binding a key press makes, or `null` for one this layer does not name.
  *
  * Shift is part of the binding only alongside the modifier: a bare Shift+D is
  * `D` as far as this is concerned, because the character *is* the shift. Escape
- * has no shifted character, so Shift+Escape is a key of its own. Escape alone
- * is not a binding at all: it belongs to whatever is open on top, and then to
- * the selection (`useShortcuts`).
+ * has no shifted character, so Shift+Escape is a key of its own, and so is a
+ * function key with Shift. Escape alone is not a binding at all: it belongs to
+ * whatever is open on top, and then to the selection (`useShortcuts`).
  *
  * Structurally typed rather than taking a `KeyboardEvent`, for the reason
  * `hasModifier` is: React's synthetic events pass, and so does a plain object in
@@ -136,7 +146,13 @@ export function bindingOf(event: {
   if (hasModifier(event)) return `Mod+${event.shiftKey ? 'Shift+' : ''}${key}`;
   if (key === 'Delete' || key === 'Backspace') return key;
   if (key === 'Escape' && event.shiftKey) return 'Shift+Escape';
+  if (FUNCTION_KEY.test(key)) return `${event.shiftKey ? 'Shift+' : ''}${key}`;
   return null;
+}
+
+/** Whether a binding's key is a function key, whatever modifier holds it. */
+export function isFunctionKey(binding: ShortcutBinding): boolean {
+  return FUNCTION_KEY.test(binding.slice(binding.lastIndexOf('+') + 1));
 }
 
 /**
@@ -172,8 +188,9 @@ export function formatBinding(binding: ShortcutBinding): string {
   const withoutMod = binding.startsWith('Mod+') ? binding.slice('Mod+'.length) : binding;
   const shifted = withoutMod.startsWith('Shift+');
   const key = shifted ? withoutMod.slice('Shift+'.length) : withoutMod;
-  // `Esc`, as the key is engraved, rather than the `⎋` glyph: the Game panel
-  // prints this inside a sentence, where a glyph few people know is a riddle.
+  // `Esc`, as the key is engraved, rather than the `⎋` glyph: the Viewport's
+  // capture hint prints this inside a sentence, where a glyph few people know
+  // is a riddle.
   const shown = key === 'Escape' ? 'Esc' : key;
   return `${binding.startsWith('Mod+') ? modKey : ''}${shifted ? shiftKey : ''}${shown}`;
 }

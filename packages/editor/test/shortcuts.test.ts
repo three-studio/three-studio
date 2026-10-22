@@ -6,9 +6,10 @@ import {
   bindingOf,
   commandForBinding,
   formatBinding,
+  isFunctionKey,
   positionalKeyLabel,
 } from '../src/shell/shortcutBindings';
-import { SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
+import { KEPT_FROM_THE_GAME, SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
 
 /** A key press, as the handler sees one. */
 const press = (key: string, options: { mod?: boolean; shift?: boolean } = {}) => ({
@@ -65,6 +66,31 @@ describe('resolving a key to a command', () => {
     // deliberately not in this table.
     expect(bindingOf(press('d'))).toBeNull();
   });
+
+  it('reads a function key bare, with Shift as a key of its own, and with the modifier', () => {
+    // A function key types no character, so Shift cannot be folded into it the
+    // way it is into a letter: Shift+F9 is a key of its own, as Shift+Escape is.
+    expect(bindingOf(press('F9'))).toBe('F9');
+    expect(bindingOf(press('F10'))).toBe('F10');
+    expect(bindingOf(press('F9', { shift: true }))).toBe('Shift+F9');
+    expect(bindingOf(press('F9', { mod: true }))).toBe('Mod+F9');
+    // F with Shift is a letter, not a function key.
+    expect(bindingOf(press('F', { shift: true }))).toBeNull();
+  });
+
+  it('pauses on F9 and steps on F10, Godot’s keys', () => {
+    expect(commandForBinding('F9')).toBe('togglePause');
+    expect(commandForBinding('F10')).toBe('stepFrame');
+    expect(bindingForCommand('togglePause')).toBe('F9');
+    expect(bindingForCommand('stepFrame')).toBe('F10');
+  });
+
+  it('knows a function key, whatever holds it', () => {
+    for (const binding of ['F1', 'F24', 'Shift+F9', 'Mod+F9']) expect(isFunctionKey(binding), binding).toBe(true);
+    for (const binding of ['F', 'F25', 'F0', 'Mod+F', 'Shift+Escape', 'Delete']) {
+      expect(isFunctionKey(binding), binding).toBe(false);
+    }
+  });
 });
 
 describe('remapping', () => {
@@ -93,9 +119,12 @@ describe('what a menu shows', () => {
   it('formats a binding the way the platform writes it', () => {
     expect(formatBinding('Mod+Z')).toBe('Ctrl+Z');
     expect(formatBinding('Mod+Shift+Z')).toBe('Ctrl+Shift+Z');
-    // Spelled out, since the Game panel prints it inside a sentence.
+    // Spelled out, since the Viewport's capture hint prints it inside a sentence.
     expect(formatBinding('Shift+Escape')).toBe('Shift+Esc');
     expect(bindingForCommand('stop')).toBe('Shift+Escape');
+    // As the key is engraved.
+    expect(formatBinding('F9')).toBe('F9');
+    expect(formatBinding('Shift+F9')).toBe('Shift+F9');
   });
 
   it('finds the key for a command, so no menu types one by hand', () => {
@@ -156,23 +185,51 @@ describe('naming a key by its place', () => {
 });
 
 describe('shortcutsApply', () => {
+  const editor = (typing: boolean, covered: boolean) => ({ typing, covered, gameHasKeys: false });
+
   it('acts when the editor has the window to itself', () => {
-    expect(shortcutsApply({ typing: false, covered: false })).toBe(true);
+    expect(shortcutsApply(editor(false, false), 'undo')).toBe(true);
+    // A tool key, X or Esc: no command, the same answer.
+    expect(shortcutsApply(editor(false, false), null)).toBe(true);
   });
 
   it('stands aside for a text field, with nothing open', () => {
     // Renaming an entity in the Inspector: Delete has to delete a character.
-    expect(shortcutsApply({ typing: true, covered: false })).toBe(false);
+    expect(shortcutsApply(editor(true, false), 'delete')).toBe(false);
+    expect(shortcutsApply(editor(true, false), null)).toBe(false);
   });
 
   it('stands aside for a surface on top, even with no text field under the key', () => {
     // The reported bug. Tweakpane commits a field and hands focus back to the
     // body, so the next Cmd+Z had no input under it — and a button in a dialog
     // never was one.
-    expect(shortcutsApply({ typing: false, covered: true })).toBe(false);
+    expect(shortcutsApply(editor(false, true), 'undo')).toBe(false);
+    expect(shortcutsApply(editor(false, true), null)).toBe(false);
   });
 
   it('needs both to be clear, not either', () => {
-    expect(shortcutsApply({ typing: true, covered: true })).toBe(false);
+    expect(shortcutsApply(editor(true, true), 'undo')).toBe(false);
+    expect(shortcutsApply(editor(true, true), null)).toBe(false);
+  });
+
+  it('is silent while the game has the keyboard, but for Stop, Pause and Step', () => {
+    // A key typed into the game is the game's: no tool key, no X, no Esc
+    // emptying the selection, no Delete answered by the scene lock's toast.
+    // Stop, Pause and Step drive the game rather than the scene, so the editor
+    // keeps them, typing and covered or not.
+    for (const typing of [false, true]) {
+      for (const covered of [false, true]) {
+        const game = { typing, covered, gameHasKeys: true };
+        for (const id of ['stop', 'togglePause', 'stepFrame'] as const) expect(shortcutsApply(game, id), id).toBe(true);
+        for (const id of ['delete', 'undo', 'save', 'openCommandPalette'] as const) {
+          expect(shortcutsApply(game, id), id).toBe(false);
+        }
+        expect(shortcutsApply(game, null)).toBe(false);
+      }
+    }
+  });
+
+  it('keeps three commands from the game, by command, so a key rebound moves with them', () => {
+    expect([...KEPT_FROM_THE_GAME].sort()).toEqual(['stepFrame', 'stop', 'togglePause']);
   });
 });

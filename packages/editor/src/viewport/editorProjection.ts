@@ -5,10 +5,10 @@ import { SelectionOutline } from './SelectionOutline';
 import { ViewportOverlay } from './overlay/ViewportOverlay';
 
 /**
- * Everything the Scene view puts in front of the author that a build will not.
+ * Everything the edit view puts in front of the author that a build will not.
  *
  * The list is the deliverable, not a convenience. Three modes project the same
- * `SceneDoc` — the Scene view, Play, and an exported build — and until this
+ * `SceneDoc` — the edit view, Play, and an exported build — and until this
  * existed the difference between the first and the other two was not written
  * down anywhere: it had to be deduced by reading a thousand lines of viewport.
  * A difference that is **stated** is a decision; a difference that has to be
@@ -40,7 +40,7 @@ export interface EditorProjectionOptions extends SceneBinderOptions {
 }
 
 /**
- * The Scene view's half of the projection.
+ * The edit view's half of the projection.
  *
  * What the editor's three.js `Scene` holds, and nothing about how it is drawn:
  * no renderer, no canvas, no frame loop, no Play cycle. That is the whole point

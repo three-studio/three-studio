@@ -1,8 +1,9 @@
 import { createEntity, type EntityTemplate } from '@three-studio/core';
 import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
-import { addEntityInView } from '../commands/placeEntity';
-import type { MenuEntry } from '../ui/Menu';
+import { addEntityInView, canAddInView } from '../commands/placeEntity';
+import { STOP_TO_EDIT } from '../state/sceneLock';
+import type { MenuEntry, MenuItem } from '../ui/Menu';
 import { commandEntry } from './commandEntry';
 
 /*
@@ -13,9 +14,19 @@ import { commandEntry } from './commandEntry';
  * editor, Unity and Blender all group them this way.
  */
 
+/**
+ * Every entry places into the scene, so every one is greyed while the game
+ * runs, saying why. A submenu's heading stays live: it only opens rows that say
+ * it themselves.
+ */
+const placing = (): Pick<MenuItem, 'disabled' | 'detail'> =>
+  canAddInView() ? {} : { disabled: true, detail: STOP_TO_EDIT };
+
 /** One thing a slice offers, as a menu entry that places it. */
 const offer = (entry: AddMenuEntry): MenuEntry =>
-  entry === null ? null : { label: entry.label, onSelect: () => addEntityInView(entry.create()) };
+  entry === null
+    ? null
+    : { label: entry.label, ...placing(), onSelect: () => addEntityInView(entry.create()) };
 
 /*
  * Where the new object lands is `addEntityInView`'s business, not the menu's.
@@ -30,7 +41,7 @@ export function buildAddMenu(): MenuEntry[] {
     // three calls this a Group; Unity calls it an Empty. Both names are in the
     // label because someone who wants a group looks for the word "group", and
     // one that only said "Empty" reads as "there is no group in this editor".
-    { label: 'Empty (Group)', onSelect: add(() => createEntity('Empty')) },
+    { label: 'Empty (Group)', ...placing(), onSelect: add(() => createEntity('Empty')) },
     // The other half, and the one that is actually asked for: an empty is
     // trivial to make, and dragging five objects into it one at a time is not.
     //

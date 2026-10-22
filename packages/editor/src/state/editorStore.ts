@@ -45,13 +45,13 @@ interface EditorState {
    */
   showGizmos: boolean;
   /**
-   * The ground grid, the Scene view's own. Blender's Floor overlay: on until
+   * The ground grid, the edit view's own. Blender's Floor overlay: on until
    * the author wants to see the scene with nothing of the editor's laid over it.
    * Only the view changes; the scene file never hears of it.
    */
   showGrid: boolean;
   /**
-   * The counters at the top right of the Scene view — backend, frame rate, draw
+   * The counters at the top right of the Viewport — backend, frame rate, draw
    * calls, triangles. Blender's Statistics overlay, and on by default because
    * that box has always been there.
    */
@@ -59,8 +59,8 @@ interface EditorState {
   playState: PlayState;
   /**
    * Whether the running session asked for the whole screen: Play Full Screen
-   * sets it, Stop clears it. The Game panel holds the screen while it is set,
-   * and leaving the screen ends the session, as it does in Unreal.
+   * sets it, Stop clears it. The Viewport's stage holds the screen while it is
+   * set, and leaving the screen ends the session, as it does in Unreal.
    */
   fullScreen: boolean;
   stepRequested: boolean;
@@ -103,6 +103,17 @@ interface EditorState {
    * empty space, and would pull the Inspector forward each time.
    */
   sceneSettingsRequests: number;
+  /**
+   * How many times the Console was asked for — by a failed Play's toast, whose
+   * details are there and nowhere else.
+   *
+   * The shape of `sceneSettingsRequests`, for the same reason: a request to the
+   * dock, which `shell/panelFocus.ts` answers by bringing the Console forward,
+   * reopening it if it was closed. The play session cannot reach the dock, and
+   * should not: a view that ran into a failure says so, and the shell decides
+   * which panel that brings forward.
+   */
+  consoleRequests: number;
 
   setTransformMode: (mode: TransformMode) => void;
   /** Steps to the next space in `TRANSFORM_SPACES`, wrapping. */
@@ -122,6 +133,7 @@ interface EditorState {
   openPalette: () => void;
   closePalette: () => void;
   requestSceneSettings: () => void;
+  requestConsole: () => void;
 
   play: (options?: { fullScreen?: boolean }) => void;
   togglePause: () => void;
@@ -146,12 +158,14 @@ export const useEditorStore = create<EditorState>()((set) => ({
   renaming: null,
   paletteOpen: false,
   sceneSettingsRequests: 0,
+  consoleRequests: 0,
 
   beginRename: (renaming) => set({ renaming }),
   endRename: () => set({ renaming: null }),
   openPalette: () => set({ paletteOpen: true }),
   closePalette: () => set({ paletteOpen: false }),
   requestSceneSettings: () => set((s) => ({ sceneSettingsRequests: s.sceneSettingsRequests + 1 })),
+  requestConsole: () => set((s) => ({ consoleRequests: s.consoleRequests + 1 })),
 
   setTransformMode: (transformMode) => set({ transformMode }),
   cycleTransformSpace: () =>

@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import { useEditorStore } from './editorStore';
 import { pushEdit, type ExternalEdit, type HistoryEntry, type HistoryStash } from './history';
 import { revisionLog, type Changes } from './revisionLog';
+import { isSceneLocked, refuseWhileLocked } from './sceneLock';
 
 /*
  * The document, and nothing else. Its history is `history.ts` and what changed
@@ -106,6 +107,29 @@ function assertHierarchy(scene: SceneDoc, patches: readonly Patch[], label: stri
   console.error(`[document] "${label}" left the hierarchy inconsistent:\n  ${problems.join('\n  ')}`);
 }
 
+/**
+ * The scene lock's backstop: whether `label` is refused because the game is
+ * running, said to the person when it is.
+ *
+ * A backstop, not the lock itself. Every gesture asks the lock before it
+ * starts, because some write an asset or open a dialog before they reach the
+ * document — Create Prefab writes the prefab first, Save as Asset the material
+ * — and a refusal that came only here would leave an orphan asset behind. What
+ * this catches is a gesture that forgot to ask: refused all the same, and said
+ * all the same, in the one toast. Named in development, so that it gets fixed
+ * where it starts.
+ */
+function refusedWhileLocked(label: string): boolean {
+  if (!isSceneLocked()) return false;
+  if (import.meta.env.DEV) {
+    console.error(
+      `[document] "${label}" reached the document while the game runs; whatever asked for it should have asked the scene lock first.`,
+    );
+  }
+  refuseWhileLocked();
+  return true;
+}
+
 /** How much history is kept. Each entry holds patches, not scene snapshots. */
 
 
@@ -150,7 +174,10 @@ interface DocumentState {
    */
   componentRevision: number;
 
-  /** The only way to change the scene. Everything else is a wrapper over this. */
+  /**
+   * The only way to change the scene. Everything else is a wrapper over this.
+   * Refused from the press of Play until Stop, as `undo` and `redo` are.
+   */
   mutate: (label: string, recipe: (draft: SceneDoc) => void, options?: MutationOptions) => void;
   /**
    * Adds an undo step for an edit that happened outside the document. The edit
@@ -241,6 +268,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
   componentRevision: 0,
 
   mutate: (label, recipe, options) => {
+    // Before the recipe runs: a refused edit leaves nothing behind, the edit
+    // outside the document it carries included.
+    if (refusedWhileLocked(label)) return;
     const state = get();
     const [scene, patches, inverse] = produceWithPatches(state.scene, recipe);
     if (patches.length === 0) {
@@ -282,6 +312,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     if (selectionAfter !== selectionBefore) useEditorStore.getState().setSelection(selectionAfter);
   },
 
+  // Not refused while the game runs. The edit is an asset's, already written,
+  // and assets stay editable during Play; it rides the scene's stack only so
+  // that one Cmd+Z takes it back. The lock is on the document's content.
   recordExternal: (label, external) => {
     const state = get();
     // Carries a selection like any other entry: without one, undoing a material
@@ -309,6 +342,11 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const state = get();
     const entry = state.past.at(-1);
     if (!entry) return;
+    // An undo moves the document like any edit. Asked before the edit outside
+    // it is reverted, which would otherwise leave the asset and the scene
+    // apart — and after the entry is found: with nothing to take back there is
+    // nothing to refuse, and a refusal said for it would be about nothing.
+    if (refusedWhileLocked(`undo ${entry.label}`)) return;
 
     entry.external?.revert();
 
@@ -343,6 +381,7 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     const state = get();
     const [entry, ...rest] = state.future;
     if (!entry) return;
+    if (refusedWhileLocked(`redo ${entry.label}`)) return;
 
     entry.external?.apply();
 
@@ -362,6 +401,9 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
     useEditorStore.getState().setSelection(pruneSelection(scene, entry.selectionAfter));
   },
 
+  // Not refused while the game runs, and neither is `restoreHistory`: a load or
+  // a restore is not an edit. Play itself leaves Prefab Mode with both after
+  // the press, and Stop puts the scene back with this one.
   replaceScene: (scene, options) =>
     set((state) => {
       const restoring = options?.keepHistory === true;
@@ -389,8 +431,13 @@ export const useDocumentStore = create<DocumentState>()((set, get) => ({
       };
     }),
 
+  // Not refused while the game runs: Save stays offered during Play, and what
+  // it writes then is the document Play started from, which the lock holds
+  // still.
   markClean: () => set((state) => ({ savedRevision: state.revision })),
 
+  // Not refused while the game runs: an identity adopted once a file holds the
+  // document is not an edit of what it holds.
   adoptIdentity: ({ id, name }) => set((state) => ({ scene: { ...state.scene, id, name } })),
 
   historyStash: () => {

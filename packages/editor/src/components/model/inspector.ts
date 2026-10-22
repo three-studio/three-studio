@@ -1,4 +1,4 @@
-import { unpackModel } from '../../commands/modelCommands';
+import { commandById, contextFor } from '../../commands/registry';
 import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -35,7 +35,10 @@ export const inspector: ComponentSchema = {
       // why it is a button and not a checkbox — and offered only on the entity
       // that still draws the whole thing.
       visibleWhen: (component) => component.type === 'model' && component.nodePath === '',
-      run: ({ entityId }) => void unpackModel(entityId),
+      // Through its command, as the prefab instance's actions go: calling
+      // `unpackModel` here went past the command's `can()`, so neither the
+      // padlock nor the scene lock was ever asked.
+      run: ({ entityId }) => commandById('unpackModel').run(contextFor([entityId])),
     },
   ],
 };

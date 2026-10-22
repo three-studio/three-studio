@@ -5,13 +5,14 @@ import { showPanel } from './dockApi';
 /*
  * Which panel a change of state brings forward.
  *
- * `commands/` used to do this itself: `startPlay` called `showPanel('game')` and
+ * `commands/` used to do this itself: `startPlay` called `showPanel` and
  * `revealAsset` called `showPanel('project')`, so the command layer imported the
  * shell and reached into the dock. **Starting the game and showing a panel are
  * two things** — the second is a reaction to the first, and a reaction belongs
  * on the side that owns the arrangement. Scene Settings… is the third: the
  * command empties the selection and counts a request, and the Inspector coming
- * forward is decided here.
+ * forward is decided here. A failed Play's Show Console is the fourth, counted
+ * the same way.
  *
  * It is the same shape as `editorStore.renaming` and `paletteOpen`: a command
  * writes state, a view reads it. The difference is that a panel cannot bring
@@ -27,29 +28,33 @@ export interface FocusInputs {
   revealed: string | null;
   /** How many times Scene Settings… was asked for: `editorStore.sceneSettingsRequests`. */
   sceneSettings: number;
+  /** How many times the Console was asked for: `editorStore.consoleRequests`. */
+  console: number;
 }
 
 /**
  * The panel to bring forward for this change, or `null` to leave the dock alone.
  *
  * A **transition**, never a state, and that is what makes it safe to run on
- * every store change: bringing Scene forward because nothing is playing would
- * yank the tab back every time the selection moved, and would do it once at
- * startup over whichever tab the author had left in front.
+ * every store change: a panel brought forward because of what *is* — a game
+ * running, an asset revealed — would be yanked back in front every time
+ * anything else moved.
  *
- * Play wins over a reveal or a Scene Settings request in the same change, which
- * cannot happen today and costs nothing to settle: what the author asked for
- * last is the game.
+ * Play wins over a reveal, a Scene Settings request or a Console request in the
+ * same change, which cannot happen today and costs nothing to settle: what the
+ * author asked for last is the game.
  */
 export function panelForChange(before: FocusInputs, after: FocusInputs): string | null {
   /*
-   * The Scene and Game panels share one drawing surface, so starting the game
-   * without bringing the Game tab forward leaves the player looking at an idle
-   * Scene view — or, if that tab had been closed, at no view of the game at all.
-   * `showPanel` reopens a closed one, which is the other half of why this is not
-   * merely a nicety.
+   * The Viewport is where the game plays, so starting the game brings it
+   * forward — and `showPanel` reopens it when it was closed, which is why this
+   * is not merely a nicety: without it, the game would start with nothing on
+   * screen to show it.
+   *
+   * Stop brings nothing. The edit view comes back in the same panel, and
+   * whatever else changed with it is for the rules below.
    */
-  if (after.playing !== before.playing) return after.playing ? 'game' : 'viewport';
+  if (after.playing && !before.playing) return 'viewport';
 
   /*
    * Scene Settings… asks for the scene's own pane, which is the Inspector with
@@ -57,6 +62,13 @@ export function panelForChange(before: FocusInputs, after: FocusInputs): string 
    * and show nothing. Every request moves the count, a second one included.
    */
   if (after.sceneSettings !== before.sceneSettings) return 'inspector';
+
+  /*
+   * A failed Play's toast offers the Console, where the compile errors or the
+   * start's error are written out in full. A count, like Scene Settings, and
+   * `showPanel` reopens a Console that was closed.
+   */
+  if (after.console !== before.console) return 'console';
 
   /*
    * Revealing an asset is a request to look at it, and looking at it is not
@@ -74,6 +86,7 @@ function inputs(): FocusInputs {
     playing: useEditorStore.getState().playState !== 'stopped',
     revealed: useAssetStore.getState().revealed,
     sceneSettings: useEditorStore.getState().sceneSettingsRequests,
+    console: useEditorStore.getState().consoleRequests,
   };
 }
 
@@ -81,7 +94,7 @@ function inputs(): FocusInputs {
  * Watches for those changes while the dock is mounted.
  *
  * Two subscriptions rather than a selector each, because the decision reads both
- * stores and has to see them together. Every store change reads three fields and
+ * stores and has to see them together. Every store change reads four fields and
  * compares them, which is nothing beside what a store change already costs in
  * React.
  */

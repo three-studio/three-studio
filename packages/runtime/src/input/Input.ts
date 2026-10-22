@@ -20,11 +20,28 @@ function isPointerLockCooldown(cause: unknown): boolean {
   return cause.message.includes('exited the lock');
 }
 
+/** How the host wants `Input` to listen. */
+export interface InputOptions {
+  /**
+   * Where keys are heard. `'window'`, the default and the exported player's
+   * choice: every key the page receives. `'element'`: only while `domElement`
+   * holds the focus — the editor's choice, so that a key typed in a panel never
+   * reaches the game.
+   */
+  keys?: 'window' | 'element';
+}
+
 /**
  * Keyboard, mouse and touch state for the running game.
  *
  * Separate from the editor's own input handling: the runtime ships in the web
  * export, where none of the editor exists.
+ *
+ * Keys are heard window-wide unless the host asks otherwise. In the exported
+ * player the page is the game, so every key is its own. The editor shares its
+ * page with a Console, an Inspector and a palette, and there a space typed in a
+ * field made the player jump and never reached the field; it asks for the keys
+ * typed into the canvas alone.
  */
 export class Input {
   private readonly pressed = new PressedKeys();
@@ -53,10 +70,22 @@ export class Input {
   private sawTouch = false;
   private sawMouse = false;
   private disposed = false;
+  /** Keys are heard on `domElement` alone: see `InputOptions.keys`. */
+  private readonly keysOnElement: boolean;
 
-  constructor(private readonly domElement: HTMLElement) {
-    window.addEventListener('keydown', this.onKeyDown);
-    window.addEventListener('keyup', this.onKeyUp);
+  constructor(
+    private readonly domElement: HTMLElement,
+    options: InputOptions = {},
+  ) {
+    this.keysOnElement = options.keys === 'element';
+    if (this.keysOnElement) {
+      domElement.addEventListener('keydown', this.onKeyDown);
+      domElement.addEventListener('keyup', this.onKeyUp);
+      domElement.addEventListener('blur', this.onBlur);
+    } else {
+      window.addEventListener('keydown', this.onKeyDown);
+      window.addEventListener('keyup', this.onKeyUp);
+    }
     window.addEventListener('blur', this.onBlur);
     // On the window rather than the canvas, which is what lets the tap on an
     // exported build's Start button be the one that summons the controls —
@@ -73,8 +102,14 @@ export class Input {
 
   dispose(): void {
     this.disposed = true;
-    window.removeEventListener('keydown', this.onKeyDown);
-    window.removeEventListener('keyup', this.onKeyUp);
+    if (this.keysOnElement) {
+      this.domElement.removeEventListener('keydown', this.onKeyDown);
+      this.domElement.removeEventListener('keyup', this.onKeyUp);
+      this.domElement.removeEventListener('blur', this.onBlur);
+    } else {
+      window.removeEventListener('keydown', this.onKeyDown);
+      window.removeEventListener('keyup', this.onKeyUp);
+    }
     window.removeEventListener('blur', this.onBlur);
     window.removeEventListener('pointerdown', this.onAnyPointerDown, true);
     window.removeEventListener('pointermove', this.onAnyPointerMove, true);
@@ -173,8 +208,15 @@ export class Input {
   private readonly onKeyDown = (event: KeyboardEvent) => {
     this.pressed.down(event);
     // Space and the arrows scroll the page otherwise, which is visible as the
-    // whole canvas jumping while the player jumps.
+    // whole canvas jumping while the player jumps. Only for a key the game
+    // hears: on the element, a space typed in one of the editor's fields is the
+    // field's again, and so is its caret.
     if (event.code === 'Space' || event.code.startsWith('Arrow')) event.preventDefault();
+    // Tab moves the focus on, and a game that hears keys on its element alone
+    // goes deaf the moment it loses the focus — at the first press of a
+    // scoreboard on Tab. Window-wide, the keys stay the game's wherever the
+    // focus goes, so the exported player leaves Tab to the page, as it always has.
+    else if (event.code === 'Tab' && this.keysOnElement) event.preventDefault();
   };
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
@@ -186,6 +228,10 @@ export class Input {
    * is worse, because a finger lifted while the page is hidden sends no event
    * at all: an incoming call would leave the character walking into a wall
    * until somebody came back and nudged the stick.
+   *
+   * With keys heard on the element, the focus leaving it is the same moment: a
+   * W held while clicking into one of the editor's panels is released where
+   * the game no longer listens.
    */
   private readonly onBlur = () => {
     this.pressed.clear();

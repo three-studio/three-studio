@@ -3,6 +3,7 @@ import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
+import { useSceneLocked } from '../state/sceneLock';
 import { useWindowUnsaved } from '../state/unsaved';
 import { MenuTrigger, type MenuEntry } from '../ui/Menu';
 import { buildAddMenu } from './addMenu';
@@ -58,6 +59,12 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
    * leave "Save Scene" greyed out for the rest of the session after one save.
    */
   useProjectStore((s) => s.saving);
+  /*
+   * Subscribed to but never read here either: the Edit and Add entries ask the
+   * scene lock, and they are built in render, so the bar has to re-render when
+   * Play locks the scene and when Stop frees it.
+   */
+  useSceneLocked();
   /*
    * The same again, for New Scene… and Save Scene As…, which ask
    * `summary !== null`. The title used to come in as a prop built from the
@@ -138,8 +145,9 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
     // the way an object menu follows the insert menu on macOS — Keynote reads
     // File · Edit · Insert · Slide — so Add keeps the place people reach for.
     Scene: buildSceneMenu({ scenes, sceneId, startScene }),
-    // Panels are closable, so the Window menu is the way back. Without it a
-    // closed Game tab meant Play ran with nothing on screen and no obvious fix.
+    // Panels are closable, so the Window menu is the way back. A few come back
+    // by themselves when something needs them — the Viewport at Play — and the
+    // rest only from here.
     Window: [
       ...PANEL_DEFS.map((def) => ({
         label: def.title,

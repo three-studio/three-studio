@@ -14,6 +14,10 @@
  * `runSmokeTest` give up before `capturePage`, so the one run whose picture is
  * worth having would be the one run with no picture. The caller reads the
  * verdict out of the log — see `.github/workflows/ci.yml`.
+ *
+ * Nothing type-checks a script that is only text, so
+ * `test/smokeDrewSomething.test.ts` runs it against the real store: a field
+ * renamed there must break a test here, not CI's boot alone.
  */
 (async () => {
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,7 +37,7 @@
    * the first sign of either answer, so a healthy machine spends ~1 tick here.
    */
   let stats = viewport.getState();
-  for (let i = 0; i < 60 && stats.drawCalls === 0 && stats.error === null; i += 1) {
+  for (let i = 0; i < 60 && stats.drawCalls === 0 && stats.rendererError === null; i += 1) {
     await wait(500);
     stats = viewport.getState();
   }
@@ -44,7 +48,7 @@
   const size = canvas ? { width: canvas.width, height: canvas.height } : null;
 
   const verdict =
-    stats.error !== null
+    stats.rendererError !== null
       ? 'renderer-failed'
       : size === null || size.width === 0 || size.height === 0
         ? 'canvas-has-no-size'
@@ -54,7 +58,7 @@
 
   return {
     verdict,
-    error: stats.error,
+    rendererError: stats.rendererError,
     backend: stats.backend,
     fps: stats.fps,
     drawCalls: stats.drawCalls,

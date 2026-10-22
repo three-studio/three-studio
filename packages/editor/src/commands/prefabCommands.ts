@@ -114,10 +114,16 @@ export function instantiatePrefab(
   const template = createEntity(prefab?.name ?? 'Prefab', [createPrefabInstance(assetId)]);
   template.entity.transform.position = position;
 
-  useDocumentStore.getState().mutate('Add prefab', (draft) => {
-    insertEntity(draft, template, parentId);
-  });
-  useEditorStore.getState().setSelection([template.entity.id]);
+  useDocumentStore.getState().mutate(
+    'Add prefab',
+    (draft) => {
+      insertEntity(draft, template, parentId);
+    },
+    // Inside the transaction, as `addEntity` does. Set after `mutate`, the
+    // selection was in no entry: Redo brought the instance back unselected, and
+    // a refused `mutate` would have selected an entity that did not exist.
+    { select: [template.entity.id] },
+  );
 }
 
 /**
@@ -454,6 +460,7 @@ function hasOverrides(ctx: EditorContext): boolean {
 export const PREFAB_COMMANDS = {
   createPrefab: defineCommand({
     label: () => 'Create Prefab…',
+    writesScene: true,
     // One entity and its children. A prefab of several unrelated roots would
     // need a wrapper nobody asked for.
     can: (ctx) => only(ctx) !== undefined,
@@ -489,6 +496,7 @@ export const PREFAB_COMMANDS = {
 
   applyPrefabOverrides: defineCommand({
     label: () => 'Apply Overrides to Prefab',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
     run: async (ctx) => {
       const entityId = only(ctx);
@@ -498,6 +506,7 @@ export const PREFAB_COMMANDS = {
 
   revertPrefabOverrides: defineCommand({
     label: () => 'Revert All Overrides',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null && hasOverrides(ctx),
     run: (ctx) => {
       const entityId = only(ctx);
@@ -507,6 +516,7 @@ export const PREFAB_COMMANDS = {
 
   unpackPrefab: defineCommand({
     label: () => 'Unpack Prefab',
+    writesScene: true,
     can: (ctx) => instance(ctx) !== null,
     run: (ctx) => {
       const entityId = only(ctx);
@@ -522,6 +532,7 @@ export const PREFAB_COMMANDS = {
    */
   revertEntityOverride: defineCommand({
     label: () => 'Revert to Prefab',
+    writesScene: true,
     can: (ctx) => {
       const entityId = only(ctx);
       return entityId !== undefined && splitInstancedId(entityId) !== null;
