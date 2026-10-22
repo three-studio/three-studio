@@ -8,7 +8,6 @@ import {
 import { useCallback, useEffect, type FunctionComponent } from 'react';
 import {
   ConsolePanel,
-  GamePanel,
   HierarchyPanel,
   InspectorPanel,
   ProjectPanel,
@@ -20,15 +19,17 @@ import { loadLayout, saveLayout } from './layoutStorage';
 
 /**
  * Panel id -> component. Adding a panel to the editor means adding one entry
- * here and one `api.addPanel` call in `applyDefaultLayout`.
+ * here, one row in `PANEL_DEFS` and one `api.addPanel` call in
+ * `applyDefaultLayout`.
  *
- * Ids are persisted inside saved layouts, so renaming one requires bumping
- * `LAYOUT_VERSION` in layoutStorage.
+ * Ids are persisted inside every saved layout, the working one and the
+ * templates, and nothing migrates them. A layout naming an id this table lacks
+ * makes `fromJSON` throw, and the default takes its place — so renaming or
+ * removing an id resets every stored layout.
  */
 const PANEL_COMPONENTS: Record<string, FunctionComponent<IDockviewPanelProps>> = {
   hierarchy: HierarchyPanel,
   viewport: ViewportPanel,
-  game: GamePanel,
   inspector: InspectorPanel,
   project: ProjectPanel,
   console: ConsolePanel,
@@ -52,23 +53,15 @@ const DOCK_THEME: DockviewTheme = {
 };
 
 /**
- * Unity's default arrangement: hierarchy on the left, Scene/Game tabs in the
- * middle, inspector down the full right edge, Project/Console across the bottom
- * of the centre column.
+ * Unity's default arrangement: hierarchy on the left, the Viewport in the
+ * middle where Unity has its Scene and Game tabs, inspector down the full right
+ * edge, Project/Console across the bottom of the centre column.
  *
  * Insertion order matters — the inspector is added before the bottom dock so it
  * spans the full window height rather than stopping above it.
  */
 function applyDefaultLayout(api: DockviewApi): void {
-  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Scene' });
-
-  api.addPanel({
-    id: 'game',
-    component: 'game',
-    title: 'Game',
-    inactive: true,
-    position: { referencePanel: 'viewport', direction: 'within' },
-  });
+  api.addPanel({ id: 'viewport', component: 'viewport', title: 'Viewport' });
 
   api.addPanel({
     id: 'hierarchy',
@@ -123,8 +116,8 @@ export function DockLayout({ resetToken }: DockLayoutProps) {
 }
 
 function DockviewHost() {
-  // What the arrangement does about state: bring the Game panel forward when
-  // the game starts, the Project panel when an asset is revealed, the Inspector
+  // What the arrangement does about state: bring the Viewport forward when the
+  // game starts, the Project panel when an asset is revealed, the Inspector
   // when Scene Settings… is asked for. It used to be `commands/` calling
   // `showPanel` itself — see `panelFocus.ts`.
   useEffect(() => watchPanelFocus(), []);

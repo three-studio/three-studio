@@ -46,10 +46,25 @@ export const PANEL_DEFS: readonly PanelDef[] = [
   {
     id: 'viewport',
     component: 'viewport',
-    title: 'Scene',
-    reopen: () => ({ id: 'viewport', component: 'viewport', title: 'Scene' }),
+    title: 'Viewport',
+    /*
+     * Where the default arrangement has it: above the Project panel, else right
+     * of the Hierarchy, else wherever the active group is. It is where the game
+     * plays, and Play brings it back when it was closed: reopened as one more
+     * tab of the active group, it could land in the 220-pixel strip along the
+     * bottom and show the game there.
+     */
+    reopen: (api) => {
+      const viewport = { id: 'viewport', component: 'viewport', title: 'Viewport' };
+      if (api.getPanel('project')) {
+        return { ...viewport, position: { referencePanel: 'project', direction: 'above' } };
+      }
+      if (api.getPanel('hierarchy')) {
+        return { ...viewport, position: { referencePanel: 'hierarchy', direction: 'right' } };
+      }
+      return viewport;
+    },
   },
-  beside('game', 'game', 'Game', 'viewport', 'within', 'right'),
   beside('hierarchy', 'hierarchy', 'Hierarchy', 'viewport', 'left', 'left'),
   beside('inspector', 'inspector', 'Inspector', 'viewport', 'right', 'right'),
   beside('project', 'project', 'Project', 'viewport', 'below', 'below'),

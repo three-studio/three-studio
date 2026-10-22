@@ -7,7 +7,7 @@ vi.mock('../src/shell/dockApi', () => ({ showPanel: vi.fn() }));
 
 /*
  * Bringing a panel forward is a reaction to a change of state, and it used to be
- * `commands/` doing it by hand: `startPlay` called `showPanel('game')`, so the
+ * `commands/` doing it by hand: `startPlay` called `showPanel` itself, so the
  * command layer imported the shell and reached into the dock.
  *
  * Extracted from the subscription so it can be checked without a dock — the
@@ -23,23 +23,28 @@ const state = (over: Partial<FocusInputs> = {}): FocusInputs => ({
 });
 
 describe('what a change of state brings forward', () => {
-  it('shows the game when it starts, and the scene when it stops', () => {
-    expect(panelForChange(state(), state({ playing: true }))).toBe('game');
-    expect(panelForChange(state({ playing: true }), state())).toBe('viewport');
+  it('shows the Viewport when the game starts, and nothing when it stops', () => {
+    // The Viewport is where the game plays, so it comes forward — reopened if
+    // it was closed. At Stop the game simply gives way to the edit view in the
+    // same panel, and the dock has nothing to bring back.
+    expect(panelForChange(state(), state({ playing: true }))).toBe('viewport');
+    expect(panelForChange(state({ playing: true }), state())).toBeNull();
+    // Stop is no request of its own, so whatever else changed with it still is.
+    expect(panelForChange(state({ playing: true }), state({ revealed: 'tex1' }))).toBe('project');
   });
 
   it('leaves the dock alone when nothing that matters changed', () => {
     // This runs on every store change — a selection, a filter, a mutation. A
-    // decision made from the *state* rather than the change would yank the Scene
-    // tab back every time anything moved, and would do it once at startup over
-    // whatever the author had left in front.
+    // decision made from the *state* rather than the change would yank the
+    // Viewport back every time anything moved, and would do it once at startup
+    // over whatever the author had left in front.
     expect(panelForChange(state(), state())).toBeNull();
     expect(panelForChange(state({ playing: true }), state({ playing: true }))).toBeNull();
   });
 
   it('stays on the game through a pause', () => {
     // `playing` is "anything but stopped", so pausing is not a change here and
-    // the Game panel is not re-shown — nor is the Scene panel pulled forward.
+    // the Viewport is not shown again.
     expect(panelForChange(state({ playing: true }), state({ playing: true }))).toBeNull();
   });
 
@@ -55,7 +60,7 @@ describe('what a change of state brings forward', () => {
   it('prefers the game when both change at once', () => {
     // Cannot happen today, and settling it costs nothing: what was asked for
     // last is the game.
-    expect(panelForChange(state(), state({ playing: true, revealed: 'tex1' }))).toBe('game');
+    expect(panelForChange(state(), state({ playing: true, revealed: 'tex1' }))).toBe('viewport');
   });
 
   it('shows the Inspector for a new Scene Settings request, and only a new one', () => {
@@ -67,7 +72,7 @@ describe('what a change of state brings forward', () => {
   it('prefers the game over a Scene Settings request in the same change', () => {
     // Cannot happen either — they are two gestures — and it is settled the same
     // way.
-    expect(panelForChange(state(), state({ playing: true, sceneSettings: 1 }))).toBe('game');
+    expect(panelForChange(state(), state({ playing: true, sceneSettings: 1 }))).toBe('viewport');
   });
 });
 

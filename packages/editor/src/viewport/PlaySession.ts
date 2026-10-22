@@ -24,18 +24,18 @@ import type { Presentation } from './Presentation';
 /**
  * What running a game needs from the viewport, and it is deliberately little.
  *
- * The renderer and the Game panel's canvas, because the engine draws through
- * the one renderer this document is allowed. And two announcements, because the
- * Scene view becomes a *view* while the game runs — flying it or dragging a
- * handle would edit a document that Stop is about to put back — and deciding
- * which of the viewport's parts that touches is the viewport's business, not
- * this one's.
+ * The renderer and the game's canvas, because the engine draws through the one
+ * renderer this document is allowed. And two announcements, because the edit
+ * view is hidden while the game runs — flying it or dragging a handle would
+ * move what nobody sees, and edit a document that Stop is about to put back —
+ * and deciding which of the viewport's parts that touches is the viewport's
+ * business, not this one's.
  */
 export interface PlayHost {
   readonly renderer: WebGPURenderer;
-  /** The Game panel's own canvas; the engine's `Input` listens on it. */
+  /** The game's own canvas, on the Viewport's stage; the engine's `Input` listens on it. */
   readonly gameView: Presentation;
-  /** The project's rendering settings, as the Scene view is already using them. */
+  /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
   onPlayStarted(): void;
   onPlayStopped(): void;
@@ -157,7 +157,8 @@ export class PlaySession {
    * The engine is created here rather than in a React component because it
    * draws through this renderer, and this document only gets one: a second
    * `WebGPURenderer` in the same frame destroys this one's output target every
-   * frame. It has a canvas of its own, though — the Game panel's.
+   * frame. It has a canvas of its own, though — the game's, on the Viewport's
+   * stage.
    */
   watch(): void {
     let previous = useEditorStore.getState().playState;
@@ -224,7 +225,7 @@ export class PlaySession {
         physicsSettings: inputs.physics,
         // The viewport's own, not the inputs': Play draws on the viewport's
         // renderer, which was made with these and is not remade when Project
-        // Settings saves new ones — so Play has to draw with what the Scene view
+        // Settings saves new ones — so Play has to draw with what the edit view
         // is drawing with, and re-reading is how they came apart. A launch
         // sends the project's, since a phone makes a new renderer every time.
         rendering: this.host.rendering,
@@ -236,9 +237,9 @@ export class PlaySession {
         // Play mode draws on this same renderer, so the running scene captures
         // its sky on the device the editor already holds.
         renderer: this.host.renderer,
-        // The Game panel's own canvas. The two views had to share one until
-        // they could be drawn separately, and sharing it is what made pressing
-        // Play hand the editor's pointer handling over to the game's.
+        // The game's own canvas. The two views had to share one until they
+        // could be drawn separately, and sharing it is what made pressing Play
+        // hand the editor's pointer handling over to the game's.
         domElement: this.host.gameView.canvas,
         // The editor's one context, shared with the preview and kept apart from
         // it by a root gain each. `undefined` where there is no Web
@@ -284,10 +285,8 @@ export class PlaySession {
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
       void engine.audio?.unlock();
-      // Not because they would fight the game for the pointer — each view has
-      // its own canvas now — but because the Scene view is a *view* while the
-      // game runs: flying it or dragging a handle would edit a document that
-      // Stop is about to put back the way it was.
+      // What the engine found while it was built, which it does not announce
+      // through `onWarning`.
       useViewportStore.getState().setPlayWarnings([...engine.warnings]);
       // The camera, the handles and the size, none of which is this class's.
       this.host.onPlayStarted();
@@ -315,7 +314,7 @@ export class PlaySession {
     }
   }
 
-  /** Hands the running game the shape of the panel it is drawn in. */
+  /** Hands the running game the shape of the canvas it is drawn in. */
   syncAspect(engine: Engine): void {
     if (!this.host.gameView.visible) return;
     engine.setViewportAspect(this.host.gameView.width / this.host.gameView.height);

@@ -1,41 +1,77 @@
 import { createAudioSourceEntity, createModelEntity, variantBaseOf } from '@three-studio/core';
-import { Boxes, ChevronLeft } from 'lucide-react';
+import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-react';
 import type { IDockviewPanelProps } from 'dockview-react';
-import { useEffect, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
 import { addEntity } from '../commands/sceneCommands';
+import { commandById } from '../commands/registry';
+import { shortcutHint } from '../shell/shortcutBindings';
 import { useAssetStore } from '../state/assetStore';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
+import { viewState } from '../viewport/viewState';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { instantiatePrefab } from '../commands/prefabCommands';
 import { SceneToolbar } from './SceneToolbar';
 import { tooltip } from '../ui/Tooltip';
 
+/**
+ * The Keyboard Lock API, which TypeScript's DOM library does not carry: only
+ * Chromium ships it, and Electron is Chromium.
+ */
+interface KeyboardLock {
+  lock(keyCodes?: string[]): Promise<void>;
+  unlock(): void;
+}
+
+function keyboardLock(): KeyboardLock | undefined {
+  return (navigator as Navigator & { keyboard?: KeyboardLock }).keyboard;
+}
+
+/** How long the full-screen hint stays before it fades, in milliseconds. */
+const FULL_SCREEN_HINT_MS = 4000;
+
+/**
+ * Where the scene is edited and the game is played.
+ *
+ * One panel for both, as Unreal plays in the level viewport: the edit view
+ * while stopped, the game during Play, in the same place. Each has a canvas of
+ * its own, stacked on the stage, and `viewState` says which one is on top. Their
+ * own canvas, but not their own renderer: a second `WebGPURenderer` in the same
+ * document would destroy this one's output target every frame. The one renderer
+ * draws whichever view is on top and hands its canvas a copy — see
+ * `Presentation`.
+ */
 export function ViewportPanel(props: IDockviewPanelProps) {
   // What the box cannot say: dockview parks an inactive tab at full size, so a
   // hidden panel goes on being drawn unless something tells the viewport. The
-  // dock is the only thing that knows, and it publishes it here.
+  // dock is the only thing that knows, and it publishes it here, for both of
+  // the views this tab holds.
   useEffect(() => {
-    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setSceneOnScreen(onScreen));
+    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setOnScreen(onScreen));
     push(props.api.isVisible);
     const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
     return () => sub.dispose();
   }, [props.api]);
 
-  const hostRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const editHostRef = useRef<HTMLDivElement>(null);
+  const gameHostRef = useRef<HTMLDivElement>(null);
   const error = useViewportStore((s) => s.error);
   const showStats = useEditorStore((s) => s.showStats);
+  const playState = useEditorStore((s) => s.playState);
   const [dropping, setDropping] = useState(false);
+  const view = viewState({ playState });
+  const holdingScreen = usePlayFullScreen(stageRef);
 
   useEffect(() => {
     let cancelled = false;
 
     void acquireViewport()
       .then((viewport) => {
-        if (cancelled || !hostRef.current) return;
-        viewport.attachScene(hostRef.current);
+        if (cancelled || !editHostRef.current || !gameHostRef.current) return;
+        viewport.attach({ edit: editHostRef.current, game: gameHostRef.current });
       })
       .catch((cause: unknown) => {
         useViewportStore
@@ -45,14 +81,14 @@ export function ViewportPanel(props: IDockviewPanelProps) {
 
     return () => {
       cancelled = true;
-      // The canvas outlives this component, so hand it back rather than leaving
-      // it parented to a container React is about to drop.
-      peekViewport()?.detachScene();
+      // The canvases outlive this component — a Reset Layout or a template
+      // remounts the panel — so hand them back rather than leaving them
+      // parented to containers React is about to drop.
+      peekViewport()?.detach();
     };
-    // Play state is not in here any more: the Scene view keeps its own canvas
-    // while the game runs, which is what lets the two panels be read side by
-    // side. It used to have to stand down so the Game panel could take the one
-    // canvas there was.
+    // Play state is not in here: both canvases stay on the stage for as long as
+    // the panel lives, and Play changes only which one is on top. Nothing is
+    // moved, re-parented or resized at the press.
   }, []);
 
   if (error) {
@@ -104,13 +140,20 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-surface-0">
       <SceneToolbar />
-      {/* The drop target is the canvas's box, not the panel's. `dropPoint`
-          measures the pointer against the canvas, and a drop on the toolbar
-          above it would be a ray above the view: the entity would land far
-          off, nowhere near where it was let go. */}
+      {/* The stage: what Play Full Screen takes, the header left behind, and
+          the drop target. The drop target is the canvas's box, not the
+          panel's. `dropPoint` measures the pointer against the canvas, and a
+          drop on the toolbar above it would be a ray above the view: the entity
+          would land far off, nowhere near where it was let go. */}
       <div
-        className="relative min-h-0 flex-1"
+        ref={stageRef}
+        data-viewport-stage
+        className="relative min-h-0 flex-1 overflow-hidden bg-surface-0"
         onDragOver={(event) => {
+          // A drop places into the scene at a point measured on the edit canvas,
+          // so only while that canvas is on top. Leaving the event uncancelled is
+          // how the browser is told the drop is refused.
+          if (!view.overlays.dropTarget) return;
           if (!event.dataTransfer.types.includes(ASSET_DRAG_MIME)) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = 'copy';
@@ -119,15 +162,167 @@ export function ViewportPanel(props: IDockviewPanelProps) {
         onDragLeave={() => setDropping(false)}
         onDrop={onDrop}
       >
-        <PrefabModeBar />
-        {/* The canvas is inserted here by `EditorViewport.attachScene`, and
-            outlives this component, so it is never rendered by React. */}
-        <div ref={hostRef} className="absolute inset-0" />
-        {showStats && <ViewportStats />}
-        {dropping && (
+        {/* The two canvases, stacked, the one on top chosen by `viewState`.
+            Inserted by `EditorViewport.attach` and outliving this component,
+            so neither is rendered by React.
+
+            The one underneath is `invisible` — `visibility: hidden` — and never
+            `display: none`. Both keep their box: nothing is resized when Play
+            starts or stops, the game's aspect and a drop's point are measured
+            against a real box, and a canvas can be drawn into before it is
+            shown, which a box of zero cannot. And a hidden element takes
+            neither the pointer nor the focus, so each canvas keeps to the input
+            that listens on it: the edit canvas cannot be pressed or tabbed to
+            while the game plays, nor the game's while the scene is edited. */}
+        <div ref={editHostRef} className={`absolute inset-0 ${view.canvas === 'edit' ? '' : 'invisible'}`} />
+        <div ref={gameHostRef} className={`absolute inset-0 ${view.canvas === 'game' ? '' : 'invisible'}`} />
+        {view.overlays.prefabBar && <PrefabModeBar />}
+        {/* Not while the stage holds the screen: full screen is the game as a
+            player sees it. */}
+        {showStats && !holdingScreen && <ViewportStats />}
+        {view.overlays.dropTarget && dropping && (
           <div className="pointer-events-none absolute inset-2 rounded-sm border-2 border-dashed border-accent" />
         )}
+        {view.overlays.paused && <PausedBadge />}
+        {view.overlays.problems && <SceneProblems />}
+        {view.overlays.captureHint && <CaptureHint holdingScreen={holdingScreen} />}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Play Full Screen: the stage takes the whole screen, and leaving the screen
+ * ends the test. Unreal's way, which is Esc there and Shift+Esc here: the stop
+ * is a binding (`shortcutBindings`), and plain Esc stays the game's.
+ *
+ * Plain Esc would otherwise be Chromium's: it leaves full screen before the
+ * page hears it. The keyboard lock hands it to the page instead, and holding it
+ * for about two seconds still gets out — Chromium's own way out of a lock,
+ * which lands in `onChange` like any other exit and stops the game.
+ *
+ * The request is made from an effect, after the click that ran Play Full Screen
+ * has brought the Viewport forward — reopening it if it was closed. Chromium
+ * accepts a full-screen request for a few seconds after a click, which is what
+ * lets it come from an effect.
+ *
+ * @returns Whether the stage holds the screen right now, as the document
+ *   reports it. `fullScreen` is what was asked for; this is what happened.
+ */
+function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean {
+  const isRunning = useEditorStore((s) => s.playState !== 'stopped');
+  const fullScreen = useEditorStore((s) => s.fullScreen);
+  const [holdingScreen, setHoldingScreen] = useState(false);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!isRunning || !fullScreen || stage === null) return;
+    let ended = false;
+
+    const onChange = () => {
+      const holding = document.fullscreenElement === stage;
+      setHoldingScreen(holding);
+      if (!holding && useEditorStore.getState().playState !== 'stopped') commandById('stop').run();
+    };
+    document.addEventListener('fullscreenchange', onChange);
+
+    stage
+      .requestFullscreen()
+      .then(() => {
+        // Granted after the session ended: a Play that failed within the
+        // request's time, which a compile error answered from cache can do in
+        // milliseconds. The stage is still in the document to be granted it,
+        // and nothing would give the screen back, Escape locked.
+        if (ended) {
+          if (document.fullscreenElement === stage) void document.exitFullscreen();
+          return;
+        }
+        return keyboardLock()?.lock(['Escape']);
+      })
+      .catch((cause: unknown) => {
+        // Refused: the game goes on in the Viewport, where it still plays.
+        console.error('[play] full screen was refused, so the game stays in the Viewport:', cause);
+      });
+
+    return () => {
+      ended = true;
+      document.removeEventListener('fullscreenchange', onChange);
+      keyboardLock()?.unlock();
+      // How the screen is given back at Stop. The game used to have a panel of
+      // its own, whose root went away with the game and took the full screen
+      // with it; the stage stays, so it has to let go here.
+      if (document.fullscreenElement === stage) void document.exitFullscreen();
+      setHoldingScreen(false);
+    };
+  }, [isRunning, fullScreen, stageRef]);
+
+  return holdingScreen;
+}
+
+/** The picture holds still while the game is paused, and this says why. */
+function PausedBadge() {
+  return (
+    <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+      <span className="rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-warn">Paused</span>
+    </div>
+  );
+}
+
+/**
+ * The running scene's set-up problems, placed where the eye lands rather than
+ * tucked away: every one of them fails silently in the simulation.
+ */
+function SceneProblems() {
+  const warnings = useViewportStore((s) => s.playWarnings);
+  if (warnings.length === 0) return null;
+
+  return (
+    <div className="absolute left-2 top-2 max-w-md rounded-sm border border-warn/40 bg-surface-0/90 p-2">
+      <div className="mb-1 flex items-center gap-1.5 text-2xs font-medium text-warn">
+        <TriangleAlert size={12} />
+        {warnings.length === 1 ? 'Scene problem' : `${warnings.length} scene problems`}
+      </div>
+      <ul className="flex flex-col gap-1">
+        {warnings.map((warning) => (
+          <li key={warning} className="text-2xs leading-snug text-ink-muted" data-selectable>
+            {warning}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** How to give the game the mouse, and how to stop it. */
+function CaptureHint({ holdingScreen }: { holdingScreen: boolean }) {
+  const [shown, setShown] = useState(true);
+
+  // Full screen is the game as a player sees it, so the hint goes after a moment.
+  useEffect(() => {
+    if (!holdingScreen) {
+      setShown(true);
+      return;
+    }
+    const timer = setTimeout(() => setShown(false), FULL_SCREEN_HINT_MS);
+    return () => clearTimeout(timer);
+  }, [holdingScreen]);
+
+  const stopKey = shortcutHint('stop');
+
+  return (
+    <div
+      className={`pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity duration-700 ${
+        shown ? 'opacity-100' : 'opacity-0'
+      }`}
+    >
+      <span className="flex items-center gap-1.5 rounded-sm bg-surface-0/70 px-2 py-1 text-2xs text-ink-muted">
+        <MousePointerClick size={11} />
+        {/* Esc frees the mouse in the panel only: full screen, the keyboard
+            lock gives it to the game, and the stop is the way out. */}
+        {['Click to capture the mouse', holdingScreen ? null : 'Esc to release', stopKey ? `${stopKey} to stop` : null]
+          .filter((part) => part !== null)
+          .join(' · ')}
+      </span>
     </div>
   );
 }

@@ -59,8 +59,8 @@ interface EditorState {
   playState: PlayState;
   /**
    * Whether the running session asked for the whole screen: Play Full Screen
-   * sets it, Stop clears it. The Game panel holds the screen while it is set,
-   * and leaving the screen ends the session, as it does in Unreal.
+   * sets it, Stop clears it. The Viewport's stage holds the screen while it is
+   * set, and leaving the screen ends the session, as it does in Unreal.
    */
   fullScreen: boolean;
   stepRequested: boolean;

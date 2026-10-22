@@ -5,7 +5,7 @@ import { showPanel } from './dockApi';
 /*
  * Which panel a change of state brings forward.
  *
- * `commands/` used to do this itself: `startPlay` called `showPanel('game')` and
+ * `commands/` used to do this itself: `startPlay` called `showPanel` and
  * `revealAsset` called `showPanel('project')`, so the command layer imported the
  * shell and reached into the dock. **Starting the game and showing a panel are
  * two things** — the second is a reaction to the first, and a reaction belongs
@@ -33,9 +33,9 @@ export interface FocusInputs {
  * The panel to bring forward for this change, or `null` to leave the dock alone.
  *
  * A **transition**, never a state, and that is what makes it safe to run on
- * every store change: bringing Scene forward because nothing is playing would
- * yank the tab back every time the selection moved, and would do it once at
- * startup over whichever tab the author had left in front.
+ * every store change: a panel brought forward because of what *is* — a game
+ * running, an asset revealed — would be yanked back in front every time
+ * anything else moved.
  *
  * Play wins over a reveal or a Scene Settings request in the same change, which
  * cannot happen today and costs nothing to settle: what the author asked for
@@ -43,13 +43,15 @@ export interface FocusInputs {
  */
 export function panelForChange(before: FocusInputs, after: FocusInputs): string | null {
   /*
-   * The Scene and Game panels share one drawing surface, so starting the game
-   * without bringing the Game tab forward leaves the player looking at an idle
-   * Scene view — or, if that tab had been closed, at no view of the game at all.
-   * `showPanel` reopens a closed one, which is the other half of why this is not
-   * merely a nicety.
+   * The Viewport is where the game plays, so starting the game brings it
+   * forward — and `showPanel` reopens it when it was closed, which is why this
+   * is not merely a nicety: without it, the game would start with nothing on
+   * screen to show it.
+   *
+   * Stop brings nothing. The edit view comes back in the same panel, and
+   * whatever else changed with it is for the rules below.
    */
-  if (after.playing !== before.playing) return after.playing ? 'game' : 'viewport';
+  if (after.playing && !before.playing) return 'viewport';
 
   /*
    * Scene Settings… asks for the scene's own pane, which is the Inspector with

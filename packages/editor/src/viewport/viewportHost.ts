@@ -7,9 +7,10 @@ let current: EditorViewport | null = null;
 /**
  * There is exactly one viewport for the lifetime of the editor window.
  *
- * Creation is async (the WebGPU device) and expensive, and the Scene and Game
- * dock panels both want the same canvas, so the instance is memoised here
- * rather than owned by whichever React component happened to mount first.
+ * Creation is async (the WebGPU device) and expensive, and more than one part
+ * of the editor wants it — the Viewport, the import dialog's preview, the
+ * commands that place or frame — so the instance is memoised here rather than
+ * owned by whichever React component happened to mount first.
  */
 export function acquireViewport(): Promise<EditorViewport> {
   pending ??= Viewport.create().then((viewport) => {

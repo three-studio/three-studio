@@ -138,8 +138,9 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
     // the way an object menu follows the insert menu on macOS — Keynote reads
     // File · Edit · Insert · Slide — so Add keeps the place people reach for.
     Scene: buildSceneMenu({ scenes, sceneId, startScene }),
-    // Panels are closable, so the Window menu is the way back. Without it a
-    // closed Game tab meant Play ran with nothing on screen and no obvious fix.
+    // Panels are closable, so the Window menu is the way back. A few come back
+    // by themselves when something needs them — the Viewport at Play — and the
+    // rest only from here.
     Window: [
       ...PANEL_DEFS.map((def) => ({
         label: def.title,

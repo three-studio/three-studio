@@ -9,7 +9,7 @@ import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 const STATS_INTERVAL_MS = 500;
 
 /**
- * One renderer, one off-screen canvas, three panels showing corners of it.
+ * One renderer, one off-screen canvas, three canvases showing corners of it.
  *
  * Lifted out of `EditorViewport`, which was 1170 lines and seven jobs. This is
  * the one that owns a device: the `WebGPURenderer`, the surface it draws into,
@@ -46,7 +46,10 @@ export class ViewportRenderer {
    * the canvas the handles are actually drawn in.
    */
   readonly editView = new Presentation('edit');
-  /** The running game's panel. The engine's `Input` listens on its canvas. */
+  /**
+   * The running game's canvas, stacked with the edit view's on the Viewport's
+   * stage. The engine's `Input` listens on it.
+   */
   readonly gameView = new Presentation('game');
   /**
    * The third view: a scene of somebody else's, drawn through this renderer.
@@ -201,13 +204,19 @@ export class ViewportRenderer {
   }
 
   /**
-   * Renders one view into its corner of the surface, and hands its panel a copy.
+   * Renders one view into its corner of the surface, and hands its canvas a
+   * copy.
    *
-   * A panel nobody is looking at — a closed tab, or one behind another — is not
-   * drawn at all. A closed one has a zero-sized box; one behind another keeps
-   * its box and fails `onScreen` instead. That is the same answer a hidden
-   * dock panel gave before by being the panel the canvas was not in, arrived at
-   * by measuring rather than by which panel happened to hold the canvas.
+   * A view nobody is looking at — on a closed tab, or one behind another — is
+   * not drawn at all. A closed one has a zero-sized box; one behind another
+   * keeps its box and fails `onScreen` instead. That is the same answer a
+   * hidden dock panel gave before by being the panel the canvas was not in,
+   * arrived at by measuring rather than by which panel happened to hold the
+   * canvas.
+   *
+   * What it cannot see is which of the Viewport's two canvases is on top: both
+   * have the stage's box, and both are on screen with their tab. That is
+   * `viewState`'s to say, and the frame loop asks it before calling this.
    *
    * **This is where a post-processing pipeline enters on this side**, and it
    * enters *per view*: a `RenderPipeline` is made from `pass(scene, camera)`, so
@@ -259,10 +268,8 @@ export class ViewportRenderer {
     const elapsed = time - this.lastReportTime;
     if (elapsed < STATS_INTERVAL_MS) return;
 
-    // Everything the frame drew, both views included: three resets `info` once
-    // per animation frame, not per render. That is the honest number for a frame
-    // that drew the Scene and the Game, and it is unchanged for the frames that
-    // drew only one.
+    // Everything the frame drew: three resets `info` once per animation frame,
+    // not per render, so a frame that drew more than one view counts them all.
     const { render } = this.renderer.info;
     useViewportStore.getState().setStats({
       fps: Math.round((this.framesSinceReport * 1000) / elapsed),
@@ -286,13 +293,13 @@ export class ViewportRenderer {
   }
 
   /**
-   * Moves one view's canvas into a dock panel.
+   * Moves one view's canvas into its host.
    *
-   * Two of these rather than one shared canvas handed back and forth, which is
-   * what the Scene and Game panels used to do: whichever unmounted last took
-   * the canvas away from the one that had just claimed it, so they each had to
-   * know about play state to keep out of each other's way. A panel now owns its
-   * own element and says nothing about the other.
+   * A canvas per view rather than one shared canvas handed back and forth,
+   * which is what the editor's Scene and Game panels once did: whichever
+   * unmounted last took the canvas away from the one that had just claimed it,
+   * so each had to know about play state to keep out of the other's way. Each
+   * view now owns its own element, and the input that listens on it.
    */
   attach(view: Presentation, host: HTMLElement): void {
     if (this.disposed || view.host === host) return;
