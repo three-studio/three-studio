@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { commandById } from '../commands/registry';
-import { bindingOf, commandForBinding } from './shortcutBindings';
+import { commandById, type CommandId } from '../commands/registry';
+import { bindingOf, commandForBinding, isFunctionKey } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
 import { topOverlay } from '../state/overlayStore';
@@ -55,6 +55,17 @@ export function shortcutsApply({ typing, covered }: ShortcutContext): boolean {
 }
 
 /**
+ * Runs what a key's binding names. A toggle runs once a press, whatever the
+ * key's repeats: F9 held would otherwise pause and resume at the repeat rate,
+ * landing wherever the key happened to be let go. Step, held, steps at that
+ * rate, which is what holding it is for.
+ */
+function runBound(id: CommandId, event: KeyboardEvent): void {
+  if (event.repeat && id === 'togglePause') return;
+  commandById(id).run();
+}
+
+/**
  * Global editor shortcuts.
  *
  * Deliberately window-level rather than per-panel: Unity and Blender both let
@@ -77,13 +88,20 @@ export function useShortcuts(): void {
         return;
       }
 
+      const binding = bindingOf(event);
+      const action = binding === null ? null : commandForBinding(binding);
+      // A bound function key is the editor's whether or not its command acts,
+      // in a text field or behind a dialog too. On Windows a key the page leaves
+      // alone goes on to the window, and F10 there opens the window's menu bar,
+      // which Electron keeps hidden: the editor would seem to stop answering
+      // until something else was pressed.
+      if (binding !== null && action !== null && isFunctionKey(binding)) event.preventDefault();
+
       if (!shortcutsApply({ typing: isTypingTarget(event.target), covered: top !== null })) {
         return;
       }
       const store = useEditorStore.getState();
 
-      const binding = bindingOf(event);
-      const action = binding === null ? null : commandForBinding(binding);
       if (action !== null) {
         const command = commandById(action);
         // A modifier binding is the editor's whether or not the command will
@@ -98,7 +116,7 @@ export function useShortcuts(): void {
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        command.run();
+        runBound(action, event);
         return;
       }
       // A modifier chord this table does not name belongs to the browser, not

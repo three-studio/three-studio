@@ -6,6 +6,7 @@ import {
   bindingOf,
   commandForBinding,
   formatBinding,
+  isFunctionKey,
   positionalKeyLabel,
 } from '../src/shell/shortcutBindings';
 import { SPACE_KEY, TOOL_KEYS, shortcutsApply } from '../src/shell/useShortcuts';
@@ -65,6 +66,31 @@ describe('resolving a key to a command', () => {
     // deliberately not in this table.
     expect(bindingOf(press('d'))).toBeNull();
   });
+
+  it('reads a function key bare, with Shift as a key of its own, and with the modifier', () => {
+    // A function key types no character, so Shift cannot be folded into it the
+    // way it is into a letter: Shift+F9 is a key of its own, as Shift+Escape is.
+    expect(bindingOf(press('F9'))).toBe('F9');
+    expect(bindingOf(press('F10'))).toBe('F10');
+    expect(bindingOf(press('F9', { shift: true }))).toBe('Shift+F9');
+    expect(bindingOf(press('F9', { mod: true }))).toBe('Mod+F9');
+    // F with Shift is a letter, not a function key.
+    expect(bindingOf(press('F', { shift: true }))).toBeNull();
+  });
+
+  it('pauses on F9 and steps on F10, Godot’s keys', () => {
+    expect(commandForBinding('F9')).toBe('togglePause');
+    expect(commandForBinding('F10')).toBe('stepFrame');
+    expect(bindingForCommand('togglePause')).toBe('F9');
+    expect(bindingForCommand('stepFrame')).toBe('F10');
+  });
+
+  it('knows a function key, whatever holds it', () => {
+    for (const binding of ['F1', 'F24', 'Shift+F9', 'Mod+F9']) expect(isFunctionKey(binding), binding).toBe(true);
+    for (const binding of ['F', 'F25', 'F0', 'Mod+F', 'Shift+Escape', 'Delete']) {
+      expect(isFunctionKey(binding), binding).toBe(false);
+    }
+  });
 });
 
 describe('remapping', () => {
@@ -96,6 +122,9 @@ describe('what a menu shows', () => {
     // Spelled out, since the Viewport's capture hint prints it inside a sentence.
     expect(formatBinding('Shift+Escape')).toBe('Shift+Esc');
     expect(bindingForCommand('stop')).toBe('Shift+Escape');
+    // As the key is engraved.
+    expect(formatBinding('F9')).toBe('F9');
+    expect(formatBinding('Shift+F9')).toBe('Shift+F9');
   });
 
   it('finds the key for a command, so no menu types one by hand', () => {

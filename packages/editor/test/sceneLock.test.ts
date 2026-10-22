@@ -365,6 +365,8 @@ const OTHERS: readonly CommandId[] = [
   'play',
   'playFullScreen',
   'stop',
+  'togglePause',
+  'stepFrame',
   'launchOnDevices',
   'stopDeviceServer',
   'deviceServerPort',
@@ -385,7 +387,7 @@ const writers = (): [CommandId, EditorContext][] =>
 describe('the commands that write the scene', () => {
   it('are thirteen, and every other command is listed as one that does not', () => {
     expect(Object.keys(WRITERS)).toHaveLength(13);
-    expect(OTHERS).toHaveLength(32);
+    expect(OTHERS).toHaveLength(34);
     expect([...Object.keys(WRITERS), ...OTHERS].sort()).toEqual([...commandIds()].sort());
   });
 
@@ -457,24 +459,31 @@ describe('the commands that write the scene', () => {
     const playing = OTHERS.map((id) => commandById(id).can(context()));
 
     for (const id of OTHERS) expect(commandById(id).waitsForStop(context()), id).toBe(false);
+    // Step One Frame is not among them: it waits for a pause, playing as stopped.
     expect(OTHERS.filter((_, index) => stopped[index] !== playing[index])).toEqual([
       'play',
       'playFullScreen',
       'stop',
+      'togglePause',
     ]);
     // The document during Play is the one Play started from, and it is unsaved.
     expect(commandById('save').can()).toBe(true);
   });
 
-  it('drop out of the palette during Play, which keeps Save and Stop', () => {
+  it('drop out of the palette during Play, which keeps Save and Stop, and offers Pause', () => {
     useEditorStore.getState().setSelection([first]);
     const palette = () => commandIds().filter((id) => commandById(id).can());
     expect(palette()).toEqual(expect.arrayContaining(['undo', 'redo', 'duplicate', 'delete', 'save']));
+    expect(palette()).not.toContain('togglePause');
 
     play();
     const listed = palette();
 
     for (const id of Object.keys(WRITERS)) expect(listed, id).not.toContain(id);
-    expect(listed).toEqual(expect.arrayContaining(['save', 'stop']));
+    expect(listed).toEqual(expect.arrayContaining(['save', 'stop', 'togglePause']));
+    expect(listed).not.toContain('stepFrame');
+
+    pause();
+    expect(palette()).toEqual(expect.arrayContaining(['stop', 'togglePause', 'stepFrame']));
   });
 });

@@ -578,9 +578,8 @@ describe('transport', () => {
     expect(commandById('play').can()).toBe(false);
     expect(commandById('stop').can()).toBe(true);
 
-    // Paused counts as running: it is Stop that gets you out of either, and the
-    // toolbar's Pause button is a different gesture entirely.
-    useEditorStore.getState().togglePause();
+    // Paused counts as running: it is Stop that gets you out of either.
+    commandById('togglePause').run();
     expect(useEditorStore.getState().playState).toBe('paused');
     expect(commandById('play').can()).toBe(false);
     expect(commandById('stop').can()).toBe(true);
@@ -615,5 +614,53 @@ describe('transport', () => {
     // would have written it a second time.
     expect(commandById('play').label()).toBe('Play');
     expect(commandById('stop').label()).toBe('Stop');
+  });
+
+  it('pauses and resumes a running game through one command, whose word follows', async () => {
+    // One key and one button, lit while paused, as in Godot and Unity: a
+    // toggle, where Play and Stop are two commands.
+    const { commandById } = await import('../src/commands/registry');
+    const pause = commandById('togglePause');
+
+    expect(pause.can()).toBe(false);
+    pause.run();
+    expect(useEditorStore.getState().playState).toBe('stopped');
+
+    commandById('play').run();
+    expect(pause.can()).toBe(true);
+    expect(pause.label()).toBe('Pause');
+    pause.run();
+    expect(useEditorStore.getState().playState).toBe('paused');
+
+    expect(pause.can()).toBe(true);
+    expect(pause.label()).toBe('Resume');
+    pause.run();
+    expect(useEditorStore.getState().playState).toBe('playing');
+
+    commandById('stop').run();
+  });
+
+  it('steps one frame only while paused', async () => {
+    const { commandById } = await import('../src/commands/registry');
+    const step = commandById('stepFrame');
+    const stepped = () => useEditorStore.getState().consumeStep();
+
+    expect(step.label()).toBe('Step One Frame');
+    expect(step.can()).toBe(false);
+    step.run();
+    expect(stepped()).toBe(false);
+
+    commandById('play').run();
+    expect(step.can()).toBe(false);
+    step.run();
+    expect(stepped()).toBe(false);
+
+    commandById('togglePause').run();
+    expect(step.can()).toBe(true);
+    step.run();
+    expect(stepped()).toBe(true);
+    expect(stepped()).toBe(false);
+
+    commandById('stop').run();
   });
 });

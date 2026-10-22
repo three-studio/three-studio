@@ -31,13 +31,13 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const [, setLayoutVersion] = useState(0);
 
   const playState = useEditorStore((s) => s.playState);
-  const togglePause = useEditorStore((s) => s.togglePause);
-  const requestStep = useEditorStore((s) => s.requestStep);
 
   const isStopped = playState === 'stopped';
   const transportId = isStopped ? 'play' : 'stop';
   const transport = commandById(transportId);
   const fullScreen = commandById('playFullScreen');
+  const pause = commandById('togglePause');
+  const step = commandById('stepFrame');
 
   return (
     <div className="relative flex shrink-0 items-center gap-0.5 bg-surface-0 px-2">
@@ -80,18 +80,22 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
             </>
           ) : (
             <>
+              {/* The commands' words, keys and gestures, as Play's: Pause says
+                  Resume while paused, and stays lit. */}
               <ToolButton
                 icon={Pause}
-                label="Pause"
+                label={pause.label()}
+                shortcut={shortcutHint('togglePause')}
                 active={playState === 'paused'}
-                onClick={togglePause}
+                onClick={() => pause.run()}
               />
               <ToolButton
                 icon={SkipForward}
-                label="Step one frame"
-                hint={playState === 'paused' ? undefined : 'Pause first'}
-                disabled={playState !== 'paused'}
-                onClick={requestStep}
+                label={step.label()}
+                shortcut={shortcutHint('stepFrame')}
+                hint={step.can() ? undefined : 'Pause first'}
+                disabled={!step.can()}
+                onClick={() => step.run()}
               />
             </>
           )}
