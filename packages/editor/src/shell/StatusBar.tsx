@@ -16,9 +16,8 @@ export function StatusBar() {
             : `${selection.length} objects selected`}
       </span>
       <div className="flex-1" />
-      {playState !== 'stopped' && (
-        <span className="text-play">{playState === 'playing' ? 'Playing' : 'Paused'}</span>
-      )}
+      {playState === 'playing' && <span className="text-play">Playing</span>}
+      {playState === 'paused' && <span className="text-pause">Paused</span>}
       {/* Named, because it is not the installer's number and may differ from
           it — see the note on `ENGINE_VERSION`. */}
       <span {...tooltip('Engine version')}>v{ENGINE_VERSION}</span>

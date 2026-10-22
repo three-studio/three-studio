@@ -299,7 +299,7 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
 function PausedBadge() {
   return (
     <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
-      <span className="rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-warn">Paused</span>
+      <span className="rounded-sm bg-surface-0/80 px-2 py-1 text-2xs text-pause">Paused</span>
     </div>
   );
 }

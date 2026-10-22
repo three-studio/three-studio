@@ -21,14 +21,16 @@
   --color-ink-muted: #8b8b8b;
   --color-ink-dim: #6a6a6a;
 
-  --color-surface-0: #1b1b1b;
-  --color-surface-1: #242424;
-  --color-surface-2: #2d2d2d;
-  --color-surface-3: #383838;
-  --color-surface-4: #454545;
+  /* The chrome's greys, each mixed toward Play's tint by its weight: 0 %, the
+     grey itself, outside Play. Why, under "Play's tint" below. */
+  --color-surface-0: color-mix(in oklab, #1b1b1b, var(--play-tint) var(--play-tint-weight));
+  --color-surface-1: color-mix(in oklab, #242424, var(--play-tint) var(--play-tint-weight));
+  --color-surface-2: color-mix(in oklab, #2d2d2d, var(--play-tint) var(--play-tint-weight));
+  --color-surface-3: color-mix(in oklab, #383838, var(--play-tint) var(--play-tint-weight));
+  --color-surface-4: color-mix(in oklab, #454545, var(--play-tint) var(--play-tint-weight));
 
-  --color-line: #141414;
-  --color-line-soft: #3a3a3a;
+  --color-line: color-mix(in oklab, #141414, var(--play-tint) var(--play-tint-weight));
+  --color-line-soft: color-mix(in oklab, #3a3a3a, var(--play-tint) var(--play-tint-weight));
 
   --color-accent: #4a8cff;
   --color-accent-dim: #2c5d87;
@@ -38,6 +40,9 @@
   --color-axis-z: #4a8cff;
 
   --color-play: #4ade80;
+  /* Pause's colour, wherever the editor says the game is paused: the warn
+     amber, named for what it says, as `ok` shares Play's green. */
+  --color-pause: #f0b429;
 
   /* Prefab instances and their contents. Blue in Unity, and worth keeping
      recognisable rather than inventing a colour nobody has seen before. */
@@ -74,6 +79,44 @@
   --z-index-toast: 40;
   --z-index-prompt: 50;
   --z-index-tooltip: 60;
+}
+
+/*
+ * Play's tint. From the press of Play to Stop the whole editor wears the play
+ * green, the pause amber while paused, so that a window in Play looks it
+ * wherever the eye is — not only in the Viewport. The scene's panels are locked
+ * then, while the Project panel and the settings still take edits for the next
+ * Play, and the tint is what says which kind of moment this is.
+ *
+ * What moves is the greys and the lines, `surface-0` to `surface-4`, `line` and
+ * `line-soft`. They are the chrome: every panel, bar, gutter, tab, menu,
+ * tooltip, toast and dialog is drawn in them, the dock and Tweakpane through
+ * their own variables below. What does not: the ink, which has to stay legible;
+ * the accent and the semantic colours, which keep their meanings; the
+ * transport's own colours, `play` and `accent-dim`; and the canvases, which are
+ * pixels no token reaches.
+ *
+ * A weight inside each grey, rather than a second set of greys for Play. A
+ * custom property cannot be mixed from its own value, so a tinted block would
+ * have to repeat every grey, and the two copies would drift apart. Written
+ * once with the tint in it, a grey mixed with 0 % of anything is that grey, so
+ * the editor at rest wears exactly its own; the tint is two variables, its
+ * colour and its weight. In oklab, where a mix moves evenly from the grey
+ * toward the colour.
+ *
+ * On the root, which `shell/playTint.ts` writes: the tokens are declared there,
+ * and a custom property's `var()` is resolved on the element that declares it.
+ * The same attribute anywhere lower would move no grey.
+ */
+:root {
+  --play-tint: var(--color-play);
+  --play-tint-weight: 0%;
+}
+:root[data-play] {
+  --play-tint-weight: 10%;
+}
+:root[data-play='paused'] {
+  --play-tint: var(--color-pause);
 }
 
 @layer base {
