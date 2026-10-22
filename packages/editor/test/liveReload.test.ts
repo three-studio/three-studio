@@ -594,7 +594,11 @@ describe('watching the window', () => {
       watch();
 
       useEditorStore.getState().play();
-      moveCube(4);
+      // A material, since the scene is locked during Play and the asset tables
+      // are not.
+      useAssetStore.setState((state) => ({
+        materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
+      }));
       vi.advanceTimersByTime(3_000);
       expect(sent).toEqual([]);
 

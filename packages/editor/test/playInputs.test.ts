@@ -13,7 +13,7 @@ import {
   type ProjectFile,
 } from '@three-studio/core';
 import type { WebGPURenderer } from 'three/webgpu';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import { addEntity } from '../src/commands/sceneCommands';
 import { useAssetStore } from '../src/state/assetStore';
@@ -136,7 +136,7 @@ describe('what a launch sends while the editor plays', () => {
     };
   }
 
-  it('is the scene Play started from, until Stop', async () => {
+  it('is what Play started from, until Stop', async () => {
     // The compile held open, so Play stays at the point where it has taken its
     // inputs and nothing has run yet: no renderer is needed to get there.
     let finishBuild: (compiled: boolean) => void = () => {};
@@ -148,15 +148,30 @@ describe('what a launch sends while the editor plays', () => {
 
     useEditorStore.getState().play();
     await Promise.resolve();
-    const atPress = launchSnapshot().entry.scene;
+    const atPress = launchSnapshot();
 
-    const later = createMeshEntity('box');
-    addEntity(later);
-    expect(doc().scene.entities[later.entity.id]).toBeDefined();
-    expect(launchSnapshot().entry.scene.entities[later.entity.id]).toBeUndefined();
-    expect(launchSnapshot().entry.scene).toBe(atPress);
+    // The scene is locked during Play: an entity added now is refused, and the
+    // document stays the one Play started from.
+    const scene = doc().scene;
+    const refused = vi.spyOn(console, 'error').mockImplementation(() => {});
+    addEntity(createMeshEntity('box'));
+    refused.mockRestore();
+    expect(doc().scene).toBe(scene);
+
+    // What Play still lets change is the asset tables. A material written now
+    // is in what Play would run, and not in what a launch sends, which keeps
+    // the table from the press.
+    const LATER = 'material-written-during-play';
+    useAssetStore.setState((state) => ({
+      materials: { ...state.materials, [LATER]: createMaterial('#ff0000') },
+    }));
+    expect(readPlayInputs().materials[LATER]).toBeDefined();
+    expect(launchSnapshot().materials[LATER]).toBeUndefined();
+    expect(launchSnapshot().materials).toBe(atPress.materials);
+    expect(launchSnapshot().entry.scene).toBe(atPress.entry.scene);
 
     useEditorStore.getState().stop();
+    expect(launchSnapshot().materials[LATER]).toBeDefined();
     expect(launchSnapshot().entry.scene).toBe(doc().scene);
 
     finishBuild(false);
