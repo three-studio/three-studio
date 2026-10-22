@@ -63,8 +63,8 @@ export function ViewHeader({ className = '', ...props }: ComponentProps<'div'>) 
  * The game's state as a glyph: ▶ in the play green while it starts or runs,
  * ❚❚ in the pause amber while paused.
  *
- * Read from the play state, as the editor's tint is, so that the two say Pause
- * together from the moment it is pressed — before the game's first frame too.
+ * Read from the play state, so that it says Pause from the moment Pause is
+ * pressed — before the game's first frame too.
  */
 export function PlayGlyph() {
   const paused = useEditorStore((s) => s.playState === 'paused');

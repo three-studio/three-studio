@@ -3,7 +3,6 @@ import { App } from './App';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
 import { watchLiveReload } from './shell/liveReload';
-import { watchPlayTint } from './shell/playTint';
 import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindings';
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
@@ -88,10 +87,6 @@ function EditorWindow() {
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.
   useEffect(() => watchUnsaved(), []);
-
-  // The whole window says when its game runs. Each editor window is a document
-  // of its own, so a Play tints its own window and the launcher never wears it.
-  useEffect(() => watchPlayTint(), []);
 
   if (error !== null && summary === null) {
     return (
