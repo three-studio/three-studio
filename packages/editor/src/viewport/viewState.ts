@@ -21,9 +21,21 @@ export interface ViewInputs {
   playState: PlayState;
   /** The running game has drawn a frame: `viewportStore.gameShown`. */
   gameShown: boolean;
+  /** The game's canvas holds the focus: `viewportStore.gameHasKeys`. */
+  gameHasKeys: boolean;
+  /** The pointer is locked to the game's canvas: `viewportStore.gameHasMouse`. */
+  gameHasMouse: boolean;
 }
 
 export type ViewMode = 'edit' | 'starting' | 'playing' | 'paused';
+
+/**
+ * What the game holds of the person's input, which is what the capture hint
+ * speaks to: the mouse while the pointer is locked to its canvas — with the
+ * focus or without it, since Esc frees the mouse either way — else the keys
+ * while its canvas holds the focus, else nothing.
+ */
+export type GameHold = 'nothing' | 'keys' | 'mouse';
 
 export interface ViewState {
   mode: ViewMode;
@@ -55,6 +67,8 @@ export interface ViewState {
    * takes no pointer.
    */
   input: 'editor' | 'game' | 'none';
+  /** What the game holds of the person's input; see `GameHold`. */
+  gameHolds: GameHold;
   /** What is laid over the stage. */
   overlays: {
     /** Prefab Mode's bar: it is about what is being edited. */
@@ -72,7 +86,10 @@ export interface ViewState {
      * while there are some.
      */
     problems: boolean;
-    /** How to give the game the mouse, and how to stop it. */
+    /**
+     * What a click, or Esc, will do now, and how to stop: where the hint may
+     * show. What it says is `captureHintText`'s, from `gameHolds`.
+     */
     captureHint: boolean;
     /** The pill that says the game is starting, over the edit image it holds. */
     starting: boolean;
@@ -88,12 +105,14 @@ export interface ViewState {
 }
 
 export function viewState(inputs: ViewInputs): ViewState {
+  const gameHolds: GameHold = inputs.gameHasMouse ? 'mouse' : inputs.gameHasKeys ? 'keys' : 'nothing';
   if (inputs.playState === 'stopped') {
     return {
       mode: 'edit',
       canvas: 'edit',
       drawn: 'edit',
       input: 'editor',
+      gameHolds,
       overlays: {
         prefabBar: true,
         dropTarget: true,
@@ -114,6 +133,7 @@ export function viewState(inputs: ViewInputs): ViewState {
       canvas: 'edit',
       drawn: 'game',
       input: 'none',
+      gameHolds,
       overlays: {
         prefabBar: false,
         dropTarget: false,
@@ -133,6 +153,7 @@ export function viewState(inputs: ViewInputs): ViewState {
     canvas: 'game',
     drawn: 'game',
     input: 'game',
+    gameHolds,
     overlays: {
       prefabBar: false,
       dropTarget: false,
@@ -143,6 +164,32 @@ export function viewState(inputs: ViewInputs): ViewState {
       editStats: false,
     },
   };
+}
+
+/**
+ * The capture hint's words: what a click, or Esc, will do now, and how to stop
+ * the game. Empty when there is nothing to say.
+ *
+ * Never that ⇧Esc stops while the mouse is captured in the panel. The browser
+ * takes every Escape, Shift or not, to free a captured mouse before the page
+ * hears it, so ⇧Esc there frees the mouse and the game goes on — a second press
+ * stops it — and the hint says Esc instead. Full screen, the keyboard lock
+ * hands Escape to the page: ⇧Esc stops even with the mouse captured, and plain
+ * Esc is the game's.
+ *
+ * @param stopKey Stop's key as a menu prints it, `undefined` while it has none:
+ *   a Stop rebound moves the words with it, and an unbound one drops them.
+ */
+export function captureHintText(
+  holds: GameHold,
+  { fullScreen, stopKey }: { fullScreen: boolean; stopKey: string | undefined },
+): string {
+  const stop = stopKey === undefined ? null : `${stopKey} to stop`;
+  const parts =
+    holds === 'mouse'
+      ? [fullScreen ? stop : 'Esc to release the mouse']
+      : [holds === 'keys' ? 'Click to capture the mouse' : 'Click to play', stop];
+  return parts.filter((part) => part !== null).join(' · ');
 }
 
 /**

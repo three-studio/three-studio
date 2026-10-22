@@ -10,7 +10,7 @@ import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
-import { viewState } from '../viewport/viewState';
+import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
 import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
 import { SceneToolbar } from './SceneToolbar';
 import { tooltip } from '../ui/Tooltip';
@@ -63,8 +63,12 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   // A boolean, so the panel renders when the game's first frame is in and at
   // Stop, never per frame.
   const gameShown = useViewportStore((s) => s.gameShown);
+  // Booleans too: the panel renders when the game takes or loses the keyboard
+  // or the mouse, which the capture hint says.
+  const gameHasKeys = useViewportStore((s) => s.gameHasKeys);
+  const gameHasMouse = useViewportStore((s) => s.gameHasMouse);
   const [dropping, setDropping] = useState(false);
-  const view = viewState({ playState, gameShown });
+  const view = viewState({ playState, gameShown, gameHasKeys, gameHasMouse });
   const holdingScreen = usePlayFullScreen(stageRef);
 
   useEffect(() => {
@@ -196,7 +200,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
         )}
         {view.overlays.paused && <PausedBadge />}
         {view.overlays.problems && <SceneProblems />}
-        {view.overlays.captureHint && <CaptureHint holdingScreen={holdingScreen} />}
+        {view.overlays.captureHint && <CaptureHint holds={view.gameHolds} holdingScreen={holdingScreen} />}
         {view.overlays.starting && <StartingPill />}
       </div>
     </div>
@@ -325,22 +329,22 @@ function SceneProblems() {
   );
 }
 
-/** How to give the game the mouse, and how to stop it. */
-function CaptureHint({ holdingScreen }: { holdingScreen: boolean }) {
+/** What a click, or Esc, will do now, and how to stop: `captureHintText`'s words. */
+function CaptureHint({ holds, holdingScreen }: { holds: GameHold; holdingScreen: boolean }) {
+  const text = captureHintText(holds, { fullScreen: holdingScreen, stopKey: shortcutHint('stop') });
   const [shown, setShown] = useState(true);
 
-  // Full screen is the game as a player sees it, so the hint goes after a moment.
+  // Full screen is the game as a player sees it, so the hint goes after a
+  // moment — and comes back each time its words change: a game that has lost
+  // the keyboard full screen says so.
   useEffect(() => {
-    if (!holdingScreen) {
-      setShown(true);
-      return;
-    }
+    setShown(true);
+    if (!holdingScreen) return;
     const timer = setTimeout(() => setShown(false), FULL_SCREEN_HINT_MS);
     return () => clearTimeout(timer);
-  }, [holdingScreen]);
+  }, [holdingScreen, text]);
 
-  const stopKey = shortcutHint('stop');
-
+  if (text === '') return null;
   return (
     <div
       className={`pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity duration-700 ${
@@ -349,11 +353,7 @@ function CaptureHint({ holdingScreen }: { holdingScreen: boolean }) {
     >
       <span className="flex items-center gap-1.5 rounded-sm bg-surface-0/70 px-2 py-1 text-2xs text-ink-muted">
         <MousePointerClick size={11} />
-        {/* Esc frees the mouse in the panel only: full screen, the keyboard
-            lock gives it to the game, and the stop is the way out. */}
-        {['Click to capture the mouse', holdingScreen ? null : 'Esc to release', stopKey ? `${stopKey} to stop` : null]
-          .filter((part) => part !== null)
-          .join(' · ')}
+        {text}
       </span>
     </div>
   );

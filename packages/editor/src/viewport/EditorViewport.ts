@@ -325,10 +325,8 @@ export class EditorViewport {
 
   /** What the Viewport shows now, read the way the panel reads it. */
   private viewNow(): ViewState {
-    return viewState({
-      playState: useEditorStore.getState().playState,
-      gameShown: useViewportStore.getState().gameShown,
-    });
+    const { gameShown, gameHasKeys, gameHasMouse } = useViewportStore.getState();
+    return viewState({ playState: useEditorStore.getState().playState, gameShown, gameHasKeys, gameHasMouse });
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */

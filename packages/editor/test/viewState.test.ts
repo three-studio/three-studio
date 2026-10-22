@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayState } from '../src/state/editorStore';
-import { gameTakesFocus, viewState } from '../src/viewport/viewState';
+import { captureHintText, gameTakesFocus, viewState } from '../src/viewport/viewState';
 
 /*
  * What the Viewport shows. One panel holds the edit view and the game, their two
@@ -11,13 +11,17 @@ import { gameTakesFocus, viewState } from '../src/viewport/viewState';
  * start wants, and nothing else does.
  */
 
+/** What the game holds in the cases about what is shown: neither the keys nor the mouse. */
+const HOLDS_NOTHING = { gameHasKeys: false, gameHasMouse: false } as const;
+
 describe('what the view shows', () => {
   it('shows the edit view while stopped, with what editing lays over it', () => {
-    expect(viewState({ playState: 'stopped', gameShown: false })).toEqual({
+    expect(viewState({ playState: 'stopped', gameShown: false, ...HOLDS_NOTHING })).toEqual({
       mode: 'edit',
       canvas: 'edit',
       drawn: 'edit',
       input: 'editor',
+      gameHolds: 'nothing',
       overlays: {
         prefabBar: true,
         dropTarget: true,
@@ -35,11 +39,12 @@ describe('what the view shows', () => {
     // undrawn and inert, under its pill, while the game draws into its own
     // canvas unseen. Neither a frame of the last session nor a blank one can
     // show.
-    expect(viewState({ playState: 'playing', gameShown: false })).toEqual({
+    expect(viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING })).toEqual({
       mode: 'starting',
       canvas: 'edit',
       drawn: 'game',
       input: 'none',
+      gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
         dropTarget: false,
@@ -53,11 +58,12 @@ describe('what the view shows', () => {
   });
 
   it('shows the game once it has drawn, with its problems and the capture hint', () => {
-    expect(viewState({ playState: 'playing', gameShown: true })).toEqual({
+    expect(viewState({ playState: 'playing', gameShown: true, ...HOLDS_NOTHING })).toEqual({
       mode: 'playing',
       canvas: 'game',
       drawn: 'game',
       input: 'game',
+      gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
         dropTarget: false,
@@ -71,11 +77,12 @@ describe('what the view shows', () => {
   });
 
   it('keeps the game while it is paused, and says it is', () => {
-    expect(viewState({ playState: 'paused', gameShown: true })).toEqual({
+    expect(viewState({ playState: 'paused', gameShown: true, ...HOLDS_NOTHING })).toEqual({
       mode: 'paused',
       canvas: 'game',
       drawn: 'game',
       input: 'game',
+      gameHolds: 'nothing',
       overlays: {
         prefabBar: false,
         dropTarget: false,
@@ -91,21 +98,21 @@ describe('what the view shows', () => {
   it('is starting until the first frame, paused or not', () => {
     // Paused before the first frame shows the pill alone: no Paused badge over
     // an edit image, and the transport already shows the pause.
-    expect(viewState({ playState: 'playing', gameShown: false }).mode).toBe('starting');
-    expect(viewState({ playState: 'paused', gameShown: false })).toEqual(
-      viewState({ playState: 'playing', gameShown: false }),
+    expect(viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING }).mode).toBe('starting');
+    expect(viewState({ playState: 'paused', gameShown: false, ...HOLDS_NOTHING })).toEqual(
+      viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING }),
     );
   });
 
   it('is the edit view while stopped, whatever the last session drew', () => {
-    expect(viewState({ playState: 'stopped', gameShown: true })).toEqual(
-      viewState({ playState: 'stopped', gameShown: false }),
+    expect(viewState({ playState: 'stopped', gameShown: true, ...HOLDS_NOTHING })).toEqual(
+      viewState({ playState: 'stopped', gameShown: false, ...HOLDS_NOTHING }),
     );
   });
 
   it('draws a canvas other than the one on top only while starting', () => {
     const cases = (['stopped', 'playing', 'paused'] as PlayState[]).flatMap((playState) =>
-      [false, true].map((gameShown) => viewState({ playState, gameShown })),
+      [false, true].map((gameShown) => viewState({ playState, gameShown, ...HOLDS_NOTHING })),
     );
     expect(cases.filter((view) => view.drawn !== view.canvas).map((view) => view.mode)).toEqual([
       'starting',
@@ -114,7 +121,7 @@ describe('what the view shows', () => {
   });
 
   it('lays nothing over the starting stage but its pill', () => {
-    const { overlays } = viewState({ playState: 'playing', gameShown: false });
+    const { overlays } = viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING });
     expect(Object.entries(overlays).filter(([, on]) => on).map(([name]) => name)).toEqual(['starting']);
   });
 
@@ -123,10 +130,10 @@ describe('what the view shows', () => {
     // neither fly the editor camera nor drag a handle into an edit the scene
     // lock refuses. While starting, it is nobody's: the edit image is a
     // picture.
-    expect(viewState({ playState: 'stopped', gameShown: false }).input).toBe('editor');
-    expect(viewState({ playState: 'playing', gameShown: false }).input).toBe('none');
-    expect(viewState({ playState: 'playing', gameShown: true }).input).toBe('game');
-    expect(viewState({ playState: 'paused', gameShown: true }).input).toBe('game');
+    expect(viewState({ playState: 'stopped', gameShown: false, ...HOLDS_NOTHING }).input).toBe('editor');
+    expect(viewState({ playState: 'playing', gameShown: false, ...HOLDS_NOTHING }).input).toBe('none');
+    expect(viewState({ playState: 'playing', gameShown: true, ...HOLDS_NOTHING }).input).toBe('game');
+    expect(viewState({ playState: 'paused', gameShown: true, ...HOLDS_NOTHING }).input).toBe('game');
   });
 
   it('says how the editor camera flies, and how the edit view is lit, only while the scene is edited', () => {
@@ -134,7 +141,7 @@ describe('what the view shows', () => {
     // light Play and a build do not have: over the game, or over the edit image
     // held while it starts, both describe something not on screen.
     const cases = (['stopped', 'playing', 'paused'] as PlayState[]).flatMap((playState) =>
-      [false, true].map((gameShown) => viewState({ playState, gameShown })),
+      [false, true].map((gameShown) => viewState({ playState, gameShown, ...HOLDS_NOTHING })),
     );
     expect(cases.filter((view) => view.overlays.editStats).map((view) => view.mode)).toEqual(['edit', 'edit']);
   });
@@ -164,5 +171,49 @@ describe('whether Play gives the game the keyboard as its canvas comes on top', 
     expect(gameTakesFocus(play, field, body)).toBe(false);
     expect(gameTakesFocus(null, field, body)).toBe(false);
     expect(gameTakesFocus(body, field, body)).toBe(false);
+  });
+});
+
+describe('what the game holds, which the capture hint speaks to', () => {
+  const holds = (playState: PlayState, gameHasKeys: boolean, gameHasMouse: boolean) =>
+    viewState({ playState, gameShown: true, gameHasKeys, gameHasMouse }).gameHolds;
+
+  it('is the mouse while the pointer is locked to the game, else the keys while it has the focus, else nothing', () => {
+    for (const playState of ['playing', 'paused'] as const) {
+      expect(holds(playState, false, false), playState).toBe('nothing');
+      expect(holds(playState, true, false), playState).toBe('keys');
+      expect(holds(playState, true, true), playState).toBe('mouse');
+      // A focus that left while the lock held: Esc frees the mouse either way.
+      expect(holds(playState, false, true), playState).toBe('mouse');
+    }
+  });
+});
+
+describe('the capture hint’s words', () => {
+  const panel = { fullScreen: false, stopKey: '⇧Esc' };
+  const fullScreen = { fullScreen: true, stopKey: '⇧Esc' };
+
+  it('say what a click will do, and how to stop', () => {
+    expect(captureHintText('nothing', panel)).toBe('Click to play · ⇧Esc to stop');
+    expect(captureHintText('nothing', fullScreen)).toBe('Click to play · ⇧Esc to stop');
+    expect(captureHintText('keys', panel)).toBe('Click to capture the mouse · ⇧Esc to stop');
+    expect(captureHintText('keys', fullScreen)).toBe('Click to capture the mouse · ⇧Esc to stop');
+  });
+
+  it('say Esc with the mouse captured in the panel, and ⇧Esc full screen', () => {
+    // In the panel the browser takes every Escape, Shift or not, to free a
+    // captured mouse before the page hears it: ⇧Esc would free the mouse and
+    // the game would go on. Full screen, the keyboard lock hands Escape to the
+    // page, and ⇧Esc stops.
+    expect(captureHintText('mouse', panel)).toBe('Esc to release the mouse');
+    expect(captureHintText('mouse', fullScreen)).toBe('⇧Esc to stop');
+  });
+
+  it('drop the stop while Stop has no key, and say nothing where that was all', () => {
+    const unbound = { fullScreen: false, stopKey: undefined };
+    expect(captureHintText('nothing', unbound)).toBe('Click to play');
+    expect(captureHintText('keys', unbound)).toBe('Click to capture the mouse');
+    expect(captureHintText('mouse', unbound)).toBe('Esc to release the mouse');
+    expect(captureHintText('mouse', { fullScreen: true, stopKey: undefined })).toBe('');
   });
 });
