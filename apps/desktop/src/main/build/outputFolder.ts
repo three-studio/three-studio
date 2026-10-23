@@ -1,7 +1,7 @@
 import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, parse, resolve } from 'node:path';
-import { ASSETS_DIR, CACHE_DIR, SCENES_DIR } from '@three-studio/core';
+import { ASSETS_DIR, BUILD_LAYOUT, CACHE_DIR, SCENES_DIR } from '@three-studio/core';
 import { AssetError } from '../assetFiles';
 
 /*
@@ -15,13 +15,18 @@ import { AssetError } from '../assetFiles';
  */
 
 /**
- * The names an export writes at the top of its folder, besides the player's
- * own top-level entries, which are read off the template.
+ * The names an export owns at the top of its folder.
  *
  * Everything else in the folder belongs to the author — a repository's `.git`,
  * its README, a `CNAME` — and the export neither writes, deletes nor lists it.
  */
-export const EXPORT_ROOTS = ['assets', 'scenes', 'scripts.mjs', 'build.json', 'files.json'] as const;
+export const BUILD_ROOTS: readonly string[] = [
+  BUILD_LAYOUT.page,
+  BUILD_LAYOUT.icon,
+  BUILD_LAYOUT.files,
+  BUILD_LAYOUT.player,
+  BUILD_LAYOUT.game,
+];
 
 /**
  * A directory as the file system knows it, rather than as it is spelled.
@@ -103,20 +108,24 @@ export async function outputFolderProblem(
  * Whether a folder holds a build an export made, which it may then replace.
  *
  * Read off the manifest, which every export since builds were versioned has
- * written with a `formatVersion`. A folder some other tool filled with an
- * `index.html` and an `assets/` has no such file, and is not ours to empty.
+ * written with a `formatVersion` — under `game/`, or at the top of the folder
+ * before format 7, so a folder exported by an earlier version is still one.
+ * A folder some other tool filled with an `index.html` has no such file, and
+ * is not ours to empty.
  */
 async function isBuildFolder(outputDir: string): Promise<boolean> {
-  try {
-    const parsed: unknown = JSON.parse(await readFile(join(outputDir, 'build.json'), 'utf8'));
-    return (
-      typeof parsed === 'object' &&
-      parsed !== null &&
-      typeof (parsed as { formatVersion?: unknown }).formatVersion === 'number'
-    );
-  } catch {
-    return false;
+  for (const manifest of [BUILD_LAYOUT.manifest, 'build.json']) {
+    try {
+      const parsed: unknown = JSON.parse(
+        await readFile(join(outputDir, ...manifest.split('/')), 'utf8'),
+      );
+      const version = (parsed as { formatVersion?: unknown } | null)?.formatVersion;
+      if (typeof version === 'number') return true;
+    } catch {
+      // Not this one; the other, or none.
+    }
   }
+  return false;
 }
 
 /**

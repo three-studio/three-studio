@@ -3,37 +3,38 @@ import {
   type AssetEntry,
   type AssetSettings,
   type BuildManifest,
+  type BuildScene,
   type MaterialDef,
   type PhysicsSettings,
   type PrefabDoc,
   type RenderingSettings,
-  type SceneEntry,
   type TextureEncoding,
 } from '@three-studio/core';
 
 /**
- * One asset a build carries, and where under `assets/` the player finds it.
+ * One asset a build carries, and where the player finds it.
  *
- * The path is the caller's: an export names a file by its content hash, a
- * device launch by the asset's id, and the manifest only has to repeat it.
+ * The path is the caller's, relative to `build.json`: an export names a file by
+ * its content, a device launch by the asset's id, and the manifest only has to
+ * repeat it.
  */
 export interface ShippedAsset {
   entry: AssetEntry;
   path: string;
 }
 
-/** Everything a caller has decided to ship. */
+/** Everything a caller has decided to ship, and where it put it. */
 export interface ManifestContents {
   title: string;
   rendering: RenderingSettings;
   physics: PhysicsSettings;
   /** Entry point first; the rest ship for a script to load later. */
-  scenes: readonly Pick<SceneEntry, 'id' | 'name'>[];
+  scenes: readonly BuildScene[];
   loadingScene: string | null;
   assets: readonly ShippedAsset[];
   materials: Record<string, MaterialDef>;
   prefabs: Record<string, PrefabDoc>;
-  /** The bundle's path beside `build.json`, or `null` when there are no scripts. */
+  /** The bundle's path relative to `build.json`, or `null` when there are no scripts. */
   scripts: string | null;
 }
 
@@ -41,7 +42,7 @@ export interface ManifestContents {
  * What `build.json` says about what a build ships.
  *
  * The one place it is said. An export and a device launch choose differently —
- * one ships what its scenes reach and names files by their hash, the other
+ * one ships what its scenes reach and names files by their content, the other
  * ships everything under the asset's id — and the player cannot tell them
  * apart, so what a field means has to be decided once. Two literals kept in
  * step by hand is how the script build result lost a field on one side.
@@ -54,7 +55,8 @@ export interface ManifestContents {
  * filled in id order. They used to follow the order the asset scan met the
  * files in, which is whatever order the volume lists a folder in — so the same
  * project exported on two machines, or after a copy, showed a diff in a build
- * that had not changed.
+ * that had not changed. The scenes keep the caller's order, which means
+ * something: the first is where the game starts.
  */
 export function assembleManifest(contents: ManifestContents): BuildManifest {
   const assets: Record<string, string> = {};
@@ -77,7 +79,9 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
    * does not look like the editor is the one bug an export must not have.
    */
   const assetSettings: Record<string, AssetSettings> = {};
-  for (const { entry, path } of [...contents.assets].sort((a, b) => byKey(a.entry.id, b.entry.id))) {
+  for (const { entry, path } of [...contents.assets].sort((a, b) =>
+    byKey(a.entry.id, b.entry.id),
+  )) {
     assets[entry.id] = path;
     if (entry.settings.kind === 'texture' && entry.settings.encoding === 'ultrahdr') {
       textureEncodings[entry.id] = entry.settings.encoding;
@@ -85,39 +89,12 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     assetSettings[entry.id] = entry.settings;
   }
 
-  /*
-   * An alias, not an address: a script may name a level, and the name is what
-   * an author reads in the editor. Nothing is found by it — see `sceneNames`.
-   *
-   * The first scene under a name keeps it. The entry is listed first, so when a
-   * scene in another folder shares its name the entry still answers to it, as
-   * `scenes.current` does in Play; the last one used to win, which left the
-   * entry reachable by its id alone.
-   *
-   * Through a `Map` and `Object.fromEntries` rather than by assigning into an
-   * object: a scene may be called `constructor`, which every object already
-   * answers to, or `__proto__`, which an assignment would take as the object's
-   * prototype instead of a name.
-   */
-  const names = new Map<string, string>();
-  for (const { id, name } of contents.scenes) {
-    if (!names.has(name)) names.set(name, id);
-  }
-
   return {
     formatVersion: BUILD_FORMAT_VERSION,
     title: contents.title,
-    // Kept beside `rendering`, which subsumes it: a build written before that
-    // field carries only this one, and a player from then still falls back to
-    // it. Persisted data gains fields; it does not lose them.
-    forceWebGL: contents.rendering.forceWebGL,
     rendering: contents.rendering,
     physics: contents.physics,
-    scenes: contents.scenes.map(({ id }) => id),
-    sceneNames: Object.fromEntries(names),
-    // The id the project already holds, passed through. An id naming a scene
-    // this build does not ship reaches the player as a loading scene it cannot
-    // read, which it says out loud — where dropping it here was silent.
+    scenes: contents.scenes.map(({ id, name, path }) => ({ id, name, path })),
     loadingScene: contents.loadingScene,
     assets,
     materials: sortedRecord(contents.materials),

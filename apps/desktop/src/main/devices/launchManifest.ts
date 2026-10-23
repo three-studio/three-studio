@@ -16,8 +16,8 @@ export interface LaunchContents {
 }
 
 /**
- * Where a launch serves an asset under `assets/`: its id, then its source's
- * file name.
+ * Where a launch serves an asset, relative to `build.json`: `assets/`, its id,
+ * then its source's file name.
  *
  * The id is how the server finds it, so the name never has to be looked up.
  * The source's name even when a scaled copy is what is served, as an export
@@ -26,7 +26,20 @@ export interface LaunchContents {
  * relative to the source, beside which the server finds them.
  */
 export function launchAssetPath(entry: AssetEntry): string {
-  return `${entry.id}/${posix.basename(entry.path)}`;
+  return `assets/${entry.id}/${posix.basename(entry.path)}`;
+}
+
+/**
+ * Where a launch serves a scene, relative to `build.json`: its id, as a file.
+ *
+ * A launch answers scenes by id — the entry from the editor's memory, every
+ * other from its file — so the path only has to carry the id back to the
+ * server. An export names its scenes by their content instead; a launch is
+ * served `no-store` and its entry is not a file at all, so a content name would
+ * buy nothing here.
+ */
+export function launchScenePath(sceneId: string): string {
+  return `scenes/${sceneId}.json`;
 }
 
 /**
@@ -53,7 +66,7 @@ export function launchManifest(contents: LaunchContents): BuildManifest {
     scenes: [
       { id: entry.id, name: entry.name },
       ...scenes.filter((scene) => scene.id !== entry.id && scene.shadowedBy === null),
-    ],
+    ].map(({ id, name }) => ({ id, name, path: launchScenePath(id) })),
     loadingScene: snapshot.loadingScene,
     /*
      * Every asset rather than what the scenes link to: a script can load any

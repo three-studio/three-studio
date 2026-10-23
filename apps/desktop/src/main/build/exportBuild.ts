@@ -1,5 +1,6 @@
 import { readFile, readdir } from 'node:fs/promises';
 import {
+  BUILD_LAYOUT,
   collectSceneAssets,
   findScene,
   basePathProblem,
@@ -22,7 +23,7 @@ import { discoverScenes, readProject } from '../project';
 import { sizeOf } from './buildFiles';
 import { BuildPlan } from './buildPlan';
 import { assembleManifest } from './manifest';
-import { EXPORT_ROOTS, claimOutputFolder } from './outputFolder';
+import { BUILD_ROOTS, claimOutputFolder } from './outputFolder';
 import { planAssets } from './steps/assets';
 import { planPlayer } from './steps/player';
 import { planScenes } from './steps/scenes';
@@ -114,7 +115,19 @@ export async function exportBuild(
   const base = normalizeBasePath(profile.basePath ?? '');
 
   const template = await findTemplate(searchRoots);
-  const roots = [...(await readdir(template)), ...EXPORT_ROOTS];
+  // The player's own names have to be the layout's, or the export would ship
+  // what it does not own — a player built before format 7 still has `_studio/`.
+  const playerNames: readonly string[] = [BUILD_LAYOUT.page, BUILD_LAYOUT.icon, BUILD_LAYOUT.player];
+  const unknown = (await readdir(template)).filter(
+    (name) => !name.startsWith('.') && !playerNames.includes(name),
+  );
+  if (unknown.length > 0) {
+    throw new AssetError(
+      `The web player holds ${unknown.join(', ')}, which a build has no place for. ` +
+        'Rebuild it: `npm run build:web`.',
+    );
+  }
+  const roots = BUILD_ROOTS;
 
   // Before anything is read or written, and after the two refusals above that
   // need no folder at all: a folder the export must not touch is the author's
@@ -210,8 +223,8 @@ async function planExport(
   if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(base)) {
     warnings.push(
       `This build is based at ${base}. If the page is served from a different origin, that ` +
-        `server has to send Access-Control-Allow-Origin for build.json, the scenes, assets/ ` +
-        `and scripts.mjs — without it the page loads and stays black.`,
+        `server has to send Access-Control-Allow-Origin for everything under ${BUILD_LAYOUT.game}/ ` +
+        `— without it the page loads and stays black.`,
     );
   }
 
@@ -239,7 +252,7 @@ async function planExport(
   );
   warnings.push(...assets.warnings);
 
-  planScenes(plan, scenes);
+  const shippedScenes = planScenes(plan, scenes);
 
   report(0.7, 'Compiling scripts');
   const scripts = await planScripts(plan, projectPath);
@@ -255,7 +268,7 @@ async function planExport(
     title: profile.title,
     rendering: project.settings.rendering,
     physics: project.settings.physics,
-    scenes: scenes.map(({ entry }) => entry),
+    scenes: shippedScenes,
     loadingScene: project.settings.loadingScene,
     assets: assets.shipped,
     // Only what a shipped scene links to. An unused material or prefab asset is
@@ -264,7 +277,7 @@ async function planExport(
     prefabs: pick(prefabs, referenced),
     scripts: scripts.file,
   });
-  plan.addBytes('build.json', JSON.stringify(build, null, 2), { kind: 'manifest' });
+  plan.addBytes(BUILD_LAYOUT.manifest, JSON.stringify(build, null, 2), { kind: 'manifest' });
 
   /*
    * GitHub Pages runs Jekyll, which leaves out every path starting with `_` —

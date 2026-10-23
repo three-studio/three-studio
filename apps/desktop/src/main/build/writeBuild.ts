@@ -1,5 +1,6 @@
 import { mkdir, readdir, rm, rmdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { BUILD_LAYOUT } from '@three-studio/core';
 import { atomicCopy, atomicWrite } from '../atomicWrite';
 import { BUILD_FILES_NAME, buildFileList } from './buildFiles';
 import type { BuildPlan, PlannedFile } from './buildPlan';
@@ -22,8 +23,16 @@ import { walkFiles, type WalkedFile } from './walk';
  *  4. `files.json`, from the plan, last of all.
  */
 
-/** The files a build switches on, in the order they are written: after every other. */
-const SWITCH_FILES = ['build.json', 'index.html'];
+/**
+ * The files a build switches on, in the order they are written: after every other.
+ *
+ * Every other file is named by its content, so writing it never disturbs the
+ * build already in the folder — the new one lands beside the old. Until the
+ * manifest is replaced, a reader finds the previous build whole; until the page
+ * is, the previous player. A failure before the switch leaves the previous
+ * build working, with a few unreferenced files beside it.
+ */
+const SWITCH_FILES: readonly string[] = [BUILD_LAYOUT.manifest, BUILD_LAYOUT.page];
 
 export async function writeBuild(
   plan: BuildPlan,

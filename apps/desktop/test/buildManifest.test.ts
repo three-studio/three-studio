@@ -43,7 +43,7 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
     title: 'Game',
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
-    scenes: [{ id: 'main', name: 'Main' }],
+    scenes: [{ id: 'main', name: 'Main', path: 'scenes/main.json' }],
     loadingScene: null,
     assets: [],
     materials: {},
@@ -104,65 +104,36 @@ describe('assembling build.json', () => {
     });
   });
 
-  it('keeps forceWebGL beside the rendering settings it is part of', () => {
+  it('carries the rendering settings whole, and nothing beside them', () => {
+    // `forceWebGL` used to be repeated at the top for a player older than
+    // `rendering`. This file only ever travels with its own player, so a field
+    // kept for an older reader is a field nobody reads.
     const rendering = { ...createRenderingSettings(), forceWebGL: true };
     const build = assembleManifest(contents({ rendering }));
     expect(build.rendering).toEqual(rendering);
-    expect(build.forceWebGL).toBe(true);
+    expect(Object.keys(build)).not.toContain('forceWebGL');
   });
 
-  it('lists the scenes in the order given, the entry first', () => {
-    const build = assembleManifest(
-      contents({
-        scenes: [
-          { id: 'b', name: 'Second' },
-          { id: 'a', name: 'First' },
-        ],
-      }),
-    );
-    expect(build.scenes).toEqual(['b', 'a']);
-    expect(build.sceneNames).toEqual({ Second: 'b', First: 'a' });
-  });
-
-  it('leaves a shared name with the first scene that has it', () => {
-    // The entry comes first, so it keeps its own name when a scene in another
-    // folder shares it, and `scenes.current` answers by name as it does in Play.
-    const build = assembleManifest(
-      contents({
-        scenes: [
-          { id: 'entry', name: 'Level' },
-          { id: 'copy', name: 'Level' },
-        ],
-      }),
-    );
-    expect(build.scenes).toEqual(['entry', 'copy']);
-    expect(build.sceneNames).toEqual({ Level: 'entry' });
-  });
-
-  it('names a scene after something every object already has', () => {
-    const build = assembleManifest(
-      contents({
-        scenes: [
-          { id: 'a', name: 'constructor' },
-          { id: 'b', name: '__proto__' },
-        ],
-      }),
-    );
-    expect(Object.hasOwn(build.sceneNames!, 'constructor')).toBe(true);
-    expect(build.sceneNames!['constructor']).toBe('a');
-    // Written as data, so it survives the trip through JSON as a name.
-    expect(JSON.parse(JSON.stringify(build.sceneNames))).toEqual(
-      JSON.parse('{"constructor":"a","__proto__":"b"}'),
-    );
+  it('lists the scenes in the order given, the entry first, each with its path', () => {
+    // A name shared with another scene stays in the list: which one answers to
+    // it is the player's to decide, and the entry comes first.
+    const scenes = [
+      { id: 'b', name: 'Level', path: 'scenes/level.2.json' },
+      { id: 'a', name: 'Level', path: 'scenes/level.1.json' },
+      { id: 'c', name: '__proto__', path: 'scenes/proto.3.json' },
+    ];
+    const build = assembleManifest(contents({ scenes }));
+    expect(build.scenes).toEqual(scenes);
+    expect(Object.keys(build)).not.toContain('sceneNames');
   });
 
   it('passes the rest through, and says which format it is', () => {
     const build = assembleManifest(
-      contents({ title: 'Mine', loadingScene: 'loading', scripts: 'scripts.mjs' }),
+      contents({ title: 'Mine', loadingScene: 'loading', scripts: 'scripts/bundle.1a2b3c4d.mjs' }),
     );
     expect(build.title).toBe('Mine');
     expect(build.loadingScene).toBe('loading');
-    expect(build.scripts).toBe('scripts.mjs');
+    expect(build.scripts).toBe('scripts/bundle.1a2b3c4d.mjs');
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
   });
 });

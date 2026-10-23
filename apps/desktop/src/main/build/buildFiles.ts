@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ASSET_KIND_INFO, type AssetKind, type BuildSize } from '@three-studio/core';
+import { ASSET_KIND_INFO, BUILD_LAYOUT, type AssetKind, type BuildSize } from '@three-studio/core';
 import { AssetError } from '../assetFiles';
 import { foldKey, toBuildPath } from './buildPath';
 import { digestOfFile, type PlannedFile } from './buildPlan';
@@ -42,7 +42,7 @@ import { walkFiles } from './walk';
  * and what vouches for the anchor is outside the folder — a signature, or the
  * CI artifact it arrived in.
  */
-export const BUILD_FILES_NAME = 'files.json';
+export const BUILD_FILES_NAME = BUILD_LAYOUT.files;
 
 /**
  * The list's shape, read by tools outside this repository — a CI job that

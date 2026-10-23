@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { claimOutputFolder, outputFolderProblem } from '../src/main/build/outputFolder';
+import { BUILD_ROOTS, claimOutputFolder, outputFolderProblem } from '../src/main/build/outputFolder';
 
 /*
  * The output folder is chosen in a file picker, and nothing stood between the
@@ -20,17 +20,7 @@ async function setUp(): Promise<{ root: string; home: string; projectPath: strin
   return { root, home, projectPath };
 }
 
-/** What an export of the current layout writes at the top of its folder. */
-const OWNED = [
-  'player',
-  'favicon.svg',
-  'index.html',
-  'assets',
-  'scenes',
-  'scripts.mjs',
-  'build.json',
-  'files.json',
-];
+const OWNED = BUILD_ROOTS;
 
 describe('where an export may write', () => {
   it('refuses the project itself, however it is spelled', async () => {
@@ -71,15 +61,15 @@ describe('what an export may replace', () => {
   it("refuses a folder holding another tool's index.html and Assets/, and leaves it as it was", async () => {
     const { root, home, projectPath } = await setUp();
     const site = join(root, 'site');
-    // `Assets` rather than `assets`: the volumes this runs on mostly ignore
-    // case, so it is the folder an export writing `assets/` would empty.
-    await mkdir(join(site, 'Assets'), { recursive: true });
+    // `Game` rather than `game`: the volumes this runs on mostly ignore case,
+    // so it is the folder an export writing `game/` would fill.
+    await mkdir(join(site, 'Game'), { recursive: true });
     await writeFile(join(site, 'index.html'), '<h1>My site</h1>', 'utf8');
 
     await expect(claimOutputFolder(site, projectPath, OWNED, home)).rejects.toThrow(
-      /Assets, index\.html/,
+      /Game, index\.html/,
     );
-    expect((await readdir(site)).sort()).toEqual(['Assets', 'index.html']);
+    expect((await readdir(site)).sort()).toEqual(['Game', 'index.html']);
   });
 
   it("accepts a repository's own files, which an export never touches", async () => {
@@ -92,15 +82,21 @@ describe('what an export may replace', () => {
     release();
   });
 
-  it('accepts a folder an export already filled', async () => {
+  it('accepts a folder an export already filled, in either layout', async () => {
     const { root, home, projectPath } = await setUp();
     const build = join(root, 'build');
-    await mkdir(join(build, 'assets'), { recursive: true });
+    await mkdir(join(build, 'game'), { recursive: true });
     await writeFile(join(build, 'index.html'), '<!doctype html>', 'utf8');
-    await writeFile(join(build, 'build.json'), JSON.stringify({ formatVersion: 6 }), 'utf8');
+    await writeFile(join(build, 'game', 'build.json'), JSON.stringify({ formatVersion: 7 }), 'utf8');
+    (await claimOutputFolder(build, projectPath, OWNED, home))();
 
-    const release = await claimOutputFolder(build, projectPath, OWNED, home);
-    release();
+    // Before format 7 the manifest sat at the top, beside the page: the folder
+    // is still one an export filled, and its old files are left as they are.
+    const older = join(root, 'older');
+    await mkdir(join(older, '_studio'), { recursive: true });
+    await writeFile(join(older, 'index.html'), '<!doctype html>', 'utf8');
+    await writeFile(join(older, 'build.json'), JSON.stringify({ formatVersion: 6 }), 'utf8');
+    (await claimOutputFolder(older, projectPath, OWNED, home))();
   });
 
   it('holds a folder for one export at a time', async () => {

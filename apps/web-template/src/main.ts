@@ -1,22 +1,19 @@
 import {
   BUILD_FORMAT_VERSION,
+  BUILD_LAYOUT,
   type AssetSettings,
   type BuildManifest,
   type TextureEncoding,
   SCRIPT_API_VERSION,
-  buildScenePath,
   deserializeScene,
   encodePath,
-  type MaterialDef,
-  type PrefabDoc,
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { announce } from './announce';
 import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
-import { entrySceneName, sceneIdOf } from './scenes';
-import { runSettingsOf } from './settings';
+import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
@@ -32,28 +29,31 @@ import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
  * same code the editor runs in play mode. Anything this file had to reimplement
  * would be a place the two could drift apart.
  *
- * It reads three files the exporter writes beside it:
- *   build.json          the manifest: what the profile chose, the scene list,
- *                       and the asset table, materials and prefabs — see
- *                       `BuildManifest`
- *   scenes/<id>.json    every scene, the entry point first in `build.scenes`
- *   scripts.mjs         the compiled behaviours, absent when the project has
- *                       none
+ * It reads what the exporter writes in `game/` beside it:
+ *   build.json   the manifest: what the profile chose, the scenes, the asset
+ *                table, materials and prefabs — see `BuildManifest`
+ *   scenes/…     every scene, the entry point first in `build.scenes`
+ *   assets/…     what the scenes use
+ *   scripts/…    the compiled behaviours, when the project has any
  *
- * Three, and it used to be six: the asset table, the materials and the prefabs
- * were files of their own. They are small and always needed, so they were three
- * round trips spent to learn nothing.
+ * Every path but the manifest's own is read **off the manifest**, relative to
+ * it, so there is one way to find a file and nothing is worked out twice.
  */
 
+/** Where the manifest is, from the page — and, through it, every other file of the game. */
+const MANIFEST_URL = new URL(BUILD_LAYOUT.manifest, document.baseURI);
+
 /**
- * The three documents the manifest carries, however they arrive.
+ * A path the manifest holds, as the URL to fetch.
  *
- * `Required<Pick<…>>` rather than a shape of its own: they are optional on
- * `BuildManifest` because an older build has them elsewhere, and by the time
- * they are here that question is settled. Naming the fields again would be the
- * fourth declaration of a manifest this commit reduced to one.
+ * Against the manifest rather than the page: the exporter and the device
+ * server both write paths relative to it, and the page may carry a `<base>`.
+ * Encoded segment by segment — see `encodePath` — since an asset may be named
+ * `brick wall #2.png`.
  */
-type BuildDocuments = Required<Pick<BuildManifest, 'assets' | 'materials' | 'prefabs'>>;
+function resolve(path: string): string {
+  return new URL(encodePath(path), MANIFEST_URL).href;
+}
 
 // Before anything loads: the loading screen and the Play screen are pinched
 // too, and a page zoomed there opens the game zoomed.
@@ -85,11 +85,11 @@ function buildResolver(
   settings: Record<string, AssetSettings> = {},
 ): AssetResolver {
   return {
-    // Relative, so the build runs from a subdirectory as happily as from a
-    // root — and from wherever the `<base>` an export can carry points.
+    // Off the manifest, so the build runs from a subdirectory as happily as
+    // from a root — and from wherever the `<base>` an export can carry points.
     url: (assetId) => {
       const path = paths[assetId];
-      return path === undefined ? null : `assets/${encodePath(path)}`;
+      return path === undefined ? null : resolve(path);
     },
     // `null` means "the extension knows", which is true of everything the
     // exporter did not have to write down.
@@ -101,44 +101,15 @@ function buildResolver(
 }
 
 /**
- * The asset table, the materials and the prefabs — from the manifest, or from
- * the three files they used to be.
- *
- * Format 4 folded them in, and this still reads the older shape. Written
- * together by one export, so one of them being absent means all three are.
- *
- * **Format 5 put that branch out of reach**, and it is worth knowing why rather
- * than finding out: moving every scene under `scenes/<id>.json` is not a field
- * with a default, so a build old enough to take this path has its scenes
- * somewhere this player never looks and fails on the next line anyway. The same
- * is now true of every optional field on `BuildManifest` — which is one
- * decision to take in one pass, not six times in six places, so this is left
- * standing until it is taken.
- */
-async function documentsOf(build: BuildManifest): Promise<BuildDocuments> {
-  const { assets, materials, prefabs } = build;
-  if (assets !== undefined && materials !== undefined && prefabs !== undefined) {
-    return { assets, materials, prefabs };
-  }
-  const [fetched, fetchedMaterials, fetchedPrefabs] = await Promise.all([
-    fetchJson<Record<string, string>>('assets.json'),
-    fetchJson<Record<string, MaterialDef>>('materials.json'),
-    fetchJson<Record<string, PrefabDoc>>('prefabs.json'),
-  ]);
-  return { assets: fetched, materials: fetchedMaterials, prefabs: fetchedPrefabs };
-}
-
-/**
  * One scene, by whichever half of its identity was named.
  *
- * The only place a scene's URL is formed, and it is *formed* rather than looked
- * up: `buildScenePath` is the same function the exporter wrote the file with,
- * so the two cannot disagree. Still encoded — a scene file carrying no id of
- * its own is addressed by its project path, which can hold spaces.
+ * Looked up, never formed: the manifest says where each scene is, and the
+ * exporter names them by their content, so a path worked out from an id would
+ * be a guess.
  */
 async function readScene(build: BuildManifest, named: string): Promise<SceneDoc> {
-  const path = buildScenePath(sceneIdOf(build, named));
-  const response = await fetch(encodePath(path));
+  const { path } = sceneOf(build, named);
+  const response = await fetch(resolve(path));
   // Named, so a missing scene reads as a missing scene. Without it a static
   // server's 404 page is handed to the parser, which reports a syntax error.
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
@@ -150,11 +121,9 @@ async function loadScripts(file: string | null): Promise<void> {
   if (!file) return; // The build manifest says this project has no scripts.
 
   try {
-    // Against the document, not `import.meta.url`: the bundle lives in
-    // `player/` while the exporter writes the script bundle beside
-    // index.html, so resolving from the module asked for
-    // `player/scripts.mjs`. Every other path here is document-relative too.
-    await import(/* @vite-ignore */ new URL(file, document.baseURI).href);
+    // Off the manifest, not `import.meta.url`: this module lives in `player/`,
+    // and resolving from it asked for `player/scripts.mjs`.
+    await import(/* @vite-ignore */ resolve(file));
   } catch (cause) {
     // A scene without its behaviours is worth more than a black page: the
     // geometry, lights and camera are all still there to look at.
@@ -165,13 +134,14 @@ async function loadScripts(file: string | null): Promise<void> {
 async function boot(): Promise<void> {
   if (!canvas || !overlay || !message || !startButton) throw new Error('template markup missing');
 
-  const build = await fetchJson<BuildManifest>('build.json');
-  // Checked before the data is touched: a player reading a build it does not
-  // understand should say so, not fail on a field it expected to be there.
-  const version = build.formatVersion ?? 0;
-  if (version > BUILD_FORMAT_VERSION) {
+  const build = await fetchJson<BuildManifest>(MANIFEST_URL.href);
+  // Checked before the data is touched, and for equality: an export always
+  // ships the player it came with, so another format means a folder holding two
+  // versions — a player copied over an old build, or a half-copied upload.
+  // Saying so beats failing on a field that is not there.
+  if (build.formatVersion !== BUILD_FORMAT_VERSION) {
     throw new Error(
-      `This build was produced by a newer version of the editor (format ${version}; this player reads up to ${BUILD_FORMAT_VERSION}). Re-export it, or use the player that came with it.`,
+      `This folder holds format ${String(build.formatVersion)} data beside a player that reads format ${BUILD_FORMAT_VERSION}. Export the game again.`,
     );
   }
 
@@ -181,17 +151,13 @@ async function boot(): Promise<void> {
    * in the same breath as `build.json`; that fixed name is exactly the
    * asymmetry format 5 removed, and one round trip is what it cost.
    */
-  const entryId = build.scenes[0];
-  if (entryId === undefined) throw new Error('This build lists no scene to start on.');
-  const [{ assets: assetPaths, materials, prefabs }, scene] = await Promise.all([
-    documentsOf(build),
-    readScene(build, entryId),
-  ]);
+  const entry = build.scenes[0];
+  if (entry === undefined) throw new Error('This build lists no scene to start on.');
+  const scene = await readScene(build, entry.id);
 
-  await loadScripts(build.scripts ?? null);
+  await loadScripts(build.scripts);
 
-  // The third of the three modes that used to answer the question for itself.
-  const { rendering, physics } = runSettingsOf(build);
+  const { rendering, physics, materials, prefabs } = build;
 
   const { renderer, backend } = await createRenderer({
     canvas,
@@ -211,14 +177,14 @@ async function boot(): Promise<void> {
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
     source: {
-      // By id, or by the name a script held: `sceneIdOf` turns one into the
-      // other, and the id is what says where the file is.
+      // By id, or by the name a script held: `sceneOf` finds either, and the
+      // manifest says where the file is.
       read: (named: string) => readScene(build, named),
     },
-    resolver: buildResolver(assetPaths, build.textureEncodings, build.assetSettings),
+    resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
     materials,
     prefabs,
-    loadingScene: build.loadingScene ?? null,
+    loadingScene: build.loadingScene,
     rendering,
     physicsSettings: physics,
     renderer,

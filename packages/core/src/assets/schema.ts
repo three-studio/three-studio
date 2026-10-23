@@ -15,11 +15,12 @@ export const MATERIAL_ASSET_VERSION = 1;
 /**
  * Shape of the files an exported build carries beside the player.
  *
- * The player and the data are written together but do not have to stay
- * together: a folder can be re-exported by a newer editor over an older
- * player, or a player dropped onto older data. Without a number the mismatch
- * shows up as an undefined field somewhere deep, which is the worst way to
- * find out.
+ * Since format 7 the player and its data are written together and never need
+ * to read each other across versions: an export always copies the player it
+ * came with, and the device server serves the editor's own. The number is no
+ * longer what lets a player read an older build — it is what lets a player say
+ * plainly that the folder holds another version's data, which is what a
+ * player dropped onto an old build, or a half-copied folder, comes to.
  */
 /**
  * 2 — `build.json` carries `textureEncodings`, naming the images whose file
@@ -36,40 +37,60 @@ export const MATERIAL_ASSET_VERSION = 1;
  * 4 — `build.json` carries the asset table, the materials and the prefabs that
  * were `assets.json`, `materials.json` and `prefabs.json` beside it. Six
  * requests before the first frame become three, and the three that go were
- * small, always needed, and always fetched. The files are no longer written;
- * the player falls back to them when the fields are absent, which is what makes
- * this additive from its side too.
+ * small, always needed, and always fetched.
  *
  * 5 — every scene is `scenes/<sceneId>.json`, and `scenes` lists ids rather
- * than files. **The first that is not additive**, and the one that shows why
- * the number is the mechanism and a per-field default is not: a moved file has
- * nothing to fall back to and nothing left where it was. The entry scene used
- * to be renamed to `scene.json` at the root while the rest went into `scenes/`,
- * and that asymmetry is what `sceneMap` — keyed by name *and* by id — existed
- * to undo.
+ * than files. The first that was not additive: a moved file has nothing to
+ * fall back to and nothing left where it was.
  *
- * 6 — `build.json` carries `physics`, the project's gravity and step. Additive:
- * a build without it runs on the factory's values, which is what every build
- * before it ran on — the player never passed any, so a project with lunar
- * gravity fell at Earth's in everything it shipped.
+ * 6 — `build.json` carries `physics`, the project's gravity and step.
+ *
+ * 7 — the layout of `BUILD_LAYOUT`: the player in `player/`, the project in
+ * `game/`, and every path in `build.json` relative to `build.json` itself.
+ * Every file but the page and the manifests is named by its content —
+ * scenes, scripts and a model's side files included — so a visitor's cache
+ * can never mix two builds. `scenes` lists `{ id, name, path }`, which is
+ * where `sceneNames` and `buildScenePath` went. Every field is required, and
+ * the player reads this format and no other; see `BuildManifest`.
  */
-export const BUILD_FORMAT_VERSION = 6;
+export const BUILD_FORMAT_VERSION = 7;
 
 /**
- * Where a scene lives in a build, from its id alone.
+ * Where everything is in an exported build, said once.
  *
- * Derived on both sides rather than listed anywhere: the exporter writes here
- * and the player fetches here, and a path written twice is a path that can
- * disagree with itself. That is the whole of what replaced `sceneMap`.
- *
- * The id is normally `createId()`'s alphabet and needs no escaping, but a scene
- * file that carries no id of its own falls back to **its project path** — see
- * `discoverScenes` — so the result can contain slashes and spaces. The exporter
- * makes the directories and the player encodes the URL; neither assumes a flat
- * name.
+ * The export owns these names in the folder it writes, and nothing else there:
+ * whatever an author keeps beside a build — a repository's `.git`, a README, a
+ * `CNAME` — is never read, written or listed. Read by the exporter, by the
+ * player (which finds the manifest here), by the device server (which serves
+ * the same layout) and by the Package dialog (which says which names are the
+ * build's).
  */
-export function buildScenePath(sceneId: string): string {
-  return `scenes/${sceneId}.json`;
+export const BUILD_LAYOUT = {
+  /** The page. */
+  page: 'index.html',
+  /** Its icon, beside it. */
+  icon: 'favicon.svg',
+  /** What the export wrote, with a digest of each file, for a verifier. */
+  files: 'files.json',
+  /** The prebuilt engine, the same for every game. */
+  player: 'player',
+  /** Everything of the project's: the manifest, the scenes, the assets and the scripts. */
+  game: 'game',
+  /** The first thing the player reads. */
+  manifest: 'game/build.json',
+} as const;
+
+/** One scene a build ships. */
+export interface BuildScene {
+  id: string;
+  /**
+   * What the author called it: what a script may name it by, and what
+   * `scenes.current` answers in the build as it does in Play. An alias, never
+   * an address — the first scene under a name keeps it.
+   */
+  name: string;
+  /** Where the scene is, relative to `build.json`. */
+  path: string;
 }
 
 /**
@@ -84,100 +105,62 @@ export function buildScenePath(sceneId: string): string {
  * restated in part a third time for the entry scene. That is exactly how the
  * script build result lost a field on one side.
  *
- * **An optional field is one an older build may not have**, never one the
- * exporter may skip. Each says which format added it, and the player says what
- * it does without it.
+ * **Every field is required, and none is ever kept for an older reader.** That
+ * is the opposite of the rule for everything else this editor persists, and
+ * deliberately: a project file, a scene or a sidecar is read years later by a
+ * newer editor, so it gains fields and never loses them. This file is only
+ * ever read by the player copied beside it in the same export, so a field it
+ * no longer needs is simply gone, and a player meeting another format says so
+ * instead of guessing. `files.json`, which tools outside this repository read,
+ * keeps the rule.
+ *
+ * **Every path in it is relative to `build.json` itself**, so the player has
+ * one way to resolve them and the device server can serve the same layout.
  */
 export interface BuildManifest {
-  /** Absent on a build written before builds were versioned. */
-  formatVersion?: number;
+  formatVersion: number;
   title: string;
+  /** The project's rendering settings, whole. */
+  rendering: RenderingSettings;
+  /** The project's physics settings, whole. */
+  physics: PhysicsSettings;
   /**
-   * Kept for a build written before `rendering` existed, and only for that.
-   * Everything reads `rendering` now — see the fallback where it is read.
+   * Every scene in the build, entry point first; the rest ship for a script to
+   * load later. A reference is an id, never a name and never a path — the path
+   * is where the file is, and the name is what an author reads.
    */
-  forceWebGL: boolean;
+  scenes: BuildScene[];
   /**
-   * The project's rendering settings, whole.
-   *
-   * Absent on a build written before this field, and then filled from the
-   * factory with `forceWebGL` taken from the field above — which is exactly
-   * what those builds were exported against, since it was the only one of the
-   * six the player ever read. The other five were thrown away: a project
-   * asking for 4096 shadow maps, no antialiasing or a different exposure got
-   * the defaults, and it went unnoticed because the defaults happened to agree.
+   * Id of the scene shown while another loads, or `null`. It ships with the
+   * build whether the profile lists it or not.
    */
-  rendering?: RenderingSettings;
+  loadingScene: string | null;
+  /** Asset id → path, so nothing in a scene is a file name. */
+  assets: Record<string, string>;
   /**
-   * The project's physics settings, whole.
-   *
-   * Format 6. Absent on a build written before it, and then the factory's —
-   * the values the player ran every earlier build on, since it passed none.
+   * The shared materials a shipped scene links to, by asset id. Only the ones
+   * something references — an unused material asset is no more part of a build
+   * than an unused texture is.
    */
-  physics?: PhysicsSettings;
-  /**
-   * Every scene in the build **by id**, entry point first; the rest ship for a
-   * script to load later.
-   *
-   * Files, until format 5. What the id buys is that the path is `buildScenePath`
-   * of it rather than something to look up — the end
-   * of the chain: a reference is an id, never a name and never a path.
-   */
-  scenes: string[];
-  /**
-   * Scene name → id. An alias table, and deliberately not a second address.
-   *
-   * A script may name a level rather than hold its id, and a name is what an
-   * author reads in the editor. Nothing is *found* by name: this resolves to an
-   * id first, and the id is what says where the file is. Absent on a build
-   * written before format 5.
-   */
-  sceneNames?: Record<string, string>;
-  /**
-   * Id of the scene shown while another loads, if the project has one.
-   *
-   * The id the project settings already hold, passed through. It was resolved
-   * back into a name until format 5, on the grounds that the manifest should be
-   * legible — which is a reason to print a build, not to address one.
-   */
-  loadingScene?: string | null;
-  /**
-   * Asset id → path under `assets/`, so nothing in a scene is a file name.
-   *
-   * Format 4. Before it this was `assets.json` beside the player.
-   */
-  assets?: Record<string, string>;
-  /**
-   * The shared materials a shipped scene links to, by asset id.
-   *
-   * Format 4; `materials.json` before it. Only the ones something references —
-   * an unused material asset is no more part of a build than an unused texture.
-   */
-  materials?: Record<string, MaterialDef>;
+  materials: Record<string, MaterialDef>;
   /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
    * engine sees the scene.
-   *
-   * Format 4; `prefabs.json` before it.
    */
-  prefabs?: Record<string, PrefabDoc>;
+  prefabs: Record<string, PrefabDoc>;
   /**
    * Images whose file name does not say how they store light.
    *
    * Ultra HDR and nothing else today: it is a `.jpg`, and without this the
    * player decodes it as an ordinary photograph — perfectly, and with every
-   * stop above white gone. Absent on a build that had none, and on one written
-   * before this field existed.
+   * stop above white gone.
    */
-  textureEncodings?: Record<string, TextureEncoding>;
+  textureEncodings: Record<string, TextureEncoding>;
   /**
-   * What each asset was imported with.
-   *
-   * Absent on a build written before this field existed, and then every asset
-   * falls back to its format's defaults — which is what those builds were
-   * exported against anyway.
+   * What each asset was imported with. The sidecars stay in the project, so
+   * without this a model imported at ×0.01 would ship at its file's own scale.
    */
-  assetSettings?: Record<string, AssetSettings>;
+  assetSettings: Record<string, AssetSettings>;
   /**
    * The compiled behaviour bundle, or `null` when the project has none.
    *

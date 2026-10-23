@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import {
   launchAssetPath,
   launchManifest,
+  launchScenePath,
   type LaunchContents,
 } from '../src/main/devices/launchManifest';
 
@@ -92,16 +93,20 @@ describe('the scenes a launch lists', () => {
     scene('alpha', 'Alpha copy', 'scenes/sub/z-alpha.scene.json', 'scenes/alpha.scene.json'),
   ];
 
-  it('starts on the entry, under the window’s id and name', () => {
+  const ids = (build: { scenes: { id: string }[] }) => build.scenes.map(({ id }) => id);
+
+  it('starts on the entry, under the window’s id and name, at a path that carries its id', () => {
     const build = launchManifest(contents({ scenes: ON_DISK }));
-    expect(build.scenes[0]).toBe('entry');
-    expect(build.sceneNames?.['Level']).toBe('entry');
+    expect(build.scenes[0]).toEqual({ id: 'entry', name: 'Level', path: 'scenes/entry.json' });
   });
 
   it('lists every other scene after it, its own file not twice and a shadowed one not at all', () => {
     const build = launchManifest(contents({ scenes: ON_DISK }));
-    expect(build.scenes).toEqual(['entry', 'alpha', 'beta']);
-    expect(build.sceneNames).toEqual({ Level: 'entry', Alpha: 'alpha', Beta: 'beta' });
+    expect(build.scenes).toEqual([
+      { id: 'entry', name: 'Level', path: launchScenePath('entry') },
+      { id: 'alpha', name: 'Alpha', path: launchScenePath('alpha') },
+      { id: 'beta', name: 'Beta', path: launchScenePath('beta') },
+    ]);
   });
 
   it('starts on the entry even when no file claims its id', () => {
@@ -109,16 +114,17 @@ describe('the scenes a launch lists', () => {
     // from memory, so it needs none.
     const withoutItsFile = ON_DISK.filter(({ id }) => id !== 'entry');
     const build = launchManifest(contents({ scenes: withoutItsFile }));
-    expect(build.scenes).toEqual(['entry', 'alpha', 'beta']);
-    expect(build.sceneNames?.['Level']).toBe('entry');
+    expect(ids(build)).toEqual(['entry', 'alpha', 'beta']);
   });
 
-  it('leaves the entry its name when a scene in another folder shares it', () => {
+  it('lists the entry first when a scene in another folder shares its name', () => {
+    // First, so the player — which gives a shared name to the first scene that
+    // has it — answers `scenes.current` with the entry, as Play does.
     const build = launchManifest(
       contents({ scenes: [...ON_DISK, scene('other', 'Level', 'scenes/other/level.scene.json')] }),
     );
-    expect(build.scenes).toEqual(['entry', 'alpha', 'beta', 'other']);
-    expect(build.sceneNames?.['Level']).toBe('entry');
+    expect(ids(build)).toEqual(['entry', 'alpha', 'beta', 'other']);
+    expect(build.scenes.find(({ name }) => name === 'Level')?.id).toBe('entry');
   });
 });
 
@@ -127,7 +133,6 @@ describe('what else a launch says', () => {
     const launched = snapshot();
     const build = launchManifest(contents({ snapshot: launched }));
     expect(build.rendering).toEqual(launched.rendering);
-    expect(build.forceWebGL).toBe(launched.rendering.forceWebGL);
     expect(build.physics).toEqual(launched.physics);
     expect(build.loadingScene).toBe('loading');
     expect(build.materials).toEqual(launched.materials);
@@ -146,8 +151,12 @@ describe('what else a launch says', () => {
         ],
       }),
     );
-    expect(build.assets).toEqual({ brick: 'brick/brick.png', tree: 'tree/tree.gltf' });
-    expect(Object.keys(build.assetSettings ?? {})).toEqual(['brick', 'tree']);
+    // Relative to `build.json`, as every path in it is.
+    expect(build.assets).toEqual({
+      brick: 'assets/brick/brick.png',
+      tree: 'assets/tree/tree.gltf',
+    });
+    expect(Object.keys(build.assetSettings)).toEqual(['brick', 'tree']);
   });
 
   it('names the bundle when there is one', () => {
@@ -159,14 +168,16 @@ describe('what else a launch says', () => {
     const build = launchManifest(contents());
     expect(build.title).toBe('My Game');
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
-    expect(build.formatVersion).toBe(6);
+    expect(build.formatVersion).toBe(7);
   });
 });
 
 describe('where a launch serves an asset', () => {
   it('is its id, then its source’s file name, whichever file is served', () => {
     const source = 'assets/textures/brick.png';
-    expect(launchAssetPath(asset('brick', 'texture', source))).toBe('brick/brick.png');
-    expect(launchAssetPath(asset('brick', 'texture', source, IMPORTED_BRICK))).toBe('brick/brick.png');
+    expect(launchAssetPath(asset('brick', 'texture', source))).toBe('assets/brick/brick.png');
+    expect(launchAssetPath(asset('brick', 'texture', source, IMPORTED_BRICK))).toBe(
+      'assets/brick/brick.png',
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { BUILD_LAYOUT } from '@three-studio/core';
 import { AssetError } from '../../assetFiles';
 import { escapeAttribute, insertIntoHead } from '../../html';
 import type { BuildPlan } from '../buildPlan';
@@ -18,15 +19,18 @@ import { walkFiles } from '../walk';
  */
 export async function planPlayer(plan: BuildPlan, template: string, base: string): Promise<void> {
   for (const file of await walkFiles(template)) {
-    if (file.path === 'index.html') {
+    // A `.DS_Store` a Finder window left in the template is not part of the
+    // player, and nothing Vite emits starts with a dot.
+    if (file.path.split('/').some((segment) => segment.startsWith('.'))) continue;
+    if (file.path === BUILD_LAYOUT.page) {
       plan.addBytes(file.path, await pageOf(file.absolute, base), { kind: 'page' });
       continue;
     }
-    // Beside the page, its own files — the icon. In a folder, the engine.
+    // Beside the page, its own files — the icon. In `player/`, the engine.
     await plan.addFile(
       file.path,
       file.absolute,
-      file.path.includes('/') ? { kind: 'player' } : { kind: 'page' },
+      file.path.startsWith(`${BUILD_LAYOUT.player}/`) ? { kind: 'player' } : { kind: 'page' },
     );
   }
 }

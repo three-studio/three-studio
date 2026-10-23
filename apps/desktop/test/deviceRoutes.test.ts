@@ -325,8 +325,8 @@ describe('the page', () => {
     );
     expect(html).toContain('id="studio-state"');
     expect(page.headers['cache-control']).toBe('no-store');
-    expect((await ask(under('build.json'))).status).toBe(404);
-    expect((await ask(under('scripts.mjs'))).status).toBe(404);
+    expect((await ask(under('game/build.json'))).status).toBe(404);
+    expect((await ask(under('game/scripts.mjs'))).status).toBe(404);
   });
 
   it('is the player once a launch is current, with the client before its module', async () => {
@@ -466,7 +466,7 @@ describe('a device’s message', () => {
   });
 
   it('is not taken anywhere but under __studio, and its body is not read', async () => {
-    const answer = await ask(under('build.json'), {
+    const answer = await ask(under('game/build.json'), {
       method: 'POST',
       headers: { origin: `http://127.0.0.1:${port}` },
       withheld: 100,
@@ -647,7 +647,7 @@ describe('a device’s frame', () => {
 
 describe('build.json', () => {
   it('is the launch’s manifest, never kept', async () => {
-    const answer = await ask(under('build.json'));
+    const answer = await ask(under('game/build.json'));
 
     expect(answer.status).toBe(200);
     // With the factory's options, byte for byte what the launch was made with.
@@ -657,7 +657,7 @@ describe('build.json', () => {
   });
 
   it('gives its length to HEAD, and no body', async () => {
-    const answer = await ask(under('build.json'), { method: 'HEAD' });
+    const answer = await ask(under('game/build.json'), { method: 'HEAD' });
 
     expect(answer.status).toBe(200);
     expect(answer.headers['content-length']).toBe(
@@ -669,20 +669,19 @@ describe('build.json', () => {
   it('carries the launch options the renderer reads, as they are when it is asked for', async () => {
     launchOptions = { forceWebGL: true, maxPixelRatio: 1, stats: true };
 
-    const answer = await ask(under('build.json'));
+    const answer = await ask(under('game/build.json'));
 
     const served = JSON.parse(answer.body.toString()) as BuildManifest;
-    expect(served.forceWebGL).toBe(true);
     expect(served.rendering).toMatchObject({ forceWebGL: true, maxPixelRatio: 1 });
     expect(answer.headers['cache-control']).toBe('no-store');
     // What the launch keeps is the project's: unticked, the next one is too.
-    expect(launch.manifest.forceWebGL).toBe(false);
+    expect(launch.manifest.rendering.forceWebGL).toBe(false);
   });
 });
 
 describe('the scenes', () => {
   it('answers the entry from the editor’s memory, with what the file lacks', async () => {
-    const answer = await ask(under(`scenes/${encodeURIComponent(entryId)}.json`));
+    const answer = await ask(under(`game/scenes/${encodeURIComponent(entryId)}.json`));
 
     expect(answer.status).toBe(200);
     expect(answer.body.toString()).toBe(launch.entryJson);
@@ -693,7 +692,7 @@ describe('the scenes', () => {
   it('answers another scene with its file, byte for byte', async () => {
     const other = (await discoverScenes(root)).find((scene) => scene.path.endsWith('Other.scene.json'))!;
 
-    const answer = await ask(under(`scenes/${encodeURIComponent(other.id)}.json`));
+    const answer = await ask(under(`game/scenes/${encodeURIComponent(other.id)}.json`));
 
     expect(answer.status).toBe(200);
     expect(answer.body.toString()).toBe(otherSceneJson);
@@ -702,20 +701,20 @@ describe('the scenes', () => {
   it('finds an id that holds slashes, one segment at a time', async () => {
     const path = slashedId.split('/').map(encodeURIComponent).join('/');
 
-    const answer = await ask(under(`scenes/${path}.json`));
+    const answer = await ask(under(`game/scenes/${path}.json`));
 
     expect(slashedId).toContain('/');
     expect(answer.status).toBe(200);
   });
 
   it('answers 404 for a scene the project does not have', async () => {
-    expect((await ask(under('scenes/nobody.json'))).status).toBe(404);
+    expect((await ask(under('game/scenes/nobody.json'))).status).toBe(404);
   });
 });
 
 describe('the assets', () => {
   it('serves the scaled copy under the source’s name, kept with an ETag', async () => {
-    const answer = await ask(under('assets/tex-brick/brick.png'));
+    const answer = await ask(under('game/assets/tex-brick/brick.png'));
 
     expect(answer.status).toBe(200);
     expect(answer.body.toString()).toBe('scaled bytes');
@@ -725,9 +724,9 @@ describe('the assets', () => {
   });
 
   it('answers 304 with no body when the device’s copy is current', async () => {
-    const first = await ask(under('assets/tex-brick/brick.png'));
+    const first = await ask(under('game/assets/tex-brick/brick.png'));
 
-    const again = await ask(under('assets/tex-brick/brick.png'), {
+    const again = await ask(under('game/assets/tex-brick/brick.png'), {
       headers: { 'if-none-match': String(first.headers.etag) },
     });
 
@@ -736,7 +735,7 @@ describe('the assets', () => {
   });
 
   it('serves the source when there is no copy', async () => {
-    const answer = await ask(under(`assets/${modelId}/Tri.gltf`));
+    const answer = await ask(under(`game/assets/${modelId}/Tri.gltf`));
 
     expect(answer.status).toBe(200);
     expect(answer.headers['content-type']).toBe('model/gltf+json');
@@ -744,16 +743,16 @@ describe('the assets', () => {
   });
 
   it('answers 404 for a wrong name, an unknown id, and a script', async () => {
-    expect((await ask(under('assets/tex-brick/stone.png'))).status).toBe(404);
-    expect((await ask(under('assets/nobody/brick.png'))).status).toBe(404);
-    expect((await ask(under(`assets/${scriptId}/Spin.ts`))).status).toBe(404);
+    expect((await ask(under('game/assets/tex-brick/stone.png'))).status).toBe(404);
+    expect((await ask(under('game/assets/nobody/brick.png'))).status).toBe(404);
+    expect((await ask(under(`game/assets/${scriptId}/Spin.ts`))).status).toBe(404);
   });
 });
 
 describe('a model’s side files', () => {
   it('serves what the glTF names, beside it', async () => {
-    const buffer = await ask(under(`assets/${modelId}/Tri.bin`));
-    const image = await ask(under(`assets/${modelId}/textures/Tri%20Color.png`));
+    const buffer = await ask(under(`game/assets/${modelId}/Tri.bin`));
+    const image = await ask(under(`game/assets/${modelId}/textures/Tri%20Color.png`));
 
     expect(buffer.status).toBe(200);
     expect(buffer.body.toString()).toBe('buffer bytes');
@@ -762,14 +761,14 @@ describe('a model’s side files', () => {
   });
 
   it('answers 404 for a file it does not name, and for a way out', async () => {
-    expect((await ask(under(`assets/${modelId}/Secret.txt`))).status).toBe(404);
-    expect((await ask(under(`assets/${modelId}/%2e%2e/models/Tri.bin`))).status).toBe(404);
-    expect((await ask(under(`assets/${modelId}/%2e%2e%2fSecret.txt`))).status).toBe(404);
+    expect((await ask(under(`game/assets/${modelId}/Secret.txt`))).status).toBe(404);
+    expect((await ask(under(`game/assets/${modelId}/%2e%2e/models/Tri.bin`))).status).toBe(404);
+    expect((await ask(under(`game/assets/${modelId}/%2e%2e%2fSecret.txt`))).status).toBe(404);
   });
 
   it('serves the OBJ’s material library and its map', async () => {
-    const library = await ask(under(`assets/${objId}/mats/Crate.mtl`));
-    const map = await ask(under(`assets/${objId}/mats/wood.png`));
+    const library = await ask(under(`game/assets/${objId}/mats/Crate.mtl`));
+    const map = await ask(under(`game/assets/${objId}/mats/wood.png`));
 
     expect(library.status).toBe(200);
     expect(library.body.toString()).toContain('newmtl Crate');
@@ -779,7 +778,7 @@ describe('a model’s side files', () => {
 
 describe('the script bundle', () => {
   it('is the launch’s, never kept', async () => {
-    const answer = await ask(under('scripts.mjs'));
+    const answer = await ask(under('game/scripts.mjs'));
 
     expect(answer.status).toBe(200);
     expect(answer.body.toString()).toBe(launch.scripts);
@@ -790,7 +789,7 @@ describe('the script bundle', () => {
   it('is not there for a launch without scripts', async () => {
     current = { ...launch, scripts: null };
 
-    expect((await ask(under('scripts.mjs'))).status).toBe(404);
+    expect((await ask(under('game/scripts.mjs'))).status).toBe(404);
   });
 });
 
@@ -822,7 +821,7 @@ describe('what is refused', () => {
   });
 
   it('answers 404 to anything but GET and HEAD, and to what is reserved', async () => {
-    expect((await ask(under('build.json'), { method: 'POST' })).status).toBe(404);
+    expect((await ask(under('game/build.json'), { method: 'POST' })).status).toBe(404);
     expect((await ask(under('__studio/x'))).status).toBe(404);
     expect((await ask(under('elsewhere.json'))).status).toBe(404);
   });
@@ -830,8 +829,8 @@ describe('what is refused', () => {
   it('says where to send no Referer, and not to sniff, on every answer', async () => {
     const answers = await Promise.all([
       ask(under('')),
-      ask(under('build.json')),
-      ask(under('assets/tex-brick/brick.png')),
+      ask(under('game/build.json')),
+      ask(under('game/assets/tex-brick/brick.png')),
       ask(under('player/player.js')),
       ask(`/${TOKEN}`),
       ask('/nothing/'),
