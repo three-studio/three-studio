@@ -147,12 +147,16 @@ const TEMPLATE_HTML = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <title>Studio Build</title>
     <link rel="icon" href="./favicon.svg" />
     <script type="module" crossorigin src="./player/player.js"></script>
   </head>
   <body><canvas id="view"></canvas></body>
 </html>
 `;
+
+/** The page an export writes with no base: the template, titled after the game. */
+const PAGE = TEMPLATE_HTML.replace('<title>Studio Build</title>', '<title>Export Test</title>');
 
 const manifestOf = (json: string): BuildManifest => JSON.parse(json) as BuildManifest;
 
@@ -637,9 +641,9 @@ describe('base URL', () => {
 
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
 
-    // Byte for byte the template: an empty base is what every build produced
-    // before this field existed, and it has to stay that.
-    expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+    // Byte for byte the template but for its title: an empty base is what
+    // every build produced before this field existed, and it has to stay that.
+    expect(await indexOf(outputDir)).toBe(PAGE);
   });
 
   it('treats "." and "./" as no base at all', async () => {
@@ -649,7 +653,7 @@ describe('base URL', () => {
       await exportBuild(projectPath, profile({ basePath }), outputDir, [templateRoot]);
       // All three resolve against the document, which is what the untagged page
       // already does. A tag saying so would be a difference with no effect.
-      expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+      expect(await indexOf(outputDir)).toBe(PAGE);
     }
   });
 
@@ -742,7 +746,29 @@ describe('base URL', () => {
     // The copy overwrites `index.html` with the pristine template, so nothing
     // is left of the last base. Nothing else guarantees that.
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
-    expect(await indexOf(outputDir)).toBe(TEMPLATE_HTML);
+    expect(await indexOf(outputDir)).toBe(PAGE);
+  });
+
+  it('titles the page after the game, as text', async () => {
+    // What a tab shows before any script has run, and what a link preview
+    // shows, which runs none. Every game used to be "Studio Build" there.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-title');
+
+    await exportBuild(
+      projectPath,
+      profile({ title: 'Tom & Jerry <3 $& more', basePath: '/demo/' }),
+      outputDir,
+      [templateRoot],
+    );
+    const html = await indexOf(outputDir);
+    expect(html).toContain('<title>Tom &amp; Jerry &lt;3 $&amp; more</title>');
+    expect(html).toContain('<base href="/demo/" />');
+    expect(html).not.toContain('Studio Build');
+
+    // No title of its own: the project's name, rather than a tab saying nothing.
+    await exportBuild(projectPath, profile({ title: '  ' }), outputDir, [templateRoot]);
+    expect(await indexOf(outputDir)).toContain('<title>Export Test</title>');
   });
 
   it('refuses a player page with no head to put the base in', async () => {

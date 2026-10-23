@@ -28,3 +28,35 @@ export function insertIntoHead(html: string, tag: string): string | null {
 export function escapeAttribute(value: string): string {
   return value.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;');
 }
+
+/**
+ * Text made safe between tags: what `<title>` holds.
+ *
+ * `>` too, though only `<` and `&` can end text early: a title is shown to a
+ * person, and one that looks like markup in the source is a title somebody
+ * will paste somewhere it means something.
+ */
+function escapeText(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/**
+ * The page with its `<title>` saying `title`, escaped as text — added to
+ * `<head>` when the page has none, `null` when it has no head either.
+ *
+ * What a tab shows before any script has run, and what a link preview shows,
+ * which runs none at all. The player sets `document.title` once it has booted,
+ * so until then every exported game was called "Studio Build".
+ */
+export function setTitle(html: string, title: string): string | null {
+  const text = escapeText(title);
+  if (/<title[^>]*>[\s\S]*?<\/title>/i.test(html)) {
+    // A replacer function, for the reason `insertIntoHead` gives: a title
+    // holding `$&` would otherwise be written back as something else.
+    return html.replace(
+      /<title([^>]*)>[\s\S]*?<\/title>/i,
+      (_match, attributes: string) => `<title${attributes}>${text}</title>`,
+    );
+  }
+  return insertIntoHead(html, `<title>${text}</title>`);
+}

@@ -242,7 +242,9 @@ async function planExport(
   const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
 
   report(0.2, 'Reading the player');
-  await planPlayer(plan, template, base);
+  // The profile's title, or the project's name when it has none: a tab saying
+  // nothing is worse than one saying what the folder is called.
+  await planPlayer(plan, template, { base, title: profile.title.trim() || project.name });
   // Any absolute base, `//host/` included. The exporter does not know which
   // origin the page will be served from, so it cannot tell whether this is a
   // different one — hence a conditional sentence rather than a verdict.
