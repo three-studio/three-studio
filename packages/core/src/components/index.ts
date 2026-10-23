@@ -69,6 +69,7 @@ export function isPlaceable(template: EntityTemplate): boolean {
 
 export {
   addableTypes,
+  componentAssetCandidates,
   componentAssets,
   componentDefinition,
   componentDefinitions,

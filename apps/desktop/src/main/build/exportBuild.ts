@@ -3,6 +3,7 @@ import {
   BUILD_LAYOUT,
   collectSceneAssets,
   findScene,
+  unknownComponentTypes,
   basePathProblem,
   deserializeScene,
   normalizeBasePath,
@@ -174,6 +175,14 @@ async function planExport(
   // refers to a scene is.
   const sceneIds = profile.scenes.length > 0 ? profile.scenes : [project.startScene];
 
+  const read = async (entry: SceneEntry): Promise<SceneDoc> => {
+    try {
+      return deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8'));
+    } catch (cause) {
+      throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
+    }
+  };
+
   const scenes: { entry: SceneEntry; scene: SceneDoc }[] = [];
   for (const id of sceneIds) {
     const entry = findScene(known, id);
@@ -186,20 +195,37 @@ async function planExport(
       warnings.push(`This profile ships a scene the project no longer has (${id}).`);
       continue;
     }
-    try {
-      scenes.push({
-        entry,
-        scene: deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8')),
-      });
-    } catch (cause) {
-      throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
-    }
+    scenes.push({ entry, scene: await read(entry) });
   }
   // None of them resolved, which is not a build. The player loads the first
   // scene in the manifest before anything else, and a manifest naming none is a
   // black page rather than a message.
   if (scenes.length === 0) {
     throw new AssetError('This profile ships no scene this project still has.');
+  }
+
+  /*
+   * The loading scene ships with the build, listed in the profile or not.
+   *
+   * It is part of the project's settings, not of the profile's scenes, and it
+   * used to be named in the manifest without being shipped: the player then
+   * reported, at every scene change, a loading scene it could not read. Last in
+   * the list, so it is never mistaken for the entry. A loading scene the
+   * project no longer has is said once, here, and the build has none.
+   */
+  let loadingScene: string | null = null;
+  if (project.settings.loadingScene !== null) {
+    const entry = findScene(known, project.settings.loadingScene);
+    if (!entry) {
+      warnings.push(
+        `The loading scene (${project.settings.loadingScene}) is not in the project any more, so this build has none.`,
+      );
+    } else {
+      loadingScene = entry.id;
+      if (!scenes.some((shipped) => shipped.entry.id === entry.id)) {
+        scenes.push({ entry, scene: await read(entry) });
+      }
+    }
   }
 
   report(0.15, 'Scanning assets');
@@ -229,12 +255,17 @@ async function planExport(
   }
 
   // Unreal's "cook everything in the project" against cooking only what is
-  // reached: scripts can load an asset by name, which no static walk can see.
+  // reached: a script can load an asset from code, which no walk can see. What
+  // a script was handed in the inspector the walk does see, given the
+  // project's ids to tell an asset from a sentence.
   // Sorted, so the plan and the manifest come out the same on every machine.
+  const knownAssets = new Set(manifest.assets.map((asset) => asset.id));
   const referenced = [
     ...(profile.includeAllAssets
-      ? new Set(manifest.assets.map((asset) => asset.id))
-      : union(scenes.map(({ scene }) => collectSceneAssets(scene, materials, prefabs)))),
+      ? knownAssets
+      : union(
+          scenes.map(({ scene }) => collectSceneAssets(scene, materials, prefabs, knownAssets)),
+        )),
   ].sort();
 
   const shippable: AssetEntry[] = [];
@@ -251,6 +282,23 @@ async function planExport(
     report(0.25 + 0.4 * (done / Math.max(total, 1)), 'Reading assets'),
   );
   warnings.push(...assets.warnings);
+
+  // A plugin's component, or a newer editor's: kept as found, and opaque. What
+  // it needs cannot ship, and a scene that works in the editor holding the
+  // plugin should not fail in silence everywhere else.
+  const shippedPrefabs = pick(prefabs, referenced);
+  for (const [label, host] of [
+    ...scenes.map(({ entry, scene }) => [`Scene "${entry.name}"`, scene] as const),
+    ...Object.entries(shippedPrefabs).map(([id, prefab]) => [`Prefab ${id}`, prefab] as const),
+  ]) {
+    const unknown = unknownComponentTypes(host);
+    if (unknown.length > 0) {
+      warnings.push(
+        `${label} uses ${unknown.join(', ')}, which this editor does not know: whatever ` +
+          'assets those components need are not in the build.',
+      );
+    }
+  }
 
   const shippedScenes = planScenes(plan, scenes);
 
@@ -269,12 +317,12 @@ async function planExport(
     rendering: project.settings.rendering,
     physics: project.settings.physics,
     scenes: shippedScenes,
-    loadingScene: project.settings.loadingScene,
+    loadingScene,
     assets: assets.shipped,
     // Only what a shipped scene links to. An unused material or prefab asset is
     // no more part of the build than an unused texture is.
     materials: pick(materials, referenced),
-    prefabs: pick(prefabs, referenced),
+    prefabs: shippedPrefabs,
     scripts: scripts.file,
   });
   plan.addBytes(BUILD_LAYOUT.manifest, JSON.stringify(build, null, 2), { kind: 'manifest' });

@@ -63,6 +63,18 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
   /** Asset ids this component points at. Empty for most types. */
   assets: (component: ComponentOfType<T>) => readonly (string | null)[];
+  /**
+   * Strings that may name an asset, and count only when they do — declared by
+   * the types whose fields do not say which they are.
+   *
+   * A script's properties are its own to declare, in code only the player
+   * runs: a string there may be an asset picked in the inspector, an entity's
+   * id or a line of dialogue, and nothing outside the script can tell. Kept
+   * where a project asset answers to it, which an id made by `createId` does
+   * and a sentence does not. Without it, the texture a script was handed in the
+   * inspector shipped in no build that did not ship the whole project.
+   */
+  assetCandidates?: (component: ComponentOfType<T>) => readonly string[];
   readonly icon: ComponentIcon;
   /**
    * Whether anything builds this type at runtime.
@@ -167,6 +179,11 @@ export function componentAssets(component: ComponentDoc): readonly (string | nul
   // A type from a plugin, or from a later version of the editor. It names assets
   // this build cannot see, and guessing would be worse than saying none.
   return definition ? definition.assets(component as never) : [];
+}
+
+/** Strings a component holds that may name an asset; see `ComponentDefinition.assetCandidates`. */
+export function componentAssetCandidates(component: ComponentDoc): readonly string[] {
+  return componentDefinition(component.type)?.assetCandidates?.(component as never) ?? [];
 }
 
 /**

@@ -136,6 +136,7 @@ export type {
 
 export {
   collectSceneAssets,
+  unknownComponentTypes,
   environmentAssets,
   findAssetUsage,
   findBrokenReferences,
@@ -279,6 +280,7 @@ export type { ComponentHost } from './scene/components';
 
 export {
   addableTypes,
+  componentAssetCandidates,
   componentAssets,
   componentDefinition,
   componentDefinitions,

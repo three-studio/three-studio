@@ -1215,6 +1215,91 @@ describe('an export that cannot finish', () => {
   });
 });
 
+/*
+ * What a build needs that no slot of a scene says it needs. Each of these
+ * worked in Play, which runs the whole project, and went missing from the thing
+ * people download.
+ */
+describe('what a scene needs beyond its slots', () => {
+  /** Puts a component on the main scene's first entity. */
+  async function addToMainScene(projectPath: string, component: object): Promise<void> {
+    const file = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = deserializeScene(await readFile(file, 'utf8'));
+    putComponent(scene, Object.keys(scene.entities)[0]!, component as never);
+    await writeFile(file, serializeScene(scene), 'utf8');
+  }
+
+  async function setLoadingScene(projectPath: string, id: string): Promise<void> {
+    const file = join(projectPath, PROJECT_FILE_NAME);
+    const project = JSON.parse(await readFile(file, 'utf8')) as ProjectFile;
+    project.settings.loadingScene = id;
+    await writeFile(file, JSON.stringify(project), 'utf8');
+  }
+
+  it('ships an asset a script was handed in the inspector, and leaves a sentence alone', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    await writeAsset(projectPath, `${ASSETS_DIR}/scripts/Door.ts`, 'script-door', 'script');
+    await writeFile(
+      join(projectPath, ASSETS_DIR, 'scripts', 'Door.ts'),
+      'export default class Door {}',
+      'utf8',
+    );
+    await addToMainScene(projectPath, {
+      ...createComponent('script'),
+      assetId: 'script-door',
+      // The spare texture is named by nothing else in the project.
+      props: { texture: 'tex-spare', greeting: 'Hello' },
+    });
+    const outputDir = join(projectPath, '..', 'out-scripted');
+
+    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect((await buildOf(outputDir)).assets['tex-spare']).toMatch(/^assets\/textures\/spare\./);
+    // A string that names no asset is not a reference to a missing one.
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('ships the loading scene, listed in the profile or not', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const loading = createStarterScene();
+    loading.name = 'Loading';
+    await writeFile(join(projectPath, SCENES_DIR, 'loading.scene.json'), serializeScene(loading), 'utf8');
+    await setLoadingScene(projectPath, loading.id);
+    const outputDir = join(projectPath, '..', 'out-loading');
+
+    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = await buildOf(outputDir);
+    expect(build.loadingScene).toBe(loading.id);
+    // Last, so it is never taken for the entry.
+    expect(build.scenes.map(({ id }) => id).at(-1)).toBe(loading.id);
+    expect(build.scenes[0]!.name).toBe('main');
+    expect(result.sceneCount).toBe(2);
+    expect((await verifyBuild(outputDir)).ok).toBe(true);
+  });
+
+  it('says so when the loading scene is gone, and names none', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    await setLoadingScene(projectPath, 'scene-deleted-in-the-finder');
+    const outputDir = join(projectPath, '..', 'out-noloading');
+
+    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(result.warnings.join(' ')).toMatch(/loading scene \(scene-deleted-in-the-finder\)/);
+    expect((await buildOf(outputDir)).loadingScene).toBeNull();
+  });
+
+  it('says when a scene holds a component this editor cannot see into', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    await addToMainScene(projectPath, { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' });
+    const outputDir = join(projectPath, '..', 'out-plugin');
+
+    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(result.warnings.join(' ')).toMatch(/Scene "main" uses plugin\.flicker/);
+  });
+});
+
 describe('a scene whose id is not a name', () => {
   it('ships inside the build all the same, named after the scene', async () => {
     // The id is read off the scene's own file, and it used to be the scene's

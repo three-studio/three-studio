@@ -1,4 +1,4 @@
-import { componentAssets } from '../components';
+import { componentAssetCandidates, componentAssets } from '../components';
 import { materialAssets } from '../components/materialAssets';
 import { COMPONENT_TYPES, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
@@ -132,6 +132,23 @@ function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> 
   }
 }
 
+/**
+ * The component types a scene or a prefab holds that this editor has no
+ * definition for — a plugin's, or a newer editor's.
+ *
+ * Kept exactly as found, so a save loses nothing of them; but nothing here can
+ * say which assets one names, and the walks above never visit them. An export
+ * cannot ship what they need, and says so rather than shipping a scene that
+ * works in the editor that has the plugin and nowhere else.
+ */
+export function unknownComponentTypes(host: ComponentHost): string[] {
+  const known = new Set<string>(COMPONENT_TYPES);
+  return Object.entries(host.components as Record<string, Record<string, unknown>>)
+    .filter(([type, table]) => !known.has(type) && Object.keys(table).length > 0)
+    .map(([type]) => type)
+    .sort();
+}
+
 /** An id a document names that nothing in the project answers to. */
 export interface BrokenReference {
   /** The entity whose component names it; `null` for the scene's environment. */
@@ -204,12 +221,23 @@ export function collectSceneAssets(
   scene: SceneDoc,
   materials: Readonly<Record<string, MaterialDef>>,
   prefabs: Readonly<Record<string, PrefabDoc>>,
+  /**
+   * Every asset id the project holds. Given, the strings a component may hold
+   * an asset in — a script's properties — count where one of these answers to
+   * them; see `ComponentDefinition.assetCandidates`. Left out, as a loading bar
+   * does, only the slots that say they hold an asset are read.
+   */
+  knownAssets?: ReadonlySet<string>,
 ): string[] {
   const ids = new Set<string>();
   const seenPrefabs = new Set<string>();
 
   const addComponent = (component: ComponentDoc): void => {
-    for (const id of componentNames(component)) {
+    const candidates =
+      knownAssets === undefined
+        ? []
+        : componentAssetCandidates(component).filter((id) => knownAssets.has(id));
+    for (const id of [...componentNames(component), ...candidates]) {
       if (id === null || id === '') continue;
       ids.add(id);
 

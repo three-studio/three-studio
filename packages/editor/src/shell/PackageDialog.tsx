@@ -304,7 +304,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
 
           <Field
             label="Include every asset"
-            hint="Ships the whole project rather than what the scenes reach. Needed when a script loads an asset by name, which no static walk can see."
+            hint="Ships the whole project rather than what the scenes reach. Needed when a script loads an asset from its code; an asset picked in a script’s properties ships on its own."
           >
             <input
               type="checkbox"

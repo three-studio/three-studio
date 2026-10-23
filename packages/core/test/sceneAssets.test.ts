@@ -4,6 +4,8 @@ import {
   createEmptyScene,
   emptyComponentTables,
   setComponentsOf,
+  putComponent,
+  unknownComponentTypes,
   createEntity,
   createPrefabInstance,
   createMaterial,
@@ -122,6 +124,55 @@ describe('what a scene needs before it can be shown', () => {
     expect(() =>
       collectSceneAssets(sceneWith([root]), {}, { 'prefab-loop': loop }),
     ).not.toThrow();
+  });
+});
+
+describe('what a script was handed in the inspector', () => {
+  // A script declares its properties in code the main process never runs, so
+  // a string there may be an asset, an entity or a sentence. It counts where a
+  // project asset answers to it — and it used to count nowhere, so the texture
+  // a script was given shipped in no build that did not ship everything.
+  const scripted = (props: Record<string, string | number>) =>
+    sceneWith([
+      createEntity('Door', [
+        { ...createComponent('script'), assetId: 'script-door', props },
+      ]),
+    ]);
+
+  it('counts a property that names a project asset, and leaves a sentence alone', () => {
+    const scene = scripted({ texture: 'tex-door', greeting: 'Hello', speed: 3 });
+    const known = new Set(['script-door', 'tex-door']);
+
+    expect(collectSceneAssets(scene, {}, {}, known).sort()).toEqual(['script-door', 'tex-door']);
+    // Without the project's ids nothing tells the two strings apart, so only
+    // the slots that say they hold an asset are read — as a loading bar asks.
+    expect(collectSceneAssets(scene, {}, {})).toEqual(['script-door']);
+  });
+
+  it('follows a material a script was handed to the maps it uses', () => {
+    const scene = scripted({ skin: 'mat-door' });
+    const known = new Set(['script-door', 'mat-door', 'tex-wood']);
+    const materials = { 'mat-door': { ...createMaterial(), colorMap: 'tex-wood' } };
+
+    expect(collectSceneAssets(scene, materials, {}, known).sort()).toEqual([
+      'mat-door',
+      'script-door',
+      'tex-wood',
+    ]);
+  });
+});
+
+describe('component types this editor does not know', () => {
+  it('names them, so an export can say what it could not follow', () => {
+    const scene = sceneWith([createEntity('Lamp', [])]);
+    putComponent(scene, Object.keys(scene.entities)[0]!, {
+      id: 'c1',
+      type: 'plugin.flicker',
+      sprite: 'tex-flame',
+    } as never);
+
+    expect(unknownComponentTypes(scene)).toEqual(['plugin.flicker']);
+    expect(unknownComponentTypes(sceneWith([]))).toEqual([]);
   });
 });
 
