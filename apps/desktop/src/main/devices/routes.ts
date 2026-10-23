@@ -34,7 +34,7 @@ import { WAITING_PAGE } from './waitingPage';
  *   scenes/<id>.json           the entry from the editor's memory, any other scene from its file
  *   assets/<id>/<name>         an asset by id, and the files a model names beside it
  *   scripts.mjs                the compiled bundle
- *   _studio/*, favicon.svg     the prebuilt player
+ *   player/*, favicon.svg      the prebuilt player
  *   __studio/client.js         the device client
  *   __studio/events?device=…   a device's event stream
  *   __studio/<type>            a device's message, POSTed as JSON: the one thing answered to POST
@@ -43,7 +43,7 @@ import { WAITING_PAGE } from './waitingPage';
  * **Nothing in the project is opened from a request path.** A scene and an
  * asset are found by id, in what the launch read from disk; a model's side
  * files come from the model's own list of them. The only path taken from a
- * request is under `_studio/`, which is the public build output of the player,
+ * request is under `player/`, which is the public build output of the player,
  * and it is resolved inside that directory. The client's folder gives out
  * `client.js` and nothing else.
  */
@@ -56,7 +56,7 @@ export interface DeviceRoutes {
    * phone keeps open between requests too.
    */
   token: () => string;
-  /** The prebuilt player: `index.html`, `favicon.svg` and `_studio/`. */
+  /** The prebuilt player: `index.html`, `favicon.svg` and `player/`. */
   templateDir: string;
   /** The device client's build, where `client.js` is. */
   clientDir: string;
@@ -362,8 +362,8 @@ async function answer(
     if (!(await sendFile(request, response, icon, 'revalidate'))) notFound();
     return;
   }
-  if (head === '_studio' && tail.length > 0) {
-    const file = inside(join(routes.templateDir, '_studio'), tail.join('/'));
+  if (head === 'player' && tail.length > 0) {
+    const file = inside(join(routes.templateDir, 'player'), tail.join('/'));
     if (file === null || !(await sendFile(request, response, file, 'immutable'))) notFound();
     return;
   }

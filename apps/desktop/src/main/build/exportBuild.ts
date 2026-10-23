@@ -266,6 +266,24 @@ async function planExport(
   });
   plan.addBytes('build.json', JSON.stringify(build, null, 2), { kind: 'manifest' });
 
+  /*
+   * GitHub Pages runs Jekyll, which leaves out every path starting with `_` —
+   * the player's own folder did, and the page 404'd on itself unless the
+   * author knew to add `.nojekyll`. The project's folders are the author's to
+   * name, so this is said rather than refused.
+   */
+  const hidden = plan
+    .files()
+    .map((file) => file.path)
+    .filter((path) => path.split('/').some((segment) => segment.startsWith('_')));
+  if (hidden.length > 0) {
+    const more = hidden.length > 3 ? `, and ${hidden.length - 3} more` : '';
+    warnings.push(
+      'GitHub Pages does not publish a path starting with "_" unless the folder holds a ' +
+        `.nojekyll file: ${hidden.slice(0, 3).join(', ')}${more}.`,
+    );
+  }
+
   return {
     sceneCount: scenes.length,
     assetCount: assets.shipped.length,

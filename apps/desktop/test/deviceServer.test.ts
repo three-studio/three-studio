@@ -81,9 +81,9 @@ async function hold(port: number): Promise<void> {
 async function template(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-server-template-'));
   const dir = join(root, 'web-template');
-  await mkdir(join(dir, '_studio'), { recursive: true });
+  await mkdir(join(dir, 'player'), { recursive: true });
   await writeFile(join(dir, 'index.html'), TEMPLATE_HTML, 'utf8');
-  await writeFile(join(dir, '_studio', 'player.js'), '// player', 'utf8');
+  await writeFile(join(dir, 'player', 'player.js'), '// player', 'utf8');
   await deviceClient(root);
   return root;
 }

@@ -132,12 +132,12 @@ async function makeProject(
   // Stands in for `apps/web-template/dist`, which the exporter copies wholesale.
   const templateRoot = join(root, 'roots');
   const template = join(templateRoot, 'web-template');
-  await mkdir(join(template, '_studio'), { recursive: true });
+  await mkdir(join(template, 'player'), { recursive: true });
   // Shaped like what Vite emits, not a bare doctype: the base URL is written
   // into `<head>`, and a fixture with no head would pass a test the real
   // template fails.
   await writeFile(join(template, 'index.html'), TEMPLATE_HTML, 'utf8');
-  await writeFile(join(template, '_studio', 'player.js'), '// player', 'utf8');
+  await writeFile(join(template, 'player', 'player.js'), '// player', 'utf8');
 
   return { projectPath, templateRoot };
 }
@@ -147,7 +147,7 @@ const TEMPLATE_HTML = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <link rel="icon" href="./favicon.svg" />
-    <script type="module" crossorigin src="./_studio/player.js"></script>
+    <script type="module" crossorigin src="./player/player.js"></script>
   </head>
   <body><canvas id="view"></canvas></body>
 </html>
@@ -266,7 +266,7 @@ describe('web export', () => {
 
     // The player, copied as-is.
     expect(await readdir(outputDir)).toContain('index.html');
-    expect(await readdir(join(outputDir, '_studio'))).toContain('player.js');
+    expect(await readdir(join(outputDir, 'player'))).toContain('player.js');
 
     // Read once, and against the declaration the exporter writes to: an inline
     // shape here would be a fourth statement of the same manifest.
@@ -498,6 +498,21 @@ describe('web export', () => {
     // Only the ones that need saying. Radiance and PNG are named by their
     // extension, and listing them would be a second place to keep in step.
     expect(Object.keys(build.textureEncodings)).toEqual([gain.id]);
+  });
+
+  it('says when a name of the project will not be published by GitHub Pages', async () => {
+    // Jekyll leaves out every path starting with "_", at any depth.
+    const { projectPath, templateRoot } = await makeProject();
+    await writeAsset(projectPath, `${ASSETS_DIR}/_shared/stone.png`, 'tex-stone', 'texture');
+    const outputDir = join(projectPath, '..', 'out-underscore');
+
+    const plain = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    expect(plain.warnings).toEqual([]);
+
+    const result = await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [
+      templateRoot,
+    ]);
+    expect(result.warnings.join('\n')).toMatch(/\.nojekyll file: assets\/_shared\/stone\./);
   });
 
   it('ships every asset when the profile asks for it', async () => {
@@ -883,7 +898,7 @@ describe('the list of what an export wrote', () => {
     // never off the output folder, which holds whatever the author keeps there.
     expect((await listOf(outputDir)).formatVersion).toBe(1);
     expect(paths).toContain('index.html');
-    expect(paths).toContain('_studio/player.js');
+    expect(paths).toContain('player/player.js');
     expect(paths).toContain(buildScenePath(build.scenes[0]!));
     expect(paths).toContain(`assets/${build.assets!['tex-used']!}`);
     // Itself included, and that is what a file of its own buys: a manifest
@@ -942,18 +957,18 @@ describe('the list of what an export wrote', () => {
     const outputDir = join(projectPath, '..', 'out-moved');
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
 
-    await rm(join(outputDir, '_studio', 'player.js'));
-    await writeFile(join(outputDir, '_studio', 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
+    await rm(join(outputDir, 'player', 'player.js'));
+    await writeFile(join(outputDir, 'player', 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
     // Beside the build rather than in it: the author's, like a README. The
     // player cannot reach it without a change to the page or the manifest,
     // and both are listed.
     await writeFile(join(outputDir, 'notes.txt'), 'todo', 'utf8');
 
     const verified = await verifyBuild(outputDir);
-    expect(verified.missing).toEqual(['_studio/player.js']);
+    expect(verified.missing).toEqual(['player/player.js']);
     // Neither missing nor altered, and reported anyway: a file that appeared
     // among the player's after the export is what an injected one looks like.
-    expect(verified.unexpected).toEqual(['_studio/analytics.js']);
+    expect(verified.unexpected).toEqual(['player/analytics.js']);
   });
 
   it('reports a link inside the build, which can point anywhere', async () => {
@@ -963,13 +978,13 @@ describe('the list of what an export wrote', () => {
     const elsewhere = join(projectPath, '..', 'elsewhere.js');
     await writeFile(elsewhere, '// not the player', 'utf8');
 
-    await symlink(elsewhere, join(outputDir, '_studio', 'extra.js'));
+    await symlink(elsewhere, join(outputDir, 'player', 'extra.js'));
     await rm(join(outputDir, 'favicon.svg'), { force: true });
     await rm(join(outputDir, 'index.html'));
     await symlink(elsewhere, join(outputDir, 'index.html'));
 
     const verified = await verifyBuild(outputDir);
-    expect(verified.unexpected).toEqual(['_studio/extra.js']);
+    expect(verified.unexpected).toEqual(['player/extra.js']);
     // Whatever it points at, a host serves something other than what was written.
     expect(verified.changed).toEqual(['index.html']);
   });
@@ -1102,10 +1117,10 @@ describe('what a re-export takes back', () => {
 
     // What an older build of the player leaves behind: Vite names a chunk by
     // its content, so the next one lands beside it rather than over it.
-    await writeFile(join(outputDir, '_studio', 'index-OLD.js'), '// last week', 'utf8');
+    await writeFile(join(outputDir, 'player', 'index-OLD.js'), '// last week', 'utf8');
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
 
-    expect(await readdir(join(outputDir, '_studio'))).toEqual(['player.js']);
+    expect(await readdir(join(outputDir, 'player'))).toEqual(['player.js']);
     expect((await verifyBuild(outputDir)).ok).toBe(true);
   });
 

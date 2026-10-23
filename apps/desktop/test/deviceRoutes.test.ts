@@ -36,7 +36,7 @@ import { pngOf } from './png';
  */
 
 const TOKEN = 'abcdefghijKLMNOPQRST01';
-const PLAYER_MODULE = '<script type="module" src="./_studio/player.js"></script>';
+const PLAYER_MODULE = '<script type="module" src="./player/player.js"></script>';
 const TEMPLATE_HTML = `<!doctype html><html><head>${PLAYER_MODULE}</head><body>player</body></html>`;
 const CLIENT_JS = '/* the device client */';
 
@@ -252,9 +252,9 @@ beforeAll(async () => {
   scriptId = (await scanAssets(root)).assets.find((asset) => asset.kind === 'script')!.id;
 
   templateDir = join(parent, 'web-template');
-  await mkdir(join(templateDir, '_studio'), { recursive: true });
+  await mkdir(join(templateDir, 'player'), { recursive: true });
   await writeFile(join(templateDir, 'index.html'), TEMPLATE_HTML, 'utf8');
-  await writeFile(join(templateDir, '_studio', 'player.js'), '// player', 'utf8');
+  await writeFile(join(templateDir, 'player', 'player.js'), '// player', 'utf8');
   await writeFile(join(templateDir, 'favicon.svg'), '<svg/>', 'utf8');
   const clientDir = join(parent, 'device-client');
   await mkdir(clientDir, { recursive: true });
@@ -796,11 +796,11 @@ describe('the script bundle', () => {
 
 describe('the player', () => {
   it('serves its bundle as immutable, and nothing outside it', async () => {
-    const bundle = await ask(under('_studio/player.js'));
+    const bundle = await ask(under('player/player.js'));
 
     expect(bundle.status).toBe(200);
     expect(bundle.headers['cache-control']).toBe('public, max-age=31536000, immutable');
-    expect((await ask(under('_studio/%2e%2e/index.html'))).status).toBe(404);
+    expect((await ask(under('player/%2e%2e/index.html'))).status).toBe(404);
   });
 
   it('serves its icon', async () => {
@@ -832,7 +832,7 @@ describe('what is refused', () => {
       ask(under('')),
       ask(under('build.json')),
       ask(under('assets/tex-brick/brick.png')),
-      ask(under('_studio/player.js')),
+      ask(under('player/player.js')),
       ask(`/${TOKEN}`),
       ask('/nothing/'),
       ask(under(''), { headers: { host: 'evil.example' } }),

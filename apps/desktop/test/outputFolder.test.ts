@@ -22,7 +22,7 @@ async function setUp(): Promise<{ root: string; home: string; projectPath: strin
 
 /** What an export of the current layout writes at the top of its folder. */
 const OWNED = [
-  '_studio',
+  'player',
   'favicon.svg',
   'index.html',
   'assets',

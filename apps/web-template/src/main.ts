@@ -151,9 +151,9 @@ async function loadScripts(file: string | null): Promise<void> {
 
   try {
     // Against the document, not `import.meta.url`: the bundle lives in
-    // `_studio/` while the exporter writes the script bundle beside
+    // `player/` while the exporter writes the script bundle beside
     // index.html, so resolving from the module asked for
-    // `_studio/scripts.mjs`. Every other path here is document-relative too.
+    // `player/scripts.mjs`. Every other path here is document-relative too.
     await import(/* @vite-ignore */ new URL(file, document.baseURI).href);
   } catch (cause) {
     // A scene without its behaviours is worth more than a black page: the

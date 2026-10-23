@@ -114,12 +114,12 @@ describe('the page’s console', () => {
     captureLogs(scope, sink);
 
     target.dispatchEvent(
-      failedToLoad({ tagName: 'SCRIPT', src: `${PAGE}_studio/player-1a2b.js`, href: undefined }),
+      failedToLoad({ tagName: 'SCRIPT', src: `${PAGE}player/player-1a2b.js`, href: undefined }),
     );
     target.dispatchEvent(failedToLoad({ tagName: 'LINK', src: undefined, href: `${PAGE}x.css` }));
 
     expect(heard).toEqual([
-      'sink error Failed to load script _studio/player-1a2b.js',
+      'sink error Failed to load script player/player-1a2b.js',
       'sink error Failed to load link x.css',
     ]);
   });
