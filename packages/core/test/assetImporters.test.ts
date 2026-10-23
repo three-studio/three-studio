@@ -204,6 +204,71 @@ describe('companion files', () => {
     expect(await gltf.companions('tree.gltf', read)).toEqual([]);
   });
 
+  it('refuses a reference that only reaches outside once it is decoded', async () => {
+    // `%2e%2e` is two dots as a URI spells them. The check used to read the
+    // text as written and decode it afterwards, so this passed as an ordinary
+    // name and came out of the set as `../` — and every caller joins what comes
+    // out onto a folder.
+    const gltf = importerForFile('tree.gltf')!;
+    const read = reading({
+      'tree.gltf': JSON.stringify({
+        buffers: [
+          { uri: '%2e%2e/%2e%2e/.ssh/id_rsa' },
+          { uri: 'textures/..%2f..%2fsecret.png' },
+          { uri: '%5c..%5csecret.bin' },
+          { uri: '%2fabsolute.bin' },
+          { uri: 'C:\\textures\\bark.png' },
+          { uri: 'C%3A%5Ctextures%5Cbark.png' },
+          { uri: 'blob:https://example.com/1234' },
+          { uri: 'tree%00.bin' },
+        ],
+      }),
+    });
+    expect(await gltf.companions('tree.gltf', read)).toEqual([]);
+  });
+
+  it('skips a reference that does not decode, and keeps the ones after it', async () => {
+    const gltf = importerForFile('tree.gltf')!;
+    const read = reading({
+      'tree.gltf': JSON.stringify({ images: [{ uri: '100%.png' }, { uri: 'bark.png' }] }),
+    });
+    expect(await gltf.companions('tree.gltf', read)).toEqual(['bark.png']);
+
+    // An OBJ used to throw outright, which failed whatever had asked: an import,
+    // a move, an export.
+    const obj = importerForFile('tree.obj')!;
+    expect(await obj.companions('tree.obj', reading({ 'tree.obj': 'mtllib 100%.mtl\n' }))).toEqual(
+      [],
+    );
+  });
+
+  it('reads the paths exporters actually write', async () => {
+    const gltf = importerForFile('tree.gltf')!;
+    const read = reading({
+      'tree.gltf': JSON.stringify({
+        // A sibling named the explicit way, a doubled slash, and two dots inside
+        // a name, which is a name and not a step up.
+        buffers: [{ uri: './tree.bin' }, { uri: 'maps//bark.png' }, { uri: 'leaf..final.png' }],
+      }),
+    });
+    expect([...(await gltf.companions('tree.gltf', read))].sort()).toEqual([
+      'leaf..final.png',
+      'maps/bark.png',
+      'tree.bin',
+    ]);
+
+    // Windows separators, in the library name and in the maps it lists.
+    const obj = importerForFile('tree.obj')!;
+    const objRead = reading({
+      'tree.obj': 'mtllib mats\\tree.mtl\n',
+      'mats/tree.mtl': 'newmtl bark\nmap_Kd textures\\bark.png\n',
+    });
+    expect([...(await obj.companions('tree.obj', objRead))].sort()).toEqual([
+      'mats/textures/bark.png',
+      'mats/tree.mtl',
+    ]);
+  });
+
   it('imports a malformed glTF rather than refusing it', async () => {
     // The loader produces an error the author can act on; refusing the import
     // only hides which file is broken.

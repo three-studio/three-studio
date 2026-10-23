@@ -261,10 +261,15 @@ export async function exportBuild(
     // and its images relative to itself, and those siblings sit beside the
     // source file rather than in the cache.
     for (const companion of await companionsOf(original)) {
-      const target = join(dirname(destination), ...companion.split('/'));
+      // Both ends resolved inside their folder, before the `try`: a name that
+      // would leave one is not a missing file, and must not be reported as one.
+      // From beside the original too, as the comment above says — the copy in
+      // the cache has no siblings.
+      const from = resolveInside(dirname(original), companion);
+      const target = resolveInside(dirname(destination), companion);
       try {
         await mkdir(dirname(target), { recursive: true });
-        await cp(join(dirname(source), companion), target);
+        await cp(from, target);
       } catch {
         warnings.push(`${entry.name} refers to ${companion}, which is not in the project.`);
       }

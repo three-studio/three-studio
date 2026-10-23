@@ -37,7 +37,9 @@ export class ObjImporter extends ModelImporter<ObjModelSettings> {
 
     const found = new CompanionSet();
     for (const match of text.matchAll(OBJ_LIBRARY)) {
-      const library = match[1]?.trim();
+      // Forward slashes before anything reads it: a Windows exporter writes
+      // `mats\tree.mtl`, and the reader beside the model looks for a folder.
+      const library = match[1]?.trim().replace(/\\/g, '/');
       found.add(library);
       if (library === undefined || library === '') continue;
 

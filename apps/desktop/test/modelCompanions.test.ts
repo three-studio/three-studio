@@ -159,6 +159,51 @@ describe('moving and deleting such a model', () => {
   });
 });
 
+/*
+ * `%2e%2e` is two dots as a URI spells them. The importer used to check a name
+ * before decoding it, so this one passed as an ordinary file — and the import
+ * copied whatever it named into the project, where the next export shipped it
+ * as part of the model.
+ */
+describe('a model that names a file outside its own folder', () => {
+  async function writeReachingGltf(): Promise<{ model: string; secret: string }> {
+    const outside = await mkdtemp(join(tmpdir(), 'studio-outside-'));
+    // Two folders down, so `../../secret.txt` names a file the author never chose.
+    const folder = join(outside, 'downloads', 'pack');
+    await mkdir(folder, { recursive: true });
+    const secret = join(outside, 'secret.txt');
+    await writeFile(secret, 'private', 'utf8');
+    const model = join(folder, 'Tri.gltf');
+    await writeFile(
+      model,
+      JSON.stringify({
+        asset: { version: '2.0' },
+        buffers: [{ uri: '%2e%2e/%2e%2e/secret.txt' }],
+      }),
+      'utf8',
+    );
+    return { model, secret };
+  }
+
+  it('imports the model and nothing it reaches for', async () => {
+    const { model } = await writeReachingGltf();
+    const root = await project();
+
+    const session = await ImportSession.open(root, [model], '');
+    const staged = session.state().files[0]!;
+    expect(staged.companions).toEqual([]);
+    // Not served to the preview either, under either spelling.
+    expect(session.resolvePreview(staged.id, '../../secret.txt')).toBeNull();
+    expect(session.resolvePreview(staged.id, '%2e%2e/%2e%2e/secret.txt')).toBeNull();
+
+    await session.commit([
+      { fileId: staged.id, folder: '', fileName: staged.fileName, settings: staged.settings! },
+    ]);
+    const everything = await listFiles(root);
+    expect(everything.some((path) => path.endsWith('secret.txt'))).toBe(false);
+  });
+});
+
 describe('what the model imports as', () => {
   it('reports the model, not its parts', async () => {
     const source = await mkdtemp(join(tmpdir(), 'studio-source-'));

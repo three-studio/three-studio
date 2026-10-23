@@ -770,6 +770,37 @@ describe('models that come with other files', () => {
     expect(await readdir(shipped)).toContain(basename(model!));
   });
 
+  it('ships nothing a model names outside its own folder', async () => {
+    // `%2e%2e` decodes to `..`. The name was checked before it was decoded, so
+    // the export copied a file from beside the project into the build — and,
+    // the same name joined onto the output, wrote it beside the build too.
+    const { projectPath, templateRoot } = await makeProject();
+    await writeFile(join(projectPath, '..', 'secret.txt'), 'private', 'utf8');
+    await writeAsset(projectPath, `${ASSETS_DIR}/models/Tri.gltf`, 'model-tri', 'model');
+    await writeFile(
+      join(projectPath, ASSETS_DIR, 'models', 'Tri.gltf'),
+      JSON.stringify({
+        asset: { version: '2.0' },
+        buffers: [{ uri: '%2e%2e/%2e%2e/%2e%2e/secret.txt' }],
+      }),
+      'utf8',
+    );
+    const scene = deserializeScene(
+      await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
+    );
+    const entityId = Object.keys(scene.entities)[0]!;
+    putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
+    await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
+
+    const outputDir = join(projectPath, '..', 'out', 'reaching');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const listed = (await listOf(outputDir)).files.map((file) => file.path);
+    expect(listed.some((path) => path.endsWith('secret.txt'))).toBe(false);
+    // `out/reaching/assets/models` climbed three times is `out/`.
+    expect(await readdir(join(projectPath, '..', 'out'))).toEqual(['reaching']);
+  });
+
   it('says so when a companion is named but missing', async () => {
     const { projectPath, templateRoot } = await makeProject();
     await writeAsset(projectPath, `${ASSETS_DIR}/models/Gone.gltf`, 'model-gone', 'model');
