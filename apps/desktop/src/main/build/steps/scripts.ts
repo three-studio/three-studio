@@ -21,7 +21,8 @@ export interface PlannedScripts {
  * behaviours the scenes no longer had.
  */
 export async function planScripts(plan: BuildPlan, projectPath: string): Promise<PlannedScripts> {
-  const scripts = await buildScripts(projectPath);
+  // Compiled for strangers: no source map, and no path from the author's disk.
+  const scripts = await buildScripts(projectPath, 'export');
   if (scripts.errors.length > 0) {
     throw new AssetError(`Scripts did not compile:\n${scripts.errors.join('\n')}`);
   }

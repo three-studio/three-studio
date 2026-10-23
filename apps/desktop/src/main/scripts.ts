@@ -55,9 +55,25 @@ export default api;
  * loop — but running esbuild and re-importing the bundle on a project nobody
  * has touched is pure latency on every single Play.
  */
-let lastBuild: { projectPath: string; signature: string; result: ScriptBuildResult } | null = null;
+const lastBuilds = new Map<
+  ScriptBuildPurpose,
+  { projectPath: string; signature: string; result: ScriptBuildResult }
+>();
 
-export async function buildScripts(projectPath: string): Promise<ScriptBuildResult> {
+/**
+ * What a bundle is compiled for, which decides what it carries besides the code.
+ *
+ * - `play`: Play and a device launch, on the author's machine. An inline source
+ *   map, so a stack trace and a breakpoint land in the author's TypeScript.
+ * - `export`: a build that strangers download. No source map: an inline one
+ *   carried every script's source, comments and all, into the published bundle.
+ */
+export type ScriptBuildPurpose = 'play' | 'export';
+
+export async function buildScripts(
+  projectPath: string,
+  purpose: ScriptBuildPurpose = 'play',
+): Promise<ScriptBuildResult> {
   const manifest = await scanAssets(projectPath);
   const scripts = manifest.assets.filter((asset) => asset.kind === 'script');
 
@@ -66,6 +82,7 @@ export async function buildScripts(projectPath: string): Promise<ScriptBuildResu
     .sort()
     .join('|');
 
+  const lastBuild = lastBuilds.get(purpose);
   if (lastBuild && lastBuild.projectPath === projectPath && lastBuild.signature === signature) {
     return { ...lastBuild.result, unchanged: true };
   }
@@ -79,7 +96,7 @@ export async function buildScripts(projectPath: string): Promise<ScriptBuildResu
   const remember = (result: ScriptBuildResult): ScriptBuildResult => {
     // A failed build is cached too, so a broken file does not re-run esbuild on
     // every Play just to produce the same error.
-    lastBuild = { projectPath, signature, result };
+    lastBuilds.set(purpose, { projectPath, signature, result });
     return result;
   };
 
@@ -98,7 +115,11 @@ export async function buildScripts(projectPath: string): Promise<ScriptBuildResu
       format: 'esm',
       target: 'es2022',
       platform: 'browser',
-      sourcemap: 'inline',
+      sourcemap: purpose === 'play' ? 'inline' : false,
+      // Paths in the bundle's comments are written relative to this. It was
+      // the editor's own working directory, so a published bundle opened with
+      // `// ../../Users/<the author>/Documents/<the game>/assets/scripts/…`.
+      absWorkingDir: projectPath,
       logLevel: 'silent',
       // Scripts are authored in TypeScript; types are stripped, not checked.
       // Type errors surface in the editor's own typecheck, not at play time.

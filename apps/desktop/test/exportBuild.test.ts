@@ -40,6 +40,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { readMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
+import { buildScripts } from '../src/main/scripts';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
 import { exportBuild, requireBuildProfile } from '../src/main/build/exportBuild';
 
@@ -1297,6 +1298,39 @@ describe('what a scene needs beyond its slots', () => {
     const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
 
     expect(result.warnings.join(' ')).toMatch(/Scene "main" uses plugin\.flicker/);
+  });
+});
+
+/*
+ * A build is published. The bundle Play compiles carries an inline source map —
+ * every script's source, comments and all — and its module comments carried
+ * paths from the editor's own working directory, which began with the
+ * author's home folder.
+ */
+describe('what a published script bundle carries', () => {
+  it('the code, and neither the sources nor a path off the author\'s disk', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    await writeAsset(projectPath, `${ASSETS_DIR}/scripts/Door.ts`, 'script-door', 'script');
+    await writeFile(
+      join(projectPath, ASSETS_DIR, 'scripts', 'Door.ts'),
+      '// a private note\nexport default class Door {}\n',
+      'utf8',
+    );
+    const outputDir = join(projectPath, '..', 'out-bundle');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = await buildOf(outputDir);
+    expect(build.scripts).toMatch(/^scripts\/bundle\.[0-9a-f]{8}\.mjs$/);
+    const code = await readFile(inGame(outputDir, build.scripts!), 'utf8');
+    expect(code).not.toContain('sourceMappingURL');
+    expect(code).not.toContain('a private note');
+    // Relative to the project, so it reads as the project does.
+    expect(code).toContain('// assets/scripts/Door.ts');
+    expect(code).not.toContain(basename(join(projectPath, '..')));
+
+    // Play keeps its map: a breakpoint there lands in the author's own file.
+    expect((await buildScripts(projectPath)).code).toContain('sourceMappingURL');
   });
 });
 
