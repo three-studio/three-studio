@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname } from 'node:path';
 import {
   createId,
   importerForFile,
@@ -12,6 +12,7 @@ import {
 } from '@three-studio/core';
 import { AssetError, hashFile } from '../assetFiles';
 import { companionsOf, scanAssets, settingsFor } from '../assetScan';
+import { resolveInside } from '../paths';
 import { ImportPipeline } from './ImportPipeline';
 import { expandSources } from './sources';
 
@@ -93,7 +94,13 @@ export class ImportSession {
     // buffer, an `.obj`'s material library. Only the ones the importer actually
     // read out of it, never whatever the folder happens to contain.
     if (!source.companions.includes(relativePath)) return null;
-    return join(dirname(source.sourcePath), relativePath);
+    // The list is the importer's, and the importer refuses a name that leaves
+    // the folder. Proved here as well, because this is the line that reads.
+    try {
+      return resolveInside(dirname(source.sourcePath), relativePath);
+    } catch {
+      return null;
+    }
   }
 
   /** Runs the import the author confirmed. The first thing to touch the disk. */

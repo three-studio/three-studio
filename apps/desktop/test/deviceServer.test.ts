@@ -81,9 +81,9 @@ async function hold(port: number): Promise<void> {
 async function template(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-server-template-'));
   const dir = join(root, 'web-template');
-  await mkdir(join(dir, '_studio'), { recursive: true });
+  await mkdir(join(dir, 'player'), { recursive: true });
   await writeFile(join(dir, 'index.html'), TEMPLATE_HTML, 'utf8');
-  await writeFile(join(dir, '_studio', 'player.js'), '// player', 'utf8');
+  await writeFile(join(dir, 'player', 'player.js'), '// player', 'utf8');
   await deviceClient(root);
   return root;
 }
@@ -435,7 +435,7 @@ describe('launching', () => {
     const second = await launchOn(devices, root, await snapshot(root, 2.5));
 
     expect(second.launch?.id).not.toBe(first.launch?.id);
-    const served = JSON.parse((await get(port, `/${TOKEN}/build.json`)).body);
+    const served = JSON.parse((await get(port, `/${TOKEN}/game/build.json`)).body);
     expect(served.rendering.exposure).toBe(2.5);
   });
 
@@ -486,7 +486,7 @@ describe('launching', () => {
     const current = await second;
     expect(current?.launch?.id).toBeDefined();
     expect(current?.launch?.id).toBe((await devices.status()).launch?.id);
-    const served = JSON.parse((await get(port, `/${TOKEN}/build.json`)).body);
+    const served = JSON.parse((await get(port, `/${TOKEN}/game/build.json`)).body);
     expect(served.rendering.exposure).toBe(2.5);
     expect(traced).toContain('launch dropped for a newer one');
   });
@@ -503,7 +503,7 @@ describe('launching', () => {
 
     expect(restarted.launch).toBeNull();
     expect((await get(port, `/${TOKEN}/`)).body).toContain('Nothing is running yet');
-    expect((await get(port, `/${TOKEN}/build.json`)).status).toBe(404);
+    expect((await get(port, `/${TOKEN}/game/build.json`)).status).toBe(404);
   });
 });
 
@@ -891,10 +891,10 @@ describe('the launch options', () => {
     // No new launch: the devices fetch the same one again, served otherwise.
     expect(await phone.until((text) => text.includes(launchLine(id)))).toContain(launchLine(id));
     expect(status.launch?.id).toBe(id);
-    const build = (await (await fetch(`http://127.0.0.1:${port}/${TOKEN}/build.json`)).json()) as {
-      forceWebGL: boolean;
-    };
-    expect(build.forceWebGL).toBe(true);
+    const build = (await (
+      await fetch(`http://127.0.0.1:${port}/${TOKEN}/game/build.json`)
+    ).json()) as { rendering: { forceWebGL: boolean } };
+    expect(build.rendering.forceWebGL).toBe(true);
     expect(traced).toContain('launch options: WebGL2 forced — 1 device restarts');
     await phone.close();
   });

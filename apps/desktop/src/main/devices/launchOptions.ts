@@ -1,8 +1,4 @@
-import {
-  createRenderingSettings,
-  type BuildManifest,
-  type DeviceLaunchOptions,
-} from '@three-studio/core';
+import type { BuildManifest, DeviceLaunchOptions } from '@three-studio/core';
 
 /**
  * The manifest a device is served: the launch's, with the launch options the
@@ -23,14 +19,9 @@ export function applyLaunchOptions(
   options: DeviceLaunchOptions,
 ): BuildManifest {
   if (!options.forceWebGL && options.maxPixelRatio === null) return manifest;
-  // A build without rendering settings is read this way by the player too.
-  const rendering = manifest.rendering ?? {
-    ...createRenderingSettings(),
-    forceWebGL: manifest.forceWebGL,
-  };
+  const { rendering } = manifest;
   return {
     ...manifest,
-    forceWebGL: manifest.forceWebGL || options.forceWebGL,
     rendering: {
       ...rendering,
       forceWebGL: rendering.forceWebGL || options.forceWebGL,

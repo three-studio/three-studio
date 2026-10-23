@@ -257,7 +257,7 @@ describe('what a deletion no longer rewrites', () => {
     await deleteScene(root, await idOf(root, 'Boss'));
 
     // Untouched — and the export says so, rather than the deletion pre-empting
-    // it. See `exportWeb.test.ts`: a profile naming a scene that is gone is a
+    // it. See `exportBuild.test.ts`: a profile naming a scene that is gone is a
     // warning on the build, not a refusal and not a silent edit.
     expect(profileScenes(await readProject(root))).toEqual(before);
   });

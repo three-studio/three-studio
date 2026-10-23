@@ -83,7 +83,11 @@ export async function removeAsset(projectPath: string, assetPath: string): Promi
   const removed = [assetPath];
   for (const companion of companions) {
     const relativePath = posix.join(posix.dirname(assetPath), companion);
-    const file = resolveInside(projectPath, relativePath);
+    // Inside the model's own folder, not merely inside the project: a side file
+    // is beside the model or below it, and a delete that reached a sibling
+    // folder would take a scene with it. The importer already refuses such a
+    // name; this is the second wall, where the file actually goes.
+    const file = resolveInside(dirname(target), companion);
     await rm(file, { force: true });
     await rm(`${file}${ASSET_META_SUFFIX}`, { force: true });
     removed.push(relativePath);
@@ -171,8 +175,12 @@ export async function moveAsset(
   );
 
   for (const companion of companions) {
-    const from = join(dirname(source), ...companion.split('/'));
-    const to = join(destinationDir, ...companion.split('/'));
+    // Resolved rather than joined, and before the `try`: a name that would leave
+    // either folder is not a file that went missing, and must not be swallowed
+    // as one. The importer refuses such names already; this is where the rename
+    // would happen, so this is where it is proved.
+    const from = resolveInside(dirname(source), companion);
+    const to = resolveInside(destinationDir, companion);
     try {
       await mkdir(dirname(to), { recursive: true });
       await rename(from, to);

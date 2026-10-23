@@ -1,29 +1,34 @@
-import type { BuildManifest } from '@three-studio/core';
+import type { BuildManifest, BuildScene } from '@three-studio/core';
 
 /*
- * The manifest's alias table, read in both directions.
+ * The scenes a build ships, found by whichever half of their identity a script
+ * holds.
  *
- * A build addresses every scene by id — `buildScenePath` is where the file is —
- * and `sceneNames` maps the names an author gave them onto those ids. That is
- * an alias and not a second address: nothing here *finds* a scene by name, it
- * turns a name into the id that finds it.
+ * The manifest lists every scene with its id, its name and its path. The id is
+ * the address and the path is where the file is; the name is an alias, the one
+ * an author reads, which a script may hold instead of the id. Nothing is found
+ * by a path a script made up.
  */
 
 /**
- * The id a script named, whichever half of the scene's identity it held.
+ * The scene a script named, by id first and then by name.
  *
- * Ids first, then names. A scene named exactly like another's id is not a case
- * to arbitrate: the id is the address, so it wins.
+ * Ids first: a scene named exactly like another's id is not a case to
+ * arbitrate — the id is the address, so it wins. Then the **first** scene
+ * under a name: the entry is listed first, so when a scene in another folder
+ * shares its name the entry still answers to it, as `scenes.current` does in
+ * Play.
  *
  * @throws when the build has no such scene, which is the only useful answer —
- *   fetching `scenes/undefined.json` would report a missing file instead of a
- *   missing scene.
+ *   fetching a guessed path would report a missing file instead of a missing
+ *   scene.
  */
-export function sceneIdOf(build: Pick<BuildManifest, 'scenes' | 'sceneNames'>, named: string): string {
-  if (build.scenes.includes(named)) return named;
-  const id = build.sceneNames?.[named];
-  if (id === undefined) throw new Error(`This build has no scene named "${named}".`);
-  return id;
+export function sceneOf(build: Pick<BuildManifest, 'scenes'>, named: string): BuildScene {
+  const scene =
+    build.scenes.find((candidate) => candidate.id === named) ??
+    build.scenes.find((candidate) => candidate.name === named);
+  if (scene === undefined) throw new Error(`This build has no scene named "${named}".`);
+  return scene;
 }
 
 /**
@@ -33,19 +38,8 @@ export function sceneIdOf(build: Pick<BuildManifest, 'scenes' | 'sceneNames'>, n
  * answer with the name too or `scenes.current` reads one thing in play mode and
  * another in the thing people download. That was a real bug with the worst
  * shape a bug can have: it worked while the script was being written and broke
- * the moment it shipped. It used to be the file name — `scene`, because the
- * entry scene was renamed to `scene.json` — where the editor said `main`.
- *
- * The scan is the reverse of the table's own direction, and it runs once at
- * boot; loading a scene goes the cheap way, through `sceneIdOf`.
- *
- * Falls back to the id. A build written before `sceneNames` cannot be read at
- * all — its scenes are elsewhere — so this is for a scene the table forgot,
- * where an id is at least true.
+ * the moment it shipped.
  */
-export function entrySceneName(build: Pick<BuildManifest, 'scenes' | 'sceneNames'>): string {
-  const id = build.scenes[0];
-  if (id === undefined) return '';
-  const named = Object.entries(build.sceneNames ?? {}).find(([, sceneId]) => sceneId === id);
-  return named?.[0] ?? id;
+export function entrySceneName(build: Pick<BuildManifest, 'scenes'>): string {
+  return build.scenes[0]?.name ?? '';
 }

@@ -3,6 +3,7 @@ import { createServer as createNetServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  BUILD_LAYOUT,
   IPC_EVENTS,
   IPC_INVOKE,
   LAUNCH_SNAPSHOT_VERSION,
@@ -283,7 +284,8 @@ describe('the guards are reached, not merely written', () => {
     // Read back from the server, as a phone reads it: what is checked is what
     // a device is given, not what the handler was handed.
     const local = status.urls.find((url) => url.address === 'localhost')!.url;
-    const build = (await (await fetch(`${local.replace('localhost', '127.0.0.1')}build.json`)).json()) as {
+    const manifest = `${local.replace('localhost', '127.0.0.1')}${BUILD_LAYOUT.manifest}`;
+    const build = (await (await fetch(manifest)).json()) as {
       materials: Record<string, Record<string, unknown>>;
     };
     expect(build.materials['stone']!.side).toBe('front');

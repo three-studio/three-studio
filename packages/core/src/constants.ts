@@ -30,7 +30,7 @@ export const ENGINE_NAME = 'Three Studio';
  * of cutting a release, which already does its own job on the file that needs
  * it.
  */
-export const ENGINE_VERSION = '0.5.0';
+export const ENGINE_VERSION = '0.6.0';
 
 /**
  * The surface compiled user scripts are built against.

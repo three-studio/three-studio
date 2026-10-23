@@ -1,4 +1,5 @@
 import {
+  BUILD_LAYOUT,
   basePathProblem,
   normalizeBasePath,
   type BuildProfile,
@@ -32,6 +33,20 @@ const TARGETS: Record<BuildTargetId, { label: string; description: string }> = {
     description: 'A folder of static files. Serve it from anywhere; no runtime is needed.',
   },
 };
+
+/**
+ * Which names in the folder are the build's, said where the folder is chosen.
+ *
+ * The export keeps exactly these in step with the project — what it no longer
+ * ships is taken back from them — and never reads, writes or lists anything
+ * else there. A repository's `.git`, a README or a CNAME beside a build is the
+ * author's, and an author who knows which names are not is an author who does
+ * not keep their own files inside them.
+ */
+const OUTPUT_FOLDER_HINT =
+  `The build is ${BUILD_LAYOUT.page}, ${BUILD_LAYOUT.icon}, ${BUILD_LAYOUT.files}, ` +
+  `${BUILD_LAYOUT.player}/ and ${BUILD_LAYOUT.game}/, kept in step with the project on every ` +
+  'export. Everything else in the folder is yours and is left as it is.';
 
 const INPUT =
   'w-full rounded-xs border border-line-soft bg-surface-0 px-2 py-1 text-2xs text-ink outline-none focus:border-accent';
@@ -236,8 +251,11 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             ) : (
               // The resolved example, so a missing trailing slash is visible
               // here rather than as a folder of 404s after the export.
-              <p className="mt-1 truncate text-2xs text-ink-dim" {...tooltip(`${base}assets/…`)}>
-                {base === '' ? 'Resolved against the page address.' : `→ ${base}assets/…`}
+              <p
+                className="mt-1 truncate text-2xs text-ink-dim"
+                {...tooltip(`${base}${BUILD_LAYOUT.game}/…`)}
+              >
+                {base === '' ? 'Resolved against the page address.' : `→ ${base}${BUILD_LAYOUT.game}/…`}
               </p>
             )}
           </Field>
@@ -286,7 +304,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
 
           <Field
             label="Include every asset"
-            hint="Ships the whole project rather than what the scenes reach. Needed when a script loads an asset by name, which no static walk can see."
+            hint="Ships the whole project rather than what the scenes reach. Needed when a script loads an asset from its code; an asset picked in a script’s properties ships on its own."
           >
             <input
               type="checkbox"
@@ -295,10 +313,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             />
           </Field>
 
-          <Field
-            label="Output folder"
-            hint="Where the build is written. Existing files with the same names are replaced."
-          >
+          <Field label="Output folder" hint={OUTPUT_FOLDER_HINT}>
             <div className="flex items-center gap-2">
               <p
                 className={`min-w-0 flex-1 truncate py-1 text-2xs ${

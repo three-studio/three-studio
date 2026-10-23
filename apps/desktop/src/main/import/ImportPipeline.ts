@@ -138,9 +138,14 @@ export class ImportPipeline {
       // Each one keeps the sub-path the model refers to it by, and still has to
       // prove it stayed inside the project.
       const target = resolveInside(this.projectPath, posix.join(directory, toPosix(companion)));
+      // And the source has to prove it stayed beside the model. A target inside
+      // the project was never enough: `../../.ssh/id_rsa` beside a download
+      // lands inside the project perfectly well, and is then shipped by the
+      // next export as one of the model's files.
+      const from = resolveInside(dirname(source.sourcePath), companion);
       try {
         await mkdir(dirname(target), { recursive: true });
-        await copyFile(join(dirname(source.sourcePath), companion), target);
+        await copyFile(from, target);
       } catch {
         // Named but missing beside the source. The loader reports it, in terms
         // the author can act on.

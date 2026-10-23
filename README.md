@@ -189,7 +189,7 @@ The tag is the authority on the **installer**: the release run stamps it into
 gives installers named `three-studio-1.4.0-…` and an app that declares `1.4.0` to the operating
 system, with nothing to bump by hand for a release. Nothing is committed — the version in the
 repository only serves as the base for a tag that is not a version number, which packages as a
-prerelease of it (`v2026-summer` → `0.5.0-2026-summer`).
+prerelease of it (`v2026-summer` → `0.6.0-2026-summer`).
 
 **What the app displays is a different number, on purpose.** The launcher and the status bar read
 `ENGINE_VERSION` from [`packages/core/src/constants.ts`](packages/core/src/constants.ts), which no

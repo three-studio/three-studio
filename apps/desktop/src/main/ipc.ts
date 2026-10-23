@@ -73,7 +73,7 @@ import {
   saveLayoutPreferences,
   saveShortcutPreferences,
 } from './preferences';
-import { exportBuild, requireBuildProfile } from './exportWeb';
+import { exportBuild, requireBuildProfile } from './build/exportBuild';
 import {
   createProject,
   discoverScenes,

@@ -49,8 +49,8 @@ export {
   ASSET_META_SUFFIX,
   ASSET_META_VERSION,
   BUILD_FORMAT_VERSION,
+  BUILD_LAYOUT,
   MATERIAL_ASSET_VERSION,
-  buildScenePath,
   applyAssetChange,
   emptyAssetChange,
   emptyManifest,
@@ -67,6 +67,7 @@ export type {
   AssetSettings,
   AudioSettings,
   BuildManifest,
+  BuildScene,
   FbxModelSettings,
   GltfModelSettings,
   MaterialAssetFile,
@@ -135,6 +136,7 @@ export type {
 
 export {
   collectSceneAssets,
+  unknownComponentTypes,
   environmentAssets,
   findAssetUsage,
   findBrokenReferences,
@@ -278,6 +280,7 @@ export type { ComponentHost } from './scene/components';
 
 export {
   addableTypes,
+  componentAssetCandidates,
   componentAssets,
   componentDefinition,
   componentDefinitions,

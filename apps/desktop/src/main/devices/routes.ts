@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { dirname, extname, join } from 'node:path';
 import {
+  BUILD_LAYOUT,
   DEVICE_BODY_LIMIT,
   DEVICE_SCREENSHOT_LIMIT,
   DEVICE_SCREENSHOT_WAIT_MS,
@@ -30,11 +31,11 @@ import { WAITING_PAGE } from './waitingPage';
  *
  *   ''                         the player when a launch is current, the waiting page otherwise,
  *                              either with the device client first in its <head>
- *   build.json                 the launch's manifest, with the launch options the renderer reads
- *   scenes/<id>.json           the entry from the editor's memory, any other scene from its file
- *   assets/<id>/<name>         an asset by id, and the files a model names beside it
- *   scripts.mjs                the compiled bundle
- *   _studio/*, favicon.svg     the prebuilt player
+ *   game/build.json            the launch's manifest, with the launch options the renderer reads
+ *   game/scenes/<id>.json      the entry from the editor's memory, any other scene from its file
+ *   game/assets/<id>/<name>    an asset by id, and the files a model names beside it
+ *   game/scripts.mjs           the compiled bundle
+ *   player/*, favicon.svg      the prebuilt player
  *   __studio/client.js         the device client
  *   __studio/events?device=…   a device's event stream
  *   __studio/<type>            a device's message, POSTed as JSON: the one thing answered to POST
@@ -43,7 +44,7 @@ import { WAITING_PAGE } from './waitingPage';
  * **Nothing in the project is opened from a request path.** A scene and an
  * asset are found by id, in what the launch read from disk; a model's side
  * files come from the model's own list of them. The only path taken from a
- * request is under `_studio/`, which is the public build output of the player,
+ * request is under `player/`, which is the public build output of the player,
  * and it is resolved inside that directory. The client's folder gives out
  * `client.js` and nothing else.
  */
@@ -56,7 +57,7 @@ export interface DeviceRoutes {
    * phone keeps open between requests too.
    */
   token: () => string;
-  /** The prebuilt player: `index.html`, `favicon.svg` and `_studio/`. */
+  /** The prebuilt player: `index.html`, `favicon.svg` and `player/`. */
   templateDir: string;
   /** The device client's build, where `client.js` is. */
   clientDir: string;
@@ -362,8 +363,8 @@ async function answer(
     if (!(await sendFile(request, response, icon, 'revalidate'))) notFound();
     return;
   }
-  if (head === '_studio' && tail.length > 0) {
-    const file = inside(join(routes.templateDir, '_studio'), tail.join('/'));
+  if (head === BUILD_LAYOUT.player && tail.length > 0) {
+    const file = inside(join(routes.templateDir, BUILD_LAYOUT.player), tail.join('/'));
     if (file === null || !(await sendFile(request, response, file, 'immutable'))) notFound();
     return;
   }
@@ -383,20 +384,24 @@ async function answer(
   }
   // Everything below belongs to a launch, and before the first there is none.
   if (launch === null) return notFound();
+  // Under `game/`, where an export puts the project, so a device runs the
+  // layout a build has and the player resolves every path one way.
+  if (head !== BUILD_LAYOUT.game) return notFound();
+  const [part = '', ...within] = tail;
 
-  if (single && head === 'build.json') {
+  if (`${head}/${part}` === BUILD_LAYOUT.manifest && within.length === 0) {
     trace(200);
     const manifest = applyLaunchOptions(launch.manifest, routes.launchOptions());
     send(request, response, 200, 'no-store', 'application/json; charset=utf-8', JSON.stringify(manifest));
     return;
   }
-  if (single && head === 'scripts.mjs') {
+  if (part === 'scripts.mjs' && within.length === 0) {
     if (launch.scripts === null) return notFound();
     send(request, response, 200, 'no-store', 'text/javascript; charset=utf-8', launch.scripts);
     return;
   }
-  if (head === 'scenes' && tail.length > 0) {
-    const name = tail.join('/');
+  if (part === 'scenes' && within.length > 0) {
+    const name = within.join('/');
     if (!name.endsWith('.json')) return notFound();
     const id = name.slice(0, -'.json'.length);
     // The entry is the scene on screen, unsaved edits and all, every time it
@@ -410,8 +415,8 @@ async function answer(
     if (file === null || !(await sendFile(request, response, file, 'no-store'))) notFound();
     return;
   }
-  if (head === 'assets' && tail.length > 1) {
-    const [assetId = '', ...named] = tail;
+  if (part === 'assets' && within.length > 1) {
+    const [assetId = '', ...named] = within;
     const entry = launch.assets.get(assetId);
     if (entry === undefined) return notFound();
     const wanted = named.join('/');
@@ -607,7 +612,7 @@ async function assetFile(
   wanted: string,
   companionsFor: (launch: Launch, entry: AssetEntry) => Promise<readonly string[]>,
 ): Promise<string | null> {
-  if (`${entry.id}/${wanted}` === launchAssetPath(entry)) {
+  if (`assets/${entry.id}/${wanted}` === launchAssetPath(entry)) {
     return inside(launch.projectPath, entry.importedPath ?? entry.path);
   }
   if (!(await companionsFor(launch, entry)).includes(wanted)) return null;

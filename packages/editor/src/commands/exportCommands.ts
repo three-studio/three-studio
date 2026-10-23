@@ -3,6 +3,7 @@ import { formatBytes } from '../import/preview/facts';
 import { showInFileManagerLabel } from '../platform';
 import { useProjectStore } from '../state/projectStore';
 import { useToastStore } from '../state/toastStore';
+import { windowUnsaved } from '../state/unsaved';
 import { defineCommand } from './command';
 
 /**
@@ -61,6 +62,18 @@ function breakdown(size: BuildSize): string {
 }
 
 /**
+ * Said first among the build's warnings when the window held edits that were
+ * not on disk.
+ *
+ * The export reads the project off disk, as a build has to — it is what makes
+ * one reproducible — and it never saves on the author's behalf. So an edit made
+ * since the last save is simply not in the build, and a build that does not
+ * look like the editor is the one surprise worth a sentence.
+ */
+const UNSAVED_WARNING =
+  'This window has unsaved changes. The build was made from the saved files: save, then package again to include them.';
+
+/**
  * Produces a build, reporting through a toast.
  *
  * **No profile argument, and losing it was the point.** `PackageDialog` used to
@@ -77,7 +90,9 @@ function breakdown(size: BuildSize): string {
  * action. The success carries a shortcut to the folder — a shortcut, not the
  * only way there, since the path is also in the message.
  */
-function runExport(): void {
+export function runExport(): void {
+  // Asked as the export starts, which is when it reads the project.
+  const unsaved = windowUnsaved();
   const toasts = useToastStore.getState();
   const id = toasts.push({
     kind: 'progress',
@@ -96,6 +111,7 @@ function runExport(): void {
   void window.studio.build
     .export()
     .then((result) => {
+      const warnings = unsaved ? [UNSAVED_WARNING, ...result.warnings] : result.warnings;
       // Size first: it is the first thing anyone looks at, and the counts are
       // what it is made of.
       const counts = [
@@ -111,13 +127,12 @@ function runExport(): void {
       const report = [breakdown(result.size), '', result.outputDir].join('\n');
 
       useToastStore.getState().update(id, {
-        kind: result.warnings.length > 0 ? 'warning' : 'success',
-        title: result.warnings.length > 0 ? 'Packaged with warnings' : 'Packaged',
+        kind: warnings.length > 0 ? 'warning' : 'success',
+        title: warnings.length > 0 ? 'Packaged with warnings' : 'Packaged',
         description: counts,
         progress: undefined,
-        details:
-          result.warnings.length > 0 ? `${result.warnings.join('\n')}\n\n${report}` : report,
-        detailsOpen: result.warnings.length > 0,
+        details: warnings.length > 0 ? `${warnings.join('\n')}\n\n${report}` : report,
+        detailsOpen: warnings.length > 0,
         actions: [
           {
             label: showInFileManagerLabel(),
