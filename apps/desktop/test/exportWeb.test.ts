@@ -512,6 +512,32 @@ describe('web export', () => {
     ]);
   });
 
+  it('refuses to write into the project, and leaves its assets and scenes as they were', async () => {
+    // The export empties the build's `assets/` and `scenes/`, which in the
+    // project's own folder are the project's.
+    const { projectPath, templateRoot } = await makeProject();
+    const before = await readdir(join(projectPath, ASSETS_DIR, 'textures'));
+
+    await expect(exportBuild(projectPath, profile(), projectPath, [templateRoot])).rejects.toThrow(
+      /project itself/,
+    );
+    expect(await readdir(join(projectPath, ASSETS_DIR, 'textures'))).toEqual(before);
+    expect(await readdir(join(projectPath, SCENES_DIR))).toContain('main.scene.json');
+  });
+
+  it('refuses a second export into a folder while the first is still writing', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-twice');
+
+    const [first, second] = await Promise.allSettled([
+      exportBuild(projectPath, profile(), outputDir, [templateRoot]),
+      exportBuild(projectPath, profile(), outputDir, [templateRoot]),
+    ]);
+    expect([first.status, second.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const refused = first.status === 'rejected' ? first : second;
+    expect(String((refused as PromiseRejectedResult).reason)).toMatch(/already running/);
+  });
+
   it('refuses when the player has not been built', async () => {
     const { projectPath } = await makeProject();
     await expect(

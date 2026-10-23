@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, posix, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
@@ -23,6 +23,7 @@ import { AssetError, hashFile } from './assetFiles';
 import { readMaterialAssets, readPrefabAssets } from './assetLibraries';
 import { companionsOf, scanAssets } from './assetScan';
 import { sizeOf, writeBuildFiles } from './buildFiles';
+import { EXPORT_ROOTS, claimOutputFolder } from './build/outputFolder';
 import { assembleManifest, type ShippedAsset } from './buildManifest';
 import { escapeAttribute, insertIntoHead } from './html';
 import { resolveInside } from './paths';
@@ -112,246 +113,257 @@ export async function exportBuild(
   const template = await findTemplate(searchRoots);
   const warnings: string[] = [];
 
-  report(0.05, 'Reading the project');
-  const project = await readProject(projectPath);
-  const known = await discoverScenes(projectPath);
-  // An empty list means the start scene, so a project that never opened the
-  // build settings still exports something sensible. Ids, as everything that
-  // refers to a scene is.
-  const sceneIds = profile.scenes.length > 0 ? profile.scenes : [project.startScene];
-
-  const scenes: { entry: SceneEntry; scene: SceneDoc }[] = [];
-  for (const id of sceneIds) {
-    const entry = findScene(known, id);
-    if (!entry) {
-      // A warning, not a refusal. A profile is written once and the scenes it
-      // names live in the Finder, where one can be deleted or moved out months
-      // later; refusing the whole export for that means the author cannot ship
-      // the eleven levels that are still there. Loud, and it does not stop the
-      // build — the same trade the missing-asset warning below already makes.
-      warnings.push(`This profile ships a scene the project no longer has (${id}).`);
-      continue;
-    }
-    try {
-      scenes.push({
-        entry,
-        scene: deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8')),
-      });
-    } catch (cause) {
-      throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
-    }
-  }
-  // None of them resolved, which is not a build. The player loads the first
-  // scene in the manifest before anything else, and a manifest naming none is a
-  // black page rather than a message.
-  if (scenes.length === 0) {
-    throw new AssetError('This profile ships no scene this project still has.');
-  }
-
-  report(0.15, 'Scanning assets');
-  const manifest = await scanAssets(projectPath);
-  // Off that manifest rather than each scanning for itself. Three concurrent
-  // walks of `assets/` was already two too many, and since a scan writes the
-  // sidecars it finds missing or out of date, they also raced: a reader
-  // catching a half-written one adopts the asset under a fresh id, and the
-  // export ships a scene pointing at an id no longer on disk.
-  const [materials, prefabs] = await Promise.all([
-    readMaterialAssets(projectPath, manifest),
-    readPrefabAssets(projectPath, manifest),
+  // Before anything is read or written, and after the two refusals above that
+  // need no folder at all: a folder the export must not touch is the author's
+  // to fix, and finding out once the copy has started is too late.
+  const release = await claimOutputFolder(outputDir, projectPath, [
+    ...(await readdir(template)),
+    ...EXPORT_ROOTS,
   ]);
-  const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
+  try {
+    report(0.05, 'Reading the project');
+    const project = await readProject(projectPath);
+    const known = await discoverScenes(projectPath);
+    // An empty list means the start scene, so a project that never opened the
+    // build settings still exports something sensible. Ids, as everything that
+    // refers to a scene is.
+    const sceneIds = profile.scenes.length > 0 ? profile.scenes : [project.startScene];
 
-  report(0.25, 'Copying the player');
-  await mkdir(outputDir, { recursive: true });
-  // The copy is what makes the base removable: `index.html` is overwritten with
-  // the pristine template on every export, so re-exporting a folder with an
-  // empty base leaves no tag behind from the last one.
-  await cp(template, outputDir, { recursive: true });
-  if (base !== '') {
-    await applyBase(join(outputDir, 'index.html'), base);
-    // Any absolute base, `//host/` included. The exporter does not know which
-    // origin the page will be served from, so it cannot tell whether this is a
-    // different one — hence a conditional sentence rather than a verdict.
-    if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(base)) {
-      warnings.push(
-        `This build is based at ${base}. If the page is served from a different origin, that ` +
-          `server has to send Access-Control-Allow-Origin for build.json, the scenes, assets/ ` +
-          `and scripts.mjs — without it the page loads and stays black.`,
-      );
-    }
-  }
-
-  // --- assets ---------------------------------------------------------------
-  // Unreal's "cook everything in the project" against cooking only what is
-  // reached: scripts can load an asset by name, which no static walk can see.
-  const referenced = profile.includeAllAssets
-    ? new Set(manifest.assets.map((asset) => asset.id))
-    : union(scenes.map(({ scene }) => new Set(collectSceneAssets(scene, materials, prefabs))));
-
-  // What `build.json` says about each one is `assembleManifest`'s to decide.
-  const shippedAssets: ShippedAsset[] = [];
-  let copied = 0;
-
-  /*
-   * Emptied first, because the names below are content addresses.
-   *
-   * An unhashed copy overwrote its predecessor; a hashed one lands beside it,
-   * so a folder re-exported through twenty rounds of tweaking one texture would
-   * carry twenty copies of it — and the author uploads the folder. Only
-   * `assets/`, which the exporter alone creates and fills: emptying the whole
-   * output directory would take whatever else has been put there, and the
-   * player's own files are overwritten by the copy above anyway.
-   */
-  await rm(join(outputDir, 'assets'), { recursive: true, force: true });
-
-  for (const id of referenced) {
-    // Reported per file: on a project with a few hundred textures this is the
-    // part that takes the time, and a bar that sits still reads as a hang.
-    report(0.3 + 0.5 * (copied++ / Math.max(referenced.size, 1)), 'Copying assets');
-    const entry = byId.get(id);
-    if (!entry) {
-      warnings.push(`Asset ${id} is referenced by a scene but is not in the project.`);
-      continue;
-    }
-    // Scripts ship compiled, not as source: the build has no TypeScript in it.
-    if (entry.kind === 'script') continue;
-
-    /*
-     * Named by its content, so a re-export is never served from a stale cache.
-     *
-     * The player bundle has been hashed by Vite since the first build; the
-     * project's own files kept their names, so a site somebody had already
-     * visited went on showing the texture they had already downloaded. A
-     * production bug, and a silent one — the build was right and the browser
-     * was serving something else.
-     *
-     * Hashed **here**, from the bytes, and deliberately not from
-     * `entry.hash`: that one is the digest taken at import and refreshed only
-     * when the editor itself rewrites a material or a prefab. A texture edited
-     * in Photoshop keeps its sidecar hash for ever, which is exactly the case
-     * this is for. It costs one extra read per asset, once per export.
-     *
-     * Free in every other sense, because the indirection was already there: the
-     * player never sees a file name, it reads `assets` in the manifest.
-     */
-    const original = resolveInside(projectPath, entry.path);
-    // The scaled copy is what ships. It is the largest single saving a build
-    // has: a museum scan carrying two 8192-square JPEGs is 166 MB of download
-    // for a player who will never resolve them.
-    const source =
-      entry.importedPath === null ? original : resolveInside(projectPath, entry.importedPath);
-    const relativeToAssets = hashedName(toPosix(relative(ASSETS_DIR, entry.path)), await hashFile(source));
-    const destination = join(outputDir, 'assets', ...relativeToAssets.split(posix.sep));
-    await mkdir(dirname(destination), { recursive: true });
-    await cp(source, destination);
-    shippedAssets.push({ entry, path: relativeToAssets });
-
-    /*
-     * A `.gltf` names its buffer and its images in the file, not by asset id,
-     * so nothing in `referenced` accounts for them — the build would ship a
-     * model with no geometry. Same for an `.obj` and its `.mtl`.
-     *
-     * Copied under their own names, and that is the point: the names are
-     * written inside the model, relative to it, and the model has not moved —
-     * only its own file name carries the hash. Hashing a companion would break
-     * the reference that names it, and the only way to hash one is to rewrite
-     * the model that points at it.
-     */
-    // Asked of the **original**, never of the copy. A `.gltf` names its buffer
-    // and its images relative to itself, and those siblings sit beside the
-    // source file rather than in the cache.
-    for (const companion of await companionsOf(original)) {
-      // Both ends resolved inside their folder, before the `try`: a name that
-      // would leave one is not a missing file, and must not be reported as one.
-      // From beside the original too, as the comment above says — the copy in
-      // the cache has no siblings.
-      const from = resolveInside(dirname(original), companion);
-      const target = resolveInside(dirname(destination), companion);
+    const scenes: { entry: SceneEntry; scene: SceneDoc }[] = [];
+    for (const id of sceneIds) {
+      const entry = findScene(known, id);
+      if (!entry) {
+        // A warning, not a refusal. A profile is written once and the scenes it
+        // names live in the Finder, where one can be deleted or moved out months
+        // later; refusing the whole export for that means the author cannot ship
+        // the eleven levels that are still there. Loud, and it does not stop the
+        // build — the same trade the missing-asset warning below already makes.
+        warnings.push(`This profile ships a scene the project no longer has (${id}).`);
+        continue;
+      }
       try {
-        await mkdir(dirname(target), { recursive: true });
-        await cp(from, target);
-      } catch {
-        warnings.push(`${entry.name} refers to ${companion}, which is not in the project.`);
+        scenes.push({
+          entry,
+          scene: deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8')),
+        });
+      } catch (cause) {
+        throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
       }
     }
+    // None of them resolved, which is not a build. The player loads the first
+    // scene in the manifest before anything else, and a manifest naming none is a
+    // black page rather than a message.
+    if (scenes.length === 0) {
+      throw new AssetError('This profile ships no scene this project still has.');
+    }
+
+    report(0.15, 'Scanning assets');
+    const manifest = await scanAssets(projectPath);
+    // Off that manifest rather than each scanning for itself. Three concurrent
+    // walks of `assets/` was already two too many, and since a scan writes the
+    // sidecars it finds missing or out of date, they also raced: a reader
+    // catching a half-written one adopts the asset under a fresh id, and the
+    // export ships a scene pointing at an id no longer on disk.
+    const [materials, prefabs] = await Promise.all([
+      readMaterialAssets(projectPath, manifest),
+      readPrefabAssets(projectPath, manifest),
+    ]);
+    const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
+
+    report(0.25, 'Copying the player');
+    await mkdir(outputDir, { recursive: true });
+    // The copy is what makes the base removable: `index.html` is overwritten with
+    // the pristine template on every export, so re-exporting a folder with an
+    // empty base leaves no tag behind from the last one.
+    await cp(template, outputDir, { recursive: true });
+    if (base !== '') {
+      await applyBase(join(outputDir, 'index.html'), base);
+      // Any absolute base, `//host/` included. The exporter does not know which
+      // origin the page will be served from, so it cannot tell whether this is a
+      // different one — hence a conditional sentence rather than a verdict.
+      if (/^(?:[a-z][a-z0-9+.-]*:)?\/\//i.test(base)) {
+        warnings.push(
+          `This build is based at ${base}. If the page is served from a different origin, that ` +
+            `server has to send Access-Control-Allow-Origin for build.json, the scenes, assets/ ` +
+            `and scripts.mjs — without it the page loads and stays black.`,
+        );
+      }
+    }
+
+    // --- assets ---------------------------------------------------------------
+    // Unreal's "cook everything in the project" against cooking only what is
+    // reached: scripts can load an asset by name, which no static walk can see.
+    const referenced = profile.includeAllAssets
+      ? new Set(manifest.assets.map((asset) => asset.id))
+      : union(scenes.map(({ scene }) => new Set(collectSceneAssets(scene, materials, prefabs))));
+
+    // What `build.json` says about each one is `assembleManifest`'s to decide.
+    const shippedAssets: ShippedAsset[] = [];
+    let copied = 0;
+
+    /*
+     * Emptied first, because the names below are content addresses.
+     *
+     * An unhashed copy overwrote its predecessor; a hashed one lands beside it,
+     * so a folder re-exported through twenty rounds of tweaking one texture would
+     * carry twenty copies of it — and the author uploads the folder. Only
+     * `assets/`, which the exporter alone creates and fills: emptying the whole
+     * output directory would take whatever else has been put there, and the
+     * player's own files are overwritten by the copy above anyway.
+     */
+    await rm(join(outputDir, 'assets'), { recursive: true, force: true });
+
+    for (const id of referenced) {
+      // Reported per file: on a project with a few hundred textures this is the
+      // part that takes the time, and a bar that sits still reads as a hang.
+      report(0.3 + 0.5 * (copied++ / Math.max(referenced.size, 1)), 'Copying assets');
+      const entry = byId.get(id);
+      if (!entry) {
+        warnings.push(`Asset ${id} is referenced by a scene but is not in the project.`);
+        continue;
+      }
+      // Scripts ship compiled, not as source: the build has no TypeScript in it.
+      if (entry.kind === 'script') continue;
+
+      /*
+       * Named by its content, so a re-export is never served from a stale cache.
+       *
+       * The player bundle has been hashed by Vite since the first build; the
+       * project's own files kept their names, so a site somebody had already
+       * visited went on showing the texture they had already downloaded. A
+       * production bug, and a silent one — the build was right and the browser
+       * was serving something else.
+       *
+       * Hashed **here**, from the bytes, and deliberately not from
+       * `entry.hash`: that one is the digest taken at import and refreshed only
+       * when the editor itself rewrites a material or a prefab. A texture edited
+       * in Photoshop keeps its sidecar hash for ever, which is exactly the case
+       * this is for. It costs one extra read per asset, once per export.
+       *
+       * Free in every other sense, because the indirection was already there: the
+       * player never sees a file name, it reads `assets` in the manifest.
+       */
+      const original = resolveInside(projectPath, entry.path);
+      // The scaled copy is what ships. It is the largest single saving a build
+      // has: a museum scan carrying two 8192-square JPEGs is 166 MB of download
+      // for a player who will never resolve them.
+      const source =
+        entry.importedPath === null ? original : resolveInside(projectPath, entry.importedPath);
+      const relativeToAssets = hashedName(toPosix(relative(ASSETS_DIR, entry.path)), await hashFile(source));
+      const destination = join(outputDir, 'assets', ...relativeToAssets.split(posix.sep));
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(source, destination);
+      shippedAssets.push({ entry, path: relativeToAssets });
+
+      /*
+       * A `.gltf` names its buffer and its images in the file, not by asset id,
+       * so nothing in `referenced` accounts for them — the build would ship a
+       * model with no geometry. Same for an `.obj` and its `.mtl`.
+       *
+       * Copied under their own names, and that is the point: the names are
+       * written inside the model, relative to it, and the model has not moved —
+       * only its own file name carries the hash. Hashing a companion would break
+       * the reference that names it, and the only way to hash one is to rewrite
+       * the model that points at it.
+       */
+      // Asked of the **original**, never of the copy. A `.gltf` names its buffer
+      // and its images relative to itself, and those siblings sit beside the
+      // source file rather than in the cache.
+      for (const companion of await companionsOf(original)) {
+        // Both ends resolved inside their folder, before the `try`: a name that
+        // would leave one is not a missing file, and must not be reported as one.
+        // From beside the original too, as the comment above says — the copy in
+        // the cache has no siblings.
+        const from = resolveInside(dirname(original), companion);
+        const target = resolveInside(dirname(destination), companion);
+        try {
+          await mkdir(dirname(target), { recursive: true });
+          await cp(from, target);
+        } catch {
+          warnings.push(`${entry.name} refers to ${companion}, which is not in the project.`);
+        }
+      }
+    }
+
+    // --- scenes ---------------------------------------------------------------
+    /*
+     * One shape for all of them: `scenes/<id>.json`, entry point first — as in
+     * Unity's Scenes In Build, where the first is where the game starts and the
+     * rest ship for a script to load later.
+     *
+     * The entry scene used to be renamed to `scene.json` at the root while the
+     * others went under `scenes/`, and that one asymmetry paid for three
+     * functions: a map from every scene's name *and* id to the file it became, a
+     * resolution of the loading scene's id back into a name, and a flattener for
+     * the project's own paths. A build is not a thing to hand-edit, so the id
+     * wins and the path is derived from it.
+     */
+    // Emptied first, for the reason `assets/` is: a scene deleted from the
+    // project, or renamed, leaves its old id behind for ever otherwise — and the
+    // list written at the end would record it as part of this build.
+    await rm(join(outputDir, 'scenes'), { recursive: true, force: true });
+
+    for (const { scene, entry } of scenes) {
+      const file = buildScenePath(entry.id);
+      // A scene file carrying no id of its own is addressed by its project path,
+      // so an id can contain slashes. Rare, and cheaper to make directories for
+      // than to special-case.
+      await mkdir(dirname(join(outputDir, file)), { recursive: true });
+      await writeFile(join(outputDir, file), serializeScene(scene), 'utf8');
+    }
+
+    // --- scripts --------------------------------------------------------------
+    report(0.85, 'Compiling scripts');
+    const scripts = await buildScripts(projectPath);
+    if (scripts.errors.length > 0) {
+      throw new AssetError(`Scripts did not compile:\n${scripts.errors.join('\n')}`);
+    }
+    const scriptFile = scripts.scriptCount > 0 ? 'scripts.mjs' : null;
+    if (scriptFile) await writeFile(join(outputDir, scriptFile), scripts.code, 'utf8');
+
+    // --- the manifest ---------------------------------------------------------
+    /*
+     * One file, and the only one the player reads before it knows anything.
+     *
+     * The asset table, the materials and the prefabs used to be three files
+     * beside this one — three more round trips before the first frame, for
+     * documents that are small and always needed. See format 4.
+     */
+    const build = assembleManifest({
+      title: profile.title,
+      rendering: project.settings.rendering,
+      physics: project.settings.physics,
+      scenes: scenes.map(({ entry }) => entry),
+      loadingScene: project.settings.loadingScene,
+      assets: shippedAssets,
+      // Only what a shipped scene links to. An unused material or prefab asset is
+      // no more part of the build than an unused texture is.
+      materials: pick(materials, referenced),
+      prefabs: pick(prefabs, referenced),
+      scripts: scriptFile,
+    });
+    await writeFile(join(outputDir, 'build.json'), JSON.stringify(build, null, 2), 'utf8');
+
+    // --- what was written -----------------------------------------------------
+    // Last, and after `build.json`, so the list covers everything including the
+    // manifest itself. See `buildFiles.ts` for why it is not part of it.
+    report(0.97, 'Listing what was written');
+    const written = await writeBuildFiles(outputDir);
+
+    report(1, 'Done');
+    return {
+      outputDir,
+      sceneCount: scenes.length,
+      assetCount: shippedAssets.length,
+      scriptCount: scripts.scriptCount,
+      // Off the list rather than counted along the way: the sizes are already
+      // there, and a second tally is a second thing to keep in step.
+      size: sizeOf(written, scriptFile),
+      warnings,
+    };
+  } finally {
+    release();
   }
-
-  // --- scenes ---------------------------------------------------------------
-  /*
-   * One shape for all of them: `scenes/<id>.json`, entry point first — as in
-   * Unity's Scenes In Build, where the first is where the game starts and the
-   * rest ship for a script to load later.
-   *
-   * The entry scene used to be renamed to `scene.json` at the root while the
-   * others went under `scenes/`, and that one asymmetry paid for three
-   * functions: a map from every scene's name *and* id to the file it became, a
-   * resolution of the loading scene's id back into a name, and a flattener for
-   * the project's own paths. A build is not a thing to hand-edit, so the id
-   * wins and the path is derived from it.
-   */
-  // Emptied first, for the reason `assets/` is: a scene deleted from the
-  // project, or renamed, leaves its old id behind for ever otherwise — and the
-  // list written at the end would record it as part of this build.
-  await rm(join(outputDir, 'scenes'), { recursive: true, force: true });
-
-  for (const { scene, entry } of scenes) {
-    const file = buildScenePath(entry.id);
-    // A scene file carrying no id of its own is addressed by its project path,
-    // so an id can contain slashes. Rare, and cheaper to make directories for
-    // than to special-case.
-    await mkdir(dirname(join(outputDir, file)), { recursive: true });
-    await writeFile(join(outputDir, file), serializeScene(scene), 'utf8');
-  }
-
-  // --- scripts --------------------------------------------------------------
-  report(0.85, 'Compiling scripts');
-  const scripts = await buildScripts(projectPath);
-  if (scripts.errors.length > 0) {
-    throw new AssetError(`Scripts did not compile:\n${scripts.errors.join('\n')}`);
-  }
-  const scriptFile = scripts.scriptCount > 0 ? 'scripts.mjs' : null;
-  if (scriptFile) await writeFile(join(outputDir, scriptFile), scripts.code, 'utf8');
-
-  // --- the manifest ---------------------------------------------------------
-  /*
-   * One file, and the only one the player reads before it knows anything.
-   *
-   * The asset table, the materials and the prefabs used to be three files
-   * beside this one — three more round trips before the first frame, for
-   * documents that are small and always needed. See format 4.
-   */
-  const build = assembleManifest({
-    title: profile.title,
-    rendering: project.settings.rendering,
-    physics: project.settings.physics,
-    scenes: scenes.map(({ entry }) => entry),
-    loadingScene: project.settings.loadingScene,
-    assets: shippedAssets,
-    // Only what a shipped scene links to. An unused material or prefab asset is
-    // no more part of the build than an unused texture is.
-    materials: pick(materials, referenced),
-    prefabs: pick(prefabs, referenced),
-    scripts: scriptFile,
-  });
-  await writeFile(join(outputDir, 'build.json'), JSON.stringify(build, null, 2), 'utf8');
-
-  // --- what was written -----------------------------------------------------
-  // Last, and after `build.json`, so the list covers everything including the
-  // manifest itself. See `buildFiles.ts` for why it is not part of it.
-  report(0.97, 'Listing what was written');
-  const written = await writeBuildFiles(outputDir);
-
-  report(1, 'Done');
-  return {
-    outputDir,
-    sceneCount: scenes.length,
-    assetCount: shippedAssets.length,
-    scriptCount: scripts.scriptCount,
-    // Off the list rather than counted along the way: the sizes are already
-    // there, and a second tally is a second thing to keep in step.
-    size: sizeOf(written, scriptFile),
-    warnings,
-  };
 }
 
 function union(sets: readonly Set<string>[]): Set<string> {
