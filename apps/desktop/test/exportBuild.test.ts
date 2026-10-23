@@ -1,4 +1,14 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import {
@@ -30,8 +40,8 @@ import {
 import { describe, expect, it } from 'vitest';
 import { readMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
-import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/buildFiles';
-import { exportBuild, requireBuildProfile } from '../src/main/exportWeb';
+import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
+import { exportBuild, requireBuildProfile } from '../src/main/build/exportBuild';
 
 /*
  * The export is the one place the editor writes something a stranger runs, so
@@ -868,8 +878,10 @@ describe('the list of what an export wrote', () => {
     const listed = (await listOf(outputDir)).files;
     const paths = listed.map((file) => file.path);
 
-    // The player arrives by copying a directory, so the exporter never names
-    // its files one by one — which is why the list is a walk of the folder.
+    // The player arrives as a directory, so the exporter never names its files
+    // one by one: they are read off the template, which holds nothing else —
+    // never off the output folder, which holds whatever the author keeps there.
+    expect((await listOf(outputDir)).formatVersion).toBe(1);
     expect(paths).toContain('index.html');
     expect(paths).toContain('_studio/player.js');
     expect(paths).toContain(buildScenePath(build.scenes[0]!));
@@ -931,22 +943,71 @@ describe('the list of what an export wrote', () => {
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
 
     await rm(join(outputDir, '_studio', 'player.js'));
-    await writeFile(join(outputDir, 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
+    await writeFile(join(outputDir, '_studio', 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
+    // Beside the build rather than in it: the author's, like a README. The
+    // player cannot reach it without a change to the page or the manifest,
+    // and both are listed.
+    await writeFile(join(outputDir, 'notes.txt'), 'todo', 'utf8');
 
     const verified = await verifyBuild(outputDir);
     expect(verified.missing).toEqual(['_studio/player.js']);
     // Neither missing nor altered, and reported anyway: a file that appeared
-    // after the export is what an injected one looks like.
-    expect(verified.unexpected).toEqual(['analytics.js']);
+    // among the player's after the export is what an injected one looks like.
+    expect(verified.unexpected).toEqual(['_studio/analytics.js']);
   });
 
-  it('takes back a scene it no longer ships, so the list describes this export', async () => {
+  it('reports a link inside the build, which can point anywhere', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-linked');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const elsewhere = join(projectPath, '..', 'elsewhere.js');
+    await writeFile(elsewhere, '// not the player', 'utf8');
+
+    await symlink(elsewhere, join(outputDir, '_studio', 'extra.js'));
+    await rm(join(outputDir, 'favicon.svg'), { force: true });
+    await rm(join(outputDir, 'index.html'));
+    await symlink(elsewhere, join(outputDir, 'index.html'));
+
+    const verified = await verifyBuild(outputDir);
+    expect(verified.unexpected).toEqual(['_studio/extra.js']);
+    // Whatever it points at, a host serves something other than what was written.
+    expect(verified.changed).toEqual(['index.html']);
+  });
+
+  it('refuses to check against a list that is not one', async () => {
+    // The list is in the folder being verified, so it is the one input a
+    // verifier has no reason to trust. Cast rather than read, it sent the
+    // verifier hashing files outside the build, or crashed it.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-badlist');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const digest = 'a'.repeat(64);
+
+    for (const broken of [
+      { formatVersion: 1, files: [{ path: '../../etc/passwd', bytes: 1, sha256: digest }] },
+      { formatVersion: 1, files: [{ path: 'index.html', bytes: 1, sha256: 'not a digest' }] },
+      { formatVersion: 1, files: [{ path: 'index.html', bytes: -1, sha256: digest }] },
+      {
+        formatVersion: 1,
+        files: [
+          { path: 'page.js', bytes: 1, sha256: digest },
+          { path: 'Page.js', bytes: 1, sha256: digest },
+        ],
+      },
+      // What an export walked out of the folder before the list had a format.
+      { files: [{ path: 'index.html', bytes: 1, sha256: digest }] },
+    ]) {
+      await writeFile(join(outputDir, BUILD_FILES_NAME), JSON.stringify(broken), 'utf8');
+      await expect(verifyBuild(outputDir)).rejects.toThrow(/cannot be checked against/);
+    }
+  });
+
+  it('takes back a scene it no longer ships, so the folder holds this export alone', async () => {
     /*
-     * The counterpart of emptying `assets/`, and the reason it is here rather
-     * than with the scene layout that introduced it: a walk of the folder
-     * cannot tell what this export wrote from what the last one left, so
-     * anything stale would be listed — and verification would then bless a
-     * folder holding two exports at once.
+     * The list is the plan, so a stale scene would not be in it — but it would
+     * still be in the folder, published with the build and reported by every
+     * verification after. The export takes back whatever its own folders hold
+     * that this build does not.
      */
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-stale');
@@ -970,6 +1031,211 @@ describe('the list of what an export wrote', () => {
     await rm(join(outputDir, BUILD_FILES_NAME));
 
     await expect(verifyBuild(outputDir)).rejects.toThrow(/nothing to check it against/);
+  });
+});
+
+/*
+ * The folder an export writes into is often a repository published as it is —
+ * GitHub Pages serves a branch — so it holds the author's `.git/`, README,
+ * CNAME and a `.DS_Store` beside the build. The list used to be a walk of the
+ * whole folder: `.git/` went into it, every commit changed it, and its 27 MB
+ * were reported as the player's weight.
+ */
+describe('a folder the build shares with its author', () => {
+  async function seedRepository(outputDir: string): Promise<Map<string, string>> {
+    const files = new Map([
+      ['.git/HEAD', 'ref: refs/heads/main\n'],
+      ['.git/objects/ab/cdef', 'blob'],
+      ['README.md', '# Demo\n'],
+      ['CNAME', 'game.example.com\n'],
+      ['.DS_Store', 'finder'],
+    ]);
+    for (const [path, text] of files) {
+      const file = join(outputDir, ...path.split('/'));
+      await mkdir(join(file, '..'), { recursive: true });
+      await writeFile(file, text, 'utf8');
+    }
+    return files;
+  }
+
+  it("leaves the author's files out of the list, and where they were", async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const clean = join(projectPath, '..', 'out-clean');
+    const shared = join(projectPath, '..', 'out-shared');
+    const seeded = await seedRepository(shared);
+
+    const alone = await exportBuild(projectPath, profile(), clean, [templateRoot]);
+    const beside = await exportBuild(projectPath, profile(), shared, [templateRoot]);
+
+    const listed = (await listOf(shared)).files.map((file) => file.path);
+    for (const [path, text] of seeded) {
+      expect(listed).not.toContain(path);
+      expect(await readFile(join(shared, ...path.split('/')), 'utf8')).toBe(text);
+    }
+    // What the author keeps beside a build weighs nothing in it.
+    expect(beside.size).toEqual(alone.size);
+    expect(await verifyBuild(shared)).toEqual({ ok: true, missing: [], changed: [], unexpected: [] });
+  });
+
+  it('writes the same list after the author commits', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-committed');
+    await seedRepository(outputDir);
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const before = await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8');
+
+    // What a commit does to the folder.
+    await writeFile(join(outputDir, '.git', 'HEAD'), 'ref: refs/heads/release\n', 'utf8');
+    await mkdir(join(outputDir, '.git', 'objects', '12'), { recursive: true });
+    await writeFile(join(outputDir, '.git', 'objects', '12', '3456'), 'commit', 'utf8');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8')).toBe(before);
+  });
+});
+
+describe('what a re-export takes back', () => {
+  it('a chunk of the player it no longer ships', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-chunk');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    // What an older build of the player leaves behind: Vite names a chunk by
+    // its content, so the next one lands beside it rather than over it.
+    await writeFile(join(outputDir, '_studio', 'index-OLD.js'), '// last week', 'utf8');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(await readdir(join(outputDir, '_studio'))).toEqual(['player.js']);
+    expect((await verifyBuild(outputDir)).ok).toBe(true);
+  });
+
+  it('the script bundle of a project that no longer has scripts', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-noscripts');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await writeFile(join(outputDir, 'scripts.mjs'), 'export {};', 'utf8');
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(await readdir(outputDir)).not.toContain('scripts.mjs');
+    expect(manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8')).scripts).toBeNull();
+  });
+
+  it('a folder spelled differently by the previous build', async () => {
+    // A folder renamed from `TEXTURES` to `textures` in the project keeps its
+    // old spelling on a volume that ignores case, and the write lands in it —
+    // so the build works on the author's disk, and the host, which does not
+    // ignore case, answers 404 for every texture.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-case');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const assets = join(outputDir, 'assets');
+    // In two steps, so a volume that ignores case renames it at all.
+    await rename(join(assets, 'textures'), join(assets, 'renaming'));
+    await rename(join(assets, 'renaming'), join(assets, 'TEXTURES'));
+
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(await readdir(assets)).toContain('textures');
+    expect(await readdir(assets)).not.toContain('TEXTURES');
+    expect((await verifyBuild(outputDir)).ok).toBe(true);
+  });
+});
+
+/** Every file under a folder with its bytes, to prove an export that failed changed nothing. */
+async function snapshot(root: string): Promise<Record<string, string>> {
+  const files: Record<string, string> = {};
+  const walk = async (directory: string, prefix: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) await walk(join(directory, entry.name), path);
+      else files[path] = (await readFile(join(directory, entry.name))).toString('base64');
+    }
+  };
+  await walk(root, '');
+  return files;
+}
+
+/*
+ * Everything is planned before anything is written, so whatever stops an
+ * export stops it while the folder still holds the previous build, whole.
+ * A script that did not compile used to be found after `assets/` and
+ * `scenes/` had been replaced.
+ */
+describe('an export that cannot finish', () => {
+  it('leaves the folder as it was when a script does not compile', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-broken');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const before = await snapshot(outputDir);
+
+    await writeAsset(projectPath, `${ASSETS_DIR}/scripts/Broken.ts`, 'script-broken', 'script');
+    await writeFile(join(projectPath, ASSETS_DIR, 'scripts', 'Broken.ts'), 'export default class {', 'utf8');
+    // And a texture that changed, so there is something an early write would replace.
+    await writeFile(join(projectPath, ASSETS_DIR, 'textures', 'used.png'), 'repainted', 'utf8');
+
+    await expect(exportBuild(projectPath, profile(), outputDir, [templateRoot])).rejects.toThrow(
+      /did not compile/,
+    );
+    expect(await snapshot(outputDir)).toEqual(before);
+  });
+
+  it('refuses a scene whose id is not a name a build can hold, and writes nothing', async () => {
+    // The id is read off the scene's own file. `scenes/<id>.json` with this
+    // one was written two folders above the build.
+    const { projectPath, templateRoot } = await makeProject();
+    const outputDir = join(projectPath, '..', 'out-evil');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const before = await snapshot(outputDir);
+
+    const main = deserializeScene(
+      await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
+    );
+    const evil = { ...JSON.parse(serializeScene(createStarterScene())), id: '../../escaped' };
+    await writeFile(join(projectPath, SCENES_DIR, 'evil.scene.json'), JSON.stringify(evil), 'utf8');
+
+    await expect(
+      exportBuild(projectPath, profile({ scenes: [main.id, '../../escaped'] }), outputDir, [
+        templateRoot,
+      ]),
+    ).rejects.toThrow(/Scene "evil" cannot be exported/);
+    expect(await snapshot(outputDir)).toEqual(before);
+    expect(await readdir(join(projectPath, '..'))).not.toContain('escaped.json');
+  });
+});
+
+describe('what ships through a link', () => {
+  it('ships a symlinked asset as the file it points at', async () => {
+    // `cp` copied the link itself: a build holding a pointer into the author's
+    // disk, which the host serves as nothing.
+    const { projectPath, templateRoot } = await makeProject();
+    const library = join(projectPath, '..', 'library');
+    await mkdir(library, { recursive: true });
+    await writeFile(join(library, 'shared.png'), 'shared pixels', 'utf8');
+    const linked = join(projectPath, ASSETS_DIR, 'textures', 'shared.png');
+    await symlink(join(library, 'shared.png'), linked);
+    await writeFile(
+      `${linked}.meta.json`,
+      JSON.stringify({
+        version: 1,
+        id: 'tex-shared',
+        kind: 'texture',
+        importedAt: 1,
+        hash: 'h',
+        settings: { kind: 'texture' },
+      }),
+      'utf8',
+    );
+
+    const outputDir = join(projectPath, '..', 'out-link');
+    await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
+
+    const path = manifestOf(await readFile(join(outputDir, 'build.json'), 'utf8')).assets![
+      'tex-shared'
+    ]!;
+    const shipped = join(outputDir, 'assets', ...path.split('/'));
+    expect((await lstat(shipped)).isSymbolicLink()).toBe(false);
+    expect(await readFile(shipped, 'utf8')).toBe('shared pixels');
   });
 });
 

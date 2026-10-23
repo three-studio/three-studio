@@ -1,6 +1,6 @@
 import { posix } from 'node:path';
 import type { AssetEntry, BuildManifest, LaunchSnapshot, SceneEntry } from '@three-studio/core';
-import { assembleManifest } from '../buildManifest';
+import { assembleManifest } from '../build/manifest';
 
 /** What a launch is made of: the editor's memory, and what was read from disk for it. */
 export interface LaunchContents {

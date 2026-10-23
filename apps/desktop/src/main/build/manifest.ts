@@ -49,6 +49,12 @@ export interface ManifestContents {
  * Typed against `BuildManifest` in core: the reader is a browser and the writer
  * is the main process, so nothing but a shared declaration keeps them in step.
  * What each field means is on that type; what is decided here is below.
+ *
+ * **The same bytes for the same project, on any machine.** Every table is
+ * filled in id order. They used to follow the order the asset scan met the
+ * files in, which is whatever order the volume lists a folder in — so the same
+ * project exported on two machines, or after a copy, showed a diff in a build
+ * that had not changed.
  */
 export function assembleManifest(contents: ManifestContents): BuildManifest {
   const assets: Record<string, string> = {};
@@ -71,7 +77,7 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
    * does not look like the editor is the one bug an export must not have.
    */
   const assetSettings: Record<string, AssetSettings> = {};
-  for (const { entry, path } of contents.assets) {
+  for (const { entry, path } of [...contents.assets].sort((a, b) => byKey(a.entry.id, b.entry.id))) {
     assets[entry.id] = path;
     if (entry.settings.kind === 'texture' && entry.settings.encoding === 'ultrahdr') {
       textureEncodings[entry.id] = entry.settings.encoding;
@@ -114,10 +120,25 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     // read, which it says out loud — where dropping it here was silent.
     loadingScene: contents.loadingScene,
     assets,
-    materials: contents.materials,
-    prefabs: contents.prefabs,
+    materials: sortedRecord(contents.materials),
+    prefabs: sortedRecord(contents.prefabs),
     textureEncodings,
     assetSettings,
     scripts: contents.scripts,
   };
+}
+
+/** Code-unit order: the same on every machine, whatever its locale. */
+function byKey(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * A record with its keys in code-unit order.
+ *
+ * Through `Object.fromEntries`, which defines each key as its own: a material
+ * whose id were `__proto__` would otherwise be taken as the object's prototype.
+ */
+function sortedRecord<T>(record: Readonly<Record<string, T>>): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byKey(a, b)));
 }

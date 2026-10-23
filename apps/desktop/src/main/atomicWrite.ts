@@ -1,4 +1,4 @@
-import { rename, rm, writeFile } from 'node:fs/promises';
+import { copyFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createId } from '@three-studio/core';
 
 /**
@@ -50,6 +50,25 @@ export async function atomicWrite(
   } catch (cause) {
     // The original failure is what the caller needs to hear about, so a
     // clean-up that fails too is not allowed to replace it.
+    await rm(staging, { force: true }).catch(() => undefined);
+    throw cause;
+  }
+}
+
+/**
+ * Copies a file whole, or not at all: `atomicWrite` for bytes already on disk.
+ *
+ * Copied rather than read and written, because a model can be hundreds of
+ * megabytes. `copyFile` reads through a symlink, and that is the point for a
+ * build: what ships is what the link points at, never a link into the author's
+ * disk, which is what `cp` made of a symlinked asset.
+ */
+export async function atomicCopy(source: string, target: string): Promise<void> {
+  const staging = `${target}.${createId()}.tmp`;
+  try {
+    await copyFile(source, staging);
+    await rename(staging, target);
+  } catch (cause) {
     await rm(staging, { force: true }).catch(() => undefined);
     throw cause;
   }

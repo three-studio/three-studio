@@ -8,7 +8,7 @@ import {
   type AssetSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { assembleManifest, type ManifestContents, type ShippedAsset } from '../src/main/buildManifest';
+import { assembleManifest, type ManifestContents, type ShippedAsset } from '../src/main/build/manifest';
 
 /*
  * The assembly is what an export and a device launch have in common: two
@@ -54,6 +54,31 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
 }
 
 describe('assembling build.json', () => {
+  it('writes the same bytes whatever order the project was read in', () => {
+    // The tables used to follow the order the scan met the files in, which is
+    // the order the volume lists a folder in: the same project exported on two
+    // machines showed a diff in a build that had not changed.
+    const a = { entry: asset('tex-a', 'texture', 'assets/textures/a.png'), path: 'textures/a.1.png' };
+    const b = { entry: asset('tex-b', 'texture', 'assets/textures/b.png'), path: 'textures/b.2.png' };
+    const material = (color: string) => ({ color }) as never;
+
+    const one = assembleManifest(
+      contents({
+        assets: [a, b],
+        materials: { 'mat-a': material('#a'), 'mat-b': material('#b') },
+        prefabs: { 'pre-a': {} as never, 'pre-b': {} as never },
+      }),
+    );
+    const other = assembleManifest(
+      contents({
+        assets: [b, a],
+        materials: { 'mat-b': material('#b'), 'mat-a': material('#a') },
+        prefabs: { 'pre-b': {} as never, 'pre-a': {} as never },
+      }),
+    );
+    expect(JSON.stringify(other)).toBe(JSON.stringify(one));
+  });
+
   it('describes each shipped asset at the path it was given', () => {
     const texture = defaultSettings('texture', 'brick.png');
     const gain = { ...defaultSettings('texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;

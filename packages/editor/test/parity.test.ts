@@ -36,7 +36,7 @@ import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorP
  *   itself without `tsc` naming it. A type cannot be skipped the way a test can.
  * - *Timing.* A glTF or a texture arrives whenever it arrives; `whenLoaded` is
  *   awaited on both sides so this compares two settled scenes, not two races.
- * - *The exported build.* It runs no engine here. `apps/desktop/test/exportWeb.test.ts`
+ * - *The exported build.* It runs no engine here. `apps/desktop/test/exportBuild.test.ts`
  *   covers the half that can be checked without a browser: that `build.json`
  *   carries `rendering` at all, so the player has the same numbers to read.
  *
