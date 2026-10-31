@@ -9,12 +9,17 @@ import type { ColliderShape, MeshBuild } from './schema';
  * collider, where a character's feet are — so the two cannot disagree.
  *
  * Rapier has no scaled shape: a box scaled 2× is a box twice the size, and the
- * scale has to be folded into the measures. Each axis of a shape takes the
- * entity's scale along it; a round section, which cannot be an ellipse, takes
- * the larger of its two stretches, and a sphere the largest of three, so it
- * encloses what is drawn (Unity's rule). A capsule keeps the span it is drawn
- * with: its radius was once scaled by the largest axis, which lifted a capsule
- * scaled 1.5 × 1 × 1.5 half a metre off the floor its mesh stood on.
+ * scale has to be folded into the measures. Each of a shape's own axes takes
+ * the entity's scale along it; a round section, which cannot be an ellipse,
+ * takes the larger of its two stretches, and a sphere the largest of three, so
+ * it encloses what is drawn (Unity's rule). A capsule keeps the span it is
+ * drawn with: its radius was once scaled by the largest axis, which lifted a
+ * capsule scaled 1.5 × 1 × 1.5 half a metre off the floor its mesh stood on.
+ *
+ * A shape turned on a non-uniformly scaled entity is drawn sheared, which no
+ * Rapier shape is. Exact when the turn keeps to the entity's axes or the scale
+ * is uniform; otherwise the stretch along each of the shape's own axes is the
+ * best fit there is.
  */
 
 /**
@@ -42,40 +47,61 @@ export type BuiltShape =
 
 export interface ColliderGeometry {
   shape: BuiltShape;
+  /** The shape's middle on its body: the collider's centre at the entity's scale. */
+  position: Vec3;
+  /** How it is turned on its body, Euler XYZ in radians. */
+  rotation: Vec3;
 }
 
 /** A collider's shape built at an entity's world scale, signed, as physics builds it. */
 export function colliderGeometry(shape: ColliderShape, scale: Vec3): ColliderGeometry {
-  const [kx, ky, kz] = stretch(scale);
+  if (shape.kind === 'mesh') {
+    // The vertices take the scale exactly, mirrored included, and are already
+    // where they are drawn.
+    return {
+      shape: { kind: 'mesh', build: shape.build, scale: [scale[0], scale[1], scale[2]] },
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+    };
+  }
+
+  // A centre is a point, so it takes the scale exactly.
+  const [cx, cy, cz] = shape.center;
+  const position: Vec3 = [cx * scale[0], cy * scale[1], cz * scale[2]];
+  if (shape.kind === 'sphere') {
+    const radius = measure(shape.radius) * Math.max(...stretch(scale, [0, 0, 0]));
+    return { shape: { kind: 'sphere', radius }, position, rotation: [0, 0, 0] };
+  }
+
+  const [rx, ry, rz] = shape.rotation;
+  return { shape: turned(shape, stretch(scale, shape.rotation)), position, rotation: [rx, ry, rz] };
+}
+
+/** A shape with a rotation, built with each of its own axes stretched by `k`. */
+function turned(
+  shape: Exclude<ColliderShape, { kind: 'sphere' | 'mesh' }>,
+  [kx, ky, kz]: Vec3,
+): BuiltShape {
   switch (shape.kind) {
     case 'box': {
       const [x, y, z] = shape.size;
-      return { shape: { kind: 'box', halfExtents: [half(x) * kx, half(y) * ky, half(z) * kz] } };
+      return { kind: 'box', halfExtents: [half(x) * kx, half(y) * ky, half(z) * kz] };
     }
-    case 'sphere':
-      return { shape: { kind: 'sphere', radius: measure(shape.radius) * Math.max(kx, ky, kz) } };
     case 'capsule': {
       const span = half(shape.height) * ky;
       // Never wider than it is tall: squashed, or drawn shorter than its
       // diameter, a capsule is the sphere as tall as it is drawn.
       const radius = Math.min(measure(shape.radius) * Math.max(kx, kz), span);
       const halfHeight = span - radius;
-      return {
-        shape: halfHeight > 0 ? { kind: 'capsule', radius, halfHeight } : { kind: 'sphere', radius },
-      };
+      return halfHeight > 0 ? { kind: 'capsule', radius, halfHeight } : { kind: 'sphere', radius };
     }
     case 'cylinder':
     case 'cone':
       return {
-        shape: {
-          kind: shape.kind,
-          radius: measure(shape.radius) * Math.max(kx, kz),
-          halfHeight: half(shape.height) * ky,
-        },
+        kind: shape.kind,
+        radius: measure(shape.radius) * Math.max(kx, kz),
+        halfHeight: half(shape.height) * ky,
       };
-    case 'mesh':
-      // The vertices take the scale exactly, mirrored included.
-      return { shape: { kind: 'mesh', build: shape.build, scale: [scale[0], scale[1], scale[2]] } };
   }
 }
 
@@ -104,25 +130,67 @@ export function colliderGeometry(shape: ColliderShape, scale: Vec3): ColliderGeo
  * wanted.
  */
 export function originAboveFeet(shape: ColliderShape): number {
-  const built = colliderGeometry(shape, [1, 1, 1]).shape;
+  const { shape: built, position, rotation } = colliderGeometry(shape, [1, 1, 1]);
+  if (built.kind === 'mesh') return 0;
+  // How far each of the shape's own axes points up.
+  const [x, y, z] = axesOf(rotation);
+  return reachBelow(built, [x[1], y[1], z[1]]) - position[1];
+}
+
+/**
+ * How far a shape reaches below its middle — its support along −y — given how
+ * far each of its own axes points up.
+ */
+function reachBelow(built: Exclude<BuiltShape, { kind: 'mesh' }>, up: Vec3): number {
+  const [ux, uy, uz] = up;
   switch (built.kind) {
-    case 'box':
-      return built.halfExtents[1];
+    case 'box': {
+      const [hx, hy, hz] = built.halfExtents;
+      return Math.abs(ux) * hx + Math.abs(uy) * hy + Math.abs(uz) * hz;
+    }
     case 'sphere':
       return built.radius;
     case 'capsule':
-      return built.halfHeight + built.radius;
+      return Math.abs(uy) * built.halfHeight + built.radius;
     case 'cylinder':
+      return Math.abs(uy) * built.halfHeight + built.radius * tilt(uy);
     case 'cone':
-      return built.halfHeight;
-    case 'mesh':
-      return 0;
+      // The apex, or the lowest point of the base's rim.
+      return Math.max(-built.halfHeight * uy, built.halfHeight * uy + built.radius * tilt(uy));
   }
 }
 
-/** How much each of the shape's own axes is stretched by the entity's scale. */
-function stretch(scale: Vec3): Vec3 {
-  return [Math.abs(scale[0]), Math.abs(scale[1]), Math.abs(scale[2])];
+/** How far a disc square to an axis reaches down, per metre of radius: the sine of the axis's tilt. */
+function tilt(upward: number): number {
+  return Math.sqrt(Math.max(0, 1 - upward * upward));
+}
+
+/**
+ * A shape's own axes in its entity's frame: the columns of its rotation, three's
+ * Euler XYZ (`R = Rx · Ry · Rz`), written out as `Matrix4.makeRotationFromEuler`
+ * writes it, so a shape turns here as the builder turns it through
+ * `Quaternion.setFromEuler`.
+ */
+function axesOf([x, y, z]: Vec3): [Vec3, Vec3, Vec3] {
+  const a = Math.cos(x);
+  const b = Math.sin(x);
+  const c = Math.cos(y);
+  const d = Math.sin(y);
+  const e = Math.cos(z);
+  const f = Math.sin(z);
+  return [
+    [c * e, a * f + b * e * d, b * f - a * e * d],
+    [-c * f, a * e - b * f * d, b * e + a * f * d],
+    [d, -b * c, a * c],
+  ];
+}
+
+/** How much each of a shape's own axes is stretched by the entity's scale. */
+function stretch(scale: Vec3, rotation: Vec3): Vec3 {
+  const [sx, sy, sz] = scale;
+  const along = ([x, y, z]: Vec3): number => Math.hypot(sx * x, sy * y, sz * z);
+  const [x, y, z] = axesOf(rotation);
+  return [along(x), along(y), along(z)];
 }
 
 /** A measure as built: a negative one, which only a hand-edited file holds, is none. */

@@ -12,10 +12,12 @@ import type { ComponentBase, Vec3 } from '../../scene/primitives';
 export type ColliderShape =
   | {
       kind: 'box';
-      /** The full size along each axis, as a box mesh's width, height and depth read. */
+      /** The full size along each of its own axes, as a box mesh's width, height and depth read. */
       size: Vec3;
+      center: Vec3;
+      rotation: Vec3;
     }
-  | { kind: 'sphere'; radius: number }
+  | { kind: 'sphere'; radius: number; center: Vec3 }
   | {
       kind: 'capsule';
       radius: number;
@@ -24,12 +26,16 @@ export type ColliderShape =
        * A capsule mesh measures its straight part alone.
        */
       height: number;
+      center: Vec3;
+      rotation: Vec3;
     }
   | {
       kind: 'cylinder';
       radius: number;
       /** From end to end, along its own y. */
       height: number;
+      center: Vec3;
+      rotation: Vec3;
     }
   | {
       kind: 'cone';
@@ -40,12 +46,24 @@ export type ColliderShape =
        * Cylinder whose top radius is 0.
        */
       height: number;
+      center: Vec3;
+      rotation: Vec3;
     }
   | {
       kind: 'mesh';
       /** How the entity's own geometry is made into a shape. */
       build: MeshBuild;
     };
+
+/*
+ * `center` is where a shape's middle sits, in its entity's frame and units:
+ * Unity's *Center*, which stands a capsule above a model's feet with no child
+ * entity to carry it. `rotation` turns a shape on its entity, Euler XYZ in
+ * radians as `Transform.rotation` is. Both live in the shapes that have them
+ * rather than on the collider: a sphere turned is the same sphere, and a mesh
+ * collider is its entity's own geometry, already where it is drawn — on the
+ * collider they would be fields that do nothing for some kinds.
+ */
 
 /**
  * How a mesh collider is made of the entity's geometry.

@@ -3,6 +3,7 @@ import {
   entitiesWith,
   entityWorldMatrixPath,
   findComponent,
+  type BuiltShape,
   type ColliderComponent,
   type EntityDoc,
   type PhysicsSettings,
@@ -10,7 +11,7 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
+import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
 import { describeMesh } from './meshShape';
@@ -212,6 +213,8 @@ const _drawnQuaternion = new Quaternion();
 const _parentQuaternion = new Quaternion();
 const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
+const _colliderEuler = new Euler();
+const _colliderRotation = new Quaternion();
 
 /**
  * Owns the Rapier world and keeps it in step with the scene document.
@@ -432,14 +435,21 @@ function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDes
 
 /**
  * A collider as Rapier takes it, built at its entity's world scale by the rules
- * core's `colliderGeometry` writes down.
+ * core's `colliderGeometry` writes down, and set off and turned on its body.
  */
 function describeCollider(
   collider: ColliderComponent,
   object: Object3D,
   scale: Vector3,
 ): RAPIER.ColliderDesc {
-  const { shape } = colliderGeometry(collider.shape, [scale.x, scale.y, scale.z]);
+  const { shape, position, rotation } = colliderGeometry(collider.shape, [scale.x, scale.y, scale.z]);
+  const [x, y, z] = position;
+  // three's Euler XYZ, which is the order `colliderGeometry` turns its axes in.
+  _colliderRotation.setFromEuler(_colliderEuler.set(...rotation));
+  return describeShape(shape, object).setTranslation(x, y, z).setRotation(_colliderRotation);
+}
+
+function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc {
   switch (shape.kind) {
     case 'box':
       return RAPIER.ColliderDesc.cuboid(...shape.halfExtents);

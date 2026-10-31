@@ -18,13 +18,13 @@ import {
  * sphere a `size` would not compile.
  */
 const SHAPE_FACTORIES: { readonly [K in ColliderShapeKind]: () => ColliderShapeOf<K> } = {
-  box: () => ({ kind: 'box', size: [1, 1, 1] }),
-  sphere: () => ({ kind: 'sphere', radius: 0.5 }),
+  box: () => ({ kind: 'box', size: [1, 1, 1], center: [0, 0, 0], rotation: [0, 0, 0] }),
+  sphere: () => ({ kind: 'sphere', radius: 0.5, center: [0, 0, 0] }),
   // The Capsule primitive's, caps included.
-  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2 }),
+  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2, center: [0, 0, 0], rotation: [0, 0, 0] }),
   // The Cylinder primitive's.
-  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1 }),
-  cone: () => ({ kind: 'cone', radius: 0.5, height: 1 }),
+  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1, center: [0, 0, 0], rotation: [0, 0, 0] }),
+  cone: () => ({ kind: 'cone', radius: 0.5, height: 1, center: [0, 0, 0], rotation: [0, 0, 0] }),
   mesh: () => ({ kind: 'mesh', build: 'triangles' }),
 };
 
@@ -108,19 +108,27 @@ export function createColliderFor(siblings: readonly Sibling[]): ColliderCompone
 function shapeOfGeometry(geometry: GeometryDef): ColliderShape {
   switch (geometry.kind) {
     case 'box':
-      return { kind: 'box', size: [geometry.width, geometry.height, geometry.depth] };
+      return { ...createColliderShape('box'), size: [geometry.width, geometry.height, geometry.depth] };
     case 'sphere':
-      return { kind: 'sphere', radius: geometry.radius };
+      return { ...createColliderShape('sphere'), radius: geometry.radius };
     case 'capsule':
       // three measures a capsule's straight part alone; a collider, end to end.
-      return { kind: 'capsule', radius: geometry.radius, height: geometry.height + 2 * geometry.radius };
+      return {
+        ...createColliderShape('capsule'),
+        radius: geometry.radius,
+        height: geometry.height + 2 * geometry.radius,
+      };
     case 'cylinder': {
       const { radiusTop, radiusBottom, height } = geometry;
-      if (radiusTop === radiusBottom) return { kind: 'cylinder', radius: radiusTop, height };
-      // Apex up, as a cone collider is built.
-      if (radiusTop === 0) return { kind: 'cone', radius: radiusBottom, height };
+      if (radiusTop === radiusBottom) {
+        return { ...createColliderShape('cylinder'), radius: radiusTop, height };
+      }
+      // A cone collider's apex points up, so one drawn apex down is turned over.
+      if (radiusTop === 0) return { ...createColliderShape('cone'), radius: radiusBottom, height };
+      if (radiusBottom === 0) {
+        return { ...createColliderShape('cone'), radius: radiusTop, height, rotation: [Math.PI, 0, 0] };
+      }
       // Any one radius would be wrong for a frustum, and its hull is exact.
-      // Apex down waits for a collider that can turn, and is the same hull.
       return { kind: 'mesh', build: 'hull' };
     }
     case 'plane':

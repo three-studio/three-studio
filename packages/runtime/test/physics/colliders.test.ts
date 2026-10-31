@@ -1,12 +1,22 @@
 import {
+  createColliderShape,
   createComponent,
   createComponentForEntity,
   createMeshEntity,
+  originAboveFeet,
+  type ColliderShape,
   type EntityTemplate,
   type Vec3,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
+import {
+  colliderOf,
+  ground,
+  physicsRig,
+  standInForTheBrowser,
+  takeTheBrowserBack,
+  withBody,
+} from './rig';
 
 /*
  * A collider rests where what is drawn rests: the shape physics builds is the
@@ -65,6 +75,33 @@ describe('a cylinder and a cone', () => {
     const rim = 0.5 * Math.cos(Math.PI / 6) + 0.5 * Math.sin(Math.PI / 6);
     expect(rig.solved(cone.entity.id).position.y).toBeCloseTo(rim, 2);
   });
+});
+
+describe('a collider off its entity’s centre, turned', () => {
+  const center: Vec3 = [0.1, 0.4, -0.2];
+  const rotation: Vec3 = [0.3, 0.5, 0.7];
+  const shapes: ColliderShape[] = [
+    { ...createColliderShape('box'), size: [0.6, 0.8, 0.4], center, rotation },
+    { ...createColliderShape('sphere'), radius: 0.3, center },
+    { ...createColliderShape('capsule'), radius: 0.2, height: 0.9, center, rotation },
+    { ...createColliderShape('cylinder'), radius: 0.3, height: 0.6, center, rotation },
+    { ...createColliderShape('cone'), radius: 0.3, height: 0.6, center, rotation },
+  ];
+
+  // Core's Euler pinned to three's, which the builder turns through, and to
+  // Rapier's: what `originAboveFeet` says is where the shape's bottom is.
+  it.each(shapes.map((shape) => [shape.kind, shape] as const))(
+    'rests a %s where originAboveFeet puts its bottom',
+    async (_kind, shape) => {
+      const body = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });
+      colliderOf(body).shape = shape;
+      const rig = await physicsRig([ground(), body]);
+
+      rig.run(2);
+
+      expect(rig.solved(body.entity.id).position.y).toBeCloseTo(originAboveFeet(shape), 2);
+    },
+  );
 });
 
 /**

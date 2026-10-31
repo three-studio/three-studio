@@ -26,11 +26,11 @@ import { describe, expect, it } from 'vitest';
 describe('originAboveFeet', () => {
   it('measures a box by half its height', () => {
     // A box is measured as drawn: 1.8 m tall reaches 0.9 m below its middle.
-    expect(originAboveFeet({ kind: 'box', size: [0.8, 1.8, 0.8] })).toBe(0.9);
+    expect(originAboveFeet({ ...createColliderShape('box'), size: [0.8, 1.8, 0.8] })).toBe(0.9);
   });
 
   it('measures a sphere by its radius', () => {
-    expect(originAboveFeet({ kind: 'sphere', radius: 0.6 })).toBe(0.6);
+    expect(originAboveFeet({ ...createColliderShape('sphere'), radius: 0.6 })).toBe(0.6);
   });
 
   it('measures a capsule by half its height, caps included', () => {
@@ -50,10 +50,41 @@ describe('originAboveFeet', () => {
   });
 
   it('measures a cylinder and a cone by half their height', () => {
-    expect(originAboveFeet({ kind: 'cylinder', radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
+    expect(originAboveFeet({ ...createColliderShape('cylinder'), radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
     // Upright, a cone reaches as far below its middle, at its base, as its apex
     // does above it.
-    expect(originAboveFeet({ kind: 'cone', radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
+    expect(originAboveFeet({ ...createColliderShape('cone'), radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
+  });
+
+  it('turns a shape as three turns an Euler XYZ', () => {
+    // Rx · Rz stands the box's 3 m depth upright; Rz · Rx, the order three
+    // calls ZYX, would stand its 1 m width there instead.
+    const box: ColliderShape = {
+      ...createColliderShape('box'),
+      size: [1, 2, 3],
+      rotation: [Math.PI / 2, 0, Math.PI / 2],
+    };
+    expect(originAboveFeet(box)).toBeCloseTo(1.5, 6);
+  });
+
+  it('reaches a cone’s rim when it is tilted, its apex being up', () => {
+    const tilt = Math.PI / 6;
+    const cone: ColliderShape = { ...createColliderShape('cone'), radius: 0.4, height: 1.2, rotation: [0, 0, tilt] };
+    // Apex down, it would reach 0.6 · cos 30° below, at its tip.
+    expect(originAboveFeet(cone)).toBeCloseTo(
+      0.6 * Math.cos(tilt) + 0.4 * Math.sin(tilt),
+      6,
+    );
+  });
+
+  it('answers 0 for a capsule whose centre stands it on the origin', () => {
+    const capsule: ColliderShape = {
+      ...createColliderShape('capsule'),
+      radius: 0.3,
+      height: 1.7,
+      center: [0, 0.85, 0],
+    };
+    expect(originAboveFeet(capsule)).toBeCloseTo(0, 6);
   });
 
   for (const build of ['triangles', 'hull'] as const) {
@@ -74,14 +105,14 @@ describe('colliderGeometry', () => {
   const capsule = (): ColliderShape => ({ ...createColliderShape('capsule'), radius: 0.3, height: 1.7 });
 
   it('stretches each axis of a box by the scale along it', () => {
-    expect(colliderGeometry({ kind: 'box', size: [2, 1, 4] }, [1, 2, 0.5]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('box'), size: [2, 1, 4] }, [1, 2, 0.5]).shape).toEqual({
       kind: 'box',
       halfExtents: [1, 1, 1],
     });
   });
 
   it('grows a sphere by the largest stretch, so it encloses what is drawn', () => {
-    expect(colliderGeometry({ kind: 'sphere', radius: 0.5 }, [1, 3, 2]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: 0.5 }, [1, 3, 2]).shape).toEqual({
       kind: 'sphere',
       radius: 1.5,
     });
@@ -112,27 +143,45 @@ describe('colliderGeometry', () => {
 
   it('stretches a cylinder and a cone along their length, their section by its larger stretch', () => {
     for (const kind of ['cylinder', 'cone'] as const) {
-      expect(colliderGeometry({ kind, radius: 0.5, height: 1 }, [1, 3, 2]).shape).toEqual({
-        kind,
-        radius: 1,
-        halfHeight: 1.5,
-      });
+      const shape = { ...createColliderShape(kind), radius: 0.5, height: 1 };
+      expect(colliderGeometry(shape, [1, 3, 2]).shape).toEqual({ kind, radius: 1, halfHeight: 1.5 });
     }
   });
 
+  it('stretches a turned box along its own axes', () => {
+    // Turned a quarter about z, its 3 m height lies along the entity's x.
+    const box: ColliderShape = { ...createColliderShape('box'), size: [1, 3, 1], rotation: [0, 0, Math.PI / 2] };
+    const { shape, rotation } = colliderGeometry(box, [2, 1, 1]);
+    expect(shape.kind).toBe('box');
+    if (shape.kind !== 'box') return;
+    expect(shape.halfExtents[0]).toBeCloseTo(0.5, 6);
+    expect(shape.halfExtents[1]).toBeCloseTo(3, 6);
+    expect(shape.halfExtents[2]).toBeCloseTo(0.5, 6);
+    expect(rotation).toEqual([0, 0, Math.PI / 2]);
+  });
+
+  it('sets a shape off its entity’s centre by the centre at the entity’s scale', () => {
+    const sphere: ColliderShape = { ...createColliderShape('sphere'), center: [1, 2, 3] };
+    expect(colliderGeometry(sphere, [2, 1, -1]).position).toEqual([2, 2, -3]);
+  });
+
   it('builds the same shape mirrored', () => {
-    const shapes: ColliderShape[] = [{ kind: 'box', size: [2, 1, 4] }, { kind: 'sphere', radius: 0.5 }, capsule()];
+    const shapes: ColliderShape[] = [
+      { ...createColliderShape('box'), size: [2, 1, 4] },
+      { ...createColliderShape('sphere'), radius: 0.5 },
+      capsule(),
+    ];
     for (const shape of shapes) {
-      expect(colliderGeometry(shape, [-1, 2, -0.5])).toEqual(colliderGeometry(shape, [1, 2, 0.5]));
+      expect(colliderGeometry(shape, [-1, 2, -0.5]).shape).toEqual(colliderGeometry(shape, [1, 2, 0.5]).shape);
     }
   });
 
   it('builds a negative measure, which only a hand-edited file holds, as none', () => {
-    expect(colliderGeometry({ kind: 'box', size: [-2, 1, 4] }, [1, 1, 1]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('box'), size: [-2, 1, 4] }, [1, 1, 1]).shape).toEqual({
       kind: 'box',
       halfExtents: [0, 0.5, 2],
     });
-    expect(colliderGeometry({ kind: 'sphere', radius: -1 }, [1, 1, 1]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: -1 }, [1, 1, 1]).shape).toEqual({
       kind: 'sphere',
       radius: 0,
     });
@@ -157,12 +206,12 @@ describe('createColliderFor', () => {
   it('guesses each primitive’s collider as it is drawn', () => {
     // A record over every primitive, so one added later has to answer here.
     const expected: Record<GeometryKind, ColliderShape> = {
-      box: { kind: 'box', size: [1, 1, 1] },
-      sphere: { kind: 'sphere', radius: 0.5 },
+      box: { ...createColliderShape('box'), size: [1, 1, 1] },
+      sphere: { ...createColliderShape('sphere'), radius: 0.5 },
       // three's capsule height is its straight part: 1 + two caps of 0.5.
-      capsule: { kind: 'capsule', radius: 0.5, height: 2 },
+      capsule: { ...createColliderShape('capsule'), radius: 0.5, height: 2 },
       // A cylinder, where it was a capsule a cap too tall at each end.
-      cylinder: { kind: 'cylinder', radius: 0.5, height: 1 },
+      cylinder: { ...createColliderShape('cylinder'), radius: 0.5, height: 1 },
       plane: { kind: 'mesh', build: 'triangles' },
       circle: { kind: 'mesh', build: 'triangles' },
       ring: { kind: 'mesh', build: 'triangles' },
@@ -188,12 +237,19 @@ describe('createColliderFor', () => {
   };
 
   it('guesses a cylinder whose top radius is 0 as a cone, apex up', () => {
-    expect(tapered(0, 0.5)).toEqual({ kind: 'cone', radius: 0.5, height: 1 });
+    expect(tapered(0, 0.5)).toEqual({ ...createColliderShape('cone'), radius: 0.5, height: 1 });
+  });
+
+  it('guesses a cylinder whose bottom radius is 0 as a cone turned over', () => {
+    expect(tapered(0.5, 0)).toEqual({
+      ...createColliderShape('cone'),
+      radius: 0.5,
+      height: 1,
+      rotation: [Math.PI, 0, 0],
+    });
   });
 
   it('guesses any other tapered cylinder as its convex hull, which is exact', () => {
-    // Apex down too, until a collider can turn.
-    expect(tapered(0.5, 0)).toEqual({ kind: 'mesh', build: 'hull' });
     expect(tapered(0.2, 0.5)).toEqual({ kind: 'mesh', build: 'hull' });
   });
 

@@ -538,7 +538,7 @@ describe('eye height, measured from the feet', () => {
     // default player's eye sat half a metre higher than anyone had asked for.
     const box: ColliderComponent = {
       ...createComponent('collider'),
-      shape: { kind: 'box', size: [1, 1.8, 1] },
+      shape: { ...createColliderShape('box'), size: [1, 1.8, 1] },
     };
     expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.2, [box])))).toBeCloseTo(2.1, 6);
   });

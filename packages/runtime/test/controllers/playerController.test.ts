@@ -125,7 +125,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   // a character walking at full speed for a second is still on it — a metre of
   // floor would have turned every movement test into a fall.
   const ground = createEntity('Ground', [
-    { ...createComponent('collider'), shape: { kind: 'box', size: [40, 1, 40] } },
+    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   ground.entity.transform.position = [0, -0.5, 0];
 
@@ -305,6 +305,14 @@ describe('PlayerController places the eye above the feet', () => {
     // player's eye sat at 2.2 m on a character one metre tall.
     const box: ColliderComponent = { ...createComponent('collider') };
     expect(eyeAbove(0.5, 1.6, box)).toBeCloseTo(1.6, 6);
+  });
+
+  it('puts the eye at its eye height above the origin for a capsule centred at its feet', () => {
+    // Unity's Center: the capsule stands on the origin, which is then the feet.
+    const standing = personCapsule();
+    if (standing.shape.kind !== 'capsule') throw new Error('not a capsule');
+    standing.shape = { ...standing.shape, center: [0, 0.85, 0] };
+    expect(eyeAbove(0, 1.6, standing)).toBeCloseTo(1.6, 6);
   });
 
   it('treats the origin as the feet when there is no collider', () => {

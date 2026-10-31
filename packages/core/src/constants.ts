@@ -80,8 +80,9 @@ export const SCRIPT_API_VERSION = 2;
  *
  * So did the collider's shape, one of box, sphere, capsule, cylinder, cone and
  * mesh, each with its own measures taken as drawn — a box by its full size, a
- * capsule from end to end — and its friction and bounce, now a `material` of
- * their own. An older build builds a cylinder or a cone as nothing at all. An older
+ * capsule from end to end — set off its entity's centre and turned, and its
+ * friction and bounce, now a `material` of their own. An older build builds a
+ * cylinder or a cone as nothing at all, and every shape at its entity's middle. An older
  * build switches on `shape` as a name and builds nothing from an object, so
  * every floor is gone, and its `colliderHalfHeight` falls through to
  * `undefined`, so a player's eye is `NaN`. A collider written before 11 is not

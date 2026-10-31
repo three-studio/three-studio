@@ -109,6 +109,8 @@ export class PlayerController implements Behaviour {
    * capsule and `eyeHeight` — which reads as a height above the ground to
    * everyone who has ever typed a number into it — had to be measured from
    * there. Subtracting this is what lets the field mean what its name says.
+   * A capsule whose Center stands it on the origin answers 0: the origin is
+   * then the feet, as in a model exported to stand on a floor.
    *
    * Read once, not per frame, and that is deliberate: `PhysicsWorld.build`
    * describes the collider once too, so a controller that tracked the component

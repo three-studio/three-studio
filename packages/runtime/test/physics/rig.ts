@@ -159,7 +159,7 @@ export function takeTheBrowserBack(): void {
 export function ground(tiltDegrees = 0): EntityTemplate {
   const tilt = (tiltDegrees * Math.PI) / 180;
   const template = createEntity('Ground', [
-    { ...createComponent('collider'), shape: { kind: 'box', size: [40, 1, 40] } },
+    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   // Half its thickness below the surface along the tilted normal, so whatever
   // the tilt the slope passes through the origin, and a body placed above it
@@ -226,7 +226,7 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
 /** Collider-only level geometry, a step or a wall: a box of this full size. */
 export function block(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Block', [
-    { ...createComponent('collider'), shape: { kind: 'box', size } },
+    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size } },
   ]);
   template.entity.transform.position = position;
   return template;

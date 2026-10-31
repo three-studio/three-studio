@@ -157,7 +157,8 @@ describe('prefab expansion', () => {
     const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
-    expect(built).toEqual({ ...collider, shape: sphere });
+    // Filled from its own kind, as any stored shape is.
+    expect(built).toEqual({ ...collider, shape: { ...createColliderShape('sphere'), radius: 0.4 } });
   });
 
   it('follows the component it names when the prefab is reordered', () => {

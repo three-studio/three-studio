@@ -114,9 +114,9 @@ const EYE_HEIGHT_FROM_FEET = 10;
  * Format 9 → 10: `eyeHeight` stops being measured from the entity's origin and
  * starts being measured from the character's feet.
  *
- * Raising each stored value by its collider's half height is what makes the
- * change invisible: the camera comes out at the height its author put it, and
- * the number now means what it says. An entity with no collider is left alone,
+ * Raising each stored value by how far its collider reaches below the origin
+ * is what makes the change invisible: the camera comes out at the height its
+ * author put it, and the number now means what it says. An entity with no collider is left alone,
  * because with nothing centred on the origin the origin already *was* the
  * reference — which is also exactly what fly mode does.
  *

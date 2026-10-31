@@ -102,6 +102,17 @@ describe('the Collider pane', () => {
     expect(shapeRow().fromModel?.('sphere')).toEqual(createColliderShape('sphere'));
   });
 
+  it('shows a rotation in degrees and writes it back in radians', () => {
+    const row = paneEntriesFor(colliderOfKind('box')).entries.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape.rotation',
+    );
+    if (!row) throw new Error('no Rotation row');
+    const shown = row.toModel?.([Math.PI / 2, 0, -Math.PI]);
+    expect(shown).toEqual({ x: expect.closeTo(90, 9), y: 0, z: expect.closeTo(-180, 9) });
+    const written = row.fromModel?.({ x: 90, y: 0, z: 45 });
+    expect(written).toEqual([expect.closeTo(Math.PI / 2, 9), 0, expect.closeTo(Math.PI / 4, 9)]);
+  });
+
   it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
     expect(paneEntriesFor(colliderOfKind(kind)).key).toBe(`collider:${kind}`);
   });
