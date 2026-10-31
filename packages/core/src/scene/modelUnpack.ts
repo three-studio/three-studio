@@ -1,4 +1,6 @@
+import type { ColliderComponent } from '../components/collider/schema';
 import { createModel } from '../components/model/defaults';
+import { createId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
@@ -96,11 +98,16 @@ function isPassThrough(node: ModelNode, childCount: number): boolean {
  *   it, together with its own path.
  * @param rootName What to call the root when the file gave it no name — the
  *   host entity's name, so an unpacked "Chair" is still called "Chair".
+ * @param colliders The host's mesh Colliders, a copy of each for every piece
+ *   that draws, under an id of its own. A mesh Collider is built from its own
+ *   entity's meshes, and the host has none left once it is unpacked: the model
+ *   collides as it did, each piece by its own meshes.
  */
 export function entitiesFromNodes(
   nodes: readonly ModelNode[],
   assetId: string,
   rootName: string,
+  colliders: readonly ColliderComponent[] = [],
 ): readonly UnpackedEntity[] {
   const childCount = new Map<string, number>();
   for (const node of nodes) {
@@ -135,7 +142,10 @@ export function entitiesFromNodes(
       // group, and a `model` naming a path that draws nothing would load the
       // file to produce an empty object.
       node.draws
-        ? [{ ...createModel(), assetId, nodePath: node.path, nodeName: node.name }]
+        ? [
+            { ...createModel(), assetId, nodePath: node.path, nodeName: node.name },
+            ...colliders.map((collider) => ({ ...structuredClone(collider), id: createId() })),
+          ]
         : [],
     );
     template.entity.transform = structuredClone(node.transform);

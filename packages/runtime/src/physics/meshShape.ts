@@ -1,6 +1,7 @@
 import type { BuiltShape, Vec3 } from '@three-studio/core';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Matrix4, Mesh, Vector3, type Object3D } from 'three/webgpu';
+import { resolveEntityId } from '../systems/identity';
 import { MeshCache } from './MeshCache';
 
 /*
@@ -74,8 +75,28 @@ function hullOf(positions: Float32Array): RAPIER.ColliderDesc {
 }
 
 /**
- * Flattens an entity's meshes into one vertex soup, in the entity's local space,
- * each vertex times `scale`.
+ * The meshes an entity draws itself: its container's, without those of its
+ * child entities, whose containers hang from it.
+ *
+ * A mesh is the entity's when the id it resolves to is the container's, the
+ * rule picking maps a hit back by: every mesh a system builds, and every node
+ * of a loaded model, carries its entity's id. Gathered from the whole subtree,
+ * a parent's mesh Collider took in its children's meshes: a child with a
+ * Collider of its own collided twice, and one with a body of its own was welded
+ * into its parent's shape as well.
+ */
+export function ownMeshes(container: Object3D): Mesh[] {
+  const entityId = resolveEntityId(container);
+  const meshes: Mesh[] = [];
+  container.traverse((child) => {
+    if (child instanceof Mesh && resolveEntityId(child) === entityId) meshes.push(child);
+  });
+  return meshes;
+}
+
+/**
+ * Flattens an entity's own meshes into one vertex soup, in the entity's local
+ * space, each vertex times `scale`.
  */
 export function collectVertices(
   object: Object3D,
@@ -90,10 +111,9 @@ export function collectVertices(
   _parentInverse.copy(object.matrixWorld).invert();
   const [sx, sy, sz] = scale;
 
-  object.traverse((child) => {
-    if (!(child instanceof Mesh)) return;
+  for (const child of ownMeshes(object)) {
     const attribute = child.geometry.getAttribute('position');
-    if (!attribute) return;
+    if (!attribute) continue;
     found = true;
 
     _localMatrix.multiplyMatrices(_parentInverse, child.matrixWorld);
@@ -110,7 +130,7 @@ export function collectVertices(
       for (let i = 0; i < attribute.count; i++) indices.push(i + vertexOffset);
     }
     vertexOffset += attribute.count;
-  });
+  }
 
   if (!found) return null;
   return { positions: new Float32Array(positions), indices: new Uint32Array(indices) };

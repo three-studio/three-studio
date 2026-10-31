@@ -1,4 +1,10 @@
-import { entitiesFromNodes, type ModelNode, type Transform } from '@three-studio/core';
+import {
+  createColliderShape,
+  createComponent,
+  entitiesFromNodes,
+  type ModelNode,
+  type Transform,
+} from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
 /*
@@ -139,6 +145,24 @@ describe('entitiesFromNodes', () => {
       if (parentId !== null) expect(seen.has(parentId)).toBe(true);
       seen.add(template.entity.id);
     }
+  });
+
+  it('hands the host’s mesh Colliders to every piece that draws, each under an id of its own', () => {
+    const collider = { ...createComponent('collider'), shape: createColliderShape('mesh') };
+    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair', [collider]);
+
+    const collidersOf = (name: string) =>
+      unpacked
+        .find((item) => item.template.entity.name === name)
+        ?.template.components.filter((component) => component.type === 'collider') ?? [];
+    const copies = [...collidersOf('Seat'), ...collidersOf('Leg')];
+    expect(copies).toEqual([
+      { ...collider, id: expect.any(String) },
+      { ...collider, id: expect.any(String) },
+    ]);
+    expect(new Set([collider.id, ...copies.map((copy) => copy.id)]).size).toBe(3);
+    // A group draws nothing to build one from.
+    expect(collidersOf('Chair')).toEqual([]);
   });
 
   it('names an unnamed root after the entity it replaces', () => {

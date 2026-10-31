@@ -2,6 +2,7 @@ import {
   createColliderShape,
   createComponent,
   createEntity,
+  createMeshEntity,
   type ColliderComponent,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -168,5 +169,34 @@ describe('a compound body', () => {
     const said = rig.engine.warnings.filter((line) => line.includes('"Torus"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('"Cart"');
+  });
+});
+
+describe('a mesh collider', () => {
+  it('is built from its own entity’s meshes, not its children’s', async () => {
+    const base = withCollider('box', [0, 0.5, 0]);
+    colliderOf(base).shape = { kind: 'mesh', build: 'hull' };
+    // Drawn 3 m above the base, with no collider of its own.
+    const above = createMeshEntity('box');
+    above.entity.transform.position = [0, 3, 0];
+    nest(base, above);
+    const probe = withBody('sphere', [0, 6, 0]);
+    const rig = await physicsRig([base, above, probe]);
+
+    rig.run(2);
+
+    // The base's hull took the cube above in, rose to 4, and held the probe at 4.5.
+    expect(Math.abs(rig.solved(probe.entity.id).position.y - 1.5)).toBeLessThan(0.02);
+  });
+
+  it('is warned about on an entity that draws nothing of its own, with the fix', async () => {
+    const shelf = createEntity('Shelf', [collider(createColliderShape('mesh'))]);
+    const cube = createMeshEntity('box');
+    nest(shelf, cube);
+    const rig = await physicsRig([shelf, cube]);
+
+    const said = rig.engine.warnings.filter((line) => line.includes('"Shelf"'));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain("its children's");
   });
 });

@@ -96,7 +96,11 @@ export async function unpackModel(entityId: string): Promise<void> {
     if (!go) return;
   }
 
-  const unpacked = entitiesFromNodes(nodes, component.assetId, host.name);
+  // Read after the waits, as the mutation below will find them.
+  const meshColliders = Object.values(
+    useDocumentStore.getState().scene.components.collider[entityId] ?? {},
+  ).filter((collider) => collider.shape.kind === 'mesh');
+  const unpacked = entitiesFromNodes(nodes, component.assetId, host.name, meshColliders);
   const root = unpacked[0];
   if (!root) return;
 
@@ -105,12 +109,16 @@ export async function unpackModel(entityId: string): Promise<void> {
     (draft) => {
       if (!draft.entities[entityId]) return;
 
-      // The model component goes; everything else the author put on the host —
-      // a collider, a script, a rigid body — stays, which is what "unpack"
-      // means.
+      // The model component goes, and so do its mesh Colliders, which every
+      // piece that draws now carries: a mesh Collider is built from its own
+      // entity's meshes, and the host has none left. Everything else the
+      // author put on the host — another collider, a script, a rigid body —
+      // stays, which is what "unpack" means, and the pieces' Colliders ride
+      // its body.
       for (const held of Object.values(draft.components.model[entityId] ?? {})) {
         deleteComponent(draft, entityId, held.id);
       }
+      for (const held of meshColliders) deleteComponent(draft, entityId, held.id);
 
       /*
        * The root under the host, every other node under the entity its parent

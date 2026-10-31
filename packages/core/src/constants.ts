@@ -94,6 +94,8 @@ export const SCRIPT_API_VERSION = 2;
  * tree, at its entity's place on it, and a body weighs its Rigid Body's mass,
  * shared among its colliders by volume. An older build leaves a child's
  * collider a fixed body in mid-air, and weighs a body by its first collider.
+ * And a mesh Collider is built from its own entity's meshes: an older build
+ * welds its children's meshes in.
  *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
@@ -204,10 +206,11 @@ export const PREFAB_ID_SEPARATOR = '/';
  * `assets/prefabs/*.prefab.json`.
  *
  * 8 — the slope and step height of scene format 11, its rigid body's
- * interpolation and locks, its collider's shapes and material, and its
- * compound bodies. A prefab holds the same `ComponentTables`, so it can hold a
- * player controller an older build would walk with its own 50° and 0.4 m, a
- * floor it would not build, and a cart whose wheels it would leave in mid-air.
+ * interpolation and locks, its collider's shapes and material, its compound
+ * bodies, and its mesh Colliders built from their own meshes. A prefab holds
+ * the same `ComponentTables`, so it can hold a player controller an older build
+ * would walk with its own 50° and 0.4 m, a floor it would not build, and a cart
+ * whose wheels it would leave in mid-air.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the

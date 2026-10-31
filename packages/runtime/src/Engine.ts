@@ -39,6 +39,7 @@ import './scripting/ScriptHost';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
 import { PhysicsWorld } from './physics/PhysicsWorld';
+import { ownMeshes } from './physics/meshShape';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
 
@@ -287,14 +288,11 @@ export class Engine {
         );
       }
 
+      // Its own meshes alone: a group's children draw theirs.
       const object = this.binder.getObject(entityId);
-      let hasGeometry = false;
-      object?.traverse((child) => {
-        if ((child as { isMesh?: boolean }).isMesh === true) hasGeometry = true;
-      });
-      if (!hasGeometry) {
+      if (!object || ownMeshes(object).length === 0) {
         this.warnings.push(
-          `"${entity.name}" has a mesh-derived Collider but no geometry to derive it from, so it is a tiny box nothing can stand on. Check that its model loaded.`,
+          `"${entity.name}" has a mesh Collider but draws no mesh of its own, so it is a tiny box nothing can stand on. A Collider is built from its own entity's meshes, not its children's: give each child that should collide a Collider, or check that its model loaded.`,
         );
       }
     }
