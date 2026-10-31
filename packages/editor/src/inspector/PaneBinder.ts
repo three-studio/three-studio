@@ -33,6 +33,17 @@ export interface FieldIO {
 }
 
 /**
+ * Gestures counted across every binder, so no two hand out the same number.
+ *
+ * A pane is rebuilt whenever the list of its rows changes — choosing a
+ * collider's Shape rebuilds it with the rows of the new kind — and a binder that
+ * counted from zero gave the first gesture on the new pane the coalesce key of
+ * the first one on the old: five kinds chosen one after another were one undo
+ * step.
+ */
+let gestureCount = 0;
+
+/**
  * A Tweakpane pane and the rows bound to it, kept in step with a source of
  * truth that is not the pane.
  *
@@ -44,8 +55,8 @@ export interface FieldIO {
 export class PaneBinder {
   readonly pane: Pane;
   private readonly fields: BoundField[] = [];
-  /** Bumped when a gesture ends so the next one opens a new undo entry. */
-  private gestures = 0;
+  /** Moved on when a gesture ends so the next one opens a new undo entry. */
+  private gestures = ++gestureCount;
   /** True while a change originates from this pane, to suppress self-refresh. */
   private writing = false;
   /** True while pulling values in from the source; see `edit`. */
@@ -87,7 +98,7 @@ export class PaneBinder {
   }
 
   endGesture(): void {
-    this.gestures += 1;
+    this.gestures = ++gestureCount;
   }
 
   /** Registers a hand-rolled binding so `refresh()` re-reads it too. */
@@ -153,7 +164,7 @@ export class PaneBinder {
       // every later comparison answers `false` to, silently.
       if (typeof value === 'number' && !Number.isFinite(value)) return;
       io.write(value, { last: event.last, generation: this.gestures });
-      if (event.last) this.gestures += 1;
+      if (event.last) this.endGesture();
     });
 
     this.track(holder, read);
