@@ -1,4 +1,5 @@
 import {
+  createColliderShape,
   createComponent,
   createEntity,
   createRenderingSettings,
@@ -46,7 +47,10 @@ const STANDING_Y = 1;
 
 /** A capsule 1.70 m tall, so its centre — the entity's origin — is 0.85 m up. */
 function personCapsule(): ColliderComponent {
-  return { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 };
+  return {
+    ...createComponent('collider'),
+    shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
+  };
 }
 
 /**
@@ -116,12 +120,12 @@ afterEach(() => {
  * fake would have to answer that question itself.
  */
 async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
-  // Nothing but a collider: `describeCollider` reads a box's half extents from
-  // the component, so the floor needs no geometry to stand on. Wide enough that
+  // Nothing but a collider: `describeCollider` reads a box's size from the
+  // component, so the floor needs no geometry to stand on. Wide enough that
   // a character walking at full speed for a second is still on it — a metre of
   // floor would have turned every movement test into a fall.
   const ground = createEntity('Ground', [
-    { ...createComponent('collider'), size: [20, 0.5, 20] as [number, number, number] },
+    { ...createComponent('collider'), shape: { kind: 'box', size: [40, 1, 40] } },
   ]);
   ground.entity.transform.position = [0, -0.5, 0];
 

@@ -1,4 +1,5 @@
 import {
+  createColliderShape,
   createComponent,
   createComponentForEntity,
   createEntity,
@@ -6,6 +7,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   type BodyType,
+  type ColliderComponent,
   type EntityTemplate,
   type GeometryKind,
   type PhysicsSettings,
@@ -157,7 +159,7 @@ export function takeTheBrowserBack(): void {
 export function ground(tiltDegrees = 0): EntityTemplate {
   const tilt = (tiltDegrees * Math.PI) / 180;
   const template = createEntity('Ground', [
-    { ...createComponent('collider'), size: [20, 0.5, 20] },
+    { ...createComponent('collider'), shape: { kind: 'box', size: [40, 1, 40] } },
   ]);
   // Half its thickness below the surface along the tilted normal, so whatever
   // the tilt the slope passes through the origin, and a body placed above it
@@ -198,7 +200,10 @@ export function player(
 ): EntityTemplate {
   const template = createEntity('Player', [
     { ...createComponent('playerController'), ...controller },
-    { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 },
+    {
+      ...createComponent('collider'),
+      shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
+    },
     { ...createComponent('rigidbody'), bodyType },
   ]);
   template.entity.transform.position = position;
@@ -218,9 +223,20 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
   return template;
 }
 
-/** Collider-only level geometry, a step or a wall: a box of these half extents. */
-export function block(position: Vec3, halfExtents: Vec3): EntityTemplate {
-  const template = createEntity('Block', [{ ...createComponent('collider'), size: halfExtents }]);
+/** Collider-only level geometry, a step or a wall: a box of this full size. */
+export function block(position: Vec3, size: Vec3): EntityTemplate {
+  const template = createEntity('Block', [
+    { ...createComponent('collider'), shape: { kind: 'box', size } },
+  ]);
   template.entity.transform.position = position;
   return template;
+}
+
+/** The template's collider, so a test can set its shape or material before the rig is built. */
+export function colliderOf(template: EntityTemplate): ColliderComponent {
+  const collider = template.components.find(
+    (component): component is ColliderComponent => component.type === 'collider',
+  );
+  if (!collider) throw new Error(`"${template.entity.name}" has no Collider.`);
+  return collider;
 }

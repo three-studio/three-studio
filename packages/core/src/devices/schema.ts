@@ -1,4 +1,5 @@
-import { conform, conformMaterial, conformPatch } from '../guards';
+import { conform, conformPatch } from '../conform';
+import { conformMaterial } from '../guards';
 import { createId } from '../ids';
 import {
   createPhysicsSettings,

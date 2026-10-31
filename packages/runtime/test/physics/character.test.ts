@@ -65,7 +65,7 @@ describe('a character', () => {
     // Rapier's controller stopped a move along a kinematic floor at once, again
     // and again, then gave up: a player walked 0.4 m of the 9 it walked on a
     // fixed floor, and sank into it.
-    const floor = block([0, -0.25, 0], [20, 0.25, 20]);
+    const floor = block([0, -0.25, 0], [40, 0.5, 40]);
     floor.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
     const walker = player([0, 1, 0]);
     const rig = await physicsRig([floor, walker]);
@@ -85,7 +85,7 @@ describe('a character', () => {
     // climb 0.4 m for every character, whatever its level was built around.
     async function walkAt(stepHeight: number) {
       const walker = player([0, 1, 0], { controller: { stepHeight } });
-      const rig = await physicsRig([ground(), block([0, 0.25, -6], [2, 0.25, 5]), walker]);
+      const rig = await physicsRig([ground(), block([0, 0.25, -6], [4, 0.5, 10]), walker]);
       rig.run(0.5);
       const settled = rig.drawn(walker.entity.id).position;
       rig.press('KeyW');

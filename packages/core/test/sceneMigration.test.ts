@@ -1,6 +1,7 @@
 import {
   PREFAB_FORMAT_VERSION,
   SCENE_FORMAT_VERSION,
+  createColliderShape,
   createComponent,
   createEntity,
   createEnvironment,
@@ -481,9 +482,18 @@ describe('scene migration', () => {
  * silently dropped by half a capsule since they last opened the project.
  */
 
-/** A capsule 1.70 m tall, so its origin sits 0.85 m above the floor. */
+/**
+ * A capsule 1.70 m tall, so its origin sits 0.85 m above the floor.
+ *
+ * In today's shape, though no scene this old held one: what these tests pin is
+ * the migration's arithmetic. A collider as an old scene stored it reads as the
+ * factory's box, and is the test below them.
+ */
 function personCapsule(): ColliderComponent {
-  return { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 };
+  return {
+    ...createComponent('collider'),
+    shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
+  };
 }
 
 /** One entity carrying a player controller, and whatever else is handed in. */
@@ -523,11 +533,28 @@ describe('eye height, measured from the feet', () => {
     expect(migrated.version).toBe(SCENE_FORMAT_VERSION);
   });
 
-  it('measures a box from its half extent', () => {
+  it('measures a box from half its height', () => {
     // The shape the old default gave every bare entity, and the reason the
     // default player's eye sat half a metre higher than anyone had asked for.
-    const box: ColliderComponent = { ...createComponent('collider'), size: [0.5, 0.9, 0.5] };
+    const box: ColliderComponent = {
+      ...createComponent('collider'),
+      shape: { kind: 'box', size: [1, 1.8, 1] },
+    };
     expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.2, [box])))).toBeCloseTo(2.1, 6);
+  });
+
+  it('gives a player written before scene 10 a finite eye height, whatever its collider was', () => {
+    // The collider as format 9 stored it: a shape's name, every kind's
+    // measures beside it. It is not converted, and reads as the factory's 1 m
+    // box, so the eye is raised by that box's half rather than by the
+    // capsule's 0.85 — finite, where the shape read as written gave `NaN`.
+    const old = {
+      ...createComponent('collider'),
+      shape: 'capsule',
+      radius: 0.3,
+      halfHeight: 0.55,
+    } as unknown as ComponentDoc;
+    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [old])))).toBeCloseTo(1.7 + 0.5, 6);
   });
 
   it('leaves a controller with no collider alone', () => {
@@ -540,8 +567,8 @@ describe('eye height, measured from the feet', () => {
     // A triangle mesh is built from the entity's own geometry in its own local
     // space, so the origin is wherever the author put it. Guessing here would
     // also be a guess the runtime could not reproduce.
-    const trimesh: ColliderComponent = { ...createComponent('collider'), shape: 'trimesh' };
-    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [trimesh])))).toBeCloseTo(1.7, 6);
+    const mesh: ColliderComponent = { ...createComponent('collider'), shape: createColliderShape('mesh') };
+    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [mesh])))).toBeCloseTo(1.7, 6);
   });
 
   it('does not raise a document that already counts from the feet', () => {

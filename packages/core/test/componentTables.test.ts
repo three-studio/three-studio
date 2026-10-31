@@ -2,6 +2,7 @@ import {
   SCENE_FORMAT_VERSION,
   cloneSubtree,
   componentsOf,
+  createColliderShape,
   createComponent,
   createEntity,
   createMeshEntity,
@@ -73,7 +74,7 @@ describe('two components of one type on one entity', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
     const first = createComponent('collider');
-    const second = { ...createComponent('collider'), shape: 'sphere' as const };
+    const second = { ...createComponent('collider'), shape: createColliderShape('sphere') };
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
@@ -85,7 +86,7 @@ describe('two components of one type on one entity', () => {
     const left = componentsOf(scene, cube.entity.id).filter((c) => c.type === 'collider');
     expect(left).toHaveLength(1);
     expect(left[0]!.id).toBe(second.id);
-    expect((left[0] as ColliderComponent).shape).toBe('sphere');
+    expect((left[0] as ColliderComponent).shape.kind).toBe('sphere');
     expect(findComponentById(scene, cube.entity.id, second.id)).toBe(second);
   });
 
@@ -206,7 +207,8 @@ describe('a document written before the tables existed', () => {
     const entityId = Object.keys(scene.entities)[0]!;
 
     expect(componentsOf(scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
-    expect(findComponent(scene, entityId, 'collider')?.shape).toBe('sphere');
+    // Told apart by id: a shape stored as a name reads as the factory's box now.
+    expect(findComponent(scene, entityId, 'collider')?.id).toBe('c2');
     expect(scene.version).toBe(SCENE_FORMAT_VERSION);
   });
 

@@ -78,6 +78,14 @@ export const SCRIPT_API_VERSION = 2;
  * while no release carried it. An older build keeps them and ignores them: a
  * body locked upright tumbles there, and a smooth one steps.
  *
+ * So did the collider's shape, one of box, sphere, capsule and mesh, each with
+ * its own measures taken as drawn — a box by its full size, a capsule from end
+ * to end — and its friction and bounce, now a `material` of their own. An older
+ * build switches on `shape` as a name and builds nothing from an object, so
+ * every floor is gone, and its `colliderHalfHeight` falls through to
+ * `undefined`, so a player's eye is `NaN`. A collider written before 11 is not
+ * converted: it opens as a 1 m box (see `colliderComponent`).
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -186,10 +194,10 @@ export const PREFAB_ID_SEPARATOR = '/';
 /**
  * `assets/prefabs/*.prefab.json`.
  *
- * 8 — the slope and step height of scene format 11, and its rigid body's
- * interpolation and locks. A prefab holds the same `ComponentTables`, so it can
- * hold a player controller an older build would walk with its own 50° and
- * 0.4 m.
+ * 8 — the slope and step height of scene format 11, its rigid body's
+ * interpolation and locks, and its collider's shapes and material. A prefab
+ * holds the same `ComponentTables`, so it can hold a player controller an older
+ * build would walk with its own 50° and 0.4 m, and a floor it would not build.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the

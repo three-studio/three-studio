@@ -38,6 +38,7 @@ import type { Hex, Transform, Vec3 } from './primitives';
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
 export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
+export type { PhysicsMaterialDef } from './physicsMaterial';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
 /*
@@ -62,8 +63,14 @@ export {
 } from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
 export { CAMERA_PROJECTION_LABELS } from '../components/camera/schema';
-export type { ColliderComponent, ColliderShape } from '../components/collider/schema';
-export { COLLIDER_SHAPE_LABELS } from '../components/collider/schema';
+export type {
+  ColliderComponent,
+  ColliderShape,
+  ColliderShapeKind,
+  ColliderShapeOf,
+  MeshBuild,
+} from '../components/collider/schema';
+export { COLLIDER_SHAPE_LABELS, MESH_BUILD_LABELS } from '../components/collider/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';

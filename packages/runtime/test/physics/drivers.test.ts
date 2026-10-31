@@ -64,7 +64,7 @@ class Respawn extends Behaviour {
 
 /** An 8 × 0.5 × 8 kinematic platform, its top through the origin, slid by its script. */
 function platform(script: ScriptClass = Slide): EntityTemplate {
-  const template = block([0, -0.25, 0], [4, 0.25, 4]);
+  const template = block([0, -0.25, 0], [8, 0.5, 8]);
   template.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
   return withScript(template, script);
 }

@@ -406,8 +406,8 @@ export class PhysicsWorld implements PhysicsApi {
     if (collider) {
       const shape = describeCollider(collider, object, _worldScale);
       if (shape) {
-        shape.setFriction(collider.friction);
-        shape.setRestitution(collider.restitution);
+        shape.setFriction(collider.material.friction);
+        shape.setRestitution(collider.material.restitution);
         shape.setSensor(collider.isSensor);
         if (rigidbody) shape.setMass(rigidbody.mass);
         created = this.world.createCollider(shape, body);
@@ -443,23 +443,28 @@ function describeCollider(
   scale: Vector3,
 ): RAPIER.ColliderDesc | null {
   const uniform = Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
+  const shape = collider.shape;
 
-  switch (collider.shape) {
+  switch (shape.kind) {
     case 'box':
+      // Measured as drawn, so Rapier's half extents are half of it.
       return RAPIER.ColliderDesc.cuboid(
-        collider.size[0] * Math.abs(scale.x),
-        collider.size[1] * Math.abs(scale.y),
-        collider.size[2] * Math.abs(scale.z),
+        (shape.size[0] / 2) * Math.abs(scale.x),
+        (shape.size[1] / 2) * Math.abs(scale.y),
+        (shape.size[2] / 2) * Math.abs(scale.z),
       );
     case 'sphere':
-      return RAPIER.ColliderDesc.ball(collider.radius * uniform);
-    case 'capsule':
-      return RAPIER.ColliderDesc.capsule(collider.halfHeight * uniform, collider.radius * uniform);
-    case 'trimesh':
-    case 'convexHull': {
+      return RAPIER.ColliderDesc.ball(shape.radius * uniform);
+    case 'capsule': {
+      // Measured end to end, where Rapier takes half the straight part: none
+      // left, it is the sphere of its caps.
+      const halfStraight = Math.max(shape.height / 2 - shape.radius, 0);
+      return RAPIER.ColliderDesc.capsule(halfStraight * uniform, shape.radius * uniform);
+    }
+    case 'mesh': {
       const vertices = collectVertices(object, scale);
       if (!vertices) return fallbackBox(object, scale);
-      return collider.shape === 'trimesh'
+      return shape.build === 'triangles'
         ? RAPIER.ColliderDesc.trimesh(
             vertices.positions,
             vertices.indices,

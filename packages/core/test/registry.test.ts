@@ -3,11 +3,14 @@ import {
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  conformColliderShape,
+  createColliderShape,
   createComponent,
   createComponentForEntity,
   createEntity,
   createMeshComponent,
   createMeshEntity,
+  createPhysicsMaterial,
   deserializeScene,
   fillComponent,
   serializeScene,
@@ -113,6 +116,53 @@ describe('fill', () => {
   });
 
   /*
+   * Physics data is the one place a stored field is not kept for its author:
+   * a collider is read against its factory, and its shape against the factory
+   * of the kind it names.
+   */
+  it('reads a collider written before scene 11 as a 1 m box with the default material, keeping its id and sensor', () => {
+    const stored = {
+      id: 'c1',
+      type: 'collider',
+      shape: 'capsule',
+      size: [0.5, 0.5, 0.5],
+      radius: 0.3,
+      halfHeight: 0.55,
+      friction: 0.2,
+      restitution: 0.5,
+      isSensor: true,
+    } as unknown as ComponentDoc;
+
+    // Its old fields dropped: kept, `friction` would sit beside `material` and
+    // read as the collider's to anyone opening the file.
+    expect(fillComponent(stored)).toEqual({
+      id: 'c1',
+      type: 'collider',
+      shape: createColliderShape('box'),
+      material: createPhysicsMaterial(),
+      isSensor: true,
+    });
+  });
+
+  it('fills a shape from its own kind, keeping each measure that fits', () => {
+    const stored = { kind: 'capsule', radius: 0.4, height: 'tall', size: [1, 1, 1] };
+    expect(conformColliderShape(stored)).toEqual({ ...createColliderShape('capsule'), radius: 0.4 });
+  });
+
+  it('builds a mesh whose build this build does not know from its triangles', () => {
+    expect(conformColliderShape({ kind: 'mesh', build: 'voxels' })).toEqual({
+      kind: 'mesh',
+      build: 'triangles',
+    });
+  });
+
+  it('reads a shape of a kind this build does not know as the factory box, its measures dropped', () => {
+    for (const kind of ['teapot', 'constructor', 7]) {
+      expect(conformColliderShape({ kind, size: [3, 3, 3] })).toEqual(createColliderShape('box'));
+    }
+  });
+
+  /*
    * Filling an unknown type against a type we do not have would invent a shape,
    * and the next save would write that invention over the author's data. A field
    * is deprecated, never lost.
@@ -183,7 +233,7 @@ describe('createComponentForEntity', () => {
   it('shapes a collider from the mesh it joins', () => {
     const entity = createMeshEntity('sphere');
     const collider = createComponentForEntity('collider', entity.components);
-    expect(collider).toMatchObject({ shape: 'sphere' });
+    expect(collider).toMatchObject({ shape: { kind: 'sphere', radius: 0.5 } });
   });
 
   it('is the plain factory for every other type', () => {

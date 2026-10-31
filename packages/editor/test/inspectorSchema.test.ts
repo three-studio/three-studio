@@ -1,9 +1,13 @@
 import {
+  COLLIDER_SHAPE_LABELS,
   COMPONENT_TYPES,
+  conformColliderShape,
   createAudioSource,
+  createColliderShape,
   createComponent,
   createEmptyScene,
   fieldOptions,
+  type ComponentDoc,
   type ComponentType,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -67,6 +71,43 @@ describe('the Audio Source pane', () => {
 });
 
 /*
+ * A collider's rows change with its shape's kind, so the checks below that walk
+ * every type's factory walk a collider of every kind too.
+ */
+const COLLIDER_KINDS = Object.keys(COLLIDER_SHAPE_LABELS);
+
+function colliderOfKind(kind: string): ComponentDoc {
+  const shape = conformColliderShape({ kind });
+  // The factory box comes back for a kind it does not know, which would test
+  // the box twice and the kind not at all.
+  expect(shape.kind).toBe(kind);
+  return { ...createComponent('collider'), shape };
+}
+
+describe('the Collider pane', () => {
+  const shapeRow = (): FieldSpec => {
+    const row = COMPONENT_PANES.collider.fields.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape',
+    );
+    if (!row) throw new Error('no Shape row');
+    return row;
+  };
+
+  it('shows the kind of the shape it reads', () => {
+    expect(shapeRow().toModel?.({ kind: 'capsule', radius: 0.3, height: 1.7 })).toBe('capsule');
+  });
+
+  it("writes a kind as that kind's whole default shape", () => {
+    // A box and a sphere share no measure, so another kind starts from its own.
+    expect(shapeRow().fromModel?.('sphere')).toEqual(createColliderShape('sphere'));
+  });
+
+  it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
+    expect(paneEntriesFor(colliderOfKind(kind)).key).toBe(`collider:${kind}`);
+  });
+});
+
+/*
  * A tuple in the document has to be declared as a pad, and a pad has to be
  * reading a tuple.
  *
@@ -77,17 +118,14 @@ describe('the Audio Source pane', () => {
  * directions are checked, because either half alone lets it back in.
  */
 describe('every row that reads a tuple says so', () => {
-  const rowsOf = (type: ComponentType): FieldSpec[] =>
-    paneEntriesFor(createComponent(type)).entries.filter(
-      (entry): entry is FieldSpec => 'path' in entry,
-    );
+  const rowsOf = (component: ComponentDoc): FieldSpec[] =>
+    paneEntriesFor(component).entries.filter((entry): entry is FieldSpec => 'path' in entry);
 
   const axesOf = (spec: FieldSpec): number | null =>
     spec.type === 'vec2' ? 2 : spec.type === 'vec3' ? 3 : null;
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
-    const component = createComponent(type);
-    for (const spec of rowsOf(type)) {
+  function checkTuples(where: string, component: ComponentDoc): void {
+    for (const spec of rowsOf(component)) {
       const value = readPath(component, spec.path);
       const axes = axesOf(spec);
 
@@ -95,18 +133,26 @@ describe('every row that reads a tuple says so', () => {
         // A row with converters of its own has said what it is doing; one
         // without is handing three numbers to a control that wants an object.
         if (spec.toModel === undefined) {
-          expect({ row: `${type}.${spec.path.join('.')}`, axes }).toEqual({
-            row: `${type}.${spec.path.join('.')}`,
+          expect({ row: `${where}.${spec.path.join('.')}`, axes }).toEqual({
+            row: `${where}.${spec.path.join('.')}`,
             axes: value.length,
           });
         }
       } else if (axes !== null) {
-        expect({ row: `${type}.${spec.path.join('.')}`, value }).toEqual({
-          row: `${type}.${spec.path.join('.')}`,
+        expect({ row: `${where}.${spec.path.join('.')}`, value }).toEqual({
+          row: `${where}.${spec.path.join('.')}`,
           value: expect.any(Array),
         });
       }
     }
+  }
+
+  it.each(COMPONENT_TYPES)('%s', (type) => {
+    checkTuples(type, createComponent(type));
+  });
+
+  it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
+    checkTuples(`collider:${kind}`, colliderOfKind(kind));
   });
 
   it('holds for the scene pane too', () => {
@@ -222,6 +268,14 @@ describe('a declared control fits the value it is bound to', () => {
     for (const spec of paneEntriesFor(component).entries) {
       if (!('path' in spec)) continue;
       check(type, spec, readPath(component, spec.path));
+    }
+  });
+
+  it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
+    const component = colliderOfKind(kind);
+    for (const spec of paneEntriesFor(component).entries) {
+      if (!('path' in spec)) continue;
+      check(`collider:${kind}`, spec, readPath(component, spec.path));
     }
   });
 

@@ -1,5 +1,6 @@
 import {
   componentsOf,
+  createColliderShape,
   createComponent,
   insertEntity,
   createEntity,
@@ -119,6 +120,44 @@ describe('prefab expansion', () => {
     const parts = componentsOf(scene, built.id);
     expect(parts.find((c) => c.id === body!.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
     expect(parts.find((c) => c.id === mesh!.id)?.type).toBe('mesh');
+  });
+
+  it('cannot put a name where a collider’s shape lives, from an override written before scene 11', () => {
+    const prefab = treePrefab();
+    const collider = createComponent('collider');
+    putComponent(prefab, prefab.root, collider);
+
+    const host = instanceOf(prefab);
+    (host.components[0] as PrefabInstanceComponent).overrides = {
+      [prefab.root]: { components: { [collider.id]: { shape: 'sphere', radius: 0.4, isSensor: true } } },
+    };
+
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+      (c) => c.id === collider.id,
+    );
+
+    // Spread alone, the name sat where the union lives and the runtime built
+    // nothing. Filled, it is the factory box, the sensor kept, `radius` gone.
+    expect(built).toEqual({ ...collider, shape: createColliderShape('box'), isSensor: true });
+  });
+
+  it('lets a whole shape in an override win', () => {
+    const prefab = treePrefab();
+    const collider = createComponent('collider');
+    putComponent(prefab, prefab.root, collider);
+    const sphere = { kind: 'sphere', radius: 0.4 };
+
+    const host = instanceOf(prefab);
+    (host.components[0] as PrefabInstanceComponent).overrides = {
+      [prefab.root]: { components: { [collider.id]: { shape: sphere } } },
+    };
+
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+      (c) => c.id === collider.id,
+    );
+    expect(built).toEqual({ ...collider, shape: sphere });
   });
 
   it('follows the component it names when the prefab is reordered', () => {

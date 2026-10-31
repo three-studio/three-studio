@@ -258,7 +258,7 @@ export class Engine {
       const entity = scene.entities[entityId];
       if (!entity) continue;
       const derived = Object.values(scene.components.collider[entityId] ?? {}).some(
-        (component) => component.shape === 'trimesh' || component.shape === 'convexHull',
+        (component) => component.shape.kind === 'mesh',
       );
       if (!derived) continue;
 

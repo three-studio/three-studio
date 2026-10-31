@@ -138,6 +138,12 @@ function raiseEyeHeightToFeet(scene: SceneDoc): void {
     // The same collider the physics builds and the same one the controller
     // measures from: all three go through `findComponent`, so an entity
     // carrying two cannot have them disagree about which one is the body.
+    //
+    // Already filled, so always a shape this build reads. Every collider that
+    // reaches here was written before scene 11 and reads as the factory's 1 m
+    // box, its old shape not converted: the eye moves by that box's half, 0.5,
+    // rather than by the capsule it may have been — a finite number, where the
+    // shape read as written would have made it `NaN`.
     const half = colliderHalfHeight(collider);
     for (const controller of Object.values(held)) controller.eyeHeight += half;
   }

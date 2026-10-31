@@ -738,9 +738,9 @@ describe('the companions a player controller brings', () => {
     addComponentWithDependencies(empty.entity.id, 'playerController');
 
     const collider = findComponent(scene(), empty.entity.id, 'collider');
-    // 0.3 + 0.55 + 0.55 + 0.3 is 1.70 m standing, so the origin sits 0.85 m up
-    // and the 1.6 m default eye height lands where an eye belongs.
-    expect(collider).toMatchObject({ shape: 'capsule', radius: 0.3, halfHeight: 0.55 });
+    // 1.70 m standing, so the origin sits 0.85 m up and the 1.6 m default eye
+    // height lands where an eye belongs.
+    expect(collider).toMatchObject({ shape: { kind: 'capsule', radius: 0.3, height: 1.7 } });
 
     const player = findComponent(scene(), empty.entity.id, 'playerController');
     expect(player?.eyeHeight).toBe(1.6);
@@ -758,7 +758,9 @@ describe('the companions a player controller brings', () => {
 
     addComponentWithDependencies(ball.entity.id, 'playerController');
 
-    expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({ shape: 'sphere' });
+    expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({
+      shape: { kind: 'sphere' },
+    });
   });
 
   it('still gives the body a kinematic type', () => {

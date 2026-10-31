@@ -127,6 +127,11 @@ describe('a material', () => {
     expect(conformMaterial({ ...createMaterial(), wrap: 'wobble' }).wrap).toBe('repeat');
   });
 
+  it('reads a union member only as an own key of its labels', () => {
+    // `in` walks the prototype, and every record has a `constructor`.
+    expect(conformMaterial({ side: 'constructor' }).side).toBe('front');
+  });
+
   it('rejects a tuple of the wrong length', () => {
     // `tiling` is a `Vec2`. A three-element array is a different type, not a
     // longer one, and three lands in a shader as a silent mistake.

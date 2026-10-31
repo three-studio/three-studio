@@ -117,13 +117,12 @@ export type {
  */
 export { field, fieldOptions, optionsFrom } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
+export { conform, conformPatch } from './conform';
 export {
-  conform,
   conformAssetSettings,
   conformLayoutPreferences,
   conformShortcutPreferences,
   conformMaterial,
-  conformPatch,
   conformSettingsPatch,
 } from './guards';
 export type {
@@ -179,6 +178,7 @@ export type {
   MaterialDef,
   MaterialSide,
   MeshComponent,
+  PhysicsMaterialDef,
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
@@ -219,6 +219,7 @@ export {
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
   MATERIAL_SIDE_LABELS,
+  MESH_BUILD_LABELS,
   PLAYER_CONTROLLER_MODE_LABELS,
   TEXTURE_WRAP_LABELS,
   TOUCH_CONTROLS_LABELS,
@@ -227,9 +228,12 @@ export type {
   BackgroundMode,
   BodyType,
   ColliderShape,
+  ColliderShapeKind,
+  ColliderShapeOf,
   DistanceModel,
   EnvironmentMode,
   FogMode,
+  MeshBuild,
   PlayerControllerMode,
   TouchControlsMode,
 } from './scene/schema';
@@ -244,6 +248,7 @@ export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
 export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
 export { createMaterial } from './scene/material';
+export { conformPhysicsMaterial, createPhysicsMaterial } from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';
@@ -299,7 +304,11 @@ export type { ComponentDefinition, ComponentIcon } from './components';
  * answer the scene migration used, and two of them would put a camera and a
  * capsule in different places.
  */
-export { colliderHalfHeight } from './components/collider/defaults';
+export {
+  colliderHalfHeight,
+  conformColliderShape,
+  createColliderShape,
+} from './components/collider/defaults';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';

@@ -8,6 +8,7 @@ import {
   findComponent,
   type ComponentHost,
 } from './components';
+import { fillComponent } from '../components';
 import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
@@ -535,12 +536,16 @@ export function applyPrefabOverride(
     // used to be silent — an index still in range but pointing at a different
     // component, which is what the old scheme wrote onto the wrong one.
     if (index === -1) continue;
+    // Filled again once the override is spread: an override is stored data
+    // too, written against the type as it was. One saved by 0.6.0 as
+    // `{ shape: 'sphere', radius: 0.4 }` put a name where a collider's shape
+    // lives now, and the runtime built nothing from it. For every other type,
+    // the fill of a whole component is that same component.
     out[index] = {
-      ...out[index],
-      ...properties,
+      ...fillComponent({ ...out[index], ...properties } as ComponentDoc),
       // Never overridable: it is what this very lookup keys on.
       id: componentId,
-    } as ComponentDoc;
+    };
   }
   return out;
 }

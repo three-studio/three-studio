@@ -65,7 +65,7 @@ export function paneEntriesFor(component: ComponentDoc): {
 } {
   const pane = COMPONENT_PANES[component.type];
   // The geometry slot expands in place, so a type that never declares one — all
-  // but `mesh` — is unaffected.
+  // but `mesh` and `collider` — is unaffected.
   const entries: Exclude<PaneEntry, GeometrySlotSpec>[] = pane.fields.flatMap((entry) =>
     isGeometrySlot(entry) ? [...(pane.geometryFields?.(component) ?? [])] : [entry],
   );
