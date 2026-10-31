@@ -1,4 +1,5 @@
 import {
+  bodyOf,
   collidersOfBody,
   createComponent,
   createEntity,
@@ -91,6 +92,35 @@ describe('physicsBodies', () => {
     const above = new Set(colliders.flatMap((id) => entityWorldMatrixPath(scene, id)));
     expect(read.size).toBeGreaterThan(0);
     for (const key of read) expect(above).toContain(key);
+  });
+});
+
+describe('bodyOf', () => {
+  it('names the body a collider rides', () => {
+    const parts = tree();
+    const scene = sceneWith(Object.values(parts));
+
+    const body = (name: keyof typeof parts) => bodyOf(scene, parts[name].entity.id);
+    expect(body('B')).toBe(parts.A.entity.id);
+    expect(body('C')).toBe(parts.A.entity.id);
+    expect(body('D')).toBe(parts.D.entity.id);
+    expect(body('E')).toBe(parts.D.entity.id);
+    expect(body('F')).toBeNull();
+    expect(body('G')).toBe(parts.G.entity.id);
+  });
+
+  it('walks up, so a prefab’s root placed under a body rides it', () => {
+    const crate = withCollider('Crate');
+    const prefab = prefabWith('Crate', [crate], crate.entity.id);
+    const cart = withRigidBody('Cart');
+    const placed = createEntity('Placed', [createPrefabInstance('prefab-1')]);
+    nest(cart, placed);
+
+    const { scene } = expandPrefabs(sceneWith([cart, placed]), {
+      get: (id) => (id === 'prefab-1' ? prefab : undefined),
+    });
+
+    expect(bodyOf(scene, instancedId(placed.entity.id, crate.entity.id))).toBe(cart.entity.id);
   });
 });
 

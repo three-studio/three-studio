@@ -1,4 +1,4 @@
-import { entitiesWith } from './components';
+import { componentsOfType, entitiesWith } from './components';
 import type { SceneDoc } from './schema';
 
 /*
@@ -41,6 +41,21 @@ export function collidersOfBody(scene: SceneDoc, entityId: string): readonly str
 }
 
 /**
+ * The entity whose Rigid Body carries the colliders of `entityId`: the nearest
+ * up the tree, its own included. `null` when no entity above it holds one, and
+ * its colliders are level geometry.
+ *
+ * The editor's collider outline asks it for each selected collider on every
+ * frame, so it looks each entity up in the Rigid Body table rather than
+ * gathering the table first: the cost is the entity's depth, whatever the scene
+ * holds.
+ */
+export function bodyOf(scene: SceneDoc, entityId: string): string | null {
+  const rigidbodies = componentsOfType(scene, 'rigidbody');
+  return riddenBy(scene, entityId, { has: (id) => Object.hasOwn(rigidbodies, id) });
+}
+
+/**
  * The nearest of `bodies` up the tree from `entityId`, its own included, or
  * `null`. A cycle in a broken document ends the walk rather than looping it.
  *
@@ -48,7 +63,11 @@ export function collidersOfBody(scene: SceneDoc, entityId: string): readonly str
  * scene of two thousand props and a dozen colliders reads the dozen and their
  * ancestors.
  */
-function riddenBy(scene: SceneDoc, entityId: string, bodies: ReadonlySet<string>): string | null {
+function riddenBy(
+  scene: SceneDoc,
+  entityId: string,
+  bodies: Pick<ReadonlySet<string>, 'has'>,
+): string | null {
   const seen = new Set<string>();
   let current: string | null = entityId;
   while (current !== null && !seen.has(current)) {

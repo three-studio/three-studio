@@ -351,7 +351,7 @@ export { capabilitiesOf } from './scene/capabilities';
 export type { EntityCapability } from './scene/capabilities';
 
 /* Which body each collider rides: the build, the warnings and the editor ask here. */
-export { collidersOfBody, physicsBodies } from './scene/bodies';
+export { bodyOf, collidersOfBody, physicsBodies } from './scene/bodies';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';

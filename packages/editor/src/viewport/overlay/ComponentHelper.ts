@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentOfType, ComponentType } from '@three-studio/core';
+import type { ComponentDoc, ComponentOfType, ComponentType, SceneDoc } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 
 /*
@@ -23,8 +23,13 @@ export interface HelperHandle {
    * ignores this; an audio source builds no object at all, so the document is
    * the only place its radius and its cone exist. Optional in practice —
    * everything that wraps one of three's helpers drops it.
+   *
+   * The scene too, for an annotation that depends on another entity: a
+   * collider is built for the body it rides, and the Rigid Body deciding that
+   * can sit on any entity above it. The expanded scene, in which a prefab's
+   * contents name the entity that placed them as their parent.
    */
-  update(component: ComponentDoc): void;
+  update(component: ComponentDoc, scene: SceneDoc): void;
   dispose(): void;
 }
 
@@ -76,7 +81,7 @@ export function annotation(
   // its own. Requiring the method meant either a cast at the call site or a
   // no-op passed in to satisfy a signature — both of which hide that a helper
   // needing nothing from us is a legitimate answer.
-  object: Object3D & { update?(component: ComponentDoc): void; dispose(): void },
+  object: Object3D & { update?(component: ComponentDoc, scene: SceneDoc): void; dispose(): void },
   after?: () => void,
 ): HelperHandle {
   // The whole subtree, not just the root: three's helpers hang their lines off
@@ -93,11 +98,11 @@ export function annotation(
 
   return {
     objects: [object],
-    update: (component) => {
+    update: (component, scene) => {
       // Forwarded, and ignored by everything that wraps one of three's helpers:
       // their `update()` takes no arguments, which is assignable to this and
-      // simply drops it.
-      object.update?.(component);
+      // simply drops them.
+      object.update?.(component, scene);
       after?.();
     },
     dispose: () => {

@@ -575,8 +575,17 @@ function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc
  * 2.82 instead of 3. No shape can follow a shear; the collider is the one of
  * the decomposed pose, whose scale is the length of each axis of the world
  * matrix, Unity's lossy scale.
+ *
+ * On the barrel for the editor's collider outline, which must be drawn at the
+ * pose the collider is built at: worked out a second way, the two parted under
+ * exactly this shear.
  */
-function worldPose(object: Object3D, position: Vector3, quaternion: Quaternion, scale: Vector3): void {
+export function worldPose(
+  object: Object3D,
+  position: Vector3,
+  quaternion: Quaternion,
+  scale: Vector3,
+): void {
   object.updateWorldMatrix(true, false);
   object.matrixWorld.decompose(position, quaternion, scale);
   quaternion.normalize();

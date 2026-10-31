@@ -42,7 +42,7 @@ export class SelectionHelpers {
   readonly root = new Group();
 
   /**
-   * The three types that annotate anything, out of the twelve that answer.
+   * The four types that annotate anything, out of the thirteen that answer.
    *
    * Built from the declarations rather than listed here: a type that gains a
    * helper says so in its own folder, and this file does not change. No cast is
@@ -96,7 +96,7 @@ export class SelectionHelpers {
           const existing = this.mounted.get(key);
           if (existing) {
             if (existing.source === source) {
-              existing.handle.update(component);
+              existing.handle.update(component, scene);
               continue;
             }
             // The system rebuilt: a different light `kind`, a different camera
@@ -111,7 +111,7 @@ export class SelectionHelpers {
           if (!handle) continue;
           for (const object of handle.objects) this.root.add(object);
           this.mounted.set(key, { handle, source });
-          handle.update(component);
+          handle.update(component, scene);
         }
       }
     }
