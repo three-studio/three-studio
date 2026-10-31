@@ -78,7 +78,7 @@ export type {
 } from './audio/playback';
 
 /* Physics. */
-export { FIXED_STEP, PhysicsWorld, applyWorldTransform } from './physics/PhysicsWorld';
+export { PhysicsWorld, applyWorldTransform } from './physics/PhysicsWorld';
 export type { PhysicsBody } from './physics/PhysicsWorld';
 
 /* Scripting: the base class user scripts extend, and the registry the host compiles into. */

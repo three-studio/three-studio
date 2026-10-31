@@ -5,7 +5,7 @@ import {
   type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
-import { FIXED_STEP, studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
+import { studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
 import {
   PerspectiveCamera,
   Vector3,
@@ -556,10 +556,14 @@ export class EditorViewport {
       // Paused still renders, so the frame stays live and Step can advance it.
       if (playState === 'playing') engine.update(delta);
       else if (consumeStep()) {
+        // One tick of the project's step, as the engine reads it. A constant
+        // here was 1/60 whatever the project said: at 30 Hz every other Step
+        // ran no tick, and at 120 Hz every Step ran two.
+        //
         // The clock too, or the surfaces hold still through a step that moves
         // everything else. `step` is the one thing a zero timescale cannot veto.
-        studioTime.step(FIXED_STEP);
-        engine.update(FIXED_STEP);
+        studioTime.step(engine.fixedStep);
+        engine.update(engine.fixedStep);
       }
 
       // Paused means paused, including the part you can hear. The root gain

@@ -12,12 +12,6 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Box3, Matrix4, Mesh, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 
-/** Physics runs at a fixed rate so behaviour does not depend on frame rate. */
-/** Default step. The project can change it; see `PhysicsSettings`. */
-export const FIXED_STEP = 1 / 60;
-/** Cap on catch-up steps; beyond this the simulation slows rather than spirals. */
-const DEFAULT_MAX_SUBSTEPS = 5;
-
 export interface PhysicsBody {
   entityId: string;
   body: RAPIER.RigidBody;
@@ -58,9 +52,9 @@ export class PhysicsWorld {
   private readonly fixedStep: number;
   private readonly maxSubsteps: number;
 
-  private constructor(world: RAPIER.World, settings?: PhysicsSettings) {
-    this.fixedStep = settings?.fixedTimestep ?? FIXED_STEP;
-    this.maxSubsteps = settings?.maxSubsteps ?? DEFAULT_MAX_SUBSTEPS;
+  private constructor(world: RAPIER.World, settings: PhysicsSettings) {
+    this.fixedStep = settings.fixedTimestep;
+    this.maxSubsteps = settings.maxSubsteps;
     this.world = world;
     this.world.timestep = this.fixedStep;
   }
@@ -68,14 +62,15 @@ export class PhysicsWorld {
   /**
    * Rapier is WebAssembly and must be initialised before any API is touched.
    * The `-compat` build inlines the module, so there is no extra file to serve.
+   *
+   * The settings are required, and the world has no defaults of its own: they
+   * were a second copy of `createPhysicsSettings()`, and the copy the editor's
+   * Step read, so it advanced 1/60 whatever step the project had chosen.
    */
-  static async create(settings?: PhysicsSettings): Promise<PhysicsWorld> {
-    const gravity = settings?.gravity ?? [0, -9.81, 0];
+  static async create(settings: PhysicsSettings): Promise<PhysicsWorld> {
     await RAPIER.init();
-    return new PhysicsWorld(
-      new RAPIER.World({ x: gravity[0], y: gravity[1], z: gravity[2] }),
-      settings,
-    );
+    const [x, y, z] = settings.gravity;
+    return new PhysicsWorld(new RAPIER.World({ x, y, z }), settings);
   }
 
   /**

@@ -1,5 +1,6 @@
 import {
   componentsOfType,
+  createPhysicsSettings,
   entitiesWith,
   hasComponent,
   type MaterialDef,
@@ -149,6 +150,13 @@ export class Engine {
   readonly physics: PhysicsWorld | null;
   /** `null` when the host handed over no context. */
   readonly audio: AudioEngine | null;
+  /**
+   * One tick, in seconds: the project's fixed step.
+   *
+   * What a host advances `update` by to move the game exactly one tick, as the
+   * editor's Step does. Set with physics off too, from the same settings.
+   */
+  readonly fixedStep: number;
 
   /** Reported to the host so it can surface a scene with no camera. */
   readonly warnings: string[] = [];
@@ -171,7 +179,11 @@ export class Engine {
   /** How many `audioListener` components the scene holds. Decides the fallback. */
   private listenerOwners = 0;
 
-  private constructor(options: EngineOptions, physics: PhysicsWorld | null) {
+  private constructor(
+    options: EngineOptions,
+    physicsSettings: PhysicsSettings,
+    physics: PhysicsWorld | null,
+  ) {
     // The renderer is handed over rather than owned: this engine still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
@@ -185,6 +197,7 @@ export class Engine {
     });
     this.input = new Input(options.domElement, options.input);
     this.physics = physics;
+    this.fixedStep = physicsSettings.fixedTimestep;
 
     this.audio =
       options.audioContext === undefined
@@ -296,9 +309,11 @@ export class Engine {
   }
 
   static async create(options: EngineOptions): Promise<Engine> {
+    // Resolved once, so the world ticks by the step the engine tells its host.
+    const physicsSettings = options.physicsSettings ?? createPhysicsSettings();
     const physics =
-      options.enablePhysics === false ? null : await PhysicsWorld.create(options.physicsSettings);
-    const engine = new Engine(options, physics);
+      options.enablePhysics === false ? null : await PhysicsWorld.create(physicsSettings);
+    const engine = new Engine(options, physicsSettings, physics);
 
     // Order matters, and each step needs the one before it:
     //
