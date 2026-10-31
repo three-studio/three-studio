@@ -49,6 +49,8 @@ class Body implements BodyHandle {
    * someone else's write.
    */
   private readonly written = { position: new Vector3(), quaternion: new Quaternion() };
+  /** The body's world pose when the last tick began: where drawing between ticks starts. */
+  private readonly previous = { position: new Vector3(), quaternion: new Quaternion() };
 
   constructor(
     readonly rapier: RAPIER.RigidBody,
@@ -61,8 +63,14 @@ class Body implements BodyHandle {
      */
     readonly object: Object3D,
     public driver: Driver,
+    /**
+     * The Rigid Body's `interpolate`. A character's body is drawn between ticks
+     * whatever it says.
+     */
+    private readonly interpolate: boolean,
   ) {
-    this.remember();
+    this.rememberWritten();
+    this.rememberPrevious();
   }
 
   /**
@@ -81,6 +89,7 @@ class Body implements BodyHandle {
     if (this.driver === 'none' || !this.enabled) return;
     if (this.driver !== 'transform') {
       if (this.moved()) this.teleport();
+      if (this.smooth) this.rememberPrevious();
       return;
     }
     this.object.updateWorldMatrix(true, false);
@@ -93,12 +102,17 @@ class Body implements BodyHandle {
    * After the frame's ticks: the pose of a body the solver or a character
    * moves, onto its object.
    *
+   * `alpha` is how far the clock has run into the next tick. A smooth body is
+   * drawn that far from where its last tick began towards where it ended, so it
+   * moves on every frame whatever the display's rate, up to a tick behind its
+   * body.
+   *
    * Not a kinematic body's: it follows its entity, which is where its script
    * put it. Drawn at its body, the body nothing had moved was written over the
    * script's move every frame, and a moving platform never left its place. Nor
    * a disabled body's, since whoever disabled it places its entity.
    */
-  draw(): void {
+  draw(alpha: number): void {
     if ((this.driver !== 'solver' && this.driver !== 'controller') || !this.enabled) return;
     // A frame with no tick still takes a write made in `onUpdate` or `onLateUpdate`.
     if (this.moved()) this.teleport();
@@ -107,8 +121,25 @@ class Body implements BodyHandle {
     const rotation = this.rapier.rotation();
     _worldPosition.set(translation.x, translation.y, translation.z);
     _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
-    applyWorldTransform(this.object, _worldPosition, _worldQuaternion);
-    this.remember();
+    if (this.smooth) {
+      // Into scratches of their own. `slerpQuaternions(a, b, t)` copies `a` into
+      // its target before it reads `b`, so `_worldQuaternion` as both would draw
+      // `previous`: the aliasing that once drew every turning body unrotated.
+      _drawnPosition.lerpVectors(this.previous.position, _worldPosition, alpha);
+      _drawnQuaternion.slerpQuaternions(this.previous.quaternion, _worldQuaternion, alpha);
+      applyWorldTransform(this.object, _drawnPosition, _drawnQuaternion);
+    } else {
+      applyWorldTransform(this.object, _worldPosition, _worldQuaternion);
+    }
+    this.rememberWritten();
+  }
+
+  /**
+   * Drawn between its last two ticks. The player's camera rides a character's
+   * body, which always is.
+   */
+  private get smooth(): boolean {
+    return this.driver === 'controller' || this.interpolate;
   }
 
   /**
@@ -137,12 +168,19 @@ class Body implements BodyHandle {
     this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setTranslation(_worldPosition, true);
     this.rapier.setRotation(_worldQuaternion, true);
-    this.remember();
+    // From there, rather than drawn sweeping from where it was.
+    this.rememberPrevious();
+    this.rememberWritten();
   }
 
-  private remember(): void {
+  private rememberWritten(): void {
     this.written.position.copy(this.object.position);
     this.written.quaternion.copy(this.object.quaternion);
+  }
+
+  private rememberPrevious(): void {
+    this.previous.position.copy(this.rapier.translation());
+    this.previous.quaternion.copy(this.rapier.rotation());
   }
 
   // Rapier hands back a fresh object on every read, which is the copy the API
@@ -167,6 +205,8 @@ class Body implements BodyHandle {
 
 const _worldPosition = new Vector3();
 const _worldQuaternion = new Quaternion();
+const _drawnPosition = new Vector3();
+const _drawnQuaternion = new Quaternion();
 const _parentQuaternion = new Quaternion();
 const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
@@ -281,9 +321,16 @@ export class PhysicsWorld implements PhysicsApi {
   /**
    * Draws the bodies onto their entities once the frame's ticks have run, in
    * the order they were built: parents first.
+   *
+   * The step runs at the project's rate and the screen at its own. Drawn at its
+   * last tick, a body stood still on every other frame at 120 Hz, and on three
+   * frames out of four at a quarter of the time scale. A body that asks is
+   * drawn between its last two ticks instead.
    */
   writeBack(): void {
-    for (const body of this.bodies.values()) body.draw();
+    // Below one: `step` takes in no more time than the ticks it may run, and runs them.
+    const alpha = this.accumulator / this.fixedStep;
+    for (const body of this.bodies.values()) body.draw(alpha);
   }
 
   body(entityId: string): BodyHandle | null {
@@ -358,7 +405,10 @@ export class PhysicsWorld implements PhysicsApi {
       }
     }
 
-    this.bodies.set(entity.id, new Body(body, created, object, DRIVER_OF[bodyType]));
+    this.bodies.set(
+      entity.id,
+      new Body(body, created, object, DRIVER_OF[bodyType], rigidbody?.interpolate ?? false),
+    );
   }
 }
 
@@ -491,7 +541,7 @@ export function applyWorldTransform(
 
   object.position.copy(worldPosition).applyMatrix4(_parentInverse);
   // A scratch no caller can be holding. This read the parent's rotation into
-  // `_worldQuaternion`, which `writeBack` passes in as `worldQuaternion`: the
+  // `_worldQuaternion`, which `draw` passes in as `worldQuaternion`: the
   // body's rotation was overwritten before it was used, every body the solver
   // turned was drawn at the identity, and a rolling ball was drawn sliding.
   parent.getWorldQuaternion(_parentQuaternion);

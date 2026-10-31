@@ -1,4 +1,4 @@
-import { BODY_TYPE_LABELS, optionsFrom } from '@three-studio/core';
+import { BODY_TYPE_LABELS, optionsFrom, type ComponentDoc } from '@three-studio/core';
 import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
@@ -23,5 +23,14 @@ export const inspector: ComponentSchema = {
     },
     { path: ['gravityScale'], label: 'Gravity scale', type: 'number', min: -5, max: 5, step: 0.1 },
     { path: ['ccd'], label: 'Continuous detection' },
+    { path: ['interpolate'], label: 'Interpolate', visibleWhen: isDynamic },
   ],
 };
+
+/**
+ * The rows only the solver reads. A kinematic body is drawn where its
+ * transform is, and the player's always between ticks, whatever they say.
+ */
+function isDynamic(component: ComponentDoc): boolean {
+  return component.type === 'rigidbody' && component.bodyType === 'dynamic';
+}

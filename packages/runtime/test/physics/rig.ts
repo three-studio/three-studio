@@ -10,6 +10,7 @@ import {
   type GeometryKind,
   type PhysicsSettings,
   type PlayerControllerComponent,
+  type RigidBodyComponent,
   type Vec3,
 } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
@@ -36,12 +37,21 @@ export interface Pose {
 
 export interface PhysicsRig {
   readonly engine: Engine;
-  /** Whole frames of one fixed step each, through `Engine.update`. */
-  run(seconds: number): void;
+  /**
+   * Whole frames through `Engine.update`: of one fixed step each, or of
+   * `1 / framesPerSecond`, as a display of that rate draws them.
+   */
+  run(seconds: number, framesPerSecond?: number): void;
   /** Holds a key down on the rig's own canvas, as a person typing into the game. */
   press(code: string): void;
   release(code: string): void;
-  /** Where the entity is drawn: its object's world pose. */
+  /**
+   * Where the entity is drawn: its object's world pose.
+   *
+   * Up to a tick behind its solved pose for a body drawn between ticks, which
+   * a new body and a character are. A test comparing the two builds its bodies
+   * with `{ interpolate: false }`, or compares them at rest.
+   */
   drawn(entityId: string): Pose;
   /** Where the solver holds its body, read through the API a behaviour reads it through. */
   solved(entityId: string): Pose;
@@ -72,9 +82,12 @@ export async function physicsRig(
 
   return {
     engine,
-    run(seconds) {
-      const frames = Math.round(seconds / step);
-      for (let frame = 0; frame < frames; frame++) engine.update(step);
+    run(seconds, framesPerSecond) {
+      // The step itself rather than `1 / (1 / step)`, which can come out an ulp
+      // short of it: a frame that short runs no tick.
+      const delta = framesPerSecond ? 1 / framesPerSecond : step;
+      const frames = Math.round(seconds / delta);
+      for (let frame = 0; frame < frames; frame++) engine.update(delta);
     },
     press(code) {
       canvas.dispatchEvent(keyEvent('keydown', code));
@@ -154,11 +167,18 @@ export function ground(tiltDegrees = 0): EntityTemplate {
   return template;
 }
 
-/** A primitive with a dynamic rigid body and the collider `createComponentForEntity` guesses for it. */
-export function withBody(kind: GeometryKind, position: Vec3): EntityTemplate {
+/**
+ * A primitive with a dynamic rigid body, of these settings, and the collider
+ * `createComponentForEntity` guesses for it.
+ */
+export function withBody(
+  kind: GeometryKind,
+  position: Vec3,
+  body?: Partial<RigidBodyComponent>,
+): EntityTemplate {
   const template = createMeshEntity(kind);
   template.components.push(
-    createComponent('rigidbody'),
+    { ...createComponent('rigidbody'), ...body },
     createComponentForEntity('collider', template.components),
   );
   template.entity.transform.position = position;

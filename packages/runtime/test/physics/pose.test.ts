@@ -14,7 +14,8 @@ afterAll(takeTheBrowserBack);
 
 describe('a body is drawn as the solver holds it', () => {
   it('a ball rolling down a slope is drawn turned as its body turns', async () => {
-    const ball = withBody('sphere', [0, 1, 0]);
+    // Drawn at its body, so the two can be compared at any moment.
+    const ball = withBody('sphere', [0, 1, 0], { interpolate: false });
     const rig = await physicsRig([ground(15), ball]);
 
     rig.run(1);
@@ -26,9 +27,9 @@ describe('a body is drawn as the solver holds it', () => {
   });
 
   it('a nested body is drawn where its body is, whichever the table lists first', async () => {
-    const parent = withBody('box', [0, 3, 0]);
+    const parent = withBody('box', [0, 3, 0], { interpolate: false });
     parent.entity.transform.rotation = [0, 0, Math.PI / 6];
-    const child = withBody('sphere', [3, 2, 0]);
+    const child = withBody('sphere', [3, 2, 0], { interpolate: false });
     child.entity.parent = parent.entity.id;
     parent.entity.children = [child.entity.id];
     // The child first on purpose: written before its parent, it was placed

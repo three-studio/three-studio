@@ -135,6 +135,23 @@ describe('scene migration', () => {
     expect(player).toMatchObject({ sprintMultiplier: 1.8, eyeHeight: 1.6 });
   });
 
+  it('fills a rigid body written before interpolation, from its factory', () => {
+    const json = olderScene((raw) => {
+      raw['version'] = 10;
+      for (const component of rawComponents(raw, 'rigidbody')) {
+        delete component['interpolate'];
+        component['mass'] = 12;
+      }
+    });
+
+    const migrated = deserializeScene(json);
+    const entityId = Object.keys(migrated.entities)[0]!;
+    expect(findComponent(migrated, entityId, 'rigidbody')).toMatchObject({
+      interpolate: true,
+      mass: 12,
+    });
+  });
+
   it('fills a light of format 4, which had no shadow settings at all', () => {
     /*
      * Written by hand in the old shape rather than by stripping the new one,
