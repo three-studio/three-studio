@@ -1,3 +1,4 @@
+import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ground, physicsRig, player, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
 
@@ -25,6 +26,24 @@ describe('a character', () => {
     expect(drawn.quaternion.angleTo(rig.solved(ball.entity.id).quaternion)).toBeLessThan(1e-4);
     const at = rig.drawn(walker.entity.id).position;
     expect(at.distanceTo(rig.solved(walker.entity.id).position)).toBeLessThan(1e-5);
+  });
+
+  it('walks on a dynamic body, and stays upright', async () => {
+    // A Rigid Body added before the Player Controller kept its Dynamic type: the
+    // solver drove the body, the character's targets moved nothing, and the
+    // player stood still.
+    const walker = player([0, 1, 0], { bodyType: 'dynamic' });
+    const rig = await physicsRig([ground(), walker]);
+
+    rig.run(0.5);
+    const from = rig.drawn(walker.entity.id).position;
+    rig.press('KeyW');
+    rig.run(1);
+
+    const { position, quaternion } = rig.drawn(walker.entity.id);
+    expect(from.z - position.z).toBeGreaterThan(4);
+    const up = new Vector3(0, 1, 0);
+    expect(up.clone().applyQuaternion(quaternion).angleTo(up)).toBeLessThan((1 * Math.PI) / 180);
   });
 
   it('leaves no body in the world while it flies', async () => {

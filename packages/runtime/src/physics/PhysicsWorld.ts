@@ -213,6 +213,11 @@ export class PhysicsWorld implements PhysicsApi {
     // The world writes this body to its entity from now on, as it writes every
     // other, so the character is placed in the same parents-first pass.
     body.driver = 'controller';
+    // Kinematic whatever its component says, so the character is its only
+    // driver. Add Component makes kinematic only the body it brings itself, and
+    // a Rigid Body added before the Player Controller stayed Dynamic: the solver
+    // drove it, the character's targets moved nothing, and the player stood still.
+    body.rapier.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     return new Character(
       this.world.createCharacterController(settings.offset),
       body.rapier,
