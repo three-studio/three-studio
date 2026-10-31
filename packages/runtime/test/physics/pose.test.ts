@@ -24,4 +24,25 @@ describe('a body is drawn as the solver holds it', () => {
     // Rolled, not slid: the identity is where it used to be drawn.
     expect(drawn.angleTo(new Quaternion())).toBeGreaterThan(1);
   });
+
+  it('a nested body is drawn where its body is, whichever the table lists first', async () => {
+    const parent = withBody('box', [0, 3, 0]);
+    parent.entity.transform.rotation = [0, 0, Math.PI / 6];
+    const child = withBody('sphere', [3, 2, 0]);
+    child.entity.parent = parent.entity.id;
+    parent.entity.children = [child.entity.id];
+    // The child first on purpose: written before its parent, it was placed
+    // against the pose its parent was about to leave, one frame of the fall off
+    // its body.
+    const rig = await physicsRig([child, parent]);
+
+    rig.run(0.5);
+
+    for (const { entity } of [parent, child]) {
+      const drawn = rig.drawn(entity.id);
+      const solved = rig.solved(entity.id);
+      expect(drawn.position.distanceTo(solved.position)).toBeLessThan(1e-5);
+      expect(drawn.quaternion.angleTo(solved.quaternion)).toBeLessThan(1e-4);
+    }
+  });
 });

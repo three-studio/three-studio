@@ -1,5 +1,6 @@
 import {
   entitiesWith,
+  entityWorldMatrixPath,
   findComponent,
   type ColliderComponent,
   type EntityDoc,
@@ -90,7 +91,15 @@ export class PhysicsWorld {
       ...entitiesWith(scene, 'collider'),
     ]);
 
-    for (const entityId of physical) {
+    // Parents first, because `writeBack` writes the bodies in the order they
+    // were added. A child written before its parent was placed against the pose
+    // its parent was about to leave, and drawn a frame of its parent's motion
+    // off its own body. `sort` is stable, so siblings keep their table order.
+    const parentsFirst = [...physical]
+      .map((entityId) => ({ entityId, depth: entityWorldMatrixPath(scene, entityId).length }))
+      .sort((a, b) => a.depth - b.depth);
+
+    for (const { entityId } of parentsFirst) {
       const entity = scene.entities[entityId];
       if (!entity) continue;
 
