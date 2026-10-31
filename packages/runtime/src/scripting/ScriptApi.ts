@@ -102,7 +102,13 @@ export abstract class Behaviour {
 
   /** The entity this script is attached to. */
   readonly entity!: EntityDoc;
-  /** Its transform, in three.js terms. Mutating it moves the object. */
+  /**
+   * Its transform, in three.js terms. Mutating it moves the object, and the
+   * entity's body with it:
+   *  - a dynamic body, or the player, is put there and keeps its speed;
+   *  - a kinematic body moves there at the next tick, carrying what rests on it;
+   *  - a fixed body's collider stays where it is.
+   */
   readonly transform!: Object3D;
   readonly input!: Input;
   /**

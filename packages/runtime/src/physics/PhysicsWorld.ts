@@ -44,6 +44,12 @@ const DRIVER_OF: Record<RigidBodyComponent['bodyType'], Driver> = {
  * entity's object and its driver.
  */
 class Body implements BodyHandle {
+  /**
+   * The object's local pose as the world last left it. Anything else there is
+   * someone else's write.
+   */
+  private readonly written = { position: new Vector3(), quaternion: new Quaternion() };
+
   constructor(
     readonly rapier: RAPIER.RigidBody,
     /** The one a character sweeps; `null` when the entity has no collider. */
@@ -55,22 +61,88 @@ class Body implements BodyHandle {
      */
     readonly object: Object3D,
     public driver: Driver,
-  ) {}
+  ) {
+    this.remember();
+  }
 
   /**
-   * Before each tick, once the behaviours' `fixedUpdate` has run: a kinematic
-   * body takes its object's world pose as its next target, so a script or an
-   * animation moves it by moving its entity, and contacts carry what rests on
-   * it. An object that stays still holds its body still.
+   * Before each tick, once the behaviours' `fixedUpdate` has run.
+   *
+   * A kinematic body takes its object's world pose as its next target, so a
+   * script or an animation moves it by moving its entity, and contacts carry
+   * what rests on it. An object that stays still holds its body still.
+   *
+   * A body the solver or a character moves is put where its object is, if
+   * someone wrote the object since the world did.
    *
    * A disabled body is left alone: whoever disabled it places its entity.
    */
   beforeTick(): void {
-    if (this.driver !== 'transform' || !this.enabled) return;
+    if (this.driver === 'none' || !this.enabled) return;
+    if (this.driver !== 'transform') {
+      if (this.moved()) this.teleport();
+      return;
+    }
     this.object.updateWorldMatrix(true, false);
     this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setNextKinematicTranslation(_worldPosition);
     this.rapier.setNextKinematicRotation(_worldQuaternion);
+  }
+
+  /**
+   * After the frame's ticks: the pose of a body the solver or a character
+   * moves, onto its object.
+   *
+   * Not a kinematic body's: it follows its entity, which is where its script
+   * put it. Drawn at its body, the body nothing had moved was written over the
+   * script's move every frame, and a moving platform never left its place. Nor
+   * a disabled body's, since whoever disabled it places its entity.
+   */
+  draw(): void {
+    if ((this.driver !== 'solver' && this.driver !== 'controller') || !this.enabled) return;
+    // A frame with no tick still takes a write made in `onUpdate` or `onLateUpdate`.
+    if (this.moved()) this.teleport();
+
+    const translation = this.rapier.translation();
+    const rotation = this.rapier.rotation();
+    _worldPosition.set(translation.x, translation.y, translation.z);
+    _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    applyWorldTransform(this.object, _worldPosition, _worldQuaternion);
+    this.remember();
+  }
+
+  /**
+   * Whether someone wrote the object since the world did.
+   *
+   * Exact, on purpose. The world keeps what it put there, so the same numbers
+   * stay until someone writes, and its own write never reads as a script's; a
+   * tolerance would let a small write through as none. A write through
+   * `rotation` reaches `quaternion`, which three keeps in step. `scale` is not
+   * compared: a collider keeps the size it was built with.
+   */
+  private moved(): boolean {
+    return (
+      !this.object.position.equals(this.written.position) ||
+      !this.object.quaternion.equals(this.written.quaternion)
+    );
+  }
+
+  /**
+   * The body put at its object's pose, rotation included, its velocities kept:
+   * a respawn keeps the fall it had. On a character's body it also replaces the
+   * move its controller made this tick, so the respawn wins over the step.
+   */
+  private teleport(): void {
+    this.object.updateWorldMatrix(true, false);
+    this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
+    this.rapier.setTranslation(_worldPosition, true);
+    this.rapier.setRotation(_worldQuaternion, true);
+    this.remember();
+  }
+
+  private remember(): void {
+    this.written.position.copy(this.object.position);
+    this.written.quaternion.copy(this.object.quaternion);
   }
 
   // Rapier hands back a fresh object on every read, which is the copy the API
@@ -207,26 +279,11 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * Copies the bodies the solver or a character moves back onto their
-   * entities, in the order they were built: parents first.
-   *
-   * Not a kinematic body: it follows its entity, which is where its script put
-   * it. Copied back, the body nothing had moved was written over the script's
-   * move every frame, and a moving platform never left its place.
-   *
-   * A disabled body is left alone, since whoever disabled it places its entity.
+   * Draws the bodies onto their entities once the frame's ticks have run, in
+   * the order they were built: parents first.
    */
   writeBack(): void {
-    for (const body of this.bodies.values()) {
-      if (body.driver === 'none' || body.driver === 'transform' || !body.enabled) continue;
-
-      const translation = body.rapier.translation();
-      const rotation = body.rapier.rotation();
-      _worldPosition.set(translation.x, translation.y, translation.z);
-      _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
-
-      applyWorldTransform(body.object, _worldPosition, _worldQuaternion);
-    }
+    for (const body of this.bodies.values()) body.draw();
   }
 
   body(entityId: string): BodyHandle | null {

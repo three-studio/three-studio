@@ -53,7 +53,8 @@ export interface BodyHandle {
   /**
    * `false` holds the body out of the world: it touches nothing and nothing
    * touches it. The world also stops writing it to its entity, so whoever
-   * disabled the body places the entity.
+   * disabled the body places the entity. Enabled again, the body is put where
+   * its entity then is, unless it is fixed.
    */
   enabled: boolean;
 }

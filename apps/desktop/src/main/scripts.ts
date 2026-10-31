@@ -306,7 +306,12 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
   entity: `
     /** The entity this script is attached to. */
     readonly entity: { id: string; name: string };`,
-  transform: `    /** Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it. */
+  transform: `    /**
+     * Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it.
+     * A dynamic body, or the player, is put there and keeps its speed; a
+     * kinematic one moves there at the next tick, carrying what rests on it; a
+     * fixed one's collider stays where it is.
+     */
     readonly transform: any;`,
   input: `    readonly input: StudioInput;`,
   audio: `    /** This entity's sounds, one-shot clips, and the buses. */
