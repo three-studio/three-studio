@@ -7,8 +7,10 @@ import {
   createMeshEntity,
   createModelEntity,
   originAboveFeet,
+  type BodyType,
   type ColliderShape,
   type GeometryKind,
+  type MeshBuild,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
@@ -112,7 +114,7 @@ describe('colliderGeometry', () => {
   const capsule = (): ColliderShape => ({ ...createColliderShape('capsule'), radius: 0.3, height: 1.7 });
 
   it('stretches each axis of a box by the scale along it', () => {
-    expect(colliderGeometry({ ...createColliderShape('box'), size: [2, 1, 4] }, [1, 2, 0.5]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('box'), size: [2, 1, 4] }, [1, 2, 0.5], undefined).shape).toEqual({
       kind: 'box',
       halfExtents: [1, 1, 1],
       rounding: 0,
@@ -120,14 +122,14 @@ describe('colliderGeometry', () => {
   });
 
   it('grows a sphere by the largest stretch, so it encloses what is drawn', () => {
-    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: 0.5 }, [1, 3, 2]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: 0.5 }, [1, 3, 2], undefined).shape).toEqual({
       kind: 'sphere',
       radius: 1.5,
     });
   });
 
   it('keeps a capsule’s span as drawn when it is stretched along its length', () => {
-    const { shape } = colliderGeometry(capsule(), [1, 2, 1]);
+    const { shape } = colliderGeometry(capsule(), [1, 2, 1], undefined);
     expect(shape.kind).toBe('capsule');
     if (shape.kind !== 'capsule') return;
     expect(shape.radius).toBeCloseTo(0.3, 6);
@@ -135,7 +137,7 @@ describe('colliderGeometry', () => {
   });
 
   it('widens a capsule by its section’s larger stretch, its span kept', () => {
-    const { shape } = colliderGeometry(capsule(), [2, 1, 2]);
+    const { shape } = colliderGeometry(capsule(), [2, 1, 2], undefined);
     expect(shape.kind).toBe('capsule');
     if (shape.kind !== 'capsule') return;
     expect(shape.radius).toBeCloseTo(0.6, 6);
@@ -143,7 +145,7 @@ describe('colliderGeometry', () => {
   });
 
   it('builds a capsule squashed wider than it is tall as the sphere as tall as it is drawn', () => {
-    const { shape } = colliderGeometry(capsule(), [3, 1, 3]);
+    const { shape } = colliderGeometry(capsule(), [3, 1, 3], undefined);
     expect(shape.kind).toBe('sphere');
     if (shape.kind !== 'sphere') return;
     expect(shape.radius).toBeCloseTo(0.85, 6);
@@ -152,7 +154,7 @@ describe('colliderGeometry', () => {
   it('stretches a cylinder and a cone along their length, their section by its larger stretch', () => {
     for (const kind of ['cylinder', 'cone'] as const) {
       const shape = { ...createColliderShape(kind), radius: 0.5, height: 1 };
-      expect(colliderGeometry(shape, [1, 3, 2]).shape).toEqual({
+      expect(colliderGeometry(shape, [1, 3, 2], undefined).shape).toEqual({
         kind,
         radius: 1,
         halfHeight: 1.5,
@@ -164,7 +166,7 @@ describe('colliderGeometry', () => {
   it('stretches a turned box along its own axes', () => {
     // Turned a quarter about z, its 3 m height lies along the entity's x.
     const box: ColliderShape = { ...createColliderShape('box'), size: [1, 3, 1], rotation: [0, 0, Math.PI / 2] };
-    const { shape, rotation } = colliderGeometry(box, [2, 1, 1]);
+    const { shape, rotation } = colliderGeometry(box, [2, 1, 1], undefined);
     expect(shape.kind).toBe('box');
     if (shape.kind !== 'box') return;
     expect(shape.halfExtents[0]).toBeCloseTo(0.5, 6);
@@ -175,12 +177,12 @@ describe('colliderGeometry', () => {
 
   it('sets a shape off its entity’s centre by the centre at the entity’s scale', () => {
     const sphere: ColliderShape = { ...createColliderShape('sphere'), center: [1, 2, 3] };
-    expect(colliderGeometry(sphere, [2, 1, -1]).position).toEqual([2, 2, -3]);
+    expect(colliderGeometry(sphere, [2, 1, -1], undefined).position).toEqual([2, 2, -3]);
   });
 
   it('rounds a box inside its drawn size, the core and the rounding apart', () => {
     const box: ColliderShape = { ...createColliderShape('box'), rounding: 0.1 };
-    const { shape } = colliderGeometry(box, [1, 1, 1]);
+    const { shape } = colliderGeometry(box, [1, 1, 1], undefined);
     expect(shape.kind).toBe('box');
     if (shape.kind !== 'box') return;
     expect(shape.halfExtents.map((h) => h.toFixed(6))).toEqual(['0.400000', '0.400000', '0.400000']);
@@ -189,7 +191,7 @@ describe('colliderGeometry', () => {
 
   it('stretches a rounding by the least the shape is stretched', () => {
     const box: ColliderShape = { ...createColliderShape('box'), rounding: 0.1 };
-    const { shape } = colliderGeometry(box, [1, 0.1, 1]);
+    const { shape } = colliderGeometry(box, [1, 0.1, 1], undefined);
     if (shape.kind !== 'box') throw new Error('not a box');
     expect(shape.rounding).toBeCloseTo(0.01, 6);
     expect(shape.halfExtents[1]).toBeCloseTo(0.04, 6);
@@ -197,7 +199,7 @@ describe('colliderGeometry', () => {
 
   it('caps a rounding at the smallest half measure', () => {
     for (const kind of ['box', 'cylinder', 'cone'] as const) {
-      const { shape } = colliderGeometry({ ...createColliderShape(kind), rounding: 2 }, [1, 1, 1]);
+      const { shape } = colliderGeometry({ ...createColliderShape(kind), rounding: 2 }, [1, 1, 1], undefined);
       if (shape.kind === 'sphere' || shape.kind === 'capsule' || shape.kind === 'mesh') {
         throw new Error(`not rounded: ${shape.kind}`);
       }
@@ -213,24 +215,37 @@ describe('colliderGeometry', () => {
       capsule(),
     ];
     for (const shape of shapes) {
-      expect(colliderGeometry(shape, [-1, 2, -0.5]).shape).toEqual(colliderGeometry(shape, [1, 2, 0.5]).shape);
+      expect(colliderGeometry(shape, [-1, 2, -0.5], undefined).shape).toEqual(colliderGeometry(shape, [1, 2, 0.5], undefined).shape);
     }
   });
 
   it('builds a negative measure, which only a hand-edited file holds, as none', () => {
-    expect(colliderGeometry({ ...createColliderShape('box'), size: [-2, 1, 4] }, [1, 1, 1]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('box'), size: [-2, 1, 4] }, [1, 1, 1], undefined).shape).toEqual({
       kind: 'box',
       halfExtents: [0, 0.5, 2],
       rounding: 0,
     });
-    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: -1 }, [1, 1, 1]).shape).toEqual({
+    expect(colliderGeometry({ ...createColliderShape('sphere'), radius: -1 }, [1, 1, 1], undefined).shape).toEqual({
       kind: 'sphere',
       radius: 0,
     });
   });
 
+  it('builds a dynamic body’s triangles as their hull, and leaves every other build alone', () => {
+    const build = (mesh: MeshBuild, bodyType?: BodyType) => {
+      const { shape } = colliderGeometry({ kind: 'mesh', build: mesh }, [1, 1, 1], bodyType);
+      return shape.kind === 'mesh' ? shape.build : null;
+    };
+    expect(build('triangles', 'dynamic')).toBe('hull');
+    expect(build('hull', 'dynamic')).toBe('hull');
+    expect(build('parts', 'dynamic')).toBe('parts');
+    expect(build('triangles', 'fixed')).toBe('triangles');
+    expect(build('triangles', 'kinematicPosition')).toBe('triangles');
+    expect(build('triangles')).toBe('triangles');
+  });
+
   it('hands a mesh its own build and the signed scale its vertices take', () => {
-    expect(colliderGeometry({ kind: 'mesh', build: 'hull' }, [-1, 2, 3]).shape).toEqual({
+    expect(colliderGeometry({ kind: 'mesh', build: 'hull' }, [-1, 2, 3], undefined).shape).toEqual({
       kind: 'mesh',
       build: 'hull',
       scale: [-1, 2, 3],

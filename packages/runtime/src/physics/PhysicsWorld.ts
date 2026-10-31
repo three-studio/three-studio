@@ -3,6 +3,7 @@ import {
   entitiesWith,
   entityWorldMatrixPath,
   findComponent,
+  type BodyType,
   type BuiltShape,
   type ColliderComponent,
   type EntityDoc,
@@ -407,7 +408,7 @@ export class PhysicsWorld implements PhysicsApi {
 
     let created: RAPIER.Collider | null = null;
     if (collider) {
-      const shape = describeCollider(collider, object, _worldScale);
+      const shape = describeCollider(collider, object, _worldScale, bodyType);
       shape.setFriction(collider.material.friction);
       shape.setRestitution(collider.material.restitution);
       shape.setSensor(collider.isSensor);
@@ -441,9 +442,10 @@ function describeCollider(
   collider: ColliderComponent,
   object: Object3D,
   scale: Vector3,
+  bodyType: BodyType,
 ): RAPIER.ColliderDesc {
   const { x: sx, y: sy, z: sz } = scale;
-  const { shape, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz]);
+  const { shape, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz], bodyType);
   const [x, y, z] = position;
   // three's Euler XYZ, which is the order `colliderGeometry` turns its axes in.
   _colliderRotation.setFromEuler(_colliderEuler.set(...rotation));

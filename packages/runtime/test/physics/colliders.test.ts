@@ -127,6 +127,39 @@ describe('a collider off its entity’s centre, turned', () => {
   );
 });
 
+describe('a mesh collider from its triangles', () => {
+  it('is built as its hull on a dynamic body: a ball rests over its hole, and the engine says why', async () => {
+    const torus = withBody('torus', [0, 0.15, 0]);
+    torus.entity.transform.rotation = [-Math.PI / 2, 0, 0];
+    colliderOf(torus).shape = { kind: 'mesh', build: 'triangles' };
+    const ball = withBody('sphere', [0, 1, 0]);
+    ball.entity.transform.scale = [0.2, 0.2, 0.2];
+    const rig = await physicsRig([ground(), torus, ball]);
+
+    rig.run(2);
+
+    // The hull's top is at 0.3, so the ball rests about 0.4 up.
+    expect(rig.solved(ball.entity.id).position.y).toBeGreaterThan(0.3);
+    const said = rig.engine.warnings.filter((line) => line.includes('"Torus"'));
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('Convex parts');
+  });
+
+  it('keeps its triangles and its hole on a fixed body', async () => {
+    const torus = withBody('torus', [0, 0.15, 0], { bodyType: 'fixed' });
+    torus.entity.transform.rotation = [-Math.PI / 2, 0, 0];
+    colliderOf(torus).shape = { kind: 'mesh', build: 'triangles' };
+    const ball = withBody('sphere', [0, 1, 0]);
+    ball.entity.transform.scale = [0.2, 0.2, 0.2];
+    const rig = await physicsRig([ground(), torus, ball]);
+
+    rig.run(2);
+
+    expect(Math.abs(rig.solved(ball.entity.id).position.y - 0.1)).toBeLessThan(0.02);
+    expect(rig.engine.warnings.filter((line) => line.includes('"Torus"'))).toEqual([]);
+  });
+});
+
 describe('a mesh collider in convex parts', () => {
   it('keeps a dynamic torus’s hole: a ball drops through it to the ground', async () => {
     const torus = withBody('torus', [0, 0.15, 0]);

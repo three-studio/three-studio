@@ -1,7 +1,9 @@
 import {
+  colliderGeometry,
   componentsOfType,
   createPhysicsSettings,
   entitiesWith,
+  findComponent,
   hasComponent,
   type MaterialDef,
   type PhysicsSettings,
@@ -250,17 +252,30 @@ export class Engine {
     const players = entitiesWith(scene, 'playerController');
 
     // A mesh-derived collider on an entity with nothing to derive from falls
-    // back to a box around an empty group — a few centimetres across, which
-    // a player walks straight past. It happened for real: physics used to be
-    // built before the glTF arrived. That is fixed, but a model that fails
-    // to load reaches the same place, and silently.
+    // back to a box 2 cm across, which a player walks straight past. It
+    // happened for real: physics used to be built before the glTF arrived.
+    // That is fixed, but a model that fails to load reaches the same place,
+    // and silently.
     for (const entityId of colliders) {
       const entity = scene.entities[entityId];
       if (!entity) continue;
-      const derived = Object.values(scene.components.collider[entityId] ?? {}).some(
+      const meshes = Object.values(scene.components.collider[entityId] ?? {}).filter(
         (component) => component.shape.kind === 'mesh',
       );
-      if (!derived) continue;
+      if (meshes.length === 0) continue;
+
+      // Triangles on a dynamic body are built as their hull, which fills in
+      // the very holes the author may have chosen triangles to keep.
+      const bodyType = findComponent(scene, entityId, 'rigidbody')?.bodyType;
+      const hulled = meshes.some(({ shape }) => {
+        const built = colliderGeometry(shape, [1, 1, 1], bodyType).shape;
+        return shape.kind === 'mesh' && built.kind === 'mesh' && built.build !== shape.build;
+      });
+      if (hulled) {
+        this.warnings.push(
+          `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make its Rigid Body Kinematic or Fixed.`,
+        );
+      }
 
       const object = this.binder.getObject(entityId);
       let hasGeometry = false;

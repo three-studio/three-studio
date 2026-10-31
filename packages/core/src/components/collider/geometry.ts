@@ -1,4 +1,5 @@
 import type { Vec3 } from '../../scene/primitives';
+import type { BodyType } from '../rigidbody/schema';
 import type { ColliderShape, MeshBuild } from './schema';
 
 /*
@@ -25,7 +26,8 @@ import type { ColliderShape, MeshBuild } from './schema';
 /**
  * A shape as physics builds it, in Rapier's own arguments: metres, at the
  * entity's scale, half measures. A rounded shape is the core it rounds and the
- * `rounding` it adds all round, so its outside is where the shape is drawn.
+ * `rounding` it adds all round, so its outside is where the shape is drawn. A
+ * mesh's `build` is the one its body allows.
  */
 export type BuiltShape =
   | { kind: 'box'; halfExtents: Vec3; rounding: number }
@@ -54,13 +56,24 @@ export interface ColliderGeometry {
   rotation: Vec3;
 }
 
-/** A collider's shape built at an entity's world scale, signed, as physics builds it. */
-export function colliderGeometry(shape: ColliderShape, scale: Vec3): ColliderGeometry {
+/**
+ * A collider's shape built at an entity's world scale, signed, as physics builds
+ * it on a body of `bodyType` — `undefined` for a collider with none.
+ */
+export function colliderGeometry(
+  shape: ColliderShape,
+  scale: Vec3,
+  bodyType: BodyType | undefined,
+): ColliderGeometry {
   if (shape.kind === 'mesh') {
+    // A triangle mesh is a surface with no inside: on a body the solver moves
+    // it gives no volume to weigh, and nothing keeps it out of another mesh,
+    // so a dynamic body is built from its hull.
+    const build = shape.build === 'triangles' && bodyType === 'dynamic' ? 'hull' : shape.build;
     // The vertices take the scale exactly, mirrored included, and are already
     // where they are drawn.
     return {
-      shape: { kind: 'mesh', build: shape.build, scale: [scale[0], scale[1], scale[2]] },
+      shape: { kind: 'mesh', build, scale: [scale[0], scale[1], scale[2]] },
       position: [0, 0, 0],
       rotation: [0, 0, 0],
     };
@@ -150,7 +163,8 @@ function rounded(rounding: number, stretches: Vec3, smallestHalf: number): numbe
  * wanted.
  */
 export function originAboveFeet(shape: ColliderShape): number {
-  const { shape: built, position, rotation } = colliderGeometry(shape, [1, 1, 1]);
+  // No body: a mesh answers 0 whatever it is built as, and no other shape asks.
+  const { shape: built, position, rotation } = colliderGeometry(shape, [1, 1, 1], undefined);
   if (built.kind === 'mesh') return 0;
   // How far each of the shape's own axes points up.
   const [x, y, z] = axesOf(rotation);
