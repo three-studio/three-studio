@@ -127,6 +127,22 @@ describe('a collider off its entity’s centre, turned', () => {
   );
 });
 
+describe('a mesh collider in convex parts', () => {
+  it('keeps a dynamic torus’s hole: a ball drops through it to the ground', async () => {
+    const torus = withBody('torus', [0, 0.15, 0]);
+    torus.entity.transform.rotation = [-Math.PI / 2, 0, 0];
+    colliderOf(torus).shape = { kind: 'mesh', build: 'parts' };
+    const ball = withBody('sphere', [0, 1, 0]);
+    ball.entity.transform.scale = [0.2, 0.2, 0.2];
+    const rig = await physicsRig([ground(), torus, ball]);
+
+    rig.run(2);
+
+    expect(Math.abs(rig.solved(ball.entity.id).position.y - 0.1)).toBeLessThan(0.02);
+    expect(Math.abs(rig.solved(torus.entity.id).position.y - 0.15)).toBeLessThan(0.02);
+  });
+});
+
 /**
  * A Cylinder mesh whose top radius is 0, with a dynamic body whose rotations are
  * locked and the collider Add Component guesses for it.

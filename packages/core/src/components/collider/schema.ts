@@ -77,8 +77,11 @@ export type ColliderShape =
  *
  * *Triangles* is exact: a surface with no inside, for what does not move with
  * physics. *Convex hull* is one cheap solid, its holes and hollows filled in.
+ * *Convex parts* is several solids that keep the holes, slower to build — a
+ * tenth of a second for a primitive, about a second for a detailed model —
+ * once per session.
  */
-export type MeshBuild = 'triangles' | 'hull';
+export type MeshBuild = 'triangles' | 'hull' | 'parts';
 
 export type ColliderShapeKind = ColliderShape['kind'];
 export type ColliderShapeOf<K extends ColliderShapeKind> = Extract<ColliderShape, { kind: K }>;
@@ -95,6 +98,7 @@ export const COLLIDER_SHAPE_LABELS: Record<ColliderShapeKind, string> = {
 export const MESH_BUILD_LABELS: Record<MeshBuild, string> = {
   triangles: 'Triangles',
   hull: 'Convex hull',
+  parts: 'Convex parts',
 };
 
 export interface ColliderComponent extends ComponentBase {
