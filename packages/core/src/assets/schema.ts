@@ -266,7 +266,11 @@ export interface ModelSettingsBase {
    * rotated when it was converted from something that did not.
    */
   upAxis: 'y' | 'z';
-  /** Builds a collider from the mesh when the model is placed. */
+  /**
+   * When the model is dropped into a scene, its entity gets the Collider Add
+   * Component would give it: a mesh built from the model's triangles. A model
+   * already placed keeps what it has.
+   */
   generateColliders: boolean;
   /** Off drops the file's materials for three's default, which is faster to look at. */
   importMaterials: boolean;
