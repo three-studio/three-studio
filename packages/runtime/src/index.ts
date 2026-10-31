@@ -77,9 +77,16 @@ export type {
   VoiceState,
 } from './audio/playback';
 
-/* Physics. */
+/* Physics. Our types only: nothing of Rapier's is on this barrel. */
 export { PhysicsWorld, applyWorldTransform } from './physics/PhysicsWorld';
-export type { PhysicsBody } from './physics/PhysicsWorld';
+export type {
+  BodyHandle,
+  CharacterController,
+  CharacterSettings,
+  PhysicsApi,
+  QuatLike,
+  Vec3Like,
+} from './physics/PhysicsApi';
 
 /* Scripting: the base class user scripts extend, and the registry the host compiles into. */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';

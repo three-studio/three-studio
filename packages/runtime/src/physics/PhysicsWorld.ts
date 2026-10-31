@@ -11,22 +11,61 @@ import {
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Box3, Matrix4, Mesh, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
+import { Character } from './Character';
+import type {
+  BodyHandle,
+  CharacterController,
+  CharacterSettings,
+  PhysicsApi,
+  QuatLike,
+  Vec3Like,
+} from './PhysicsApi';
 
-export interface PhysicsBody {
-  entityId: string;
-  body: RAPIER.RigidBody;
-  collider: RAPIER.Collider | null;
-  /** Fixed bodies never move, so they are skipped when writing transforms back. */
-  dynamic: boolean;
-  /**
-   * Positioned by a behaviour rather than by the solver.
-   *
-   * Such an entity already has its transform written by whatever drives it, and
-   * copying the body back over that would undo the move — which is exactly what
-   * left fly mode unable to move at all. Claimed by the behaviour itself, so a
-   * vehicle chassis (which *is* solver-driven) simply does not claim it.
-   */
-  controllerDriven: boolean;
+/**
+ * What moves a body: the solver, its kinematic target, a character controller
+ * that took it, or nothing at all.
+ *
+ * Exactly one per body, set when the world is built and changed only when a
+ * character controller takes the body. Two at once — a behaviour writing an
+ * entity while the world copied its body back over it — is what once left fly
+ * mode unable to move at all.
+ */
+type Driver = 'solver' | 'transform' | 'controller' | 'none';
+
+/** Who drives a body of each type, until a character controller takes it. */
+const DRIVER_OF: Record<RigidBodyComponent['bodyType'], Driver> = {
+  dynamic: 'solver',
+  kinematicPosition: 'transform',
+  fixed: 'none',
+};
+
+/** A body as the world keeps it: Rapier's, the collider built on it, and its driver. */
+class Body implements BodyHandle {
+  constructor(
+    readonly rapier: RAPIER.RigidBody,
+    /** The one a character sweeps; `null` when the entity has no collider. */
+    readonly collider: RAPIER.Collider | null,
+    public driver: Driver,
+  ) {}
+
+  // Rapier hands back a fresh object on every read, which is the copy the API
+  // promises.
+  get position(): Readonly<Vec3Like> {
+    return this.rapier.translation();
+  }
+
+  get rotation(): Readonly<QuatLike> {
+    return this.rapier.rotation();
+  }
+
+  get enabled(): boolean {
+    return this.rapier.isEnabled();
+  }
+
+  /** Rapier disables the body's colliders with it, which is what holds it out of the world. */
+  set enabled(enabled: boolean) {
+    this.rapier.setEnabled(enabled);
+  }
 }
 
 const _worldPosition = new Vector3();
@@ -43,10 +82,15 @@ const _bounds = new Box3();
  * Bodies are built from the *bound* three.js objects rather than from the
  * document's local transforms, so entity nesting is handled for free: the
  * object already carries its resolved world matrix.
+ *
+ * Two faces. The lifecycle — `create`, `build`, `step`, `writeBack`, `dispose`
+ * — is the `Engine`'s alone. `PhysicsApi` is what behaviours are handed, and
+ * nothing of Rapier's crosses it.
  */
-export class PhysicsWorld {
-  readonly world: RAPIER.World;
-  private readonly bodies = new Map<string, PhysicsBody>();
+export class PhysicsWorld implements PhysicsApi {
+  readonly gravity: Readonly<Vec3Like>;
+  private readonly world: RAPIER.World;
+  private readonly bodies = new Map<string, Body>();
   private accumulator = 0;
 
   private readonly fixedStep: number;
@@ -55,6 +99,8 @@ export class PhysicsWorld {
   private constructor(world: RAPIER.World, settings: PhysicsSettings) {
     this.fixedStep = settings.fixedTimestep;
     this.maxSubsteps = settings.maxSubsteps;
+    const [x, y, z] = settings.gravity;
+    this.gravity = Object.freeze({ x, y, z });
     this.world = world;
     this.world.timestep = this.fixedStep;
   }
@@ -133,15 +179,20 @@ export class PhysicsWorld {
     }
   }
 
-  /** Copies simulated transforms back onto the rendered objects. */
+  /**
+   * Copies the bodies something moves back onto their entities, in the order
+   * they were built: parents first.
+   *
+   * A disabled body is left alone, since whoever disabled it places its entity.
+   */
   writeBack(binder: SceneBinder): void {
-    for (const entry of this.bodies.values()) {
-      if (!entry.dynamic || entry.controllerDriven) continue;
-      const object = binder.getObject(entry.entityId);
+    for (const [entityId, body] of this.bodies) {
+      if (body.driver === 'none' || !body.enabled) continue;
+      const object = binder.getObject(entityId);
       if (!object) continue;
 
-      const translation = entry.body.translation();
-      const rotation = entry.body.rotation();
+      const translation = body.rapier.translation();
+      const rotation = body.rapier.rotation();
       _worldPosition.set(translation.x, translation.y, translation.z);
       _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 
@@ -149,25 +200,25 @@ export class PhysicsWorld {
     }
   }
 
-  get(entityId: string): PhysicsBody | undefined {
-    return this.bodies.get(entityId);
+  body(entityId: string): BodyHandle | null {
+    return this.bodies.get(entityId) ?? null;
   }
 
-  /** Declares that a behaviour writes this entity's transform, not the solver. */
-  claimTransform(entityId: string): void {
-    const entry = this.bodies.get(entityId);
-    if (entry) entry.controllerDriven = true;
-  }
-
-  createCharacterController(offset = 0.02): RAPIER.KinematicCharacterController {
-    const controller = this.world.createCharacterController(offset);
-    // Without autostep a character catches on every kerb and stair edge.
-    controller.enableAutostep(0.4, 0.2, true);
-    // Without snap-to-ground, walking down a slope becomes a series of hops.
-    controller.enableSnapToGround(0.4);
-    controller.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
-    controller.setApplyImpulsesToDynamicBodies(true);
-    return controller;
+  createCharacterController(
+    entityId: string,
+    settings: CharacterSettings,
+  ): CharacterController | null {
+    const body = this.bodies.get(entityId);
+    if (!body?.collider) return null;
+    // The world writes this body to its entity from now on, as it writes every
+    // other, so the character is placed in the same parents-first pass.
+    body.driver = 'controller';
+    return new Character(
+      this.world.createCharacterController(settings.offset),
+      body.rapier,
+      body.collider,
+      settings,
+    );
   }
 
   dispose(): void {
@@ -216,13 +267,7 @@ export class PhysicsWorld {
       }
     }
 
-    this.bodies.set(entity.id, {
-      entityId: entity.id,
-      body,
-      collider: created,
-      dynamic: bodyType !== 'fixed',
-      controllerDriven: false,
-    });
+    this.bodies.set(entity.id, new Body(body, created, DRIVER_OF[bodyType]));
   }
 }
 

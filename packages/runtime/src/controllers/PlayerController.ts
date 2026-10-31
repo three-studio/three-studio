@@ -4,7 +4,6 @@ import {
   type ColliderComponent,
   type PlayerControllerComponent,
 } from '@three-studio/core';
-import type RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import {
   registerBehaviour,
@@ -13,7 +12,8 @@ import {
   type BehaviourTarget,
 } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
-import { applyWorldTransform, type PhysicsWorld } from '../physics/PhysicsWorld';
+import type { CharacterController, PhysicsApi } from '../physics/PhysicsApi';
+import { applyWorldTransform } from '../physics/PhysicsWorld';
 
 const FORWARD = ['KeyW', 'ArrowUp'];
 const BACK = ['KeyS', 'ArrowDown'];
@@ -39,8 +39,25 @@ const EARTH_GRAVITY = 9.81;
  * faster than the controller can push it back out.
  */
 const GROUNDED_STICK = -1;
-/** Matches the value the physics world enables snap-to-ground with. */
-const SNAP_DISTANCE = 0.4;
+/*
+ * How the player's character meets the world. These are the player's numbers,
+ * not the world's: a character is a tool the world lends, configured by
+ * whoever creates it.
+ */
+/**
+ * The gap the character keeps around its capsule. Rapier's controller asks for
+ * one: zero leaves its sweeps in numerical trouble, and much more than this
+ * shows the player floating.
+ */
+const SKIN = 0.02;
+/** The steepest slope the player walks up: the 50° the world used to hard-code. */
+const MAX_SLOPE = (50 * Math.PI) / 180;
+/** The highest step the player walks onto: the 0.4 m the world used to hard-code. */
+const STEP_HEIGHT = 0.4;
+/** The free floor a step needs on top, so a ledge too narrow to stand on stays a wall. */
+const STEP_WIDTH = 0.2;
+/** How far below the feet the ground still holds a walking player, so a slope is walked down rather than hopped. */
+const SNAP_TO_GROUND = 0.4;
 
 const _move = new Vector3();
 const _forward = new Vector3();
@@ -52,10 +69,10 @@ const _euler = new Euler(0, 0, 0, 'YXZ');
 /**
  * Drives one entity as the player, in first person, third person or free flight.
  *
- * Movement goes through Rapier's kinematic character controller rather than a
- * dynamic body: a dynamic capsule tips over, slides down slopes and fights the
- * player for control. The controller resolves collisions but leaves the motion
- * exactly as commanded, which is what makes movement feel deliberate.
+ * Movement goes through the physics world's character controller rather than
+ * a dynamic body: a dynamic capsule tips over, slides down slopes and fights
+ * the player for control. The controller resolves collisions but leaves the
+ * motion exactly as commanded, which is what makes movement feel deliberate.
  */
 export class PlayerController implements Behaviour {
   /**
@@ -75,13 +92,11 @@ export class PlayerController implements Behaviour {
   private yaw = 0;
   private pitch = 0;
   private verticalVelocity = 0;
-  private grounded = false;
   private jumpRequested = false;
   private orbitDistance: number;
 
-  private readonly controller: RAPIER.KinematicCharacterController | null;
-  private readonly collider: RAPIER.Collider | null;
-  private readonly body: RAPIER.RigidBody | null;
+  /** `null` in fly mode, and when the entity has no body and collider to walk with. */
+  private readonly character: CharacterController | null;
 
   /**
    * Downward acceleration, in m/s², taken from the world this character moves
@@ -112,7 +127,7 @@ export class PlayerController implements Behaviour {
   constructor(
     private readonly component: PlayerControllerComponent,
     private readonly object: Object3D,
-    physics: PhysicsWorld | null,
+    physics: PhysicsApi | null,
     entityId: string,
     /**
      * The entity's collider as the *document* describes it, not as Rapier built
@@ -131,20 +146,31 @@ export class PlayerController implements Behaviour {
     _euler.setFromQuaternion(_quaternion);
     this.yaw = _euler.y;
 
-    const entry = component.mode === 'fly' ? undefined : physics?.get(entityId);
-    this.body = entry?.body ?? null;
-    this.collider = entry?.collider ?? null;
-    this.controller = this.collider && physics ? physics.createCharacterController() : null;
-    this.gravity = physics ? -physics.world.gravity.y : EARTH_GRAVITY;
+    this.character =
+      component.mode === 'fly'
+        ? null
+        : (physics?.createCharacterController(entityId, {
+            offset: SKIN,
+            maxSlope: MAX_SLOPE,
+            stepHeight: STEP_HEIGHT,
+            stepWidth: STEP_WIDTH,
+            snapToGround: SNAP_TO_GROUND,
+          }) ?? null);
+    this.gravity = physics ? -physics.gravity.y : EARTH_GRAVITY;
 
-    // This behaviour writes the entity's transform itself, so the solver must
-    // not copy the body back over it afterwards.
-    physics?.claimTransform(entityId);
+    // A player with no character places itself, so its body leaves the world.
+    // Left in, it stayed at the spawn as a capsule nobody could see, which a
+    // ball dropped there landed on; and the world, which writes every body it
+    // drives back to its entity, would pin the flying player to it.
+    if (!this.character) {
+      const body = physics?.body(entityId);
+      if (body) body.enabled = false;
+    }
   }
 
   /** True when this controller is driven by the fixed physics step. */
   get usesPhysics(): boolean {
-    return this.component.mode !== 'fly' && this.controller !== null && this.collider !== null;
+    return this.character !== null;
   }
 
   /**
@@ -261,37 +287,24 @@ export class PlayerController implements Behaviour {
   }
 
   private moveOnGround(delta: number, input: Input): void {
-    const controller = this.controller;
-    const collider = this.collider;
-    const body = this.body;
-    if (!controller || !collider || !body) return;
+    const character = this.character;
+    if (!character) return;
 
     const direction = this.desiredDirection(input);
     const speed = this.speed(input);
 
-    // `&& this.verticalVelocity <= 0`, and without it a jump is five centimetres
-    // high. Rapier answers `computedGrounded()` from the contact it found while
-    // solving, so on the frame a jump is issued — the character is still
-    // touching the floor when the solve begins — it comes back **true** even
-    // though the movement was upward. The next tick then saw `grounded` and
-    // overwrote the whole jump velocity with the stick, snap-to-ground was
-    // re-enabled by that same negative velocity, and the character was pulled
-    // straight back down. Measured: a 1.2 m jump reached 0.0497 m, which is
-    // exactly one step of the initial velocity and nothing more.
-    //
-    // Asking about the velocity instead is what separates "standing on the
-    // floor" from "leaving it", which is the question this branch was always
-    // trying to ask. Landing still works: the descent is negative long before
-    // the contact is reported.
-    if (this.grounded && this.verticalVelocity <= 0) {
+    // Standing, and not leaving: on the tick a jump leaves the floor the
+    // character still touches it, and asking about the contact alone gave a
+    // 1.2 m jump five centimetres. The character answers it — see its `move`.
+    if (character.grounded) {
       this.verticalVelocity = GROUNDED_STICK;
       if (this.jumpRequested) {
         // v = sqrt(2gh) puts the apex exactly at the configured jump height.
         //
         // Clamped at zero because a world whose gravity does not pull down has
         // no apex to aim at, and `Math.sqrt` of a negative is `NaN` — which
-        // would go straight into `setNextKinematicTranslation` and teleport the
-        // body out of the world with nothing at all reported. Zero is the
+        // would go straight into the character's move and teleport the body
+        // out of the world with nothing at all reported. Zero is the
         // honest answer there: without a pull, you cannot jump to a height.
         this.verticalVelocity = Math.sqrt(2 * Math.max(this.gravity, 0) * this.component.jumpHeight);
       }
@@ -300,36 +313,12 @@ export class PlayerController implements Behaviour {
     }
     this.jumpRequested = false;
 
-    // Snap-to-ground is what stops a character hopping down slopes, but it also
-    // drags it straight back to the floor the instant it leaves — which turns a
-    // jump into a stutter a few centimetres high. It has to be off while rising.
-    if (this.verticalVelocity > 0) controller.disableSnapToGround();
-    else controller.enableSnapToGround(SNAP_DISTANCE);
-
     const desired = {
       x: direction.x * speed * delta,
       y: this.verticalVelocity * delta,
       z: direction.z * speed * delta,
     };
 
-    controller.computeColliderMovement(collider, desired);
-    this.grounded = controller.computedGrounded();
-
-    const movement = controller.computedMovement();
-    this.debug.desiredX = desired.x;
-    this.debug.desiredZ = desired.z;
-    this.debug.computedX = movement.x;
-    this.debug.computedZ = movement.z;
-    this.debug.grounded = this.grounded;
-
-    const current = body.translation();
-    body.setNextKinematicTranslation({
-      x: current.x + movement.x,
-      y: current.y + movement.y,
-      z: current.z + movement.z,
-    });
-
-    _worldPosition.set(current.x + movement.x, current.y + movement.y, current.z + movement.z);
     // Third person turns the body to face travel; first person turns it with
     // the camera so anything parented to the player points the right way.
     const facing =
@@ -337,7 +326,14 @@ export class PlayerController implements Behaviour {
         ? Math.atan2(direction.x, direction.z)
         : this.yaw;
     _quaternion.setFromEuler(_euler.set(0, facing, 0));
-    applyWorldTransform(this.object, _worldPosition, _quaternion);
+
+    // The world writes the entity once the step has moved the body there.
+    const movement = character.move(desired, _quaternion);
+    this.debug.desiredX = desired.x;
+    this.debug.desiredZ = desired.z;
+    this.debug.computedX = movement.x;
+    this.debug.computedZ = movement.z;
+    this.debug.grounded = character.grounded;
   }
 
   /** Fly mode, and the fallback when an entity has no collider to move with. */

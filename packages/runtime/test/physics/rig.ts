@@ -5,9 +5,11 @@ import {
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  type BodyType,
   type EntityTemplate,
   type GeometryKind,
   type PhysicsSettings,
+  type PlayerControllerComponent,
   type Vec3,
 } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
@@ -35,9 +37,12 @@ export interface PhysicsRig {
   readonly engine: Engine;
   /** Whole frames of one fixed step each, through `Engine.update`. */
   run(seconds: number): void;
+  /** Holds a key down on the rig's own canvas, as a person typing into the game. */
+  press(code: string): void;
+  release(code: string): void;
   /** Where the entity is drawn: its object's world pose. */
   drawn(entityId: string): Pose;
-  /** Where the solver holds its body: the one place a test reads Rapier. */
+  /** Where the solver holds its body, read through the API a behaviour reads it through. */
   solved(entityId: string): Pose;
 }
 
@@ -47,6 +52,7 @@ export async function physicsRig(
   settings?: Partial<PhysicsSettings>,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
+  const canvas = new EventTarget();
   const engine = await Engine.create({
     scene: sceneWith(entities),
     resolver: NULL_ASSET_RESOLVER,
@@ -54,7 +60,10 @@ export async function physicsRig(
     // reads would be one the screen never shows.
     rendering: { ...createRenderingSettings(), batching: false },
     physicsSettings,
-    domElement: new EventTarget() as unknown as HTMLElement,
+    domElement: canvas as unknown as HTMLElement,
+    // Heard on the canvas rather than on the window, which every test file
+    // shares: two rigs alive in one test cannot hear each other's keys.
+    input: { keys: 'element' },
   });
   onTestFinished(() => engine.dispose());
 
@@ -66,6 +75,12 @@ export async function physicsRig(
       const frames = Math.round(seconds / step);
       for (let frame = 0; frame < frames; frame++) engine.update(step);
     },
+    press(code) {
+      canvas.dispatchEvent(keyEvent('keydown', code));
+    },
+    release(code) {
+      canvas.dispatchEvent(keyEvent('keyup', code));
+    },
     drawn(entityId) {
       const object = engine.binder.getObject(entityId);
       if (!object) throw new Error(`No object is bound to "${entityId}".`);
@@ -75,12 +90,11 @@ export async function physicsRig(
       return pose;
     },
     solved(entityId) {
-      const body = engine.physics?.get(entityId)?.body;
+      const body = engine.physics?.body(entityId);
       if (!body) throw new Error(`No body was built for "${entityId}".`);
-      const translation = body.translation();
-      const rotation = body.rotation();
+      const { position, rotation } = body;
       return {
-        position: new Vector3(translation.x, translation.y, translation.z),
+        position: new Vector3(position.x, position.y, position.z),
         // Unit length only to within Rapier's single precision, and an angle
         // read off a dot product (`angleTo`) turns a norm 3e-8 short of one
         // into half a milliradian between two poses that are the same.
@@ -88,6 +102,17 @@ export async function physicsRig(
       };
     },
   };
+}
+
+/** A key as `Input` reads one: where it is on the keyboard, and no modifier held. */
+function keyEvent(type: 'keydown' | 'keyup', code: string): Event {
+  return Object.assign(new Event(type), {
+    code,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+  });
 }
 
 /**
@@ -135,6 +160,26 @@ export function withBody(kind: GeometryKind, position: Vec3): EntityTemplate {
     createComponent('rigidbody'),
     createComponentForEntity('collider', template.components),
   );
+  template.entity.transform.position = position;
+  return template;
+}
+
+/**
+ * What Add Component ▸ Player Controller builds on an empty entity: the
+ * controller, a 1.70 m capsule and a kinematic body. It faces −z.
+ */
+export function player(
+  position: Vec3,
+  {
+    controller,
+    bodyType = 'kinematicPosition',
+  }: { controller?: Partial<PlayerControllerComponent>; bodyType?: BodyType } = {},
+): EntityTemplate {
+  const template = createEntity('Player', [
+    { ...createComponent('playerController'), ...controller },
+    { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 },
+    { ...createComponent('rigidbody'), bodyType },
+  ]);
   template.entity.transform.position = position;
   return template;
 }

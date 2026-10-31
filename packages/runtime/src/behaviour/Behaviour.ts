@@ -3,7 +3,7 @@ import type { Camera, Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { SceneBinder } from '../SceneBinder';
 import type { Input } from '../input/Input';
-import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import type { PhysicsApi } from '../physics/PhysicsApi';
 import type { StudioTime } from '../time/StudioTime';
 
 /**
@@ -45,7 +45,11 @@ export interface SceneApi {
 export interface BehaviourContext {
   readonly scene: SceneDoc;
   readonly binder: SceneBinder;
-  readonly physics: PhysicsWorld | null;
+  /**
+   * How a behaviour, a plugin's included, reaches physics: through our API,
+   * never Rapier's. `null` when the engine runs without physics.
+   */
+  readonly physics: PhysicsApi | null;
   readonly input: Input;
   /**
    * The one clock, shared with the shaders.

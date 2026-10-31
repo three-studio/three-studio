@@ -208,6 +208,22 @@ describe('the layers only ever point downwards', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('lets only packages/runtime/src/physics/ import Rapier', () => {
+    // One folder knows the engine, so changing engines one day rewrites that
+    // folder and nothing else. A second importer is a second place to rewrite,
+    // and a way around the module: a behaviour holding a Rapier body can move it
+    // behind the back of whatever the world says drives it. Tests included, so
+    // a test reads the solver as a behaviour does, through the module's API.
+    const offenders: string[] = [];
+    for (const file of files) {
+      if (show(file).startsWith('packages/runtime/src/physics/')) continue;
+      for (const spec of specifiers(file)) {
+        if (spec.startsWith('@dimforge/')) offenders.push(`${show(file)} -> ${spec}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('resolves every import it claims to have read', () => {
     // The graph is only worth its assertions if it is complete. A specifier that
     // looks internal and resolves to nothing is either a broken import or a hole

@@ -177,6 +177,8 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
       for (let frame = 0; frame < Math.round(seconds / STEP); frame++) {
         controller.update(STEP, ctx);
         physics.step(STEP, (fixed) => controller.fixedUpdate(fixed, ctx));
+        // The world writes the player's entity, as it writes every body it drives.
+        physics.writeBack(binder);
         controller.postUpdate();
         onFrame?.();
       }

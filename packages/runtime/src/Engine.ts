@@ -34,6 +34,7 @@ import './behaviour/audio';
 import './controllers/PlayerController';
 import './scripting/ScriptHost';
 import { Input, type InputOptions } from './input/Input';
+import type { PhysicsApi } from './physics/PhysicsApi';
 import { PhysicsWorld } from './physics/PhysicsWorld';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -147,7 +148,13 @@ export class Engine {
   readonly scene = new Scene();
   readonly binder: SceneBinder;
   readonly input: Input;
-  readonly physics: PhysicsWorld | null;
+  /**
+   * Physics as the behaviours see it, `null` with physics off.
+   *
+   * The world's lifecycle stays private, so no host can step it out of turn or
+   * free it a second time, which throws.
+   */
+  readonly physics: PhysicsApi | null;
   /** `null` when the host handed over no context. */
   readonly audio: AudioEngine | null;
   /**
@@ -173,6 +180,7 @@ export class Engine {
   readonly behaviours: Behaviour[] = [];
 
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
+  private readonly world: PhysicsWorld | null;
   private readonly context: BehaviourContext;
   private documentCamera: Camera | null = null;
   private disposed = false;
@@ -196,6 +204,7 @@ export class Engine {
       renderer: options.renderer,
     });
     this.input = new Input(options.domElement, options.input);
+    this.world = physics;
     this.physics = physics;
     this.fixedStep = physicsSettings.fixedTimestep;
 
@@ -369,11 +378,11 @@ export class Engine {
     // impulse — issuing two targets between one step discards the first.
     for (const behaviour of this.behaviours) behaviour.update?.(delta, this.context);
 
-    if (this.physics) {
-      this.physics.step(delta, (step) => {
+    if (this.world) {
+      this.world.step(delta, (step) => {
         for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
       });
-      this.physics.writeBack(this.binder);
+      this.world.writeBack(this.binder);
     }
 
     for (const behaviour of this.behaviours) behaviour.postUpdate?.(this.context);
@@ -453,7 +462,7 @@ export class Engine {
     this.behaviours.length = 0;
     this.input.dispose();
     this.audio?.dispose();
-    this.physics?.dispose();
+    this.world?.dispose();
     this.binder.dispose();
     this.scene.clear();
   }
