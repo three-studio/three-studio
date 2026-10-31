@@ -1,16 +1,22 @@
 import {
   componentsOf,
   createAudioSourceEntity,
+  createColliderShape,
   createComponent,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
+  createRenderingSettings,
   findComponent,
   instancedId,
   type AudioSourceComponent,
+  type ColliderComponent,
+  type EntityTemplate,
 } from '@three-studio/core';
+import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import {
@@ -18,6 +24,7 @@ import {
   addEntity,
   duplicateSelection,
   deleteSelection,
+  fitColliderToMesh,
   removeComponent,
   renameEntity,
   reparentEntity,
@@ -28,6 +35,7 @@ import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
+import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
 
 /** A selection over the scene as it is drawn, for commands that take one. */
@@ -863,5 +871,84 @@ describe('a selection after a scene swap', () => {
     const selected = [wall];
 
     expect(pruneSelection(scene(), selected)).toBe(selected);
+  });
+});
+
+describe('fitting a collider to its mesh', () => {
+  /** A binder holding the meshes as the edit view draws them, synced to the document. */
+  function drawnBinder(): SceneBinder {
+    const binder = new SceneBinder({ resolver: NULL_ASSET_RESOLVER, rendering: createRenderingSettings() });
+    binder.sync(expandedScene().scene);
+    return binder;
+  }
+
+  /** A Sphere of radius 1 whose Sphere collider is still 0.5, a sensor gripping at 0.2. */
+  function grownSphere(): { template: EntityTemplate; colliderId: string } {
+    const template = createMeshEntity('sphere');
+    const [mesh] = template.components;
+    if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
+    mesh.geometry = { ...mesh.geometry, radius: 1 };
+    const collider: ColliderComponent = {
+      ...createComponent('collider'),
+      shape: createColliderShape('sphere'),
+      isSensor: true,
+    };
+    collider.material.friction = 0.2;
+    template.components.push(collider);
+    return { template, colliderId: collider.id };
+  }
+
+  const colliderOf = (entityId: string, componentId: string): ColliderComponent => {
+    const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+    if (found?.type !== 'collider') throw new Error('no collider');
+    return found;
+  };
+
+  beforeEach(() => {
+    useToastStore.getState().clear();
+  });
+
+  it('fits a Sphere collider to its mesh and keeps everything else, in one undo step', () => {
+    const { template, colliderId } = grownSphere();
+    const entityId = addEntity(template);
+
+    fitColliderToMesh(entityId, colliderId, drawnBinder());
+
+    const fitted = colliderOf(entityId, colliderId);
+    if (fitted.shape.kind !== 'sphere') throw new Error('not a sphere');
+    expect(Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
+    fitted.shape.center.forEach((value) => expect(Math.abs(value)).toBeLessThan(1e-6));
+    expect(fitted.isSensor).toBe(true);
+    expect(fitted.material.friction).toBe(0.2);
+
+    doc().undo();
+    const before = colliderOf(entityId, colliderId);
+    expect(before.shape.kind === 'sphere' && before.shape.radius).toBe(0.5);
+  });
+
+  it('fits its own entity’s meshes, never its children’s', () => {
+    const { template, colliderId } = grownSphere();
+    const above = createMeshEntity('box');
+    above.entity.transform.position = [0, 3, 0];
+    const entityId = addEntity(template);
+    addEntity(above, entityId);
+
+    fitColliderToMesh(entityId, colliderId, drawnBinder());
+
+    const fitted = colliderOf(entityId, colliderId);
+    expect(fitted.shape.kind === 'sphere' && Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
+  });
+
+  it('says so, and writes nothing, when the entity draws no mesh of its own', () => {
+    const collider = createComponent('collider');
+    const entityId = addEntity(createEntity('Shelf', [collider]));
+    const { revision } = doc();
+
+    fitColliderToMesh(entityId, collider.id, drawnBinder());
+
+    expect(doc().revision).toBe(revision);
+    const warnings = useToastStore.getState().toasts.filter((toast) => toast.kind === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(`${warnings[0]?.title} ${warnings[0]?.description}`).toContain('"Shelf"');
   });
 });

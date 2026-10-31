@@ -307,7 +307,7 @@ export { conformColliderShape, createColliderShape } from './components/collider
  * migration measured with, and two of them would put a camera and a capsule in
  * different places.
  */
-export { colliderGeometry, originAboveFeet } from './components/collider/geometry';
+export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
 export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
 
 export { deserializeScene, serializeScene } from './scene/serialization';

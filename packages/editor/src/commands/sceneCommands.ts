@@ -8,6 +8,7 @@ import {
   createEntity,
   deleteComponent,
   findComponentById,
+  fitColliderShape,
   insertEntity,
   isAncestorOf,
   putComponent,
@@ -20,6 +21,7 @@ import {
   type SceneDoc,
   type Transform,
 } from '@three-studio/core';
+import { collectVertices, type SceneBinder } from '@three-studio/runtime';
 import type { Matrix4 } from 'three/webgpu';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
@@ -581,6 +583,35 @@ export function setComponentNestedField(
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
+}
+
+/**
+ * Fits a collider around its entity's meshes, keeping its kind, rotation and
+ * rounding, as one undo step: Unity's Reset. A collider's size was copied from
+ * its mesh once, when it was added, and kept nothing in step afterwards.
+ *
+ * Read from the expanded scene, so an instance's inner collider fits too, and
+ * from the entity's own meshes, as physics builds a mesh collider from them:
+ * its children's are theirs. The binder is the edit view's, which holds those
+ * meshes as they are drawn, a model loaded through its cache included.
+ */
+export function fitColliderToMesh(id: string, componentId: string, binder: SceneBinder): void {
+  const { scene } = expandedScene();
+  const collider = findComponentById(scene, id, componentId);
+  if (collider?.type !== 'collider') return;
+
+  const container = binder.containerFor(id);
+  const vertices = container ? collectVertices(container, [1, 1, 1]) : null;
+  if (!vertices) {
+    const name = scene.entities[id]?.name ?? id;
+    notify({
+      kind: 'warning',
+      title: 'Nothing to fit to',
+      description: `"${name}" draws no mesh of its own. A Collider fits its own entity's meshes, not its children's.`,
+    });
+    return;
+  }
+  setComponentNestedField(id, componentId, ['shape'], fitColliderShape(collider.shape, vertices.positions));
 }
 
 /*

@@ -9,7 +9,9 @@ import {
   type ComponentDoc,
   type Vec3,
 } from '@three-studio/core';
+import { fitColliderToMesh } from '../../commands/sceneCommands';
 import type { ComponentSchema, FieldSpec } from '../../inspector/fields';
+import { peekViewport } from '../../viewport/viewportHost';
 
 const RAD_TO_DEG = 180 / Math.PI;
 
@@ -103,6 +105,17 @@ export const inspector: ComponentSchema = {
       fromModel: (kind) => conformColliderShape({ kind }),
     },
     { kind: 'geometry' },
+    {
+      kind: 'action',
+      title: 'Fit to Mesh',
+      // A mesh collider is its meshes already.
+      visibleWhen: (component) => component.type === 'collider' && component.shape.kind !== 'mesh',
+      // The edit view's binder: the meshes as it draws them.
+      run: ({ entityId, componentId }) => {
+        const binder = peekViewport()?.binder;
+        if (binder) fitColliderToMesh(entityId, componentId, binder);
+      },
+    },
     { path: ['isSensor'], label: 'Is sensor' },
     { kind: 'separator' },
     {

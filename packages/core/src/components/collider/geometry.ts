@@ -172,6 +172,58 @@ export function originAboveFeet(shape: ColliderShape): number {
 }
 
 /**
+ * The shape fitted around these vertices: its kind, rotation and rounding kept;
+ * its measures and its centre taken from the box the vertices span along its
+ * own axes. A mesh shape, or no vertex, gives the shape back as it was.
+ *
+ * Unity's Reset. Exact on a primitive of the shape's own kind at its default
+ * segment counts, whose poles and rims are vertices; one with fewer segments
+ * spans a little less, and off centre. A sphere takes the largest half extent,
+ * so one fitted to a cube touches its faces; a round section the larger of its
+ * two. Here, beside the rules it mirrors, so a shape fitted in its own frame
+ * turns as it is built.
+ *
+ * @param positions x, y, z triples in the entity's frame and units, unscaled:
+ *   where a collider's measures live.
+ */
+export function fitColliderShape(shape: ColliderShape, positions: ArrayLike<number>): ColliderShape {
+  if (shape.kind === 'mesh' || positions.length < 3) return shape;
+
+  const [xAxis, yAxis, zAxis] = axesOf(shape.kind === 'sphere' ? [0, 0, 0] : shape.rotation);
+  const x = spanAlong(xAxis, positions);
+  const y = spanAlong(yAxis, positions);
+  const z = spanAlong(zAxis, positions);
+  // The middle of what they span, back in the entity's frame: R · m.
+  const at = (row: 0 | 1 | 2): number =>
+    xAxis[row] * x.middle + yAxis[row] * y.middle + zAxis[row] * z.middle;
+  const center: Vec3 = [at(0), at(1), at(2)];
+
+  switch (shape.kind) {
+    case 'box':
+      return { ...shape, size: [2 * x.half, 2 * y.half, 2 * z.half], center };
+    case 'sphere':
+      return { ...shape, radius: Math.max(x.half, y.half, z.half), center };
+    case 'capsule':
+    case 'cylinder':
+    case 'cone':
+      return { ...shape, radius: Math.max(x.half, z.half), height: 2 * y.half, center };
+  }
+}
+
+/** What x, y, z triples span along a unit axis: half of it, and its middle. */
+function spanAlong([ax, ay, az]: Vec3, positions: ArrayLike<number>): { half: number; middle: number } {
+  let low = Infinity;
+  let high = -Infinity;
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    const along =
+      ax * (positions[i] ?? 0) + ay * (positions[i + 1] ?? 0) + az * (positions[i + 2] ?? 0);
+    low = Math.min(low, along);
+    high = Math.max(high, along);
+  }
+  return { half: (high - low) / 2, middle: (high + low) / 2 };
+}
+
+/**
  * How far a shape reaches below its middle — its support along −y — given how
  * far each of its own axes points up.
  */

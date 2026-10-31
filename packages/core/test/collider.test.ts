@@ -6,11 +6,13 @@ import {
   createComponentForEntity,
   createMeshEntity,
   createModelEntity,
+  fitColliderShape,
   originAboveFeet,
   type BodyType,
   type ColliderShape,
   type GeometryKind,
   type MeshBuild,
+  type Vec3,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
@@ -250,6 +252,61 @@ describe('colliderGeometry', () => {
       build: 'hull',
       scale: [-1, 2, 3],
     });
+  });
+});
+
+describe('fitColliderShape', () => {
+  /** The eight corners of a box of this size, centred on `middle`, as x, y, z triples. */
+  const corners = ([x, y, z]: Vec3, [mx, my, mz]: Vec3): number[] =>
+    [-1, 1].flatMap((sx) =>
+      [-1, 1].flatMap((sy) => [-1, 1].flatMap((sz) => [mx + (sx * x) / 2, my + (sy * y) / 2, mz + (sz * z) / 2])),
+    );
+
+  /** Within a millionth, axis by axis. */
+  const expectNear = (actual: readonly number[], expected: readonly number[]): void => {
+    expect(actual).toHaveLength(expected.length);
+    actual.forEach((value, i) => expect(Math.abs(value - (expected[i] ?? Number.NaN))).toBeLessThan(1e-6));
+  };
+
+  it('fits each kind around what the vertices span', () => {
+    const block = corners([2, 1, 4], [0, 0.5, 0]);
+
+    const box = fitColliderShape(createColliderShape('box'), block);
+    if (box.kind !== 'box') throw new Error('not a box');
+    expectNear(box.size, [2, 1, 4]);
+    expectNear(box.center, [0, 0.5, 0]);
+
+    const sphere = fitColliderShape(createColliderShape('sphere'), block);
+    if (sphere.kind !== 'sphere') throw new Error('not a sphere');
+    // Unity's rule: a sphere fitted to a cube touches its faces.
+    expect(sphere.radius).toBeCloseTo(2, 6);
+    expectNear(sphere.center, [0, 0.5, 0]);
+
+    for (const kind of ['capsule', 'cylinder', 'cone'] as const) {
+      const fitted = fitColliderShape(createColliderShape(kind), block);
+      if (fitted.kind !== kind) throw new Error(`not a ${kind}`);
+      expect(fitted.radius).toBeCloseTo(2, 6);
+      expect(fitted.height).toBeCloseTo(1, 6);
+      expectNear(fitted.center, [0, 0.5, 0]);
+    }
+  });
+
+  it('fits in the shape’s own frame, keeping its turn and its rounding', () => {
+    const log = corners([4, 1, 1], [0, 0, 0]);
+    const lying: ColliderShape = { ...createColliderShape('capsule'), rotation: [0, 0, Math.PI / 2] };
+
+    const fitted = fitColliderShape(lying, log);
+    if (fitted.kind !== 'capsule') throw new Error('not a capsule');
+    expect(fitted.radius).toBeCloseTo(0.5, 6);
+    expect(fitted.height).toBeCloseTo(4, 6);
+    expect(fitted.rotation).toEqual([0, 0, Math.PI / 2]);
+    expectNear(fitted.center, [0, 0, 0]);
+
+    const rounded = fitColliderShape({ ...createColliderShape('box'), rounding: 0.1 }, log);
+    expect(rounded.kind === 'box' && rounded.rounding).toBe(0.1);
+
+    const mesh: ColliderShape = { kind: 'mesh', build: 'hull' };
+    expect(fitColliderShape(mesh, log)).toEqual(mesh);
   });
 });
 
