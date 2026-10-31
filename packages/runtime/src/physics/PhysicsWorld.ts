@@ -36,6 +36,7 @@ export interface PhysicsBody {
 
 const _worldPosition = new Vector3();
 const _worldQuaternion = new Quaternion();
+const _parentQuaternion = new Quaternion();
 const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
 const _localMatrix = new Matrix4();
@@ -349,6 +350,10 @@ export function applyWorldTransform(
   _parentInverse.copy(parent.matrixWorld).invert();
 
   object.position.copy(worldPosition).applyMatrix4(_parentInverse);
-  parent.getWorldQuaternion(_worldQuaternion);
-  object.quaternion.copy(_worldQuaternion).invert().multiply(worldQuaternion);
+  // A scratch no caller can be holding. This read the parent's rotation into
+  // `_worldQuaternion`, which `writeBack` passes in as `worldQuaternion`: the
+  // body's rotation was overwritten before it was used, every body the solver
+  // turned was drawn at the identity, and a rolling ball was drawn sliding.
+  parent.getWorldQuaternion(_parentQuaternion);
+  object.quaternion.copy(_parentQuaternion).invert().multiply(worldQuaternion);
 }
