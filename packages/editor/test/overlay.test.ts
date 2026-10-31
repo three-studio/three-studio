@@ -16,6 +16,7 @@ import {
   type ColliderShape,
   type ComponentDoc,
   type EntityTemplate,
+  type MeshBuild,
   type SceneDoc,
   type Vec3,
 } from '@three-studio/core';
@@ -787,6 +788,120 @@ describe('what a collider is built as', () => {
     frame(scene, [box.entity.id]);
     frame(scene, [box.entity.id]);
     expect(positionsOf(annotations(overlay)[0]).version).toBe(version);
+  });
+});
+
+describe('what a mesh collider is built as', () => {
+  /*
+   * A Torus at its defaults, radius R and tube t, lying across its own z: its
+   * hole is what tells its triangles from its hull. Distances are measured from
+   * that axis.
+   */
+  const R = 0.4;
+  const t = 0.15;
+
+  const torus = (build: MeshBuild, ...components: ComponentDoc[]): EntityTemplate => {
+    const template = createMeshEntity('torus');
+    // At the origin, where its axis is the world's z; a new one stands on the ground.
+    template.entity.transform.position = [0, 0, 0];
+    template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } }, ...components);
+    return template;
+  };
+
+  /** Each point's distance from the torus's axis. */
+  const fromAxis = (points: readonly Vector3[]): number[] => points.map((point) => Math.hypot(point.x, point.y));
+
+  /** The outline drawn for the one entity selected, which draws something. */
+  function drawn(templates: readonly EntityTemplate[], selected: EntityTemplate): Vector3[] {
+    const scene = sceneWith(templates);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [selected.entity.id]);
+    const points = worldPoints(annotations(overlay)[0]);
+    expect(points.length).toBeGreaterThan(0);
+    return points;
+  }
+
+  it('draws Triangles as its triangles, hole included', () => {
+    const ring = torus('triangles');
+    const distances = fromAxis(drawn([ring], ring));
+
+    expect(Math.min(...distances.map((distance) => Math.abs(distance - (R - t))))).toBeLessThan(1e-3);
+  });
+
+  it('draws a Convex hull over the hole', () => {
+    const ring = torus('hull');
+    const distances = fromAxis(drawn([ring], ring));
+
+    expect(Math.min(...distances)).toBeGreaterThan(R - 1e-3);
+  });
+
+  it('draws Triangles as the hull a dynamic body makes of them, its own or an ancestor’s', () => {
+    const own = torus('triangles', createComponent('rigidbody'));
+    expect(Math.min(...fromAxis(drawn([own], own)))).toBeGreaterThan(R - 1e-3);
+
+    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const ridden = torus('triangles');
+    nest(cart, ridden);
+    expect(Math.min(...fromAxis(drawn([cart, ridden], ridden)))).toBeGreaterThan(R - 1e-3);
+  });
+
+  it('draws Convex parts as its triangles', () => {
+    // The parts exist only in the runtime, where V-HACD cuts them.
+    const parts = torus('parts');
+    const triangles = torus('triangles');
+
+    expect(drawn([parts], parts)).toEqual(drawn([triangles], triangles));
+  });
+
+  it('draws a flat mesh’s hull as its triangles, three hulling no flat soup', () => {
+    // three hands back a sliver of four of a disc's points, drawn as a triangle.
+    const disc = (build: MeshBuild): EntityTemplate => {
+      const template = createMeshEntity('circle');
+      template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } });
+      return template;
+    };
+    const hull = disc('hull');
+    const triangles = disc('triangles');
+
+    expect(drawn([hull], hull)).toEqual(drawn([triangles], triangles));
+  });
+
+  it('draws its own entity’s meshes, never its children’s', () => {
+    const base = createMeshEntity('box');
+    base.entity.transform.position = [0, 0, 0];
+    base.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build: 'hull' } });
+    const above = createMeshEntity('box');
+    above.entity.transform.position = [0, 3, 0];
+    nest(base, above);
+
+    const top = new Box3().setFromPoints(drawn([base, above], base)).max.y;
+    expect(Math.abs(top - 0.5)).toBeLessThan(1e-6);
+  });
+
+  it('follows its mesh, and a scale moves it without a rebuild', () => {
+    const ring = torus('triangles');
+    const scene = sceneWith([ring]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [ring.entity.id]);
+
+    const mesh = findComponent(scene, ring.entity.id, 'mesh');
+    if (mesh?.geometry.kind !== 'torus') throw new Error('no torus');
+    putComponent(scene, ring.entity.id, { ...mesh, geometry: { ...mesh.geometry, radius: 0.6 } });
+    frame(scene, [ring.entity.id]);
+    const outline = annotations(overlay)[0];
+    const reach = (): number => new Box3().setFromPoints(worldPoints(annotations(overlay)[0])).max.x;
+    expect(Math.abs(reach() - (0.6 + t))).toBeLessThan(1e-3);
+    const geometry = outline instanceof LineSegments ? outline.geometry : undefined;
+
+    const entity = scene.entities[ring.entity.id];
+    if (!entity) throw new Error('no entity');
+    const scaled: SceneDoc = {
+      ...scene,
+      entities: { ...scene.entities, [entity.id]: { ...entity, transform: { ...entity.transform, scale: [2, 2, 2] } } },
+    };
+    frame(scaled, [ring.entity.id]);
+    expect(Math.abs(reach() - 2 * (0.6 + t))).toBeLessThan(1e-3);
+    expect(outline instanceof LineSegments ? outline.geometry : undefined).toBe(geometry);
   });
 });
 

@@ -1,7 +1,7 @@
 import type { BuiltShape, Vec3 } from '@three-studio/core';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Matrix4, Mesh, Vector3, type Object3D } from 'three/webgpu';
-import { resolveEntityId } from '../systems/identity';
+import { ENTITY_ID_KEY, resolveEntityId } from '../systems/identity';
 import { MeshCache } from './MeshCache';
 
 /*
@@ -84,19 +84,32 @@ function hullOf(positions: Float32Array): RAPIER.ColliderDesc {
  * a parent's mesh Collider took in its children's meshes: a child with a
  * Collider of its own collided twice, and one with a body of its own was welded
  * into its parent's shape as well.
+ *
+ * The walk stops at a child's container rather than visiting what lies below
+ * it: the editor's collider outline asks on every frame, and a child's subtree
+ * is all someone else's.
  */
 export function ownMeshes(container: Object3D): Mesh[] {
   const entityId = resolveEntityId(container);
   const meshes: Mesh[] = [];
-  container.traverse((child) => {
-    if (child instanceof Mesh && resolveEntityId(child) === entityId) meshes.push(child);
-  });
+  const visit = (object: Object3D): void => {
+    if (object instanceof Mesh) meshes.push(object);
+    for (const child of object.children) {
+      const owner: unknown = child.userData[ENTITY_ID_KEY];
+      if (typeof owner === 'string' && owner !== entityId) continue;
+      visit(child);
+    }
+  };
+  visit(container);
   return meshes;
 }
 
 /**
  * Flattens an entity's own meshes into one vertex soup, in the entity's local
  * space, each vertex times `scale`.
+ *
+ * On the runtime's barrel with `ownMeshes`, for the editor's collider outline
+ * and *Fit to Mesh*: the vertices a collider is built from, gathered once.
  */
 export function collectVertices(
   object: Object3D,
