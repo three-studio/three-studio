@@ -281,6 +281,74 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     /** Fetches and shows, for a transition with nothing to display meanwhile. */
     go(scene: string): Promise<void>;
   }
+
+  /** A point, a direction or a velocity: metres, metres per second. three's \`Vector3\` is one. */
+  export interface Vec3Like { x: number; y: number; z: number }
+  /** A rotation. three's \`Quaternion\` is one. */
+  export interface QuatLike { x: number; y: number; z: number; w: number }
+
+  /**
+   * A body in the physics world, in world space: metres, seconds, kilograms, radians.
+   *
+   * Forces, impulses and velocities move a Dynamic body only: a Kinematic body is moved by
+   * its transform, a Fixed one stays put, and a character's by its controller. A vector or
+   * a rotation holding a NaN or an infinity is ignored, with the rest of the call.
+   */
+  export interface StudioBody {
+    /** Where the solver holds it, as of the last physics tick. */
+    readonly position: Readonly<Vec3Like>;
+    readonly rotation: Readonly<QuatLike>;
+    /** In kilograms: its Rigid Body's Mass. */
+    readonly mass: number;
+    /** \`false\` holds it out of the world: it touches nothing, and nothing touches it. */
+    enabled: boolean;
+    /** Metres per second. Assign a whole vector: \`body.linearVelocity = { x: 0, y: 5, z: 0 }\`. */
+    linearVelocity: Readonly<Vec3Like>;
+    /** Radians per second, about the world's axes. */
+    angularVelocity: Readonly<Vec3Like>;
+    /** Pushes it through the next physics tick, in newtons; at a world point \`at\` it turns it too. Call it in onFixedUpdate to push steadily. */
+    addForce(force: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+    /** A kick: changes its velocity at once by impulse / mass, in newton-seconds; at a world point \`at\` it turns it too. */
+    applyImpulse(impulse: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+    /** Turns it through the next physics tick, in newton-metres. */
+    addTorque(torque: Readonly<Vec3Like>): void;
+    /** Changes its spin at once, in newton-metre-seconds. */
+    applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
+    /** Puts it, and its entity, there at once, keeping its velocities. Without a rotation it is moved, not turned. */
+    teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
+  }
+
+  /** How a character meets the world. Every number is yours: the Player Controller's are 0.02, 0.87 (50°), 0.4, 0.2 and 0.4. */
+  export interface CharacterSettings {
+    /** The gap kept between it and what it touches, in metres. Small, never zero. */
+    readonly offset: number;
+    /** The steepest slope it walks up, in radians. */
+    readonly maxSlope: number;
+    /** The highest step it walks onto, in metres. */
+    readonly stepHeight: number;
+    /** How much free floor a step needs on top, in metres. */
+    readonly stepWidth: number;
+    /** How far below its feet the ground still holds it while it is not rising, in metres. */
+    readonly snapToGround: number;
+  }
+
+  /** A character its script moves. Its body is kinematic from the moment it is made. */
+  export interface CharacterController {
+    /** Moves it by up to \`translation\` this tick, sliding along what it meets, and turns it to \`rotation\`. Once per onFixedUpdate. Returns the part allowed. */
+    move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like>;
+    /** It stood on something after its last move, and was not leaving it. */
+    readonly grounded: boolean;
+  }
+
+  /** The physics world. An entity's id names the body it moves with: its own Rigid Body, or the nearest one above it. */
+  export interface StudioPhysics {
+    /** The project's gravity, in m/s². */
+    readonly gravity: Readonly<Vec3Like>;
+    /** \`null\` when the entity moves with no body. */
+    body(entityId: string): StudioBody | null;
+    /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
+    createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
+  }
 `;
 
 /**
@@ -314,6 +382,15 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
      * ancestor's body: it sits where the world was built.
      */
     readonly transform: any;`,
+  body: `
+    /**
+     * The body this entity moves with: its own Rigid Body, or the nearest one above it — a
+     * wheel's is its car's. With no body behind it, it moves nothing, and its first change
+     * raises a warning.
+     */
+    readonly body: StudioBody;`,
+  physics: `    /** The physics world: gravity, any entity's body, and character controllers. */
+    readonly physics: StudioPhysics;`,
   input: `    readonly input: StudioInput;`,
   audio: `    /** This entity's sounds, one-shot clips, and the buses. */
     readonly audio: StudioAudio;`,

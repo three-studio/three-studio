@@ -6,6 +6,7 @@ import {
   type BehaviourTarget,
 } from '../behaviour/Behaviour';
 import { audioApiFor } from './audioApi';
+import { noBody, scriptPhysicsFor } from './scriptPhysics';
 import {
   Behaviour,
   RESERVED_PROPERTY_NAMES,
@@ -137,9 +138,22 @@ registerBehaviour('script', (target: BehaviourTarget, ctx: BehaviourContext) => 
     (instance as unknown as Record<string, unknown>)[key] = value;
   }
 
+  const physics = scriptPhysicsFor(ctx.physics, ctx.scene);
   Object.assign(instance, {
     entity: target.entity,
     transform: target.object,
+    // With physics off — a host that has none, which is a test — the stand-in
+    // is silent: the line would be about the host, not the scene.
+    body:
+      physics.body(target.entity.id) ??
+      noBody(
+        ctx.physics &&
+          (() =>
+            ctx.warn(
+              `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
+            )),
+      ),
+    physics,
     input: ctx.input,
     scenes: ctx.scenes,
     // Bound to this entity, so `this.audio.play()` with no argument means "my

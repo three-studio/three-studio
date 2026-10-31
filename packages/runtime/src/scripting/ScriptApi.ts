@@ -2,8 +2,10 @@ import type { EntityDoc, FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { BehaviourContext } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
+import type { BodyHandle } from '../physics/PhysicsApi';
 import type { AudioApi } from './audioApi';
 import type { SceneApi } from '../behaviour/Behaviour';
+import type { ScriptPhysics } from './scriptPhysics';
 
 /**
  * Declared shape of one editable property. Drives the inspector.
@@ -49,6 +51,8 @@ export type BehaviourMember = keyof Behaviour | ProtectedMember;
 const OCCUPIED_NAMES: Record<BehaviourMember, true> = {
   entity: true,
   transform: true,
+  body: true,
+  physics: true,
   input: true,
   scenes: true,
   audio: true,
@@ -112,6 +116,21 @@ export abstract class Behaviour {
    *    moves.
    */
   readonly transform!: Object3D;
+  /**
+   * The body this entity moves with: its own Rigid Body, or the nearest one up
+   * the tree — a wheel's is its car's. An entity with a Collider and no Rigid
+   * Body on or above it is level geometry, a Fixed body of its own.
+   *
+   * There on every script. With no body behind it, it moves nothing, its reads
+   * are zero, and its first change raises a warning. Forces, impulses and
+   * velocities move a Dynamic body only.
+   */
+  readonly body!: BodyHandle;
+  /**
+   * The physics world: gravity, any entity's body, and character controllers.
+   * Its ids name bodies as `body` does.
+   */
+  readonly physics!: ScriptPhysics;
   readonly input!: Input;
   /**
    * The mix: this entity's own sounds, one-shot clips, and the buses.

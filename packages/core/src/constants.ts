@@ -46,8 +46,16 @@ export const ENGINE_VERSION = '0.6.0';
  * that happened to declare a property called `audio` now has it refused with a
  * warning instead of silently overwriting the api. That is what the number is
  * for: the change is invisible until it is not.
+ *
+ * 3 — `Behaviour` gained `this.body` and `this.physics`: forces, impulses,
+ * torques, velocities and teleports on the body an entity moves with, any
+ * entity's body by id, gravity, and character controllers of a script's own. A
+ * bundle compiled against 2 never named them — but `body` and `physics` joined
+ * the reserved property names, so a script that declared a property called
+ * `body` now has it refused with a warning instead of silently replacing the
+ * api.
  */
-export const SCRIPT_API_VERSION = 2;
+export const SCRIPT_API_VERSION = 3;
 
 /**
  * Scene document format version. Bump on any schema change; `migrateScene`
