@@ -74,9 +74,9 @@ export const SCRIPT_API_VERSION = 2;
  * built around a 0.5 m stair cannot be climbed there, and nothing says why.
  * Refusing the file is the better failure.
  *
- * A rigid body's `interpolate` joined 11 while no release carried it. An older
- * build keeps it and ignores it, and draws every body at its last step: a
- * smooth body steps there.
+ * A rigid body's `interpolate`, `lockPosition` and `lockRotation` joined 11
+ * while no release carried it. An older build keeps them and ignores them: a
+ * body locked upright tumbles there, and a smooth one steps.
  *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
@@ -187,8 +187,9 @@ export const PREFAB_ID_SEPARATOR = '/';
  * `assets/prefabs/*.prefab.json`.
  *
  * 8 — the slope and step height of scene format 11, and its rigid body's
- * `interpolate`. A prefab holds the same `ComponentTables`, so it can hold a
- * player controller an older build would walk with its own 50° and 0.4 m.
+ * interpolation and locks. A prefab holds the same `ComponentTables`, so it can
+ * hold a player controller an older build would walk with its own 50° and
+ * 0.4 m.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the

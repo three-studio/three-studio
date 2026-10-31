@@ -12,5 +12,7 @@ export function createRigidBody(): RigidBodyComponent {
     gravityScale: 1,
     ccd: false,
     interpolate: true,
+    lockPosition: [false, false, false],
+    lockRotation: [false, false, false],
   };
 }

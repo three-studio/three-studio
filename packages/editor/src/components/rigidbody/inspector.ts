@@ -24,6 +24,13 @@ export const inspector: ComponentSchema = {
     { path: ['gravityScale'], label: 'Gravity scale', type: 'number', min: -5, max: 5, step: 0.1 },
     { path: ['ccd'], label: 'Continuous detection' },
     { path: ['interpolate'], label: 'Interpolate', visibleWhen: isDynamic },
+    // One row each: three checkboxes to a row would need a Tweakpane plugin.
+    { path: ['lockPosition', '0'], label: 'Lock position X', visibleWhen: isDynamic },
+    { path: ['lockPosition', '1'], label: 'Lock position Y', visibleWhen: isDynamic },
+    { path: ['lockPosition', '2'], label: 'Lock position Z', visibleWhen: isDynamic },
+    { path: ['lockRotation', '0'], label: 'Lock rotation X', visibleWhen: isDynamic },
+    { path: ['lockRotation', '1'], label: 'Lock rotation Y', visibleWhen: isDynamic },
+    { path: ['lockRotation', '2'], label: 'Lock rotation Z', visibleWhen: isDynamic },
   ],
 };
 

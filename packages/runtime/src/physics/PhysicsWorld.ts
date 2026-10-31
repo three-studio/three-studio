@@ -389,6 +389,15 @@ export class PhysicsWorld implements PhysicsApi {
       desc.setAngularDamping(rigidbody.angularDamping);
       desc.setGravityScale(rigidbody.gravityScale);
       desc.setCcdEnabled(rigidbody.ccd);
+      // The solver's alone, as the Inspector shows them: a kinematic body never
+      // takes a lock hidden since it stopped being dynamic. Rapier names the
+      // axes left free, where the document names those locked.
+      if (bodyType === 'dynamic') {
+        const [px, py, pz] = rigidbody.lockPosition;
+        const [rx, ry, rz] = rigidbody.lockRotation;
+        desc.enabledTranslations(!px, !py, !pz);
+        desc.enabledRotations(!rx, !ry, !rz);
+      }
     }
 
     const body = this.world.createRigidBody(desc);

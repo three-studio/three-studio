@@ -135,11 +135,13 @@ describe('scene migration', () => {
     expect(player).toMatchObject({ sprintMultiplier: 1.8, eyeHeight: 1.6 });
   });
 
-  it('fills a rigid body written before interpolation, from its factory', () => {
+  it('fills a rigid body written before interpolation and locks, from its factory', () => {
     const json = olderScene((raw) => {
       raw['version'] = 10;
       for (const component of rawComponents(raw, 'rigidbody')) {
         delete component['interpolate'];
+        delete component['lockPosition'];
+        delete component['lockRotation'];
         component['mass'] = 12;
       }
     });
@@ -148,6 +150,8 @@ describe('scene migration', () => {
     const entityId = Object.keys(migrated.entities)[0]!;
     expect(findComponent(migrated, entityId, 'rigidbody')).toMatchObject({
       interpolate: true,
+      lockPosition: [false, false, false],
+      lockRotation: [false, false, false],
       mass: 12,
     });
   });

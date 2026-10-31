@@ -28,4 +28,8 @@ export interface RigidBodyComponent extends ComponentBase {
    * transform is, and a character's always this way.
    */
   interpolate: boolean;
+  /** World axes the solver may not move it along, x, y, z. A dynamic body only. */
+  lockPosition: [boolean, boolean, boolean];
+  /** World axes it may not turn about, x, y, z. A dynamic body only. */
+  lockRotation: [boolean, boolean, boolean];
 }
