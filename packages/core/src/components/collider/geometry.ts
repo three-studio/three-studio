@@ -30,6 +30,9 @@ export type BuiltShape =
       /** Half the straight part, between the centres of its caps. */
       halfHeight: number;
     }
+  | { kind: 'cylinder'; radius: number; halfHeight: number }
+  /** Its base at −`halfHeight` along its own y, its apex at +`halfHeight`. */
+  | { kind: 'cone'; radius: number; halfHeight: number }
   | {
       kind: 'mesh';
       build: MeshBuild;
@@ -61,6 +64,15 @@ export function colliderGeometry(shape: ColliderShape, scale: Vec3): ColliderGeo
         shape: halfHeight > 0 ? { kind: 'capsule', radius, halfHeight } : { kind: 'sphere', radius },
       };
     }
+    case 'cylinder':
+    case 'cone':
+      return {
+        shape: {
+          kind: shape.kind,
+          radius: measure(shape.radius) * Math.max(kx, kz),
+          halfHeight: half(shape.height) * ky,
+        },
+      };
     case 'mesh':
       // The vertices take the scale exactly, mirrored included.
       return { shape: { kind: 'mesh', build: shape.build, scale: [scale[0], scale[1], scale[2]] } };
@@ -100,6 +112,9 @@ export function originAboveFeet(shape: ColliderShape): number {
       return built.radius;
     case 'capsule':
       return built.halfHeight + built.radius;
+    case 'cylinder':
+    case 'cone':
+      return built.halfHeight;
     case 'mesh':
       return 0;
   }

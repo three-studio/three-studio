@@ -26,6 +26,22 @@ export type ColliderShape =
       height: number;
     }
   | {
+      kind: 'cylinder';
+      radius: number;
+      /** From end to end, along its own y. */
+      height: number;
+    }
+  | {
+      kind: 'cone';
+      /** Its base's. */
+      radius: number;
+      /**
+       * From base to apex, along its own y. The apex points up, as three draws a
+       * Cylinder whose top radius is 0.
+       */
+      height: number;
+    }
+  | {
       kind: 'mesh';
       /** How the entity's own geometry is made into a shape. */
       build: MeshBuild;
@@ -46,6 +62,8 @@ export const COLLIDER_SHAPE_LABELS: Record<ColliderShapeKind, string> = {
   box: 'Box',
   sphere: 'Sphere',
   capsule: 'Capsule',
+  cylinder: 'Cylinder',
+  cone: 'Cone',
   mesh: 'Mesh',
 };
 

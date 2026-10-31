@@ -15,14 +15,21 @@ import type { ComponentSchema, FieldSpec } from '../../inspector/fields';
 const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
   box: [{ path: ['shape', 'size'], label: 'Size', type: 'vec3', min: 0.01, step: 0.1 }],
   sphere: [{ path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 }],
-  capsule: [
-    { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
-  ],
+  capsule: radiusAndHeight(),
+  cylinder: radiusAndHeight(),
+  cone: radiusAndHeight(),
   mesh: [
     { path: ['shape', 'build'], label: 'Build', type: 'enum', options: optionsFrom(MESH_BUILD_LABELS) },
   ],
 };
+
+/** A capsule, a cylinder and a cone are measured alike: a radius, and a height end to end. */
+function radiusAndHeight(): readonly FieldSpec[] {
+  return [
+    { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
+    { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
+  ];
+}
 
 /** What the `{ kind: 'geometry' }` slot expands into: the rows of the collider's kind. */
 function shapeFields(component: ComponentDoc): readonly FieldSpec[] {

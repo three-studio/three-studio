@@ -49,6 +49,13 @@ describe('originAboveFeet', () => {
     );
   });
 
+  it('measures a cylinder and a cone by half their height', () => {
+    expect(originAboveFeet({ kind: 'cylinder', radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
+    // Upright, a cone reaches as far below its middle, at its base, as its apex
+    // does above it.
+    expect(originAboveFeet({ kind: 'cone', radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
+  });
+
   for (const build of ['triangles', 'hull'] as const) {
     it(`treats the origin of a mesh built as ${build} as already being its reference`, () => {
       // Built from the entity's own geometry in its own local space, so there
@@ -103,6 +110,16 @@ describe('colliderGeometry', () => {
     expect(shape.radius).toBeCloseTo(0.85, 6);
   });
 
+  it('stretches a cylinder and a cone along their length, their section by its larger stretch', () => {
+    for (const kind of ['cylinder', 'cone'] as const) {
+      expect(colliderGeometry({ kind, radius: 0.5, height: 1 }, [1, 3, 2]).shape).toEqual({
+        kind,
+        radius: 1,
+        halfHeight: 1.5,
+      });
+    }
+  });
+
   it('builds the same shape mirrored', () => {
     const shapes: ColliderShape[] = [{ kind: 'box', size: [2, 1, 4] }, { kind: 'sphere', radius: 0.5 }, capsule()];
     for (const shape of shapes) {
@@ -144,8 +161,8 @@ describe('createColliderFor', () => {
       sphere: { kind: 'sphere', radius: 0.5 },
       // three's capsule height is its straight part: 1 + two caps of 0.5.
       capsule: { kind: 'capsule', radius: 0.5, height: 2 },
-      // A capsule still, as before cylinders had a collider of their own.
-      cylinder: { kind: 'capsule', radius: 0.5, height: 2 },
+      // A cylinder, where it was a capsule a cap too tall at each end.
+      cylinder: { kind: 'cylinder', radius: 0.5, height: 1 },
       plane: { kind: 'mesh', build: 'triangles' },
       circle: { kind: 'mesh', build: 'triangles' },
       ring: { kind: 'mesh', build: 'triangles' },
@@ -162,18 +179,22 @@ describe('createColliderFor', () => {
     }
   });
 
-  it('guesses a tapered cylinder as the capsule of its wider end', () => {
-    for (const [radiusTop, radiusBottom] of [[0, 0.5], [0.5, 0], [0.2, 0.5]] as const) {
-      const template = createMeshEntity('cylinder');
-      const mesh = template.components[0]!;
-      if (mesh.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
-      mesh.geometry = { ...mesh.geometry, radiusTop, radiusBottom };
-      expect(createComponentForEntity('collider', template.components).shape).toEqual({
-        kind: 'capsule',
-        radius: 0.5,
-        height: 2,
-      });
-    }
+  const tapered = (radiusTop: number, radiusBottom: number): ColliderShape => {
+    const template = createMeshEntity('cylinder');
+    const mesh = template.components[0]!;
+    if (mesh.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
+    mesh.geometry = { ...mesh.geometry, radiusTop, radiusBottom };
+    return createComponentForEntity('collider', template.components).shape;
+  };
+
+  it('guesses a cylinder whose top radius is 0 as a cone, apex up', () => {
+    expect(tapered(0, 0.5)).toEqual({ kind: 'cone', radius: 0.5, height: 1 });
+  });
+
+  it('guesses any other tapered cylinder as its convex hull, which is exact', () => {
+    // Apex down too, until a collider can turn.
+    expect(tapered(0.5, 0)).toEqual({ kind: 'mesh', build: 'hull' });
+    expect(tapered(0.2, 0.5)).toEqual({ kind: 'mesh', build: 'hull' });
   });
 
   it('gives a model a mesh collider built from its triangles', () => {

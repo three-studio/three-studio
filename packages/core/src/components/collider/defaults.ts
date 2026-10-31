@@ -22,6 +22,9 @@ const SHAPE_FACTORIES: { readonly [K in ColliderShapeKind]: () => ColliderShapeO
   sphere: () => ({ kind: 'sphere', radius: 0.5 }),
   // The Capsule primitive's, caps included.
   capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2 }),
+  // The Cylinder primitive's.
+  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1 }),
+  cone: () => ({ kind: 'cone', radius: 0.5, height: 1 }),
   mesh: () => ({ kind: 'mesh', build: 'triangles' }),
 };
 
@@ -112,8 +115,13 @@ function shapeOfGeometry(geometry: GeometryDef): ColliderShape {
       // three measures a capsule's straight part alone; a collider, end to end.
       return { kind: 'capsule', radius: geometry.radius, height: geometry.height + 2 * geometry.radius };
     case 'cylinder': {
-      const radius = Math.max(geometry.radiusTop, geometry.radiusBottom);
-      return { kind: 'capsule', radius, height: geometry.height + 2 * radius };
+      const { radiusTop, radiusBottom, height } = geometry;
+      if (radiusTop === radiusBottom) return { kind: 'cylinder', radius: radiusTop, height };
+      // Apex up, as a cone collider is built.
+      if (radiusTop === 0) return { kind: 'cone', radius: radiusBottom, height };
+      // Any one radius would be wrong for a frustum, and its hull is exact.
+      // Apex down waits for a collider that can turn, and is the same hull.
+      return { kind: 'mesh', build: 'hull' };
     }
     case 'plane':
     case 'circle':

@@ -1,3 +1,10 @@
+import {
+  createComponent,
+  createComponentForEntity,
+  createMeshEntity,
+  type EntityTemplate,
+  type Vec3,
+} from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
 
@@ -32,3 +39,47 @@ describe('a scaled collider', () => {
     expect(rig.solved(box.entity.id).position.y).toBeCloseTo(0.25, 2);
   });
 });
+
+describe('a cylinder and a cone', () => {
+  it('rests a cylinder of height 1 at y = 0.5', async () => {
+    // Locked, so the old capsule could not tip off its round end and hide the
+    // half metre it stood on: the audit measured it resting at 1.0.
+    const cylinder = withBody('cylinder', [0, 2, 0], { lockRotation: [true, true, true] });
+    const rig = await physicsRig([ground(), cylinder]);
+
+    rig.run(2);
+
+    expect(rig.solved(cylinder.entity.id).position.y).toBeCloseTo(0.5, 2);
+  });
+
+  it('stands a cone on its base, its apex up, as three draws it', async () => {
+    // Tilted, because upright a cone resting on its base and one resting on its
+    // apex stand at the same height. Built apex down, it would rest on its tip,
+    // 0.5 · cos 30° ≈ 0.433 up; apex up, on its rim.
+    const cone = coneBody([0, 2, 0]);
+    cone.entity.transform.rotation = [0, 0, Math.PI / 6];
+    const rig = await physicsRig([ground(), cone]);
+
+    rig.run(2);
+
+    const rim = 0.5 * Math.cos(Math.PI / 6) + 0.5 * Math.sin(Math.PI / 6);
+    expect(rig.solved(cone.entity.id).position.y).toBeCloseTo(rim, 2);
+  });
+});
+
+/**
+ * A Cylinder mesh whose top radius is 0, with a dynamic body whose rotations are
+ * locked and the collider Add Component guesses for it.
+ */
+function coneBody(position: Vec3): EntityTemplate {
+  const template = createMeshEntity('cylinder');
+  const mesh = template.components[0];
+  if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
+  mesh.geometry = { ...mesh.geometry, radiusTop: 0 };
+  template.components.push(
+    { ...createComponent('rigidbody'), lockRotation: [true, true, true] },
+    createComponentForEntity('collider', template.components),
+  );
+  template.entity.transform.position = position;
+  return template;
+}

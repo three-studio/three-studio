@@ -447,6 +447,10 @@ function describeCollider(
       return RAPIER.ColliderDesc.ball(shape.radius);
     case 'capsule':
       return RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius);
+    case 'cylinder':
+      return RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
+    case 'cone':
+      return RAPIER.ColliderDesc.cone(shape.halfHeight, shape.radius);
     case 'mesh':
       return describeMesh(object, shape);
   }
