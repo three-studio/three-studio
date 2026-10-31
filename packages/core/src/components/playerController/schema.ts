@@ -60,7 +60,7 @@ export interface PlayerControllerComponent extends ComponentBase {
    * Inspector could have told anyone that; the offset was only knowable by
    * reading `describeCollider`. Format 10 raises every stored value by its
    * collider's half height, so the camera does not move, and from then on the
-   * number means what its name says. See `colliderHalfHeight`.
+   * number means what its name says. See `originAboveFeet`.
    *
    * Read in FPS mode as the eye, and in TPS mode as the height of the point the
    * camera orbits — which is why the Inspector shows it in both.

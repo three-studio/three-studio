@@ -1,4 +1,5 @@
 import {
+  colliderGeometry,
   entitiesWith,
   entityWorldMatrixPath,
   findComponent,
@@ -9,9 +10,10 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Box3, Matrix4, Mesh, Quaternion, Vector3, type Object3D } from 'three/webgpu';
+import { Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
+import { describeMesh } from './meshShape';
 import type {
   BodyHandle,
   CharacterController,
@@ -210,8 +212,6 @@ const _drawnQuaternion = new Quaternion();
 const _parentQuaternion = new Quaternion();
 const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
-const _localMatrix = new Matrix4();
-const _bounds = new Box3();
 
 /**
  * Owns the Rapier world and keeps it in step with the scene document.
@@ -405,13 +405,11 @@ export class PhysicsWorld implements PhysicsApi {
     let created: RAPIER.Collider | null = null;
     if (collider) {
       const shape = describeCollider(collider, object, _worldScale);
-      if (shape) {
-        shape.setFriction(collider.material.friction);
-        shape.setRestitution(collider.material.restitution);
-        shape.setSensor(collider.isSensor);
-        if (rigidbody) shape.setMass(rigidbody.mass);
-        created = this.world.createCollider(shape, body);
-      }
+      shape.setFriction(collider.material.friction);
+      shape.setRestitution(collider.material.restitution);
+      shape.setSensor(collider.isSensor);
+      if (rigidbody) shape.setMass(rigidbody.mass);
+      created = this.world.createCollider(shape, body);
     }
 
     this.bodies.set(
@@ -433,102 +431,25 @@ function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDes
 }
 
 /**
- * Collider shapes are scaled by the entity's world scale, because Rapier has no
- * notion of a scaled shape — a box scaled 2× in the scene must be described as
- * a box with doubled half-extents.
+ * A collider as Rapier takes it, built at its entity's world scale by the rules
+ * core's `colliderGeometry` writes down.
  */
 function describeCollider(
   collider: ColliderComponent,
   object: Object3D,
   scale: Vector3,
-): RAPIER.ColliderDesc | null {
-  const uniform = Math.max(Math.abs(scale.x), Math.abs(scale.y), Math.abs(scale.z));
-  const shape = collider.shape;
-
+): RAPIER.ColliderDesc {
+  const { shape } = colliderGeometry(collider.shape, [scale.x, scale.y, scale.z]);
   switch (shape.kind) {
     case 'box':
-      // Measured as drawn, so Rapier's half extents are half of it.
-      return RAPIER.ColliderDesc.cuboid(
-        (shape.size[0] / 2) * Math.abs(scale.x),
-        (shape.size[1] / 2) * Math.abs(scale.y),
-        (shape.size[2] / 2) * Math.abs(scale.z),
-      );
+      return RAPIER.ColliderDesc.cuboid(...shape.halfExtents);
     case 'sphere':
-      return RAPIER.ColliderDesc.ball(shape.radius * uniform);
-    case 'capsule': {
-      // Measured end to end, where Rapier takes half the straight part: none
-      // left, it is the sphere of its caps.
-      const halfStraight = Math.max(shape.height / 2 - shape.radius, 0);
-      return RAPIER.ColliderDesc.capsule(halfStraight * uniform, shape.radius * uniform);
-    }
-    case 'mesh': {
-      const vertices = collectVertices(object, scale);
-      if (!vertices) return fallbackBox(object, scale);
-      return shape.build === 'triangles'
-        ? RAPIER.ColliderDesc.trimesh(
-            vertices.positions,
-            vertices.indices,
-            // Without this, a character catches on the shared edge between two
-            // coplanar triangles — which is every seam in every imported piece
-            // of level geometry. It cost half the strafing speed on a floor
-            // made of two triangles, and only in the directions that crossed
-            // the diagonal.
-            RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES,
-          )
-        : (RAPIER.ColliderDesc.convexHull(vertices.positions) ?? fallbackBox(object, scale));
-    }
+      return RAPIER.ColliderDesc.ball(shape.radius);
+    case 'capsule':
+      return RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius);
+    case 'mesh':
+      return describeMesh(object, shape);
   }
-}
-
-/** A mesh-derived shape is impossible without geometry; a box is better than nothing. */
-function fallbackBox(object: Object3D, scale: Vector3): RAPIER.ColliderDesc {
-  _bounds.setFromObject(object, true);
-  const size = _bounds.getSize(new Vector3());
-  return RAPIER.ColliderDesc.cuboid(
-    Math.max(size.x / 2, 0.01) * Math.abs(scale.x),
-    Math.max(size.y / 2, 0.01) * Math.abs(scale.y),
-    Math.max(size.z / 2, 0.01) * Math.abs(scale.z),
-  );
-}
-
-/** Flattens an entity's meshes into one vertex soup, in the entity's local space. */
-function collectVertices(
-  object: Object3D,
-  scale: Vector3,
-): { positions: Float32Array; indices: Uint32Array } | null {
-  const positions: number[] = [];
-  const indices: number[] = [];
-  let vertexOffset = 0;
-  let found = false;
-
-  object.updateWorldMatrix(true, true);
-  _parentInverse.copy(object.matrixWorld).invert();
-
-  object.traverse((child) => {
-    if (!(child instanceof Mesh)) return;
-    const attribute = child.geometry.getAttribute('position');
-    if (!attribute) return;
-    found = true;
-
-    _localMatrix.multiplyMatrices(_parentInverse, child.matrixWorld);
-    const vertex = new Vector3();
-
-    for (let i = 0; i < attribute.count; i++) {
-      vertex.fromBufferAttribute(attribute, i).applyMatrix4(_localMatrix);
-      positions.push(vertex.x * scale.x, vertex.y * scale.y, vertex.z * scale.z);
-    }
-
-    const index = child.geometry.getIndex();
-    if (index) {
-      for (let i = 0; i < index.count; i++) indices.push(index.getX(i) + vertexOffset);
-    } else {
-      for (let i = 0; i < attribute.count; i++) indices.push(i + vertexOffset);
-    }
-    vertexOffset += attribute.count;
-  });
-
-  if (!found) return null;
-  return { positions: new Float32Array(positions), indices: new Uint32Array(indices) };
 }
 
 /**

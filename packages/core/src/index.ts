@@ -298,17 +298,15 @@ export {
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
 
+export { conformColliderShape, createColliderShape } from './components/collider/defaults';
 /*
- * How far a collider hangs below the entity's origin, which is the middle of
- * the shape rather than its base. Exported because the runtime needs the same
- * answer the scene migration used, and two of them would put a camera and a
- * capsule in different places.
+ * A collider as physics builds it, and how far it hangs below the entity's
+ * origin. Exported because the runtime builds from the same rules the scene
+ * migration measured with, and two of them would put a camera and a capsule in
+ * different places.
  */
-export {
-  colliderHalfHeight,
-  conformColliderShape,
-  createColliderShape,
-} from './components/collider/defaults';
+export { colliderGeometry, originAboveFeet } from './components/collider/geometry';
+export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';

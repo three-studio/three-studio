@@ -1,6 +1,6 @@
 import {
-  colliderHalfHeight,
   findComponent,
+  originAboveFeet,
   type ColliderComponent,
   type PlayerControllerComponent,
 } from '@three-studio/core';
@@ -136,7 +136,7 @@ export class PlayerController implements Behaviour {
   ) {
     this.orbitDistance = component.cameraDistance;
     this.camera = new PerspectiveCamera(component.fov, 16 / 9, 0.1, 5000);
-    this.feetOffset = colliderDoc ? colliderHalfHeight(colliderDoc) : 0;
+    this.feetOffset = colliderDoc ? originAboveFeet(colliderDoc.shape) : 0;
 
     object.getWorldQuaternion(_quaternion);
     _euler.setFromQuaternion(_quaternion);

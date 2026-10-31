@@ -1,6 +1,6 @@
 import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
-import { colliderHalfHeight } from '../components/collider/defaults';
+import { originAboveFeet } from '../components/collider/geometry';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -144,8 +144,8 @@ function raiseEyeHeightToFeet(scene: SceneDoc): void {
     // box, its old shape not converted: the eye moves by that box's half, 0.5,
     // rather than by the capsule it may have been — a finite number, where the
     // shape read as written would have made it `NaN`.
-    const half = colliderHalfHeight(collider);
-    for (const controller of Object.values(held)) controller.eyeHeight += half;
+    const below = originAboveFeet(collider.shape);
+    for (const controller of Object.values(held)) controller.eyeHeight += below;
   }
 }
 
