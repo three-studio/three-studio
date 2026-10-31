@@ -50,6 +50,20 @@ describe('a scaled collider', () => {
   });
 });
 
+describe('a rounded collider', () => {
+  it('rests a rounded 1 m box at 0.5, its outside the size drawn', async () => {
+    const box = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });
+    const collider = colliderOf(box);
+    if (collider.shape.kind !== 'box') throw new Error('not a box');
+    collider.shape = { ...collider.shape, rounding: 0.1 };
+    const rig = await physicsRig([ground(), box]);
+
+    rig.run(2);
+
+    expect(rig.solved(box.entity.id).position.y).toBeCloseTo(0.5, 2);
+  });
+});
+
 describe('a cylinder and a cone', () => {
   it('rests a cylinder of height 1 at y = 0.5', async () => {
     // Locked, so the old capsule could not tip off its round end and hide the
@@ -86,11 +100,20 @@ describe('a collider off its entity’s centre, turned', () => {
     { ...createColliderShape('capsule'), radius: 0.2, height: 0.9, center, rotation },
     { ...createColliderShape('cylinder'), radius: 0.3, height: 0.6, center, rotation },
     { ...createColliderShape('cone'), radius: 0.3, height: 0.6, center, rotation },
+    // Rounded too: the rounding is outside the core Rapier is handed.
+    { ...createColliderShape('box'), size: [0.6, 0.8, 0.4], rounding: 0.05, center, rotation },
+    { ...createColliderShape('cylinder'), radius: 0.3, height: 0.6, rounding: 0.05, center, rotation },
+    { ...createColliderShape('cone'), radius: 0.3, height: 0.6, rounding: 0.05, center, rotation },
   ];
 
   // Core's Euler pinned to three's, which the builder turns through, and to
   // Rapier's: what `originAboveFeet` says is where the shape's bottom is.
-  it.each(shapes.map((shape) => [shape.kind, shape] as const))(
+  const named = shapes.map((shape) => {
+    const rounded = 'rounding' in shape && shape.rounding > 0 ? 'rounded ' : '';
+    return [`${rounded}${shape.kind}`, shape] as const;
+  });
+
+  it.each(named)(
     'rests a %s where originAboveFeet puts its bottom',
     async (_kind, shape) => {
       const body = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });

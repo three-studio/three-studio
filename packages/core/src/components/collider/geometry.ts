@@ -24,10 +24,11 @@ import type { ColliderShape, MeshBuild } from './schema';
 
 /**
  * A shape as physics builds it, in Rapier's own arguments: metres, at the
- * entity's scale, half measures.
+ * entity's scale, half measures. A rounded shape is the core it rounds and the
+ * `rounding` it adds all round, so its outside is where the shape is drawn.
  */
 export type BuiltShape =
-  | { kind: 'box'; halfExtents: Vec3 }
+  | { kind: 'box'; halfExtents: Vec3; rounding: number }
   | { kind: 'sphere'; radius: number }
   | {
       kind: 'capsule';
@@ -35,9 +36,9 @@ export type BuiltShape =
       /** Half the straight part, between the centres of its caps. */
       halfHeight: number;
     }
-  | { kind: 'cylinder'; radius: number; halfHeight: number }
+  | { kind: 'cylinder'; radius: number; halfHeight: number; rounding: number }
   /** Its base at −`halfHeight` along its own y, its apex at +`halfHeight`. */
-  | { kind: 'cone'; radius: number; halfHeight: number }
+  | { kind: 'cone'; radius: number; halfHeight: number; rounding: number }
   | {
       kind: 'mesh';
       build: MeshBuild;
@@ -85,7 +86,10 @@ function turned(
   switch (shape.kind) {
     case 'box': {
       const [x, y, z] = shape.size;
-      return { kind: 'box', halfExtents: [half(x) * kx, half(y) * ky, half(z) * kz] };
+      const outside: Vec3 = [half(x) * kx, half(y) * ky, half(z) * kz];
+      const rounding = rounded(shape.rounding, [kx, ky, kz], Math.min(...outside));
+      const [hx, hy, hz] = outside;
+      return { kind: 'box', halfExtents: [hx - rounding, hy - rounding, hz - rounding], rounding };
     }
     case 'capsule': {
       const span = half(shape.height) * ky;
@@ -96,13 +100,29 @@ function turned(
       return halfHeight > 0 ? { kind: 'capsule', radius, halfHeight } : { kind: 'sphere', radius };
     }
     case 'cylinder':
-    case 'cone':
+    case 'cone': {
+      // For a cone the core keeps its span and its base's radius exactly; near
+      // the apex, the rounding bulges a little past the drawn sides.
+      const radius = measure(shape.radius) * Math.max(kx, kz);
+      const halfHeight = half(shape.height) * ky;
+      const rounding = rounded(shape.rounding, [kx, ky, kz], Math.min(radius, halfHeight));
       return {
         kind: shape.kind,
-        radius: measure(shape.radius) * Math.max(kx, kz),
-        halfHeight: half(shape.height) * ky,
+        radius: radius - rounding,
+        halfHeight: halfHeight - rounding,
+        rounding,
       };
+    }
   }
+}
+
+/**
+ * A rounding as built: stretched by the least the shape is, so it never rounds
+ * past the flattest side, and never more than the shape's smallest half
+ * measure, so the core it rounds is never turned inside out.
+ */
+function rounded(rounding: number, stretches: Vec3, smallestHalf: number): number {
+  return Math.min(measure(rounding) * Math.min(...stretches), smallestHalf);
 }
 
 /**
@@ -144,23 +164,27 @@ export function originAboveFeet(shape: ColliderShape): number {
 function reachBelow(built: Exclude<BuiltShape, { kind: 'mesh' }>, up: Vec3): number {
   const [ux, uy, uz] = up;
   switch (built.kind) {
+    // A rounded shape reaches its rounding further than the core it rounds.
     case 'box': {
       const [hx, hy, hz] = built.halfExtents;
-      return Math.abs(ux) * hx + Math.abs(uy) * hy + Math.abs(uz) * hz;
+      return Math.abs(ux) * hx + Math.abs(uy) * hy + Math.abs(uz) * hz + built.rounding;
     }
     case 'sphere':
       return built.radius;
     case 'capsule':
       return Math.abs(uy) * built.halfHeight + built.radius;
     case 'cylinder':
-      return Math.abs(uy) * built.halfHeight + built.radius * tilt(uy);
+      return Math.abs(uy) * built.halfHeight + built.radius * tilt(uy) + built.rounding;
     case 'cone':
       // The apex, or the lowest point of the base's rim.
-      return Math.max(-built.halfHeight * uy, built.halfHeight * uy + built.radius * tilt(uy));
+      return (
+        Math.max(-built.halfHeight * uy, built.halfHeight * uy + built.radius * tilt(uy)) +
+        built.rounding
+      );
   }
 }
 
-/** How far a disc square to an axis reaches down, per metre of radius: the sine of the axis's tilt. */
+/** How far a disc square to an axis reaches down, per metre of radius: the sine of its tilt. */
 function tilt(upward: number): number {
   return Math.sqrt(Math.max(0, 1 - upward * upward));
 }

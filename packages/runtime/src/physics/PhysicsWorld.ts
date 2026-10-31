@@ -442,7 +442,8 @@ function describeCollider(
   object: Object3D,
   scale: Vector3,
 ): RAPIER.ColliderDesc {
-  const { shape, position, rotation } = colliderGeometry(collider.shape, [scale.x, scale.y, scale.z]);
+  const { x: sx, y: sy, z: sz } = scale;
+  const { shape, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz]);
   const [x, y, z] = position;
   // three's Euler XYZ, which is the order `colliderGeometry` turns its axes in.
   _colliderRotation.setFromEuler(_colliderEuler.set(...rotation));
@@ -452,15 +453,21 @@ function describeCollider(
 function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc {
   switch (shape.kind) {
     case 'box':
-      return RAPIER.ColliderDesc.cuboid(...shape.halfExtents);
+      return shape.rounding > 0
+        ? RAPIER.ColliderDesc.roundCuboid(...shape.halfExtents, shape.rounding)
+        : RAPIER.ColliderDesc.cuboid(...shape.halfExtents);
     case 'sphere':
       return RAPIER.ColliderDesc.ball(shape.radius);
     case 'capsule':
       return RAPIER.ColliderDesc.capsule(shape.halfHeight, shape.radius);
     case 'cylinder':
-      return RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
+      return shape.rounding > 0
+        ? RAPIER.ColliderDesc.roundCylinder(shape.halfHeight, shape.radius, shape.rounding)
+        : RAPIER.ColliderDesc.cylinder(shape.halfHeight, shape.radius);
     case 'cone':
-      return RAPIER.ColliderDesc.cone(shape.halfHeight, shape.radius);
+      return shape.rounding > 0
+        ? RAPIER.ColliderDesc.roundCone(shape.halfHeight, shape.radius, shape.rounding)
+        : RAPIER.ColliderDesc.cone(shape.halfHeight, shape.radius);
     case 'mesh':
       return describeMesh(object, shape);
   }

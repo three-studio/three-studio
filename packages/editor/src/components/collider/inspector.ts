@@ -28,6 +28,21 @@ const IN_DEGREES: Pick<FieldSpec, 'toModel' | 'fromModel'> = {
   },
 };
 
+const RADIUS: FieldSpec = {
+  path: ['shape', 'radius'],
+  label: 'Radius',
+  type: 'number', min: 0.01, step: 0.05,
+};
+const HEIGHT: FieldSpec = {
+  path: ['shape', 'height'],
+  label: 'Height',
+  type: 'number', min: 0.01, step: 0.05,
+};
+const ROUNDING: FieldSpec = {
+  path: ['shape', 'rounding'],
+  label: 'Rounding',
+  type: 'number', min: 0, step: 0.01,
+};
 const CENTER: FieldSpec = { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 };
 const ROTATION: FieldSpec = {
   path: ['shape', 'rotation'],
@@ -44,32 +59,25 @@ const ROTATION: FieldSpec = {
 const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
   box: [
     { path: ['shape', 'size'], label: 'Size', type: 'vec3', min: 0.01, step: 0.1 },
+    ROUNDING,
     CENTER,
     ROTATION,
   ],
   // A sphere turned is the same sphere.
-  sphere: [
-    { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    CENTER,
-  ],
-  capsule: radiusAndHeight(),
-  cylinder: radiusAndHeight(),
-  cone: radiusAndHeight(),
+  sphere: [RADIUS, CENTER],
+  capsule: [RADIUS, HEIGHT, CENTER, ROTATION],
+  cylinder: [RADIUS, HEIGHT, ROUNDING, CENTER, ROTATION],
+  cone: [RADIUS, HEIGHT, ROUNDING, CENTER, ROTATION],
   // A mesh collider is its entity's own geometry, already where it is drawn.
   mesh: [
-    { path: ['shape', 'build'], label: 'Build', type: 'enum', options: optionsFrom(MESH_BUILD_LABELS) },
+    {
+      path: ['shape', 'build'],
+      label: 'Build',
+      type: 'enum',
+      options: optionsFrom(MESH_BUILD_LABELS),
+    },
   ],
 };
-
-/** A capsule, a cylinder and a cone are measured alike: a radius, and a height end to end. */
-function radiusAndHeight(): readonly FieldSpec[] {
-  return [
-    { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
-    CENTER,
-    ROTATION,
-  ];
-}
 
 /** What the `{ kind: 'geometry' }` slot expands into: the rows of the collider's kind. */
 function shapeFields(component: ComponentDoc): readonly FieldSpec[] {

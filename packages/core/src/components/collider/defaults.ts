@@ -2,7 +2,7 @@ import { conform, isMemberOf, oneOf } from '../../conform';
 import { createId } from '../../ids';
 import { createPhysicsMaterial } from '../../scene/physicsMaterial';
 import type { GeometryDef } from '../../scene/geometry';
-import type { ComponentBase } from '../../scene/primitives';
+import type { ComponentBase, Vec3 } from '../../scene/primitives';
 import type { MeshComponent } from '../mesh/schema';
 import {
   COLLIDER_SHAPE_LABELS,
@@ -18,15 +18,20 @@ import {
  * sphere a `size` would not compile.
  */
 const SHAPE_FACTORIES: { readonly [K in ColliderShapeKind]: () => ColliderShapeOf<K> } = {
-  box: () => ({ kind: 'box', size: [1, 1, 1], center: [0, 0, 0], rotation: [0, 0, 0] }),
+  box: () => ({ kind: 'box', size: [1, 1, 1], rounding: 0, ...centred() }),
   sphere: () => ({ kind: 'sphere', radius: 0.5, center: [0, 0, 0] }),
   // The Capsule primitive's, caps included.
-  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2, center: [0, 0, 0], rotation: [0, 0, 0] }),
+  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2, ...centred() }),
   // The Cylinder primitive's.
-  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1, center: [0, 0, 0], rotation: [0, 0, 0] }),
-  cone: () => ({ kind: 'cone', radius: 0.5, height: 1, center: [0, 0, 0], rotation: [0, 0, 0] }),
+  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1, rounding: 0, ...centred() }),
+  cone: () => ({ kind: 'cone', radius: 0.5, height: 1, rounding: 0, ...centred() }),
   mesh: () => ({ kind: 'mesh', build: 'triangles' }),
 };
+
+/** At its entity's middle, turned as its entity is. */
+function centred(): { center: Vec3; rotation: Vec3 } {
+  return { center: [0, 0, 0], rotation: [0, 0, 0] };
+}
 
 /** A shape of this kind, at its defaults. */
 export function createColliderShape<K extends ColliderShapeKind>(kind: K): ColliderShapeOf<K> {
@@ -53,14 +58,16 @@ export function createCollider(): ColliderComponent {
  * 11 — is the factory's box: its measures were written for another shape.
  */
 export function conformColliderShape(value: unknown): ColliderShape {
-  const kind = typeof value === 'object' && value !== null && 'kind' in value ? value.kind : undefined;
+  const kind =
+    typeof value === 'object' && value !== null && 'kind' in value ? value.kind : undefined;
   if (!isMemberOf(kind, COLLIDER_SHAPE_LABELS)) return createColliderShape('box');
 
   // `conform` keeps the stored `kind`, the one just checked, and takes every
   // other string as it finds it: `build` is a union, read against its members.
   const shape = conform(value, createColliderShape(kind));
   if (shape.kind !== 'mesh') return shape;
-  return { ...shape, build: oneOf(shape.build, MESH_BUILD_LABELS, createColliderShape('mesh').build) };
+  const build = oneOf(shape.build, MESH_BUILD_LABELS, createColliderShape('mesh').build);
+  return { ...shape, build };
 }
 
 /**
@@ -108,7 +115,10 @@ export function createColliderFor(siblings: readonly Sibling[]): ColliderCompone
 function shapeOfGeometry(geometry: GeometryDef): ColliderShape {
   switch (geometry.kind) {
     case 'box':
-      return { ...createColliderShape('box'), size: [geometry.width, geometry.height, geometry.depth] };
+      return {
+        ...createColliderShape('box'),
+        size: [geometry.width, geometry.height, geometry.depth],
+      };
     case 'sphere':
       return { ...createColliderShape('sphere'), radius: geometry.radius };
     case 'capsule':
@@ -126,7 +136,8 @@ function shapeOfGeometry(geometry: GeometryDef): ColliderShape {
       // A cone collider's apex points up, so one drawn apex down is turned over.
       if (radiusTop === 0) return { ...createColliderShape('cone'), radius: radiusBottom, height };
       if (radiusBottom === 0) {
-        return { ...createColliderShape('cone'), radius: radiusTop, height, rotation: [Math.PI, 0, 0] };
+        const cone = createColliderShape('cone');
+        return { ...cone, radius: radiusTop, height, rotation: [Math.PI, 0, 0] };
       }
       // Any one radius would be wrong for a frustum, and its hull is exact.
       return { kind: 'mesh', build: 'hull' };

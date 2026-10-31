@@ -14,6 +14,7 @@ export type ColliderShape =
       kind: 'box';
       /** The full size along each of its own axes, as a box mesh's width, height and depth read. */
       size: Vec3;
+      rounding: number;
       center: Vec3;
       rotation: Vec3;
     }
@@ -34,6 +35,7 @@ export type ColliderShape =
       radius: number;
       /** From end to end, along its own y. */
       height: number;
+      rounding: number;
       center: Vec3;
       rotation: Vec3;
     }
@@ -46,6 +48,7 @@ export type ColliderShape =
        * Cylinder whose top radius is 0.
        */
       height: number;
+      rounding: number;
       center: Vec3;
       rotation: Vec3;
     }
@@ -56,6 +59,10 @@ export type ColliderShape =
     };
 
 /*
+ * `rounding` is the radius of a shape's rounded edges and corners, in metres; 0
+ * is sharp. The outside stays the size drawn: a rounded 1 m box still stands
+ * 1 m tall, and rolls over its corners where a sharp one catches.
+ *
  * `center` is where a shape's middle sits, in its entity's frame and units:
  * Unity's *Center*, which stands a capsule above a model's feet with no child
  * entity to carry it. `rotation` turns a shape on its entity, Euler XYZ in

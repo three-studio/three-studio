@@ -56,6 +56,13 @@ describe('originAboveFeet', () => {
     expect(originAboveFeet({ ...createColliderShape('cone'), radius: 0.4, height: 1.2 })).toBeCloseTo(0.6, 6);
   });
 
+  it('is not moved by a rounding when the shape is not turned', () => {
+    for (const kind of ['box', 'cylinder', 'cone'] as const) {
+      const sharp = createColliderShape(kind);
+      expect(originAboveFeet({ ...sharp, rounding: 0.1 })).toBeCloseTo(originAboveFeet(sharp), 6);
+    }
+  });
+
   it('turns a shape as three turns an Euler XYZ', () => {
     // Rx · Rz stands the box's 3 m depth upright; Rz · Rx, the order three
     // calls ZYX, would stand its 1 m width there instead.
@@ -108,6 +115,7 @@ describe('colliderGeometry', () => {
     expect(colliderGeometry({ ...createColliderShape('box'), size: [2, 1, 4] }, [1, 2, 0.5]).shape).toEqual({
       kind: 'box',
       halfExtents: [1, 1, 1],
+      rounding: 0,
     });
   });
 
@@ -144,7 +152,12 @@ describe('colliderGeometry', () => {
   it('stretches a cylinder and a cone along their length, their section by its larger stretch', () => {
     for (const kind of ['cylinder', 'cone'] as const) {
       const shape = { ...createColliderShape(kind), radius: 0.5, height: 1 };
-      expect(colliderGeometry(shape, [1, 3, 2]).shape).toEqual({ kind, radius: 1, halfHeight: 1.5 });
+      expect(colliderGeometry(shape, [1, 3, 2]).shape).toEqual({
+        kind,
+        radius: 1,
+        halfHeight: 1.5,
+        rounding: 0,
+      });
     }
   });
 
@@ -165,6 +178,34 @@ describe('colliderGeometry', () => {
     expect(colliderGeometry(sphere, [2, 1, -1]).position).toEqual([2, 2, -3]);
   });
 
+  it('rounds a box inside its drawn size, the core and the rounding apart', () => {
+    const box: ColliderShape = { ...createColliderShape('box'), rounding: 0.1 };
+    const { shape } = colliderGeometry(box, [1, 1, 1]);
+    expect(shape.kind).toBe('box');
+    if (shape.kind !== 'box') return;
+    expect(shape.halfExtents.map((h) => h.toFixed(6))).toEqual(['0.400000', '0.400000', '0.400000']);
+    expect(shape.rounding).toBeCloseTo(0.1, 6);
+  });
+
+  it('stretches a rounding by the least the shape is stretched', () => {
+    const box: ColliderShape = { ...createColliderShape('box'), rounding: 0.1 };
+    const { shape } = colliderGeometry(box, [1, 0.1, 1]);
+    if (shape.kind !== 'box') throw new Error('not a box');
+    expect(shape.rounding).toBeCloseTo(0.01, 6);
+    expect(shape.halfExtents[1]).toBeCloseTo(0.04, 6);
+  });
+
+  it('caps a rounding at the smallest half measure', () => {
+    for (const kind of ['box', 'cylinder', 'cone'] as const) {
+      const { shape } = colliderGeometry({ ...createColliderShape(kind), rounding: 2 }, [1, 1, 1]);
+      if (shape.kind === 'sphere' || shape.kind === 'capsule' || shape.kind === 'mesh') {
+        throw new Error(`not rounded: ${shape.kind}`);
+      }
+      // 1 m across and 1 m tall: never more than half a metre, its core a point.
+      expect(shape.rounding).toBeCloseTo(0.5, 6);
+    }
+  });
+
   it('builds the same shape mirrored', () => {
     const shapes: ColliderShape[] = [
       { ...createColliderShape('box'), size: [2, 1, 4] },
@@ -180,6 +221,7 @@ describe('colliderGeometry', () => {
     expect(colliderGeometry({ ...createColliderShape('box'), size: [-2, 1, 4] }, [1, 1, 1]).shape).toEqual({
       kind: 'box',
       halfExtents: [0, 0.5, 2],
+      rounding: 0,
     });
     expect(colliderGeometry({ ...createColliderShape('sphere'), radius: -1 }, [1, 1, 1]).shape).toEqual({
       kind: 'sphere',
