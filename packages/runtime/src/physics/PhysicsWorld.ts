@@ -22,7 +22,7 @@ import type {
 } from './PhysicsApi';
 
 /**
- * What moves a body: the solver, its kinematic target, a character controller
+ * What moves a body: the solver, its entity's transform, a character controller
  * that took it, or nothing at all.
  *
  * Exactly one per body, set when the world is built and changed only when a
@@ -39,14 +39,39 @@ const DRIVER_OF: Record<RigidBodyComponent['bodyType'], Driver> = {
   fixed: 'none',
 };
 
-/** A body as the world keeps it: Rapier's, the collider built on it, and its driver. */
+/**
+ * A body as the world keeps it: Rapier's, the collider built on it, its
+ * entity's object and its driver.
+ */
 class Body implements BodyHandle {
   constructor(
     readonly rapier: RAPIER.RigidBody,
     /** The one a character sweeps; `null` when the entity has no collider. */
     readonly collider: RAPIER.Collider | null,
+    /**
+     * The entity's container, kept from the build. The binder creates it once,
+     * and nothing syncs the binder while a game runs, so it is the entity's
+     * object for the engine's life.
+     */
+    readonly object: Object3D,
     public driver: Driver,
   ) {}
+
+  /**
+   * Before each tick, once the behaviours' `fixedUpdate` has run: a kinematic
+   * body takes its object's world pose as its next target, so a script or an
+   * animation moves it by moving its entity, and contacts carry what rests on
+   * it. An object that stays still holds its body still.
+   *
+   * A disabled body is left alone: whoever disabled it places its entity.
+   */
+  beforeTick(): void {
+    if (this.driver !== 'transform' || !this.enabled) return;
+    this.object.updateWorldMatrix(true, false);
+    this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
+    this.rapier.setNextKinematicTranslation(_worldPosition);
+    this.rapier.setNextKinematicRotation(_worldQuaternion);
+  }
 
   // Rapier hands back a fresh object on every read, which is the copy the API
   // promises.
@@ -173,6 +198,8 @@ export class PhysicsWorld implements PhysicsApi {
     let steps = 0;
     while (this.accumulator >= this.fixedStep && steps < this.maxSubsteps) {
       beforeStep?.(this.fixedStep);
+      // After the behaviours, so a body follows where they put its entity this tick.
+      for (const body of this.bodies.values()) body.beforeTick();
       this.world.step();
       this.accumulator -= this.fixedStep;
       steps += 1;
@@ -180,23 +207,25 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * Copies the bodies something moves back onto their entities, in the order
-   * they were built: parents first.
+   * Copies the bodies the solver or a character moves back onto their
+   * entities, in the order they were built: parents first.
+   *
+   * Not a kinematic body: it follows its entity, which is where its script put
+   * it. Copied back, the body nothing had moved was written over the script's
+   * move every frame, and a moving platform never left its place.
    *
    * A disabled body is left alone, since whoever disabled it places its entity.
    */
-  writeBack(binder: SceneBinder): void {
-    for (const [entityId, body] of this.bodies) {
-      if (body.driver === 'none' || !body.enabled) continue;
-      const object = binder.getObject(entityId);
-      if (!object) continue;
+  writeBack(): void {
+    for (const body of this.bodies.values()) {
+      if (body.driver === 'none' || body.driver === 'transform' || !body.enabled) continue;
 
       const translation = body.rapier.translation();
       const rotation = body.rapier.rotation();
       _worldPosition.set(translation.x, translation.y, translation.z);
       _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
 
-      applyWorldTransform(object, _worldPosition, _worldQuaternion);
+      applyWorldTransform(body.object, _worldPosition, _worldQuaternion);
     }
   }
 
@@ -272,7 +301,7 @@ export class PhysicsWorld implements PhysicsApi {
       }
     }
 
-    this.bodies.set(entity.id, new Body(body, created, DRIVER_OF[bodyType]));
+    this.bodies.set(entity.id, new Body(body, created, object, DRIVER_OF[bodyType]));
   }
 }
 

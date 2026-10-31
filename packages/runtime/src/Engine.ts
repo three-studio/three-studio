@@ -382,7 +382,7 @@ export class Engine {
       this.world.step(delta, (step) => {
         for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
       });
-      this.world.writeBack(this.binder);
+      this.world.writeBack();
     }
 
     for (const behaviour of this.behaviours) behaviour.postUpdate?.(this.context);

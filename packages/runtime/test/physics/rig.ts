@@ -17,6 +17,7 @@ import { onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
 
 /*
  * A scene document running in the real `Engine`, with real Rapier, under Node.
@@ -181,6 +182,19 @@ export function player(
     { ...createComponent('rigidbody'), bodyType },
   ]);
   template.entity.transform.position = position;
+  return template;
+}
+
+/**
+ * The template, running `type` as its script.
+ *
+ * Registered under its class name until the test finishes, as a project's
+ * compiled bundle registers each script under its asset id.
+ */
+export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
+  registerScript(type.name, type);
+  onTestFinished(clearScripts);
+  template.components.push({ ...createComponent('script'), assetId: type.name });
   return template;
 }
 
