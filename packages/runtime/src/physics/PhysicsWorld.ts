@@ -6,6 +6,7 @@ import {
   type BodyType,
   type BuiltShape,
   type ColliderComponent,
+  type CombineRule,
   type EntityDoc,
   type PhysicsSettings,
   type RigidBodyComponent,
@@ -409,8 +410,11 @@ export class PhysicsWorld implements PhysicsApi {
     let created: RAPIER.Collider | null = null;
     if (collider) {
       const shape = describeCollider(collider, object, _worldScale, bodyType);
-      shape.setFriction(collider.material.friction);
-      shape.setRestitution(collider.material.restitution);
+      const { material } = collider;
+      shape.setFriction(material.friction);
+      shape.setRestitution(material.restitution);
+      shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
+      shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
       shape.setSensor(collider.isSensor);
       if (rigidbody) shape.setMass(rigidbody.mass);
       created = this.world.createCollider(shape, body);
@@ -422,6 +426,14 @@ export class PhysicsWorld implements PhysicsApi {
     );
   }
 }
+
+/** Each rule as Rapier names it. */
+const COMBINE_RULES: Record<CombineRule, RAPIER.CoefficientCombineRule> = {
+  average: RAPIER.CoefficientCombineRule.Average,
+  min: RAPIER.CoefficientCombineRule.Min,
+  multiply: RAPIER.CoefficientCombineRule.Multiply,
+  max: RAPIER.CoefficientCombineRule.Max,
+};
 
 function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDesc {
   switch (kind) {

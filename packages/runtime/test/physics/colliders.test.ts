@@ -5,6 +5,7 @@ import {
   createMeshEntity,
   originAboveFeet,
   type ColliderShape,
+  type CombineRule,
   type EntityTemplate,
   type Vec3,
 } from '@three-studio/core';
@@ -61,6 +62,52 @@ describe('a rounded collider', () => {
     rig.run(2);
 
     expect(rig.solved(box.entity.id).position.y).toBeCloseTo(0.5, 2);
+  });
+});
+
+describe('a collider’s material', () => {
+  it('holds a box on a 30° slope by Maximum, and slides it by Minimum', async () => {
+    const slope = ground(30);
+    colliderOf(slope).material = { ...colliderOf(slope).material, friction: 0.2 };
+    const boxWith = (frictionCombine: CombineRule, z: number) => {
+      const box = withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
+      colliderOf(box).material = { ...colliderOf(box).material, friction: 1, frictionCombine };
+      return box;
+    };
+    // tan 30° is 0.58: 1 grips, 0.2 does not.
+    const held = boxWith('max', 1.5);
+    const slid = boxWith('min', -1.5);
+    const rig = await physicsRig([slope, held, slid]);
+
+    rig.run(0.5);
+    const landed = {
+      held: rig.solved(held.entity.id).position,
+      slid: rig.solved(slid.entity.id).position,
+    };
+    rig.run(1);
+
+    expect(rig.solved(held.entity.id).position.distanceTo(landed.held)).toBeLessThan(0.01);
+    expect(rig.solved(slid.entity.id).position.distanceTo(landed.slid)).toBeGreaterThan(0.5);
+  });
+
+  it('bounces a ball off a floor with no bounce by Maximum, and not by Minimum', async () => {
+    const peakAfterLanding = async (restitutionCombine: CombineRule): Promise<number> => {
+      const ball = withBody('sphere', [0, 2.5, 0]);
+      const { material } = colliderOf(ball);
+      colliderOf(ball).material = { ...material, restitution: 1, restitutionCombine };
+      const rig = await physicsRig([ground(), ball]);
+      const heights: number[] = [];
+      for (let tick = 0; tick < 100; tick++) {
+        rig.run(1 / 60);
+        heights.push(rig.solved(ball.entity.id).position.y);
+      }
+      // Its first contact is the lowest it gets before it rises again, if it does.
+      const contact = heights.findIndex((height, i) => i > 0 && height >= (heights[i - 1] ?? height));
+      return Math.max(...heights.slice(contact === -1 ? heights.length - 1 : contact));
+    };
+
+    expect(await peakAfterLanding('max')).toBeGreaterThan(2);
+    expect(await peakAfterLanding('min')).toBeLessThan(0.6);
   });
 });
 

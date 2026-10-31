@@ -81,7 +81,8 @@ export const SCRIPT_API_VERSION = 2;
  * So did the collider's shape, one of box, sphere, capsule, cylinder, cone and
  * mesh, each with its own measures taken as drawn — a box by its full size, a
  * capsule from end to end — set off its entity's centre, turned and rounded,
- * and its friction and bounce, now a `material` of their own. An older build builds a
+ * and its friction and bounce, now a `material` of their own that says how
+ * each combines with the other collider's. An older build builds a
  * cylinder or a cone as nothing at all, every shape at its entity's middle,
  * and a mesh in convex parts as nothing at all either. An older
  * build switches on `shape` as a name and builds nothing from an object, so

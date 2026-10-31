@@ -1,5 +1,6 @@
 import {
   COLLIDER_SHAPE_LABELS,
+  COMBINE_RULE_LABELS,
   MESH_BUILD_LABELS,
   conform,
   conformColliderShape,
@@ -110,9 +111,21 @@ export const inspector: ComponentSchema = {
       type: 'number', min: 0, max: 2, step: 0.01,
     },
     {
+      path: ['material', 'frictionCombine'],
+      label: 'Friction combine',
+      type: 'enum',
+      options: optionsFrom(COMBINE_RULE_LABELS),
+    },
+    {
       path: ['material', 'restitution'],
       label: 'Bounciness',
       type: 'number', min: 0, max: 1, step: 0.01,
+    },
+    {
+      path: ['material', 'restitutionCombine'],
+      label: 'Bounce combine',
+      type: 'enum',
+      options: optionsFrom(COMBINE_RULE_LABELS),
     },
   ],
 };

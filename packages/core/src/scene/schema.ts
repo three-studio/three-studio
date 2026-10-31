@@ -38,7 +38,8 @@ import type { Hex, Transform, Vec3 } from './primitives';
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
 export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
-export type { PhysicsMaterialDef } from './physicsMaterial';
+export type { CombineRule, PhysicsMaterialDef } from './physicsMaterial';
+export { COMBINE_RULE_LABELS } from './physicsMaterial';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
 /*

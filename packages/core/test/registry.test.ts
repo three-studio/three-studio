@@ -4,6 +4,7 @@ import {
   componentDefinition,
   componentDefinitions,
   conformColliderShape,
+  conformPhysicsMaterial,
   createColliderShape,
   createComponent,
   createComponentForEntity,
@@ -147,6 +148,13 @@ describe('fill', () => {
   it('fills a shape from its own kind, keeping each measure that fits', () => {
     const stored = { kind: 'capsule', radius: 0.4, height: 'tall', size: [1, 1, 1] };
     expect(conformColliderShape(stored)).toEqual({ ...createColliderShape('capsule'), radius: 0.4 });
+  });
+
+  it('reads a material naming a rule this build does not know as Average', () => {
+    for (const rule of ['sum', 'constructor']) {
+      const stored = { friction: 0.3, frictionCombine: rule, restitutionCombine: rule };
+      expect(conformPhysicsMaterial(stored)).toEqual({ ...createPhysicsMaterial(), friction: 0.3 });
+    }
   });
 
   it('builds a mesh whose build this build does not know from its triangles', () => {
