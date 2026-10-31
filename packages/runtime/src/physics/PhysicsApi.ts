@@ -57,6 +57,11 @@ export interface BodyHandle {
    * its entity then is, unless it is fixed.
    */
   enabled: boolean;
+  /**
+   * What the body weighs, in kilograms: its Rigid Body's Mass, shared by its
+   * colliders. Only a dynamic body's is felt.
+   */
+  readonly mass: number;
 }
 
 export interface CharacterController {

@@ -206,6 +206,10 @@ class Body implements BodyHandle {
   set enabled(enabled: boolean) {
     this.rapier.setEnabled(enabled);
   }
+
+  get mass(): number {
+    return this.rapier.mass();
+  }
 }
 
 const _worldPosition = new Vector3();
@@ -416,9 +420,9 @@ export class PhysicsWorld implements PhysicsApi {
       shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
       shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
       shape.setSensor(collider.isSensor);
-      if (rigidbody) shape.setMass(rigidbody.mass);
       created = this.world.createCollider(shape, body);
     }
+    if (rigidbody) weigh(body, created ? [created] : [], rigidbody.mass);
 
     this.bodies.set(
       entity.id,
@@ -434,6 +438,37 @@ const COMBINE_RULES: Record<CombineRule, RAPIER.CoefficientCombineRule> = {
   multiply: RAPIER.CoefficientCombineRule.Multiply,
   max: RAPIER.CoefficientCombineRule.Max,
 };
+
+/**
+ * A body given its Rigid Body's mass, shared out among its colliders.
+ *
+ * At one density over the solid ones, so its centre of mass is their volumes'
+ * centroid and its inertia a uniform solid's, as Unity computes them. A sensor
+ * weighs nothing: it is a zone, not matter, and one reaching out to a side,
+ * weighed as Rapier weighs it, tipped its body over. PhysX leaves trigger shapes
+ * out of a body's mass too.
+ *
+ * With no solid volume to share it — no collider, sensors alone, a flat hull —
+ * the body takes the mass whole: Rapier lets a dynamic body nothing weighs
+ * ignore gravity, and a Rigid Body with no collider hung where it was built.
+ * Only then, because Rapier spreads a body's own mass over every shape on it,
+ * sensors included.
+ *
+ * A rounded shape weighs by its core, as Rapier measures its volume; the total
+ * stays exact.
+ */
+function weigh(body: RAPIER.RigidBody, colliders: readonly RAPIER.Collider[], mass: number): void {
+  const solid = colliders.filter((collider) => !collider.isSensor());
+  const volume = solid.reduce((sum, collider) => sum + collider.volume(), 0);
+  const shared = volume > 0;
+  for (const collider of colliders) {
+    collider.setDensity(shared && !collider.isSensor() ? mass / volume : 0);
+  }
+  if (!shared) body.setAdditionalMass(mass, true);
+  // A density set on a built collider reaches its body at the next step, and
+  // `mass` read before it gave the old one.
+  body.recomputeMassPropertiesFromColliders();
+}
 
 function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDesc {
   switch (kind) {

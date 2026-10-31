@@ -59,6 +59,10 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * written before a sub-object gained a field comes back with `undefined`
    * inside it otherwise — the bug that shipped twice on this project. Each of
    * the three says so in its own module.
+   *
+   * The collider and the rigid body declare one for another reason, which their
+   * modules give: physics data is read against its factory, and what it does
+   * not know is dropped.
    */
   fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
   /** Asset ids this component points at. Empty for most types. */
@@ -208,7 +212,7 @@ export function componentIsPlaceable(component: ComponentDoc): boolean {
  *
  * A type that declared no `fill` gets the default: its own factory underneath
  * what was stored, so nothing the author wrote is overwritten and nothing added
- * since is left `undefined`. See `ComponentDefinition.fill` for the three that
+ * since is left `undefined`. See `ComponentDefinition.fill` for the types that
  * need more than that.
  */
 export function fillComponent(stored: ComponentDoc): ComponentDoc {

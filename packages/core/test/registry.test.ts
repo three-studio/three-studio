@@ -145,6 +145,20 @@ describe('fill', () => {
     });
   });
 
+  it('reads a stored rigid body against its factory, field by field', () => {
+    const stored = {
+      id: 'c1',
+      type: 'rigidbody',
+      bodyType: 'kinematicVelocity',
+      mass: -3,
+      ccd: true,
+      lockPosition: [true, 'no', false],
+      stray: 1,
+    } as unknown as ComponentDoc;
+
+    expect(fillComponent(stored)).toEqual({ ...createComponent('rigidbody'), id: 'c1', ccd: true });
+  });
+
   it('fills a shape from its own kind, keeping each measure that fits', () => {
     const stored = { kind: 'capsule', radius: 0.4, height: 'tall', size: [1, 1, 1] };
     expect(conformColliderShape(stored)).toEqual({ ...createColliderShape('capsule'), radius: 0.4 });

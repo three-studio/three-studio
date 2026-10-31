@@ -12,6 +12,10 @@ export const BODY_TYPE_LABELS: Record<BodyType, string> = {
 export interface RigidBodyComponent extends ComponentBase {
   type: 'rigidbody';
   bodyType: BodyType;
+  /**
+   * What the body weighs, in kilograms, shared by its colliders by volume. A
+   * sensor weighs nothing.
+   */
   mass: number;
   linearDamping: number;
   angularDamping: number;
