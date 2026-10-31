@@ -1,5 +1,6 @@
 import type RAPIER from '@dimforge/rapier3d-compat';
 import type { CharacterController, CharacterSettings, QuatLike, Vec3Like } from './PhysicsApi';
+import { isFiniteVec, unitQuat } from './values';
 
 /**
  * A kinematic character, moved by Rapier's character controller.
@@ -36,6 +37,10 @@ export class Character implements CharacterController {
   }
 
   move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like> {
+    // An infinite move handed Rapier's controller a target that is not a
+    // number, and the character never moved again.
+    if (!isFiniteVec(translation)) return { x: 0, y: 0, z: 0 };
+
     // Snap-to-ground is what stops a character hopping down slopes, but it also
     // drags it straight back to the floor the instant it leaves, which turns a
     // jump into a stutter a few centimetres high. It has to be off while rising.
@@ -65,7 +70,9 @@ export class Character implements CharacterController {
       y: current.y + movement.y,
       z: current.z + movement.z,
     });
-    this.body.setNextKinematicRotation(rotation);
+    // A rotation with no direction keeps the turn the body has.
+    const turn = unitQuat(rotation);
+    if (turn) this.body.setNextKinematicRotation(turn);
     return movement;
   }
 

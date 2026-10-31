@@ -453,7 +453,9 @@ export class PhysicsWorld implements PhysicsApi {
     settings: CharacterSettings,
   ): CharacterController | null {
     const body = this.bodies.get(entityId);
-    if (!body?.collider) return null;
+    // One driver to a body: a second controller would set its target on every
+    // tick too, and whichever moved it last would win, silently.
+    if (!body?.collider || body.driver === 'controller') return null;
     // The world writes this body to its entity from now on, as it writes every
     // other, so the character is placed in the same parents-first pass.
     body.driver = 'controller';

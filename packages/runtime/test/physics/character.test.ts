@@ -1,6 +1,7 @@
 import { createComponent } from '@three-studio/core';
-import { Vector3 } from 'three/webgpu';
+import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { CharacterSettings } from '../../src/physics/PhysicsApi';
 import {
   block,
   ground,
@@ -19,6 +20,15 @@ import {
 
 beforeAll(standInForTheBrowser);
 afterAll(takeTheBrowserBack);
+
+/** The Player Controller's. */
+const SETTINGS: CharacterSettings = {
+  offset: 0.02,
+  maxSlope: (50 * Math.PI) / 180,
+  stepHeight: 0.4,
+  stepWidth: 0.2,
+  snapToGround: 0.4,
+};
 
 describe('a character', () => {
   it('pushes a ball it walks into, and both are drawn where their bodies are', async () => {
@@ -113,5 +123,47 @@ describe('a character', () => {
     expect(position.y).toBeCloseTo(0.5, 1);
     expect(Math.abs(position.x)).toBeLessThan(1e-3);
     expect(Math.abs(position.z)).toBeLessThan(1e-3);
+  });
+
+  it('is one to a body: asked again, the world gives none, and the player walks on', async () => {
+    // Two would each set the body's target on every tick, the last one winning.
+    const walker = player([0, 1, 0]);
+    const rig = await physicsRig([ground(), walker]);
+
+    expect(rig.engine.physics?.createCharacterController(walker.entity.id, SETTINGS)).toBeNull();
+
+    rig.press('KeyW');
+    rig.run(1);
+    expect(rig.solved(walker.entity.id).position.z).toBeLessThan(-4);
+  });
+
+  it('moves nothing for a move that is not a number, walks on after it, and keeps its turn for a rotation of zero', async () => {
+    // An infinite move handed Rapier's controller a target that is not a
+    // number: the character stood where it was, and never moved again.
+    const capsule = withBody('capsule', [0, 1.1, 0]);
+    const rig = await physicsRig([ground(), capsule]);
+    const id = capsule.entity.id;
+    const character = rig.engine.physics?.createCharacterController(id, SETTINGS);
+    if (!character) throw new Error('The capsule was given no character.');
+
+    // Settled as the Player Controller holds a player down: 1 m/s.
+    const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.PI / 2);
+    for (let tick = 0; tick < 30; tick++) {
+      character.move({ x: 0, y: -1 / 60, z: 0 }, turn);
+      rig.run(1 / 60);
+    }
+    const settled = rig.solved(id);
+
+    for (const bad of [NaN, Infinity]) {
+      expect(character.move({ x: bad, y: 0, z: 0 }, turn)).toEqual({ x: 0, y: 0, z: 0 });
+      rig.run(1 / 60);
+      expect(rig.solved(id).position.distanceTo(settled.position)).toBeLessThan(1e-6);
+    }
+
+    character.move({ x: 0.01, y: 0, z: 0 }, { x: 0, y: 0, z: 0, w: 0 });
+    rig.run(1 / 60);
+    const { position, quaternion } = rig.solved(id);
+    expect(quaternion.angleTo(settled.quaternion)).toBeLessThan(1e-6);
+    expect(Math.abs(position.x - settled.position.x - 0.01)).toBeLessThan(1e-4);
   });
 });

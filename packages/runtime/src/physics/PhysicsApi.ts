@@ -42,7 +42,8 @@ export interface PhysicsApi {
    * It takes the entity's body: from then on only `move` moves it, and the
    * world writes it to the entity after each step. It sweeps the entity's own
    * first collider; whatever else rides the body follows it. `null` when the
-   * entity has no body, or no collider of its own.
+   * entity has no body, no collider of its own, or a controller already: a body
+   * has one driver.
    */
   createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
 }
@@ -113,6 +114,8 @@ export interface CharacterController {
    *
    * Call it from `fixedUpdate`, once per tick: the result is the body's target
    * for the next step, and a second call before that step replaces the first.
+   * A translation that is not a number moves nothing, and a rotation with no
+   * direction keeps the body's turn.
    *
    * @returns the part of `translation` the world allowed.
    */
