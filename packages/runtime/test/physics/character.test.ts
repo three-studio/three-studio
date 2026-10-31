@@ -1,3 +1,4 @@
+import { createComponent } from '@three-studio/core';
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -58,6 +59,25 @@ describe('a character', () => {
     expect(from.z - position.z).toBeGreaterThan(4);
     const up = new Vector3(0, 1, 0);
     expect(up.clone().applyQuaternion(quaternion).angleTo(up)).toBeLessThan((1 * Math.PI) / 180);
+  });
+
+  it('walks on a kinematic body as on a fixed one', async () => {
+    // Rapier's controller stopped a move along a kinematic floor at once, again
+    // and again, then gave up: a player walked 0.4 m of the 9 it walked on a
+    // fixed floor, and sank into it.
+    const floor = block([0, -0.25, 0], [20, 0.25, 20]);
+    floor.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
+    const walker = player([0, 1, 0]);
+    const rig = await physicsRig([floor, walker]);
+
+    rig.run(0.5);
+    const from = rig.solved(walker.entity.id).position;
+    rig.press('KeyW');
+    rig.run(1);
+
+    const { position } = rig.solved(walker.entity.id);
+    expect(from.z - position.z).toBeGreaterThan(4);
+    expect(Math.abs(position.y - from.y)).toBeLessThan(0.005);
   });
 
   it('climbs a step its step height clears, and no higher', async () => {

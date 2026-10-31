@@ -1,7 +1,7 @@
 import { createComponent, type EntityTemplate } from '@three-studio/core';
 import { Euler, Quaternion } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Behaviour } from '../../src/scripting/ScriptHost';
+import { Behaviour, type ScriptClass } from '../../src/scripting/ScriptHost';
 import {
   block,
   ground,
@@ -33,6 +33,13 @@ class Slide extends Behaviour {
   }
 }
 
+/** As `Slide`, but at the display's rate, as a script moving it in `onUpdate` does. */
+class SlideEachFrame extends Behaviour {
+  override onUpdate(delta: number) {
+    if (this.time > 0.5) this.transform.position.x += 2 * delta;
+  }
+}
+
 /** On its 30th tick, puts its entity at (5, 10, 0), turned a radian about y. */
 class MoveOnce extends Behaviour {
   private ticks = 0;
@@ -56,10 +63,10 @@ class Respawn extends Behaviour {
 }
 
 /** An 8 × 0.5 × 8 kinematic platform, its top through the origin, slid by its script. */
-function platform(): EntityTemplate {
+function platform(script: ScriptClass = Slide): EntityTemplate {
   const template = block([0, -0.25, 0], [4, 0.25, 4]);
   template.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
-  return withScript(template, Slide);
+  return withScript(template, script);
 }
 
 describe('a kinematic body', () => {
@@ -89,8 +96,25 @@ describe('a kinematic body', () => {
     const landed = rig.solved(walker.entity.id).position;
     rig.run(1);
 
+    // 2 m less a tick: Rapier carries a character by its platform's last step.
     const carried = rig.solved(walker.entity.id).position;
-    expect(carried.x - landed.x).toBeGreaterThan(1.7);
+    expect(carried.x - landed.x).toBeGreaterThan(1.9);
+    expect(Math.abs(carried.y - landed.y)).toBeLessThan(0.05);
+  });
+
+  it('carries the player riding it at 120 Hz, moved a frame at a time', async () => {
+    // Rapier's controller dropped the platform's carry on a tick in four, and the
+    // player slid off the back of a platform its script moved in `onUpdate`.
+    const moving = platform(SlideEachFrame);
+    const walker = player([0, 1, 0]);
+    const rig = await physicsRig([moving, walker]);
+
+    rig.run(0.5, 120);
+    const landed = rig.solved(walker.entity.id).position;
+    rig.run(1, 120);
+
+    const carried = rig.solved(walker.entity.id).position;
+    expect(carried.x - landed.x).toBeGreaterThan(1.9);
     expect(Math.abs(carried.y - landed.y)).toBeLessThan(0.05);
   });
 });
