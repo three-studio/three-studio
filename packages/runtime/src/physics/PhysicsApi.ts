@@ -50,9 +50,10 @@ export interface PhysicsApi {
 /**
  * A body in the world, in world space: metres, seconds, kilograms, radians.
  *
- * A vector holding a NaN or an infinity is ignored, and the rest of the call
- * with it: Rapier keeps whatever it is handed, and one bad division in a
- * script would otherwise leave the body nowhere for good.
+ * A vector or a rotation holding a NaN or an infinity is ignored, and the rest
+ * of the call with it: Rapier keeps whatever it is handed, and one bad
+ * division in a script would otherwise leave the body nowhere for good. A
+ * rotation is made unit length.
  */
 export interface BodyHandle {
   /** Where the solver holds the body, in world space, as of the last step. */
@@ -96,6 +97,13 @@ export interface BodyHandle {
   addTorque(torque: Readonly<Vec3Like>): void;
   /** Changes a Dynamic body's spin at once, in newton-metre-seconds. */
   applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
+  /**
+   * Puts the body and its entity there at once, whatever drives it, keeping
+   * its velocities. Without a rotation, it is moved and not turned. A
+   * Kinematic body stays where it is put; a Fixed one takes its colliders with
+   * it.
+   */
+  teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
 }
 
 export interface CharacterController {

@@ -1,4 +1,4 @@
-import type { Vec3Like } from './PhysicsApi';
+import type { QuatLike, Vec3Like } from './PhysicsApi';
 
 /*
  * A caller's values, checked before they reach Rapier.
@@ -13,4 +13,12 @@ import type { Vec3Like } from './PhysicsApi';
 /** Every component a finite number. */
 export function isFiniteVec(value: Readonly<Vec3Like>): boolean {
   return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
+}
+
+/** The rotation made unit length, or `null` when it has none to give: zero, or not a number. */
+export function unitQuat({ x, y, z, w }: Readonly<QuatLike>): QuatLike | null {
+  // Infinite with an infinity in it, even beside a NaN.
+  const length = Math.hypot(x, y, z, w);
+  if (!Number.isFinite(length) || length === 0) return null;
+  return { x: x / length, y: y / length, z: z / length, w: w / length };
 }

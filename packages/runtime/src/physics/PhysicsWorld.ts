@@ -26,7 +26,7 @@ import type {
   QuatLike,
   Vec3Like,
 } from './PhysicsApi';
-import { isFiniteVec } from './values';
+import { isFiniteVec, unitQuat } from './values';
 
 /**
  * What moves a body: the solver, its entity's transform, a character controller
@@ -102,7 +102,7 @@ class Body implements BodyHandle {
   beforeTick(): void {
     if (this.driver === 'none' || !this.enabled) return;
     if (this.driver !== 'transform') {
-      if (this.moved()) this.teleport();
+      if (this.moved()) this.jumpToObject();
       if (this.smooth) this.rememberPrevious();
       return;
     }
@@ -143,7 +143,7 @@ class Body implements BodyHandle {
   draw(alpha: number): void {
     if ((this.driver !== 'solver' && this.driver !== 'controller') || !this.enabled) return;
     // A frame with no tick still takes a write made in `onUpdate` or `onLateUpdate`.
-    if (this.moved()) this.teleport();
+    if (this.moved()) this.jumpToObject();
 
     const translation = this.rapier.translation();
     const rotation = this.rapier.rotation();
@@ -191,7 +191,7 @@ class Body implements BodyHandle {
    * a respawn keeps the fall it had. On a character's body it also replaces the
    * move its controller made this tick, so the respawn wins over the step.
    */
-  private teleport(): void {
+  private jumpToObject(): void {
     worldPose(this.object, _worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setTranslation(_worldPosition, true);
     this.rapier.setRotation(_worldQuaternion, true);
@@ -270,6 +270,31 @@ class Body implements BodyHandle {
 
   applyTorqueImpulse(impulse: Readonly<Vec3Like>): void {
     if (isFiniteVec(impulse)) this.rapier.applyTorqueImpulse(impulse, true);
+  }
+
+  /**
+   * The body and its object put there together, whatever drives the body.
+   *
+   * The object too. A kinematic body follows it at the next tick, and left
+   * where it was it pulled the body back, flinging what rested on it at the
+   * speed of the pull. Its `previous` and `written` take the pose as well, so
+   * the body is not drawn sweeping in from where it was, and the move does not
+   * read as a script's write.
+   */
+  teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void {
+    const turn = rotation ? unitQuat(rotation) : undefined;
+    if (turn === null || !isFiniteVec(position)) return;
+
+    _worldPosition.set(position.x, position.y, position.z);
+    this.rapier.setTranslation(_worldPosition, true);
+    this.previous.position.copy(_worldPosition);
+    if (turn) {
+      _worldQuaternion.set(turn.x, turn.y, turn.z, turn.w);
+      this.rapier.setRotation(_worldQuaternion, true);
+      this.previous.quaternion.copy(_worldQuaternion);
+    }
+    applyWorldTransform(this.object, _worldPosition, turn ? _worldQuaternion : undefined);
+    this.rememberWritten();
   }
 }
 
@@ -654,17 +679,17 @@ export function worldPose(
  *
  * Physics reports world space, but the scene graph stores local transforms, so
  * writing the result straight onto `position` would double-apply any ancestor's
- * transform.
+ * transform. Without a rotation the object is moved, and keeps its own.
  */
 export function applyWorldTransform(
   object: Object3D,
   worldPosition: Vector3,
-  worldQuaternion: Quaternion,
+  worldQuaternion?: Quaternion,
 ): void {
   const parent = object.parent;
   if (!parent) {
     object.position.copy(worldPosition);
-    object.quaternion.copy(worldQuaternion);
+    if (worldQuaternion) object.quaternion.copy(worldQuaternion);
     return;
   }
 
@@ -672,6 +697,7 @@ export function applyWorldTransform(
   _parentInverse.copy(parent.matrixWorld).invert();
 
   object.position.copy(worldPosition).applyMatrix4(_parentInverse);
+  if (!worldQuaternion) return;
   // A scratch no caller can be holding. This read the parent's rotation into
   // `_worldQuaternion`, which `draw` passes in as `worldQuaternion`: the
   // body's rotation was overwritten before it was used, every body the solver

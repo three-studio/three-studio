@@ -22,6 +22,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 export { nest } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
 
 /*
@@ -59,6 +60,8 @@ export interface PhysicsRig {
   drawn(entityId: string): Pose;
   /** Where the solver holds its body, read through the API a behaviour reads it through. */
   solved(entityId: string): Pose;
+  /** The entity's body, as a behaviour is handed it. */
+  body(entityId: string): BodyHandle;
 }
 
 /** These entities in a running engine, disposed when the test finishes. */
@@ -83,6 +86,11 @@ export async function physicsRig(
   onTestFinished(() => engine.dispose());
 
   const step = physicsSettings.fixedTimestep;
+  const body = (entityId: string): BodyHandle => {
+    const built = engine.physics?.body(entityId);
+    if (!built) throw new Error(`No body was built for "${entityId}".`);
+    return built;
+  };
 
   return {
     engine,
@@ -108,9 +116,7 @@ export async function physicsRig(
       return pose;
     },
     solved(entityId) {
-      const body = engine.physics?.body(entityId);
-      if (!body) throw new Error(`No body was built for "${entityId}".`);
-      const { position, rotation } = body;
+      const { position, rotation } = body(entityId);
       return {
         position: new Vector3(position.x, position.y, position.z),
         // Unit length only to within Rapier's single precision, and an angle
@@ -119,6 +125,7 @@ export async function physicsRig(
         quaternion: new Quaternion(rotation.x, rotation.y, rotation.z, rotation.w).normalize(),
       };
     },
+    body,
   };
 }
 

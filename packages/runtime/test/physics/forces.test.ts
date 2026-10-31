@@ -1,6 +1,6 @@
 import { createComponent, createEntity, type EntityTemplate, type Vec3 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { BodyHandle, Vec3Like } from '../../src/physics/PhysicsApi';
+import type { Vec3Like } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
 import {
   block,
@@ -12,7 +12,6 @@ import {
   withBody,
   withCollider,
   withScript,
-  type PhysicsRig,
 } from './rig';
 
 /*
@@ -41,13 +40,6 @@ function platform(y = 0): EntityTemplate {
   return template;
 }
 
-/** The template's body, as a behaviour is handed it. */
-function bodyOf(rig: PhysicsRig, template: EntityTemplate): BodyHandle {
-  const body = rig.engine.physics?.body(template.entity.id);
-  if (!body) throw new Error(`No body was built for "${template.entity.name}".`);
-  return body;
-}
-
 /** How far a vector read off a body lies from `expected`. */
 function off(value: Readonly<Vec3Like>, [x, y, z]: Vec3): number {
   return Math.hypot(value.x - x, value.y - y, value.z - z);
@@ -66,11 +58,11 @@ describe('a body moved by numbers', () => {
     nest(cart, ...parts);
     const rig = await physicsRig([ball, cart, ...parts]);
 
-    bodyOf(rig, ball).applyImpulse({ x: 6, y: 0, z: 3 });
-    bodyOf(rig, cart).applyImpulse({ x: 24, y: 0, z: 0 });
+    rig.body(ball.entity.id).applyImpulse({ x: 6, y: 0, z: 3 });
+    rig.body(cart.entity.id).applyImpulse({ x: 24, y: 0, z: 0 });
 
-    expect(off(bodyOf(rig, ball).linearVelocity, [2, 0, 1])).toBeLessThan(1e-6);
-    expect(off(bodyOf(rig, cart).linearVelocity, [2, 0, 0])).toBeLessThan(1e-6);
+    expect(off(rig.body(ball.entity.id).linearVelocity, [2, 0, 1])).toBeLessThan(1e-6);
+    expect(off(rig.body(cart.entity.id).linearVelocity, [2, 0, 0])).toBeLessThan(1e-6);
   });
 
   it('feels a force for one tick: once, F·dt / m; added on every tick for a second, F·t / m', async () => {
@@ -81,21 +73,21 @@ describe('a body moved by numbers', () => {
     const steady = withBody('sphere', [0, 0, 3], { ...FLOATING, mass: 2 });
     const rig = await physicsRig([once, steady]);
 
-    bodyOf(rig, once).addForce({ x: 120, y: 0, z: 0 });
+    rig.body(once.entity.id).addForce({ x: 120, y: 0, z: 0 });
     for (let tick = 0; tick < 60; tick++) {
-      bodyOf(rig, steady).addForce({ x: 120, y: 0, z: 0 });
+      rig.body(steady.entity.id).addForce({ x: 120, y: 0, z: 0 });
       rig.run(1 / 60);
     }
 
-    expect(Math.abs(bodyOf(rig, once).linearVelocity.x - 1)).toBeLessThan(1e-4);
-    expect(Math.abs(bodyOf(rig, steady).linearVelocity.x - 60)).toBeLessThan(1e-3);
+    expect(Math.abs(rig.body(once.entity.id).linearVelocity.x - 1)).toBeLessThan(1e-4);
+    expect(Math.abs(rig.body(steady.entity.id).linearVelocity.x - 60)).toBeLessThan(1e-3);
   });
 
   it('spins by τ·t / I under a torque, and by J / I at once under a torque impulse', async () => {
     // 2/5 · 2 kg · (0.5 m)² = 0.2 kg·m², with no damping to take any spin off.
     const ball = withBody('sphere', [0, 0, 0], { ...FLOATING, mass: 2, angularDamping: 0 });
     const rig = await physicsRig([ball]);
-    const body = bodyOf(rig, ball);
+    const body = rig.body(ball.entity.id);
 
     for (let tick = 0; tick < 60; tick++) {
       body.addTorque({ x: 0, y: 0.2, z: 0 });
@@ -110,7 +102,7 @@ describe('a body moved by numbers', () => {
   it('turns too when pushed off its centre of mass', async () => {
     const ball = withBody('sphere', [0, 0, 0], { ...FLOATING, mass: 2, angularDamping: 0 });
     const rig = await physicsRig([ball]);
-    const body = bodyOf(rig, ball);
+    const body = rig.body(ball.entity.id);
 
     const { x, y, z } = body.position;
     body.addForce({ x: 0, y: 0, z: -6 }, { x: x + 0.5, y, z });
@@ -124,7 +116,7 @@ describe('a body moved by numbers', () => {
   it('reads back the velocities it is given', async () => {
     const ball = withBody('sphere', [0, 0, 0], FLOATING);
     const rig = await physicsRig([ball]);
-    const body = bodyOf(rig, ball);
+    const body = rig.body(ball.entity.id);
 
     body.linearVelocity = { x: 1, y: 2, z: 3 };
     body.angularVelocity = { x: 0, y: 4, z: 0 };
@@ -144,7 +136,7 @@ describe('a body moved by numbers', () => {
       at: rig.solved(template.entity.id).position,
     }));
     for (const { template } of still) {
-      const body = bodyOf(rig, template);
+      const body = rig.body(template.entity.id);
       body.linearVelocity = { x: 1, y: 0, z: 0 };
       body.addForce({ x: 0, y: 100, z: 0 });
       body.applyImpulse({ x: 0, y: 0, z: 10 });
@@ -152,16 +144,16 @@ describe('a body moved by numbers', () => {
     rig.run(0.5);
 
     for (const { template, at } of still) {
-      expect(off(bodyOf(rig, template).linearVelocity, [0, 0, 0])).toBeLessThan(1e-6);
+      expect(off(rig.body(template.entity.id).linearVelocity, [0, 0, 0])).toBeLessThan(1e-6);
       expect(rig.solved(template.entity.id).position.distanceTo(at)).toBeLessThan(1e-6);
     }
-    expect(Math.abs(bodyOf(rig, sliding).linearVelocity.x - 2)).toBeLessThan(0.01);
+    expect(Math.abs(rig.body(sliding.entity.id).linearVelocity.x - 2)).toBeLessThan(0.01);
   });
 
   it('ignores a vector that is not a number, and the rest of the call with it', async () => {
     const ball = withBody('sphere', [0, 0, 0], { ...FLOATING, angularDamping: 0 });
     const rig = await physicsRig([ball]);
-    const body = bodyOf(rig, ball);
+    const body = rig.body(ball.entity.id);
     body.linearVelocity = { x: 1, y: 0, z: 0 };
     body.angularVelocity = { x: 0, y: 1, z: 0 };
 
