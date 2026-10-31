@@ -1,8 +1,9 @@
 import {
   colliderGeometry,
-  entitiesWith,
+  componentsOfType,
   entityWorldMatrixPath,
   findComponent,
+  physicsBodies,
   type BodyType,
   type BuiltShape,
   type ColliderComponent,
@@ -45,8 +46,8 @@ const DRIVER_OF: Record<RigidBodyComponent['bodyType'], Driver> = {
 };
 
 /**
- * A body as the world keeps it: Rapier's, the collider built on it, its
- * entity's object and its driver.
+ * A body as the world keeps it: Rapier's, the collider its character would
+ * sweep, its entity's object and its driver.
  */
 class Body implements BodyHandle {
   /**
@@ -59,7 +60,12 @@ class Body implements BodyHandle {
 
   constructor(
     readonly rapier: RAPIER.RigidBody,
-    /** The one a character sweeps; `null` when the entity has no collider. */
+    /**
+     * The one a character sweeps: the first collider of the body's own entity,
+     * which `findComponent` returns and `PlayerController` measures its feet
+     * from. `null` when the entity's colliders are all on its children, or it
+     * has none.
+     */
     readonly collider: RAPIER.Collider | null,
     /**
      * The entity's container, kept from the build. The binder creates it once,
@@ -97,8 +103,7 @@ class Body implements BodyHandle {
       if (this.smooth) this.rememberPrevious();
       return;
     }
-    this.object.updateWorldMatrix(true, false);
-    this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
+    worldPose(this.object, _worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setNextKinematicTranslation(_worldPosition);
     this.rapier.setNextKinematicRotation(_worldQuaternion);
   }
@@ -169,8 +174,7 @@ class Body implements BodyHandle {
    * move its controller made this tick, so the respawn wins over the step.
    */
   private teleport(): void {
-    this.object.updateWorldMatrix(true, false);
-    this.object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
+    worldPose(this.object, _worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setTranslation(_worldPosition, true);
     this.rapier.setRotation(_worldQuaternion, true);
     // From there, rather than drawn sweeping from where it was.
@@ -219,8 +223,25 @@ const _drawnQuaternion = new Quaternion();
 const _parentQuaternion = new Quaternion();
 const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
+const _carrierPosition = new Vector3();
+const _carrierQuaternion = new Quaternion();
+const _carrierScale = new Vector3();
+const _frame: Frame = { position: new Vector3(), quaternion: new Quaternion() };
 const _colliderEuler = new Euler();
 const _colliderRotation = new Quaternion();
+const _colliderPosition = new Vector3();
+
+/** A pose on a body, in its frame. */
+interface Frame {
+  readonly position: Vector3;
+  readonly quaternion: Quaternion;
+}
+
+/** An entity whose colliders a body carries: its object, and its colliders. */
+interface Carrier {
+  readonly object: Object3D;
+  readonly colliders: readonly ColliderComponent[];
+}
 
 /**
  * Owns the Rapier world and keeps it in step with the scene document.
@@ -266,23 +287,22 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * Creates a body for every entity that declares physics.
+   * Creates a body for every Rigid Body, and for every collider with none above
+   * it, each carrying the colliders that ride it (`physicsBodies`).
    *
    * Driven by the two component tables rather than by a walk of the entity
    * table: a scene of two thousand props with a dozen physical objects in it
    * visits the dozen.
    */
   build(scene: SceneDoc, binder: SceneBinder): void {
-    const physical = new Set([
-      ...entitiesWith(scene, 'rigidbody'),
-      ...entitiesWith(scene, 'collider'),
-    ]);
+    const bodies = physicsBodies(scene);
+    const colliders = componentsOfType(scene, 'collider');
 
     // Parents first, because `writeBack` writes the bodies in the order they
     // were added. A child written before its parent was placed against the pose
     // its parent was about to leave, and drawn a frame of its parent's motion
     // off its own body. `sort` is stable, so siblings keep their table order.
-    const parentsFirst = [...physical]
+    const parentsFirst = [...bodies.keys()]
       .map((entityId) => ({ entityId, depth: entityWorldMatrixPath(scene, entityId).length }))
       .sort((a, b) => a.depth - b.depth);
 
@@ -293,12 +313,11 @@ export class PhysicsWorld implements PhysicsApi {
       const object = binder.getObject(entityId);
       if (!object) continue;
 
-      this.addBody(
-        entity,
-        object,
-        findComponent(scene, entityId, 'rigidbody'),
-        findComponent(scene, entityId, 'collider'),
-      );
+      const carriers = (bodies.get(entityId) ?? []).flatMap((carrierId): Carrier[] => {
+        const carrier = binder.getObject(carrierId);
+        return carrier ? [{ object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }] : [];
+      });
+      this.addBody(entity, object, findComponent(scene, entityId, 'rigidbody'), carriers);
     }
   }
 
@@ -377,10 +396,9 @@ export class PhysicsWorld implements PhysicsApi {
     entity: EntityDoc,
     object: Object3D,
     rigidbody: RigidBodyComponent | undefined,
-    collider: ColliderComponent | undefined,
+    carriers: readonly Carrier[],
   ): void {
-    object.updateWorldMatrix(true, false);
-    object.matrixWorld.decompose(_worldPosition, _worldQuaternion, _worldScale);
+    worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
 
     // A collider with no rigid body is level geometry: static, and free.
     const bodyType = rigidbody?.bodyType ?? 'fixed';
@@ -411,22 +429,41 @@ export class PhysicsWorld implements PhysicsApi {
 
     const body = this.world.createRigidBody(desc);
 
-    let created: RAPIER.Collider | null = null;
-    if (collider) {
-      const shape = describeCollider(collider, object, _worldScale, bodyType);
-      const { material } = collider;
-      shape.setFriction(material.friction);
-      shape.setRestitution(material.restitution);
-      shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
-      shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
-      shape.setSensor(collider.isSensor);
-      created = this.world.createCollider(shape, body);
+    const created: RAPIER.Collider[] = [];
+    let own: RAPIER.Collider | null = null;
+    for (const carrier of carriers) {
+      const isOwn = carrier.object === object;
+      if (isOwn) {
+        _frame.position.set(0, 0, 0);
+        _frame.quaternion.identity();
+        _carrierScale.copy(_worldScale);
+      } else {
+        // Its place on the body, fixed from here on: q_B⁻¹ · q_C, at
+        // q_B⁻¹ · (p_C − p_B).
+        worldPose(carrier.object, _carrierPosition, _carrierQuaternion, _carrierScale);
+        _frame.quaternion.copy(_worldQuaternion).invert();
+        _frame.position.copy(_carrierPosition).sub(_worldPosition).applyQuaternion(_frame.quaternion);
+        _frame.quaternion.multiply(_carrierQuaternion);
+      }
+
+      for (const collider of carrier.colliders) {
+        const shape = describeCollider(collider, carrier.object, _carrierScale, bodyType, _frame);
+        const { material } = collider;
+        shape.setFriction(material.friction);
+        shape.setRestitution(material.restitution);
+        shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
+        shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
+        shape.setSensor(collider.isSensor);
+        const built = this.world.createCollider(shape, body);
+        created.push(built);
+        if (isOwn) own ??= built;
+      }
     }
-    if (rigidbody) weigh(body, created ? [created] : [], rigidbody.mass);
+    if (rigidbody) weigh(body, created, rigidbody.mass);
 
     this.bodies.set(
       entity.id,
-      new Body(body, created, object, DRIVER_OF[bodyType], rigidbody?.interpolate ?? false),
+      new Body(body, own, object, DRIVER_OF[bodyType], rigidbody?.interpolate ?? false),
     );
   }
 }
@@ -483,20 +520,25 @@ function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDes
 
 /**
  * A collider as Rapier takes it, built at its entity's world scale by the rules
- * core's `colliderGeometry` writes down, and set off and turned on its body.
+ * core's `colliderGeometry` writes down for the type of the body it rides, and
+ * set off and turned on that body: by its own centre and rotation, carried
+ * through its entity's frame on the body.
  */
 function describeCollider(
   collider: ColliderComponent,
   object: Object3D,
   scale: Vector3,
   bodyType: BodyType,
+  frame: Frame,
 ): RAPIER.ColliderDesc {
   const { x: sx, y: sy, z: sz } = scale;
   const { shape, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz], bodyType);
-  const [x, y, z] = position;
+  _colliderPosition.set(...position).applyQuaternion(frame.quaternion).add(frame.position);
   // three's Euler XYZ, which is the order `colliderGeometry` turns its axes in.
-  _colliderRotation.setFromEuler(_colliderEuler.set(...rotation));
-  return describeShape(shape, object).setTranslation(x, y, z).setRotation(_colliderRotation);
+  _colliderRotation.setFromEuler(_colliderEuler.set(...rotation)).premultiply(frame.quaternion);
+  return describeShape(shape, object)
+    .setTranslation(_colliderPosition.x, _colliderPosition.y, _colliderPosition.z)
+    .setRotation(_colliderRotation);
 }
 
 function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc {
@@ -520,6 +562,24 @@ function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc
     case 'mesh':
       return describeMesh(object, shape);
   }
+}
+
+/**
+ * An entity's world pose as physics reads it: its world matrix decomposed, the
+ * rotation made unit length.
+ *
+ * Under a parent scaled unevenly, with the entity turned inside it, the world
+ * matrix is sheared, and three hands back a rotation 0.933 long. Rapier
+ * normalises nothing it is given, and stretched every offset that rotation
+ * turned by its square: a box centred 2 m above such an entity held a ball at
+ * 2.82 instead of 3. No shape can follow a shear; the collider is the one of
+ * the decomposed pose, whose scale is the length of each axis of the world
+ * matrix, Unity's lossy scale.
+ */
+function worldPose(object: Object3D, position: Vector3, quaternion: Quaternion, scale: Vector3): void {
+  object.updateWorldMatrix(true, false);
+  object.matrixWorld.decompose(position, quaternion, scale);
+  quaternion.normalize();
 }
 
 /**

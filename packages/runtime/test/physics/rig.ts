@@ -18,6 +18,8 @@ import {
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
+
+export { nest } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
@@ -183,6 +185,14 @@ export function withBody(
     { ...createComponent('rigidbody'), ...body },
     createComponentForEntity('collider', template.components),
   );
+  template.entity.transform.position = position;
+  return template;
+}
+
+/** A primitive with the collider `createComponentForEntity` guesses for it, and no body: `withBody`'s sibling. */
+export function withCollider(kind: GeometryKind, position: Vec3): EntityTemplate {
+  const template = createMeshEntity(kind);
+  template.components.push(createComponentForEntity('collider', template.components));
   template.entity.transform.position = position;
   return template;
 }

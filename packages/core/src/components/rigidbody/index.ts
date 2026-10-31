@@ -4,7 +4,8 @@ import { createRigidBody } from './defaults';
 import { BODY_TYPE_LABELS } from './schema';
 
 /**
- * Physics motion for an entity.
+ * Physics motion for an entity, and for the colliders of its descendants that
+ * have no body of their own.
  *
  * Read field by field against its factory, as the collider is, and what it does
  * not know is dropped. Its type decides how every collider riding it is built,

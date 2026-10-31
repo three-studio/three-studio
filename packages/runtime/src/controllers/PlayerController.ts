@@ -388,9 +388,9 @@ registerBehaviour('playerController', (target: BehaviourTarget, ctx: BehaviourCo
     target.object,
     ctx.physics,
     target.entity.id,
-    // The entity's first collider, by the same lookup `PhysicsWorld.build` uses
-    // to decide what shape to give the body — so an entity carrying two cannot
-    // have the camera measuring from one and the capsule built from the other.
+    // The entity's first collider, the one its character sweeps — so an entity
+    // carrying two cannot have the camera measuring from one and the character
+    // sweeping the other.
     findComponent(ctx.scene, target.entity.id, 'collider'),
   );
 });

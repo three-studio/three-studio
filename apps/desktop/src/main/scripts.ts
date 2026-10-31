@@ -310,7 +310,8 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
      * Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it.
      * A dynamic body, or the player, is put there and keeps its speed; a
      * kinematic one moves there at the next tick, carrying what rests on it; a
-     * fixed one's collider stays where it is.
+     * fixed one's collider stays where it is, and so does a collider riding an
+     * ancestor's body: it sits where the world was built.
      */
     readonly transform: any;`,
   input: `    readonly input: StudioInput;`,

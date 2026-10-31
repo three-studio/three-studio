@@ -75,3 +75,16 @@ export const close = (actual: readonly number[], expected: readonly number[]): v
   expect(actual).toHaveLength(expected.length);
   actual.forEach((value, index) => expect(value).toBeCloseTo(expected[index]!, 5));
 };
+
+/**
+ * `parent` with `children` hung under it, linked as a document links them: each
+ * child's `parent`, and the parent's `children`. A child's transform is then
+ * local to its parent. Returns the parent.
+ */
+export function nest(parent: EntityTemplate, ...children: readonly EntityTemplate[]): EntityTemplate {
+  for (const child of children) {
+    child.entity.parent = parent.entity.id;
+    parent.entity.children.push(child.entity.id);
+  }
+  return parent;
+}

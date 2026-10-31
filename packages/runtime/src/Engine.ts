@@ -5,6 +5,7 @@ import {
   entitiesWith,
   findComponent,
   hasComponent,
+  physicsBodies,
   type MaterialDef,
   type PhysicsSettings,
   type RenderingSettings,
@@ -250,6 +251,11 @@ export class Engine {
   private checkPhysicsSetup(scene: SceneDoc): void {
     const colliders = entitiesWith(scene, 'collider');
     const players = entitiesWith(scene, 'playerController');
+    // Which body each collider rides: the one whose type it is built for.
+    const riding = new Map<string, string>();
+    for (const [body, carried] of physicsBodies(scene)) {
+      for (const entityId of carried) riding.set(entityId, body);
+    }
 
     // A mesh-derived collider on an entity with nothing to derive from falls
     // back to a box 2 cm across, which a player walks straight past. It
@@ -265,15 +271,19 @@ export class Engine {
       if (meshes.length === 0) continue;
 
       // Triangles on a dynamic body are built as their hull, which fills in
-      // the very holes the author may have chosen triangles to keep.
-      const bodyType = findComponent(scene, entityId, 'rigidbody')?.bodyType;
+      // the very holes the author may have chosen triangles to keep. The body
+      // may be a parent's, which is then the one to name.
+      const bodyId = riding.get(entityId) ?? entityId;
+      const bodyType = findComponent(scene, bodyId, 'rigidbody')?.bodyType;
       const hulled = meshes.some(({ shape }) => {
         const built = colliderGeometry(shape, [1, 1, 1], bodyType).shape;
         return shape.kind === 'mesh' && built.kind === 'mesh' && built.build !== shape.build;
       });
       if (hulled) {
+        const body =
+          bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities[bodyId]?.name}"`;
         this.warnings.push(
-          `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make its Rigid Body Kinematic or Fixed.`,
+          `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make ${body} Kinematic or Fixed.`,
         );
       }
 

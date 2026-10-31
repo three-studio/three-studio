@@ -40,8 +40,9 @@ export interface PhysicsApi {
    * A character controller for the entity, built with the caller's settings.
    *
    * It takes the entity's body: from then on only `move` moves it, and the
-   * world writes it to the entity after each step. `null` when the entity has
-   * no body or no collider.
+   * world writes it to the entity after each step. It sweeps the entity's own
+   * first collider; whatever else rides the body follows it. `null` when the
+   * entity has no body, or no collider of its own.
    */
   createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
 }

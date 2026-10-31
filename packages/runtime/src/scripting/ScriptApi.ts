@@ -107,7 +107,9 @@ export abstract class Behaviour {
    * entity's body with it:
    *  - a dynamic body, or the player, is put there and keeps its speed;
    *  - a kinematic body moves there at the next tick, carrying what rests on it;
-   *  - a fixed body's collider stays where it is.
+   *  - a fixed body's collider stays where it is, and so does a collider riding
+   *    an ancestor's body: it sits where the world was built, and only the mesh
+   *    moves.
    */
   readonly transform!: Object3D;
   readonly input!: Input;
