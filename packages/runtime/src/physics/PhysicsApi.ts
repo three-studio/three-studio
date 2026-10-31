@@ -47,6 +47,13 @@ export interface PhysicsApi {
   createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
 }
 
+/**
+ * A body in the world, in world space: metres, seconds, kilograms, radians.
+ *
+ * A vector holding a NaN or an infinity is ignored, and the rest of the call
+ * with it: Rapier keeps whatever it is handed, and one bad division in a
+ * script would otherwise leave the body nowhere for good.
+ */
 export interface BodyHandle {
   /** Where the solver holds the body, in world space, as of the last step. */
   readonly position: Readonly<Vec3Like>;
@@ -63,6 +70,32 @@ export interface BodyHandle {
    * colliders. Only a dynamic body's is felt.
    */
   readonly mass: number;
+  /**
+   * In metres per second. Written, it is set on a Dynamic body. Any other is
+   * moved by what drives it, and reads the speed that gives it: a Kinematic
+   * body its transform's, a character its controller's.
+   */
+  linearVelocity: Readonly<Vec3Like>;
+  /** In radians per second, about the world's axes. As `linearVelocity`. */
+  angularVelocity: Readonly<Vec3Like>;
+  /**
+   * Pushes a Dynamic body, in newtons, through the next tick only: added in
+   * every `fixedUpdate`, it pushes steadily. At a world point `at`, it turns
+   * the body too.
+   *
+   * Added in `update`, it waits for the frame's first tick, and a frame with
+   * none leaves it to add to the next frame's.
+   */
+  addForce(force: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+  /**
+   * A kick: changes a Dynamic body's velocity at once, by `impulse / mass`,
+   * in newton-seconds. At a world point `at`, it turns the body too.
+   */
+  applyImpulse(impulse: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+  /** Turns a Dynamic body, in newton-metres about the world's axes, through the next tick only. */
+  addTorque(torque: Readonly<Vec3Like>): void;
+  /** Changes a Dynamic body's spin at once, in newton-metre-seconds. */
+  applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
 }
 
 export interface CharacterController {

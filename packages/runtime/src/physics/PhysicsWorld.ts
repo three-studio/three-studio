@@ -26,6 +26,7 @@ import type {
   QuatLike,
   Vec3Like,
 } from './PhysicsApi';
+import { isFiniteVec } from './values';
 
 /**
  * What moves a body: the solver, its entity's transform, a character controller
@@ -57,6 +58,8 @@ class Body implements BodyHandle {
   private readonly written = { position: new Vector3(), quaternion: new Quaternion() };
   /** The body's world pose when the last tick began: where drawing between ticks starts. */
   private readonly previous = { position: new Vector3(), quaternion: new Quaternion() };
+  /** A force or a torque was added since the last tick, for `afterTick` to drop. */
+  private pushed = false;
 
   constructor(
     readonly rapier: RAPIER.RigidBody,
@@ -106,6 +109,21 @@ class Body implements BodyHandle {
     worldPose(this.object, _worldPosition, _worldQuaternion, _worldScale);
     this.rapier.setNextKinematicTranslation(_worldPosition);
     this.rapier.setNextKinematicRotation(_worldQuaternion);
+  }
+
+  /**
+   * After each tick: the forces and torques added for it, dropped.
+   *
+   * Rapier keeps a force until it is reset, where Unity's and Godot's last one
+   * tick. A force added in every `fixedUpdate`, as every engine's docs teach,
+   * grew by one more push each tick, and 10 N added once was still pushing a
+   * second later. Torques too: a force at a point adds one.
+   */
+  afterTick(): void {
+    if (!this.pushed) return;
+    this.rapier.resetForces(false);
+    this.rapier.resetTorques(false);
+    this.pushed = false;
   }
 
   /**
@@ -213,6 +231,45 @@ class Body implements BodyHandle {
 
   get mass(): number {
     return this.rapier.mass();
+  }
+
+  get linearVelocity(): Readonly<Vec3Like> {
+    return this.rapier.linvel();
+  }
+
+  set linearVelocity(velocity: Readonly<Vec3Like>) {
+    if (isFiniteVec(velocity)) this.rapier.setLinvel(velocity, true);
+  }
+
+  get angularVelocity(): Readonly<Vec3Like> {
+    return this.rapier.angvel();
+  }
+
+  set angularVelocity(velocity: Readonly<Vec3Like>) {
+    if (isFiniteVec(velocity)) this.rapier.setAngvel(velocity, true);
+  }
+
+  addForce(force: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void {
+    if (!isFiniteVec(force) || (at && !isFiniteVec(at))) return;
+    if (at) this.rapier.addForceAtPoint(force, at, true);
+    else this.rapier.addForce(force, true);
+    this.pushed = true;
+  }
+
+  applyImpulse(impulse: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void {
+    if (!isFiniteVec(impulse) || (at && !isFiniteVec(at))) return;
+    if (at) this.rapier.applyImpulseAtPoint(impulse, at, true);
+    else this.rapier.applyImpulse(impulse, true);
+  }
+
+  addTorque(torque: Readonly<Vec3Like>): void {
+    if (!isFiniteVec(torque)) return;
+    this.rapier.addTorque(torque, true);
+    this.pushed = true;
+  }
+
+  applyTorqueImpulse(impulse: Readonly<Vec3Like>): void {
+    if (isFiniteVec(impulse)) this.rapier.applyTorqueImpulse(impulse, true);
   }
 }
 
@@ -341,6 +398,7 @@ export class PhysicsWorld implements PhysicsApi {
       // After the behaviours, so a body follows where they put its entity this tick.
       for (const body of this.bodies.values()) body.beforeTick();
       this.world.step();
+      for (const body of this.bodies.values()) body.afterTick();
       this.accumulator -= this.fixedStep;
       steps += 1;
     }
