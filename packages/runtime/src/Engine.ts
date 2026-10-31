@@ -250,20 +250,24 @@ export class Engine {
    * fix costs nothing and turns a mystery into a one-line correction.
    */
   private checkPhysicsSetup(scene: SceneDoc): void {
-    const colliders = entitiesWith(scene, 'collider');
-    const players = entitiesWith(scene, 'playerController');
+    // Over the bodies the world builds, so the two cannot disagree: a body
+    // whose colliders are on its children was warned about as having none.
+    const bodies = physicsBodies(scene);
+    const players = new Set(entitiesWith(scene, 'playerController'));
     // Which body each collider rides: the one whose type it is built for.
     const riding = new Map<string, string>();
-    for (const [body, carried] of physicsBodies(scene)) {
+    for (const [body, carried] of bodies) {
       for (const entityId of carried) riding.set(entityId, body);
     }
+    // Through the context, as every warning is, so a line is said once.
+    const { warn } = this.context;
 
     // A mesh-derived collider on an entity with nothing to derive from falls
     // back to a box 2 cm across, which a player walks straight past. It
     // happened for real: physics used to be built before the glTF arrived.
     // That is fixed, but a model that fails to load reaches the same place,
     // and silently.
-    for (const entityId of colliders) {
+    for (const [entityId, bodyId] of riding) {
       const entity = scene.entities[entityId];
       if (!entity) continue;
       const meshes = Object.values(scene.components.collider[entityId] ?? {}).filter(
@@ -274,7 +278,6 @@ export class Engine {
       // Triangles on a dynamic body are built as their hull, which fills in
       // the very holes the author may have chosen triangles to keep. The body
       // may be a parent's, which is then the one to name.
-      const bodyId = riding.get(entityId) ?? entityId;
       const bodyType = findComponent(scene, bodyId, 'rigidbody')?.bodyType;
       const hulled = meshes.some(({ shape }) => {
         const built = colliderGeometry(shape, [1, 1, 1], bodyType).shape;
@@ -283,7 +286,7 @@ export class Engine {
       if (hulled) {
         const body =
           bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities[bodyId]?.name}"`;
-        this.warnings.push(
+        warn(
           `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make ${body} Kinematic or Fixed.`,
         );
       }
@@ -291,33 +294,39 @@ export class Engine {
       // Its own meshes alone: a group's children draw theirs.
       const object = this.binder.getObject(entityId);
       if (!object || ownMeshes(object).length === 0) {
-        this.warnings.push(
+        warn(
           `"${entity.name}" has a mesh Collider but draws no mesh of its own, so it is a tiny box nothing can stand on. A Collider is built from its own entity's meshes, not its children's: give each child that should collide a Collider, or check that its model loaded.`,
         );
       }
     }
 
-    // Both halves are now driven by the table of the component that is *there*,
-    // which is the whole shape of the check: something declares physics and is
-    // missing its collider. It used to be a walk of every entity in the scene.
-    for (const entityId of [...players, ...entitiesWith(scene, 'rigidbody')]) {
+    // Something declares physics and has nothing to collide with. An empty
+    // list is a Rigid Body's, level geometry being a collider's own; a player
+    // is said by what it lacks itself.
+    for (const [entityId, carried] of bodies) {
+      const entity = scene.entities[entityId];
+      if (!entity || carried.length > 0 || players.has(entityId)) continue;
+      warn(
+        `"${entity.name}" has a Rigid Body but no Collider, on it or on a child without a body of its own, so nothing can touch it. Add a Collider.`,
+      );
+    }
+    // Its own: a character sweeps its entity's collider, never one riding its
+    // body from a child.
+    for (const entityId of players) {
       const entity = scene.entities[entityId];
       if (!entity || hasComponent(scene, entityId, 'collider')) continue;
-      this.warnings.push(
-        hasComponent(scene, entityId, 'playerController')
-          ? `"${entity.name}" has a Player Controller but no Collider, so it flies instead of walking. Add a Collider.`
-          : `"${entity.name}" has a Rigid Body but no Collider, so nothing can touch it. Add a Collider.`,
+      warn(
+        `"${entity.name}" has a Player Controller but no Collider, so it flies instead of walking. Add a Collider.`,
       );
     }
 
     // A player's own capsule is not something to stand on, and counting it
     // was a false negative that hid the whole point of the check: a scene
     // whose only collider was the player's said nothing while the player fell
-    // for ever.
-    const hasGround = colliders.some((entityId) => !players.includes(entityId));
-    const hasPlayer = players.length > 0;
-    if (hasPlayer && !hasGround) {
-      this.warnings.push(
+    // for ever. Nor is anything riding the player's body, which moves with it.
+    const hasGround = [...bodies].some(([entityId, carried]) => carried.length > 0 && !players.has(entityId));
+    if (players.size > 0 && !hasGround) {
+      warn(
         'Nothing but the player has a Collider, so there is no ground to stand on. Add a Collider to whatever the player should walk on.',
       );
     }

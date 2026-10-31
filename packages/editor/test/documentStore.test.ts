@@ -1,15 +1,18 @@
 import {
   componentsOf,
   createAudioSourceEntity,
+  createComponent,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createModelEntity,
+  createPrefabInstance,
   findComponent,
   instancedId,
   type AudioSourceComponent,
 } from '@three-studio/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { prefabWith } from '../../core/test/fixtures';
 import {
   addComponentWithDependencies,
   addEntity,
@@ -21,6 +24,7 @@ import {
   setComponentNestedField,
   setTransform,
 } from '../src/commands/sceneCommands';
+import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
@@ -774,6 +778,63 @@ describe('the companions a player controller brings', () => {
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
     });
+  });
+});
+
+/*
+ * A Rigid Body brings a Collider so that it does not pass through the world, and
+ * a body whose colliders are on its children has one already: it rides them.
+ */
+describe('the companions a rigid body brings', () => {
+  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+
+  /** An empty entity "Cart", in the document, with these under it. */
+  function cartOver(...children: ReturnType<typeof createEntity>[]): string {
+    const cart = addEntity(createEntity('Cart'));
+    for (const child of children) addEntity(child, cart);
+    return cart;
+  }
+
+  const withCollider = () => {
+    const wheel = createMeshEntity('sphere');
+    wheel.components.push(createComponent('collider'));
+    return wheel;
+  };
+
+  it('brings no Collider to an entity whose children carry them', () => {
+    const cart = cartOver(withCollider(), withCollider());
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+  });
+
+  it('still brings one to an entity with nothing to collide with', () => {
+    const cart = cartOver(createMeshEntity('sphere'));
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+  });
+
+  it('counts no child that has a body of its own', () => {
+    const trailer = withCollider();
+    trailer.components.push(createComponent('rigidbody'));
+    const cart = cartOver(trailer);
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+  });
+
+  it('sees the colliders inside a prefab placed under it', () => {
+    const crate = withCollider();
+    useAssetStore.setState({ prefabs: { crate: prefabWith('Crate', [crate], crate.entity.id) } });
+    const cart = cartOver(createEntity('Crate', [createPrefabInstance('crate')]));
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
 });
 

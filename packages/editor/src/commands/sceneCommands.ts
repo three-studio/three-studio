@@ -1,5 +1,6 @@
 import {
   cloneSubtree,
+  collidersOfBody,
   componentsOf,
   splitInstancedId,
   createColliderShape,
@@ -407,6 +408,10 @@ export function setTransform(
  * body with no collider passes through the world. Both are easy to hit and hard
  * to diagnose, so the pieces are added together — the same bargain Unity makes
  * when a CharacterController brings its own capsule.
+ *
+ * A body's colliders may be on its children, which ride it: a Rigid Body added
+ * over them brings none of its own. A player's must be its own, since its
+ * character sweeps that one.
  */
 const REQUIRED_COMPANIONS: Partial<Record<ComponentType, readonly ComponentType[]>> = {
   playerController: ['collider', 'rigidbody'],
@@ -457,7 +462,11 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
 
   const toAdd: ComponentType[] = [type];
   for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
-    if (!present.has(companion)) toAdd.push(companion);
+    if (present.has(companion)) continue;
+    // Over the expanded scene, so the contents of a prefab placed under it count.
+    const carries = type === 'rigidbody' && companion === 'collider'
+      && collidersOfBody(expandedScene().scene, id).length > 0;
+    if (!carries) toAdd.push(companion);
   }
 
   mutate(`Add ${type}`, (draft) => {
