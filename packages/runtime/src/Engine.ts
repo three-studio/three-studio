@@ -291,11 +291,12 @@ export class Engine {
         );
       }
 
-      // Its own meshes alone: a group's children draw theirs.
+      // Its own meshes alone: a group's children draw theirs. Moved, not
+      // copied: given to its children and kept, it is still the tiny box.
       const object = this.binder.getObject(entityId);
       if (!object || ownMeshes(object).length === 0) {
         warn(
-          `"${entity.name}" has a mesh Collider but draws no mesh of its own, so it is a tiny box nothing can stand on. A Collider is built from its own entity's meshes, not its children's: give each child that should collide a Collider, or check that its model loaded.`,
+          `"${entity.name}" has a mesh Collider but draws no mesh of its own, so it is a tiny box nothing can stand on. A Collider is built from its own entity's meshes, not its children's: move it onto each child that should collide, or check that its model loaded.`,
         );
       }
     }
