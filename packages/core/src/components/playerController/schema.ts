@@ -33,6 +33,21 @@ export interface PlayerControllerComponent extends ComponentBase {
   moveSpeed: number;
   sprintMultiplier: number;
   jumpHeight: number;
+  /**
+   * The steepest slope the player walks up, in radians, shown in degrees: a
+   * ramp steeper than this is a wall. A level's ramps are built against it.
+   *
+   * This and `stepHeight` are the two numbers a level decides. The character's
+   * others — the gap it keeps, the floor a step needs on top, how far the
+   * ground holds it — are `PlayerController`'s.
+   */
+  maxSlope: number;
+  /**
+   * The highest step the player walks onto without jumping, in metres: a kerb
+   * or a stair under this is climbed, anything higher is a wall. A level's
+   * stairs are built against it.
+   */
+  stepHeight: number;
   mouseSensitivity: number;
   /**
    * How high the eye sits above the character's **feet** — the bottom of its

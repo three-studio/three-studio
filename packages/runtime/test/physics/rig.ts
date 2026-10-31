@@ -183,3 +183,10 @@ export function player(
   template.entity.transform.position = position;
   return template;
 }
+
+/** Collider-only level geometry, a step or a wall: a box of these half extents. */
+export function block(position: Vec3, halfExtents: Vec3): EntityTemplate {
+  const template = createEntity('Block', [{ ...createComponent('collider'), size: halfExtents }]);
+  template.entity.transform.position = position;
+  return template;
+}

@@ -64,6 +64,16 @@ export const SCRIPT_API_VERSION = 2;
  * they went on calling 9 and 10 unreleased after each had shipped. The same
  * holds for every format number in this file.
  *
+ * 11 — the player controller decides the steepest slope it walks up and the
+ * highest step it climbs, `maxSlope` and `stepHeight`. The physics world held
+ * both, 50° and 0.4 m for every character, and they are the two numbers a
+ * level's ramps and stairs are built against.
+ *
+ * An older build keeps both fields — `fillComponent` copies through what it
+ * does not know — and walks every player with its own 50° and 0.4 m. A level
+ * built around a 0.5 m stair cannot be climbed there, and nothing says why.
+ * Refusing the file is the better failure.
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -157,7 +167,7 @@ export const SCRIPT_API_VERSION = 2;
  * opening a new one: without it that build ignores the fields it has never
  * heard of and erases them on the first save.
  */
-export const SCENE_FORMAT_VERSION = 10;
+export const SCENE_FORMAT_VERSION = 11;
 
 /**
  * Separates an instance from the entity it produced, in an expanded id.
@@ -171,6 +181,10 @@ export const PREFAB_ID_SEPARATOR = '/';
 
 /**
  * `assets/prefabs/*.prefab.json`.
+ *
+ * 8 — the slope and step height of scene format 11. A prefab holds the same
+ * `ComponentTables`, so it can hold a player controller an older build would
+ * walk with its own 50° and 0.4 m.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the
@@ -203,7 +217,7 @@ export const PREFAB_ID_SEPARATOR = '/';
  * 2 — components carry an `id`, and prefab overrides name them by it rather
  * than by their position in the array.
  */
-export const PREFAB_FORMAT_VERSION = 7;
+export const PREFAB_FORMAT_VERSION = 8;
 
 /**
  * Project file format version, tracked separately from scenes.

@@ -9,6 +9,10 @@ export function createPlayerController(): PlayerControllerComponent {
     moveSpeed: 6,
     sprintMultiplier: 1.8,
     jumpHeight: 1.2,
+    // The 50° and 0.4 m the physics world used to hard-code for every
+    // character, so a component filled from this factory walks as it did.
+    maxSlope: (50 * Math.PI) / 180,
+    stepHeight: 0.4,
     mouseSensitivity: 0.0022,
     // An adult's eye, measured from the floor — which is what the field means
     // now. It pairs with the 1.70 m capsule `addComponentWithDependencies`

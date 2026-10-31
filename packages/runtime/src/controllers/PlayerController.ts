@@ -40,9 +40,9 @@ const EARTH_GRAVITY = 9.81;
  */
 const GROUNDED_STICK = -1;
 /*
- * How the player's character meets the world. These are the player's numbers,
- * not the world's: a character is a tool the world lends, configured by
- * whoever creates it.
+ * How the player's character meets the world, beside the slope and the step
+ * its component decides. These are the player's numbers, not the world's: a
+ * character is a tool the world lends, configured by whoever creates it.
  */
 /**
  * The gap the character keeps around its capsule. Rapier's controller asks for
@@ -50,10 +50,6 @@ const GROUNDED_STICK = -1;
  * shows the player floating.
  */
 const SKIN = 0.02;
-/** The steepest slope the player walks up: the 50° the world used to hard-code. */
-const MAX_SLOPE = (50 * Math.PI) / 180;
-/** The highest step the player walks onto: the 0.4 m the world used to hard-code. */
-const STEP_HEIGHT = 0.4;
 /** The free floor a step needs on top, so a ledge too narrow to stand on stays a wall. */
 const STEP_WIDTH = 0.2;
 /** How far below the feet the ground still holds a walking player, so a slope is walked down rather than hopped. */
@@ -151,8 +147,8 @@ export class PlayerController implements Behaviour {
         ? null
         : (physics?.createCharacterController(entityId, {
             offset: SKIN,
-            maxSlope: MAX_SLOPE,
-            stepHeight: STEP_HEIGHT,
+            maxSlope: component.maxSlope,
+            stepHeight: component.stepHeight,
             stepWidth: STEP_WIDTH,
             snapToGround: SNAP_TO_GROUND,
           }) ?? null);

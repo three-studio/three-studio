@@ -1,6 +1,14 @@
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ground, physicsRig, player, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
+import {
+  block,
+  ground,
+  physicsRig,
+  player,
+  standInForTheBrowser,
+  takeTheBrowserBack,
+  withBody,
+} from './rig';
 
 /*
  * A character is a tool the world lends a behaviour: it moves its body by the
@@ -44,6 +52,27 @@ describe('a character', () => {
     expect(from.z - position.z).toBeGreaterThan(4);
     const up = new Vector3(0, 1, 0);
     expect(up.clone().applyQuaternion(quaternion).angleTo(up)).toBeLessThan((1 * Math.PI) / 180);
+  });
+
+  it('climbs a step its step height clears, and no higher', async () => {
+    // A 0.5 m step, its face a metre ahead of the player. The world used to
+    // climb 0.4 m for every character, whatever its level was built around.
+    async function walkAt(stepHeight: number) {
+      const walker = player([0, 1, 0], { controller: { stepHeight } });
+      const rig = await physicsRig([ground(), block([0, 0.25, -6], [2, 0.25, 5]), walker]);
+      rig.run(0.5);
+      const settled = rig.drawn(walker.entity.id).position;
+      rig.press('KeyW');
+      rig.run(1);
+      return { settled, walked: rig.drawn(walker.entity.id).position };
+    }
+
+    const over = await walkAt(0.6);
+    expect(over.walked.y - over.settled.y).toBeGreaterThan(0.4);
+
+    const under = await walkAt(0.3);
+    expect(under.walked.z).toBeGreaterThan(-1);
+    expect(under.walked.y).toBeCloseTo(under.settled.y, 1);
   });
 
   it('leaves no body in the world while it flies', async () => {
