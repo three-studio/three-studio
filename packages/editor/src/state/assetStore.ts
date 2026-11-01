@@ -225,7 +225,21 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   remove: (assetPath) =>
     guard(set, async () => {
-      adopt(await window.studio.assets.remove(assetPath));
+      const change = await window.studio.assets.remove(assetPath);
+      const removed = new Set(change.removed);
+      const gone = new Set(get().manifest.assets.filter((a) => removed.has(a.path)).map((a) => a.id));
+      adopt(change);
+      if (gone.size === 0) return;
+      // Out of the tables too, which nothing reads again until a refresh: Play
+      // went on bouncing a ball by a physics material the hierarchy called gone,
+      // and a deleted material or prefab went on being drawn, where the delete
+      // dialog says what linked it shows nothing.
+      const kept = <T,>(table: Record<string, T>) =>
+        Object.fromEntries(Object.entries(table).filter(([id]) => !gone.has(id)));
+      const { materials, physicsMaterials, prefabs } = get();
+      set({ materials: kept(materials), physicsMaterials: kept(physicsMaterials), prefabs: kept(prefabs) });
+      useDocumentStore.getState().noteLibraryChange('materials');
+      useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
 
   move: (assetPath, targetFolder) =>
