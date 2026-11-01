@@ -61,7 +61,7 @@ const DRIVER_OF: Record<RigidBodyComponent['bodyType'], Driver> = {
 
 /**
  * A body as the world keeps it: Rapier's, the collider its character would
- * sweep, its entity's object and its driver.
+ * sweep, its entity's object, its driver, and what it was built from.
  */
 class Body implements BodyHandle {
   /**
@@ -91,13 +91,77 @@ class Body implements BodyHandle {
     readonly object: Object3D,
     public driver: Driver,
     /**
-     * The Rigid Body's `interpolate`. A character's body is drawn between ticks
-     * whatever it says.
+     * Its Rigid Body as last applied, by the build and by each tune since; `null`
+     * on level geometry, a collider with no Rigid Body above it.
      */
-    private readonly interpolate: boolean,
+    public rigidbody: RigidBodyComponent | null,
+    /** The colliders riding it, as the table of owners holds them. */
+    readonly colliders: readonly Built[],
   ) {
     this.rememberWritten();
     this.rememberPrevious();
+  }
+
+  /**
+   * Its Rigid Body's values at once, from the desc the world would build it
+   * with: its type, its dampings, its gravity scale, its continuous detection
+   * and the axes it leaves free.
+   *
+   * The type sets its driver as the build does, but a character's stays its
+   * controller's, and kinematic: its controller drives it, whatever its type
+   * says. A new driver starts as if just built there: drawn between ticks from
+   * where the body is, and its object's pose taken as the world's own write,
+   * so the change reads as no script's.
+   */
+  tune(rigidbody: RigidBodyComponent, desc: RAPIER.RigidBodyDesc): void {
+    const driver = this.driver === 'controller' ? 'controller' : DRIVER_OF[rigidbody.bodyType];
+    const wasSmooth = this.smooth;
+    if (driver !== 'controller' && this.rapier.bodyType() !== desc.status) this.rapier.setBodyType(desc.status, true);
+    this.rapier.setLinearDamping(desc.linearDamping);
+    this.rapier.setAngularDamping(desc.angularDamping);
+    this.rapier.setGravityScale(desc.gravityScale, true);
+    this.rapier.enableCcd(desc.ccdEnabled);
+    this.rapier.setEnabledTranslations(
+      desc.translationsEnabledX,
+      desc.translationsEnabledY,
+      desc.translationsEnabledZ,
+      true,
+    );
+    this.rapier.setEnabledRotations(desc.rotationsEnabledX, desc.rotationsEnabledY, desc.rotationsEnabledZ, true);
+    // Held still along what it locks, as a body built locked is. Rapier only
+    // stops the solver changing a locked axis's speed: a ball locked in its
+    // fall went on falling at the speed it had, 4.9 m in the next second.
+    if (this.rapier.isDynamic()) {
+      const v = this.rapier.linvel();
+      const w = this.rapier.angvel();
+      this.rapier.setLinvel(
+        {
+          x: desc.translationsEnabledX ? v.x : 0,
+          y: desc.translationsEnabledY ? v.y : 0,
+          z: desc.translationsEnabledZ ? v.z : 0,
+        },
+        true,
+      );
+      this.rapier.setAngvel(
+        { x: desc.rotationsEnabledX ? w.x : 0, y: desc.rotationsEnabledY ? w.y : 0, z: desc.rotationsEnabledZ ? w.z : 0 },
+        true,
+      );
+    }
+
+    if (driver === this.driver) {
+      this.rigidbody = rigidbody;
+      // Not sweeping in from where it was last drawn at its tick.
+      if (this.smooth && !wasSmooth) this.rememberPrevious();
+      return;
+    }
+    // Drawn once where it is, as the world stops drawing it. Its object was up
+    // to a tick behind it, and a kinematic body following its object would be
+    // pulled back that far, flinging what rests on it.
+    if (this.driver === 'solver') this.draw(1);
+    this.driver = driver;
+    this.rigidbody = rigidbody;
+    this.rememberPrevious();
+    this.rememberWritten();
   }
 
   /**
@@ -180,7 +244,7 @@ class Body implements BodyHandle {
    * body, which always is.
    */
   private get smooth(): boolean {
-    return this.driver === 'controller' || this.interpolate;
+    return this.driver === 'controller' || (this.rigidbody?.interpolate ?? false);
   }
 
   /**
@@ -323,8 +387,6 @@ const _worldScale = new Vector3();
 const _parentInverse = new Matrix4();
 const _carrierPosition = new Vector3();
 const _carrierQuaternion = new Quaternion();
-const _carrierScale = new Vector3();
-const _frame: Frame = { position: new Vector3(), quaternion: new Quaternion() };
 const _colliderEuler = new Euler();
 const _colliderRotation = new Quaternion();
 const _colliderPosition = new Vector3();
@@ -374,10 +436,23 @@ export interface DebugLines {
   readonly colors: Float32Array;
 }
 
-/** A collider the world built, as an event names it. */
+/** The components the running world builds bodies, colliders and joints from. */
+export type PhysicsComponent = RigidBodyComponent | ColliderComponent | JointComponent;
+
+/**
+ * A collider the world built: whom an event names for it, and what it was
+ * built from, which a tune builds it from again.
+ */
 interface Built {
   readonly owner: ColliderOwner;
-  readonly sensor: boolean;
+  /** Its Collider as last applied, by the build and by each tune since. */
+  component: ColliderComponent;
+  /** Its entity's object, whose own meshes a mesh collider is built from. */
+  readonly carrier: Object3D;
+  /** Its entity's world scale, fixed when the world was built, as the place below is. */
+  readonly scale: Vector3;
+  /** Its entity's place on the body. */
+  readonly frame: Frame;
   readonly collider: RAPIER.Collider;
 }
 
@@ -414,6 +489,14 @@ export class PhysicsWorld implements PhysicsApi {
    * registers it here, or nothing it touches is ever heard.
    */
   private readonly owners = new Map<number, Built>();
+  /**
+   * The pairs a sensor overlaps, by their two handles: heard leaving as they
+   * were heard entering. A collider tuned to a sensor or back ends its pairs
+   * under its new kind, and a contact's end then read as a trigger's.
+   */
+  private readonly triggers = new Set<string>();
+  /** The project's physics materials by asset id: the build's, and each one tuned since. */
+  private materials: Record<string, PhysicsMaterialDef> = {};
   /** What touched when the world was built, for the first tick to hand out before its own. */
   private atBuild: PhysicsEvent[] = [];
   /** What a joint with no Connected Body is held to; made by the first one. */
@@ -424,7 +507,7 @@ export class PhysicsWorld implements PhysicsApi {
    */
   private readonly joints = new Map<string, Joint>();
   private accumulator = 0;
-  /** Moves with each tick: the debug view read at a version holds until it moves. */
+  /** Moves with each tick and each tune: the debug view read at a version holds until it moves. */
   private version = 0;
   private debug: { readonly version: number; readonly lines: DebugLines } | null = null;
 
@@ -471,8 +554,7 @@ export class PhysicsWorld implements PhysicsApi {
    * visits the dozen.
    *
    * `materials` are the project's physics materials by asset id, which a
-   * collider linking one is built with. Read here and not kept: they belong to
-   * the build, as the scene does.
+   * collider linking one is built with, and is built with again when tuned.
    */
   build(
     scene: SceneDoc,
@@ -481,6 +563,7 @@ export class PhysicsWorld implements PhysicsApi {
   ): void {
     const bodies = physicsBodies(scene);
     const colliders = componentsOfType(scene, 'collider');
+    this.materials = { ...materials };
 
     // Parents first, because `writeBack` writes the bodies in the order they
     // were added. A child written before its parent was placed against the pose
@@ -503,8 +586,8 @@ export class PhysicsWorld implements PhysicsApi {
           ? [{ entityId: carrierId, object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }]
           : [];
       });
-      const rigidbody = findComponent(scene, entityId, 'rigidbody');
-      this.addBody(entity, object, rigidbody, carriers, materials);
+      const rigidbody = findComponent(scene, entityId, 'rigidbody') ?? null;
+      this.addBody(entity, object, rigidbody, carriers);
     }
 
     // After the bodies, two of which each joint holds, and before the step of
@@ -608,6 +691,48 @@ export class PhysicsWorld implements PhysicsApi {
       this.debug = { version: this.version, lines: { vertices, colors } };
     }
     return this.debug.lines;
+  }
+
+  /**
+   * A component's values applied to the running world at once, every field, as
+   * the world would have built it with them: the editor's live tuning.
+   *
+   * Through the functions that built it — `describeBody`, `describeCollider` —,
+   * at the poses the world was built from, so a tuned game is the game built
+   * with those values, and no second way from the document to Rapier can fall
+   * out of step with the first. A component the world did not build changes
+   * nothing. The document is not the world's to write.
+   */
+  tune(entityId: string, component: PhysicsComponent): void {
+    switch (component.type) {
+      case 'rigidbody':
+        this.tuneBody(entityId, component);
+        break;
+      case 'collider':
+        for (const built of this.owners.values()) {
+          const body = this.bodies.get(built.owner.body);
+          if (!body || built.owner.entity !== entityId || built.component.id !== component.id) continue;
+          this.tuneCollider(built, component, body, false);
+          this.settle(body);
+          break;
+        }
+        break;
+      case 'joint':
+        // Held as it was built.
+        break;
+    }
+    // Shown at once, paused or not.
+    this.version += 1;
+  }
+
+  /** A physics material's values, taken at once by every collider that links it. */
+  tunePhysicsMaterial(assetId: string, material: PhysicsMaterialDef): void {
+    this.materials[assetId] = material;
+    for (const built of this.owners.values()) {
+      const body = this.bodies.get(built.owner.body);
+      if (body && built.component.materialId === assetId) this.tuneCollider(built, built.component, body, false);
+    }
+    this.version += 1;
   }
 
   body(entityId: string): BodyHandle | null {
@@ -727,6 +852,71 @@ export class PhysicsWorld implements PhysicsApi {
     return this.overlap(box, center, rotation, options);
   }
 
+  /** A Rigid Body tuned on the body built from it. Level geometry has none, and takes none. */
+  private tuneBody(entityId: string, rigidbody: RigidBodyComponent): void {
+    const body = this.bodies.get(entityId);
+    if (!body?.rigidbody || body.rigidbody.id !== rigidbody.id) return;
+    const moved = rigidbody.bodyType !== body.rigidbody.bodyType;
+    body.tune(rigidbody, describeBody(rigidbody));
+    // Each collider is built for its body's type: Triangles on a Dynamic body
+    // are their hull.
+    if (moved) for (const built of body.colliders) this.tuneCollider(built, built.component, body, true);
+    this.settle(body);
+  }
+
+  /**
+   * A built collider given a Collider's values, its handle kept: the table of
+   * owners stands, a character sweeps its tuned shape on its tuned layer, and
+   * the queries find it as tuned from the next tick.
+   *
+   * A mesh's shape is built again only when its build or its body's type moved
+   * (`reshape`): it is built from its entity's vertices, which a friction
+   * slider must not pay at every step of a drag. Rapier builds any other
+   * shape in no time.
+   */
+  private tuneCollider(built: Built, component: ColliderComponent, body: Body, reshape: boolean): void {
+    const { collider } = built;
+    const was = built.component.shape;
+    const keeps = !reshape && component.shape.kind === 'mesh' && was.kind === 'mesh' && component.shape.build === was.build;
+    const desc = describeCollider(
+      component,
+      built.carrier,
+      built.scale,
+      body.rigidbody?.bodyType ?? 'fixed',
+      built.frame,
+      this.materialOf(component),
+      this.groupsOf(component.layer),
+      keeps ? collider.shape : undefined,
+    );
+    if (desc.shape !== collider.shape) collider.setShape(desc.shape);
+    // The offset whether it moved or not. Rapier keeps a contact's friction and
+    // bounce from when it was made: a box resting on a slope held at friction
+    // 0 until its collider's offset was set again, which remade its contacts
+    // with the new values, and reported no event.
+    collider.setTranslationWrtParent(desc.translation);
+    collider.setRotationWrtParent(desc.rotation);
+    collider.setFriction(desc.friction);
+    collider.setRestitution(desc.restitution);
+    collider.setFrictionCombineRule(desc.frictionCombineRule);
+    collider.setRestitutionCombineRule(desc.restitutionCombineRule);
+    collider.setSensor(desc.isSensor);
+    collider.setCollisionGroups(desc.collisionGroups);
+    collider.setActiveEvents(desc.activeEvents);
+    collider.setActiveCollisionTypes(desc.activeCollisionTypes);
+    built.component = component;
+  }
+
+  /**
+   * A tuned body weighed again — a sensor weighs nothing, and a shape changes
+   * each collider's share — and woken. A setter's own wake did not keep a
+   * sleeping ball awake: its gravity reversed, it read awake, fell asleep again
+   * at the next step and never moved. `wakeUp()` did.
+   */
+  private settle(body: Body): void {
+    if (body.rigidbody) weigh(body.rapier, body.colliders.map(({ collider }) => collider), body.rigidbody.mass);
+    if (body.rapier.isDynamic()) body.rapier.wakeUp();
+  }
+
   /**
    * The world a joint with no Connected Body is held to: one fixed body at the
    * origin, with no collider. No entity owns it, so `body()` never answers
@@ -741,6 +931,7 @@ export class PhysicsWorld implements PhysicsApi {
     this.bodies.clear();
     this.joints.clear();
     this.owners.clear();
+    this.triggers.clear();
     // Rapier says a queue must be freed by hand, and `world.free()` leaves it.
     this.events.free();
     this.world.free();
@@ -763,7 +954,12 @@ export class PhysicsWorld implements PhysicsApi {
       // Every collider the world builds is in the table.
       if (!a || !b) return [];
       const sides = { a: a.owner, b: b.owner };
-      if (a.sensor || b.sensor) return [{ ...sides, kind: started ? 'triggerEnter' : 'triggerExit' }];
+      const pair = first < second ? `${first} ${second}` : `${second} ${first}`;
+      if (started ? a.component.isSensor || b.component.isSensor : this.triggers.has(pair)) {
+        if (started) this.triggers.add(pair);
+        else this.triggers.delete(pair);
+        return [{ ...sides, kind: started ? 'triggerEnter' : 'triggerExit' }];
+      }
       if (!started) return [{ ...sides, kind: 'collisionExit' }];
       return [{ ...sides, kind: 'collisionEnter', contact: this.contactOf(a.collider, b.collider) }];
     });
@@ -920,92 +1116,60 @@ export class PhysicsWorld implements PhysicsApi {
   private addBody(
     entity: EntityDoc,
     object: Object3D,
-    rigidbody: RigidBodyComponent | undefined,
+    rigidbody: RigidBodyComponent | null,
     carriers: readonly Carrier[],
-    materials: Readonly<Record<string, PhysicsMaterialDef>>,
   ): void {
     worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
 
+    const body = this.world.createRigidBody(
+      describeBody(rigidbody)
+        .setTranslation(_worldPosition.x, _worldPosition.y, _worldPosition.z)
+        .setRotation({ x: _worldQuaternion.x, y: _worldQuaternion.y, z: _worldQuaternion.z, w: _worldQuaternion.w }),
+    );
     // A collider with no rigid body is level geometry: static, and free.
     const bodyType = rigidbody?.bodyType ?? 'fixed';
-    const desc = describeBody(bodyType)
-      .setTranslation(_worldPosition.x, _worldPosition.y, _worldPosition.z)
-      .setRotation({
-        x: _worldQuaternion.x,
-        y: _worldQuaternion.y,
-        z: _worldQuaternion.z,
-        w: _worldQuaternion.w,
-      });
 
-    if (rigidbody) {
-      desc.setLinearDamping(rigidbody.linearDamping);
-      desc.setAngularDamping(rigidbody.angularDamping);
-      desc.setGravityScale(rigidbody.gravityScale);
-      desc.setCcdEnabled(rigidbody.ccd);
-      // The solver's alone, as the Inspector shows them: a kinematic body never
-      // takes a lock hidden since it stopped being dynamic. Rapier names the
-      // axes left free, where the document names those locked.
-      if (bodyType === 'dynamic') {
-        const [px, py, pz] = rigidbody.lockPosition;
-        const [rx, ry, rz] = rigidbody.lockRotation;
-        desc.enabledTranslations(!px, !py, !pz);
-        desc.enabledRotations(!rx, !ry, !rz);
-      }
-    }
-
-    const body = this.world.createRigidBody(desc);
-
-    const created: RAPIER.Collider[] = [];
+    const riding: Built[] = [];
     let own: RAPIER.Collider | null = null;
     for (const carrier of carriers) {
       const isOwn = carrier.object === object;
-      if (isOwn) {
-        _frame.position.set(0, 0, 0);
-        _frame.quaternion.identity();
-        _carrierScale.copy(_worldScale);
-      } else {
-        // Its place on the body, fixed from here on: q_B⁻¹ · q_C, at
-        // q_B⁻¹ · (p_C − p_B).
-        worldPose(carrier.object, _carrierPosition, _carrierQuaternion, _carrierScale);
-        _frame.quaternion.copy(_worldQuaternion).invert();
-        _frame.position.copy(_carrierPosition).sub(_worldPosition).applyQuaternion(_frame.quaternion);
-        _frame.quaternion.multiply(_carrierQuaternion);
+      // Its place on the body and its scale, fixed from here on.
+      const frame: Frame = { position: new Vector3(), quaternion: new Quaternion() };
+      const scale = _worldScale.clone();
+      if (!isOwn) {
+        // q_B⁻¹ · q_C, at q_B⁻¹ · (p_C − p_B).
+        worldPose(carrier.object, _carrierPosition, _carrierQuaternion, scale);
+        frame.quaternion.copy(_worldQuaternion).invert();
+        frame.position.copy(_carrierPosition).sub(_worldPosition).applyQuaternion(frame.quaternion);
+        frame.quaternion.multiply(_carrierQuaternion);
       }
 
       const owner: ColliderOwner = { entity: carrier.entityId, body: entity.id };
-      for (const collider of carrier.colliders) {
-        const shape = describeCollider(collider, carrier.object, _carrierScale, bodyType, _frame);
-        // A link the project cannot answer plays its own values, as an
-        // unlinked collider does; the Engine says so.
-        const material = linkedPhysicsMaterial(collider.materialId, materials) ?? collider.material;
-        shape.setFriction(material.friction);
-        shape.setRestitution(material.restitution);
-        shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
-        shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
-        shape.setSensor(collider.isSensor);
-        // Every collider, not the sensors alone: one matrix decides what
-        // touches, what a sensor sees and what a character sweeps, its
-        // collider's groups being its sweep's filter. Rapier tests the groups
-        // beside a sensor's active types, not instead of them: a fixed sensor
-        // with the kinematic pairs below saw nothing on a layer its own ignores.
-        shape.setCollisionGroups(this.groupsOf(collider.layer));
-        // Every collider asks. Rapier reports a pair when either side does, so
-        // what a pair reports never depends on which side asked; and only when
-        // it changes, so a scene at rest reports nothing.
-        shape.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
-        if (collider.isSensor) shape.setActiveCollisionTypes(SENSOR_PAIRS);
-        const built = this.world.createCollider(shape, body);
-        this.owners.set(built.handle, { owner, sensor: collider.isSensor, collider: built });
-        created.push(built);
-        if (isOwn) own ??= built;
+      for (const component of carrier.colliders) {
+        const material = this.materialOf(component);
+        const groups = this.groupsOf(component.layer);
+        const collider = this.world.createCollider(
+          describeCollider(component, carrier.object, scale, bodyType, frame, material, groups),
+          body,
+        );
+        const built: Built = { owner, component, carrier: carrier.object, scale, frame, collider };
+        this.owners.set(collider.handle, built);
+        riding.push(built);
+        if (isOwn) own ??= collider;
       }
     }
-    if (rigidbody) weigh(body, created, rigidbody.mass);
+    if (rigidbody) weigh(body, riding.map(({ collider }) => collider), rigidbody.mass);
 
-    this.bodies.set(
-      entity.id,
-      new Body(body, own, object, DRIVER_OF[bodyType], rigidbody?.interpolate ?? false),
-    );
+    this.bodies.set(entity.id, new Body(body, own, object, DRIVER_OF[bodyType], rigidbody, riding));
+  }
+
+  /**
+   * The physics material a collider is built with: the one it links, or its
+   * own values where the project cannot answer the link, as an unlinked
+   * collider plays them; the Engine says so.
+   */
+  private materialOf(collider: ColliderComponent): PhysicsMaterialDef {
+    return linkedPhysicsMaterial(collider.materialId, this.materials) ?? collider.material;
   }
 }
 
@@ -1055,28 +1219,56 @@ function weigh(body: RAPIER.RigidBody, colliders: readonly RAPIER.Collider[], ma
   for (const collider of colliders) {
     collider.setDensity(shared && !collider.isSensor() ? mass / volume : 0);
   }
-  if (!shared) body.setAdditionalMass(mass, true);
+  // Set either way: a body weighed again once tuned, whose sensors had carried
+  // its mass whole, would carry it on top of its colliders' share.
+  body.setAdditionalMass(shared ? 0 : mass, true);
   // A density set on a built collider reaches its body at the next step, and
   // `mass` read before it gave the old one.
   body.recomputeMassPropertiesFromColliders();
 }
 
-function describeBody(kind: RigidBodyComponent['bodyType']): RAPIER.RigidBodyDesc {
-  switch (kind) {
-    case 'dynamic':
-      return RAPIER.RigidBodyDesc.dynamic();
-    case 'kinematicPosition':
-      return RAPIER.RigidBodyDesc.kinematicPositionBased();
-    case 'fixed':
-      return RAPIER.RigidBodyDesc.fixed();
+/** Each body type as Rapier names it. */
+const BODY_TYPES: Record<RigidBodyComponent['bodyType'], RAPIER.RigidBodyType> = {
+  dynamic: RAPIER.RigidBodyType.Dynamic,
+  kinematicPosition: RAPIER.RigidBodyType.KinematicPositionBased,
+  fixed: RAPIER.RigidBodyType.Fixed,
+};
+
+/**
+ * A body as its Rigid Body describes it, on one desc that the build places and
+ * a tune reads: its type, its dampings, its gravity scale, its continuous
+ * detection and the axes it leaves free. Level geometry, with no Rigid Body,
+ * is fixed.
+ */
+function describeBody(rigidbody: RigidBodyComponent | null): RAPIER.RigidBodyDesc {
+  if (!rigidbody) return RAPIER.RigidBodyDesc.fixed();
+  const desc = new RAPIER.RigidBodyDesc(BODY_TYPES[rigidbody.bodyType])
+    .setLinearDamping(rigidbody.linearDamping)
+    .setAngularDamping(rigidbody.angularDamping)
+    .setGravityScale(rigidbody.gravityScale)
+    .setCcdEnabled(rigidbody.ccd);
+  // The solver's alone, as the Inspector shows them: a kinematic body never
+  // takes a lock hidden since it stopped being dynamic. Rapier names the axes
+  // left free, where the document names those locked.
+  if (rigidbody.bodyType === 'dynamic') {
+    const [px, py, pz] = rigidbody.lockPosition;
+    const [rx, ry, rz] = rigidbody.lockRotation;
+    desc.enabledTranslations(!px, !py, !pz);
+    desc.enabledRotations(!rx, !ry, !rz);
   }
+  return desc;
 }
 
 /**
- * A collider as Rapier takes it, built at its entity's world scale by the rules
- * core's `colliderGeometry` writes down for the type of the body it rides, and
- * set off and turned on that body: by its own centre and rotation, carried
- * through its entity's frame on the body.
+ * A collider as Rapier takes it, on one desc that the build creates and a tune
+ * reads: built at its entity's world scale by the rules core's
+ * `colliderGeometry` writes down for the type of the body it rides; set off
+ * and turned on that body by its own centre and rotation, carried through its
+ * entity's frame on it; with its material's values, its layer's groups and
+ * the events it reports.
+ *
+ * Around `shape` when one is given: the shape a built collider has, which a
+ * tune keeps where it would only build the same one again.
  */
 function describeCollider(
   collider: ColliderComponent,
@@ -1084,15 +1276,36 @@ function describeCollider(
   scale: Vector3,
   bodyType: BodyType,
   frame: Frame,
+  material: PhysicsMaterialDef,
+  groups: number,
+  shape?: RAPIER.Shape,
 ): RAPIER.ColliderDesc {
   const { x: sx, y: sy, z: sz } = scale;
-  const { shape, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz], bodyType);
+  const { shape: built, position, rotation } = colliderGeometry(collider.shape, [sx, sy, sz], bodyType);
   _colliderPosition.set(...position).applyQuaternion(frame.quaternion).add(frame.position);
   // three's Euler XYZ, which is the order `colliderGeometry` turns its axes in.
   _colliderRotation.setFromEuler(_colliderEuler.set(...rotation)).premultiply(frame.quaternion);
-  return describeShape(shape, object)
-    .setTranslation(_colliderPosition.x, _colliderPosition.y, _colliderPosition.z)
-    .setRotation(_colliderRotation);
+  return (
+    (shape ? new RAPIER.ColliderDesc(shape) : describeShape(built, object))
+      .setTranslation(_colliderPosition.x, _colliderPosition.y, _colliderPosition.z)
+      .setRotation(_colliderRotation)
+      .setFriction(material.friction)
+      .setRestitution(material.restitution)
+      .setFrictionCombineRule(COMBINE_RULES[material.frictionCombine])
+      .setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine])
+      .setSensor(collider.isSensor)
+      // Every collider, not the sensors alone: one matrix decides what
+      // touches, what a sensor sees and what a character sweeps, its
+      // collider's groups being its sweep's filter. Rapier tests the groups
+      // beside a sensor's active types, not instead of them: a fixed sensor
+      // with the kinematic pairs below saw nothing on a layer its own ignores.
+      .setCollisionGroups(groups)
+      // Every collider asks. Rapier reports a pair when either side does, so
+      // what a pair reports never depends on which side asked; and only when
+      // it changes, so a scene at rest reports nothing.
+      .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+      .setActiveCollisionTypes(collider.isSensor ? SENSOR_PAIRS : RAPIER.ActiveCollisionTypes.DEFAULT)
+  );
 }
 
 function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc {

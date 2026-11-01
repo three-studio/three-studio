@@ -8,6 +8,8 @@ import {
   createRenderingSettings,
   type BodyType,
   type ColliderComponent,
+  type ComponentOfType,
+  type ComponentType,
   type EntityTemplate,
   type GeometryKind,
   type JointComponent,
@@ -284,9 +286,15 @@ export function onLayer(template: EntityTemplate, layerId: string): EntityTempla
 
 /** The template's collider, so a test can set its shape or material before the rig is built. */
 export function colliderOf(template: EntityTemplate): ColliderComponent {
-  const collider = template.components.find(
-    (component): component is ColliderComponent => component.type === 'collider',
-  );
-  if (!collider) throw new Error(`"${template.entity.name}" has no Collider.`);
-  return collider;
+  return componentOf(template, 'collider');
+}
+
+/**
+ * The template's first component of this type: to set before the rig is
+ * built, or to tune with a spread once it runs.
+ */
+export function componentOf<T extends ComponentType>(template: EntityTemplate, type: T): ComponentOfType<T> {
+  const found = template.components.find((component): component is ComponentOfType<T> => component.type === type);
+  if (!found) throw new Error(`"${template.entity.name}" has no ${type} component.`);
+  return found;
 }

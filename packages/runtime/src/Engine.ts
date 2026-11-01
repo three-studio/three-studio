@@ -43,7 +43,13 @@ import './controllers/PlayerController';
 import './scripting/ScriptHost';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
-import { PhysicsWorld, type ColliderOwner, type DebugLines, type PhysicsEvent } from './physics/PhysicsWorld';
+import {
+  PhysicsWorld,
+  type ColliderOwner,
+  type DebugLines,
+  type PhysicsComponent,
+  type PhysicsEvent,
+} from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -502,6 +508,21 @@ export class Engine {
    */
   physicsDebug(): DebugLines | null {
     return this.world?.debugLines() ?? null;
+  }
+
+  /**
+   * A physics component's values applied to the running world at once, as it
+   * would have built them: the editor's live tuning. The host's, as
+   * `physicsDebug` is: retuning the world's components is no behaviour's
+   * business. Nothing with physics off.
+   */
+  tune(entityId: string, component: PhysicsComponent): void {
+    this.world?.tune(entityId, component);
+  }
+
+  /** The same for a physics material asset: every collider that links it takes its values. */
+  tunePhysicsMaterial(assetId: string, material: PhysicsMaterialDef): void {
+    this.world?.tunePhysicsMaterial(assetId, material);
   }
 
   update(delta: number): void {
