@@ -15,6 +15,7 @@ import {
   prefabFromEntities,
   prefabInstanceOf,
   prefabVariantOf,
+  renameEntityReferences,
   setComponentsOf,
   splitInstancedId,
   type EntityDoc,
@@ -397,6 +398,18 @@ export function unpackPrefabInstance(entityId: string): void {
     // `instanceOwnerOf` pointing at an instance that does not exist any more.
     const renamed = new Map(produced.map((entity) => [entity.id, createId()]));
     const rename = (id: string) => renamed.get(id) ?? id;
+    // What the unpacked entities name among themselves follows them: a door's
+    // hinge named `host/frame`, an id gone with the instance. Inside a prefab
+    // one of them places, `host/inner/leaf` follows its host's new id, where it
+    // will expand.
+    const follow = (id: string): string | undefined => {
+      const exact = renamed.get(id);
+      if (exact !== undefined) return exact;
+      for (const [from, to] of renamed) {
+        if (id.startsWith(`${from}${PREFAB_ID_SEPARATOR}`)) return `${to}${id.slice(from.length)}`;
+      }
+      return undefined;
+    };
 
     for (const entity of produced) {
       const copy: EntityDoc = structuredClone(entity);
@@ -405,8 +418,9 @@ export function unpackPrefabInstance(entityId: string): void {
       copy.children = copy.children.map(rename);
       draft.entities[copy.id] = copy;
       // Read from the expansion, not from the draft: these entities only exist
-      // in the expanded scene, and their components with them.
-      setComponentsOf(draft, copy.id, structuredClone(componentsOf(expanded, entity.id)));
+      // in the expanded scene, and their components with them. The walk that
+      // renames them copies them too.
+      setComponentsOf(draft, copy.id, renameEntityReferences(componentsOf(expanded, entity.id), follow));
 
       // Appended, never assigned: whatever the author parented under the
       // instance is already in `children` and is not ours to drop.

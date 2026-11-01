@@ -2,11 +2,13 @@ import {
   componentsOf,
   createColliderShape,
   createComponent,
+  createJoint,
   insertEntity,
   createEntity,
   createMeshEntity,
   createPrefabInstance,
   expandPrefabs,
+  findComponent,
   putComponent,
   instanceOwnerOf,
   instancedId,
@@ -365,6 +367,21 @@ describe('references inside a prefab', () => {
     // looking up an entity that does not exist.
     expect(script.props['target']).toBe(instancedId(host.entity.id, turret.entity.id));
     expect(script.props['speed']).toBe(3);
+  });
+
+  it('a joint in a prefab names the copy of its Connected Body', () => {
+    const frame = createMeshEntity('box');
+    frame.entity.name = 'Frame';
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
+    frame.entity.children = [door.entity.id];
+    door.entity.parent = frame.entity.id;
+    const prefab = prefabWith('Doorway', [frame, door], frame.entity.id);
+
+    const host = createEntity('Doorway', [createPrefabInstance('prefab-1')]);
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+
+    const joint = findComponent(scene, instancedId(host.entity.id, door.entity.id), 'joint');
+    expect(joint?.connectedEntity).toBe(instancedId(host.entity.id, frame.entity.id));
   });
 
   it('leaves values that only look like ids alone', () => {

@@ -6,6 +6,7 @@ import {
   emptyComponentTables,
   entitiesWith,
   findComponent,
+  renameEntityReferences,
   type ComponentHost,
 } from './components';
 import { fillComponent } from '../components';
@@ -432,7 +433,9 @@ function instantiate(
     // `type: 'entity'` — holds an id local to the prefab, which nothing in the
     // expanded scene answers to. Without this a prefab whose script targets its
     // own turret looked up an id that does not exist, once per instance.
-    held = remapEntityReferences(held, prefab.entities, hostId);
+    held = renameEntityReferences(held, (id) =>
+      prefab.entities[id] === undefined ? undefined : instancedId(hostId, id),
+    );
 
     produced.entities.push(copy);
     for (const item of held) {
@@ -472,42 +475,6 @@ function instantiate(
   }
 
   return produced;
-}
-
-/**
- * Rewrites references to the prefab's own entities so they name the copies.
- *
- * Matched by value rather than by a declared list of reference fields: which
- * properties hold an entity id is decided by a user's script at runtime, and
- * core cannot see that. An id is twelve random characters, so a string that
- * equals one and means something else does not happen in practice — and the
- * alternative, leaving the reference pointing into the asset, is a lookup that
- * silently returns nothing.
- */
-function remapEntityReferences(
-  components: readonly ComponentDoc[],
-  local: Record<string, EntityDoc>,
-  hostId: string,
-): ComponentDoc[] {
-  const rewrite = (value: unknown): unknown => {
-    if (typeof value === 'string') {
-      return local[value] === undefined ? value : instancedId(hostId, value);
-    }
-    if (Array.isArray(value)) return value.map(rewrite);
-    if (typeof value === 'object' && value !== null) {
-      const out: Record<string, unknown> = {};
-      for (const [key, inner] of Object.entries(value)) out[key] = rewrite(inner);
-      return out;
-    }
-    return value;
-  };
-
-  return components.map((component) => {
-    // `type` is never an id, and skipping it keeps the walk off the one string
-    // property every component has.
-    const { type, ...rest } = component as unknown as Record<string, unknown>;
-    return { type, ...(rewrite(rest) as object) } as ComponentDoc;
-  });
 }
 
 /**

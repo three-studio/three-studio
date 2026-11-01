@@ -8,6 +8,7 @@ import {
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
+  createJoint,
   createRenderingSettings,
   findComponent,
   instancedId,
@@ -31,6 +32,7 @@ import {
   setComponentNestedField,
   setTransform,
 } from '../src/commands/sceneCommands';
+import { unpackPrefabInstance } from '../src/commands/prefabCommands';
 import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
@@ -877,6 +879,79 @@ describe('the companions a joint brings', () => {
     addComponentWithDependencies(cart, 'joint');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
+  });
+});
+
+/*
+ * A component names another entity by id — a joint its Connected Body, a
+ * script its target — so a copy made with that entity names the copy, as
+ * prefab expansion already does.
+ */
+describe('references to the entities copied with them', () => {
+  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+
+  /** A Frame, and a Door jointed to it. */
+  function doorway(): { frame: string; door: string } {
+    const frame = addEntity(createEntity('Frame', [createComponent('collider')]));
+    const door = addEntity(
+      createEntity('Door', [createComponent('rigidbody'), { ...createJoint(), connectedEntity: frame }]),
+    );
+    return { frame, door };
+  }
+
+  const copyOf = (name: string) =>
+    Object.values(scene().entities).find((entity) => entity.name === name)?.id;
+
+  it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
+    const { frame, door } = doorway();
+
+    duplicateSelection(sel([door, frame]));
+
+    const copiedFrame = copyOf('Frame (1)');
+    expect(copiedFrame).toBeDefined();
+    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(copiedFrame);
+    // The originals keep theirs.
+    expect(findComponent(scene(), door, 'joint')?.connectedEntity).toBe(frame);
+
+    doc().undo();
+    expect(Object.keys(scene().entities).sort()).toEqual([door, frame].sort());
+
+    duplicateSelection(sel([door]));
+    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(frame);
+  });
+
+  it("a script's entity property follows the copy too", () => {
+    const turret = addEntity(createEntity('Turret'));
+    const brain = addEntity(
+      createEntity('Brain', [{ ...createComponent('script'), assetId: 'aim', props: { target: turret } }]),
+      turret,
+    );
+
+    duplicateSelection(sel([turret]));
+
+    const copy = copyOf('Turret (1)')!;
+    const copiedBrain = scene().entities[copy]!.children[0]!;
+    expect(copiedBrain).not.toBe(brain);
+    expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
+  });
+
+  it('unpacking a prefab keeps its joint on the entity it named', () => {
+    const frame = createEntity('Frame', [createComponent('collider')]);
+    const door = createEntity('Door', [
+      createComponent('rigidbody'),
+      { ...createJoint(), connectedEntity: frame.entity.id },
+    ]);
+    frame.entity.children = [door.entity.id];
+    door.entity.parent = frame.entity.id;
+    useAssetStore.setState({ prefabs: { doorway: prefabWith('Doorway', [frame, door], frame.entity.id) } });
+    const host = addEntity(createEntity('Doorway', [createPrefabInstance('doorway')]));
+
+    unpackPrefabInstance(host);
+
+    const unpackedFrame = copyOf('Frame');
+    expect(unpackedFrame).toBeDefined();
+    expect(unpackedFrame).not.toBe(instancedId(host, frame.entity.id));
+    expect(findComponent(scene(), copyOf('Door')!, 'joint')?.connectedEntity).toBe(unpackedFrame);
   });
 });
 

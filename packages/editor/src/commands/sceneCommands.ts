@@ -14,7 +14,9 @@ import {
   isAncestorOf,
   putComponent,
   removeSubtree,
+  renameEntityReferences,
   reparentEntity as reparentInScene,
+  setComponentsOf,
   type ComponentDoc,
   type ComponentType,
   type EntityTemplate,
@@ -698,14 +700,22 @@ export function duplicateSelection(selection: Selection): void {
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
     (scene) => {
+      const renamed = new Map<string, string>();
       for (const id of ids) {
         const source = scene.entities[id];
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
         // keep theirs, which is what Unity and Blender do. It was computed per
         // cloned node before, which is one of the O(N) costs phase 7 collects.
-        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name));
+        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name), renamed);
         if (copyId) created.push(copyId);
+      }
+      // What the copies name among what was copied, the copy: a car and its
+      // trailer duplicated together left the new trailer hitched to the old car.
+      // What was not copied keeps the original, as Unity's Duplicate does.
+      for (const copyId of renamed.values()) {
+        const components = renameEntityReferences(componentsOf(scene, copyId), (id) => renamed.get(id));
+        setComponentsOf(scene, copyId, components);
       }
     },
     // The function form exists for this: the new ids are only known once the

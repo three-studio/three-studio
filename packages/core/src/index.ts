@@ -305,6 +305,7 @@ export {
   hasComponent,
   isKnownComponentType,
   putComponent,
+  renameEntityReferences,
   setComponentsOf,
 } from './scene/components';
 export type { ComponentHost } from './scene/components';
