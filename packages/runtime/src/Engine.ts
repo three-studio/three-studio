@@ -43,7 +43,7 @@ import './controllers/PlayerController';
 import './scripting/ScriptHost';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
-import { PhysicsWorld, type ColliderOwner, type PhysicsEvent } from './physics/PhysicsWorld';
+import { PhysicsWorld, type ColliderOwner, type DebugLines, type PhysicsEvent } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -491,6 +491,17 @@ export class Engine {
         camera.updateProjectionMatrix();
       }
     }
+  }
+
+  /**
+   * Rapier's debug view as of the last tick, for a host to draw over the game;
+   * `null` with physics off.
+   *
+   * Here and not on `physics`, which every behaviour and script is handed: what
+   * the solver holds is the host's to show.
+   */
+  physicsDebug(): DebugLines | null {
+    return this.world?.debugLines() ?? null;
   }
 
   update(delta: number): void {

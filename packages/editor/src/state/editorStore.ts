@@ -56,6 +56,13 @@ interface EditorState {
    * that box has always been there.
    */
   showStats: boolean;
+  /**
+   * Rapier's debug view over the running game: the colliders, the bodies' axes
+   * and the joints, as the solver holds them. Off by default, as Unity's Game
+   * view starts with its gizmos off: the lines cover the game being played.
+   * Kept from one Play to the next while the editor is open.
+   */
+  showPhysicsDebug: boolean;
   playState: PlayState;
   /**
    * Whether the running session asked for the whole screen: Play Full Screen
@@ -124,6 +131,7 @@ interface EditorState {
   toggleGizmos: () => void;
   toggleGrid: () => void;
   toggleStats: () => void;
+  togglePhysicsDebug: () => void;
   setSelection: (ids: readonly string[]) => void;
   clearSelection: () => void;
   /** Asks whichever view holds this entity to edit its name in place. */
@@ -151,6 +159,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   showGizmos: true,
   showGrid: true,
   showStats: true,
+  showPhysicsDebug: false,
   playState: 'stopped',
   fullScreen: false,
   stepRequested: false,
@@ -179,6 +188,7 @@ export const useEditorStore = create<EditorState>()((set) => ({
   toggleGizmos: () => set((s) => ({ showGizmos: !s.showGizmos })),
   toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
   toggleStats: () => set((s) => ({ showStats: !s.showStats })),
+  togglePhysicsDebug: () => set((s) => ({ showPhysicsDebug: !s.showPhysicsDebug })),
   setSelection: (selection) => set({ selection }),
   clearSelection: () => set({ selection: [] }),
 

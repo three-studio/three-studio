@@ -33,6 +33,7 @@ import { Picker } from './Picker';
 import { createEditorProjection } from './editorProjection';
 import type { Presentation } from './Presentation';
 import { ViewportInput } from './ViewportInput';
+import { PhysicsDebug } from './PhysicsDebug';
 import { PlaySession } from './PlaySession';
 import { ViewportRenderer } from './ViewportRenderer';
 import { gameTakesFocus, viewState, type ViewState } from './viewState';
@@ -109,6 +110,8 @@ export class EditorViewport {
 
   /** Play, Pause and Stop, and everything that has to happen around them. */
   private readonly play: PlaySession;
+  /** Rapier's debug view, laid over whichever engine runs. */
+  private readonly physicsDebug = new PhysicsDebug();
 
   /**
    * Whether the game is still owed the keyboard, and where the focus was at the
@@ -309,6 +312,7 @@ export class EditorViewport {
     this.gizmo.dispose();
     this.outline.dispose();
     this.overlay.dispose();
+    this.physicsDebug.dispose();
     this.binder.dispose();
     // Last, and it takes the loop, the observer, the three canvases and the
     // device with it.
@@ -626,10 +630,21 @@ export class EditorViewport {
     // While the game starts it is the game too, unseen under the edit image
     // until its first frame is in, which is what brings it on top.
     if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView)) {
+    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView, this.overGame(engine))) {
       this.play.gameDrawn();
     }
     this.view.reportStats(time, this.controls.moveSpeed);
+  }
+
+  /**
+   * What is laid over the game: Rapier's debug view, while the Play bar's
+   * Physics is on. Read only then, and only while the game is seen, since the
+   * world hands new arrays at each tick it is read.
+   */
+  private overGame(engine: Engine): Scene | undefined {
+    if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return undefined;
+    const lines = engine.physicsDebug();
+    return lines === null ? undefined : this.physicsDebug.show(lines);
   }
 
 

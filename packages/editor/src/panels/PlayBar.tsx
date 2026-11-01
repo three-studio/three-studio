@@ -1,5 +1,5 @@
 import { findScene } from '@three-studio/core';
-import { ChartNoAxesColumn, Pause, Play } from 'lucide-react';
+import { Box, ChartNoAxesColumn, Pause, Play } from 'lucide-react';
 import { useEditorStore } from '../state/editorStore';
 import { useProjectStore } from '../state/projectStore';
 import { useViewportStore } from '../state/viewportStore';
@@ -9,7 +9,7 @@ import { ViewHeader } from './PanelShell';
 
 /**
  * The Viewport's header from the press of Play to Stop, in place of the edit
- * tools: what the game is doing, which scene it runs, and Stats.
+ * tools: what the game is doing, which scene it runs, Physics and Stats.
  *
  * No word for the game's state: the glyph follows it, and the stage already
  * says the rest — its pill says Starting…, its badge Paused.
@@ -22,11 +22,17 @@ import { ViewHeader } from './PanelShell';
  *
  * Nothing in it takes the focus: the game hears keys only while its canvas
  * holds it, and a press on the bar must leave the keyboard with the game. The
- * glyph and the name are not controls, and Stats leaves the focus where it was.
+ * glyph and the name are not controls, and Physics and Stats leave the focus
+ * where they found it.
+ *
+ * Physics draws Rapier's debug view over the game, the Collider's icon on it.
+ * Full screen, where the bar is not, keeps it as it was left.
  */
 export function PlayBar() {
   const showStats = useEditorStore((s) => s.showStats);
   const toggleStats = useEditorStore((s) => s.toggleStats);
+  const showPhysicsDebug = useEditorStore((s) => s.showPhysicsDebug);
+  const togglePhysicsDebug = useEditorStore((s) => s.togglePhysicsDebug);
   const sceneName = useRunningSceneName();
 
   return (
@@ -48,6 +54,14 @@ export function PlayBar() {
           in the same strip: the swap at the press and at Stop leaves it under
           the pointer, as the transport puts Stop where Play was. */}
       <div className="ml-auto flex items-center gap-0.5">
+        <ToolButton
+          icon={Box}
+          label="Physics"
+          hint="Rapier's debug view: colliders, bodies and joints, as the solver holds them"
+          active={showPhysicsDebug}
+          takesNoFocus
+          onClick={togglePhysicsDebug}
+        />
         <ToolButton icon={ChartNoAxesColumn} label="Stats" active={showStats} takesNoFocus onClick={toggleStats} />
       </div>
     </ViewHeader>

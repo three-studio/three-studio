@@ -231,11 +231,15 @@ export class ViewportRenderer {
    * straightforward. Whoever writes this one decides what size the pass runs at;
    * the seam does not decide it for them.
    *
+   * @param over Drawn onto the image `scene` leaves, through the same camera:
+   *   what the editor lays over the running game. A scene of its own, because
+   *   a running engine's scene carries no overlay — what Play draws is what a
+   *   build draws.
    * @returns Whether it drew. For the game's canvas, the first `true` of a
    *   session is its first frame: the moment it has something of its own to
    *   show, which is when it comes on top.
    */
-  draw(scene: Scene, camera: Camera, view: Presentation): boolean {
+  draw(scene: Scene, camera: Camera, view: Presentation, over?: Scene): boolean {
     if (!view.visible) return false;
 
     // The surface is at least this big — `resize` sized it to the largest
@@ -256,6 +260,17 @@ export class ViewportRenderer {
      * `createRenderer` already awaits `renderer.init()`.
      */
     this.renderer.render(scene, camera);
+    if (over) {
+      // Uncleared, so it lands on the image rather than in place of it: three
+      // draws both into its tone-mapping target and copies that out whole.
+      const { autoClear } = this.renderer;
+      this.renderer.autoClear = false;
+      try {
+        this.renderer.render(over, camera);
+      } finally {
+        this.renderer.autoClear = autoClear;
+      }
+    }
     view.show(this.surface, this.renderer.getPixelRatio());
     return true;
   }

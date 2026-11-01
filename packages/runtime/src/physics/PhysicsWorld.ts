@@ -363,6 +363,17 @@ export type PhysicsEvent = { readonly a: ColliderOwner; readonly b: ColliderOwne
   | { readonly kind: 'collisionExit' | 'triggerEnter' | 'triggerExit' }
 );
 
+/**
+ * What Rapier's debug view draws: line segments, two points of three floats
+ * each in `vertices`, and an RGBA colour of four floats per point in `colors` —
+ * Rapier's own, which tell fixed, dynamic and kinematic bodies apart and dim a
+ * sleeping one.
+ */
+export interface DebugLines {
+  readonly vertices: Float32Array;
+  readonly colors: Float32Array;
+}
+
 /** A collider the world built, as an event names it. */
 interface Built {
   readonly owner: ColliderOwner;
@@ -413,6 +424,9 @@ export class PhysicsWorld implements PhysicsApi {
    */
   private readonly joints = new Map<string, Joint>();
   private accumulator = 0;
+  /** Moves with each tick: the debug view read at a version holds until it moves. */
+  private version = 0;
+  private debug: { readonly version: number; readonly lines: DebugLines } | null = null;
 
   private readonly fixedStep: number;
   private readonly maxSubsteps: number;
@@ -551,6 +565,7 @@ export class PhysicsWorld implements PhysicsApi {
       // After the behaviours, so a body follows where they put its entity this tick.
       for (const body of this.bodies.values()) body.beforeTick();
       this.world.step(this.events);
+      this.version += 1;
       for (const body of this.bodies.values()) body.afterTick();
       const events = this.atBuild.concat(this.drain());
       this.atBuild = [];
@@ -573,6 +588,26 @@ export class PhysicsWorld implements PhysicsApi {
     // Below one: `step` takes in no more time than the ticks it may run, and runs them.
     const alpha = this.accumulator / this.fixedStep;
     for (const body of this.bodies.values()) body.draw(alpha);
+  }
+
+  /**
+   * Rapier's debug view as of the last tick: every collider as the solver holds
+   * it, each body's axes, each joint.
+   *
+   * Read once per tick, and handed again until the next. Rapier hands two new
+   * arrays per read, 840 KB in 0.7 ms for a thousand boxes, so a view drawn at
+   * the display's rate, or over a paused game, reads them once.
+   *
+   * A body held out of the world — a flying player's, any disabled one — was
+   * drawn where it was left. Its colliders read disabled, and leaving them out
+   * takes its axes with them.
+   */
+  debugLines(): DebugLines {
+    if (this.debug === null || this.debug.version !== this.version) {
+      const { vertices, colors } = this.world.debugRender(undefined, (collider) => collider.isEnabled());
+      this.debug = { version: this.version, lines: { vertices, colors } };
+    }
+    return this.debug.lines;
   }
 
   body(entityId: string): BodyHandle | null {
