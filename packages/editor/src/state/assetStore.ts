@@ -7,6 +7,7 @@ import {
   type AssetKind,
   type AssetManifest,
   type MaterialDef,
+  type PhysicsMaterialDef,
   type PrefabDoc,
 } from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime';
@@ -35,6 +36,11 @@ interface AssetState {
    * synchronously; see `SceneBinder.setMaterialLibrary`.
    */
   materials: Record<string, MaterialDef>;
+  /**
+   * Every physics material, by asset id. Nothing in the edit view reads one:
+   * Play, a launch and the Inspector read the table itself.
+   */
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
   /** Every prefab, by asset id. Pushed into the binder the same way. */
   prefabs: Record<string, PrefabDoc>;
   loading: boolean;
@@ -137,6 +143,7 @@ function adopt(change: AssetChange): AssetChange {
 export const useAssetStore = create<AssetState>()((set, get) => ({
   manifest: emptyManifest(),
   materials: {},
+  physicsMaterials: {},
   prefabs: {},
   revision: 0,
   loading: false,
@@ -153,12 +160,13 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   refresh: () =>
     guard(set, async () => {
-      const [manifest, materials, prefabs] = await Promise.all([
+      const [manifest, materials, physicsMaterials, prefabs] = await Promise.all([
         window.studio.assets.list(),
         window.studio.assets.readMaterials(),
+        window.studio.assets.readPhysicsMaterials(),
         window.studio.assets.readPrefabs(),
       ]);
-      set({ manifest, materials, prefabs, revision: get().revision + 1 });
+      set({ manifest, materials, physicsMaterials, prefabs, revision: get().revision + 1 });
       useDocumentStore.getState().noteLibraryChange('materials');
       useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
@@ -236,6 +244,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     set({
       manifest: emptyManifest(),
       materials: {},
+      physicsMaterials: {},
       prefabs: {},
       revision: get().revision + 1,
       error: null,

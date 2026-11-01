@@ -5,6 +5,7 @@ import {
   createEmptyScene,
   createMaterial,
   createMeshEntity,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
@@ -79,6 +80,7 @@ beforeEach(async () => {
   root.entity.name = 'Crate';
   useAssetStore.setState({
     materials: { [MATERIAL_ID]: createMaterial() },
+    physicsMaterials: { ice: createPhysicsMaterial() },
     prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
     savePrefab: async (assetId, prefab) => {
       saved.push([assetId, prefab]);
@@ -105,6 +107,7 @@ describe('what Play runs, read in one place', () => {
     expect(inputs.physics).toEqual(physics);
     expect(inputs.loadingScene).toBe('loading-scene');
     expect(inputs.materials).toBe(useAssetStore.getState().materials);
+    expect(inputs.physicsMaterials).toBe(useAssetStore.getState().physicsMaterials);
     expect(inputs.prefabs).toBe(useAssetStore.getState().prefabs);
   });
 

@@ -25,6 +25,7 @@ function manifest(overrides: Partial<BuildManifest> = {}): BuildManifest {
     loadingScene: null,
     assets: {},
     materials: {},
+    physicsMaterials: {},
     prefabs: {},
     textureEncodings: {},
     assetSettings: {},

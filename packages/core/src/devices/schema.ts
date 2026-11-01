@@ -7,6 +7,7 @@ import {
   type PhysicsSettings,
   type RenderingSettings,
 } from '../project/schema';
+import { conformPhysicsMaterial, type PhysicsMaterialDef } from '../scene/physicsMaterial';
 import { migratePrefab, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
 import { migrateScene } from '../scene/serialization';
@@ -44,6 +45,8 @@ export interface LaunchSnapshot {
   entry: { id: string; name: string; scene: SceneDoc };
   /** The asset store's, with Prefab Mode's unsaved edits composed in. */
   materials: Record<string, MaterialDef>;
+  /** The asset store's, by asset id: what a collider linking one is built with. */
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
   prefabs: Record<string, PrefabDoc>;
   /** The project's current settings, as held in memory. */
   rendering: RenderingSettings;
@@ -93,6 +96,10 @@ export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
   for (const [key, material] of entriesOf(given['materials'])) {
     materials[key] = conformMaterial(material);
   }
+  const physicsMaterials: Record<string, PhysicsMaterialDef> = {};
+  for (const [key, material] of entriesOf(given['physicsMaterials'])) {
+    physicsMaterials[key] = conformPhysicsMaterial(material);
+  }
   const prefabs: Record<string, PrefabDoc> = {};
   for (const [key, prefab] of entriesOf(given['prefabs'])) {
     if (typeof prefab === 'object' && prefab !== null) prefabs[key] = migratePrefab(prefab as PrefabDoc);
@@ -103,6 +110,7 @@ export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id, name, scene: migrateScene(scene) },
     materials,
+    physicsMaterials,
     prefabs,
     rendering: conform(given['rendering'], createRenderingSettings()),
     physics: conformPhysicsSettings(given['physics']),

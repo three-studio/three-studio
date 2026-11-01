@@ -5,6 +5,7 @@ import {
   type BuildManifest,
   type BuildScene,
   type MaterialDef,
+  type PhysicsMaterialDef,
   type PhysicsSettings,
   type PrefabDoc,
   type RenderingSettings,
@@ -33,6 +34,7 @@ export interface ManifestContents {
   loadingScene: string | null;
   assets: readonly ShippedAsset[];
   materials: Record<string, MaterialDef>;
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
   prefabs: Record<string, PrefabDoc>;
   /** The bundle's path relative to `build.json`, or `null` when there are no scripts. */
   scripts: string | null;
@@ -98,6 +100,7 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     loadingScene: contents.loadingScene,
     assets,
     materials: sortedRecord(contents.materials),
+    physicsMaterials: sortedRecord(contents.physicsMaterials),
     prefabs: sortedRecord(contents.prefabs),
     textureEncodings,
     assetSettings,

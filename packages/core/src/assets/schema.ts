@@ -59,6 +59,10 @@ export const MATERIAL_ASSET_VERSION = 1;
  * each other. An export copies the player it came with, so this only lets a
  * player of 7 dropped beside this data say so, rather than build every
  * collider on one layer.
+ *
+ * And `physicsMaterials` carries the physics materials a shipped scene links
+ * to, by asset id: a player of 7 dropped beside this data would build every
+ * linked collider with its own values.
  */
 export const BUILD_FORMAT_VERSION = 8;
 
@@ -150,6 +154,11 @@ export interface BuildManifest {
    * than an unused texture is.
    */
   materials: Record<string, MaterialDef>;
+  /**
+   * The physics materials a shipped scene's colliders link to, by asset id, and
+   * only those, as for the materials.
+   */
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
   /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
    * engine sees the scene.

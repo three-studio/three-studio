@@ -6,6 +6,7 @@ import {
   createEmptyScene,
   createEntity,
   createMeshEntity,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   defaultSettings,
@@ -145,6 +146,7 @@ beforeEach(() => {
   });
   const root = createMeshEntity('box');
   useAssetStore.setState({
+    physicsMaterials: {},
     prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
     savePrefab: async () => {},
   });
@@ -435,6 +437,20 @@ describe('the problems over the game', () => {
     // What Boss found while it was built, which its `onWarning` never hears —
     // and none of the first scene's.
     expect(useViewportStore.getState().playWarnings).toEqual(boss.warnings);
+  });
+
+  it('plays a collider with the physics material it links, and does not call it missing', async () => {
+    const cube = createMeshEntity('box');
+    cube.entity.name = 'Cube';
+    cube.components.push({ ...createComponent('collider'), materialId: 'ice' });
+    useDocumentStore.getState().replaceScene(sceneWith([cube]));
+    useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
+    watching();
+
+    play();
+    await until(() => session!.playEngine !== null, 'the engine');
+
+    expect(session!.playEngine!.warnings.filter((line) => line.includes('"Cube"'))).toEqual([]);
   });
 
   it('takes a running game down once when the session goes', async () => {

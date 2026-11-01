@@ -81,6 +81,7 @@ export function readPlayInputs(): LaunchSnapshot {
     // only a fallback for a window with no project, which a test alone reaches.
     entry: { id: sceneId ?? scene.id, name: currentSceneName(), scene },
     materials: assets.materials,
+    physicsMaterials: assets.physicsMaterials,
     prefabs: composed?.prefabs ?? assets.prefabs,
     rendering: project?.settings.rendering ?? createRenderingSettings(),
     physics: project?.settings.physics ?? createPhysicsSettings(),
@@ -317,6 +318,9 @@ export class PlaySession {
         // embedded material — the scene would look different the moment you
         // pressed Play, for no reason the author could see.
         materials: inputs.materials,
+        // And without this a collider linked to a physics material would play
+        // with its own values, for the same unseen reason.
+        physicsMaterials: inputs.physicsMaterials,
         prefabs: inputs.prefabs,
         // Play mode draws on this same renderer, so the running scene captures
         // its sky on the device the editor already holds.

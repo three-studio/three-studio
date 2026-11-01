@@ -2,6 +2,7 @@ import {
   BUILD_FORMAT_VERSION,
   LAUNCH_SNAPSHOT_VERSION,
   createMaterial,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabDoc,
   createRenderingSettings,
@@ -65,6 +66,7 @@ function snapshot(): LaunchSnapshot {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: 'entry', name: 'Level', scene: createStarterScene() },
     materials: { stone: createMaterial() },
+    physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: { ...createPhysicsSettings(), gravity: [0, -3, 0] },
@@ -129,13 +131,14 @@ describe('the scenes a launch lists', () => {
 });
 
 describe('what else a launch says', () => {
-  it('carries the snapshot’s settings, materials and prefabs', () => {
+  it('carries the snapshot’s settings, materials, physics materials and prefabs', () => {
     const launched = snapshot();
     const build = launchManifest(contents({ snapshot: launched }));
     expect(build.rendering).toEqual(launched.rendering);
     expect(build.physics).toEqual(launched.physics);
     expect(build.loadingScene).toBe('loading');
     expect(build.materials).toEqual(launched.materials);
+    expect(build.physicsMaterials).toEqual(launched.physicsMaterials);
     expect(build.prefabs).toEqual(launched.prefabs);
   });
 

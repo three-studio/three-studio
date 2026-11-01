@@ -21,6 +21,7 @@ import {
   createBuildProfiles,
   createComponent,
   createDefaultLayer,
+  createEntity,
   createMaterial,
   createMeshEntity,
   createAudioSourceEntity,
@@ -408,6 +409,38 @@ describe('web export', () => {
     for (const gone of ['assets.json', 'materials.json', 'prefabs.json']) {
       expect(files).not.toContain(gone);
     }
+  });
+
+  it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const folder = join(projectPath, ASSETS_DIR, 'physics-materials');
+    await mkdir(folder, { recursive: true });
+    for (const [name, id] of [
+      ['Ice', 'pm-ice'],
+      ['Unused', 'pm-unused'],
+    ] as const) {
+      const file = join(folder, `${name}.physics-material.json`);
+      const material = { friction: 0.05, frictionCombine: 'sum' };
+      await writeFile(file, JSON.stringify({ version: 1, material }), 'utf8');
+      await writeFile(
+        `${file}.meta.json`,
+        JSON.stringify({ version: 1, id, kind: 'physicsMaterial', importedAt: 1, hash: 'h' }),
+        'utf8',
+      );
+    }
+    const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    insertEntity(scene, createEntity('Cube', [{ ...createComponent('collider'), materialId: 'pm-ice' }]));
+    await writeFile(scenePath, serializeScene(scene), 'utf8');
+
+    const outputDir = join(projectPath, '..', 'out-physics-materials');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = await buildOf(outputDir);
+    // Read against its factory: the rule it does not know is Average.
+    expect(build.physicsMaterials).toEqual({ 'pm-ice': { ...createPhysicsMaterial(), friction: 0.05 } });
+    expect(build.assets['pm-ice']).toMatch(/^assets\/physics-materials\/Ice\./);
+    expect(build.assets).not.toHaveProperty('pm-unused');
   });
 
   it('renames an asset whose bytes changed, so a re-export is not served stale', async () => {

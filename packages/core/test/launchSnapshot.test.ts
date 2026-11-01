@@ -5,6 +5,7 @@ import {
   conformLaunchSnapshot,
   createDefaultLayer,
   createMaterial,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabDoc,
   createRenderingSettings,
@@ -26,6 +27,7 @@ function snapshot(): LaunchSnapshot {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: 'scene-1', name: 'Level', scene: createStarterScene() },
     materials: { stone: createMaterial('#777777') },
+    physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' } },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: {
@@ -87,6 +89,17 @@ describe('a launch snapshot, where it arrives', () => {
 
     expect(material.side).toBe(createMaterial().side);
     expect(material).not.toHaveProperty('trap');
+  });
+
+  it('conforms each physics material', () => {
+    const conformed = conformLaunchSnapshot({
+      ...snapshot(),
+      physicsMaterials: { ice: { restitution: 0.5, frictionCombine: 'sum' }, broken: 'nothing' },
+    });
+
+    // The rule read as Average, the missing friction the factory's.
+    expect(conformed.physicsMaterials['ice']).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
+    expect(conformed.physicsMaterials['broken']).toEqual(createPhysicsMaterial());
   });
 
   it('falls back on the factories’ settings, and on no loading scene', () => {

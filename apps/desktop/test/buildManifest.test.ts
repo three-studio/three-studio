@@ -1,5 +1,6 @@
 import {
   BUILD_FORMAT_VERSION,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   defaultSettings,
@@ -47,6 +48,7 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
     loadingScene: null,
     assets: [],
     materials: {},
+    physicsMaterials: {},
     prefabs: {},
     scripts: null,
     ...overrides,
@@ -66,6 +68,7 @@ describe('assembling build.json', () => {
       contents({
         assets: [a, b],
         materials: { 'mat-a': material('#a'), 'mat-b': material('#b') },
+        physicsMaterials: { 'pm-a': createPhysicsMaterial(), 'pm-b': createPhysicsMaterial() },
         prefabs: { 'pre-a': {} as never, 'pre-b': {} as never },
       }),
     );
@@ -73,10 +76,12 @@ describe('assembling build.json', () => {
       contents({
         assets: [b, a],
         materials: { 'mat-b': material('#b'), 'mat-a': material('#a') },
+        physicsMaterials: { 'pm-b': createPhysicsMaterial(), 'pm-a': createPhysicsMaterial() },
         prefabs: { 'pre-b': {} as never, 'pre-a': {} as never },
       }),
     );
     expect(JSON.stringify(other)).toBe(JSON.stringify(one));
+    expect(Object.keys(one.physicsMaterials)).toEqual(['pm-a', 'pm-b']);
   });
 
   it('describes each shipped asset at the path it was given', () => {
