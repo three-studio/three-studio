@@ -85,6 +85,7 @@ export type {
   CharacterController,
   CharacterSettings,
   Collision,
+  JointHandle,
   PhysicsApi,
   QuatLike,
   QueryFilter,

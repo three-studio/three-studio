@@ -49,6 +49,7 @@ const PROBE = `import type {
   StudioAudio,
   StudioInput,
   StudioBody,
+  StudioJoint,
   StudioPhysics,
   Vec3Like as PublishedVec,
   QuatLike as PublishedQuat,
@@ -67,6 +68,7 @@ import type {
   CharacterController,
   CharacterSettings,
   Collision,
+  JointHandle,
   QuatLike,
   QueryFilter,
   RaycastHit,
@@ -137,6 +139,10 @@ declare const filter: QueryFilter;
 declare const publishedFilter: PublishedFilter;
 
 export const t: PublishedHit = hit;
+
+declare const joint: JointHandle;
+
+export const w: StudioJoint = joint;
 // Both ways: the filter a script builds is the one the runtime reads.
 export const u: PublishedFilter = filter;
 export const v: QueryFilter = publishedFilter;

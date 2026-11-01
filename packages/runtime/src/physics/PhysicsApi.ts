@@ -39,6 +39,11 @@ export interface PhysicsApi {
   /** The entity's body, or `null` when it carries none. */
   body(entityId: string): BodyHandle | null;
   /**
+   * The Joint on that entity, the one that carries it as the Inspector shows
+   * it, or `null` when it carries none or its joint holds nothing.
+   */
+  joint(entityId: string): JointHandle | null;
+  /**
    * A character controller for the entity, built with the caller's settings.
    *
    * It takes the entity's body: from then on only `move` moves it, and the
@@ -185,6 +190,9 @@ export interface BodyHandle {
    * touches it. The world also stops writing it to its entity, so whoever
    * disabled the body places the entity. Enabled again, the body is put where
    * its entity then is, unless it is fixed.
+   *
+   * Its joints hold nothing meanwhile, and one enabled again away from what it
+   * is joined to snaps the two together: 3 m apart, at 20 m/s.
    */
   enabled: boolean;
   /**
@@ -223,8 +231,30 @@ export interface BodyHandle {
    * its velocities. Without a rotation, it is moved and not turned. A
    * Kinematic body stays where it is put; a Fixed one takes its colliders with
    * it.
+   *
+   * A body a joint holds is pulled back by it, 3 m in five ticks: teleport
+   * what it is joined to as well.
    */
   teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
+}
+
+/** A joint, as of the last step. */
+export interface JointHandle {
+  /**
+   * How far it has moved since it was built: a hinge's angle in radians,
+   * right-handed about its axis, between −π and π; a slider's offset in metres
+   * along its axis. A Fixed or Spring joint reads 0.
+   */
+  readonly position: number;
+  /**
+   * Whether its motor drives it. A Fixed or Spring joint has none: it reads
+   * false, at no speed and no force, and a write does nothing.
+   */
+  motorEnabled: boolean;
+  /** Radians per second for a hinge, metres per second for a slider. A write that is not a number is ignored. */
+  motorSpeed: number;
+  /** The most its motor pushes with: newton-metres for a hinge, newtons for a slider. Below 0 is ignored. */
+  motorMaxForce: number;
 }
 
 export interface CharacterController {

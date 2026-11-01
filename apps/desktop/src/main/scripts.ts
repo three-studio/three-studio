@@ -301,7 +301,7 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     readonly rotation: Readonly<QuatLike>;
     /** In kilograms: its Rigid Body's Mass. */
     readonly mass: number;
-    /** \`false\` holds it out of the world: it touches nothing, and nothing touches it. */
+    /** \`false\` holds it out of the world: it touches nothing, and nothing touches it, and its joints hold nothing. */
     enabled: boolean;
     /** Metres per second. Assign a whole vector: \`body.linearVelocity = { x: 0, y: 5, z: 0 }\`. */
     linearVelocity: Readonly<Vec3Like>;
@@ -315,8 +315,20 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     addTorque(torque: Readonly<Vec3Like>): void;
     /** Changes its spin at once, in newton-metre-seconds. */
     applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
-    /** Puts it, and its entity, there at once, keeping its velocities. Without a rotation it is moved, not turned. */
+    /** Puts it, and its entity, there at once, keeping its velocities. Without a rotation it is moved, not turned. A joint holding it pulls it back: teleport what it is joined to as well. */
     teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
+  }
+
+  /** A joint, as of the last physics tick. */
+  export interface StudioJoint {
+    /** How far it has moved since it was built: a hinge's angle in radians, right-handed about its axis, between -π and π; a slider's offset in metres. 0 for a Fixed or Spring joint. */
+    readonly position: number;
+    /** Whether its motor drives it. A Fixed or Spring joint has none. */
+    motorEnabled: boolean;
+    /** Radians per second for a hinge, metres per second for a slider. */
+    motorSpeed: number;
+    /** The most it pushes with: newton-metres for a hinge, newtons for a slider. */
+    motorMaxForce: number;
   }
 
   /** How a character meets the world. Every number is yours: the Player Controller's are 0.02, 0.87 (50°), 0.4, 0.2 and 0.4. */
@@ -347,6 +359,8 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     readonly gravity: Readonly<Vec3Like>;
     /** \`null\` when the entity moves with no body. */
     body(entityId: string): StudioBody | null;
+    /** The Joint on that entity, exactly the one that carries it, or null when it carries none or holds nothing. */
+    joint(entityId: string): StudioJoint | null;
     /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
     createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
     /** The project's collision layers, Default first. A query names a layer by its id: find it here by its name. */
@@ -440,8 +454,9 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
      */
     readonly body: StudioBody;`,
   physics: `    /**
-     * The physics world: gravity, any entity's body, character controllers, the project's
-     * collision layers, and rays, casts and overlaps that leave out this entity's own body.
+     * The physics world: gravity, any entity's body, the scene's joints, character controllers,
+     * the project's collision layers, and rays, casts and overlaps that leave out this entity's
+     * own body.
      */
     readonly physics: StudioPhysics;`,
   input: `    readonly input: StudioInput;`,

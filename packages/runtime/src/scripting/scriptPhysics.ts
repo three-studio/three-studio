@@ -19,6 +19,10 @@ import type {
  *
  * Its queries leave out the body its entity moves with, whatever `exclude`
  * says: a turret's ray never stops at its tank.
+ *
+ * `joint` reads an id exactly, as the behaviour's does: the entity carrying
+ * the Joint, as the Inspector shows it, which on a door's hinge is not the
+ * body it moves with.
  */
 export interface ScriptPhysics extends PhysicsApi {
   /** The body `entityId` moves with, or `null` when it moves with none. */
@@ -63,6 +67,7 @@ export function scriptPhysicsFor(
     gravity: physics?.gravity ?? ZERO,
     layers: physics?.layers ?? [],
     body: (entityId) => physics?.body(bodyEntity(entityId)) ?? null,
+    joint: (entityId) => physics?.joint(entityId) ?? null,
     createCharacterController: (entityId, settings) =>
       physics?.createCharacterController(bodyEntity(entityId), settings) ?? null,
     // With no physics, nothing is asked, and so nothing is said.

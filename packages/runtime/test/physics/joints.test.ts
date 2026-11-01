@@ -333,6 +333,107 @@ describe('a joint', () => {
     expect(heard.get(first.entity.id)).toContain(second.entity.id);
   });
 
+  it('a hinge reads its angle from where it was built, right-handed about its axis', async () => {
+    // Read while it swings: damped to rest, a pendulum falls asleep short of
+    // hanging straight down.
+    const onZ = pendulum();
+    const reversed = withJoint(withBody('box', [1, 2, 3], { interpolate: false }), {
+      anchor: [-1, 0, 0],
+      motion: hinge([0, 0, -1]),
+    });
+    const rig = await physicsRig([onZ, reversed]);
+    const angle = (template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id)?.position ?? NaN;
+    expect([angle(onZ), angle(reversed)]).toEqual([0, 0]);
+
+    let lowest = 0;
+    for (let frame = 0; frame < 120; frame++) {
+      rig.run(1 / 60);
+      const turned = turnAboutZ(rig, onZ.entity.id);
+      expect(Math.abs(angle(onZ) - turned)).toBeLessThan(1e-4);
+      expect(Math.abs(angle(reversed) + turnAboutZ(rig, reversed.entity.id))).toBeLessThan(1e-4);
+      lowest = Math.min(lowest, angle(onZ));
+    }
+    // Down from +x, clockwise seen from +z, and on past hanging straight down.
+    expect(lowest).toBeLessThan(-Math.PI / 2);
+  });
+
+  it('a slider reads its offset along its axis', async () => {
+    const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);
+    rail.entity.transform.rotation = [(20 * Math.PI) / 180, 0, 0];
+    const box = withJoint(withBody('box', [2, 3, 1], { interpolate: false }), {
+      connectedEntity: rail.entity.id,
+      motion: slider([1, 1, 0], { enabled: true, min: -1, max: 0.5 }),
+    });
+    const rig = await physicsRig([rail, box]);
+
+    rig.run(2);
+
+    expect(Math.abs((rig.engine.physics?.joint(box.entity.id)?.position ?? 0) + 1)).toBeLessThan(1e-3);
+  });
+
+  it('a motor turned on drives its joint, and turned off lets it turn freely', async () => {
+    const spun = wheel();
+    const rig = await physicsRig([spun]);
+    const joint = rig.engine.physics?.joint(spun.entity.id);
+    if (!joint) throw new Error('No joint was built.');
+
+    joint.motorSpeed = 5;
+    joint.motorEnabled = true;
+    rig.run(1 / 60);
+    expect(Math.abs(rig.body(spun.entity.id).angularVelocity.x - 5)).toBeLessThan(1e-3);
+
+    // A motor zeroed rather than given no force brakes the wheel to 0.
+    joint.motorEnabled = false;
+    rig.run(1);
+    expect(Math.abs(rig.body(spun.entity.id).angularVelocity.x - 5)).toBeLessThan(1e-3);
+  });
+
+  it('a write that is not a number is ignored', async () => {
+    const spun = wheel({ speed: 3, maxForce: 20 });
+    const rig = await physicsRig([spun]);
+    const joint = rig.engine.physics?.joint(spun.entity.id);
+    if (!joint) throw new Error('No joint was built.');
+
+    joint.motorSpeed = Number.NaN;
+    joint.motorSpeed = Number.POSITIVE_INFINITY;
+    joint.motorMaxForce = -1;
+
+    expect(joint.motorSpeed).toBe(3);
+    expect(joint.motorMaxForce).toBe(20);
+  });
+
+  it('a Fixed joint has no motor', async () => {
+    const first = withBody('box', [0, 2, 0]);
+    const second = withJoint(withBody('box', [1.5, 2, 0]), {
+      connectedEntity: first.entity.id,
+      motion: createJointMotion('fixed'),
+    });
+    const rig = await physicsRig([first, second]);
+    const joint = rig.engine.physics?.joint(second.entity.id);
+    if (!joint) throw new Error('No joint was built.');
+
+    joint.motorEnabled = true;
+    joint.motorSpeed = 5;
+    joint.motorMaxForce = 10;
+    rig.run(0.5);
+
+    expect([joint.motorEnabled, joint.motorSpeed, joint.motorMaxForce, joint.position]).toEqual([false, 0, 0, 0]);
+  });
+
+  it('`joint` names the entity that carries it', async () => {
+    const door = withBody('box', [1, 2, 0]);
+    const edge = withJoint(createEntity('Hinge'), { motion: hinge([0, 0, 1]) });
+    edge.entity.transform.position = [-1, 0, 0];
+    nest(door, edge);
+    // On an empty entity, it holds nothing.
+    const loose = withJoint(createEntity('Loose'));
+    const rig = await physicsRig([door, edge, loose]);
+
+    expect(rig.engine.physics?.joint(edge.entity.id)).not.toBeNull();
+    expect(rig.engine.physics?.joint(door.entity.id)).toBeNull();
+    expect(rig.engine.physics?.joint(loose.entity.id)).toBeNull();
+  });
+
   it('building the world with joints moves nothing', async () => {
     const swinging = pendulum();
     const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);

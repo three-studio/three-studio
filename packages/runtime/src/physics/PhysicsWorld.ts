@@ -24,7 +24,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
-import { buildJoint, type JointPose } from './joints';
+import { buildJoint, type Joint, type JointPose } from './joints';
 import { collisionGroups, layerBits } from './layers';
 import { describeMesh } from './meshShape';
 import type {
@@ -32,6 +32,7 @@ import type {
   CharacterController,
   CharacterSettings,
   Collision,
+  JointHandle,
   PhysicsApi,
   QuatLike,
   QueryOptions,
@@ -406,6 +407,11 @@ export class PhysicsWorld implements PhysicsApi {
   private atBuild: PhysicsEvent[] = [];
   /** What a joint with no Connected Body is held to; made by the first one. */
   private groundBody: RAPIER.RigidBody | null = null;
+  /**
+   * Each joint built, by the entity carrying it. The first only, should a
+   * hand-edited file give an entity two: the Inspector adds one.
+   */
+  private readonly joints = new Map<string, Joint>();
   private accumulator = 0;
 
   private readonly fixedStep: number;
@@ -498,7 +504,8 @@ export class PhysicsWorld implements PhysicsApi {
         const other = ends.other === null ? this.ground() : this.bodies.get(ends.other)?.rapier;
         const object = binder.getObject(entityId);
         if (!own || !other || !object) continue;
-        buildJoint(this.world, joint, other, own, jointPose(object, joint));
+        const built = buildJoint(this.world, joint, other, own, jointPose(object, joint));
+        if (!this.joints.has(entityId)) this.joints.set(entityId, built);
       }
     }
 
@@ -570,6 +577,10 @@ export class PhysicsWorld implements PhysicsApi {
 
   body(entityId: string): BodyHandle | null {
     return this.bodies.get(entityId) ?? null;
+  }
+
+  joint(entityId: string): JointHandle | null {
+    return this.joints.get(entityId) ?? null;
   }
 
   createCharacterController(
@@ -693,6 +704,7 @@ export class PhysicsWorld implements PhysicsApi {
 
   dispose(): void {
     this.bodies.clear();
+    this.joints.clear();
     this.owners.clear();
     // Rapier says a queue must be freed by hand, and `world.free()` leaves it.
     this.events.free();

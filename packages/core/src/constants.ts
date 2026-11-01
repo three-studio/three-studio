@@ -58,7 +58,8 @@ export const ENGINE_VERSION = '0.6.0';
  * names joined the reserved ones too, so a property called `onTriggerEnter` is
  * now refused with a warning. `this.physics` also gained rays, sphere, box and
  * capsule casts, sphere and box overlaps, and the project's collision layers: a
- * bundle compiled against them calls members an older build does not have.
+ * bundle compiled against them calls members an older build does not have. So
+ * did `joint(id)`, which reads a joint and drives its motor.
  */
 export const SCRIPT_API_VERSION = 3;
 

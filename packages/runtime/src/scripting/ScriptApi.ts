@@ -134,9 +134,10 @@ export abstract class Behaviour {
    */
   readonly body!: BodyHandle;
   /**
-   * The physics world: gravity, any entity's body, character controllers, the
-   * project's collision layers, and rays, casts and overlaps that leave out
-   * this entity's own body. Its ids name bodies as `body` does.
+   * The physics world: gravity, any entity's body, the scene's joints,
+   * character controllers, the project's collision layers, and rays, casts and
+   * overlaps that leave out this entity's own body. Its ids name bodies as
+   * `body` does, and a joint by the entity that carries it.
    */
   readonly physics!: ScriptPhysics;
   readonly input!: Input;
