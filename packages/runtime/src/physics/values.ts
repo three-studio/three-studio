@@ -22,3 +22,10 @@ export function unitQuat({ x, y, z, w }: Readonly<QuatLike>): QuatLike | null {
   if (!Number.isFinite(length) || length === 0) return null;
   return { x: x / length, y: y / length, z: z / length, w: w / length };
 }
+
+/** The direction made unit length, or `null` when it has none to give: zero, or not a number. */
+export function unitVec({ x, y, z }: Readonly<Vec3Like>): Vec3Like | null {
+  const length = Math.hypot(x, y, z);
+  if (!Number.isFinite(length) || length === 0) return null;
+  return { x: x / length, y: y / length, z: z / length };
+}

@@ -46,6 +46,46 @@ export interface PhysicsApi {
    * has one driver.
    */
   createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
+  /**
+   * The nearest Collider along a ray, within `maxDistance` metres, or `null`.
+   * `direction` need not be unit.
+   *
+   * A query sees the world as the last physics tick left it: a body moved
+   * since — by a script, a teleport, its controller — is found where it was. A
+   * ray passes out of whatever it starts inside. A point or a distance that is
+   * not a number, or a direction of zero, finds nothing.
+   */
+  raycast(
+    origin: Readonly<Vec3Like>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null;
+}
+
+/** What a query leaves out. */
+export interface QueryOptions {
+  /**
+   * The entity whose body is left out, every collider of it: the body on that
+   * entity exactly, as `body` reads an id. The caller's own, usually.
+   */
+  readonly exclude?: string;
+}
+
+/** What a ray met first, in world space. */
+export interface RaycastHit {
+  /**
+   * The entity whose Collider it met. A script's `this.physics.body(entity)`
+   * is the body it moves with; a behaviour's `physics.body` is exact, so a
+   * behaviour reads `bodyOf(scene, entity) ?? entity` first.
+   */
+  readonly entity: string;
+  /** Where, on that Collider's surface. */
+  readonly point: Readonly<Vec3Like>;
+  /** Unit, out of that surface. */
+  readonly normal: Readonly<Vec3Like>;
+  /** How far it travelled to get there from its origin, in metres. */
+  readonly distance: number;
 }
 
 /**

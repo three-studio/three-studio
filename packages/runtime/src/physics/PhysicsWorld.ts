@@ -26,9 +26,11 @@ import type {
   Collision,
   PhysicsApi,
   QuatLike,
+  QueryOptions,
+  RaycastHit,
   Vec3Like,
 } from './PhysicsApi';
-import { isFiniteVec, unitQuat } from './values';
+import { isFiniteVec, unitQuat, unitVec } from './values';
 
 /**
  * What moves a body: the solver, its entity's transform, a character controller
@@ -356,6 +358,15 @@ interface Built {
   readonly collider: RAPIER.Collider;
 }
 
+/** What a query sees, as the arguments every Rapier query ends with. */
+type Scope = [
+  flags: RAPIER.QueryFilterFlags,
+  groups: undefined,
+  excludeCollider: undefined,
+  excludeBody: RAPIER.RigidBody | undefined,
+  predicate: (collider: RAPIER.Collider) => boolean,
+];
+
 /**
  * Owns the Rapier world and keeps it in step with the scene document.
  *
@@ -524,6 +535,37 @@ export class PhysicsWorld implements PhysicsApi {
     );
   }
 
+  raycast(
+    origin: Readonly<Vec3Like>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null {
+    // Unit, so that a distance in or out is in metres: Rapier counts it in
+    // lengths of the direction, and read 2.25 for a face 4.5 m along (0, 0, −2).
+    const unit = unitVec(direction);
+    // A NaN fails every comparison, so `>= 0` refuses it too.
+    if (!unit || !isFiniteVec(origin) || !(maxDistance >= 0)) return null;
+    const ray = new RAPIER.Ray(origin, unit);
+    // Solid or hollow tells only what a ray does inside a collider, and one
+    // holding the origin is left out.
+    const hit = this.world.castRayAndGetNormal(
+      ray,
+      maxDistance,
+      true,
+      ...this.scope(options, (collider) => collider.containsPoint(origin)),
+    );
+    const met = hit && this.owners.get(hit.collider.handle);
+    if (!hit || !met) return null;
+    const { x, y, z } = hit.normal;
+    return {
+      entity: met.owner.entity,
+      point: ray.pointAt(hit.timeOfImpact),
+      normal: { x, y, z },
+      distance: hit.timeOfImpact,
+    };
+  }
+
   dispose(): void {
     this.bodies.clear();
     this.owners.clear();
@@ -595,6 +637,32 @@ export class PhysicsWorld implements PhysicsApi {
       normal: normals[0] ?? { x: 0, y: 1, z: 0 },
       impulse,
     };
+  }
+
+  /**
+   * What a query sees: solid colliders, but the body it is told to leave out
+   * and what it starts in.
+   *
+   * Only colliders the world built, so that a hit can name its entity: one
+   * missing from the table is passed over, and the next one found.
+   *
+   * A query passes out of what it starts in, as Unity's and Godot's do: a ray
+   * reports what it runs into. Rapier's met the box it started inside at 0,
+   * facing nowhere, and a ray along the ground's top face the ground, at 0;
+   * with what holds the origin left out, each went on to the wall ahead.
+   *
+   * Rapier leaves out every collider of the body it is handed, so a compound
+   * caller is left out whole.
+   */
+  private scope(options: QueryOptions | undefined, startsIn: (collider: RAPIER.Collider) => boolean): Scope {
+    const excluded = options?.exclude === undefined ? undefined : this.bodies.get(options.exclude)?.rapier;
+    return [
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      undefined,
+      undefined,
+      excluded,
+      (collider) => this.owners.has(collider.handle) && !startsIn(collider),
+    ];
   }
 
   private addBody(

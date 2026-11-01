@@ -36,6 +36,8 @@ export function scriptPhysicsFor(physics: PhysicsApi | null, scene: SceneDoc): S
     body: (entityId) => physics?.body(bodyEntity(entityId)) ?? null,
     createCharacterController: (entityId, settings) =>
       physics?.createCharacterController(bodyEntity(entityId), settings) ?? null,
+    raycast: (origin, direction, maxDistance, options) =>
+      physics?.raycast(origin, direction, maxDistance, options) ?? null,
   };
 }
 
