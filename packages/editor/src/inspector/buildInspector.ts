@@ -18,8 +18,10 @@ import {
 } from '../commands/sceneCommands';
 import { currentSceneName, renameCurrentScene } from '../commands/sceneFiles';
 import { useAssetStore } from '../state/assetStore';
+import { isSceneLocked } from '../state/sceneLock';
+import { tunePhysicsMaterialField, tunedComponent, tunedPhysicsMaterial } from '../state/tuning';
 import { assetFieldBundle, type AssetFieldActions } from './assetField';
-import { PaneBinder, numeric, type Holder } from './PaneBinder';
+import { PaneBinder, numeric, type FieldIO, type Holder } from './PaneBinder';
 import {
   MultiTarget,
   SingleTarget,
@@ -264,10 +266,12 @@ export class InspectorBinding {
 
     // Conditional fields read the material the mesh actually renders with, so
     // a linked material shows the shared values' fields, not the embedded ones'.
-    const effective = effectiveComponent(component);
+    // And the rows are the tuned kind's during Play: a collider tuned to a
+    // sphere shows a radius.
+    const effective = effectiveComponent(entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(effective).entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
         continue;
@@ -285,7 +289,7 @@ export class InspectorBinding {
           );
         continue;
       }
-      this.bindField(folder, entityId, target, spec, owner);
+      this.bindField(folder, entityId, target, spec, owner, schema.live === true);
     }
 
     folder
@@ -299,10 +303,11 @@ export class InspectorBinding {
     target: ComponentTarget,
     spec: FieldSpec,
     owner: EntityTarget,
+    live: boolean,
   ): void {
     const componentId = target.representative.id;
     const multiple = owner instanceof MultiTarget;
-    this.binder.bind(folder, spec, {
+    const io: FieldIO = {
       read: () => {
         if (multiple) {
           // The first one's value. Tweakpane has no notion of an
@@ -311,9 +316,25 @@ export class InspectorBinding {
           return target.read(spec.path);
         }
         const component = currentComponent(entityId, componentId);
-        return readPath(component && effectiveComponent(component), spec.path);
+        return readPath(component && effectiveComponent(entityId, component), spec.path);
       },
       write: (value, { last, generation }) => {
+        // During Play only a live row is enabled, and it tunes the running game:
+        // the world takes the value, `state/tuning` keeps it, and the document
+        // is not written. A linked collider's material rows tune the asset,
+        // every collider linking it, as they edit its file when stopped.
+        if (isSceneLocked()) {
+          const component = currentComponent(entityId, componentId);
+          const linked =
+            multiple || !component ? null : linkedMaterial(effectiveComponent(entityId, component), spec.path);
+          const key = spec.path[1];
+          this.binder.edit(() => {
+            if (linked && component?.type === 'collider' && key !== undefined) {
+              tunePhysicsMaterialField(linked.assetId, key, value);
+            } else target.tune(spec.path, value);
+          });
+          return;
+        }
         if (multiple) {
           // Straight to every target, in one entry: they share the coalesce key.
           this.binder.edit(() =>
@@ -323,7 +344,8 @@ export class InspectorBinding {
           );
           return;
         }
-        const linked = linkedMaterial(currentComponent(entityId, componentId), spec.path);
+        const current = currentComponent(entityId, componentId);
+        const linked = linkedMaterial(current && effectiveComponent(entityId, current), spec.path);
         if (linked) {
           // The values belong to a shared asset, so the edit goes to the file
           // rather than to this entity — that is the whole point of linking.
@@ -340,7 +362,8 @@ export class InspectorBinding {
           }),
         );
       },
-    });
+    };
+    this.binder.bind(folder, spec, io, live);
   }
 
 }
@@ -370,18 +393,22 @@ function currentComponent(entityId: string, componentId: string): ComponentDoc |
  * copy it is no longer using. A collider linked to a physics material reports
  * the asset's values, which are what it is built with; one whose link the
  * project cannot answer reports its own, which are what it plays with.
+ *
+ * During Play, with what was tuned on it and on the asset it links: what the
+ * running game is built with.
  */
-export function effectiveComponent(component: ComponentDoc): ComponentDoc {
-  const { materials, physicsMaterials } = useAssetStore.getState();
-  if (component.type === 'mesh' && component.materialId !== null) {
-    const shared = materials[component.materialId];
-    return shared ? { ...component, material: shared } : component;
+export function effectiveComponent(entityId: string, component: ComponentDoc): ComponentDoc {
+  const { materials } = useAssetStore.getState();
+  const tuned = tunedComponent(entityId, component);
+  if (tuned.type === 'mesh' && tuned.materialId !== null) {
+    const shared = materials[tuned.materialId];
+    return shared ? { ...tuned, material: shared } : tuned;
   }
-  if (component.type === 'collider') {
-    const shared = linkedPhysicsMaterial(component.materialId, physicsMaterials);
-    return shared ? { ...component, material: shared } : component;
+  if (tuned.type === 'collider' && tuned.materialId !== null) {
+    const shared = tunedPhysicsMaterial(tuned.materialId);
+    return shared ? { ...tuned, material: shared } : tuned;
   }
-  return component;
+  return tuned;
 }
 
 /** A field whose edits go to a shared asset rather than to the document. */
@@ -445,8 +472,9 @@ export function inspectorSignature(entityId: string | undefined): string {
   const scene = expandedScene().scene;
   if (entityId === undefined || scene.entities[entityId] === undefined) return '';
   const parts = componentsOf(scene, entityId).map((component) => {
-    const { key, entries } = paneEntriesFor(component);
-    return `${key}/${shapeOf(entries, effectiveComponent(component))}`;
+    const effective = effectiveComponent(entityId, component);
+    const { key, entries } = paneEntriesFor(effective);
+    return `${key}/${shapeOf(entries, effective)}`;
   });
   return `${entityId}|${parts.join(',')}`;
 }

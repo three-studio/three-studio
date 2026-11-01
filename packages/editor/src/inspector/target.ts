@@ -8,6 +8,7 @@ import {
 } from '@three-studio/core';
 import { removeComponent, setComponentNestedField } from '../commands/sceneCommands';
 import { expandedScene } from '../state/expansion';
+import { tuneComponentField, tunedComponent } from '../state/tuning';
 
 /**
  * What the Inspector edits, whether that is one entity or forty.
@@ -60,6 +61,11 @@ export interface ComponentTarget {
    */
   read(path: readonly string[]): unknown;
   write(path: readonly string[], value: unknown, options?: WriteOptions): void;
+  /**
+   * The value tuned on the running game, during Play: the world takes it,
+   * `state/tuning` keeps it, and the document is not written.
+   */
+  tune(path: readonly string[], value: unknown): void;
   remove(): void;
 }
 
@@ -183,9 +189,10 @@ class MultiComponentTarget implements ComponentTarget {
     return out;
   }
 
-  /** The first one's, re-resolved: the panel holds this object across frames. */
+  /** The first one's, re-resolved: the panel holds this object across frames. As tuned, during Play. */
   read(path: readonly string[]): unknown {
-    return readPath(this.each()[0]?.component, path);
+    const first = this.each()[0];
+    return readPath(first && tunedComponent(first.entityId, first.component), path);
   }
 
   write(path: readonly string[], value: unknown, options?: WriteOptions): void {
@@ -194,6 +201,10 @@ class MultiComponentTarget implements ComponentTarget {
     for (const { entityId, component } of this.each()) {
       setComponentNestedField(entityId, component.id, path, value, options);
     }
+  }
+
+  tune(path: readonly string[], value: unknown): void {
+    for (const { entityId, component } of this.each()) tuneComponentField(entityId, component.id, path, value);
   }
 
   remove(): void {
@@ -230,11 +241,16 @@ class SingleComponentTarget implements ComponentTarget {
   }
 
   read(path: readonly string[]): unknown {
-    return readPath(this.live, path);
+    const live = this.live;
+    return readPath(live && tunedComponent(this.entityId, live), path);
   }
 
   write(path: readonly string[], value: unknown, options?: WriteOptions): void {
     setComponentNestedField(this.entityId, this.componentId, path, value, options);
+  }
+
+  tune(path: readonly string[], value: unknown): void {
+    tuneComponentField(this.entityId, this.componentId, path, value);
   }
 
   remove(): void {

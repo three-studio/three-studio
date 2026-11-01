@@ -55,6 +55,8 @@ let gestureCount = 0;
 export class PaneBinder {
   readonly pane: Pane;
   private readonly fields: BoundField[] = [];
+  /** The rows that tune the running game, which `setReadOnly` leaves enabled. */
+  private readonly live = new Set<BladeApi>();
   /** Moved on when a gesture ends so the next one opens a new undo entry. */
   private gestures = ++gestureCount;
   /** True while a change originates from this pane, to suppress self-refresh. */
@@ -106,8 +108,13 @@ export class PaneBinder {
     this.fields.push({ holder, read });
   }
 
-  /** One control, wired to whatever `io` says its value is. */
-  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO): void {
+  /**
+   * One control, wired to whatever `io` says its value is.
+   *
+   * @param live A row of a pane that tunes the running game: left enabled while
+   *   the game runs, when every other control is greyed.
+   */
+  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO, live = false): void {
     // What the declared type decides, which the row may still override: a
     // `vec3` converts because it is a vec3, but a row is free to say something
     // else about how its value reaches the control.
@@ -149,7 +156,9 @@ export class PaneBinder {
       ...(dynamicOptions ? { options: dynamicOptions } : {}),
     };
 
-    folder.addBinding(holder, 'value', params).on('change', (event) => {
+    const blade = folder.addBinding(holder, 'value', params);
+    if (live) this.live.add(blade);
+    blade.on('change', (event) => {
       // A change raised by `refresh()` is the source talking back, not the
       // user; acting on it would also bump the coalescing generation.
       if (this.pulling) return;
@@ -201,12 +210,15 @@ export class PaneBinder {
    * asset slots, buttons, monitors. And a disabled blade takes no pointer at all
    * (`.tp-v-disabled { pointer-events: none }`), so a greyed slider cannot be
    * dragged by its knob either.
+   *
+   * But a live row: it tunes the running game, and the document is not what it
+   * writes (`state/tuning`).
    */
   setReadOnly(readOnly: boolean): void {
     const walk = (blades: readonly BladeApi[]): void => {
       for (const blade of blades) {
         if ('children' in blade) walk((blade as FolderApi).children);
-        else blade.disabled = readOnly;
+        else blade.disabled = readOnly && !this.live.has(blade);
       }
     };
     walk(this.pane.children);

@@ -17,6 +17,7 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock';
 import { useScriptStore } from '../state/scriptStore';
+import { useTuningStore } from '../state/tuning';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
 
@@ -96,8 +97,15 @@ export function InspectorPanel() {
    * ones included, and every action. A material edited during Play would show
    * nowhere — the game keeps the table it started with, and the edit view is
    * behind it — and its undo would wait for Stop with the rest.
+   *
+   * But the rows of the panes that tune the running game — a Rigid Body's, a
+   * Collider's, a Joint's —, which write the running world and not the
+   * document (`state/tuning`).
    */
   const locked = useSceneLocked();
+  // What was tuned during Play: a kind tuned brings its rows, and a value tuned
+  // has to stay on screen, though the document did not move.
+  const tuningRevision = useTuningStore((s) => s.revision);
 
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
@@ -165,6 +173,7 @@ export function InspectorPanel() {
     materials,
     prefabs,
     componentRevision,
+    tuningRevision,
   ]);
 
   useEffect(() => {
@@ -212,7 +221,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName]);
+  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);

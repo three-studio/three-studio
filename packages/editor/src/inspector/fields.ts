@@ -213,6 +213,12 @@ export interface ComponentSchema {
    * arrangement of `visibleWhen` bits could say that, which is what this is for.
    */
   paneKey?(component: ComponentDoc): string;
+  /**
+   * Its rows tune the running game during Play, where every other row is
+   * locked. The running world takes the value; the document does not. Declared
+   * by the components the world builds — `rigidbody`, `collider` and `joint`.
+   */
+  live?: true;
 }
 
 const RAD_TO_DEG = 180 / Math.PI;

@@ -21,6 +21,7 @@ import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/p
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { toastSlot } from '../state/toastStore';
+import { startTuning, tuningEngine } from '../state/tuning';
 import { useViewportStore } from '../state/viewportStore';
 import type { Presentation } from './Presentation';
 
@@ -235,6 +236,8 @@ export class PlaySession {
         // Named from the press, before the compile and the load: what starts
         // is the window's scene, from Prefab Mode too.
         useViewportStore.getState().setRunningScene(useProjectStore.getState().sceneId);
+        // What the last Play tuned is about a game that has gone.
+        startTuning();
         this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
@@ -416,6 +419,9 @@ export class PlaySession {
   private run(engine: Engine, sceneId: string | null): void {
     this.engine = engine;
     useViewportStore.getState().setRunningScene(sceneId);
+    // The Inspector tunes the window's scene: another scene's engine is handed
+    // nothing, and the window's, restarted or come back to, all of it.
+    tuningEngine(sceneId !== null && sceneId === running?.entry.id ? engine : null);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
     engine.onWarning = (warnings) => {
@@ -451,6 +457,7 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine = null;
     running = null;
+    tuningEngine(null);
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);

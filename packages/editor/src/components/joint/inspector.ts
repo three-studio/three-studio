@@ -75,6 +75,7 @@ function motionFields(component: ComponentDoc): readonly FieldSpec[] {
 
 export const inspector: ComponentSchema = {
   label: 'Joint',
+  live: true,
   geometryFields: motionFields,
   // The rows change with the kind, as a collider's do with its shape.
   paneKey: (component) => (component.type === 'joint' ? `joint:${component.motion.kind}` : 'joint'),

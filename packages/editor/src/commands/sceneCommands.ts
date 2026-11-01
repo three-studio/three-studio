@@ -580,18 +580,31 @@ export function setComponentNestedField(
       }
 
       dropOverridesOnPrefabSwap(component, path, value);
-
-      let target = component as unknown as Record<string, unknown>;
-      for (const key of path.slice(0, -1)) {
-        const next = target[key];
-        if (typeof next !== 'object' || next === null) return;
-        target = next as Record<string, unknown>;
-      }
-      const last = path.at(-1);
-      if (last !== undefined) target[last] = value;
+      writePath(component, path, value);
     },
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
+}
+
+/**
+ * Writes `value` at `path` inside a component, or nothing where the path leaves
+ * the component's shape: a document's draft, and a copy tuned during Play.
+ *
+ * A copy of it. A value tuned during Play is written again at every read of
+ * its component, and the first `produce` froze it where it landed: a shape
+ * tuned and then a radius tuned under it, written into the same object, lost
+ * the radius without a word.
+ */
+export function writePath(target: object, path: readonly string[], value: unknown): void {
+  let current: unknown = target;
+  for (const key of path.slice(0, -1)) {
+    if (typeof current !== 'object' || current === null) return;
+    current = Reflect.get(current, key);
+  }
+  const last = path.at(-1);
+  if (last !== undefined && typeof current === 'object' && current !== null) {
+    Reflect.set(current, last, structuredClone(value));
+  }
 }
 
 /**

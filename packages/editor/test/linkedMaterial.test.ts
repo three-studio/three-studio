@@ -68,7 +68,7 @@ describe('a linked physics material', () => {
   it('a collider linked to a physics material shows its values, and an edit goes to the asset in one undo step', () => {
     const cube = cubeLinking('ice');
 
-    expect((effectiveComponent(colliderOf(cube)) as ColliderComponent).material).toEqual(ice);
+    expect((effectiveComponent(cube, colliderOf(cube)) as ColliderComponent).material).toEqual(ice);
     const linked = linkedMaterial(colliderOf(cube), ['material', 'friction']);
     expect(linked?.assetId).toBe('ice');
 
@@ -87,7 +87,7 @@ describe('a linked physics material', () => {
     const cube = cubeLinking('gone');
 
     expect(linkedMaterial(colliderOf(cube), ['material', 'friction'])).toBeNull();
-    expect((effectiveComponent(colliderOf(cube)) as ColliderComponent).material.friction).toBe(0.7);
+    expect((effectiveComponent(cube, colliderOf(cube)) as ColliderComponent).material.friction).toBe(0.7);
   });
 
   it('a mesh’s linked material keeps its edit going to its asset', () => {
@@ -96,7 +96,7 @@ describe('a linked physics material', () => {
     doc().replaceScene(sceneWith([mesh]));
     const component = () => findComponent(doc().scene, mesh.entity.id, 'mesh')!;
 
-    expect((effectiveComponent(component()) as MeshComponent).material).toEqual(stone);
+    expect((effectiveComponent(mesh.entity.id, component()) as MeshComponent).material).toEqual(stone);
     const linked = linkedMaterial(component(), ['material', 'roughness']);
     expect(linked?.assetId).toBe('stone');
 

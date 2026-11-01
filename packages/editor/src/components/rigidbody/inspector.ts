@@ -3,6 +3,7 @@ import type { ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
   label: 'Rigid Body',
+  live: true,
   fields: [
     {
       path: ['bodyType'],

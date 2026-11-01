@@ -119,6 +119,7 @@ function shapeFields(component: ComponentDoc): readonly FieldSpec[] {
 
 export const inspector: ComponentSchema = {
   label: 'Collider',
+  live: true,
   geometryFields: shapeFields,
   // The rows change with the kind, as a mesh's do with its primitive.
   paneKey: (component) =>
