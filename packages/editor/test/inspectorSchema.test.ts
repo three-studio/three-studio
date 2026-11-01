@@ -116,6 +116,40 @@ describe('the Joint pane', () => {
     expect(row.fromModel?.('door')).toBe('door');
     expect(row.optionsProvider?.()).toMatchObject({ World: '' });
   });
+
+  it("shows a hinge's range with its Limits, and its speed with its Motor, in degrees", () => {
+    const shown = (component: ComponentDoc) =>
+      paneEntriesFor(component)
+        .entries.filter((entry): entry is FieldSpec => 'path' in entry)
+        .filter((entry) => entry.visibleWhen?.(component) ?? true)
+        .map((entry) => entry.label);
+    const hinge = jointOfKind('hinge');
+    expect(shown(hinge)).toEqual(['Type', 'Connected Body', 'Anchor', 'Axis', 'Limits', 'Motor', 'Enable Collision']);
+
+    if (hinge.type !== 'joint' || hinge.motion.kind !== 'hinge') throw new Error('not a hinge');
+    const { limits, motor } = hinge.motion;
+    const both = {
+      ...hinge,
+      motion: { ...hinge.motion, limits: { ...limits, enabled: true }, motor: { ...motor, enabled: true } },
+    };
+    expect(shown(both)).toEqual([
+      'Type',
+      'Connected Body',
+      'Anchor',
+      'Axis',
+      'Limits',
+      'Min',
+      'Max',
+      'Motor',
+      'Speed',
+      'Max Torque',
+      'Enable Collision',
+    ]);
+    const min = paneEntriesFor(both).entries.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.label === 'Min',
+    );
+    expect(min?.toModel?.(-Math.PI / 2)).toBeCloseTo(-90, 9);
+  });
 });
 
 describe('the Collider pane', () => {

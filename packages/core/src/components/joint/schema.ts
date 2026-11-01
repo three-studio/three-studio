@@ -14,11 +14,15 @@ export type JointMotion =
        * turned with the entity, never stretched by its scale. A zero axis is up.
        */
       axis: Vec3;
+      limits: JointLimits;
+      motor: JointMotor;
     }
   | {
       kind: 'slider';
       /** The line it slides along, through the anchor, as a hinge's axis is read. */
       axis: Vec3;
+      limits: JointLimits;
+      motor: JointMotor;
     }
   | {
       kind: 'spring';
@@ -31,6 +35,26 @@ export type JointMotion =
       /** Newton-seconds per metre. */
       damping: number;
     };
+
+/**
+ * The range a hinge turns or a slider slides within, measured from where the
+ * joint was built. A build pose outside it is pushed into it at the first tick.
+ */
+export interface JointLimits {
+  enabled: boolean;
+  /** Radians for a hinge, right-handed about its axis; metres for a slider, along it. */
+  min: number;
+  max: number;
+}
+
+/** Drives a hinge or a slider at a speed, pushing no harder than `maxForce`. */
+export interface JointMotor {
+  enabled: boolean;
+  /** Radians per second for a hinge, metres per second for a slider. */
+  speed: number;
+  /** Newton-metres for a hinge, newtons for a slider. */
+  maxForce: number;
+}
 
 export type JointKind = JointMotion['kind'];
 export type JointMotionOf<K extends JointKind> = Extract<JointMotion, { kind: K }>;
@@ -53,4 +77,6 @@ export interface JointComponent extends ComponentBase {
   connectedEntity: string | null;
   /** Where it holds, in this entity's frame and units: a door's hinge on its edge. */
   anchor: Vec3;
+  /** Whether its two bodies collide with each other. Off, a door can sit against its frame and two links overlap. */
+  enableCollision: boolean;
 }

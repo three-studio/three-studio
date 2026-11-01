@@ -2,7 +2,10 @@ import {
   createEntity,
   createJointMotion,
   type EntityTemplate,
+  type JointLimits,
   type JointMotion,
+  type JointMotor,
+  type RigidBodyComponent,
   type Vec3,
 } from '@three-studio/core';
 import { Euler, Quaternion, Vector3 } from 'three/webgpu';
@@ -38,8 +41,16 @@ registerBehaviour('collider', ({ entity }) => ({
 
 beforeEach(() => heard.clear());
 
-const hinge = (axis: Vec3): JointMotion => ({ ...createJointMotion('hinge'), axis });
-const slider = (axis: Vec3): JointMotion => ({ ...createJointMotion('slider'), axis });
+/** A hinge or a slider on this axis, its limits and its motor as given and otherwise as made. */
+function hinge(axis: Vec3, limits?: Partial<JointLimits>, motor?: Partial<JointMotor>): JointMotion {
+  const made = createJointMotion('hinge');
+  return { ...made, axis, limits: { ...made.limits, ...limits }, motor: { ...made.motor, ...motor } };
+}
+function slider(axis: Vec3, limits?: Partial<JointLimits>, motor?: Partial<JointMotor>): JointMotion {
+  const made = createJointMotion('slider');
+  return { ...made, axis, limits: { ...made.limits, ...limits }, motor: { ...made.motor, ...motor } };
+}
+const degrees = (angle: number) => (angle * Math.PI) / 180;
 const spring = (stiffness: number, damping: number): JointMotion => ({
   ...createJointMotion('spring'),
   stiffness,
@@ -47,11 +58,25 @@ const spring = (stiffness: number, damping: number): JointMotion => ({
 });
 
 /** A 1 m box hinged to the world on z at its left face's middle, (0, 2, 0), level to start with. */
-function pendulum(): EntityTemplate {
-  return withJoint(withBody('box', [1, 2, 0], { interpolate: false }), {
+function pendulum(limits?: Partial<JointLimits>, body?: Partial<RigidBodyComponent>): EntityTemplate {
+  return withJoint(withBody('box', [1, 2, 0], { interpolate: false, ...body }), {
     anchor: [-1, 0, 0],
-    motion: hinge([0, 0, 1]),
+    motion: hinge([0, 0, 1], limits),
   });
+}
+
+/** How far a body has turned about z, right-handed, from where it was built level. */
+function turnAboutZ(rig: PhysicsRig, entityId: string): number {
+  const { quaternion } = rig.solved(entityId);
+  return 2 * Math.atan2(quaternion.z, quaternion.w);
+}
+
+/** A ball of radius 0.5 and 1 kg, I = 0.1 kg·m², that only its hinge on x turns. */
+function wheel(motor?: Partial<JointMotor>): EntityTemplate {
+  return withJoint(
+    withBody('sphere', [0, 2, 0], { mass: 1, angularDamping: 0, gravityScale: 0, interpolate: false }),
+    { motion: hinge([1, 0, 0], {}, motor) },
+  );
 }
 
 /**
@@ -221,6 +246,91 @@ describe('a joint', () => {
     expect(rig.solved(second.entity.id).position.distanceTo(new Vector3(0.6, 2, 0))).toBeLessThan(1e-6);
     expect(heard.get(first.entity.id)).toBeUndefined();
     expect(heard.get(second.entity.id)).toBeUndefined();
+  });
+
+  it('a hinge stops at its limits, measured from where it was built', async () => {
+    const free = pendulum({ enabled: true, min: degrees(-45), max: degrees(45) }, { angularDamping: 2 });
+    const held = pendulum({ enabled: true, min: 0, max: degrees(90) }, { angularDamping: 2 });
+    held.entity.transform.position = [1, 2, 4];
+    const rig = await physicsRig([free, held]);
+
+    rig.run(5);
+
+    // Swung down, clockwise seen from +z, to its stop.
+    expect(Math.abs(turnAboutZ(rig, free.entity.id) - degrees(-45))).toBeLessThan(degrees(0.5));
+    // Its range is above where it was built, so gravity holds it there.
+    expect(Math.abs(turnAboutZ(rig, held.entity.id))).toBeLessThan(degrees(0.5));
+  });
+
+  it('a slider stops at its limits', async () => {
+    const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);
+    rail.entity.transform.rotation = [(20 * Math.PI) / 180, 0, 0];
+    const box = withJoint(withBody('box', [2, 3, 1], { interpolate: false }), {
+      connectedEntity: rail.entity.id,
+      motion: slider([1, 1, 0], { enabled: true, min: -1, max: 0.5 }),
+    });
+    const rig = await physicsRig([rail, box]);
+
+    rig.run(2);
+
+    const moved = rig.solved(box.entity.id).position.sub(new Vector3(2, 3, 1));
+    expect(Math.abs(moved.dot(new Vector3(1, 1, 0).normalize()) + 1)).toBeLessThan(1e-3);
+  });
+
+  it('a motor brings a wheel to its speed, as fast as its Max Torque allows', async () => {
+    const strong = wheel({ enabled: true, speed: 5, maxForce: 1000 });
+    const weak = wheel({ enabled: true, speed: 5, maxForce: 1 });
+    weak.entity.transform.position = [0, 2, 3];
+    const rig = await physicsRig([strong, weak]);
+
+    rig.run(1 / 60);
+    expect(Math.abs(rig.body(strong.entity.id).angularVelocity.x - 5)).toBeLessThan(1e-3);
+
+    // 1 N·m on 0.1 kg·m² is 10 rad/s², for ten ticks.
+    rig.run(9 / 60);
+    expect(Math.abs(rig.body(weak.entity.id).angularVelocity.x - 10 / 6)).toBeLessThan(1e-2);
+  });
+
+  it('a lift rises at its speed when its force holds its weight, and sinks when it cannot', async () => {
+    const lift = (maxForce: number, x: number) =>
+      withJoint(withBody('box', [x, 2, 0], { mass: 10, interpolate: false }), {
+        motion: slider([0, 1, 0], {}, { enabled: true, speed: 1, maxForce }),
+      });
+    const strong = lift(150, 0);
+    const weak = lift(50, 3);
+    const rig = await physicsRig([strong, weak]);
+
+    rig.run(2);
+
+    // 98.1 N of weight: 150 N lifts it, 50 N lets it fall at 4.8 m/s².
+    expect(Math.abs(rig.body(strong.entity.id).linearVelocity.y - 1)).toBeLessThan(0.02);
+    expect(rig.body(weak.entity.id).linearVelocity.y).toBeLessThan(-5);
+  });
+
+  it('a hinge whose motor is off turns freely', async () => {
+    const spun = wheel();
+    const rig = await physicsRig([spun]);
+    rig.body(spun.entity.id).angularVelocity = { x: 5, y: 0, z: 0 };
+
+    rig.run(1);
+
+    expect(Math.abs(rig.body(spun.entity.id).angularVelocity.x - 5)).toBeLessThan(1e-3);
+  });
+
+  it('two bodies whose joint enables collision push each other apart', async () => {
+    const first = withBody('box', [0, 2, 0], { gravityScale: 0, interpolate: false });
+    const second = withJoint(withBody('box', [0.6, 2, 0], { gravityScale: 0, interpolate: false }), {
+      connectedEntity: first.entity.id,
+      motion: createJointMotion('fixed'),
+      enableCollision: true,
+    });
+    const rig = await physicsRig([first, second]);
+
+    rig.run(2);
+
+    const apart = rig.solved(first.entity.id).position.distanceTo(rig.solved(second.entity.id).position);
+    expect(apart - 0.6).toBeGreaterThan(0.02);
+    expect(heard.get(first.entity.id)).toContain(second.entity.id);
   });
 
   it('building the world with joints moves nothing', async () => {

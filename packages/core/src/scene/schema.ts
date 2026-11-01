@@ -76,8 +76,10 @@ export { COLLIDER_SHAPE_LABELS, MESH_BUILD_LABELS } from '../components/collider
 export type {
   JointComponent,
   JointKind,
+  JointLimits,
   JointMotion,
   JointMotionOf,
+  JointMotor,
 } from '../components/joint/schema';
 export { JOINT_KIND_LABELS } from '../components/joint/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';

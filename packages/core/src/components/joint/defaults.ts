@@ -5,13 +5,25 @@ import { JOINT_KIND_LABELS, type JointComponent, type JointKind, type JointMotio
 /*
  * A hinge is the joint most games start with, a door; and up is the axis a
  * door, a gate, a turnstile and a carousel turn about, and the one a lift
- * slides along. A spring holds 1 kg about 10 cm below its anchor, and bounces
- * for a second or two before it settles.
+ * slides along. A motor's 1000 turns a door at once, or lifts a platform
+ * carrying a player. A spring holds 1 kg about 10 cm below its anchor, and
+ * bounces for a second or two before it settles.
  */
 const MOTION_FACTORIES: { readonly [K in JointKind]: () => JointMotionOf<K> } = {
   fixed: () => ({ kind: 'fixed' }),
-  hinge: () => ({ kind: 'hinge', axis: [0, 1, 0] }),
-  slider: () => ({ kind: 'slider', axis: [0, 1, 0] }),
+  hinge: () => ({
+    kind: 'hinge',
+    axis: [0, 1, 0],
+    limits: { enabled: false, min: -Math.PI / 2, max: Math.PI / 2 },
+    // 90° a second.
+    motor: { enabled: false, speed: Math.PI / 2, maxForce: 1000 },
+  }),
+  slider: () => ({
+    kind: 'slider',
+    axis: [0, 1, 0],
+    limits: { enabled: false, min: -1, max: 1 },
+    motor: { enabled: false, speed: 1, maxForce: 1000 },
+  }),
   spring: () => ({ kind: 'spring', stiffness: 100, damping: 5 }),
 };
 
@@ -28,6 +40,7 @@ export function createJoint(): JointComponent {
     motion: createJointMotion('hinge'),
     connectedEntity: null,
     anchor: [0, 0, 0],
+    enableCollision: false,
   };
 }
 
