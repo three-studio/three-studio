@@ -390,6 +390,8 @@ export class PhysicsWorld implements PhysicsApi {
    * registers it here, or nothing it touches is ever heard.
    */
   private readonly owners = new Map<number, Built>();
+  /** What touched when the world was built, for the first tick to hand out before its own. */
+  private atBuild: PhysicsEvent[] = [];
   private accumulator = 0;
 
   private readonly fixedStep: number;
@@ -456,6 +458,19 @@ export class PhysicsWorld implements PhysicsApi {
       });
       this.addBody(entity, object, findComponent(scene, entityId, 'rigidbody'), carriers);
     }
+
+    // A step of no time, so that a query sees the scene from the start. Rapier
+    // files colliders for its queries as it steps, and a world not yet stepped
+    // answered none: a script placing itself on the ground in `onStart`, or
+    // asking at its first tick, met nothing. It moves nothing — a ball resting
+    // on the ground kept its place and no speed, two boxes built into each
+    // other stayed where they were — and reports as started what touches
+    // already, which no tick reports again: the first tick hands that out,
+    // after every `onStart`, when it was heard before.
+    this.world.timestep = 0;
+    this.world.step(this.events);
+    this.world.timestep = this.fixedStep;
+    this.atBuild = this.drain();
   }
 
   /**
@@ -469,7 +484,8 @@ export class PhysicsWorld implements PhysicsApi {
    *   is a target, not an impulse, so a caller running at display rate would
    *   overwrite its own commands between steps and lose most of the motion.
    * @param afterStep Runs after each step, with what started or stopped
-   *   touching in it, once the step's forces are dropped: a force added then is
+   *   touching in it — the first step also with what touched when the world
+   *   was built —, once the step's forces are dropped: a force added then is
    *   felt in the next step, and a kick at once.
    */
   step(
@@ -486,7 +502,9 @@ export class PhysicsWorld implements PhysicsApi {
       for (const body of this.bodies.values()) body.beforeTick();
       this.world.step(this.events);
       for (const body of this.bodies.values()) body.afterTick();
-      afterStep?.(this.drain());
+      const events = this.atBuild.concat(this.drain());
+      this.atBuild = [];
+      afterStep?.(events);
       this.accumulator -= this.fixedStep;
       steps += 1;
     }

@@ -50,10 +50,11 @@ export interface PhysicsApi {
    * The nearest Collider along a ray, within `maxDistance` metres, or `null`.
    * `direction` need not be unit.
    *
-   * A query sees the world as the last physics tick left it: a body moved
-   * since — by a script, a teleport, its controller — is found where it was. A
-   * ray passes out of whatever it starts inside. A point or a distance that is
-   * not a number, or a direction of zero, finds nothing.
+   * A query sees the world as the last physics tick left it, from the moment
+   * the world is built: a body moved since — by a script, a teleport, its
+   * controller — is found where it was. A ray passes out of whatever it starts
+   * inside. A point or a distance that is not a number, or a direction of zero,
+   * finds nothing.
    */
   raycast(
     origin: Readonly<Vec3Like>,

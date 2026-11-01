@@ -298,4 +298,19 @@ describe('collision and trigger events', () => {
     expect(said(ball)).toEqual([]);
     expect(said(floor)).toEqual([]);
   });
+
+  it('what touches when the world is built is heard once, at the first tick', async () => {
+    const floor = ground();
+    const ball = withBody('sphere', [0, 0.5, 0], { interpolate: false });
+    const rig = await physicsRig([floor, ball]);
+
+    expect(said(ball)).toEqual([]);
+    rig.run(1 / 60);
+    expect(said(ball)).toEqual([['onCollisionEnter', floor.entity.id]]);
+    expect(said(floor)).toEqual([['onCollisionEnter', ball.entity.id]]);
+
+    rig.run(1);
+    expect(said(ball)).toHaveLength(1);
+    expect(said(floor)).toHaveLength(1);
+  });
 });

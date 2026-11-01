@@ -37,10 +37,9 @@ function cart(): { cart: EntityTemplate; wheel: EntityTemplate } {
 
 const ahead = { x: 0, y: 0, z: -1 };
 
-/** These entities in a running engine, one tick run: a world answers no query before its first. */
-async function ticked(entities: readonly EntityTemplate[]): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
+/** These entities in a running engine, and the world as a behaviour asks it. */
+async function running(entities: readonly EntityTemplate[]): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
   const rig = await physicsRig(entities);
-  rig.run(1 / 60);
   const physics = rig.engine.physics;
   if (!physics) throw new Error('The rig runs with physics on.');
   return { rig, physics };
@@ -66,7 +65,7 @@ function expectHit(
 describe('a ray', () => {
   it('finds the nearest collider in its way: which entity, where, which way it faces, how far', async () => {
     const wall = near();
-    const { physics } = await ticked([wall, far()]);
+    const { physics } = await running([wall, far()]);
 
     // Of length 2: Rapier counts in lengths of the direction, and read 2.25.
     const hit = physics.raycast({ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: -2 }, 20);
@@ -74,8 +73,15 @@ describe('a ray', () => {
     expectHit(hit, { entity: wall, distance: 4.5, point: { x: 0, y: 1, z: -4.5 }, normal: { x: 0, y: 0, z: 1 } });
   });
 
+  it('sees the scene as it was built, before the first tick', async () => {
+    const wall = near();
+    const { physics } = await running([wall, far()]);
+
+    expectHit(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 20), { entity: wall, distance: 4.5 });
+  });
+
   it('stops at its length, and finds nothing out of its way', async () => {
-    const { physics } = await ticked([near(), far()]);
+    const { physics } = await running([near(), far()]);
 
     expect(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 4)).toBeNull();
     expect(physics.raycast({ x: 0, y: 1, z: 0 }, { x: 0, y: 0, z: 1 }, 20)).toBeNull();
@@ -83,7 +89,7 @@ describe('a ray', () => {
 
   it('passes out of what it starts inside', async () => {
     const back = far();
-    const { physics } = await ticked([ground(), near(), back]);
+    const { physics } = await running([ground(), near(), back]);
 
     // Rapier's own met the wall it starts in, and the ground it lies on, at 0, facing nowhere.
     expectHit(physics.raycast({ x: 0, y: 1, z: -5 }, ahead, 20), { entity: back, distance: 4.5 });
@@ -93,7 +99,7 @@ describe('a ray', () => {
   it("leaves out the body it is told to, every collider of it, and names the collider's own entity", async () => {
     const wall = near();
     const { cart: box, wheel } = cart();
-    const { physics } = await ticked([box, wheel, wall]);
+    const { physics } = await running([box, wheel, wall]);
     const from = { x: 0, y: 1, z: 0 };
 
     expectHit(physics.raycast(from, ahead, 20), { entity: box, distance: 1.5 });
@@ -106,7 +112,7 @@ describe('a ray', () => {
 
   it('passes through a trigger zone', async () => {
     const wall = near();
-    const { physics } = await ticked([sensor([0, 1, -2.5], [2, 2, 1]), wall]);
+    const { physics } = await running([sensor([0, 1, -2.5], [2, 2, 1]), wall]);
 
     expectHit(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 20), { entity: wall, distance: 4.5 });
   });
@@ -114,7 +120,7 @@ describe('a ray', () => {
   it('sees the world as the last tick left it', async () => {
     const wall = near();
     const ball = withBody('sphere', [0, 1, -3], { gravityScale: 0 });
-    const { rig, physics } = await ticked([wall, ball]);
+    const { rig, physics } = await running([wall, ball]);
 
     rig.body(ball.entity.id).teleport({ x: 5, y: 1, z: -3 });
     expectHit(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 20), { entity: ball, distance: 2.5 });
@@ -125,12 +131,24 @@ describe('a ray', () => {
   });
 
   it('finds nothing when it is not a number or has no direction', async () => {
-    const { physics } = await ticked([near()]);
+    const { physics } = await running([near()]);
     const from = { x: 0, y: 1, z: 0 };
 
     expect(physics.raycast({ x: Number.NaN, y: 1, z: 0 }, ahead, 20)).toBeNull();
     expect(physics.raycast(from, { x: 0, y: 0, z: 0 }, 20)).toBeNull();
     expect(physics.raycast(from, ahead, Number.NaN)).toBeNull();
     expect(physics.raycast(from, ahead, -1)).toBeNull();
+  });
+});
+
+describe('the world, as it is built', () => {
+  it('moves nothing', async () => {
+    // 0.4 m into each other, which a tick would push apart.
+    const left = withBody('box', [0, 3, 0], { gravityScale: 0 });
+    const right = withBody('box', [0.6, 3, 0], { gravityScale: 0 });
+    const { rig } = await running([left, right]);
+
+    expect(apart(rig.solved(left.entity.id).position, { x: 0, y: 3, z: 0 })).toBeLessThan(1e-6);
+    expect(apart(rig.solved(right.entity.id).position, { x: 0.6, y: 3, z: 0 })).toBeLessThan(1e-6);
   });
 });
