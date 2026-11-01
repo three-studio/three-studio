@@ -111,6 +111,12 @@ export function InspectorPanel() {
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
   const assetRevision = useAssetStore((s) => s.revision);
+  // So is the project's layer table, which a Collider's Layer row lists by name
+  // when the pane is built: a layer renamed in Project Settings kept its old
+  // name there until something else rebuilt the pane.
+  const layers = useProjectStore((s) =>
+    (s.project?.settings.physics.layers ?? []).map(({ id, name }) => `${id}:${name}`).join('|'),
+  );
   // With nothing selected the pane is the scene's own — Blender's Scene tab —
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
@@ -128,7 +134,7 @@ export function InspectorPanel() {
       return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
     }
     if (entityId !== undefined) {
-      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}`;
+      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
     }
 
     /*
@@ -139,7 +145,7 @@ export function InspectorPanel() {
      * selecting a different set of the same shapes is a different pane.
      */
     const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
-    return `${shapes}#${assetRevision}#${scriptRevision}`;
+    return `${shapes}#${assetRevision}#${scriptRevision}#${layers}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
@@ -152,6 +158,7 @@ export function InspectorPanel() {
     entity,
     scriptRevision,
     assetRevision,
+    layers,
     materials,
     prefabs,
     componentRevision,

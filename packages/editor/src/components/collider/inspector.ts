@@ -4,6 +4,7 @@ import {
   MESH_BUILD_LABELS,
   conform,
   conformColliderShape,
+  createPhysicsSettings,
   optionsFrom,
   type ColliderShapeKind,
   type ComponentDoc,
@@ -11,6 +12,7 @@ import {
 } from '@three-studio/core';
 import { fitColliderToMesh } from '../../commands/sceneCommands';
 import type { ComponentSchema, FieldSpec } from '../../inspector/fields';
+import { useProjectStore } from '../../state/projectStore';
 import { peekViewport } from '../../viewport/viewportHost';
 
 const RAD_TO_DEG = 180 / Math.PI;
@@ -117,6 +119,18 @@ export const inspector: ComponentSchema = {
       },
     },
     { path: ['isSensor'], label: 'Is sensor' },
+    {
+      path: ['layer'],
+      label: 'Layer',
+      // Read when the pane is built, which the Inspector does again when the
+      // table changes. A layer the project no longer has is no choice at all:
+      // the list selects nothing, and Play says what it collides as meanwhile.
+      optionsProvider: () => {
+        const layers =
+          useProjectStore.getState().project?.settings.physics.layers ?? createPhysicsSettings().layers;
+        return Object.fromEntries(layers.map((layer) => [layer.name, layer.id]));
+      },
+    },
     { kind: 'separator' },
     {
       path: ['material', 'friction'],

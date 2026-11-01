@@ -1,17 +1,23 @@
 import {
   COLLIDER_SHAPE_LABELS,
   COMPONENT_TYPES,
+  PROJECT_FORMAT_VERSION,
   conformColliderShape,
   createAudioSource,
+  createBuildProfiles,
   createColliderShape,
   createComponent,
+  createDefaultLayer,
   createEmptyScene,
+  createPhysicsSettings,
+  createRenderingSettings,
   fieldOptions,
   type ComponentDoc,
   type ComponentType,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
+import { useProjectStore } from '../src/state/projectStore';
 import { declaredControl } from '../src/inspector/declaredFields';
 import { SCENE_SCHEMA, sceneFieldPath, isAction, isSeparator, type FieldSpec } from '../src/inspector/schema';
 import { readPath } from '../src/inspector/target';
@@ -115,6 +121,35 @@ describe('the Collider pane', () => {
 
   it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
     expect(paneEntriesFor(colliderOfKind(kind)).key).toBe(`collider:${kind}`);
+  });
+
+  it("lists the project's layers by name in its Layer row", () => {
+    const row = COMPONENT_PANES.collider.fields.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
+    );
+    if (!row) throw new Error('no Layer row');
+
+    useProjectStore.setState({
+      project: {
+        version: PROJECT_FORMAT_VERSION,
+        name: 'Layers',
+        engineVersion: '0.6.0',
+        startScene: 'scene-1',
+        settings: {
+          loadingScene: null,
+          rendering: createRenderingSettings(),
+          physics: {
+            ...createPhysicsSettings(),
+            layers: [createDefaultLayer(), { id: 'p1', name: 'Player', ignores: [] }],
+          },
+          build: createBuildProfiles('Layers'),
+        },
+      },
+    });
+    expect(row.optionsProvider?.()).toEqual({ Default: 'default', Player: 'p1' });
+
+    useProjectStore.setState({ project: null });
+    expect(row.optionsProvider?.()).toEqual({ Default: 'default' });
   });
 });
 
