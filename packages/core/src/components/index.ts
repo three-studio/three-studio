@@ -74,6 +74,7 @@ export {
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  componentEntities,
   componentIsPlaceable,
   defineComponent,
   fillComponent,

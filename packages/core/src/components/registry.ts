@@ -69,6 +69,12 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   /** Asset ids this component points at. Empty for most types. */
   assets: (component: ComponentOfType<T>) => readonly (string | null)[];
   /**
+   * Entity ids this component points at — a joint its Connected Body. Empty
+   * for most types. Asked of every type, as `assets` is, so that a new type
+   * answers in its own module.
+   */
+  entities: (component: ComponentOfType<T>) => readonly (string | null)[];
+  /**
    * Strings that may name an asset, and count only when they do — declared by
    * the types whose fields do not say which they are.
    *
@@ -184,6 +190,11 @@ export function componentAssets(component: ComponentDoc): readonly (string | nul
   // A type from a plugin, or from a later version of the editor. It names assets
   // this build cannot see, and guessing would be worse than saying none.
   return definition ? definition.assets(component as never) : [];
+}
+
+/** Entity ids a component points at, whatever its type; none for a type this build does not know. */
+export function componentEntities(component: ComponentDoc): readonly (string | null)[] {
+  return componentDefinition(component.type)?.entities(component as never) ?? [];
 }
 
 /** Strings a component holds that may name an asset; see `ComponentDefinition.assetCandidates`. */

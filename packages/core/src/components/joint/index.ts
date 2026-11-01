@@ -16,6 +16,7 @@ export const jointComponent = defineComponent({
   create: () => createJoint(),
   fill: (stored) => ({ ...conform(stored, createJoint()), motion: conformJointMotion(stored.motion) }),
   assets: () => [],
+  entities: (component) => [component.connectedEntity],
   icon: 'link',
   placeable: () => true,
   runtime: true,

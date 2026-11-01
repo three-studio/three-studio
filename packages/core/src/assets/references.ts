@@ -1,7 +1,7 @@
-import { componentAssetCandidates, componentAssets } from '../components';
+import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
 import { materialAssets } from '../components/materialAssets';
 import { COMPONENT_TYPES, type ComponentHost } from '../scene/components';
-import type { ComponentDoc, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
+import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
 
 /**
@@ -205,6 +205,26 @@ export function findBrokenReferences(
   for (const assetId of environmentAssets(scene.environment)) note(null, assetId);
 
   return broken;
+}
+
+/**
+ * Every component that names an entity the scene does not have, with the
+ * entity carrying it: a joint whose Connected Body was deleted.
+ *
+ * Beside `findBrokenReferences`, over the same walk, for the same reason: a
+ * reference that answers to nothing must be seen while it is edited, not at
+ * Play. `null` and `''` are empty slots, as an asset's are. Give it the
+ * expanded scene to reach what prefab instances place.
+ */
+export function findMissingEntities(scene: SceneDoc): { entityId: string; type: ComponentType }[] {
+  const missing: { entityId: string; type: ComponentType }[] = [];
+  for (const [entityId, component] of eachComponent(scene)) {
+    const gone = componentEntities(component).some(
+      (id) => id !== null && id !== '' && !Object.hasOwn(scene.entities, id),
+    );
+    if (gone) missing.push({ entityId, type: component.type });
+  }
+  return missing;
 }
 
 /**

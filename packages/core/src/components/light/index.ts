@@ -56,6 +56,7 @@ export const lightComponent = defineComponent({
     return { ...base, ...stored, shadow: { ...base.shadow, ...stored.shadow } };
   },
   assets: (component) => [component.mapId],
+  entities: () => [],
   icon: 'lightbulb',
   // The only `false` in the twelve, and the reason the question is asked of
   // the component rather than of the type: it is answered by the `kind`.

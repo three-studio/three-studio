@@ -27,6 +27,7 @@ export const colliderComponent = defineComponent({
     material: conformPhysicsMaterial(stored.material),
   }),
   assets: (component) => [component.materialId],
+  entities: () => [],
   icon: 'box',
   placeable: () => true,
   runtime: true,

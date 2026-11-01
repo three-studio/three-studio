@@ -1,13 +1,17 @@
 import {
   createEntity,
+  createJoint,
   createPrefabInstance,
   createMaterial,
   createComponent,
   createMeshEntity,
   collectSceneAssets,
   findAssetUsage,
+  expandPrefabs,
   findBrokenReferences,
+  findMissingEntities,
   findPrefabInstances,
+  instancedId,
   isUsed,
   totalUses,
   type MeshComponent,
@@ -120,5 +124,35 @@ describe('counting prefab instances', () => {
     expect(findPrefabInstances('prefab-1', sceneWith([a, b, other])).sort()).toEqual(
       [a.entity.id, b.entity.id].sort(),
     );
+  });
+});
+
+/*
+ * An entity a component names that the scene does not have: a joint whose
+ * Connected Body was deleted, which the hierarchy marks as it marks a missing
+ * asset.
+ */
+describe('who names an entity that is gone', () => {
+  it('a joint naming an entity the scene does not have names a missing entity', () => {
+    const frame = createEntity('Frame');
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: 'gone' }]);
+    const free = createEntity('Free', [createJoint()]);
+    const held = createEntity('Held', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
+
+    expect(findMissingEntities(sceneWith([frame, door, free, held]))).toEqual([
+      { entityId: door.entity.id, type: 'joint' },
+    ]);
+  });
+
+  it('reaches what a prefab places, through the expanded scene', () => {
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: 'gone' }]);
+    const prefab = prefabWith('Door', [door], door.entity.id);
+    const host = createEntity('Doorway', [createPrefabInstance('prefab-1')]);
+
+    const { scene } = expandPrefabs(sceneWith([host]), { get: (id) => (id === 'prefab-1' ? prefab : undefined) });
+
+    expect(findMissingEntities(scene)).toEqual([
+      { entityId: instancedId(host.entity.id, door.entity.id), type: 'joint' },
+    ]);
   });
 });

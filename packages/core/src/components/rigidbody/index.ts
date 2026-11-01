@@ -26,6 +26,7 @@ export const rigidbodyComponent = defineComponent({
     };
   },
   assets: () => [],
+  entities: () => [],
   icon: 'weight',
   placeable: () => true,
   runtime: true,
