@@ -1,4 +1,11 @@
-import type { EntityTemplate } from '@three-studio/core';
+import {
+  createColliderShape,
+  createComponent,
+  createEntity,
+  type ColliderComponent,
+  type EntityTemplate,
+} from '@three-studio/core';
+import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PhysicsApi, RaycastHit, Vec3Like } from '../../src/physics/PhysicsApi';
 import {
@@ -36,6 +43,11 @@ function cart(): { cart: EntityTemplate; wheel: EntityTemplate } {
 }
 
 const ahead = { x: 0, y: 0, z: -1 };
+const down = { x: 0, y: -1, z: 0 };
+const identity = { x: 0, y: 0, z: 0, w: 1 };
+/** A quarter turn about an axis. */
+const quarter = (x: number, y: number, z: number) =>
+  new Quaternion().setFromAxisAngle(new Vector3(x, y, z), Math.PI / 2);
 
 /** These entities in a running engine, and the world as a behaviour asks it. */
 async function running(entities: readonly EntityTemplate[]): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
@@ -48,6 +60,12 @@ async function running(entities: readonly EntityTemplate[]): Promise<{ rig: Phys
 function apart(a: Readonly<Vec3Like>, b: Readonly<Vec3Like>): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
+
+/**
+ * How near a cast is read. Rapier's casts are iterative: their distances came
+ * within 3e-6 m of the exact ones, but a point on the surface up to 0.8 mm off.
+ */
+const CAST = 1e-3;
 
 /** The hit met `entity`, and each number given is within `tolerance` of the one read. */
 function expectHit(
@@ -138,6 +156,108 @@ describe('a ray', () => {
     expect(physics.raycast(from, { x: 0, y: 0, z: 0 }, 20)).toBeNull();
     expect(physics.raycast(from, ahead, Number.NaN)).toBeNull();
     expect(physics.raycast(from, ahead, -1)).toBeNull();
+  });
+});
+
+describe('a cast', () => {
+  it('of a sphere finds the nearest collider it would meet: how far it went, where, which way it faces', async () => {
+    const wall = near();
+    const { physics } = await running([wall, far()]);
+
+    const hit = physics.sphereCast({ x: 0, y: 1, z: 0 }, 0.25, ahead, 20);
+
+    const face = { x: 0, y: 1, z: -4.5 };
+    expectHit(hit, { entity: wall, distance: 4.25, point: face, normal: { x: 0, y: 0, z: 1 } }, CAST);
+  });
+
+  it('of a box reads its full size, and turns as it is told', async () => {
+    const wall = near();
+    const { physics } = await running([wall]);
+    const from = { x: 0, y: 1, z: 0 };
+    const size = { x: 2, y: 0.2, z: 0.2 };
+
+    // Read as half extents, it would stop at 4.3, and at 2.5 turned.
+    expectHit(physics.boxCast(from, size, identity, ahead, 20), { entity: wall, distance: 4.4 }, CAST);
+    expectHit(physics.boxCast(from, size, quarter(0, 1, 0), ahead, 20), { entity: wall, distance: 3.5 }, CAST);
+  });
+
+  it('of a capsule reads its height from end to end', async () => {
+    const floor = ground();
+    const { physics } = await running([floor]);
+    const from = { x: 10, y: 3, z: 0 };
+
+    // Taken as its straight part alone, it would stop at 1.75.
+    const upright = physics.capsuleCast(from, 0.25, 2, identity, down, 10);
+    const under = { x: 10, y: 0, z: 0 };
+    expectHit(upright, { entity: floor, distance: 2, point: under, normal: { x: 0, y: 1, z: 0 } }, CAST);
+    const lying = physics.capsuleCast(from, 0.25, 2, quarter(0, 0, 1), down, 10);
+    expectHit(lying, { entity: floor, distance: 2.75 }, CAST);
+  });
+
+  it('passes out of what it starts touching: a ball resting on the ground, cast along it, meets the wall', async () => {
+    const wall = block([0, 1, -5], [4, 2, 0.2]);
+    const { physics } = await running([ground(), wall]);
+
+    // Rapier's own met the ground 4 mm on, facing 45° off.
+    const hit = physics.sphereCast({ x: 0, y: 0.25, z: 0 }, 0.25, ahead, 20);
+
+    expectHit(hit, { entity: wall, distance: 4.65, normal: { x: 0, y: 0, z: 1 } }, CAST);
+  });
+});
+
+describe('an overlap', () => {
+  it('finds each entity whose collider is in the sphere or touches it, once', async () => {
+    const a = withCollider('sphere', [1, 3, 0]);
+    const cube = (x: number): ColliderComponent => ({
+      ...createComponent('collider'),
+      shape: { ...createColliderShape('box'), size: [0.4, 0.4, 0.4], center: [x, 0, 0] },
+    });
+    const twin = createEntity('Twin', [cube(-0.3), cube(0.3)]);
+    twin.entity.transform.position = [-1, 3, 0];
+    const out = withCollider('sphere', [4, 3, 0]);
+    const { physics } = await running([ground(), a, twin, out]);
+
+    const found = physics.overlapSphere({ x: 0, y: 3, z: 0 }, 2);
+
+    expect([...found].sort()).toEqual([a.entity.id, twin.entity.id].sort());
+  });
+
+  it('of a box reads its full size, and turns as it is told', async () => {
+    const east = withCollider('sphere', [2.2, 3, 0]);
+    const farEast = withCollider('sphere', [3.2, 3, 0]);
+    const north = withCollider('sphere', [0, 3, -2.2]);
+    const { physics } = await running([east, farEast, north]);
+    const size = { x: 4, y: 0.2, z: 0.2 };
+
+    // Read as half extents, it would reach `farEast` too.
+    expect(physics.overlapBox({ x: 0, y: 3, z: 0 }, size)).toEqual([east.entity.id]);
+    expect(physics.overlapBox({ x: 0, y: 3, z: 0 }, size, quarter(0, 1, 0))).toEqual([north.entity.id]);
+  });
+});
+
+describe('a query of a shape', () => {
+  it('leaves out the body it is told to', async () => {
+    const wall = near();
+    const { cart: box, wheel } = cart();
+    const { physics } = await running([box, wheel, wall]);
+    const between = { x: 0, y: 1, z: -2.5 };
+
+    expect([...physics.overlapSphere(between, 0.9)].sort()).toEqual([box.entity.id, wheel.entity.id].sort());
+    expect(physics.overlapSphere(between, 0.9, { exclude: box.entity.id })).toEqual([]);
+    const hit = physics.sphereCast({ x: 0, y: 1, z: 0 }, 0.25, ahead, 20, { exclude: box.entity.id });
+    expectHit(hit, { entity: wall, distance: 4.25 }, CAST);
+  });
+
+  it('finds nothing when it is not a number', async () => {
+    const { physics } = await running([near()]);
+    const from = { x: 0, y: 1, z: 0 };
+    const nowhere = { x: 0, y: 0, z: 0, w: 0 };
+
+    expect(physics.sphereCast(from, Number.NaN, ahead, 20)).toBeNull();
+    expect(physics.boxCast(from, { x: 1, y: Number.NaN, z: 1 }, identity, ahead, 20)).toBeNull();
+    expect(physics.capsuleCast(from, 0.25, 2, nowhere, ahead, 20)).toBeNull();
+    expect(physics.overlapSphere({ x: 0, y: 1, z: -5 }, Number.NaN)).toEqual([]);
+    expect(physics.overlapBox({ x: 0, y: 1, z: -5 }, { x: 1, y: 1, z: 1 }, nowhere)).toEqual([]);
   });
 });
 

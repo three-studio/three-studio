@@ -52,9 +52,10 @@ export interface PhysicsApi {
    *
    * A query sees the world as the last physics tick left it, from the moment
    * the world is built: a body moved since — by a script, a teleport, its
-   * controller — is found where it was. A ray passes out of whatever it starts
-   * inside. A point or a distance that is not a number, or a direction of zero,
-   * finds nothing.
+   * controller — is found where it was. A ray or a cast passes out of whatever
+   * it starts inside or touching. A shape is measured as a Collider is. A
+   * point, a measure or a distance that is not a number, a direction of zero
+   * or a rotation of zero finds nothing.
    */
   raycast(
     origin: Readonly<Vec3Like>,
@@ -62,6 +63,45 @@ export interface PhysicsApi {
     maxDistance: number,
     options?: QueryOptions,
   ): RaycastHit | null;
+  /** A ball of `radius`, swept from `origin`, its centre: the nearest Collider it meets. As `raycast`. */
+  sphereCast(
+    origin: Readonly<Vec3Like>,
+    radius: number,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null;
+  /** A box of full `size`, turned by `rotation`, swept from `origin`, its centre. As `raycast`. */
+  boxCast(
+    origin: Readonly<Vec3Like>,
+    size: Readonly<Vec3Like>,
+    rotation: Readonly<QuatLike>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null;
+  /**
+   * A capsule of `radius`, `height` from end to end along its own y, turned by
+   * `rotation`, swept from `origin`, its centre. As `raycast`.
+   */
+  capsuleCast(
+    origin: Readonly<Vec3Like>,
+    radius: number,
+    height: number,
+    rotation: Readonly<QuatLike>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null;
+  /** The entities whose Colliders are in the ball or touch it, each once, in no particular order. */
+  overlapSphere(center: Readonly<Vec3Like>, radius: number, options?: QueryOptions): readonly string[];
+  /** The same, for a box of full `size`, turned by `rotation` when one is given. */
+  overlapBox(
+    center: Readonly<Vec3Like>,
+    size: Readonly<Vec3Like>,
+    rotation?: Readonly<QuatLike>,
+    options?: QueryOptions,
+  ): readonly string[];
 }
 
 /** What a query leaves out. */
@@ -73,7 +113,7 @@ export interface QueryOptions {
   readonly exclude?: string;
 }
 
-/** What a ray met first, in world space. */
+/** What a ray or a cast met first, in world space. */
 export interface RaycastHit {
   /**
    * The entity whose Collider it met. A script's `this.physics.body(entity)`
@@ -85,7 +125,7 @@ export interface RaycastHit {
   readonly point: Readonly<Vec3Like>;
   /** Unit, out of that surface. */
   readonly normal: Readonly<Vec3Like>;
-  /** How far it travelled to get there from its origin, in metres. */
+  /** How far it travelled to get there, in metres: from the ray's origin, or from where the shape's centre started. */
   readonly distance: number;
 }
 

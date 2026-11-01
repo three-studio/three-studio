@@ -1,12 +1,14 @@
 import {
   colliderGeometry,
   componentsOfType,
+  createColliderShape,
   entityWorldMatrixPath,
   findComponent,
   physicsBodies,
   type BodyType,
   type BuiltShape,
   type ColliderComponent,
+  type ColliderShape,
   type CombineRule,
   type EntityDoc,
   type PhysicsSettings,
@@ -302,6 +304,9 @@ class Body implements BodyHandle {
   }
 }
 
+/** No turn: a sphere's, and a box overlap's when it is given none. */
+const IDENTITY: Readonly<QuatLike> = Object.freeze({ x: 0, y: 0, z: 0, w: 1 });
+
 const _worldPosition = new Vector3();
 const _worldQuaternion = new Quaternion();
 const _drawnPosition = new Vector3();
@@ -584,6 +589,60 @@ export class PhysicsWorld implements PhysicsApi {
     };
   }
 
+  sphereCast(
+    origin: Readonly<Vec3Like>,
+    radius: number,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null {
+    if (!Number.isFinite(radius)) return null;
+    return this.cast({ ...createColliderShape('sphere'), radius }, origin, IDENTITY, direction, maxDistance, options);
+  }
+
+  boxCast(
+    origin: Readonly<Vec3Like>,
+    size: Readonly<Vec3Like>,
+    rotation: Readonly<QuatLike>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null {
+    if (!isFiniteVec(size)) return null;
+    const box: ColliderShape = { ...createColliderShape('box'), size: [size.x, size.y, size.z] };
+    return this.cast(box, origin, rotation, direction, maxDistance, options);
+  }
+
+  capsuleCast(
+    origin: Readonly<Vec3Like>,
+    radius: number,
+    height: number,
+    rotation: Readonly<QuatLike>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options?: QueryOptions,
+  ): RaycastHit | null {
+    if (!Number.isFinite(radius) || !Number.isFinite(height)) return null;
+    const capsule = { ...createColliderShape('capsule'), radius, height };
+    return this.cast(capsule, origin, rotation, direction, maxDistance, options);
+  }
+
+  overlapSphere(center: Readonly<Vec3Like>, radius: number, options?: QueryOptions): readonly string[] {
+    if (!Number.isFinite(radius)) return [];
+    return this.overlap({ ...createColliderShape('sphere'), radius }, center, IDENTITY, options);
+  }
+
+  overlapBox(
+    center: Readonly<Vec3Like>,
+    size: Readonly<Vec3Like>,
+    rotation: Readonly<QuatLike> = IDENTITY,
+    options?: QueryOptions,
+  ): readonly string[] {
+    if (!isFiniteVec(size)) return [];
+    const box: ColliderShape = { ...createColliderShape('box'), size: [size.x, size.y, size.z] };
+    return this.overlap(box, center, rotation, options);
+  }
+
   dispose(): void {
     this.bodies.clear();
     this.owners.clear();
@@ -664,10 +723,11 @@ export class PhysicsWorld implements PhysicsApi {
    * Only colliders the world built, so that a hit can name its entity: one
    * missing from the table is passed over, and the next one found.
    *
-   * A query passes out of what it starts in, as Unity's and Godot's do: a ray
-   * reports what it runs into. Rapier's met the box it started inside at 0,
-   * facing nowhere, and a ray along the ground's top face the ground, at 0;
-   * with what holds the origin left out, each went on to the wall ahead.
+   * A ray or a cast passes out of what it starts in, as Unity's and Godot's
+   * do: it reports what it runs into, where an overlap says what is there.
+   * Rapier's ray met the box it started inside at 0, facing nowhere, and a ray
+   * along the ground's top face the ground, at 0; with what holds the origin
+   * left out, each went on to the wall ahead.
    *
    * Rapier leaves out every collider of the body it is handed, so a compound
    * caller is left out whole.
@@ -681,6 +741,76 @@ export class PhysicsWorld implements PhysicsApi {
       excluded,
       (collider) => this.owners.has(collider.handle) && !startsIn(collider),
     ];
+  }
+
+  /**
+   * The nearest collider a shape meets, swept from `origin` along `direction`.
+   *
+   * Passing out of what it starts touching: a ball resting on the ground, cast
+   * along it, met the ground 4 mm on, its normal 45° off, and went on to the
+   * wall once the ground was left out. With that left out it penetrates
+   * nothing where it starts, so stopping at a penetration changes nothing.
+   */
+  private cast(
+    shape: ColliderShape,
+    origin: Readonly<Vec3Like>,
+    rotation: Readonly<QuatLike>,
+    direction: Readonly<Vec3Like>,
+    maxDistance: number,
+    options: QueryOptions | undefined,
+  ): RaycastHit | null {
+    const turn = unitQuat(rotation);
+    // Unit, for metres, as a ray's.
+    const unit = unitVec(direction);
+    const swept = queryShape(shape);
+    if (!turn || !unit || !swept || !isFiniteVec(origin) || !(maxDistance >= 0)) return null;
+    const hit = this.world.castShape(
+      origin,
+      turn,
+      unit,
+      swept,
+      0,
+      maxDistance,
+      true,
+      ...this.scope(options, (collider) => collider.intersectsShape(swept, origin, turn)),
+    );
+    const met = hit && this.owners.get(hit.collider.handle);
+    if (!hit || !met) return null;
+    // On the collider met, in world space, though Rapier's doc says its own
+    // frame: a wall's face 4.5 m ahead read (0, 1, −4.5), where it stands.
+    const { witness1: point, normal1: normal } = hit;
+    return {
+      entity: met.owner.entity,
+      point: { x: point.x, y: point.y, z: point.z },
+      normal: { x: normal.x, y: normal.y, z: normal.z },
+      distance: hit.time_of_impact,
+    };
+  }
+
+  /** The entities whose colliders a shape holds or touches, each once. What it starts in is what it asks about. */
+  private overlap(
+    shape: ColliderShape,
+    center: Readonly<Vec3Like>,
+    rotation: Readonly<QuatLike>,
+    options: QueryOptions | undefined,
+  ): readonly string[] {
+    const turn = unitQuat(rotation);
+    const held = queryShape(shape);
+    if (!turn || !held || !isFiniteVec(center)) return [];
+    // An entity's two colliders in it are one entity.
+    const found = new Set<string>();
+    this.world.intersectionsWithShape(
+      center,
+      turn,
+      held,
+      (collider) => {
+        const met = this.owners.get(collider.handle);
+        if (met) found.add(met.owner.entity);
+        return true;
+      },
+      ...this.scope(options, () => false),
+    );
+    return [...found];
   }
 
   private addBody(
@@ -859,6 +989,11 @@ function describeCollider(
 }
 
 function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc {
+  return shape.kind === 'mesh' ? describeMesh(object, shape) : primitiveDesc(shape);
+}
+
+/** A shape with no mesh behind it, as Rapier builds it: a collider's, and a query's. */
+function primitiveDesc(shape: Exclude<BuiltShape, { kind: 'mesh' }>): RAPIER.ColliderDesc {
   switch (shape.kind) {
     case 'box':
       return shape.rounding > 0
@@ -876,9 +1011,19 @@ function describeShape(shape: BuiltShape, object: Object3D): RAPIER.ColliderDesc
       return shape.rounding > 0
         ? RAPIER.ColliderDesc.roundCone(shape.halfHeight, shape.radius, shape.rounding)
         : RAPIER.ColliderDesc.cone(shape.halfHeight, shape.radius);
-    case 'mesh':
-      return describeMesh(object, shape);
   }
+}
+
+/**
+ * A query's shape, measured as a Collider is: through `colliderGeometry`, at
+ * scale 1, so a box reads its full size and a capsule its height from end to
+ * end, as the Collider pane shows them — and a capsule shorter than it is wide
+ * is the sphere a collider would be. `null` for a mesh, which a query has none
+ * of.
+ */
+function queryShape(shape: ColliderShape): RAPIER.Shape | null {
+  const { shape: built } = colliderGeometry(shape, [1, 1, 1], undefined);
+  return built.kind === 'mesh' ? null : primitiveDesc(built).shape;
 }
 
 /**

@@ -38,6 +38,14 @@ export function scriptPhysicsFor(physics: PhysicsApi | null, scene: SceneDoc): S
       physics?.createCharacterController(bodyEntity(entityId), settings) ?? null,
     raycast: (origin, direction, maxDistance, options) =>
       physics?.raycast(origin, direction, maxDistance, options) ?? null,
+    sphereCast: (origin, radius, direction, maxDistance, options) =>
+      physics?.sphereCast(origin, radius, direction, maxDistance, options) ?? null,
+    boxCast: (origin, size, rotation, direction, maxDistance, options) =>
+      physics?.boxCast(origin, size, rotation, direction, maxDistance, options) ?? null,
+    capsuleCast: (origin, radius, height, rotation, direction, maxDistance, options) =>
+      physics?.capsuleCast(origin, radius, height, rotation, direction, maxDistance, options) ?? null,
+    overlapSphere: (center, radius, options) => physics?.overlapSphere(center, radius, options) ?? [],
+    overlapBox: (center, size, rotation, options) => physics?.overlapBox(center, size, rotation, options) ?? [],
   };
 }
 
