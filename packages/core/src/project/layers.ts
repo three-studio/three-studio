@@ -5,9 +5,13 @@
  * collision groups, the checkboxes of Project Settings and the engine's
  * warnings — and is written once, here.
  */
+import { isRecord } from '../conform';
 
 /** The layer every collider starts on, and the one a collider naming a removed layer collides as. */
 export const DEFAULT_LAYER_ID = 'default';
+
+/** Rapier's ceiling: its collision groups are sixteen bits of membership and sixteen of filter. */
+export const MAX_COLLISION_LAYERS = 16;
 
 /** One collision layer of the project. */
 export interface CollisionLayer {
@@ -49,4 +53,40 @@ function layerOf(layers: readonly CollisionLayer[], id: string): CollisionLayer 
     layers.find((layer) => layer.id === DEFAULT_LAYER_ID) ??
     createDefaultLayer()
   );
+}
+
+/**
+ * A table that arrived from elsewhere — a project file, a settings patch, a
+ * launch — read entry by entry.
+ *
+ * Not through `conform`, which takes an array as a tuple of the model's
+ * length: a table of three sent where the model held one came back as Default
+ * alone.
+ *
+ * An entry is kept when it is an object whose id is a string, neither empty nor
+ * seen before; a name that is not a string reads as its id. Default comes
+ * first, named as its factory names it, and is added when missing; the first
+ * sixteen are kept. What a layer ignores keeps the ids of the table's layers.
+ */
+export function conformLayers(value: unknown): CollisionLayer[] {
+  const entries: readonly unknown[] = Array.isArray(value) ? value : [];
+  const read: CollisionLayer[] = [];
+  for (const entry of entries) {
+    if (!isRecord(entry)) continue;
+    const { id, name, ignores } = entry;
+    if (typeof id !== 'string' || id === '' || read.some((layer) => layer.id === id)) continue;
+    read.push({
+      id,
+      name: typeof name === 'string' ? name : id,
+      ignores: Array.isArray(ignores) ? ignores.filter((other): other is string => typeof other === 'string') : [],
+    });
+  }
+
+  const stored = read.find((layer) => layer.id === DEFAULT_LAYER_ID);
+  const table = [
+    { ...createDefaultLayer(), ignores: stored?.ignores ?? [] },
+    ...read.filter((layer) => layer !== stored),
+  ].slice(0, MAX_COLLISION_LAYERS);
+  const ids = new Set(table.map((layer) => layer.id));
+  return table.map((layer) => ({ ...layer, ignores: layer.ignores.filter((other) => ids.has(other)) }));
 }

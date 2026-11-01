@@ -1,8 +1,8 @@
-import { conform, conformPatch } from '../conform';
+import { conform, conformPatch, isRecord } from '../conform';
 import { conformMaterial } from '../guards';
 import { createId } from '../ids';
 import {
-  createPhysicsSettings,
+  conformPhysicsSettings,
   createRenderingSettings,
   type PhysicsSettings,
   type RenderingSettings,
@@ -105,7 +105,7 @@ export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
     materials,
     prefabs,
     rendering: conform(given['rendering'], createRenderingSettings()),
-    physics: conform(given['physics'], createPhysicsSettings()),
+    physics: conformPhysicsSettings(given['physics']),
     loadingScene: typeof loadingScene === 'string' ? loadingScene : null,
   };
 }
@@ -260,10 +260,6 @@ function isDeviceAddress(value: unknown): value is string {
     octets.length === 4 &&
     octets.every((octet) => /^(?:0|[1-9]\d{0,2})$/.test(octet) && Number(octet) <= 255)
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

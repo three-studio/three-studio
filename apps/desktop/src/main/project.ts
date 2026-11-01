@@ -9,6 +9,7 @@ import {
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
+  conformPhysicsSettings,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
@@ -379,7 +380,10 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   // See the format rules in `README.md`.
   const settings = (project.settings ?? {}) as Partial<ProjectFile['settings']>;
   settings.rendering = { ...createRenderingSettings(), ...settings.rendering };
-  settings.physics = { ...createPhysicsSettings(), ...settings.physics };
+  // Read against its factory rather than spread over it: physics data keeps no
+  // field it does not know, and the layer table is a list read entry by entry,
+  // so a hand-broken one reaches neither the editor nor a running game.
+  settings.physics = conformPhysicsSettings(settings.physics);
   // Not `??=`: a profile written before a build option existed is missing that
   // one field, not the whole section, and only the profiles themselves know
   // which. `normalizeBuildProfiles` fills each from the factory.

@@ -3,6 +3,7 @@ import {
   PREFAB_FORMAT_VERSION,
   componentsOf,
   conformLaunchSnapshot,
+  createDefaultLayer,
   createMaterial,
   createPhysicsSettings,
   createPrefabDoc,
@@ -27,7 +28,11 @@ function snapshot(): LaunchSnapshot {
     materials: { stone: createMaterial('#777777') },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
-    physics: { ...createPhysicsSettings(), gravity: [0, -3, 0] },
+    physics: {
+      ...createPhysicsSettings(),
+      gravity: [0, -3, 0],
+      layers: [createDefaultLayer(), { id: 'player', name: 'Player', ignores: ['default'] }],
+    },
     loadingScene: 'loading',
   };
 }
@@ -108,5 +113,16 @@ describe('a launch snapshot, where it arrives', () => {
 
   it('drops a field it does not know', () => {
     expect(conformLaunchSnapshot({ ...snapshot(), trap: 1 })).not.toHaveProperty('trap');
+  });
+
+  it('reads its layer table entry by entry', () => {
+    const sent = snapshot();
+    const conformed = conformLaunchSnapshot({
+      ...sent,
+      physics: { ...sent.physics, layers: [{ id: 'player', name: 'Player', ignores: [] }, 'oops'] },
+    });
+
+    expect(conformed.physics.layers).toEqual([createDefaultLayer(), { id: 'player', name: 'Player', ignores: [] }]);
+    expect(conformed.physics.gravity).toEqual([0, -3, 0]);
   });
 });

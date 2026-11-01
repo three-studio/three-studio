@@ -7,6 +7,11 @@
  * there closed a cycle through `assets/schema.ts` and back into the scene.
  */
 
+/** An object that is neither `null` nor an array: what a record that arrived from elsewhere has to be. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Numbers that can be written and read back. `NaN` serialises as `null`. */
 function isUsableNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);

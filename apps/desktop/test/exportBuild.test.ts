@@ -20,6 +20,7 @@ import {
   SCENES_DIR,
   createBuildProfiles,
   createComponent,
+  createDefaultLayer,
   createMaterial,
   createMeshEntity,
   createAudioSourceEntity,
@@ -470,6 +471,7 @@ describe('web export', () => {
       ...createPhysicsSettings(),
       gravity: [0, -3, 0],
       fixedTimestep: 1 / 120,
+      layers: [createDefaultLayer(), { id: 'ghost', name: 'Ghost', ignores: ['default'] }],
     };
     const { projectPath, templateRoot } = await makeProject(createRenderingSettings(), physics);
     const outputDir = join(projectPath, '..', 'out-physics');

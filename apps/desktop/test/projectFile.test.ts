@@ -5,6 +5,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  createDefaultLayer,
   createEmptyScene,
   serializeScene,
 } from '@three-studio/core';
@@ -80,6 +81,25 @@ describe('settings a project predates', () => {
     // one as of the version that wrote it, which is exactly the shape a setting
     // added later has to survive: kept where it spoke, filled where it did not.
     expect(project.settings.rendering.batching).toBe(true);
+  });
+
+  it('reads a hand-broken layer table entry by entry', async () => {
+    const root = await projectWith({
+      settings: {
+        physics: {
+          gravity: [0, -9.81, 0],
+          fixedTimestep: 1 / 60,
+          maxSubsteps: 5,
+          layers: [{ id: 'ghost', name: 'Ghost', ignores: ['default', 7] }, 'oops', { id: 'ghost' }],
+        },
+      },
+    });
+    const project = await readProject(root);
+
+    expect(project.settings.physics.layers).toEqual([
+      createDefaultLayer(),
+      { id: 'ghost', name: 'Ghost', ignores: ['default'] },
+    ]);
   });
 
   it('does not rewrite the file just by reading it', async () => {
@@ -237,6 +257,17 @@ describe('a project written in an older format', () => {
 
     expect(project.startScene).toBe(path);
     expect(project.version).toBe(3);
+  });
+
+  it('fills the collision layers a format 2 project predates', async () => {
+    const root = await formatTwoProject();
+    const before = await readFile(join(root, PROJECT_FILE_NAME), 'utf8');
+
+    const project = await readProject(root);
+
+    expect(project.settings.physics.layers).toEqual([createDefaultLayer()]);
+    expect(project.version).toBe(3);
+    expect(await readFile(join(root, PROJECT_FILE_NAME), 'utf8')).toBe(before);
   });
 
   it('resolves the paths and names it holds into ids', async () => {

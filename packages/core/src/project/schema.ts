@@ -16,8 +16,9 @@
  * layout is the one place a reader goes for the truth, so what it can name it
  * points at instead.
  */
+import { conform, isRecord } from '../conform';
 import type { Vec3 } from '../scene/schema';
-import { createDefaultLayer, type CollisionLayer } from './layers';
+import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers';
 
 /**
  * One scene of a project, as it was found on disk.
@@ -241,6 +242,19 @@ export function createPhysicsSettings(): PhysicsSettings {
     maxSubsteps: 5,
     layers: [createDefaultLayer()],
   };
+}
+
+/**
+ * Physics settings that arrived from elsewhere — a project file, a settings
+ * patch, a launch — read against a model: the factory, or for a patch the
+ * project's current settings, so a table the patch leaves out keeps its value.
+ *
+ * `conform` reads gravity and the step; the layer table is read entry by entry
+ * (`conformLayers`), since `conform` takes an array as a tuple.
+ */
+export function conformPhysicsSettings(value: unknown, model = createPhysicsSettings()): PhysicsSettings {
+  const layers = isRecord(value) ? value['layers'] : undefined;
+  return { ...conform(value, model), layers: layers === undefined ? model.layers : conformLayers(layers) };
 }
 
 /**

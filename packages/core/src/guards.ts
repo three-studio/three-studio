@@ -10,10 +10,15 @@ import {
   type LayoutPreferences,
   type ShortcutPreferences,
 } from './preferences/schema';
-import { createBuildProfiles, type BuildProfiles, type ProjectSettings } from './project/schema';
+import {
+  conformPhysicsSettings,
+  createBuildProfiles,
+  type BuildProfiles,
+  type ProjectSettings,
+} from './project/schema';
 import { defaultSettings } from './assets/import';
 import type { AssetKind, AssetSettings } from './assets/schema';
-import { conform, conformPatch, oneOf } from './conform';
+import { conform, conformPatch, isRecord, oneOf } from './conform';
 
 /*
  * What the renderer sends, made safe before it reaches the disk.
@@ -47,18 +52,21 @@ import { conform, conformPatch, oneOf } from './conform';
  * The model is the project's **current** settings rather than a fresh default,
  * because two of the four fields are open: `build.profiles` is keyed by profile
  * id, and a patch that adds one is the ordinary way a build profile is created.
- * Conforming against the live value would drop exactly that.
+ * Conforming against the live value would drop exactly that. The physics
+ * section's layer table is a list of any length, read by its own conformer for
+ * the same reason: a patch adding a layer came back with the current table.
  */
 export function conformSettingsPatch(
   patch: unknown,
   current: ProjectSettings,
 ): Partial<ProjectSettings> {
   const conformed = conformPatch(patch, current);
+  const given = isRecord(patch) ? patch : {};
   if (conformed.build !== undefined) {
-    conformed.build = conformBuildProfiles(
-      (patch as { build?: unknown }).build,
-      current.build,
-    );
+    conformed.build = conformBuildProfiles(given['build'], current.build);
+  }
+  if (conformed.physics !== undefined) {
+    conformed.physics = conformPhysicsSettings(given['physics'], current.physics);
   }
   return conformed;
 }
