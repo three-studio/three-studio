@@ -78,7 +78,7 @@ export type {
 } from './audio/playback';
 
 /* Physics. Our types only: nothing of Rapier's is on this barrel. */
-export { PhysicsWorld, applyWorldTransform, worldPose } from './physics/PhysicsWorld';
+export { PhysicsWorld, applyWorldTransform, jointPose, worldPose } from './physics/PhysicsWorld';
 export { collectVertices, ownMeshes } from './physics/meshShape';
 export type {
   BodyHandle,

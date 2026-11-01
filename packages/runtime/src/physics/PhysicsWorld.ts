@@ -1102,8 +1102,11 @@ function queryShape(shape: ColliderShape): RAPIER.Shape | null {
  * Where a joint on this object holds, in the world: its entity's pose as
  * physics reads it, composed with the joint's anchor and axis on it, the
  * pose's X along the axis.
+ *
+ * On the barrel for the editor's joint gizmo, drawn where this builds it, as
+ * `worldPose` is for the collider outline.
  */
-function jointPose(object: Object3D, joint: JointComponent): JointPose {
+export function jointPose(object: Object3D, joint: JointComponent): JointPose {
   worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
   const { anchor, axis } = jointFrame(joint, [_worldScale.x, _worldScale.y, _worldScale.z]);
   return {

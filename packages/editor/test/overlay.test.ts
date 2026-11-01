@@ -5,17 +5,22 @@ import {
   createColliderShape,
   createComponent,
   createEntity,
+  createJoint,
+  createJointMotion,
   createLightEntity,
   createMeshComponent,
   createMeshEntity,
   createRenderingSettings,
   findComponent,
+  jointFrame,
   putComponent,
   type AudioSourceComponent,
   type BuiltShape,
   type ColliderShape,
   type ComponentDoc,
   type EntityTemplate,
+  type JointComponent,
+  type JointMotion,
   type MeshBuild,
   type SceneDoc,
   type Vec3,
@@ -924,5 +929,162 @@ describe('teardown', () => {
 
     expect(overlay.markers.children).toHaveLength(0);
     expect(overlay.annotations.children).toHaveLength(0);
+  });
+});
+
+describe('where a joint holds', () => {
+  /** An entity carrying one joint of this motion, at this anchor. */
+  const jointEntity = (motion: JointMotion, anchor: Vec3 = [0, 0, 0]): EntityTemplate =>
+    createEntity('Joint', [{ ...createJoint(), motion, anchor }]);
+
+  /** The world pose physics reads the entity at. */
+  function poseOf(binder: SceneBinder, entityId: string) {
+    const container = binder.containerFor(entityId);
+    if (!container) throw new Error('no container');
+    const position = new Vector3();
+    const quaternion = new Quaternion();
+    const scale = new Vector3();
+    worldPose(container, position, quaternion, scale);
+    return { position, quaternion, scale };
+  }
+
+  /** Where physics builds the joint: the entity's pose with its anchor and axis on it. */
+  function heldAt(binder: SceneBinder, template: EntityTemplate) {
+    const joint = template.components[0] as JointComponent;
+    const { position, quaternion, scale } = poseOf(binder, template.entity.id);
+    const { anchor, axis } = jointFrame(joint, scale.toArray());
+    return {
+      anchor: new Vector3(...anchor).applyQuaternion(quaternion).add(position),
+      axis: new Vector3(...axis).applyQuaternion(quaternion),
+      origin: position,
+    };
+  }
+
+  const average = (points: readonly Vector3[]): Vector3 =>
+    points.reduce((sum, point) => sum.add(point), new Vector3()).divideScalar(points.length);
+
+  it('draws its anchor where physics builds it, on a scaled, turned entity', () => {
+    // A Fixed joint draws its cross alone, so every point is the cross's.
+    const welded = jointEntity(createJointMotion('fixed'), [0.5, 0, 0]);
+    welded.entity.transform.position = [1, 2, 3];
+    welded.entity.transform.scale = [2, 2, 2];
+    welded.entity.transform.rotation = [0, Math.PI / 2, 0];
+    const scene = sceneWith([welded]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [welded.entity.id]);
+
+    const drawn = average(worldPoints(annotations(overlay)[0]));
+    expectAt(drawn, heldAt(binder, welded).anchor.toArray());
+    // 1 m out along the entity's x, which the turn points down −z.
+    expectAt(drawn, [1, 2, 2]);
+  });
+
+  it("draws a hinge's axis, and its limits from where it was built", () => {
+    const motion = createJointMotion('hinge');
+    const door = jointEntity(
+      { ...motion, axis: [0, 1, 0], limits: { enabled: true, min: 0, max: Math.PI / 2 } },
+      [-0.5, 0, 0],
+    );
+    door.entity.transform.position = [2, 1, 0];
+    door.entity.transform.rotation = [0, Math.PI / 6, 0];
+    const scene = sceneWith([door]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [door.entity.id]);
+
+    const { anchor, axis, origin } = heldAt(binder, door);
+    const points = worldPoints(annotations(overlay)[0]);
+    const from = (point: Vector3) => point.clone().sub(anchor);
+    // The axis: 0.5 m each side of the anchor, along it.
+    for (const side of [-0.5, 0.5]) {
+      const end = anchor.clone().addScaledVector(axis, side);
+      expect(Math.min(...points.map((point) => point.distanceTo(end)))).toBeLessThan(1e-6);
+    }
+    // The needle, from the anchor, towards the door's own origin: its leaf.
+    const leaf = from(origin).normalize();
+    const tip = anchor.clone().addScaledVector(leaf, 0.5);
+    expect(Math.min(...points.map((point) => point.distanceTo(tip)))).toBeLessThan(1e-6);
+    // The arc, at 0.5 m in the plane across the axis, from the needle to 90°.
+    const across = points.filter(
+      (point) => Math.abs(from(point).length() - 0.5) < 1e-6 && Math.abs(from(point).dot(axis)) < 1e-6,
+    );
+    expect(across.length).toBeGreaterThan(4);
+    const sideways = axis.clone().cross(leaf);
+    for (const point of across) {
+      const angle = Math.atan2(from(point).dot(sideways), from(point).dot(leaf));
+      expect(angle).toBeGreaterThan(-1e-6);
+      expect(angle).toBeLessThan(Math.PI / 2 + 1e-6);
+    }
+  });
+
+  it("draws a slider's limits along its axis", () => {
+    const motion = createJointMotion('slider');
+    const lift = jointEntity({ ...motion, axis: [1, 1, 0], limits: { enabled: true, min: -1, max: 0.5 } });
+    lift.entity.transform.position = [0, 3, 0];
+    const scene = sceneWith([lift]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [lift.entity.id]);
+
+    const { anchor, axis } = heldAt(binder, lift);
+    const along = worldPoints(annotations(overlay)[0]).map((point) => point.sub(anchor).dot(axis));
+    expect(Math.abs(Math.min(...along) + 1)).toBeLessThan(1e-6);
+    expect(Math.abs(Math.max(...along) - 0.5)).toBeLessThan(1e-6);
+  });
+
+  it('draws a joint on a child where the child is', () => {
+    const parent = createEntity('Door', [createComponent('rigidbody')]);
+    parent.entity.transform.position = [0, 3, 0];
+    parent.entity.transform.rotation = [0, 0, Math.PI / 2];
+    parent.entity.transform.scale = [2, 2, 2];
+    const hinge = jointEntity(createJointMotion('fixed'));
+    hinge.entity.transform.position = [-1, 0, 0];
+    nest(parent, hinge);
+    const scene = sceneWith([parent, hinge]);
+    const { overlay, frame } = mount(scene);
+
+    frame(scene, [hinge.entity.id]);
+
+    // Turned and scaled with its parent, the child sits 2 m below it.
+    expectAt(average(worldPoints(annotations(overlay)[0])), [0, 1, 0]);
+  });
+
+  it('follows an edit while selected, and writes nothing when nothing changed', () => {
+    const welded = jointEntity(createJointMotion('fixed'));
+    const scene = sceneWith([welded]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [welded.entity.id]);
+
+    const joint = findComponent(scene, welded.entity.id, 'joint');
+    if (!joint) throw new Error('no joint');
+    putComponent(scene, welded.entity.id, { ...joint, anchor: [0, 2, 0] });
+    frame(scene, [welded.entity.id]);
+    expectAt(average(worldPoints(annotations(overlay)[0])), [0, 2, 0]);
+
+    putComponent(scene, welded.entity.id, { ...joint, motion: createJointMotion('hinge') });
+    frame(scene, [welded.entity.id]);
+    const { version } = positionsOf(annotations(overlay)[0]);
+    frame(scene, [welded.entity.id]);
+    frame(scene, [welded.entity.id]);
+    expect(positionsOf(annotations(overlay)[0]).version).toBe(version);
+  });
+
+  it('never lets an annotation take a click', () => {
+    const hinge = jointEntity(createJointMotion('hinge'));
+    const scene = sceneWith([hinge]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [hinge.entity.id]);
+    expect(annotations(overlay)).toHaveLength(1);
+
+    // Down the hinge's axis, through its cross and its circle.
+    const raycaster = new Raycaster(new Vector3(0, 10, 0), new Vector3(0, -1, 0));
+    const hits: Intersection[] = [];
+    for (const object of annotations(overlay)) {
+      object.traverse((child) => {
+        child.raycast(raycaster, hits);
+      });
+    }
+    expect(hits).toHaveLength(0);
   });
 });
