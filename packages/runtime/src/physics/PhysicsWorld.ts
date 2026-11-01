@@ -5,7 +5,6 @@ import {
   entityWorldMatrixPath,
   findComponent,
   jointEnds,
-  jointFrame,
   linkedPhysicsMaterial,
   physicsBodies,
   type BodyType,
@@ -24,7 +23,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
-import { buildJoint, type Joint, type JointPose } from './joints';
+import { Joint, holdingPose, type JointBodies, type JointPose, type Placed } from './joints';
 import { collisionGroups, layerBits } from './layers';
 import { describeMesh } from './meshShape';
 import type {
@@ -73,6 +72,11 @@ class Body implements BodyHandle {
   private readonly previous = { position: new Vector3(), quaternion: new Quaternion() };
   /** A force or a torque was added since the last tick, for `afterTick` to drop. */
   private pushed = false;
+  /**
+   * Its world pose when the world was built: what a joint's frames on it are
+   * measured from, at the build and at each tune.
+   */
+  readonly built: { readonly position: Vector3; readonly quaternion: Quaternion };
 
   constructor(
     readonly rapier: RAPIER.RigidBody,
@@ -98,6 +102,10 @@ class Body implements BodyHandle {
     /** The colliders riding it, as the table of owners holds them. */
     readonly colliders: readonly Built[],
   ) {
+    this.built = {
+      position: new Vector3().copy(rapier.translation()),
+      quaternion: new Quaternion().copy(rapier.rotation()),
+    };
     this.rememberWritten();
     this.rememberPrevious();
   }
@@ -500,12 +508,14 @@ export class PhysicsWorld implements PhysicsApi {
   /** What touched when the world was built, for the first tick to hand out before its own. */
   private atBuild: PhysicsEvent[] = [];
   /** What a joint with no Connected Body is held to; made by the first one. */
-  private groundBody: RAPIER.RigidBody | null = null;
+  private grounding: Placed | null = null;
   /**
-   * Each joint built, by the entity carrying it. The first only, should a
-   * hand-edited file give an entity two: the Inspector adds one.
+   * Each entity's Joints, holding or not, in table order: the Inspector adds
+   * one, a hand-edited file may hold two.
    */
-  private readonly joints = new Map<string, Joint>();
+  private readonly joints = new Map<string, Joint[]>();
+  /** The scene the world was built from, whose bodies a tuned joint holds again. */
+  private scene: SceneDoc | null = null;
   private accumulator = 0;
   /** Moves with each tick and each tune: the debug view read at a version holds until it moves. */
   private version = 0;
@@ -563,6 +573,7 @@ export class PhysicsWorld implements PhysicsApi {
   ): void {
     const bodies = physicsBodies(scene);
     const colliders = componentsOfType(scene, 'collider');
+    this.scene = scene;
     this.materials = { ...materials };
 
     // Parents first, because `writeBack` writes the bodies in the order they
@@ -592,18 +603,21 @@ export class PhysicsWorld implements PhysicsApi {
 
     // After the bodies, two of which each joint holds, and before the step of
     // no time, which moves nothing with joints built either. One that holds
-    // nothing is left out, and the Engine says why.
+    // nothing is kept holding nothing, for a tune to give it ends, and the
+    // Engine says why.
     for (const [entityId, held] of Object.entries(componentsOfType(scene, 'joint'))) {
-      for (const joint of Object.values(held)) {
-        const ends = jointEnds(scene, entityId, joint);
-        if (!ends.holds) continue;
-        const own = this.bodies.get(ends.own)?.rapier;
-        const other = ends.other === null ? this.ground() : this.bodies.get(ends.other)?.rapier;
-        const object = binder.getObject(entityId);
-        if (!own || !other || !object) continue;
-        const built = buildJoint(this.world, joint, other, own, jointPose(object, joint));
-        if (!this.joints.has(entityId)) this.joints.set(entityId, built);
-      }
+      const object = binder.getObject(entityId);
+      if (!object) continue;
+      worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
+      const placed = {
+        position: _worldPosition.clone(),
+        quaternion: _worldQuaternion.clone(),
+        scale: _worldScale.clone(),
+      };
+      this.joints.set(
+        entityId,
+        Object.values(held).map((joint) => new Joint(this.world, joint, placed, this.endsOf(entityId, joint))),
+      );
     }
 
     // A step of no time, so that a query sees the scene from the start. Rapier
@@ -697,8 +711,8 @@ export class PhysicsWorld implements PhysicsApi {
    * A component's values applied to the running world at once, every field, as
    * the world would have built it with them: the editor's live tuning.
    *
-   * Through the functions that built it — `describeBody`, `describeCollider` —,
-   * at the poses the world was built from, so a tuned game is the game built
+   * Through the functions that built it — `describeBody`, `describeCollider`,
+   * a Joint's own —, at the poses the world was built from, so a tuned game is the game built
    * with those values, and no second way from the document to Rapier can fall
    * out of step with the first. A component the world did not build changes
    * nothing. The document is not the world's to write.
@@ -718,7 +732,10 @@ export class PhysicsWorld implements PhysicsApi {
         }
         break;
       case 'joint':
-        // Held as it was built.
+        this.joints
+          .get(entityId)
+          ?.find((joint) => joint.component.id === component.id)
+          ?.remake(component, this.endsOf(entityId, component));
         break;
     }
     // Shown at once, paused or not.
@@ -739,8 +756,9 @@ export class PhysicsWorld implements PhysicsApi {
     return this.bodies.get(entityId) ?? null;
   }
 
+  /** The first Joint on the entity that holds: one tuned to hold nothing reads as none. */
   joint(entityId: string): JointHandle | null {
-    return this.joints.get(entityId) ?? null;
+    return this.joints.get(entityId)?.find((joint) => joint.holds) ?? null;
   }
 
   createCharacterController(
@@ -918,13 +936,28 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
+   * The two bodies a joint holds, as they were built, by the rule the Engine's
+   * warnings read; `null` when it holds nothing.
+   */
+  private endsOf(entityId: string, joint: JointComponent): JointBodies | null {
+    const ends = this.scene && jointEnds(this.scene, entityId, joint);
+    if (!ends?.holds) return null;
+    const own = this.bodies.get(ends.own);
+    const other = ends.other === null ? this.ground() : this.bodies.get(ends.other);
+    return own && other ? { other, own } : null;
+  }
+
+  /**
    * The world a joint with no Connected Body is held to: one fixed body at the
    * origin, with no collider. No entity owns it, so `body()` never answers
    * with it.
    */
-  private ground(): RAPIER.RigidBody {
-    this.groundBody ??= this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-    return this.groundBody;
+  private ground(): Placed {
+    this.grounding ??= {
+      rapier: this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed()),
+      built: { position: new Vector3(), quaternion: new Quaternion() },
+    };
+    return this.grounding;
   }
 
   dispose(): void {
@@ -1356,14 +1389,8 @@ function queryShape(shape: ColliderShape): RAPIER.Shape | null {
  */
 export function jointPose(object: Object3D, joint: JointComponent): JointPose {
   worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
-  const { anchor, axis } = jointFrame(joint, [_worldScale.x, _worldScale.y, _worldScale.z]);
-  return {
-    position: new Vector3(...anchor).applyQuaternion(_worldQuaternion).add(_worldPosition),
-    quaternion: new Quaternion().setFromUnitVectors(UNIT_X, new Vector3(...axis)).premultiply(_worldQuaternion),
-  };
+  return holdingPose({ position: _worldPosition, quaternion: _worldQuaternion, scale: _worldScale }, joint);
 }
-
-const UNIT_X = new Vector3(1, 0, 0);
 
 /**
  * An entity's world pose as physics reads it: its world matrix decomposed, the

@@ -1,19 +1,27 @@
 import {
   createColliderShape,
   createDefaultLayer,
+  createJointMotion,
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   type CollisionLayer,
   type EntityTemplate,
+  type JointLimits,
+  type JointMotion,
   type PhysicsMaterialDef,
+  type Vec3,
 } from '@three-studio/core';
+import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { registerBehaviour } from '../../src/behaviour/Behaviour';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import type { JointHandle } from '../../src/physics/PhysicsApi';
+import { Behaviour } from '../../src/scripting/ScriptHost';
 import {
+  block,
   colliderOf,
   componentOf,
   ground,
@@ -23,6 +31,9 @@ import {
   takeTheBrowserBack,
   withBody,
   withCollider,
+  withJoint,
+  withScript,
+  type PhysicsRig,
 } from './rig';
 
 /*
@@ -77,6 +88,34 @@ function meshSlope(): EntityTemplate {
 function boxOnSlope(z: number): EntityTemplate {
   return withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
 }
+
+/** A hinge on this axis, its limits as given and otherwise as made. */
+function hinge(axis: Vec3, limits?: Partial<JointLimits>): JointMotion {
+  const made = createJointMotion('hinge');
+  return { ...made, axis, limits: { ...made.limits, ...limits } };
+}
+const slider = (axis: Vec3): JointMotion => ({ ...createJointMotion('slider'), axis });
+const spring = (stiffness: number, damping: number): JointMotion => ({
+  ...createJointMotion('spring'),
+  stiffness,
+  damping,
+});
+const degrees = (angle: number) => (angle * Math.PI) / 180;
+
+/**
+ * F12's pendulum: a 1 m box hinged to the world on z at (0, 2, 0), level to
+ * start with. Slowed by a linear damping, so that it comes to hang: an angular
+ * one barely slows a body turning about a pivot rather than about itself.
+ */
+function pendulum(): EntityTemplate {
+  return withJoint(withBody('box', [1, 2, 0], { interpolate: false, linearDamping: 2 }), {
+    anchor: [-1, 0, 0],
+    motion: hinge([0, 0, 1]),
+  });
+}
+
+/** The template's joint, as a behaviour reaches it. */
+const jointOf = (rig: PhysicsRig, template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id) ?? null;
 
 const grip: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' };
 const ice: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' };
@@ -267,6 +306,177 @@ describe('a collider tuned while running', () => {
     rig.engine.tune(ball.entity.id, { ...colliderOf(ball), shape: { ...createColliderShape('sphere'), radius: 1 } });
 
     expect(Array.from(rig.engine.physicsDebug()?.vertices ?? [])).not.toEqual(before);
+  });
+});
+
+describe('a joint tuned while running', () => {
+  it('a spring stiffened while running hangs m·g / k below where it was built', async () => {
+    const bag = withJoint(withBody('sphere', [0, 2, 0], { mass: 1, interpolate: false }), { motion: spring(100, 5) });
+    const rig = await physicsRig([bag]);
+    rig.run(5);
+
+    rig.engine.tune(bag.entity.id, { ...componentOf(bag, 'joint'), motion: spring(25, 5) });
+    rig.run(5);
+
+    // m·g / k: 9.81 / 25.
+    const sag = 2 - rig.solved(bag.entity.id).position.y;
+    expect(Math.abs(sag - 0.392) / 0.392).toBeLessThan(0.05);
+  });
+
+  it('a hinge’s limits tuned on while it hangs stop it at them', async () => {
+    const box = pendulum();
+    const rig = await physicsRig([box]);
+    rig.run(6);
+
+    const limited = hinge([0, 0, 1], { enabled: true, min: degrees(-30), max: degrees(30) });
+    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), motion: limited });
+    rig.run(2);
+
+    expect(Math.abs((jointOf(rig, box)?.position ?? 0) - degrees(-30))).toBeLessThan(degrees(0.5));
+  });
+
+  it('a hinge whose limits are tuned off turns freely again', async () => {
+    const box = pendulum();
+    const rig = await physicsRig([box]);
+    const joint = componentOf(box, 'joint');
+    const limits = { enabled: true, min: degrees(-30), max: degrees(30) };
+    rig.run(6);
+    rig.engine.tune(box.entity.id, { ...joint, motion: hinge([0, 0, 1], limits) });
+    rig.run(2);
+
+    // Rapier has no setter to switch a live joint's limits off.
+    rig.engine.tune(box.entity.id, { ...joint, motion: hinge([0, 0, 1], { ...limits, enabled: false }) });
+    rig.run(6);
+
+    expect(Math.abs((jointOf(rig, box)?.position ?? 0) - degrees(-90))).toBeLessThan(degrees(1));
+  });
+
+  it('a hinge given another anchor turns about it, as placed when the world was built', async () => {
+    const box = pendulum();
+    const rig = await physicsRig([box]);
+    rig.run(1);
+
+    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), anchor: [-0.5, 0, 0] });
+    // Pulled there in a tick, and swinging hard from it: still swinging after
+    // 6 s, it falls asleep at 10 s a degree short of the bottom.
+    rig.run(0.5);
+
+    // Its anchor held at (0.5, 2, 0), where that anchor was when the world was
+    // built, on every frame of the swing, and its centre swinging through 0.5 m
+    // below it.
+    const pivot = new Vector3(0.5, 2, 0);
+    let farthest = 0;
+    let lowest = Number.POSITIVE_INFINITY;
+    for (let frame = 0; frame < 300; frame++) {
+      rig.run(1 / 60);
+      const { position, quaternion } = rig.solved(box.entity.id);
+      const anchor = new Vector3(-0.5, 0, 0).applyQuaternion(quaternion).add(position);
+      farthest = Math.max(farthest, anchor.distanceTo(pivot));
+      lowest = Math.min(lowest, position.y);
+    }
+    expect(farthest).toBeLessThan(1e-3);
+    expect(Math.abs(lowest - 1.5)).toBeLessThan(0.01);
+  });
+
+  it('a joint tuned to another Connected Body is held to that one', async () => {
+    class Glide extends Behaviour {
+      override onFixedUpdate(step: number) {
+        this.transform.position.x += 2 * step;
+      }
+    }
+    // Hinged to the world at its top, and a block beside it sliding away.
+    const box = withJoint(withBody('box', [0, 2, 0], { interpolate: false }), {
+      anchor: [0, 0.5, 0],
+      motion: hinge([0, 0, 1]),
+    });
+    const sled = withScript(withBody('box', [2, 2, 0], { bodyType: 'kinematicPosition' }), Glide);
+    const rig = await physicsRig([box, sled]);
+
+    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: sled.entity.id });
+    rig.run(1);
+
+    expect(rig.solved(box.entity.id).position.x).toBeGreaterThan(1.5);
+  });
+
+  it('a joint that held nothing holds once its Connected Body is tuned to one with a body', async () => {
+    const hook = block([0, 3, 0], [0.2, 0.2, 0.2]);
+    const box = withJoint(withBody('box', [0, 2, 0], { interpolate: false, linearDamping: 2 }), {
+      anchor: [0, 1, 0],
+      connectedEntity: 'gone',
+      motion: hinge([0, 0, 1]),
+    });
+    const rig = await physicsRig([hook, box]);
+    expect(jointOf(rig, box)).toBeNull();
+    rig.run(0.5);
+    expect(rig.solved(box.entity.id).position.y).toBeLessThan(1.5);
+
+    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: hook.entity.id });
+    expect(jointOf(rig, box)).not.toBeNull();
+    rig.run(3);
+
+    // Hanging from the hook, as placed when the world was built.
+    expect(rig.solved(box.entity.id).position.distanceTo(new Vector3(0, 2, 0))).toBeLessThan(0.05);
+  });
+
+  it('a script’s handle drives the joint that replaced it', async () => {
+    /** Keeps its door's joint from the start, and opens the door with it when told. */
+    class Keeper extends Behaviour {
+      static kept: JointHandle | null = null;
+      static open = false;
+
+      override onStart() {
+        Keeper.kept = this.physics.joint(this.entity.id);
+      }
+
+      override onUpdate() {
+        if (!Keeper.open || !Keeper.kept) return;
+        Keeper.kept.motorSpeed = 2;
+        Keeper.kept.motorEnabled = true;
+      }
+    }
+    const motion = createJointMotion('hinge');
+    const door = withScript(
+      withJoint(withBody('box', [0.5, 1, 0]), {
+        anchor: [-0.5, 0, 0],
+        motion: { ...motion, limits: { enabled: true, min: 0, max: Math.PI / 2 } },
+      }),
+      Keeper,
+    );
+    const rig = await physicsRig([door]);
+
+    const joint = componentOf(door, 'joint');
+    rig.engine.tune(door.entity.id, {
+      ...joint,
+      motion: { ...motion, limits: { enabled: true, min: 0, max: Math.PI / 4 } },
+    });
+    Keeper.open = true;
+    rig.run(1.5);
+
+    expect(Math.abs((Keeper.kept?.position ?? 0) - Math.PI / 4)).toBeLessThan(0.01);
+  });
+
+  it('a hinge tuned to a slider slides along its axis', async () => {
+    // F12's slider, built as a hinge about the box's own centre: it holds still.
+    const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);
+    rail.entity.transform.rotation = [degrees(20), 0, 0];
+    const box = withJoint(withBody('box', [2, 3, 1], { interpolate: false }), {
+      connectedEntity: rail.entity.id,
+      motion: hinge([1, 1, 0]),
+    });
+    const rig = await physicsRig([rail, box]);
+    rig.run(0.5);
+    const held = rig.solved(box.entity.id);
+
+    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), motion: slider([1, 1, 0]) });
+    rig.run(0.5);
+
+    const { position, quaternion } = rig.solved(box.entity.id);
+    const moved = position.clone().sub(held.position);
+    const along = new Vector3(1, 1, 0).normalize();
+    const across = moved.clone().sub(along.clone().multiplyScalar(moved.dot(along)));
+    expect(moved.dot(along)).toBeLessThan(-0.5);
+    expect(across.length()).toBeLessThan(1e-6);
+    expect(quaternion.angleTo(held.quaternion)).toBeLessThan(1e-3);
   });
 });
 
