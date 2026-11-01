@@ -249,6 +249,15 @@ export function block(position: Vec3, size: Vec3): EntityTemplate {
   return template;
 }
 
+/** `block`'s sibling that touches nothing: a box of this full size, its Collider *Is sensor*. */
+export function sensor(position: Vec3, size: Vec3): EntityTemplate {
+  const template = createEntity('Sensor', [
+    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size }, isSensor: true },
+  ]);
+  template.entity.transform.position = position;
+  return template;
+}
+
 /** The template's collider, so a test can set its shape or material before the rig is built. */
 export function colliderOf(template: EntityTemplate): ColliderComponent {
   const collider = template.components.find(

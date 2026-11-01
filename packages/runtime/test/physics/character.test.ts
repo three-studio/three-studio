@@ -7,6 +7,7 @@ import {
   ground,
   physicsRig,
   player,
+  sensor,
   standInForTheBrowser,
   takeTheBrowserBack,
   withBody,
@@ -88,6 +89,20 @@ describe('a character', () => {
     const { position } = rig.solved(walker.entity.id);
     expect(from.z - position.z).toBeGreaterThan(4);
     expect(Math.abs(position.y - from.y)).toBeLessThan(0.005);
+  });
+
+  it('walks through a sensor as if it were not there', async () => {
+    // Rapier's controller sweeps a sensor as it sweeps a wall: the player
+    // stopped dead at a trigger zone's face, and could never set it off.
+    const walker = player([0, 1, 0]);
+    const rig = await physicsRig([ground(), sensor([0, 1, -3], [2, 2, 2]), walker]);
+
+    rig.run(0.5);
+    const from = rig.drawn(walker.entity.id).position;
+    rig.press('KeyW');
+    rig.run(1);
+
+    expect(from.z - rig.drawn(walker.entity.id).position.z).toBeGreaterThan(4);
   });
 
   it('climbs a step its step height clears, and no higher', async () => {

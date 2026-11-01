@@ -1,4 +1,4 @@
-import type RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d-compat';
 import type { CharacterController, CharacterSettings, QuatLike, Vec3Like } from './PhysicsApi';
 import { isFiniteVec, unitQuat } from './values';
 
@@ -8,9 +8,9 @@ import { isFiniteVec, unitQuat } from './values';
  * A tool the world lends a behaviour. The gameplay numbers — how steep, how
  * high a step, how far the ground holds — are the caller's settings; what lives
  * here is how Rapier's controller behaves, which is true for any character.
- * Three of those behaviours cost the player dearly before anyone knew of them,
- * two its jump's height and one every kinematic floor, and they are handled
- * below, once, for every character.
+ * Four of those behaviours cost the player dearly before anyone knew of them —
+ * two its jump's height, one every kinematic floor and one every trigger zone —
+ * and they are handled below, once, for every character.
  *
  * Built from Rapier's own objects, so this file needs nothing of the world's
  * and the two import no cycle.
@@ -47,7 +47,7 @@ export class Character implements CharacterController {
     if (translation.y > 0) this.controller.disableSnapToGround();
     else this.controller.enableSnapToGround(this.settings.snapToGround);
 
-    this.controller.computeColliderMovement(this.collider, translation);
+    this.sweep(translation);
 
     // `&& translation.y <= 0`, and without it a jump is five centimetres high.
     // Rapier answers `computedGrounded()` from the contact it found while
@@ -109,7 +109,7 @@ export class Character implements CharacterController {
     const along = { x: x - n.x * across, y: y - n.y * across, z: z - n.z * across };
     if (Math.hypot(along.x, along.y, along.z) < 1e-5) return;
 
-    this.controller.computeColliderMovement(this.collider, {
+    this.sweep({
       x: along.x + n.x * FLOOR_NUDGE,
       y: along.y + n.y * FLOOR_NUDGE,
       z: along.z + n.z * FLOOR_NUDGE,
@@ -118,6 +118,21 @@ export class Character implements CharacterController {
     movement.x += rest.x - n.x * FLOOR_NUDGE;
     movement.y += rest.y - n.y * FLOOR_NUDGE;
     movement.z += rest.z - n.z * FLOOR_NUDGE;
+  }
+
+  /**
+   * Rapier's sweep of the character's collider, sensors left out.
+   *
+   * Its controller sweeps a sensor as it sweeps a wall: the player stopped dead
+   * at a trigger zone's face, its radius and offset short of it, and could never
+   * set one off. A sensor is a zone, not matter, as it weighs nothing.
+   */
+  private sweep(translation: Readonly<Vec3Like>): void {
+    this.controller.computeColliderMovement(
+      this.collider,
+      translation,
+      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+    );
   }
 }
 
