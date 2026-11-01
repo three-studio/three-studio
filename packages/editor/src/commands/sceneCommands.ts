@@ -17,13 +17,11 @@ import {
   type ComponentDoc,
   type ComponentType,
   type EntityTemplate,
-  type MaterialDef,
   type SceneDoc,
   type Transform,
 } from '@three-studio/core';
 import { collectVertices, type SceneBinder } from '@three-studio/runtime';
 import type { Matrix4 } from 'three/webgpu';
-import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
@@ -727,25 +725,28 @@ export function redo(): void {
 }
 
 /**
- * Edits a shared material asset as one undo step.
+ * Edits a shared material asset as one undo step: a mesh's material or a
+ * collider's physics material, `save` writing the asset's kind and `noun`
+ * naming it in the entry.
  *
  * The write goes to a file rather than to the document, so there are no immer
  * patches to invert — the step carries the before and after values instead and
  * replays them by writing again. Without this, editing a linked material was
  * the one thing in the editor Cmd+Z could not take back.
  */
-export function setLinkedMaterialField(
-  assetId: string,
+export function setLinkedMaterialField<T>(
+  noun: string,
   label: string,
-  before: MaterialDef,
-  after: MaterialDef,
+  before: T,
+  after: T,
+  save: (material: T) => Promise<void>,
 ): void {
-  const write = (material: MaterialDef) => {
-    void useAssetStore.getState().saveMaterial(assetId, material);
+  const write = (material: T) => {
+    void save(material);
   };
 
   write(after);
-  useDocumentStore.getState().recordExternal(`Edit material ${label}`, {
+  useDocumentStore.getState().recordExternal(`Edit ${noun} ${label}`, {
     apply: () => write(after),
     revert: () => write(before),
   });

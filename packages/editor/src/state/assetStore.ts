@@ -61,6 +61,10 @@ interface AssetState {
   createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
   /** Writes back to a material asset, then re-reads so every user updates. */
   saveMaterial: (assetId: string, material: MaterialDef) => Promise<void>;
+  /** Writes a new physics material asset; returns its id. */
+  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  /** Writes back to a physics material asset, every collider linking it following. */
+  savePhysicsMaterial: (assetId: string, material: PhysicsMaterialDef) => Promise<void>;
   savePrefab: (assetId: string, prefab: PrefabDoc) => Promise<void>;
   remove: (assetPath: string) => Promise<void>;
   move: (assetPath: string, targetFolder: string) => Promise<void>;
@@ -194,6 +198,20 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     useDocumentStore.getState().noteLibraryChange('materials');
   },
 
+  createPhysicsMaterial: async (name, material) => {
+    const assetId = await window.studio.assets.createPhysicsMaterial(name, material);
+    await get().refresh();
+    return assetId;
+  },
+
+  savePhysicsMaterial: async (assetId, material) => {
+    const entry = get().byId(assetId);
+    if (!entry) return;
+    await window.studio.assets.savePhysicsMaterial(entry.path, material);
+    // In place as well, as `saveMaterial` does, so a slider does not snap back.
+    set({ physicsMaterials: { ...get().physicsMaterials, [assetId]: material } });
+  },
+
   savePrefab: async (assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
@@ -307,7 +325,8 @@ export function filterAndSortAssets(state: {
 
   const filtered = state.manifest.assets.filter((asset) => {
     if (state.kindFilter !== 'all' && asset.kind !== state.kindFilter) return false;
-    if (typeTerm !== null && !asset.kind.startsWith(typeTerm)) return false;
+    // The kind lowered as the query is: `t:physicsmaterial` is how it is typed.
+    if (typeTerm !== null && !asset.kind.toLowerCase().startsWith(typeTerm)) return false;
     if (folderTerm !== null && !asset.folder.toLowerCase().includes(folderTerm)) return false;
 
     if (!searching && asset.folder !== state.folder) return false;

@@ -1,9 +1,9 @@
 import {
   componentsOf,
   findComponentById,
+  linkedPhysicsMaterial,
   type ComponentDoc,
   type EntityDoc,
-  type MaterialDef,
   type SceneDoc,
 } from '@three-studio/core';
 import type { FolderApi } from 'tweakpane';
@@ -331,12 +331,7 @@ export class InspectorBinding {
           // Only on `last`, which also makes the undo step exact: nothing is
           // written during the drag, so the stored material is still the value
           // the gesture started from.
-          if (last) {
-            setLinkedMaterialField(linked.assetId, spec.label, linked.material, {
-              ...linked.material,
-              [spec.path[1]!]: value,
-            });
-          }
+          if (last) linked.edit(spec.label, spec.path[1]!, value);
           return;
         }
         this.binder.edit(() =>
@@ -372,23 +367,62 @@ function currentComponent(entityId: string, componentId: string): ComponentDoc |
 /**
  * The component as it renders: a mesh linked to a material asset reports the
  * shared values, so the panel shows what is on screen rather than the embedded
- * copy it is no longer using.
+ * copy it is no longer using. A collider linked to a physics material reports
+ * the asset's values, which are what it is built with; one whose link the
+ * project cannot answer reports its own, which are what it plays with.
  */
-function effectiveComponent(component: ComponentDoc): ComponentDoc {
-  if (component.type !== 'mesh' || component.materialId === null) return component;
-  const shared = useAssetStore.getState().materials[component.materialId];
-  return shared ? { ...component, material: shared } : component;
+export function effectiveComponent(component: ComponentDoc): ComponentDoc {
+  const { materials, physicsMaterials } = useAssetStore.getState();
+  if (component.type === 'mesh' && component.materialId !== null) {
+    const shared = materials[component.materialId];
+    return shared ? { ...component, material: shared } : component;
+  }
+  if (component.type === 'collider') {
+    const shared = linkedPhysicsMaterial(component.materialId, physicsMaterials);
+    return shared ? { ...component, material: shared } : component;
+  }
+  return component;
+}
+
+/** A field whose edits go to a shared asset rather than to the document. */
+export interface LinkedMaterial {
+  assetId: string;
+  /** Writes one of the asset's values, as one undo step named after the field. */
+  edit(label: string, key: string, value: unknown): void;
 }
 
 /** Non-null when this field edits a shared material rather than the document. */
-function linkedMaterial(
+export function linkedMaterial(
   component: ComponentDoc | undefined,
   path: readonly string[],
-): { assetId: string; material: MaterialDef } | null {
+): LinkedMaterial | null {
   if (path[0] !== 'material' || path.length !== 2) return null;
-  if (component?.type !== 'mesh' || component.materialId === null) return null;
-  const material = useAssetStore.getState().materials[component.materialId];
-  return material ? { assetId: component.materialId, material } : null;
+  const { materials, physicsMaterials } = useAssetStore.getState();
+  if (component?.type === 'mesh' && component.materialId !== null) {
+    const assetId = component.materialId;
+    const shared = materials[assetId];
+    if (!shared) return null;
+    return {
+      assetId,
+      edit: (label, key, value) =>
+        setLinkedMaterialField('material', label, shared, { ...shared, [key]: value }, (material) =>
+          useAssetStore.getState().saveMaterial(assetId, material),
+        ),
+    };
+  }
+  if (component?.type === 'collider' && component.materialId !== null) {
+    const assetId = component.materialId;
+    const shared = linkedPhysicsMaterial(assetId, physicsMaterials);
+    if (!shared) return null;
+    return {
+      assetId,
+      edit: (label, key, value) =>
+        setLinkedMaterialField('physics material', label, shared, { ...shared, [key]: value }, (material) =>
+          useAssetStore.getState().savePhysicsMaterial(assetId, material),
+        ),
+    };
+  }
+  return null;
 }
 
 /**

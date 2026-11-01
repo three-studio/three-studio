@@ -328,7 +328,9 @@ class AssetFieldView implements View {
       'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;';
     this.element.appendChild(this.name);
 
-    this.browse = iconButton(document, 'import', `Import a ${kind} and assign it`);
+    // In words: "a physics material", not "a physicsMaterial".
+    const named = kind.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
+    this.browse = iconButton(document, 'import', `Import a ${named} and assign it`);
     this.locate = iconButton(document, 'locate', 'Show in the Project panel');
     this.clear = iconButton(document, 'clear', 'Clear');
     this.element.append(this.browse, this.locate, this.clear);

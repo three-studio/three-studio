@@ -5,13 +5,18 @@ import {
   conform,
   conformColliderShape,
   createPhysicsSettings,
+  linkedPhysicsMaterial,
   optionsFrom,
   type ColliderShapeKind,
   type ComponentDoc,
+  type PhysicsMaterialDef,
   type Vec3,
 } from '@three-studio/core';
-import { fitColliderToMesh } from '../../commands/sceneCommands';
-import type { ComponentSchema, FieldSpec } from '../../inspector/fields';
+import { fitColliderToMesh, setComponentNestedField } from '../../commands/sceneCommands';
+import { assetSlot, type ComponentSchema, type FieldSpec } from '../../inspector/fields';
+import { useAssetStore } from '../../state/assetStore';
+import { askForText } from '../../state/dialogStore';
+import { expandedScene } from '../../state/expansion';
 import { useProjectStore } from '../../state/projectStore';
 import { peekViewport } from '../../viewport/viewportHost';
 
@@ -84,6 +89,29 @@ const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
   ],
 };
 
+/**
+ * Writes the collider's own values out as a physics material and links it, as
+ * a mesh's *Save as Asset…* does: the file first, so a failed write leaves the
+ * collider on its own values rather than linked to an id that does not exist.
+ */
+async function extractPhysicsMaterial(
+  entityId: string,
+  componentId: string,
+  material: PhysicsMaterialDef,
+): Promise<void> {
+  const suggested = expandedScene().scene.entities[entityId]?.name ?? 'Collider';
+  const name = await askForText({
+    title: 'Save Physics Material as Asset',
+    label: 'Name',
+    defaultValue: `${suggested} Physics Material`,
+    confirmLabel: 'Create',
+  });
+  if (name === null) return;
+
+  const assetId = await useAssetStore.getState().createPhysicsMaterial(name, material);
+  setComponentNestedField(entityId, componentId, ['materialId'], assetId);
+}
+
 /** What the `{ kind: 'geometry' }` slot expands into: the rows of the collider's kind. */
 function shapeFields(component: ComponentDoc): readonly FieldSpec[] {
   return component.type === 'collider' ? COLLIDER_SHAPE_FIELDS[component.shape.kind] : [];
@@ -132,6 +160,32 @@ export const inspector: ComponentSchema = {
       },
     },
     { kind: 'separator' },
+    // While linked, the four rows below show the asset's values and edit its
+    // file, for every collider linking it; the collider's own are kept.
+    assetSlot(['materialId'], 'Material', 'physicsMaterial', 'Embedded'),
+    {
+      kind: 'action',
+      title: 'Save as Asset…',
+      visibleWhen: (component) => component.type === 'collider' && component.materialId === null,
+      run: ({ entityId, componentId, component }) => {
+        if (component.type !== 'collider') return;
+        void extractPhysicsMaterial(entityId, componentId, component.material);
+      },
+    },
+    {
+      kind: 'action',
+      title: 'Make Unique',
+      visibleWhen: (component) => component.type === 'collider' && component.materialId !== null,
+      run: ({ entityId, componentId, component }) => {
+        if (component.type !== 'collider' || component.materialId === null) return;
+        // The shared values copied in before unlinking, so the collider grips
+        // as it did. A link the project cannot answer played its own already.
+        const { physicsMaterials } = useAssetStore.getState();
+        const shared = linkedPhysicsMaterial(component.materialId, physicsMaterials);
+        if (shared) setComponentNestedField(entityId, componentId, ['material'], { ...shared });
+        setComponentNestedField(entityId, componentId, ['materialId'], null);
+      },
+    },
     {
       path: ['material', 'friction'],
       label: 'Friction',

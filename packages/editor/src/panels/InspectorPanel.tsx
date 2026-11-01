@@ -107,6 +107,9 @@ export function InspectorPanel() {
   // Editing a shared material changes which fields exist without touching the
   // document, so the material table is part of the shape too.
   const materials = useAssetStore((s) => s.materials);
+  // A physics material's values, which a linked Collider's rows show: undoing
+  // an edit of one changes no entity, so only this can refresh them.
+  const physicsMaterials = useAssetStore((s) => s.physicsMaterials);
   // So are the assets themselves: a dropdown's options are computed when the
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
@@ -209,7 +212,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, prefabs, componentRevision, sceneName]);
+  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);
