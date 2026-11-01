@@ -59,6 +59,7 @@ export interface PhysicsApi {
 export interface BodyHandle {
   /** Where the solver holds the body, in world space, as of the last step. */
   readonly position: Readonly<Vec3Like>;
+  /** How the solver has the body turned, as of the last step. */
   readonly rotation: Readonly<QuatLike>;
   /**
    * `false` holds the body out of the world: it touches nothing and nothing

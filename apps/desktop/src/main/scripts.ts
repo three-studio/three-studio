@@ -297,6 +297,7 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
   export interface StudioBody {
     /** Where the solver holds it, as of the last physics tick. */
     readonly position: Readonly<Vec3Like>;
+    /** How the solver has it turned, as of the last physics tick. */
     readonly rotation: Readonly<QuatLike>;
     /** In kilograms: its Rigid Body's Mass. */
     readonly mass: number;
