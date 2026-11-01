@@ -121,17 +121,25 @@ export class Character implements CharacterController {
   }
 
   /**
-   * Rapier's sweep of the character's collider, sensors left out.
+   * Rapier's sweep of the character's collider, sensors and the layers its own
+   * passes through left out.
    *
    * Its controller sweeps a sensor as it sweeps a wall: the player stopped dead
    * at a trigger zone's face, its radius and offset short of it, and could never
    * set one off. A sensor is a zone, not matter, as it weighs nothing.
+   *
+   * It sweeps every collider whatever its groups, too, unless handed the
+   * character's own: the player stopped at a wall its layer ignores. What it
+   * does not sweep it does not push, so a ball on such a layer stays put. Read
+   * on each sweep rather than kept, so nothing falls out of step with the
+   * collider's.
    */
   private sweep(translation: Readonly<Vec3Like>): void {
     this.controller.computeColliderMovement(
       this.collider,
       translation,
       RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      this.collider.collisionGroups(),
     );
   }
 }

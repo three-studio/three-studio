@@ -661,9 +661,10 @@ export class PhysicsWorld implements PhysicsApi {
         shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
         shape.setSensor(collider.isSensor);
         // Every collider, not the sensors alone: one matrix decides what
-        // touches and what a sensor sees. Rapier tests the groups beside a
-        // sensor's active types, not instead of them: a fixed sensor with the
-        // kinematic pairs below saw nothing on a layer its own ignores.
+        // touches, what a sensor sees and what a character sweeps, its
+        // collider's groups being its sweep's filter. Rapier tests the groups
+        // beside a sensor's active types, not instead of them: a fixed sensor
+        // with the kinematic pairs below saw nothing on a layer its own ignores.
         shape.setCollisionGroups(this.groupsOf(collider.layer));
         // Every collider asks. Rapier reports a pair when either side does, so
         // what a pair reports never depends on which side asked; and only when

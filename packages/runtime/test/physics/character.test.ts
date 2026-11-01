@@ -1,10 +1,11 @@
-import { createComponent } from '@three-studio/core';
+import { createComponent, createDefaultLayer, type CollisionLayer } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CharacterSettings } from '../../src/physics/PhysicsApi';
 import {
   block,
   ground,
+  onLayer,
   physicsRig,
   player,
   sensor,
@@ -30,6 +31,13 @@ const SETTINGS: CharacterSettings = {
   stepWidth: 0.2,
   snapToGround: 0.4,
 };
+
+/** The player's layer, and a ghost one that passes through it. */
+const LAYERS: CollisionLayer[] = [
+  createDefaultLayer(),
+  { id: 'player', name: 'Player', ignores: [] },
+  { id: 'ghost', name: 'Ghost', ignores: ['player'] },
+];
 
 describe('a character', () => {
   it('pushes a ball it walks into, and both are drawn where their bodies are', async () => {
@@ -103,6 +111,36 @@ describe('a character', () => {
     rig.run(1);
 
     expect(from.z - rig.drawn(walker.entity.id).position.z).toBeGreaterThan(4);
+  });
+
+  it('walks through a wall its layer ignores, and stops at one it touches', async () => {
+    // With no groups, Rapier's controller swept every collider: the player
+    // stopped at a wall its layer passes through, its radius and offset short.
+    const walker = onLayer(player([0, 1, 0]), 'player');
+    const ghost = onLayer(block([0, 1, -3], [4, 2, 0.2]), 'ghost');
+    const wall = block([0, 1, -6], [4, 2, 0.2]);
+    const rig = await physicsRig([walker, ground(), ghost, wall], { layers: LAYERS });
+
+    rig.run(0.5);
+    rig.press('KeyW');
+    rig.run(1.5);
+
+    // The wall's face at −5.9, less the radius and the offset: −5.5799 measured.
+    expect(Math.abs(rig.solved(walker.entity.id).position.z - -5.58)).toBeLessThan(0.01);
+  });
+
+  it('pushes nothing whose layer it ignores', async () => {
+    const ball = onLayer(withBody('sphere', [0, 0.5, -2], { interpolate: false }), 'ghost');
+    const walker = onLayer(player([0, 1, 0]), 'player');
+    const rig = await physicsRig([ground(), ball, walker], { layers: LAYERS });
+
+    rig.run(0.5);
+    const from = rig.solved(ball.entity.id).position;
+    rig.press('KeyW');
+    rig.run(1.5);
+
+    expect(rig.solved(ball.entity.id).position.distanceTo(from)).toBeLessThan(1e-3);
+    expect(rig.solved(walker.entity.id).position.z).toBeLessThan(-4);
   });
 
   it('climbs a step its step height clears, and no higher', async () => {

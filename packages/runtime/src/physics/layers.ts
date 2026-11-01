@@ -5,7 +5,7 @@ import { DEFAULT_LAYER_ID, layersTouch, type CollisionLayer } from '@three-studi
  * of the layers it touches in the sixteen low ones (Rapier's
  * `InteractionGroups`). Rapier lets two colliders meet only when each one's bit
  * is among those the other touches, which is the matrix read both ways, by
- * contacts and sensors alike.
+ * contacts, sensors and a character's sweep alike.
  *
  * Bits follow the table's order and live in the running world only: a collider
  * names its layer by id. An id the table does not hold gets Default's groups, as
