@@ -155,6 +155,29 @@ describe('a ray', () => {
     expectHit(physics.raycast({ x: 5, y: 1, z: 0 }, ahead, 20), { entity: ball, distance: 2.5 });
   });
 
+  it("meets a capsule whatever the line it passes through near its axis: a guard's ray at the player", async () => {
+    // Rapier 0.20 let a ray through a capsule close to its axis pass on: 18 of
+    // 120 ticks for a guard watching the player walk straight away, and 27 of
+    // 400 rays here, a still capsule missed by Rapier alone. 0.21 misses none.
+    const target = createEntity('Target', [
+      { ...createComponent('collider'), shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 } },
+    ]);
+    target.entity.transform.position = [0, 0.87, 0];
+    const { physics } = await running([target]);
+
+    let missed = 0;
+    for (const offset of [0, 1e-5, 7e-5, 1e-3, 1e-2]) {
+      for (const aim of [0.87, 1.37]) {
+        for (let i = 0; i < 400; i++) {
+          const eye = { x: offset, y: 1.6, z: -(2 + i * 0.0157) };
+          const hit = physics.raycast(eye, { x: -offset, y: aim - eye.y, z: -eye.z }, 50);
+          if (hit?.entity !== target.entity.id) missed++;
+        }
+      }
+    }
+    expect(missed).toBe(0);
+  });
+
   it('finds nothing when it is not a number or has no direction', async () => {
     const { physics } = await running([near()]);
     const from = { x: 0, y: 1, z: 0 };

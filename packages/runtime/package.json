@@ -47,7 +47,7 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@dimforge/rapier3d-compat": "0.20.0",
+    "@dimforge/rapier3d-compat": "0.21.0",
     "@three-studio/core": "0.6.0",
     "nipplejs": "1.0.4"
   },

@@ -343,7 +343,10 @@ describe('a joint', () => {
     });
     const rig = await physicsRig([onZ, reversed]);
     const angle = (template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id)?.position ?? NaN;
-    expect([angle(onZ), angle(reversed)]).toEqual([0, 0]);
+    // Zero as built, give or take the nanosecond the world steps through as it
+    // is built: -3e-20 rad.
+    expect(Math.abs(angle(onZ))).toBeLessThan(1e-12);
+    expect(Math.abs(angle(reversed))).toBeLessThan(1e-12);
 
     let lowest = 0;
     for (let frame = 0; frame < 120; frame++) {

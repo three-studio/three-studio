@@ -628,7 +628,13 @@ export class PhysicsWorld implements PhysicsApi {
     // other stayed where they were — and reports as started what touches
     // already, which no tick reports again: the first tick hands that out,
     // after every `onStart`, when it was heard before.
-    this.world.timestep = 0;
+    //
+    // A nanosecond rather than none: after a step of exactly no time, Rapier
+    // 0.21 panics (`unreachable`) at the next step once a body has been
+    // disabled — a player built flying, or a script's `enabled = false` in
+    // `onStart` —, which brought the whole world down. Gravity moves a body
+    // 5e-18 m in it.
+    this.world.timestep = 1e-9;
     this.world.step(this.events);
     this.world.timestep = this.fixedStep;
     this.atBuild = this.drain();
