@@ -1,5 +1,6 @@
 import {
   cloneSubtree,
+  bodyOf,
   collidersOfBody,
   componentsOf,
   splitInstancedId,
@@ -412,10 +413,17 @@ export function setTransform(
  * A body's colliders may be on its children, which ride it: a Rigid Body added
  * over them brings none of its own. A player's must be its own, since its
  * character sweeps that one.
+ *
+ * A joint holds the body its entity moves with, so on an entity that moves
+ * with none it brings a Rigid Body, as Unity's joints require one, and that
+ * body its Collider; on a child of a body it brings neither. On level geometry
+ * meant to stay put, set the new Rigid Body to Fixed, or put the joint on the
+ * side that moves.
  */
 const REQUIRED_COMPANIONS: Partial<Record<ComponentType, readonly ComponentType[]>> = {
   playerController: ['collider', 'rigidbody'],
   rigidbody: ['collider'],
+  joint: ['rigidbody', 'collider'],
 };
 
 /**
@@ -464,7 +472,8 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
   for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
     if (present.has(companion)) continue;
     // Over the expanded scene, so the contents of a prefab placed under it count.
-    const carries = type === 'rigidbody' && companion === 'collider'
+    if (type === 'joint' && bodyOf(expandedScene().scene, id) !== null) continue;
+    const carries = (type === 'rigidbody' || type === 'joint') && companion === 'collider'
       && collidersOfBody(expandedScene().scene, id).length > 0;
     if (!carries) toAdd.push(companion);
   }

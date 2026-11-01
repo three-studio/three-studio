@@ -2,6 +2,7 @@ import {
   createComponent,
   createDefaultLayer,
   createEntity,
+  type EntityTemplate,
   createPhysicsSettings,
   createRenderingSettings,
   type CollisionLayer,
@@ -21,6 +22,7 @@ import {
   takeTheBrowserBack,
   withBody,
   withCollider,
+  withJoint,
 } from './rig';
 
 /*
@@ -110,5 +112,67 @@ describe('the physics set-up, with layers', () => {
     onTestFinished(() => engine.dispose());
 
     expect(engine.warnings.filter((line) => line.includes('layer'))).toEqual([]);
+  });
+});
+
+describe('the physics set-up, with joints', () => {
+  /** The one line naming the entity, which must say each of `words`. */
+  async function saidOf(name: string, entities: readonly EntityTemplate[], ...words: string[]): Promise<void> {
+    const rig = await physicsRig([ground(), ...entities]);
+    const lines = rig.engine.warnings.filter((line) => line.startsWith(`"${name}"`));
+    expect(lines).toHaveLength(1);
+    for (const word of words) expect(lines[0]).toContain(word);
+  }
+
+  const named = (template: EntityTemplate, name: string) => {
+    template.entity.name = name;
+    return template;
+  };
+
+  it('says so of a joint whose Connected Body is gone', async () => {
+    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: 'gone' }), 'Door');
+    await saidOf('Door', [door], 'Connected Body');
+  });
+
+  it('says so of a joint on an entity that moves with no body', async () => {
+    await saidOf('Hinge', [withJoint(createEntity('Hinge'))], 'Rigid Body');
+  });
+
+  it('says so of a joint connected to an entity that moves with no body', async () => {
+    const frame = createEntity('Frame');
+    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: frame.entity.id }), 'Door');
+    await saidOf('Door', [frame, door], '"Door"', '"Frame"');
+  });
+
+  it('says so of a joint on a child naming its parent', async () => {
+    const door = named(withBody('box', [0, 1, 0]), 'Door');
+    const handle = withJoint(createEntity('Handle'), { connectedEntity: door.entity.id });
+    nest(door, handle);
+    await saidOf('Handle', [door, handle], 'same body');
+  });
+
+  it('says so of a joint that holds no Dynamic body', async () => {
+    const gate = named(withJoint(withBody('box', [0, 1, 0], { bodyType: 'kinematicPosition' })), 'Gate');
+    await saidOf('Gate', [gate], 'Dynamic');
+  });
+
+  it('says nothing of a working door, nor anything with physics off', async () => {
+    const frame = named(block([0, 1, 0], [0.1, 2, 0.1]), 'Frame');
+    const door = named(
+      withJoint(withBody('box', [0.55, 1, 0]), { connectedEntity: frame.entity.id, anchor: [-0.5, 0, 0] }),
+      'Door',
+    );
+    const rig = await physicsRig([ground(), frame, door]);
+    expect(rig.engine.warnings.filter((line) => line.includes('Joint'))).toEqual([]);
+
+    const engine = await Engine.create({
+      scene: sceneWith([withJoint(createEntity('Hinge'))]),
+      resolver: NULL_ASSET_RESOLVER,
+      rendering: createRenderingSettings(),
+      domElement: new EventTarget() as unknown as HTMLElement,
+      enablePhysics: false,
+    });
+    onTestFinished(() => engine.dispose());
+    expect(engine.warnings.filter((line) => line.includes('Joint'))).toEqual([]);
   });
 });

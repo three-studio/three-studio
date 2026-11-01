@@ -495,7 +495,7 @@ export class PhysicsWorld implements PhysicsApi {
 
     // After the bodies, two of which each joint holds, and before the step of
     // no time, which moves nothing with joints built either. One that holds
-    // nothing is left out.
+    // nothing is left out, and the Engine says why.
     for (const [entityId, held] of Object.entries(componentsOfType(scene, 'joint'))) {
       for (const joint of Object.values(held)) {
         const ends = jointEnds(scene, entityId, joint);

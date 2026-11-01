@@ -847,6 +847,40 @@ describe('the companions a rigid body brings', () => {
 });
 
 /*
+ * A Joint holds the body its entity moves with, so on an entity that moves with
+ * none it brings a Rigid Body, as Unity's joints require one, and that body its
+ * Collider.
+ */
+describe('the companions a joint brings', () => {
+  it('brings a Rigid Body to a Cube, and that body its Collider', () => {
+    const cube = addEntity(createMeshEntity('box'));
+
+    addComponentWithDependencies(cube, 'joint');
+
+    expect(componentsOf(scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
+    expect(findComponent(scene(), cube, 'rigidbody')?.bodyType).toBe('dynamic');
+  });
+
+  it('brings none to a child of a body', () => {
+    const door = createMeshEntity('box');
+    door.components.push(createComponent('rigidbody'), createComponent('collider'));
+    const hinge = addEntity(createEntity('Hinge'), addEntity(door));
+
+    addComponentWithDependencies(hinge, 'joint');
+
+    expect(componentsOf(scene(), hinge).map((c) => c.type)).toEqual(['joint']);
+  });
+
+  it('brings none to an entity that has a Rigid Body', () => {
+    const cart = addEntity(createEntity('Cart', [createComponent('rigidbody')]));
+
+    addComponentWithDependencies(cart, 'joint');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
+  });
+});
+
+/*
  * A load prunes nothing: it hands over a whole document and leaves the
  * selection as it was. Revert puts the selection through the rule an edit uses,
  * since one selected id naming nothing leaves the Inspector blank.

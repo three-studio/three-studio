@@ -5,9 +5,11 @@ import {
   entitiesWith,
   findComponent,
   hasComponent,
+  jointEnds,
   layersTouch,
   linkedPhysicsMaterial,
   physicsBodies,
+  type JointComponent,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PhysicsSettings,
@@ -399,6 +401,17 @@ export class Engine {
       );
     }
 
+    // A joint the world left out is dropped silently, and one holding no body
+    // the solver moves is built and does nothing: a door falls off its hinge,
+    // or a gate on a Kinematic body never swings, and nothing else says why.
+    // Read through the rule the build reads.
+    for (const [entityId, held] of this.world ? Object.entries(componentsOfType(scene, 'joint')) : []) {
+      for (const joint of Object.values(held)) {
+        const problem = jointProblem(scene, entityId, joint);
+        if (problem) warn(problem);
+      }
+    }
+
     // A behaviour hears through its entity's colliders, or a body's through
     // those of the children riding it: on an entity with neither it hears
     // nothing, and nothing says why. A Rigid Body with no collider anywhere is
@@ -728,4 +741,28 @@ function listens(behaviour: Behaviour): boolean {
 function unit(x: number, y: number, z: number): [number, number, number] {
   const length = Math.hypot(x, y, z);
   return length === 0 ? [0, 0, -1] : [x / length, y / length, z / length];
+}
+
+/** What keeps a joint from doing its work, said as `checkPhysicsSetup` says it, or `null`. */
+function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent): string | null {
+  const name = scene.entities[entityId]?.name;
+  const other = joint.connectedEntity === null ? undefined : scene.entities[joint.connectedEntity]?.name;
+  const ends = jointEnds(scene, entityId, joint);
+  if (!ends.holds) {
+    switch (ends.why) {
+      case 'gone':
+        return `"${name}" has a Joint whose Connected Body is not in this scene, so it holds nothing. Choose its Connected Body again, or World to hold it to the world.`;
+      case 'noBody':
+        return `"${name}" has a Joint but moves with no body, so it holds nothing. Add a Rigid Body to it or to an entity above it.`;
+      case 'otherNoBody':
+        return `"${name}"'s Joint is connected to "${other}", which moves with no body, so it holds nothing. Give "${other}" a Rigid Body or a Collider, or choose World to hold "${name}" to the world.`;
+      case 'same':
+        return `"${name}"'s Joint is connected to "${other}", which moves with the same body, so it holds nothing. Choose another Connected Body.`;
+    }
+  }
+  // The world is not Dynamic, and two Fixed bodies joined are harmless to build.
+  const dynamic = (bodyId: string | null) =>
+    bodyId !== null && findComponent(scene, bodyId, 'rigidbody')?.bodyType === 'dynamic';
+  if (dynamic(ends.own) || dynamic(ends.other)) return null;
+  return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities[ends.own]?.name}" or of what it is connected to Dynamic.`;
 }
