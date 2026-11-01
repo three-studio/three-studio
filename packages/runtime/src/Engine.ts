@@ -5,6 +5,7 @@ import {
   entitiesWith,
   findComponent,
   hasComponent,
+  layersTouch,
   physicsBodies,
   type MaterialDef,
   type PhysicsSettings,
@@ -251,7 +252,7 @@ export class Engine {
    * makes them the hardest kind of mistake to find. Naming the entity and the
    * fix costs nothing and turns a mystery into a one-line correction.
    */
-  private checkPhysicsSetup(scene: SceneDoc): void {
+  private checkPhysicsSetup(scene: SceneDoc, settings: PhysicsSettings): void {
     // Over the bodies the world builds, so the two cannot disagree: a body
     // whose colliders are on its children was warned about as having none.
     const bodies = physicsBodies(scene);
@@ -332,6 +333,42 @@ export class Engine {
       warn(
         'Nothing but the player has a Collider, so there is no ground to stand on. Add a Collider to whatever the player should walk on.',
       );
+    } else if (this.world) {
+      // Nor is a sensor, nor a collider whose layer the player's passes
+      // through. Unticking a pair while trying the matrix out is the quickest
+      // way to a player that falls for ever, and nothing else says why.
+      const solid = [...riding].flatMap(([entityId, body]) =>
+        Object.values(scene.components.collider[entityId] ?? {})
+          .filter((collider) => !collider.isSensor)
+          .map(({ layer }) => ({ body, layer })),
+      );
+      for (const entityId of players) {
+        const entity = scene.entities[entityId];
+        // The collider its character sweeps.
+        const own = Object.values(scene.components.collider[entityId] ?? {})[0];
+        if (!entity || !own) continue;
+        const stands = solid.some(
+          ({ body, layer }) => body !== entityId && layersTouch(settings.layers, own.layer, layer),
+        );
+        if (stands) continue;
+        const name = settings.layers.find((layer) => layer.id === own.layer)?.name ?? 'Default';
+        warn(
+          `"${entity.name}" is on the layer "${name}", which touches the layer of no other Collider, so it falls through everything. Tick "${name}" against the ground's layer in Project Settings ▸ Physics.`,
+        );
+      }
+    }
+
+    // A collider naming a layer the table no longer has collides as Default,
+    // and its Layer row only shows no choice. Removing a layer rewrites no
+    // scene: the others are on disk.
+    const layerIds = new Set(settings.layers.map((layer) => layer.id));
+    for (const entityId of this.world ? riding.keys() : []) {
+      const entity = scene.entities[entityId];
+      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      if (!entity || colliders.every((collider) => layerIds.has(collider.layer))) continue;
+      warn(
+        `"${entity.name}" has a Collider on a layer this project no longer has, so it collides as Default. Choose its Layer again.`,
+      );
     }
 
     // A behaviour hears through its entity's colliders, or a body's through
@@ -386,7 +423,7 @@ export class Engine {
     physics?.build(options.scene, engine.binder);
     engine.buildBehaviours(options.scene);
     engine.pickCamera(options.scene);
-    engine.checkPhysicsSetup(options.scene);
+    engine.checkPhysicsSetup(options.scene, physicsSettings);
     engine.checkAudioSetup(options.scene);
     engine.checkLighting(options.scene);
 
