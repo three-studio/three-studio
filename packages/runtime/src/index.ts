@@ -84,6 +84,7 @@ export type {
   BodyHandle,
   CharacterController,
   CharacterSettings,
+  Collision,
   PhysicsApi,
   QuatLike,
   Vec3Like,

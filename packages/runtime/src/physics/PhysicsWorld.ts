@@ -22,6 +22,7 @@ import type {
   BodyHandle,
   CharacterController,
   CharacterSettings,
+  Collision,
   PhysicsApi,
   QuatLike,
   Vec3Like,
@@ -319,10 +320,39 @@ interface Frame {
   readonly quaternion: Quaternion;
 }
 
-/** An entity whose colliders a body carries: its object, and its colliders. */
+/** An entity whose colliders a body carries: its id, its object, and its colliders. */
 interface Carrier {
+  readonly entityId: string;
   readonly object: Object3D;
   readonly colliders: readonly ColliderComponent[];
+}
+
+/** The entity a collider was built from, and the entity whose body it rides: the same one on its own body. */
+export interface ColliderOwner {
+  readonly entity: string;
+  readonly body: string;
+}
+
+/**
+ * Two colliders that started or stopped touching in a tick, by entity, named
+ * after the hook that hears it: Rapier's handles stay in this module. A
+ * trigger is a pair with a sensor in it, an overlap with no contact to
+ * describe.
+ */
+export type PhysicsEvent = { readonly a: ColliderOwner; readonly b: ColliderOwner } & (
+  | {
+      readonly kind: 'collisionEnter';
+      /** Seen from `a`: `b` is pushed the other way. */
+      readonly contact: Omit<Collision, 'other'>;
+    }
+  | { readonly kind: 'collisionExit' | 'triggerEnter' | 'triggerExit' }
+);
+
+/** A collider the world built, as an event names it. */
+interface Built {
+  readonly owner: ColliderOwner;
+  readonly sensor: boolean;
+  readonly collider: RAPIER.Collider;
 }
 
 /**
@@ -340,6 +370,14 @@ export class PhysicsWorld implements PhysicsApi {
   readonly gravity: Readonly<Vec3Like>;
   private readonly world: RAPIER.World;
   private readonly bodies = new Map<string, Body>();
+  /** Drained before each step, so the events of a world nobody listens to cannot pile up. */
+  private readonly events = new RAPIER.EventQueue(true);
+  /**
+   * Each collider's entity and body, by Rapier's handle: an event names two
+   * handles, and no handle leaves this module. Whatever builds a collider
+   * registers it here, or nothing it touches is ever heard.
+   */
+  private readonly owners = new Map<number, Built>();
   private accumulator = 0;
 
   private readonly fixedStep: number;
@@ -397,7 +435,9 @@ export class PhysicsWorld implements PhysicsApi {
 
       const carriers = (bodies.get(entityId) ?? []).flatMap((carrierId): Carrier[] => {
         const carrier = binder.getObject(carrierId);
-        return carrier ? [{ object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }] : [];
+        return carrier
+          ? [{ entityId: carrierId, object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }]
+          : [];
       });
       this.addBody(entity, object, findComponent(scene, entityId, 'rigidbody'), carriers);
     }
@@ -413,8 +453,15 @@ export class PhysicsWorld implements PhysicsApi {
    *   Anything that commands a kinematic body belongs here: `setNextKinematic*`
    *   is a target, not an impulse, so a caller running at display rate would
    *   overwrite its own commands between steps and lose most of the motion.
+   * @param afterStep Runs after each step, with what started or stopped
+   *   touching in it, once the step's forces are dropped: a force added then is
+   *   felt in the next step, and a kick at once.
    */
-  step(delta: number, beforeStep?: (fixedDelta: number) => void): void {
+  step(
+    delta: number,
+    beforeStep?: (fixedDelta: number) => void,
+    afterStep?: (events: readonly PhysicsEvent[]) => void,
+  ): void {
     this.accumulator += Math.min(delta, this.fixedStep * this.maxSubsteps);
 
     let steps = 0;
@@ -422,8 +469,9 @@ export class PhysicsWorld implements PhysicsApi {
       beforeStep?.(this.fixedStep);
       // After the behaviours, so a body follows where they put its entity this tick.
       for (const body of this.bodies.values()) body.beforeTick();
-      this.world.step();
+      this.world.step(this.events);
       for (const body of this.bodies.values()) body.afterTick();
+      afterStep?.(this.drain());
       this.accumulator -= this.fixedStep;
       steps += 1;
     }
@@ -474,7 +522,75 @@ export class PhysicsWorld implements PhysicsApi {
 
   dispose(): void {
     this.bodies.clear();
+    this.owners.clear();
+    // Rapier says a queue must be freed by hand, and `world.free()` leaves it.
+    this.events.free();
     this.world.free();
+  }
+
+  /**
+   * The tick's events, by entity.
+   *
+   * Rapier's queue is read whole before the world is asked where any pair
+   * touches, so nothing calls into Rapier from inside its own loop.
+   */
+  private drain(): PhysicsEvent[] {
+    const pairs: { first: number; second: number; started: boolean }[] = [];
+    this.events.drainCollisionEvents((first, second, started) => {
+      pairs.push({ first, second, started });
+    });
+    return pairs.flatMap(({ first, second, started }): PhysicsEvent[] => {
+      const a = this.owners.get(first);
+      const b = this.owners.get(second);
+      // Every collider the world builds is in the table.
+      if (!a || !b) return [];
+      const sides = { a: a.owner, b: b.owner };
+      if (a.sensor || b.sensor) return [{ ...sides, kind: started ? 'triggerEnter' : 'triggerExit' }];
+      if (!started) return [{ ...sides, kind: 'collisionExit' }];
+      return [{ ...sides, kind: 'collisionEnter', contact: this.contactOf(a.collider, b.collider) }];
+    });
+  }
+
+  /**
+   * Where two colliders that have just begun touching touch, seen from `first`.
+   *
+   * Rapier starts a collision when the pair gains a solver contact, so there is
+   * one to read: a ball landing touches at one point, under it; a box landing
+   * flat at four, whose middle is its face's centre. A manifold's normal points
+   * out of its first collider, which is `second` when Rapier holds the pair the
+   * other way round (`flipped`), and `first` is pushed along the one out of
+   * `second`. The impulse is what held them apart through the tick: a 2 kg
+   * ball landing at 5.4 m/s read 11.12 N·s, its m·v and its weight over the
+   * tick.
+   */
+  private contactOf(first: RAPIER.Collider, second: RAPIER.Collider): Omit<Collision, 'other'> {
+    const points: Vec3Like[] = [];
+    const normals: Vec3Like[] = [];
+    let impulse = 0;
+    this.world.contactPair(first, second, (manifold, flipped) => {
+      for (let i = 0; i < manifold.numContacts(); i++) impulse += manifold.contactImpulse(i);
+      const touching = manifold.numSolverContacts();
+      for (let i = 0; i < touching; i++) {
+        const point = manifold.solverContactPoint(i);
+        if (point) points.push(point);
+      }
+      if (touching === 0) return;
+      const n = manifold.normal();
+      normals.push(flipped ? n : { x: -n.x, y: -n.y, z: -n.z });
+    });
+    // Never taken, a collision starting with a solver contact; here so that no
+    // NaN can leave this module.
+    if (points.length === 0) points.push(first.translation(), second.translation());
+    const sum = points.reduce(
+      (total, p) => ({ x: total.x + p.x, y: total.y + p.y, z: total.z + p.z }),
+      { x: 0, y: 0, z: 0 },
+    );
+    const count = points.length;
+    return {
+      point: { x: sum.x / count, y: sum.y / count, z: sum.z / count },
+      normal: normals[0] ?? { x: 0, y: 1, z: 0 },
+      impulse,
+    };
   }
 
   private addBody(
@@ -531,6 +647,7 @@ export class PhysicsWorld implements PhysicsApi {
         _frame.quaternion.multiply(_carrierQuaternion);
       }
 
+      const owner: ColliderOwner = { entity: carrier.entityId, body: entity.id };
       for (const collider of carrier.colliders) {
         const shape = describeCollider(collider, carrier.object, _carrierScale, bodyType, _frame);
         const { material } = collider;
@@ -539,7 +656,13 @@ export class PhysicsWorld implements PhysicsApi {
         shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
         shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
         shape.setSensor(collider.isSensor);
+        // Every collider asks. Rapier reports a pair when either side does, so
+        // what a pair reports never depends on which side asked; and only when
+        // it changes, so a scene at rest reports nothing.
+        shape.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
+        if (collider.isSensor) shape.setActiveCollisionTypes(SENSOR_PAIRS);
         const built = this.world.createCollider(shape, body);
+        this.owners.set(built.handle, { owner, sensor: collider.isSensor, collider: built });
         created.push(built);
         if (isOwn) own ??= built;
       }
@@ -560,6 +683,19 @@ const COMBINE_RULES: Record<CombineRule, RAPIER.CoefficientCombineRule> = {
   multiply: RAPIER.CoefficientCombineRule.Multiply,
   max: RAPIER.CoefficientCombineRule.Max,
 };
+
+/**
+ * The pairs a sensor is checked in: Rapier's default ones, which need a
+ * dynamic body on one side, and a kinematic body meeting a fixed or another
+ * kinematic one. With the default alone a fixed sensor never saw the player,
+ * whose body is kinematic, walk through it. So a trigger sees whatever moves —
+ * the player, a script's character, a moving platform —, as in Unity's matrix,
+ * and two fixed colliders still never meet.
+ */
+const SENSOR_PAIRS =
+  RAPIER.ActiveCollisionTypes.DEFAULT |
+  RAPIER.ActiveCollisionTypes.KINEMATIC_FIXED |
+  RAPIER.ActiveCollisionTypes.KINEMATIC_KINEMATIC;
 
 /**
  * A body given its Rigid Body's mass, shared out among its colliders.

@@ -38,7 +38,7 @@ import './controllers/PlayerController';
 import './scripting/ScriptHost';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
-import { PhysicsWorld } from './physics/PhysicsWorld';
+import { PhysicsWorld, type ColliderOwner, type PhysicsEvent } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -182,6 +182,8 @@ export class Engine {
 
   /** Exposed for diagnostics; drive them through `update`, not directly. */
   readonly behaviours: Behaviour[] = [];
+  /** The behaviours that hear what colliders touch, by the entity each sits on. */
+  private readonly listeners = new Map<string, Behaviour[]>();
 
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private readonly world: PhysicsWorld | null;
@@ -412,9 +414,15 @@ export class Engine {
     for (const behaviour of this.behaviours) behaviour.update?.(delta, this.context);
 
     if (this.world) {
-      this.world.step(delta, (step) => {
-        for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
-      });
+      this.world.step(
+        delta,
+        (step) => {
+          for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
+        },
+        // After the tick they happened in and before the next one's
+        // `fixedUpdate`, as Unity runs its collision messages.
+        (events) => this.hear(events),
+      );
       this.world.writeBack();
     }
 
@@ -493,6 +501,7 @@ export class Engine {
     this.disposed = true;
     for (const behaviour of this.behaviours) behaviour.dispose?.();
     this.behaviours.length = 0;
+    this.listeners.clear();
     this.input.dispose();
     this.audio?.dispose();
     this.world?.dispose();
@@ -527,6 +536,11 @@ export class Engine {
 
           this.behaviours.push(behaviour);
           if (behaviour.camera) cameraOwners += 1;
+          if (listens(behaviour)) {
+            const listening = this.listeners.get(entityId) ?? [];
+            listening.push(behaviour);
+            this.listeners.set(entityId, listening);
+          }
         }
       }
     }
@@ -540,6 +554,57 @@ export class Engine {
     // Second pass. Everything now exists, so a behaviour can look another one
     // up regardless of which entity was built first.
     for (const behaviour of this.behaviours) behaviour.start?.(this.context);
+  }
+
+  /** Hands each side of the tick's events to its listeners, `a`'s side first. */
+  private hear(events: readonly PhysicsEvent[]): void {
+    for (const event of events) {
+      this.tell(event, event.a, event.b.entity, 1);
+      this.tell(event, event.b, event.a.entity, -1);
+    }
+  }
+
+  /**
+   * One side of an event, told to the behaviours on its collider's entity,
+   * then to those on its body's when that is another: a cart hears its wheels,
+   * and a wheel with a script of its own hears itself. `other` is the other
+   * side's collider's entity, and `sign` turns the contact's normal, which
+   * pushes `a`, into the one that pushes this side.
+   *
+   * Unguarded, as `update` is: a script's hook is guarded by its own behaviour.
+   */
+  private tell(event: PhysicsEvent, side: ColliderOwner, other: string, sign: 1 | -1): void {
+    const listening = [
+      ...(this.listeners.get(side.entity) ?? []),
+      ...(side.body === side.entity ? [] : (this.listeners.get(side.body) ?? [])),
+    ];
+    for (const behaviour of listening) {
+      switch (event.kind) {
+        case 'collisionEnter': {
+          // A copy each, so no listener can change what the next one hears.
+          const { point, normal, impulse } = event.contact;
+          behaviour.onCollisionEnter?.(
+            {
+              other,
+              point: { x: point.x, y: point.y, z: point.z },
+              normal: { x: sign * normal.x, y: sign * normal.y, z: sign * normal.z },
+              impulse,
+            },
+            this.context,
+          );
+          break;
+        }
+        case 'collisionExit':
+          behaviour.onCollisionExit?.(other, this.context);
+          break;
+        case 'triggerEnter':
+          behaviour.onTriggerEnter?.(other, this.context);
+          break;
+        case 'triggerExit':
+          behaviour.onTriggerExit?.(other, this.context);
+          break;
+      }
+    }
   }
 
   private pickCamera(scene: SceneDoc): void {
@@ -568,6 +633,16 @@ export function isPerspective(camera: Camera): camera is PerspectiveCamera {
 }
 
 export type { Object3D, OrthographicCamera };
+
+/** Whether a behaviour hears what its entity's colliders touch. */
+function listens(behaviour: Behaviour): boolean {
+  return (
+    behaviour.onCollisionEnter !== undefined ||
+    behaviour.onCollisionExit !== undefined ||
+    behaviour.onTriggerEnter !== undefined ||
+    behaviour.onTriggerExit !== undefined
+  );
+}
 
 function unit(x: number, y: number, z: number): [number, number, number] {
   const length = Math.hypot(x, y, z);

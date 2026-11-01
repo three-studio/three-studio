@@ -49,6 +49,30 @@ export interface PhysicsApi {
 }
 
 /**
+ * A collision that has just begun, as one side hears it: whom it met, where,
+ * which way it was pushed, and how hard. In world space: metres and
+ * newton-seconds.
+ */
+export interface Collision {
+  /**
+   * The entity whose Collider touched this side's. A script's
+   * `this.physics.body(other)` is the body it moves with; a behaviour's
+   * `physics.body` is exact, so a behaviour reads `bodyOf(scene, other) ?? other`
+   * first.
+   */
+  readonly other: string;
+  /** Where they touch: the middle of their contact points. A box landing flat touches at its face's centre. */
+  readonly point: Readonly<Vec3Like>;
+  /** Unit: the way this side was pushed, away from the other. A ball landing on the ground hears up; the ground, down. */
+  readonly normal: Readonly<Vec3Like>;
+  /**
+   * How hard they met: the impulse that held them apart in the tick they
+   * touched, at least m·v for a body of mass m stopped from speed v.
+   */
+  readonly impulse: number;
+}
+
+/**
  * A body in the world, in world space: metres, seconds, kilograms, radians.
  *
  * A vector or a rotation holding a NaN or an infinity is ignored, and the rest
