@@ -333,6 +333,21 @@ export class Engine {
         'Nothing but the player has a Collider, so there is no ground to stand on. Add a Collider to whatever the player should walk on.',
       );
     }
+
+    // A behaviour hears through its entity's colliders, or a body's through
+    // those of the children riding it: on an entity with neither it hears
+    // nothing, and nothing says why. A Rigid Body with no collider anywhere is
+    // said above. With physics off the line would be about the host, not the
+    // scene.
+    for (const entityId of this.world ? this.listeners.keys() : []) {
+      const entity = scene.entities[entityId];
+      if (!entity || hasComponent(scene, entityId, 'collider') || hasComponent(scene, entityId, 'rigidbody')) {
+        continue;
+      }
+      warn(
+        `"${entity.name}" listens for collisions or triggers but has no Collider and no Rigid Body, so it never hears one. Add a Collider to it, or move the script onto the entity that has one.`,
+      );
+    }
   }
 
   /**

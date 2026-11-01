@@ -350,6 +350,18 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
     createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
   }
+
+  /** A collision that has just begun, as one side hears it. */
+  export interface Collision {
+    /** The entity whose Collider touched this one. this.physics.body(other) is the body it moves with. */
+    readonly other: string;
+    /** Where they touch, in world space: the middle of their contact points. */
+    readonly point: Readonly<Vec3Like>;
+    /** Unit, in world space: the way this side was pushed, away from the other. */
+    readonly normal: Readonly<Vec3Like>;
+    /** How hard they met, in newton-seconds: at least m·v for a body of mass m stopped from speed v. */
+    readonly impulse: number;
+  }
 `;
 
 /**
@@ -410,6 +422,19 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
     onFixedUpdate?(step: number): void;`,
   onLateUpdate: `    /** After physics. Anything following a subject belongs here. */
     onLateUpdate?(): void;`,
+  onCollisionEnter: `
+    /**
+     * A Collider of this entity, or of a child riding its body, began touching another, after
+     * the physics tick it happened in. One side needs a Dynamic Rigid Body: a character walking
+     * into a wall hears nothing.
+     */
+    onCollisionEnter?(collision: Collision): void;`,
+  onCollisionExit: `    /** They stopped touching. \`other\` is the entity whose Collider it was. */
+    onCollisionExit?(other: string): void;`,
+  onTriggerEnter: `    /** A sensor of this entity was entered, or this entity entered one. A sensor sees whatever moves. */
+    onTriggerEnter?(other: string): void;`,
+  onTriggerExit: `    /** It left. */
+    onTriggerExit?(other: string): void;`,
   onSceneUnload: `    /** The scene is being left, and everything is still here to read. */
     onSceneUnload?(): void;`,
   onDestroy: `    onDestroy?(): void;`,

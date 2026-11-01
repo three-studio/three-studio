@@ -5,6 +5,7 @@ import {
   type BehaviourContext,
   type BehaviourTarget,
 } from '../behaviour/Behaviour';
+import type { Collision } from '../physics/PhysicsApi';
 import { audioApiFor } from './audioApi';
 import { noBody, scriptPhysicsFor } from './scriptPhysics';
 import {
@@ -51,12 +52,33 @@ export function clearScripts(): void {
  */
 class ScriptBehaviour implements RuntimeBehaviour {
   private failed = false;
+  // Set for the hooks the script defines, and only those: a script that
+  // defines none is not listening, so the engine passes it by and never warns
+  // that it can hear nothing.
+  readonly onCollisionEnter?: (collision: Collision) => void;
+  readonly onCollisionExit?: (other: string) => void;
+  readonly onTriggerEnter?: (other: string) => void;
+  readonly onTriggerExit?: (other: string) => void;
 
   constructor(
     private readonly instance: Behaviour,
     private readonly label: string,
     private readonly ctx: BehaviourContext,
-  ) {}
+  ) {
+    if (instance.onCollisionEnter) {
+      this.onCollisionEnter = (collision) =>
+        this.guard('onCollisionEnter', () => instance.onCollisionEnter?.(collision));
+    }
+    if (instance.onCollisionExit) {
+      this.onCollisionExit = (other) => this.guard('onCollisionExit', () => instance.onCollisionExit?.(other));
+    }
+    if (instance.onTriggerEnter) {
+      this.onTriggerEnter = (other) => this.guard('onTriggerEnter', () => instance.onTriggerEnter?.(other));
+    }
+    if (instance.onTriggerExit) {
+      this.onTriggerExit = (other) => this.guard('onTriggerExit', () => instance.onTriggerExit?.(other));
+    }
+  }
 
   /** Self-contained setup, while other entities may still be under construction. */
   awake(): void {

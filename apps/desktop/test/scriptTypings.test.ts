@@ -54,6 +54,7 @@ const PROBE = `import type {
   QuatLike as PublishedQuat,
   CharacterController as PublishedCharacter,
   CharacterSettings as PublishedSettings,
+  Collision as PublishedCollision,
 } from '@three-studio/runtime';
 import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
 import type { SceneApi } from ${importable('packages/runtime/src/behaviour/Behaviour')};
@@ -63,6 +64,7 @@ import type {
   BodyHandle,
   CharacterController,
   CharacterSettings,
+  Collision,
   QuatLike,
   Vec3Like,
 } from ${importable('packages/runtime/src/physics/PhysicsApi')};
@@ -118,6 +120,13 @@ export const n: PublishedQuat = quat;
 export const o: QuatLike = publishedQuat;
 export const p: PublishedSettings = settings;
 export const q: CharacterSettings = publishedSettings;
+
+declare const collision: Collision;
+declare const publishedCollision: PublishedCollision;
+
+// Both ways: what the runtime hands a hook is what the script reads.
+export const r: PublishedCollision = collision;
+export const s: Collision = publishedCollision;
 `;
 
 /**

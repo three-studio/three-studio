@@ -106,6 +106,11 @@ export interface ColliderComponent extends ComponentBase {
   shape: ColliderShape;
   /** How the surface grips and bounces. */
   material: PhysicsMaterialDef;
-  /** Sensors report overlaps without resolving them. */
+  /**
+   * A zone rather than matter: it touches nothing, and weighs nothing. What
+   * moves through it is reported, through `onTriggerEnter` and `onTriggerExit`,
+   * to the scripts of its entity, of the body it rides, and of what entered it.
+   * It sees anything that moves, never another Fixed collider.
+   */
   isSensor: boolean;
 }

@@ -2,7 +2,7 @@ import type { EntityDoc, FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { BehaviourContext } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
-import type { BodyHandle } from '../physics/PhysicsApi';
+import type { BodyHandle, Collision } from '../physics/PhysicsApi';
 import type { AudioApi } from './audioApi';
 import type { SceneApi } from '../behaviour/Behaviour';
 import type { ScriptPhysics } from './scriptPhysics';
@@ -67,6 +67,10 @@ const OCCUPIED_NAMES: Record<BehaviourMember, true> = {
   onUpdate: true,
   onFixedUpdate: true,
   onLateUpdate: true,
+  onCollisionEnter: true,
+  onCollisionExit: true,
+  onTriggerEnter: true,
+  onTriggerExit: true,
   onSceneUnload: true,
   onDestroy: true,
 };
@@ -93,6 +97,9 @@ export interface EntityHandle {
  *    impulse, so issuing two targets between one step discards the first.
  *  - `onLateUpdate` runs after physics, which is where anything following a
  *    subject has to be or it trails by a frame.
+ *
+ * After each physics tick, the collision and trigger hooks hear what its
+ * colliders started or stopped touching in it.
  */
 export abstract class Behaviour {
   /**
@@ -160,6 +167,19 @@ export abstract class Behaviour {
   onUpdate?(delta: number): void;
   onFixedUpdate?(step: number): void;
   onLateUpdate?(): void;
+  /**
+   * One of this entity's Colliders, or a child's riding its body, began
+   * touching another, after the physics tick it happened in. One side needs a
+   * Dynamic Rigid Body. `this.physics.body(collision.other)` is the body the
+   * other moves with.
+   */
+  onCollisionEnter?(collision: Collision): void;
+  /** They stopped touching. */
+  onCollisionExit?(other: string): void;
+  /** A sensor of this entity was entered, or this entity entered one. A sensor sees whatever moves. */
+  onTriggerEnter?(other: string): void;
+  /** It left. */
+  onTriggerExit?(other: string): void;
   /**
    * The scene is being left, and everything is still here to read.
    *

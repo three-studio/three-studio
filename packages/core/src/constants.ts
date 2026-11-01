@@ -53,7 +53,10 @@ export const ENGINE_VERSION = '0.6.0';
  * bundle compiled against 2 never named them — but `body` and `physics` joined
  * the reserved property names, so a script that declared a property called
  * `body` now has it refused with a warning instead of silently replacing the
- * api.
+ * api. And four hooks, `onCollisionEnter`, `onCollisionExit`, `onTriggerEnter`
+ * and `onTriggerExit`, which hear what the entity's colliders touch: their
+ * names joined the reserved ones too, so a property called `onTriggerEnter` is
+ * now refused with a warning.
  */
 export const SCRIPT_API_VERSION = 3;
 
