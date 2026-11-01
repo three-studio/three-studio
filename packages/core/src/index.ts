@@ -263,7 +263,11 @@ export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
 export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
 export { createMaterial } from './scene/material';
-export { conformPhysicsMaterial, createPhysicsMaterial } from './scene/physicsMaterial';
+export {
+  conformPhysicsMaterial,
+  createPhysicsMaterial,
+  linkedPhysicsMaterial,
+} from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';

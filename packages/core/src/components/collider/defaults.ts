@@ -46,6 +46,7 @@ export function createCollider(): ColliderComponent {
     type: 'collider',
     shape: createColliderShape('box'),
     material: createPhysicsMaterial(),
+    materialId: null,
     isSensor: false,
     layer: DEFAULT_LAYER_ID,
   };

@@ -142,6 +142,7 @@ describe('fill', () => {
       type: 'collider',
       shape: createColliderShape('box'),
       material: createPhysicsMaterial(),
+      materialId: null,
       isSensor: true,
       layer: DEFAULT_LAYER_ID,
     });

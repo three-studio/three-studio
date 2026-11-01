@@ -10,6 +10,7 @@ import {
   type ColliderComponent,
   type EntityTemplate,
   type GeometryKind,
+  type PhysicsMaterialDef,
   type PhysicsSettings,
   type PlayerControllerComponent,
   type RigidBodyComponent,
@@ -64,10 +65,14 @@ export interface PhysicsRig {
   body(entityId: string): BodyHandle;
 }
 
-/** These entities in a running engine, disposed when the test finishes. */
+/**
+ * These entities in a running engine, disposed when the test finishes, with the
+ * project's physics materials by asset id.
+ */
 export async function physicsRig(
   entities: readonly EntityTemplate[],
   settings?: Partial<PhysicsSettings>,
+  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
@@ -78,6 +83,7 @@ export async function physicsRig(
     // reads would be one the screen never shows.
     rendering: { ...createRenderingSettings(), batching: false },
     physicsSettings,
+    physicsMaterials,
     domElement: canvas as unknown as HTMLElement,
     // Heard on the canvas rather than on the window, which every test file
     // shares: two rigs alive in one test cannot hear each other's keys.

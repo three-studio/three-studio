@@ -4,7 +4,9 @@ import {
   createMaterial,
   createComponent,
   createMeshEntity,
-    findAssetUsage,
+  collectSceneAssets,
+  findAssetUsage,
+  findBrokenReferences,
   findPrefabInstances,
   isUsed,
   totalUses,
@@ -54,6 +56,17 @@ describe('who uses an asset', () => {
     expect(findAssetUsage('model-1', scene, {}, {}).entities).toEqual([model.entity.id]);
     expect(findAssetUsage('script-1', scene, {}, {}).entities).toEqual([scripted.entity.id]);
     expect(isUsed(findAssetUsage('audio-1', scene, {}, {}))).toBe(false);
+  });
+
+  it('a physics material is used by the colliders that link it, ships with their scene, and is a broken reference once gone', () => {
+    const puck = createEntity('Puck', [{ ...createComponent('collider'), materialId: 'ice' }]);
+    const scene = sceneWith([puck]);
+
+    expect(findAssetUsage('ice', scene, {}, {}).entities).toEqual([puck.entity.id]);
+    expect(collectSceneAssets(scene, {}, {})).toContain('ice');
+    expect(findBrokenReferences(scene, new Set())).toEqual([
+      { entityId: puck.entity.id, assetId: 'ice' },
+    ]);
   });
 
   it('finds the scene environment, which is not an entity and holds no component', () => {

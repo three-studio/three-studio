@@ -6,8 +6,10 @@ import {
   findComponent,
   hasComponent,
   layersTouch,
+  linkedPhysicsMaterial,
   physicsBodies,
   type MaterialDef,
+  type PhysicsMaterialDef,
   type PhysicsSettings,
   type RenderingSettings,
   type SceneDoc,
@@ -56,6 +58,12 @@ export interface EngineOptions {
    * which is exactly what play mode was doing before it was passed.
    */
   materials?: Readonly<Record<string, MaterialDef>>;
+  /**
+   * The project's physics materials by asset id, read when the world is built.
+   * Omitted, every collider that links one plays with its own values, and the
+   * engine says so.
+   */
+  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
@@ -252,7 +260,11 @@ export class Engine {
    * makes them the hardest kind of mistake to find. Naming the entity and the
    * fix costs nothing and turns a mystery into a one-line correction.
    */
-  private checkPhysicsSetup(scene: SceneDoc, settings: PhysicsSettings): void {
+  private checkPhysicsSetup(
+    scene: SceneDoc,
+    settings: PhysicsSettings,
+    physicsMaterials: Readonly<Record<string, PhysicsMaterialDef>>,
+  ): void {
     // Over the bodies the world builds, so the two cannot disagree: a body
     // whose colliders are on its children was warned about as having none.
     const bodies = physicsBodies(scene);
@@ -371,6 +383,22 @@ export class Engine {
       );
     }
 
+    // A link to a physics material the project lacks plays the collider's own
+    // values. The hierarchy marks it while editing; a device and a build have
+    // no hierarchy, and a puck that grips where it was made to slide gives no
+    // reason. `''` is a slot left empty, not a link.
+    for (const entityId of this.world ? riding.keys() : []) {
+      const entity = scene.entities[entityId];
+      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      const lost = colliders.some(
+        ({ materialId }) => !!materialId && linkedPhysicsMaterial(materialId, physicsMaterials) === null,
+      );
+      if (!entity || !lost) continue;
+      warn(
+        `"${entity.name}" has a Collider whose physics material is not in this project, so it grips and bounces by its own values. Choose its Material again.`,
+      );
+    }
+
     // A behaviour hears through its entity's colliders, or a body's through
     // those of the children riding it: on an entity with neither it hears
     // nothing, and nothing says why. A Rigid Body with no collider anywhere is
@@ -420,10 +448,11 @@ export class Engine {
     //   physics   a behaviour looks its rigid body up when it is constructed,
     //             so a controller built earlier would find none and fly.
     await engine.binder.whenLoaded();
-    physics?.build(options.scene, engine.binder);
+    const physicsMaterials = options.physicsMaterials ?? {};
+    physics?.build(options.scene, engine.binder, physicsMaterials);
     engine.buildBehaviours(options.scene);
     engine.pickCamera(options.scene);
-    engine.checkPhysicsSetup(options.scene, physicsSettings);
+    engine.checkPhysicsSetup(options.scene, physicsSettings, physicsMaterials);
     engine.checkAudioSetup(options.scene);
     engine.checkLighting(options.scene);
 

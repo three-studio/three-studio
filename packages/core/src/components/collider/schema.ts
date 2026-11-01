@@ -104,8 +104,15 @@ export const MESH_BUILD_LABELS: Record<MeshBuild, string> = {
 export interface ColliderComponent extends ComponentBase {
   type: 'collider';
   shape: ColliderShape;
-  /** How the surface grips and bounces. */
+  /** How the surface grips and bounces, while `materialId` links no physics material. */
   material: PhysicsMaterialDef;
+  /**
+   * Asset id of a shared physics material. While it names one, the collider is
+   * built with that asset's friction, bounce and rules, and `material` is left
+   * untouched, so unlinking falls back to it. One the project does not have
+   * leaves the collider on its own values, and Play says so.
+   */
+  materialId: string | null;
   /**
    * A zone rather than matter: it touches nothing, and weighs nothing. What
    * moves through it is reported, through `onTriggerEnter` and `onTriggerExit`,

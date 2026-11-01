@@ -114,6 +114,10 @@ export const SCRIPT_API_VERSION = 3;
  * only when their layers touch. An older build builds every collider on one
  * layer, so a wall the player was meant to walk through stops it.
  *
+ * And a collider may name a physics material asset, `materialId`, whose
+ * friction, bounce and rules it is built with. An older build builds it with
+ * its own values, so a puck made to slide grips there.
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -223,12 +227,13 @@ export const PREFAB_ID_SEPARATOR = '/';
  * `assets/prefabs/*.prefab.json`.
  *
  * 8 — the slope and step height of scene format 11, its rigid body's
- * interpolation and locks, its collider's shapes, material and collision layer,
- * its compound bodies, and its mesh Colliders built from their own meshes. A
- * prefab holds the same `ComponentTables`, so it can hold a player controller
- * an older build would walk with its own 50° and 0.4 m, a floor it would not
- * build, a cart whose wheels it would leave in mid-air, and a wall the player
- * walks through, which it would build solid.
+ * interpolation and locks, its collider's shapes, material, physics material
+ * asset and collision layer, its compound bodies, and its mesh Colliders built
+ * from their own meshes. A prefab holds the same `ComponentTables`, so it can
+ * hold a player controller an older build would walk with its own 50° and
+ * 0.4 m, a floor it would not build, a cart whose wheels it would leave in
+ * mid-air, a wall the player walks through, which it would build solid, and a
+ * puck made to slide, which it would build gripping.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the

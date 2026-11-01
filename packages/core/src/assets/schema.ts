@@ -194,8 +194,9 @@ export interface MaterialAssetFile {
 /**
  * Shape of `assets/physics-materials/<name>.physics-material.json`.
  *
- * A file of a later version is left out: a newer build may have given the
- * material something this one would drop.
+ * A file of a later version is left out, and the colliders that link it play
+ * with their own values: a newer build may have given the material something
+ * this one would drop.
  */
 export const PHYSICS_MATERIAL_ASSET_VERSION = 1;
 

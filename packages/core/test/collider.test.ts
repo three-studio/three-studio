@@ -6,10 +6,15 @@ import {
   createComponentForEntity,
   createMeshEntity,
   createModelEntity,
+  createPhysicsMaterial,
+  fillComponent,
   fitColliderShape,
+  linkedPhysicsMaterial,
   originAboveFeet,
   type BodyType,
+  type ColliderComponent,
   type ColliderShape,
+  type ComponentDoc,
   type GeometryKind,
   type MeshBuild,
   type Vec3,
@@ -373,5 +378,28 @@ describe('createColliderFor', () => {
       kind: 'mesh',
       build: 'triangles',
     });
+  });
+});
+
+describe('a collider’s physics material', () => {
+  it('a stored collider keeps the physics material it names, and reads anything else as none', () => {
+    const stored = (fields: object) => {
+      const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
+      return fillComponent(component) as ColliderComponent;
+    };
+
+    expect(stored({ materialId: 'ice' }).materialId).toBe('ice');
+    expect(stored({ materialId: 7 }).materialId).toBeNull();
+    expect(stored({}).materialId).toBeNull();
+  });
+
+  it('a link finds only an asset its library holds as its own', () => {
+    const ice = { ...createPhysicsMaterial(), friction: 0 };
+
+    expect(linkedPhysicsMaterial('ice', { ice })).toBe(ice);
+    // An id is read off a file, and `constructor` is what every object answers to.
+    for (const id of [null, '', 'gone', 'constructor']) {
+      expect(linkedPhysicsMaterial(id, { ice })).toBeNull();
+    }
   });
 });

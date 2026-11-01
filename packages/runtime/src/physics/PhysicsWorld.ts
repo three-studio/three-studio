@@ -4,6 +4,7 @@ import {
   createColliderShape,
   entityWorldMatrixPath,
   findComponent,
+  linkedPhysicsMaterial,
   physicsBodies,
   type BodyType,
   type BuiltShape,
@@ -11,6 +12,7 @@ import {
   type ColliderShape,
   type CombineRule,
   type EntityDoc,
+  type PhysicsMaterialDef,
   type PhysicsSettings,
   type RigidBodyComponent,
   type SceneDoc,
@@ -441,8 +443,16 @@ export class PhysicsWorld implements PhysicsApi {
    * Driven by the two component tables rather than by a walk of the entity
    * table: a scene of two thousand props with a dozen physical objects in it
    * visits the dozen.
+   *
+   * `materials` are the project's physics materials by asset id, which a
+   * collider linking one is built with. Read here and not kept: they belong to
+   * the build, as the scene does.
    */
-  build(scene: SceneDoc, binder: SceneBinder): void {
+  build(
+    scene: SceneDoc,
+    binder: SceneBinder,
+    materials: Readonly<Record<string, PhysicsMaterialDef>> = {},
+  ): void {
     const bodies = physicsBodies(scene);
     const colliders = componentsOfType(scene, 'collider');
 
@@ -467,7 +477,8 @@ export class PhysicsWorld implements PhysicsApi {
           ? [{ entityId: carrierId, object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }]
           : [];
       });
-      this.addBody(entity, object, findComponent(scene, entityId, 'rigidbody'), carriers);
+      const rigidbody = findComponent(scene, entityId, 'rigidbody');
+      this.addBody(entity, object, rigidbody, carriers, materials);
     }
 
     // A step of no time, so that a query sees the scene from the start. Rapier
@@ -833,6 +844,7 @@ export class PhysicsWorld implements PhysicsApi {
     object: Object3D,
     rigidbody: RigidBodyComponent | undefined,
     carriers: readonly Carrier[],
+    materials: Readonly<Record<string, PhysicsMaterialDef>>,
   ): void {
     worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
 
@@ -885,7 +897,9 @@ export class PhysicsWorld implements PhysicsApi {
       const owner: ColliderOwner = { entity: carrier.entityId, body: entity.id };
       for (const collider of carrier.colliders) {
         const shape = describeCollider(collider, carrier.object, _carrierScale, bodyType, _frame);
-        const { material } = collider;
+        // A link the project cannot answer plays its own values, as an
+        // unlinked collider does; the Engine says so.
+        const material = linkedPhysicsMaterial(collider.materialId, materials) ?? collider.material;
         shape.setFriction(material.friction);
         shape.setRestitution(material.restitution);
         shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);

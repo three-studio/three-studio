@@ -2,8 +2,8 @@ import { conform, oneOf } from '../conform';
 
 /*
  * How a surface grips and bounces. Beside `material.ts` and shared for the same
- * reason: a collider carries one inline, and a physics material asset will
- * carry the same thing in a file of its own.
+ * reason: a collider carries one inline, and a physics material asset carries
+ * the same thing in a file of its own.
  */
 
 /**
@@ -46,4 +46,16 @@ export function conformPhysicsMaterial(value: unknown): PhysicsMaterialDef {
     frictionCombine: rule(kept.frictionCombine, model.frictionCombine),
     restitutionCombine: rule(kept.restitutionCombine, model.restitutionCombine),
   };
+}
+
+/**
+ * The physics material asset `materialId` names, or `null` when `library` holds
+ * none under it. Own keys only: an id is read off a file, and
+ * `library['constructor']` would answer with `Object`.
+ */
+export function linkedPhysicsMaterial(
+  materialId: string | null,
+  library: Readonly<Record<string, PhysicsMaterialDef>>,
+): PhysicsMaterialDef | null {
+  return materialId !== null && Object.hasOwn(library, materialId) ? library[materialId]! : null;
 }

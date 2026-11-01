@@ -26,7 +26,7 @@ export const colliderComponent = defineComponent({
     shape: conformColliderShape(stored.shape),
     material: conformPhysicsMaterial(stored.material),
   }),
-  assets: () => [],
+  assets: (component) => [component.materialId],
   icon: 'box',
   placeable: () => true,
   runtime: true,
