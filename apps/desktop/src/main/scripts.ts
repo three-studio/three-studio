@@ -349,6 +349,23 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     body(entityId: string): StudioBody | null;
     /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
     createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
+    /** The project's collision layers, Default first. A query names a layer by its id: find it here by its name. */
+    readonly layers: readonly { readonly id: string; readonly name: string }[];
+    /**
+     * The nearest Collider along a ray, within maxDistance metres, or null. Leaves out this entity's own body, and
+     * passes out of anything it starts inside. Sees the world as the last physics tick left it.
+     */
+    raycast(origin: Readonly<Vec3Like>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A ball swept from origin, its centre. As raycast. */
+    sphereCast(origin: Readonly<Vec3Like>, radius: number, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A box of full size, turned by rotation, swept from origin, its centre. As raycast. */
+    boxCast(origin: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A capsule, its height from end to end along its own y, turned by rotation, swept from its centre. As raycast. */
+    capsuleCast(origin: Readonly<Vec3Like>, radius: number, height: number, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** The entities whose Colliders are in the ball or touch it, each once, but this entity's own body. */
+    overlapSphere(center: Readonly<Vec3Like>, radius: number, filter?: QueryFilter): readonly string[];
+    /** The same, for a box of full size, turned by rotation when one is given. */
+    overlapBox(center: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>, filter?: QueryFilter): readonly string[];
   }
 
   /** A collision that has just begun, as one side hears it. */
@@ -361,6 +378,26 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     readonly normal: Readonly<Vec3Like>;
     /** How hard they met, in newton-seconds: at least m·v for a body of mass m stopped from speed v. */
     readonly impulse: number;
+  }
+
+  /** What a query sees. Left out, every layer and no sensor. */
+  export interface QueryFilter {
+    /** Ids of the collision layers it sees: find one by its name in this.physics.layers. A Collider is seen by its own layer. */
+    readonly layers?: readonly string[];
+    /** Sensors too. Left out, a ray passes through a trigger zone. */
+    readonly sensors?: boolean;
+  }
+
+  /** What a ray or a cast met first, in world space. */
+  export interface RaycastHit {
+    /** The entity whose Collider it met. this.physics.body(entity) is the body it moves with. */
+    readonly entity: string;
+    /** Where, on that Collider's surface. */
+    readonly point: Readonly<Vec3Like>;
+    /** Unit, out of that surface. */
+    readonly normal: Readonly<Vec3Like>;
+    /** How far it travelled to get there, in metres. */
+    readonly distance: number;
   }
 `;
 
@@ -402,7 +439,10 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
      * raises a warning.
      */
     readonly body: StudioBody;`,
-  physics: `    /** The physics world: gravity, any entity's body, and character controllers. */
+  physics: `    /**
+     * The physics world: gravity, any entity's body, character controllers, the project's
+     * collision layers, and rays, casts and overlaps that leave out this entity's own body.
+     */
     readonly physics: StudioPhysics;`,
   input: `    readonly input: StudioInput;`,
   audio: `    /** This entity's sounds, one-shot clips, and the buses. */

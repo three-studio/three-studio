@@ -56,7 +56,9 @@ export const ENGINE_VERSION = '0.6.0';
  * api. And four hooks, `onCollisionEnter`, `onCollisionExit`, `onTriggerEnter`
  * and `onTriggerExit`, which hear what the entity's colliders touch: their
  * names joined the reserved ones too, so a property called `onTriggerEnter` is
- * now refused with a warning.
+ * now refused with a warning. `this.physics` also gained rays, sphere, box and
+ * capsule casts, sphere and box overlaps, and the project's collision layers: a
+ * bundle compiled against them calls members an older build does not have.
  */
 export const SCRIPT_API_VERSION = 3;
 

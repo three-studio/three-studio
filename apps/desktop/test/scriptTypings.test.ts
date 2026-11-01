@@ -55,6 +55,8 @@ const PROBE = `import type {
   CharacterController as PublishedCharacter,
   CharacterSettings as PublishedSettings,
   Collision as PublishedCollision,
+  QueryFilter as PublishedFilter,
+  RaycastHit as PublishedHit,
 } from '@three-studio/runtime';
 import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
 import type { SceneApi } from ${importable('packages/runtime/src/behaviour/Behaviour')};
@@ -66,6 +68,8 @@ import type {
   CharacterSettings,
   Collision,
   QuatLike,
+  QueryFilter,
+  RaycastHit,
   Vec3Like,
 } from ${importable('packages/runtime/src/physics/PhysicsApi')};
 import type { ScriptPhysics } from ${importable('packages/runtime/src/scripting/scriptPhysics')};
@@ -127,6 +131,15 @@ declare const publishedCollision: PublishedCollision;
 // Both ways: what the runtime hands a hook is what the script reads.
 export const r: PublishedCollision = collision;
 export const s: Collision = publishedCollision;
+
+declare const hit: RaycastHit;
+declare const filter: QueryFilter;
+declare const publishedFilter: PublishedFilter;
+
+export const t: PublishedHit = hit;
+// Both ways: the filter a script builds is the one the runtime reads.
+export const u: PublishedFilter = filter;
+export const v: QueryFilter = publishedFilter;
 `;
 
 /**

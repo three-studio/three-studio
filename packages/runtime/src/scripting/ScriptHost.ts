@@ -160,7 +160,7 @@ registerBehaviour('script', (target: BehaviourTarget, ctx: BehaviourContext) => 
     (instance as unknown as Record<string, unknown>)[key] = value;
   }
 
-  const physics = scriptPhysicsFor(ctx.physics, ctx.scene);
+  const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);
   Object.assign(instance, {
     entity: target.entity,
     transform: target.object,

@@ -181,7 +181,7 @@ describe('a script moving bodies', () => {
 
 describe('a script with no physics', () => {
   it('finds nothing, moves nothing, and says nothing', () => {
-    const physics = scriptPhysicsFor(null, sceneWith([]));
+    const physics = scriptPhysicsFor(null, sceneWith([]), createEntity('Lone').entity, () => {});
     const body = noBody(null);
 
     expect(physics.gravity).toEqual({ x: 0, y: 0, z: 0 });
