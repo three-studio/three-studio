@@ -1,5 +1,6 @@
 import { conform, isMemberOf, oneOf } from '../../conform';
 import { createId } from '../../ids';
+import { DEFAULT_LAYER_ID } from '../../project/layers';
 import { createPhysicsMaterial } from '../../scene/physicsMaterial';
 import type { GeometryDef } from '../../scene/geometry';
 import type { ComponentBase, Vec3 } from '../../scene/primitives';
@@ -46,6 +47,7 @@ export function createCollider(): ColliderComponent {
     shape: createColliderShape('box'),
     material: createPhysicsMaterial(),
     isSensor: false,
+    layer: DEFAULT_LAYER_ID,
   };
 }
 

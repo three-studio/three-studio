@@ -113,4 +113,10 @@ export interface ColliderComponent extends ComponentBase {
    * It sees anything that moves, never another Fixed collider.
    */
   isSensor: boolean;
+  /**
+   * The collision layer it is on, by id: one of Project Settings ▸ Physics's.
+   * Its layer decides what it meets — bodies, sensors and characters alike. A
+   * layer the project no longer has collides as Default.
+   */
+  layer: string;
 }

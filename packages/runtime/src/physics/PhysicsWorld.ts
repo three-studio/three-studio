@@ -17,6 +17,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
+import { collisionGroups } from './layers';
 import { describeMesh } from './meshShape';
 import type {
   BodyHandle,
@@ -382,10 +383,13 @@ export class PhysicsWorld implements PhysicsApi {
 
   private readonly fixedStep: number;
   private readonly maxSubsteps: number;
+  /** Each layer's collision groups, by its id: project data, as gravity and the step are. */
+  private readonly groupsOf: (layerId: string) => number;
 
   private constructor(world: RAPIER.World, settings: PhysicsSettings) {
     this.fixedStep = settings.fixedTimestep;
     this.maxSubsteps = settings.maxSubsteps;
+    this.groupsOf = collisionGroups(settings.layers);
     const [x, y, z] = settings.gravity;
     this.gravity = Object.freeze({ x, y, z });
     this.world = world;
@@ -656,6 +660,11 @@ export class PhysicsWorld implements PhysicsApi {
         shape.setFrictionCombineRule(COMBINE_RULES[material.frictionCombine]);
         shape.setRestitutionCombineRule(COMBINE_RULES[material.restitutionCombine]);
         shape.setSensor(collider.isSensor);
+        // Every collider, not the sensors alone: one matrix decides what
+        // touches and what a sensor sees. Rapier tests the groups beside a
+        // sensor's active types, not instead of them: a fixed sensor with the
+        // kinematic pairs below saw nothing on a layer its own ignores.
+        shape.setCollisionGroups(this.groupsOf(collider.layer));
         // Every collider asks. Rapier reports a pair when either side does, so
         // what a pair reports never depends on which side asked; and only when
         // it changes, so a scene at rest reports nothing.

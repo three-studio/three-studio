@@ -2,6 +2,7 @@ import {
   createColliderShape,
   createComponent,
   createEntity,
+  createPhysicsSettings,
   createRenderingSettings,
   type ColliderComponent,
   type PlayerControllerComponent,
@@ -146,7 +147,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   binder.sync(scene);
   live.push(binder);
 
-  const physics = await PhysicsWorld.create({ gravity, fixedTimestep: STEP, maxSubsteps: 5 });
+  const physics = await PhysicsWorld.create({ ...createPhysicsSettings(), gravity, fixedTimestep: STEP });
   physics.build(scene, binder);
   live.push(physics);
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DEFAULT_LAYER_ID,
   componentAssets,
   componentDefinition,
   componentDefinitions,
@@ -142,6 +143,7 @@ describe('fill', () => {
       shape: createColliderShape('box'),
       material: createPhysicsMaterial(),
       isSensor: true,
+      layer: DEFAULT_LAYER_ID,
     });
   });
 

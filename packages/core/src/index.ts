@@ -43,6 +43,8 @@ export {
   resolveScene,
   sceneName,
 } from './project/schema';
+export { DEFAULT_LAYER_ID, createDefaultLayer, layersTouch } from './project/layers';
+export type { CollisionLayer } from './project/layers';
 
 export {
   ASSET_MANIFEST_VERSION,

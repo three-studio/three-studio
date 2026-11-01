@@ -168,7 +168,7 @@ describe('what else a launch says', () => {
     const build = launchManifest(contents());
     expect(build.title).toBe('My Game');
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
-    expect(build.formatVersion).toBe(7);
+    expect(build.formatVersion).toBe(8);
   });
 });
 

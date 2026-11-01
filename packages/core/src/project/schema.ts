@@ -17,6 +17,7 @@
  * points at instead.
  */
 import type { Vec3 } from '../scene/schema';
+import { createDefaultLayer, type CollisionLayer } from './layers';
 
 /**
  * One scene of a project, as it was found on disk.
@@ -213,6 +214,12 @@ export interface PhysicsSettings {
    * never catches up.
    */
   maxSubsteps: number;
+  /**
+   * Collision layers, in the order the matrix shows them: Default first,
+   * sixteen at most. A collider names one by id, and two colliders meet when
+   * their layers touch (`layersTouch`).
+   */
+  layers: CollisionLayer[];
 }
 
 export function createRenderingSettings(): RenderingSettings {
@@ -228,7 +235,12 @@ export function createRenderingSettings(): RenderingSettings {
 }
 
 export function createPhysicsSettings(): PhysicsSettings {
-  return { gravity: [0, -9.81, 0], fixedTimestep: 1 / 60, maxSubsteps: 5 };
+  return {
+    gravity: [0, -9.81, 0],
+    fixedTimestep: 1 / 60,
+    maxSubsteps: 5,
+    layers: [createDefaultLayer()],
+  };
 }
 
 /**

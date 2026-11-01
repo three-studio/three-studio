@@ -52,8 +52,13 @@ export const MATERIAL_ASSET_VERSION = 1;
  * can never mix two builds. `scenes` lists `{ id, name, path }`, which is
  * where `sceneNames` and `buildScenePath` went. Every field is required, and
  * the player reads this format and no other; see `BuildManifest`.
+ *
+ * 8 — `physics` carries the collision layers and the pairs that pass through
+ * each other. An export copies the player it came with, so this only lets a
+ * player of 7 dropped beside this data say so, rather than build every
+ * collider on one layer.
  */
-export const BUILD_FORMAT_VERSION = 7;
+export const BUILD_FORMAT_VERSION = 8;
 
 /**
  * Where everything is in an exported build, said once.

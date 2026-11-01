@@ -258,6 +258,14 @@ export function sensor(position: Vec3, size: Vec3): EntityTemplate {
   return template;
 }
 
+/** The template, each Collider it carries on this collision layer. */
+export function onLayer(template: EntityTemplate, layerId: string): EntityTemplate {
+  for (const component of template.components) {
+    if (component.type === 'collider') component.layer = layerId;
+  }
+  return template;
+}
+
 /** The template's collider, so a test can set its shape or material before the rig is built. */
 export function colliderOf(template: EntityTemplate): ColliderComponent {
   const collider = template.components.find(

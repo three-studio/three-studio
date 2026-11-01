@@ -108,6 +108,10 @@ export const SCRIPT_API_VERSION = 3;
  * And a mesh Collider is built from its own entity's meshes: an older build
  * welds its children's meshes in.
  *
+ * And a collider names its collision layer by id, `layer`: two colliders meet
+ * only when their layers touch. An older build builds every collider on one
+ * layer, so a wall the player was meant to walk through stops it.
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -217,11 +221,12 @@ export const PREFAB_ID_SEPARATOR = '/';
  * `assets/prefabs/*.prefab.json`.
  *
  * 8 — the slope and step height of scene format 11, its rigid body's
- * interpolation and locks, its collider's shapes and material, its compound
- * bodies, and its mesh Colliders built from their own meshes. A prefab holds
- * the same `ComponentTables`, so it can hold a player controller an older build
- * would walk with its own 50° and 0.4 m, a floor it would not build, and a cart
- * whose wheels it would leave in mid-air.
+ * interpolation and locks, its collider's shapes, material and collision layer,
+ * its compound bodies, and its mesh Colliders built from their own meshes. A
+ * prefab holds the same `ComponentTables`, so it can hold a player controller
+ * an older build would walk with its own 50° and 0.4 m, a floor it would not
+ * build, a cart whose wheels it would leave in mid-air, and a wall the player
+ * walks through, which it would build solid.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the
@@ -259,6 +264,16 @@ export const PREFAB_FORMAT_VERSION = 8;
 /**
  * Project file format version, tracked separately from scenes.
  *
+ * 3 — `settings.physics` gained the collision layers: a table of up to
+ * sixteen, each with an id and a name, and the pairs that pass through each
+ * other. An older build keeps the table and builds every collider on one
+ * layer, so a wall the player was meant to walk through stops it, and debris
+ * meant to fall past it knocks it over: a project that opens, runs and is
+ * quietly wrong. Its scenes are 11 and refused already; refusing the project
+ * says so once, when it is opened. Nothing to migrate: a format 2 file is
+ * filled from the factory, Default alone, which is why the step from 1 is
+ * gated on `< 2`.
+ *
  * 2 — scenes are referenced by id rather than by path: `startScene`,
  * `loadingScene` and each build profile name an id: a reference
  * that is a path or a name is a reference that renaming breaks.
@@ -269,4 +284,4 @@ export const PREFAB_FORMAT_VERSION = 8;
  * refused projects that open correctly, which is the failure this version
  * number exists to prevent, not to cause.
  */
-export const PROJECT_FORMAT_VERSION = 2;
+export const PROJECT_FORMAT_VERSION = 3;

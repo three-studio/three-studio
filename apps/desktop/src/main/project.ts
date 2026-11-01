@@ -401,7 +401,10 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   // here on every save, and a current project must not read a directory to be
   // told it is already current. An old one walks twice on open — once here,
   // once in `openProject` — which the index of T-019 makes a warm `stat` each.
-  if (project.version < PROJECT_FORMAT_VERSION) {
+  // Gated on the format it translates rather than on the current one: format 3
+  // changed no reference, and a format 2 project would walk its scenes on every
+  // read until something wrote it, to translate references that are ids already.
+  if (project.version < 2) {
     adoptSceneIds(parsed as ProjectFile, await discoverScenes(projectPath));
   }
   // Stamped, so the object says which format it now conforms to. Nothing is

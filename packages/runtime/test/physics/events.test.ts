@@ -1,4 +1,4 @@
-import type { EntityTemplate } from '@three-studio/core';
+import { createDefaultLayer, type EntityTemplate } from '@three-studio/core';
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { registerBehaviour } from '../../src/behaviour/Behaviour';
@@ -9,6 +9,7 @@ import {
   colliderOf,
   ground,
   nest,
+  onLayer,
   physicsRig,
   player,
   sensor,
@@ -258,5 +259,43 @@ describe('collision and trigger events', () => {
     expect(rig.solved(ball.entity.id).position.z).toBeLessThan(-3);
     expect(said(walker)).toEqual([]);
     expect(said(ball).filter(([, other]) => other === walker.entity.id)).toEqual([]);
+  });
+
+  it('a sensor hears only what its layer touches', async () => {
+    const layers = [
+      createDefaultLayer(),
+      { id: 'zone', name: 'Zone', ignores: ['b'] },
+      { id: 'b', name: 'B', ignores: [] },
+    ];
+    const zone = onLayer(sensor([0, 4, 0], [6, 2, 2]), 'zone');
+    const seen = withBody('sphere', [-1.5, 7, 0]);
+    const unseen = onLayer(withBody('sphere', [1.5, 7, 0]), 'b');
+    const rig = await physicsRig([zone, seen, unseen, ground()], { layers });
+
+    rig.run(3);
+
+    expect(said(zone)).toEqual([
+      ['onTriggerEnter', seen.entity.id],
+      ['onTriggerExit', seen.entity.id],
+    ]);
+    expect(said(unseen).filter(([, other]) => other === zone.entity.id)).toEqual([]);
+    // Through the zone, onto the ground its layer still touches.
+    expect(Math.abs(rig.solved(unseen.entity.id).position.y - 0.5)).toBeLessThan(0.02);
+  });
+
+  it("a ball whose layer the ground's ignores falls through it, and neither hears the other", async () => {
+    const layers = [
+      { ...createDefaultLayer(), ignores: ['ghost'] },
+      { id: 'ghost', name: 'Ghost', ignores: [] },
+    ];
+    const floor = ground();
+    const ball = onLayer(withBody('sphere', [0, 2, 0]), 'ghost');
+    const rig = await physicsRig([floor, ball], { layers });
+
+    rig.run(1);
+
+    expect(rig.solved(ball.entity.id).position.y).toBeLessThan(-1);
+    expect(said(ball)).toEqual([]);
+    expect(said(floor)).toEqual([]);
   });
 });

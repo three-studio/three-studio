@@ -466,7 +466,11 @@ describe('web export', () => {
      * project tuned for low gravity played it in the editor and lost it in the
      * thing people download.
      */
-    const physics: PhysicsSettings = { gravity: [0, -3, 0], fixedTimestep: 1 / 120, maxSubsteps: 5 };
+    const physics: PhysicsSettings = {
+      ...createPhysicsSettings(),
+      gravity: [0, -3, 0],
+      fixedTimestep: 1 / 120,
+    };
     const { projectPath, templateRoot } = await makeProject(createRenderingSettings(), physics);
     const outputDir = join(projectPath, '..', 'out-physics');
 
@@ -474,7 +478,7 @@ describe('web export', () => {
 
     const build = await buildOf(outputDir);
     expect(build.physics).toEqual(physics);
-    expect(build.formatVersion).toBe(7);
+    expect(build.formatVersion).toBe(8);
   });
 
   it('tells the player which images its file names do not describe', async () => {
