@@ -1,4 +1,5 @@
 import { useEditorStore } from '../state/editorStore';
+import { hasTuning, keepTuning } from '../state/tuning';
 import { defineCommand } from './command';
 
 /*
@@ -69,5 +70,17 @@ export const PLAY_COMMANDS = {
     label: () => 'Step One Frame',
     can: () => useEditorStore.getState().playState === 'paused',
     run: () => useEditorStore.getState().requestStep(),
+  }),
+
+  /**
+   * The physics tuned during Play, written into the scene as one undo step.
+   * Offered at Stop by a toast, and here until the next Play or another scene,
+   * so the toast is not the only way to it: Unreal's Keep Simulation Changes.
+   */
+  keepTuning: defineCommand({
+    label: () => 'Keep Tuned Physics',
+    writesScene: true,
+    can: () => hasTuning(),
+    run: () => keepTuning(),
   }),
 };

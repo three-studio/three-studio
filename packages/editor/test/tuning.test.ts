@@ -8,7 +8,11 @@ import {
   createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabInstance,
   createRenderingSettings,
+  findComponent,
+  findComponentById,
+  instancedId,
   serializeScene,
   type ColliderComponent,
   type ComponentDoc,
@@ -20,16 +24,24 @@ import {
 import { Behaviour, Engine, clearScripts, registerScript } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { sceneWith } from '../../core/test/fixtures';
+import { prefabWith, sceneWith } from '../../core/test/fixtures';
+import { commandById } from '../src/commands/registry';
 import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
 import { effectiveComponent, inspectorSignature, linkedMaterial } from '../src/inspector/buildInspector';
 import { MultiTarget } from '../src/inspector/target';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
+import { expandedScene } from '../src/state/expansion';
 import { useProjectStore } from '../src/state/projectStore';
 import { useScriptStore } from '../src/state/scriptStore';
-import { tuneComponentField, tunePhysicsMaterialField, useTuningStore } from '../src/state/tuning';
+import { useToastStore } from '../src/state/toastStore';
+import {
+  keepTuning,
+  tuneComponentField,
+  tunePhysicsMaterialField,
+  useTuningStore,
+} from '../src/state/tuning';
 import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 
@@ -57,6 +69,9 @@ const project: ProjectFile = {
 
 const play = () => useEditorStore.getState().play();
 const stop = () => useEditorStore.getState().stop();
+const doc = () => useDocumentStore.getState();
+const toasts = () => useToastStore.getState().toasts;
+const realSavePhysicsMaterial = useAssetStore.getState().savePhysicsMaterial;
 
 /** A start goes through a few awaits; the longest is the physics module. */
 async function until(condition: () => boolean, what: string): Promise<void> {
@@ -80,8 +95,10 @@ let session: PlaySession | null = null;
 
 /** A session watching the transport, as the viewport builds one, and the engine Play starts. */
 async function playing(): Promise<Engine> {
-  session ??= new PlaySession(host);
-  session.watch();
+  if (!session) {
+    session = new PlaySession(host);
+    session.watch();
+  }
   play();
   await until(() => session?.playEngine != null, 'the engine');
   return session.playEngine!;
@@ -128,9 +145,10 @@ beforeEach(() => {
     sceneId: SCENE_ID,
     scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
   });
-  useAssetStore.setState({ physicsMaterials: {} });
+  useAssetStore.setState({ physicsMaterials: {}, prefabs: {} });
   // Compiled, with nothing to import: the classes are registered here.
   useScriptStore.setState({ build: async () => true });
+  useToastStore.getState().clear();
 });
 
 afterEach(() => {
@@ -138,6 +156,7 @@ afterEach(() => {
   session?.dispose();
   session = null;
   clearScripts();
+  useAssetStore.setState({ savePhysicsMaterial: realSavePhysicsMaterial });
   vi.restoreAllMocks();
 });
 
@@ -287,6 +306,104 @@ describe('tuning during Play', () => {
 
     expect(massOf(next, box)).toBeCloseTo(1, 5);
     expect(useTuningStore.getState().values).toEqual([]);
+  });
+});
+
+describe('keeping what was tuned', () => {
+  it('Keep writes what was tuned as one undo step, an instance’s field as its override and a physics material’s file included', async () => {
+    const ice = { ...createPhysicsMaterial(), friction: 0.05 };
+    const save = vi.fn(async () => {});
+    const inside = createMeshEntity('sphere');
+    inside.components.push({ ...createComponent('collider'), shape: createColliderShape('sphere') });
+    useAssetStore.setState({
+      physicsMaterials: { ice },
+      prefabs: { ball: prefabWith('Ball', [inside], inside.entity.id) },
+      savePhysicsMaterial: save,
+    });
+    const box = cube();
+    componentOf(box, 'collider').materialId = 'ice';
+    const instance = createEntity('Ball', [createPrefabInstance('ball')]);
+    instance.entity.transform.position = [3, 0, 0];
+    useDocumentStore.getState().replaceScene(sceneWith([box, instance]));
+    const produced = instancedId(instance.entity.id, inside.entity.id);
+    const ball = componentOf(inside, 'collider');
+    await playing();
+
+    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    // A kind, then a measure of it: one field, written whole.
+    tuneComponentField(produced, ball.id, ['shape'], createColliderShape('capsule'));
+    tuneComponentField(produced, ball.id, ['shape', 'radius'], 0.8);
+    tunePhysicsMaterialField('ice', 'friction', 0);
+    stop();
+    keepTuning();
+
+    const mass = () => findComponent(doc().scene, box.entity.id, 'rigidbody')?.mass;
+    const override = () =>
+      findComponent(doc().scene, instance.entity.id, 'prefabInstance')?.overrides[inside.entity.id]?.components?.[ball.id];
+    const shape = () => {
+      const collider = findComponentById(expandedScene().scene, produced, ball.id);
+      return collider?.type === 'collider' ? collider.shape : null;
+    };
+    expect(mass()).toBe(5);
+    expect(override()).toBeDefined();
+    expect(shape()).toEqual({ ...createColliderShape('capsule'), radius: 0.8 });
+    expect(save).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0 });
+    expect(doc().undoLabel()).toBe('Keep tuned physics');
+
+    doc().undo();
+    expect(mass()).toBe(1);
+    expect(override()).toBeUndefined();
+    expect(shape()).toEqual(createColliderShape('sphere'));
+    expect(save).toHaveBeenLastCalledWith('ice', ice);
+
+    doc().redo();
+    expect(mass()).toBe(5);
+    expect(shape()).toEqual({ ...createColliderShape('capsule'), radius: 0.8 });
+    expect(save).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0 });
+  });
+
+  it('Keep is offered at Stop, and in the Edit menu until the next Play', async () => {
+    const box = cube();
+    useDocumentStore.getState().replaceScene(sceneWith([box]));
+    await playing();
+    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+
+    stop();
+
+    expect(toasts()).toHaveLength(1);
+    expect(toasts()[0]).toMatchObject({ kind: 'info', title: 'Keep the physics tuned during Play?' });
+    expect(toasts()[0]!.actions?.map(({ label }) => label)).toEqual(['Keep']);
+    expect(commandById('keepTuning').can()).toBe(true);
+
+    play();
+    expect(toasts()).toEqual([]);
+    await until(() => session?.playEngine != null, 'the next engine');
+    stop();
+    expect(commandById('keepTuning').can()).toBe(false);
+    expect(toasts()).toEqual([]);
+  });
+
+  it('another scene in the window drops what was tuned', async () => {
+    const box = cube();
+    useDocumentStore.getState().replaceScene(sceneWith([box]));
+    await playing();
+    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    stop();
+
+    useProjectStore.setState({ sceneId: BOSS.id });
+
+    expect(commandById('keepTuning').can()).toBe(false);
+    expect(toasts()).toEqual([]);
+  });
+
+  it('nothing tuned, nothing offered', async () => {
+    useDocumentStore.getState().replaceScene(sceneWith([cube()]));
+    await playing();
+
+    stop();
+
+    expect(toasts()).toEqual([]);
+    expect(commandById('keepTuning').can()).toBe(false);
   });
 });
 

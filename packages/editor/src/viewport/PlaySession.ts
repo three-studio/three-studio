@@ -21,7 +21,7 @@ import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/p
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { toastSlot } from '../state/toastStore';
-import { startTuning, tuningEngine } from '../state/tuning';
+import { dropTuning, offerTuning, tuningEngine } from '../state/tuning';
 import { useViewportStore } from '../state/viewportStore';
 import type { Presentation } from './Presentation';
 
@@ -184,6 +184,7 @@ export class PlaySession {
    */
   private startedFrom: SceneDoc | null = null;
   private unsubscribePlayState: (() => void) | null = null;
+  private unsubscribeScene: (() => void) | null = null;
   /**
    * Which start is the one somebody waits for: bumped at every press, every
    * Stop and `dispose`. A start that finds it moved after an await has been
@@ -218,6 +219,14 @@ export class PlaySession {
    */
   watch(): void {
     let previous = useEditorStore.getState().playState;
+    // What a Play tuned is against the scene it ran: another scene in the
+    // window drops it, its offer at Stop included.
+    let sceneId = useProjectStore.getState().sceneId;
+    this.unsubscribeScene = useProjectStore.subscribe((state) => {
+      if (state.sceneId === sceneId) return;
+      sceneId = state.sceneId;
+      dropTuning();
+    });
 
     this.unsubscribePlayState = useEditorStore.subscribe((state) => {
       const next = state.playState;
@@ -237,7 +246,7 @@ export class PlaySession {
         // is the window's scene, from Prefab Mode too.
         useViewportStore.getState().setRunningScene(useProjectStore.getState().sceneId);
         // What the last Play tuned is about a game that has gone.
-        startTuning();
+        dropTuning();
         this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
@@ -458,6 +467,8 @@ export class PlaySession {
     this.engine = null;
     running = null;
     tuningEngine(null);
+    // What the Play tuned, offered back now that the document can take it.
+    offerTuning();
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);
@@ -491,6 +502,7 @@ export class PlaySession {
   /** Stops the game and unsubscribes. The session is not usable afterwards. */
   dispose(): void {
     this.unsubscribePlayState?.();
+    this.unsubscribeScene?.();
     this.session += 1;
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on

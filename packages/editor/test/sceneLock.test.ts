@@ -22,6 +22,7 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { STOP_TO_EDIT, isSceneLocked, sceneLocked } from '../src/state/sceneLock';
 import { useToastStore } from '../src/state/toastStore';
+import { useTuningStore } from '../src/state/tuning';
 
 /*
  * From the press of Play until Stop, nothing edits the scene document.
@@ -337,6 +338,11 @@ const WRITERS: Readonly<Record<string, () => EditorContext>> = {
   unpackPrefab: () => contextFor([crate]),
   revertEntityOverride: () => contextFor([produced]),
   unpackModel: () => contextFor([chair]),
+  // With something tuned during Play to keep.
+  keepTuning: () => {
+    useTuningStore.setState({ values: [{ entityId: first, componentId: 'any', path: ['castShadow'], value: false }] });
+    return currentContext();
+  },
 };
 
 /**
@@ -385,8 +391,8 @@ const writers = (): [CommandId, EditorContext][] =>
   Object.entries(WRITERS).map(([id, context]) => [id as CommandId, context()]);
 
 describe('the commands that write the scene', () => {
-  it('are thirteen, and every other command is listed as one that does not', () => {
-    expect(Object.keys(WRITERS)).toHaveLength(13);
+  it('are fourteen, and every other command is listed as one that does not', () => {
+    expect(Object.keys(WRITERS)).toHaveLength(14);
     expect(OTHERS).toHaveLength(34);
     expect([...Object.keys(WRITERS), ...OTHERS].sort()).toEqual([...commandIds()].sort());
   });

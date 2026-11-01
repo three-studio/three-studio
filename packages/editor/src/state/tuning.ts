@@ -8,10 +8,12 @@ import {
 import type { Engine } from '@three-studio/runtime';
 import { produce } from 'immer';
 import { create } from 'zustand';
-import { writePath } from '../commands/sceneCommands';
+import { writeComponentPath, writePath } from '../commands/sceneCommands';
 import { useAssetStore } from './assetStore';
+import { useDocumentStore } from './documentStore';
 import { expandedScene } from './expansion';
 import { isSceneLocked } from './sceneLock';
+import { toastSlot } from './toastStore';
 
 /*
  * What a Play tunes: the physics rows the Inspector edits while the game runs.
@@ -52,9 +54,94 @@ export const useTuningStore = create<TuningState>()(() => ({ values: [], materia
  */
 let engine: Engine | null = null;
 
-/** At the press of Play: the last Play's tuning is dropped. */
-export function startTuning(): void {
+/** The offer at Stop: one toast, replaced where it stands. */
+const offer = toastSlot();
+
+/**
+ * Drops what was tuned, and its offer: at the next press of Play, when the
+ * window shows another scene — the values are against the scene Play ran —,
+ * and once kept.
+ */
+export function dropTuning(): void {
+  offer.dismiss();
   useTuningStore.setState((state) => ({ values: [], materials: {}, revision: state.revision + 1 }));
+}
+
+/**
+ * At Stop, when something was tuned: a toast offering to keep it, and Edit ▸
+ * Keep Tuned Physics until the next Play or until the window shows another
+ * scene. A toast is never the only way to something. Ignored, the values are
+ * dropped then.
+ */
+export function offerTuning(): void {
+  if (!hasTuning()) return;
+  const { values, materials } = useTuningStore.getState();
+  const entities = new Set(values.map(({ entityId }) => entityId)).size;
+  const assets = Object.keys(materials).length;
+  const on = [
+    entities > 0 ? `${entities} ${entities === 1 ? 'entity' : 'entities'}` : null,
+    assets > 0 ? `${assets} physics ${assets === 1 ? 'material' : 'materials'}` : null,
+  ].filter((part) => part !== null);
+  offer.show({
+    kind: 'info',
+    title: 'Keep the physics tuned during Play?',
+    description: `Tuned on ${on.join(' and ')}. Edit ▸ Keep Tuned Physics keeps it until the next Play.`,
+    duration: null,
+    actions: [{ label: 'Keep', primary: true, onClick: keepTuning }],
+  });
+}
+
+/** Whether something tuned waits to be kept. */
+export function hasTuning(): boolean {
+  const { values, materials } = useTuningStore.getState();
+  return values.length > 0 || Object.keys(materials).length > 0;
+}
+
+/**
+ * Writes what the Play tuned into the scene, as one undo step, once the game
+ * has stopped, and drops it: each field where the Inspector writes it when
+ * stopped, an instance's as its override, over whatever the document holds
+ * now; and each tuned physics material to its file. A component gone since is
+ * passed by. One Cmd+Z takes all of it back, the files included.
+ *
+ * A component's fields are written whole, each as tuned: written one value at
+ * a time, a radius tuned under a tuned shape went into an instance's override
+ * built from the shape the document held before, as the expansion still had it.
+ */
+export function keepTuning(): void {
+  if (isSceneLocked() || !hasTuning()) return;
+  const { values, materials } = useTuningStore.getState();
+  const { scene } = expandedScene();
+  const writes: { entityId: string; componentId: string; key: string; value: unknown }[] = [];
+  for (const { entityId, componentId, path } of values) {
+    const [key] = path;
+    const seen = writes.some(
+      (write) => write.entityId === entityId && write.componentId === componentId && write.key === key,
+    );
+    const component = findComponentById(scene, entityId, componentId);
+    if (key === undefined || seen || !component) continue;
+    writes.push({ entityId, componentId, key, value: Reflect.get(withTuned(entityId, component), key) });
+  }
+
+  const stored = useAssetStore.getState().physicsMaterials;
+  const files = Object.entries(materials).flatMap(([assetId, after]) => {
+    const before = linkedPhysicsMaterial(assetId, stored);
+    return before ? [{ assetId, before, after }] : [];
+  });
+  const save = (which: 'before' | 'after') => {
+    for (const file of files) void useAssetStore.getState().savePhysicsMaterial(file.assetId, file[which]);
+  };
+  save('after');
+  useDocumentStore.getState().mutate(
+    'Keep tuned physics',
+    (draft) => {
+      for (const { entityId, componentId, key, value } of writes) {
+        writeComponentPath(draft, entityId, componentId, [key], value);
+      }
+    },
+    files.length === 0 ? undefined : { external: { apply: () => save('after'), revert: () => save('before') } },
+  );
+  dropTuning();
 }
 
 /**
@@ -121,7 +208,11 @@ export function tunePhysicsMaterialField(assetId: string, key: string, value: un
  * under each instance's entity, so a component id alone repeats.
  */
 export function tunedComponent<C extends ComponentDoc>(entityId: string, component: C): C {
-  if (!isSceneLocked()) return component;
+  return isSceneLocked() ? withTuned(entityId, component) : component;
+}
+
+/** The component with what was tuned on it, the game running or not. */
+function withTuned<C extends ComponentDoc>(entityId: string, component: C): C {
   const tuned = useTuningStore
     .getState()
     .values.filter((value) => value.entityId === entityId && value.componentId === component.id);

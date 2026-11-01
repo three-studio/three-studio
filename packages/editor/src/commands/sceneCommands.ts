@@ -570,20 +570,33 @@ export function setComponentNestedField(
   if (typeof value === 'number' && !Number.isFinite(value)) return;
   mutate(
     'Edit component',
-    (scene) => {
-      const component = findComponentById(scene, id, componentId);
-      if (!component) {
-        editInstance(scene, id, (override, current) => {
-          overrideComponentPath(override, current, componentId, path, value);
-        });
-        return;
-      }
-
-      dropOverridesOnPrefabSwap(component, path, value);
-      writePath(component, path, value);
-    },
+    (scene) => writeComponentPath(scene, id, componentId, path, value),
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
+}
+
+/**
+ * One field of one component, written inside a recipe: the scene's own
+ * component, or an instance's as its override. Nothing for a component the
+ * scene no longer has.
+ */
+export function writeComponentPath(
+  scene: SceneDoc,
+  entityId: string,
+  componentId: string,
+  path: readonly string[],
+  value: unknown,
+): void {
+  const component = findComponentById(scene, entityId, componentId);
+  if (!component) {
+    editInstance(scene, entityId, (override, current) => {
+      overrideComponentPath(override, current, componentId, path, value);
+    });
+    return;
+  }
+
+  dropOverridesOnPrefabSwap(component, path, value);
+  writePath(component, path, value);
 }
 
 /**
