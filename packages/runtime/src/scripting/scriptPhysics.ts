@@ -33,6 +33,7 @@ export function scriptPhysicsFor(physics: PhysicsApi | null, scene: SceneDoc): S
   const bodyEntity = (entityId: string) => bodyOf(scene, entityId) ?? entityId;
   return {
     gravity: physics?.gravity ?? ZERO,
+    layers: physics?.layers ?? [],
     body: (entityId) => physics?.body(bodyEntity(entityId)) ?? null,
     createCharacterController: (entityId, settings) =>
       physics?.createCharacterController(bodyEntity(entityId), settings) ?? null,

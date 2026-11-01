@@ -2,8 +2,11 @@ import {
   createColliderShape,
   createComponent,
   createEntity,
+  createDefaultLayer,
   type ColliderComponent,
+  type CollisionLayer,
   type EntityTemplate,
+  type PhysicsSettings,
 } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -12,6 +15,7 @@ import {
   block,
   ground,
   nest,
+  onLayer,
   physicsRig,
   sensor,
   standInForTheBrowser,
@@ -50,8 +54,11 @@ const quarter = (x: number, y: number, z: number) =>
   new Quaternion().setFromAxisAngle(new Vector3(x, y, z), Math.PI / 2);
 
 /** These entities in a running engine, and the world as a behaviour asks it. */
-async function running(entities: readonly EntityTemplate[]): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
-  const rig = await physicsRig(entities);
+async function running(
+  entities: readonly EntityTemplate[],
+  settings?: Partial<PhysicsSettings>,
+): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
+  const rig = await physicsRig(entities, settings);
   const physics = rig.engine.physics;
   if (!physics) throw new Error('The rig runs with physics on.');
   return { rig, physics };
@@ -258,6 +265,54 @@ describe('a query of a shape', () => {
     expect(physics.capsuleCast(from, 0.25, 2, nowhere, ahead, 20)).toBeNull();
     expect(physics.overlapSphere({ x: 0, y: 1, z: -5 }, Number.NaN)).toEqual([]);
     expect(physics.overlapBox({ x: 0, y: 1, z: -5 }, { x: 1, y: 1, z: 1 }, nowhere)).toEqual([]);
+  });
+});
+
+describe('what a query sees', () => {
+  /** Lonely touches nothing, itself included. */
+  const layers: CollisionLayer[] = [
+    createDefaultLayer(),
+    { id: 'a', name: 'A', ignores: [] },
+    { id: 'lonely', name: 'Lonely', ignores: ['default', 'a', 'lonely'] },
+  ];
+
+  it('is the layers it asks for, each collider by its own layer, one that touches nothing included', async () => {
+    const lonely = onLayer(block([0, 1, -3], [2, 2, 1]), 'lonely');
+    const onA = onLayer(near(), 'a');
+    const { physics } = await running([ground(), lonely, onA], { layers });
+    const from = { x: 0, y: 1, z: 0 };
+
+    // Given collision groups, Rapier hid the Lonely block from every query.
+    expectHit(physics.raycast(from, ahead, 20), { entity: lonely, distance: 2.5 });
+    expectHit(physics.raycast(from, ahead, 20, { layers: ['a'] }), { entity: onA, distance: 4.5 });
+    expectHit(physics.raycast(from, ahead, 20, { layers: ['lonely'] }), { entity: lonely, distance: 2.5 });
+    expect(physics.raycast(from, ahead, 20, { layers: [] })).toBeNull();
+    expect(physics.raycast(from, ahead, 20, { layers: ['gone'] })).toBeNull();
+    expect(physics.overlapSphere({ x: 0, y: 1, z: -4 }, 1.4, { layers: ['a'] })).toEqual([onA.entity.id]);
+  });
+
+  it('is sensors too, when it asks', async () => {
+    const zone = sensor([0, 1, -2.5], [2, 2, 1]);
+    const wall = near();
+    const { physics } = await running([zone, wall]);
+    const inside = { x: 0, y: 1, z: -2.5 };
+
+    expectHit(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 20), { entity: wall, distance: 4.5 });
+    expectHit(physics.raycast({ x: 0, y: 1, z: 0 }, ahead, 20, { sensors: true }), { entity: zone, distance: 2 });
+    expect(physics.overlapSphere(inside, 0.5)).toEqual([]);
+    expect(physics.overlapSphere(inside, 0.5, { sensors: true })).toEqual([zone.entity.id]);
+  });
+
+  it("is named from the project's table, Default first, which cannot be changed", async () => {
+    const { physics } = await running([], { layers });
+
+    expect(physics.layers).toEqual([
+      { id: 'default', name: 'Default' },
+      { id: 'a', name: 'A' },
+      { id: 'lonely', name: 'Lonely' },
+    ]);
+    expect(Object.isFrozen(physics.layers)).toBe(true);
+    expect(physics.layers.every((layer) => Object.isFrozen(layer))).toBe(true);
   });
 });
 

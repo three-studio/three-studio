@@ -28,3 +28,17 @@ export function collisionGroups(layers: readonly CollisionLayer[]): (layerId: st
   const asDefault = groups.get(DEFAULT_LAYER_ID) ?? 0xffff_ffff;
   return (layerId) => groups.get(layerId) ?? asDefault;
 }
+
+/**
+ * The bits of the layers a query asks for, in `collisionGroups`' order but in
+ * the sixteen low bits, where a collider's own bit lands once its membership is
+ * shifted down: the sixteenth stays positive.
+ *
+ * An id the table does not hold adds none, so it sees nothing. A collider
+ * naming a layer that is gone collides as Default, but a query asked for
+ * something specific.
+ */
+export function layerBits(layers: readonly CollisionLayer[]): (layerIds: readonly string[]) => number {
+  const bits = new Map(layers.map((layer, index): [string, number] => [layer.id, 1 << index]));
+  return (layerIds) => layerIds.reduce((all, id) => all | (bits.get(id) ?? 0), 0);
+}

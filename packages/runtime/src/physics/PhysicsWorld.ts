@@ -19,7 +19,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
-import { collisionGroups } from './layers';
+import { collisionGroups, layerBits } from './layers';
 import { describeMesh } from './meshShape';
 import type {
   BodyHandle,
@@ -365,7 +365,7 @@ interface Built {
 
 /** What a query sees, as the arguments every Rapier query ends with. */
 type Scope = [
-  flags: RAPIER.QueryFilterFlags,
+  flags: RAPIER.QueryFilterFlags | undefined,
   groups: undefined,
   excludeCollider: undefined,
   excludeBody: RAPIER.RigidBody | undefined,
@@ -385,6 +385,7 @@ type Scope = [
  */
 export class PhysicsWorld implements PhysicsApi {
   readonly gravity: Readonly<Vec3Like>;
+  readonly layers: readonly Readonly<{ id: string; name: string }>[];
   private readonly world: RAPIER.World;
   private readonly bodies = new Map<string, Body>();
   /** Drained before each step, so the events of a world nobody listens to cannot pile up. */
@@ -403,13 +404,18 @@ export class PhysicsWorld implements PhysicsApi {
   private readonly maxSubsteps: number;
   /** Each layer's collision groups, by its id: project data, as gravity and the step are. */
   private readonly groupsOf: (layerId: string) => number;
+  /** The bits of the layers a query asks for, by their ids. */
+  private readonly bitsOf: (layerIds: readonly string[]) => number;
 
   private constructor(world: RAPIER.World, settings: PhysicsSettings) {
     this.fixedStep = settings.fixedTimestep;
     this.maxSubsteps = settings.maxSubsteps;
     this.groupsOf = collisionGroups(settings.layers);
+    this.bitsOf = layerBits(settings.layers);
     const [x, y, z] = settings.gravity;
     this.gravity = Object.freeze({ x, y, z });
+    // Without what each ignores, which is the matrix's business.
+    this.layers = Object.freeze(settings.layers.map(({ id, name }) => Object.freeze({ id, name })));
     this.world = world;
     this.world.timestep = this.fixedStep;
   }
@@ -717,8 +723,10 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * What a query sees: solid colliders, but the body it is told to leave out
-   * and what it starts in.
+   * What a query sees: the colliders on the layers it asks for, by each
+   * collider's own layer, as Unity's and Godot's do, whatever the matrix says;
+   * sensors only when it asks, so that a ray of sight passes through a trigger
+   * zone; never the body it is told to leave out, nor what it starts in.
    *
    * Only colliders the world built, so that a hit can name its entity: one
    * missing from the table is passed over, and the next one found.
@@ -734,12 +742,19 @@ export class PhysicsWorld implements PhysicsApi {
    */
   private scope(options: QueryOptions | undefined, startsIn: (collider: RAPIER.Collider) => boolean): Scope {
     const excluded = options?.exclude === undefined ? undefined : this.bodies.get(options.exclude)?.rapier;
+    const bits = options?.layers === undefined ? undefined : this.bitsOf(options.layers);
     return [
-      RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      options?.sensors ? undefined : RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+      // No groups. Rapier tests a query's both ways, as between two colliders,
+      // and hid a collider whose layer touches nothing from every query
+      // whatever it asked for; so the predicate reads the collider's own bit.
       undefined,
       undefined,
       excluded,
-      (collider) => this.owners.has(collider.handle) && !startsIn(collider),
+      (collider) =>
+        this.owners.has(collider.handle) &&
+        (bits === undefined || ((collider.collisionGroups() >>> 16) & bits) !== 0) &&
+        !startsIn(collider),
     ];
   }
 

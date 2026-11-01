@@ -34,6 +34,8 @@ export interface QuatLike {
 export interface PhysicsApi {
   /** The project's gravity, in m/s². */
   readonly gravity: Readonly<Vec3Like>;
+  /** The project's collision layers, in Project Settings' order, Default first: a query names theirs by id. */
+  readonly layers: readonly Readonly<{ id: string; name: string }>[];
   /** The entity's body, or `null` when it carries none. */
   body(entityId: string): BodyHandle | null;
   /**
@@ -104,8 +106,20 @@ export interface PhysicsApi {
   ): readonly string[];
 }
 
-/** What a query leaves out. */
-export interface QueryOptions {
+/** What a query sees. Left out, it sees every layer and no sensor. */
+export interface QueryFilter {
+  /**
+   * Ids of the collision layers it sees, from `PhysicsApi.layers`. A Collider
+   * is seen by its own layer, whatever the matrix says. An id the project does
+   * not have sees nothing.
+   */
+  readonly layers?: readonly string[];
+  /** Sensors too. Left out, a query sees solid colliders only: a ray passes through a trigger zone. */
+  readonly sensors?: boolean;
+}
+
+/** A behaviour's filter: what it sees, and the body it leaves out. */
+export interface QueryOptions extends QueryFilter {
   /**
    * The entity whose body is left out, every collider of it: the body on that
    * entity exactly, as `body` reads an id. The caller's own, usually.

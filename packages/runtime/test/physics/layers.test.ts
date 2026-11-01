@@ -1,6 +1,6 @@
 import { createDefaultLayer, type CollisionLayer } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { collisionGroups } from '../../src/physics/layers';
+import { collisionGroups, layerBits } from '../../src/physics/layers';
 import {
   ground,
   onLayer,
@@ -25,6 +25,12 @@ const parted: CollisionLayer[] = [
   { id: 'b', name: 'B', ignores: [] },
 ];
 
+/** As many as Rapier has bits for: the last one's is a 32-bit number's sign. */
+const sixteen: CollisionLayer[] = [
+  createDefaultLayer(),
+  ...Array.from({ length: 15 }, (_, i): CollisionLayer => ({ id: `l${i + 1}`, name: `L${i + 1}`, ignores: [] })),
+];
+
 describe('the groups a layer is built with', () => {
   it('gives Default alone its bit, touching itself', () => {
     expect(collisionGroups([createDefaultLayer()])('default')).toBe(0x0001_0001);
@@ -44,11 +50,20 @@ describe('the groups a layer is built with', () => {
   });
 
   it("keeps the sixteenth layer's groups positive, its bit the 32nd", () => {
-    const sixteen = [
-      createDefaultLayer(),
-      ...Array.from({ length: 15 }, (_, i): CollisionLayer => ({ id: `l${i + 1}`, name: `L${i + 1}`, ignores: [] })),
-    ];
     expect(collisionGroups(sixteen)('l15')).toBe(0x8000_ffff);
+  });
+});
+
+describe('the bits a query asks for', () => {
+  it("gives each id its layer's bit, in table order, and an id the table does not hold none", () => {
+    const bitsOf = layerBits(parted);
+    expect(bitsOf(['a'])).toBe(0b010);
+    expect(bitsOf(['default', 'b'])).toBe(0b101);
+    expect(bitsOf(['gone'])).toBe(0);
+  });
+
+  it("keeps the sixteenth layer's bit positive", () => {
+    expect(layerBits(sixteen)(['l15'])).toBe(1 << 15);
   });
 });
 

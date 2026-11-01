@@ -87,6 +87,7 @@ export type {
   Collision,
   PhysicsApi,
   QuatLike,
+  QueryFilter,
   QueryOptions,
   RaycastHit,
   Vec3Like,
