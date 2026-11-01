@@ -6,6 +6,7 @@ import {
 } from '@three-studio/core';
 import {
   AlertTriangle,
+  Atom,
   Box,
   Boxes,
   Copy,
@@ -32,6 +33,7 @@ const KIND_ICON: Record<AssetKind, LucideIcon> = {
   model: Box,
   texture: Image,
   material: Palette,
+  physicsMaterial: Atom,
   prefab: Boxes,
   shader: Sparkles,
   audio: Volume2,

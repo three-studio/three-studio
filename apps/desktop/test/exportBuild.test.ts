@@ -24,6 +24,7 @@ import {
   createMaterial,
   createMeshEntity,
   createAudioSourceEntity,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
@@ -39,7 +40,7 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { readMaterialAssets } from '../src/main/assetLibraries';
+import { readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { buildScripts } from '../src/main/scripts';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
@@ -268,6 +269,33 @@ describe('asset and material migration', () => {
     expect(materials['mat-old']?.color).toBe('#ff0000');
     expect(materials['mat-old']?.tiling).toEqual([1, 1]);
     expect(materials['mat-old']?.displacementScale).toBeCloseTo(0.1);
+  });
+
+  it('reads a physics material against its factory, and leaves out one a newer build wrote', async () => {
+    const { projectPath } = await makeProject();
+    const folder = join(projectPath, ASSETS_DIR, 'physics-materials');
+    await mkdir(folder, { recursive: true });
+    const write = async (name: string, id: string, contents: unknown) => {
+      const file = join(folder, `${name}.physics-material.json`);
+      await writeFile(file, JSON.stringify(contents), 'utf8');
+      await writeFile(
+        `${file}.meta.json`,
+        JSON.stringify({ version: 1, id, kind: 'physicsMaterial', importedAt: 1, hash: 'h' }),
+        'utf8',
+      );
+    };
+    await write('Ice', 'pm-ice', {
+      version: 1,
+      material: { friction: 0.05, frictionCombine: 'sum' },
+    });
+    await write('Future', 'pm-future', { version: 2, material: { friction: 0.05 } });
+
+    expect(await readPhysicsMaterialAssets(projectPath)).toEqual({
+      'pm-ice': { ...createPhysicsMaterial(), friction: 0.05 },
+    });
+    const materials = await readMaterialAssets(projectPath);
+    expect(materials).not.toHaveProperty('pm-ice');
+    expect(materials).not.toHaveProperty('pm-future');
   });
 });
 

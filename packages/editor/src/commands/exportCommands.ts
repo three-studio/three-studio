@@ -17,6 +17,7 @@ const KIND_LABELS: Record<AssetKind, string> = {
   texture: 'Textures',
   audio: 'Audio',
   material: 'Materials',
+  physicsMaterial: 'Physics materials',
   prefab: 'Prefabs',
   shader: 'Shaders',
   // Never in a build: scripts ship compiled, as the row below them.

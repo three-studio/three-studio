@@ -61,6 +61,7 @@ export {
   BUILD_FORMAT_VERSION,
   BUILD_LAYOUT,
   MATERIAL_ASSET_VERSION,
+  PHYSICS_MATERIAL_ASSET_VERSION,
   applyAssetChange,
   emptyAssetChange,
   emptyManifest,
@@ -85,6 +86,8 @@ export type {
   ModelSettings,
   ModelSettingsBase,
   ObjModelSettings,
+  PhysicsMaterialAssetFile,
+  PhysicsMaterialSettings,
   PrefabSettings,
   ScriptSettings,
   ShaderSettings,
@@ -127,7 +130,7 @@ export type {
  */
 export { field, fieldOptions, optionsFrom } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
-export { conform, conformPatch } from './conform';
+export { conform, conformPatch, isRecord } from './conform';
 export {
   conformAssetSettings,
   conformLayoutPreferences,

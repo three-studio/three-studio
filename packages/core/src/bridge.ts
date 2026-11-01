@@ -22,6 +22,7 @@ import type {
   ProjectSummary,
   SceneEntry,
 } from './project/schema';
+import type { PhysicsMaterialDef } from './scene/physicsMaterial';
 import type { PrefabDoc } from './scene/prefab';
 import type { MaterialDef } from './scene/schema';
 
@@ -298,6 +299,12 @@ export interface AssetApi {
   createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
+  /** Every physics material in the project, by asset id. Read in one go, like materials. */
+  readPhysicsMaterials: () => Promise<Record<string, PhysicsMaterialDef>>;
+  /** Writes a new physics material asset and returns its id. */
+  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  /** Overwrites an existing physics material asset, by project-relative path. */
+  savePhysicsMaterial: (assetPath: string, material: PhysicsMaterialDef) => Promise<void>;
   savePrefab: (assetPath: string, prefab: PrefabDoc) => Promise<void>;
   /**
    * Opens the containing folder in the OS file browser, the file selected.
@@ -551,6 +558,9 @@ export const IPC_INVOKE = {
     createPrefab: 'assets:createPrefab',
     saveMaterial: 'assets:saveMaterial',
     savePrefab: 'assets:savePrefab',
+    readPhysicsMaterials: 'assets:readPhysicsMaterials',
+    createPhysicsMaterial: 'assets:createPhysicsMaterial',
+    savePhysicsMaterial: 'assets:savePhysicsMaterial',
     revealInFileManager: 'assets:reveal',
   },
   scripts: {

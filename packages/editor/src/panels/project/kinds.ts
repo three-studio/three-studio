@@ -1,5 +1,6 @@
 import type { AssetEntry, AssetKind } from '@three-studio/core';
 import {
+  Atom,
   Box,
   Boxes,
   FileCode,
@@ -15,6 +16,7 @@ export const KIND_ICON: Record<AssetKind, LucideIcon> = {
   model: Box,
   texture: Image,
   material: Palette,
+  physicsMaterial: Atom,
   prefab: Boxes,
   shader: Sparkles,
   audio: Volume2,
@@ -34,6 +36,7 @@ const KIND_LABELS: Record<AssetKind, string> = {
   model: 'Models',
   texture: 'Textures',
   material: 'Materials',
+  physicsMaterial: 'Physics materials',
   prefab: 'Prefabs',
   shader: 'Shaders',
   audio: 'Audio',

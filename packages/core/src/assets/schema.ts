@@ -1,10 +1,12 @@
 import type { PrefabDoc } from '../scene/prefab';
+import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
   | 'model'
   | 'texture'
   | 'material'
+  | 'physicsMaterial'
   | 'prefab'
   | 'shader'
   | 'audio'
@@ -190,6 +192,23 @@ export interface MaterialAssetFile {
 }
 
 /**
+ * Shape of `assets/physics-materials/<name>.physics-material.json`.
+ *
+ * A file of a later version is left out: a newer build may have given the
+ * material something this one would drop.
+ */
+export const PHYSICS_MATERIAL_ASSET_VERSION = 1;
+
+/**
+ * A physics material on disk: the same `PhysicsMaterialDef` a collider embeds,
+ * so saving a collider's own values as an asset is a move, as it is for a mesh.
+ */
+export interface PhysicsMaterialAssetFile {
+  version: number;
+  material: PhysicsMaterialDef;
+}
+
+/**
  * `assets/**\/*.meta.json`.
  *
  * 2 — a texture carries its `encoding`. The extension cannot answer it: an
@@ -341,6 +360,10 @@ export interface PrefabSettings {
   kind: 'prefab';
 }
 
+export interface PhysicsMaterialSettings {
+  kind: 'physicsMaterial';
+}
+
 export interface MaterialSettings {
   kind: 'material';
   /**
@@ -395,6 +418,7 @@ export type AssetSettings =
   | ModelSettings
   | ScriptSettings
   | MaterialSettings
+  | PhysicsMaterialSettings
   | PrefabSettings
   | ShaderSettings
   | AudioSettings;

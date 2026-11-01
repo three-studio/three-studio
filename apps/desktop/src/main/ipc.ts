@@ -10,6 +10,7 @@ import {
   type ImportSessionState,
   type ExportResult,
   type MaterialDef,
+  type PhysicsMaterialDef,
   type PrefabDoc,
   type ProjectContents,
   type ProjectFile,
@@ -31,6 +32,7 @@ import {
   conformLayoutPreferences,
   conformShortcutPreferences,
   conformMaterial,
+  conformPhysicsMaterial,
   conformSettingsPatch,
   conformDeviceSettingsPatch,
   conformLaunchSnapshot,
@@ -50,10 +52,13 @@ import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } f
 type IpcHandler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
 import {
   createMaterialAsset,
+  createPhysicsMaterialAsset,
   createPrefabAsset,
   readMaterialAssets,
+  readPhysicsMaterialAssets,
   readPrefabAssets,
   saveMaterialAsset,
+  savePhysicsMaterialAsset,
   savePrefabAsset,
 } from './assetLibraries';
 import {
@@ -512,6 +517,15 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     savePrefab: (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
       return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
     },
+
+    readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
+      readPhysicsMaterialAssets(requireProject()),
+
+    createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<string> =>
+      createPhysicsMaterialAsset(requireProject(), name, conformPhysicsMaterial(material)),
+
+    savePhysicsMaterial: (_event, path: string, material: PhysicsMaterialDef): Promise<void> =>
+      savePhysicsMaterialAsset(requireProject(), path, conformPhysicsMaterial(material)),
 
     revealInFileManager: async (_event, assetPath: string): Promise<void> => {
       // `showItemInFolder` takes an absolute path, so the guard still applies.
