@@ -1,4 +1,4 @@
-import { fieldOptions, type FieldDef } from '@three-studio/core';
+import { fieldOptions, type FieldDef, type SceneDoc } from '@three-studio/core';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import type { BoundSpec, Declared } from './fields';
@@ -67,15 +67,7 @@ export function declaredControl(spec: Declared): {
 
     case 'entity':
       return {
-        optionsProvider: () => {
-          const scene = useDocumentStore.getState().scene;
-          return {
-            None: '',
-            ...Object.fromEntries(
-              Object.values(scene.entities).map((entity) => [entity.name, entity.id]),
-            ),
-          };
-        },
+        optionsProvider: () => ({ None: '', ...entityChoices(useDocumentStore.getState().scene) }),
       };
 
     case 'asset':
@@ -87,6 +79,11 @@ export function declaredControl(spec: Declared): {
         },
       };
   }
+}
+
+/** The scene's entities as a picker offers them: an id by its label, the entity's name. */
+export function entityChoices(scene: SceneDoc): Record<string, string> {
+  return Object.fromEntries(Object.values(scene.entities).map((entity) => [entity.name, entity.id]));
 }
 
 /** The declared bounds, without the keys that were not declared. */

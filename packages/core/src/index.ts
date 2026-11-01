@@ -186,6 +186,7 @@ export type {
   GeometryDef,
   GeometryKind,
   Hex,
+  JointComponent,
   LightComponent,
   LightKind,
   MaterialDef,
@@ -232,6 +233,7 @@ export {
   EMITTER_SHAPE_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
+  JOINT_KIND_LABELS,
   MATERIAL_SIDE_LABELS,
   MESH_BUILD_LABELS,
   PLAYER_CONTROLLER_MODE_LABELS,
@@ -248,6 +250,9 @@ export type {
   DistanceModel,
   EnvironmentMode,
   FogMode,
+  JointKind,
+  JointMotion,
+  JointMotionOf,
   MeshBuild,
   PlayerControllerMode,
   TouchControlsMode,
@@ -326,6 +331,9 @@ export { conformColliderShape, createColliderShape } from './components/collider
  */
 export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
 export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
+export { conformJointMotion, createJoint, createJointMotion } from './components/joint/defaults';
+/* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
+export { jointFrame } from './components/joint/frame';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';
@@ -368,7 +376,8 @@ export { capabilitiesOf } from './scene/capabilities';
 export type { EntityCapability } from './scene/capabilities';
 
 /* Which body each collider rides: the build, the warnings and the editor ask here. */
-export { bodyOf, collidersOfBody, physicsBodies } from './scene/bodies';
+export { bodyOf, collidersOfBody, jointEnds, physicsBodies } from './scene/bodies';
+export type { JointEnds } from './scene/bodies';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';

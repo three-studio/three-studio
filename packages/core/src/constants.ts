@@ -118,6 +118,10 @@ export const SCRIPT_API_VERSION = 3;
  * friction, bounce and rules it is built with. An older build builds it with
  * its own values, so a puck made to slide grips there.
  *
+ * And a scene may hold Joint components, which hold two bodies together as
+ * they were placed. An older build keeps them and builds none: a door falls
+ * off its hinge, and a chain falls apart.
+ *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
  *
@@ -228,12 +232,13 @@ export const PREFAB_ID_SEPARATOR = '/';
  *
  * 8 — the slope and step height of scene format 11, its rigid body's
  * interpolation and locks, its collider's shapes, material, physics material
- * asset and collision layer, its compound bodies, and its mesh Colliders built
- * from their own meshes. A prefab holds the same `ComponentTables`, so it can
- * hold a player controller an older build would walk with its own 50° and
- * 0.4 m, a floor it would not build, a cart whose wheels it would leave in
- * mid-air, a wall the player walks through, which it would build solid, and a
- * puck made to slide, which it would build gripping.
+ * asset and collision layer, its compound bodies, its mesh Colliders built
+ * from their own meshes, and its joints. A prefab holds the same
+ * `ComponentTables`, so it can hold a player controller an older build would
+ * walk with its own 50° and 0.4 m, a floor it would not build, a cart whose
+ * wheels it would leave in mid-air, a wall the player walks through, which it
+ * would build solid, a puck made to slide, which it would build gripping, and a
+ * door it would let fall off its hinge.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the

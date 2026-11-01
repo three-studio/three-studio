@@ -10,6 +10,7 @@ import {
   type ColliderComponent,
   type EntityTemplate,
   type GeometryKind,
+  type JointComponent,
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type PlayerControllerComponent,
@@ -243,6 +244,15 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
   registerScript(type.name, type);
   onTestFinished(clearScripts);
   template.components.push({ ...createComponent('script'), assetId: type.name });
+  return template;
+}
+
+/**
+ * The template, holding a Joint: a hinge to the world unless `joint` says
+ * otherwise. A test names the other side by its template's entity id.
+ */
+export function withJoint(template: EntityTemplate, joint?: Partial<JointComponent>): EntityTemplate {
+  template.components.push({ ...createComponent('joint'), ...joint });
   return template;
 }
 

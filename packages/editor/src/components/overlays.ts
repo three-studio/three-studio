@@ -10,6 +10,7 @@ import * as audioListener from './audioListener/overlay';
 import * as audioSource from './audioSource/overlay';
 import * as camera from './camera/overlay';
 import * as collider from './collider/overlay';
+import * as joint from './joint/overlay';
 import * as light from './light/overlay';
 import * as mesh from './mesh/overlay';
 import * as model from './model/overlay';
@@ -30,6 +31,7 @@ export const OVERLAYS: Record<ComponentType, EntityOverlay> = {
   camera,
   rigidbody,
   collider,
+  joint,
   audioSource,
   audioListener,
   script,

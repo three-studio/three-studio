@@ -3,12 +3,15 @@ import {
   collidersOfBody,
   createComponent,
   createEntity,
+  createJoint,
   createPrefabInstance,
   entityWorldMatrixPath,
   expandPrefabs,
   instancedId,
+  jointEnds,
   physicsBodies,
   type EntityTemplate,
+  type JointComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { nest, prefabWith, sceneWith } from './fixtures';
@@ -133,5 +136,28 @@ describe('collidersOfBody', () => {
     nest(h, i, nest(j, k));
 
     expect(collidersOfBody(sceneWith([h, i, j, k]), h.entity.id)).toEqual([i.entity.id]);
+  });
+});
+
+describe('jointEnds', () => {
+  it('names the bodies a joint holds, or why it holds none', () => {
+    // A, a body, carrying B's collider and C, an empty "Hinge"; D, level
+    // geometry; E, an empty entity.
+    const a = withRigidBody('A');
+    const b = withCollider('B');
+    const c = createEntity('Hinge');
+    const d = withCollider('D');
+    const e = createEntity('E');
+    nest(a, b, c);
+    const scene = sceneWith([a, b, c, d, e]);
+    const id = (template: EntityTemplate) => template.entity.id;
+    const joint = (connectedEntity: string | null): JointComponent => ({ ...createJoint(), connectedEntity });
+
+    expect(jointEnds(scene, id(c), joint(null))).toEqual({ holds: true, own: id(a), other: null });
+    expect(jointEnds(scene, id(c), joint(id(d)))).toEqual({ holds: true, own: id(a), other: id(d) });
+    expect(jointEnds(scene, id(c), joint(id(e)))).toEqual({ holds: false, why: 'otherNoBody' });
+    expect(jointEnds(scene, id(c), joint('gone'))).toEqual({ holds: false, why: 'gone' });
+    expect(jointEnds(scene, id(e), joint(null))).toEqual({ holds: false, why: 'noBody' });
+    expect(jointEnds(scene, id(b), joint(id(a)))).toEqual({ holds: false, why: 'same' });
   });
 });

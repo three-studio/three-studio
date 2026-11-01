@@ -1,5 +1,5 @@
-import { componentsOfType, entitiesWith } from './components';
-import type { SceneDoc } from './schema';
+import { componentsOfType, entitiesWith, hasComponent } from './components';
+import type { JointComponent, SceneDoc } from './schema';
 
 /*
  * Which body each collider rides.
@@ -53,6 +53,39 @@ export function collidersOfBody(scene: SceneDoc, entityId: string): readonly str
 export function bodyOf(scene: SceneDoc, entityId: string): string | null {
   const rigidbodies = componentsOfType(scene, 'rigidbody');
   return riddenBy(scene, entityId, { has: (id) => Object.hasOwn(rigidbodies, id) });
+}
+
+/** The bodies a joint holds together, by the entity each sits on, or why it holds none. `other: null` is the world. */
+export type JointEnds =
+  | { readonly holds: true; readonly own: string; readonly other: string | null }
+  | { readonly holds: false; readonly why: 'noBody' | 'gone' | 'otherNoBody' | 'same' };
+
+/**
+ * Which bodies a joint on `entityId` holds: the body its entity moves with,
+ * and the one its Connected Body moves with, or the world.
+ *
+ * Here for the reason this module is: the build and the engine's warnings must
+ * agree, so that the warnings name exactly the joints the world left out.
+ */
+export function jointEnds(scene: SceneDoc, entityId: string, joint: JointComponent): JointEnds {
+  const own = movesWith(scene, entityId);
+  if (own === null) return { holds: false, why: 'noBody' };
+  if (joint.connectedEntity === null) return { holds: true, own, other: null };
+  if (!Object.hasOwn(scene.entities, joint.connectedEntity)) return { holds: false, why: 'gone' };
+  const other = movesWith(scene, joint.connectedEntity);
+  if (other === null) return { holds: false, why: 'otherNoBody' };
+  // A joint on a child naming its parent: one body, nothing to hold.
+  if (other === own) return { holds: false, why: 'same' };
+  return { holds: true, own, other };
+}
+
+/**
+ * The entity whose body `entityId` moves with: the Rigid Body it rides, or its
+ * own fixed body when it carries a Collider with none above it. The world
+ * builds a body for exactly those, under that entity's id.
+ */
+function movesWith(scene: SceneDoc, entityId: string): string | null {
+  return bodyOf(scene, entityId) ?? (hasComponent(scene, entityId, 'collider') ? entityId : null);
 }
 
 /**

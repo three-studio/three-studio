@@ -194,14 +194,15 @@ export interface ComponentSchema {
 
   /*
    * The three facets below are declared only by the types that have them, the
-   * way a runtime system declares a capability. Three panes are not fixed by
+   * way a runtime system declares a capability. Four panes are not fixed by
    * the component's type: a mesh's geometry slot expands into the fields of
-   * whichever primitive it is, a collider's into those of its shape's kind, and
-   * a script's properties are whatever its source says today. For those three
-   * the *list* changes, not merely which of a fixed list is visible.
+   * whichever primitive it is, a collider's into those of its shape's kind, a
+   * joint's into those of its kind, and a script's properties are whatever its
+   * source says today. For those four the *list* changes, not merely which of
+   * a fixed list is visible.
    */
 
-  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh` and `collider`. */
+  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`, `collider` and `joint`. */
   geometryFields?(component: ComponentDoc): readonly FieldSpec[];
   /** Rows appended after the declared ones, from the document. Declared by `script`. */
   extraFields?(component: ComponentDoc): readonly FieldSpec[];

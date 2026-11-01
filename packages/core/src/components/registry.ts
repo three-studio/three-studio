@@ -30,6 +30,7 @@ export type ComponentIcon =
   | 'camera'
   | 'file-code'
   | 'lightbulb'
+  | 'link'
   | 'move'
   | 'shapes'
   | 'sparkles'

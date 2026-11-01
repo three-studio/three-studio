@@ -1,8 +1,10 @@
 import {
   COLLIDER_SHAPE_LABELS,
   COMPONENT_TYPES,
+  JOINT_KIND_LABELS,
   PROJECT_FORMAT_VERSION,
   conformColliderShape,
+  conformJointMotion,
   createAudioSource,
   createBuildProfiles,
   createColliderShape,
@@ -89,6 +91,32 @@ function colliderOfKind(kind: string): ComponentDoc {
   expect(shape.kind).toBe(kind);
   return { ...createComponent('collider'), shape };
 }
+
+/** A joint's rows change with its kind, as a collider's do with its shape. */
+const JOINT_KINDS = Object.keys(JOINT_KIND_LABELS);
+
+function jointOfKind(kind: string): ComponentDoc {
+  const motion = conformJointMotion({ kind });
+  expect(motion.kind).toBe(kind);
+  return { ...createComponent('joint'), motion };
+}
+
+describe('the Joint pane', () => {
+  it.each(JOINT_KINDS)('is a pane of its own for a %s', (kind) => {
+    expect(paneEntriesFor(jointOfKind(kind)).key).toBe(`joint:${kind}`);
+  });
+
+  it('shows the world as the choice for no Connected Body, and writes it back as none', () => {
+    const row = COMPONENT_PANES.joint.fields.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'connectedEntity',
+    );
+    if (!row) throw new Error('no Connected Body row');
+    expect(row.toModel?.(null)).toBe('');
+    expect(row.fromModel?.('')).toBeNull();
+    expect(row.fromModel?.('door')).toBe('door');
+    expect(row.optionsProvider?.()).toMatchObject({ World: '' });
+  });
+});
 
 describe('the Collider pane', () => {
   const shapeRow = (): FieldSpec => {
@@ -199,6 +227,10 @@ describe('every row that reads a tuple says so', () => {
 
   it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
     checkTuples(`collider:${kind}`, colliderOfKind(kind));
+  });
+
+  it.each(JOINT_KINDS)('a joint of kind %s', (kind) => {
+    checkTuples(`joint:${kind}`, jointOfKind(kind));
   });
 
   it('holds for the scene pane too', () => {
@@ -322,6 +354,14 @@ describe('a declared control fits the value it is bound to', () => {
     for (const spec of paneEntriesFor(component).entries) {
       if (!('path' in spec)) continue;
       check(`collider:${kind}`, spec, readPath(component, spec.path));
+    }
+  });
+
+  it.each(JOINT_KINDS)('a joint of kind %s', (kind) => {
+    const component = jointOfKind(kind);
+    for (const spec of paneEntriesFor(component).entries) {
+      if (!('path' in spec)) continue;
+      check(`joint:${kind}`, spec, readPath(component, spec.path));
     }
   });
 

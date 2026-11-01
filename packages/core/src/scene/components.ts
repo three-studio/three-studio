@@ -27,6 +27,7 @@ export const COMPONENT_TYPES = [
   'camera',
   'rigidbody',
   'collider',
+  'joint',
   'audioSource',
   'audioListener',
   'script',

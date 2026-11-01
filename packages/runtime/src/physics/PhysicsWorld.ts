@@ -4,6 +4,8 @@ import {
   createColliderShape,
   entityWorldMatrixPath,
   findComponent,
+  jointEnds,
+  jointFrame,
   linkedPhysicsMaterial,
   physicsBodies,
   type BodyType,
@@ -12,6 +14,7 @@ import {
   type ColliderShape,
   type CombineRule,
   type EntityDoc,
+  type JointComponent,
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type RigidBodyComponent,
@@ -21,6 +24,7 @@ import RAPIER from '@dimforge/rapier3d-compat';
 import { Euler, Matrix4, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { SceneBinder } from '../SceneBinder';
 import { Character } from './Character';
+import { buildJoint, type JointPose } from './joints';
 import { collisionGroups, layerBits } from './layers';
 import { describeMesh } from './meshShape';
 import type {
@@ -400,6 +404,8 @@ export class PhysicsWorld implements PhysicsApi {
   private readonly owners = new Map<number, Built>();
   /** What touched when the world was built, for the first tick to hand out before its own. */
   private atBuild: PhysicsEvent[] = [];
+  /** What a joint with no Connected Body is held to; made by the first one. */
+  private groundBody: RAPIER.RigidBody | null = null;
   private accumulator = 0;
 
   private readonly fixedStep: number;
@@ -479,6 +485,21 @@ export class PhysicsWorld implements PhysicsApi {
       });
       const rigidbody = findComponent(scene, entityId, 'rigidbody');
       this.addBody(entity, object, rigidbody, carriers, materials);
+    }
+
+    // After the bodies, two of which each joint holds, and before the step of
+    // no time, which moves nothing with joints built either. One that holds
+    // nothing is left out.
+    for (const [entityId, held] of Object.entries(componentsOfType(scene, 'joint'))) {
+      for (const joint of Object.values(held)) {
+        const ends = jointEnds(scene, entityId, joint);
+        if (!ends.holds) continue;
+        const own = this.bodies.get(ends.own)?.rapier;
+        const other = ends.other === null ? this.ground() : this.bodies.get(ends.other)?.rapier;
+        const object = binder.getObject(entityId);
+        if (!own || !other || !object) continue;
+        buildJoint(this.world, joint, other, own, jointPose(object, joint));
+      }
     }
 
     // A step of no time, so that a query sees the scene from the start. Rapier
@@ -658,6 +679,16 @@ export class PhysicsWorld implements PhysicsApi {
     if (!isFiniteVec(size)) return [];
     const box: ColliderShape = { ...createColliderShape('box'), size: [size.x, size.y, size.z] };
     return this.overlap(box, center, rotation, options);
+  }
+
+  /**
+   * The world a joint with no Connected Body is held to: one fixed body at the
+   * origin, with no collider. No entity owns it, so `body()` never answers
+   * with it.
+   */
+  private ground(): RAPIER.RigidBody {
+    this.groundBody ??= this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    return this.groundBody;
   }
 
   dispose(): void {
@@ -1054,6 +1085,22 @@ function queryShape(shape: ColliderShape): RAPIER.Shape | null {
   const { shape: built } = colliderGeometry(shape, [1, 1, 1], undefined);
   return built.kind === 'mesh' ? null : primitiveDesc(built).shape;
 }
+
+/**
+ * Where a joint on this object holds, in the world: its entity's pose as
+ * physics reads it, composed with the joint's anchor and axis on it, the
+ * pose's X along the axis.
+ */
+function jointPose(object: Object3D, joint: JointComponent): JointPose {
+  worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
+  const { anchor, axis } = jointFrame(joint, [_worldScale.x, _worldScale.y, _worldScale.z]);
+  return {
+    position: new Vector3(...anchor).applyQuaternion(_worldQuaternion).add(_worldPosition),
+    quaternion: new Quaternion().setFromUnitVectors(UNIT_X, new Vector3(...axis)).premultiply(_worldQuaternion),
+  };
+}
+
+const UNIT_X = new Vector3(1, 0, 0);
 
 /**
  * An entity's world pose as physics reads it: its world matrix decomposed, the

@@ -26,6 +26,7 @@ import { inspector as audioListener } from './audioListener/inspector';
 import { inspector as audioSource } from './audioSource/inspector';
 import { inspector as camera } from './camera/inspector';
 import { inspector as collider } from './collider/inspector';
+import { inspector as joint } from './joint/inspector';
 import { inspector as light } from './light/inspector';
 import { inspector as mesh } from './mesh/inspector';
 import { inspector as model } from './model/inspector';
@@ -45,6 +46,7 @@ export const COMPONENT_PANES: Record<ComponentType, ComponentSchema> = {
   camera,
   rigidbody,
   collider,
+  joint,
   audioSource,
   audioListener,
   script,
@@ -65,7 +67,7 @@ export function paneEntriesFor(component: ComponentDoc): {
 } {
   const pane = COMPONENT_PANES[component.type];
   // The geometry slot expands in place, so a type that never declares one — all
-  // but `mesh` and `collider` — is unaffected.
+  // but `mesh`, `collider` and `joint` — is unaffected.
   const entries: Exclude<PaneEntry, GeometrySlotSpec>[] = pane.fields.flatMap((entry) =>
     isGeometrySlot(entry) ? [...(pane.geometryFields?.(component) ?? [])] : [entry],
   );
