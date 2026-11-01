@@ -46,6 +46,50 @@ export function layersTouch(layers: readonly CollisionLayer[], a: string, b: str
   return !first.ignores.includes(second.id) && !second.ignores.includes(first.id);
 }
 
+/**
+ * A new table in which the two layers touch or part, for Project Settings'
+ * draft.
+ *
+ * Ticked, each id leaves the other's list. Unticked, the later layer joins the
+ * earlier one's, unless the two already part: one side, always the same, so a
+ * diff of `project.json` shows one line per checkbox.
+ */
+export function setLayersTouch(
+  layers: readonly CollisionLayer[],
+  a: string,
+  b: string,
+  touch: boolean,
+): CollisionLayer[] {
+  if (touch) {
+    return layers.map((layer) => {
+      const other = layer.id === a ? b : layer.id === b ? a : null;
+      return other === null ? layer : { ...layer, ignores: layer.ignores.filter((id) => id !== other) };
+    });
+  }
+  if (!layersTouch(layers, a, b)) return [...layers];
+  const index = (id: string) => layers.findIndex((layer) => layer.id === id);
+  const [earlier, later] = index(a) <= index(b) ? [a, b] : [b, a];
+  return layers.map((layer) => (layer.id === earlier ? { ...layer, ignores: [...layer.ignores, later] } : layer));
+}
+
+/**
+ * Why the table cannot be saved, or `null` when it can.
+ *
+ * A Collider's Layer row lists the layers by name, so a name left empty
+ * shows as nothing, and two alike would read as one: choosing the second
+ * would write the first.
+ */
+export function layerNamesProblem(layers: readonly CollisionLayer[]): string | null {
+  const seen = new Set<string>();
+  for (const layer of layers) {
+    const name = layer.name.trim();
+    if (name === '') return 'Every layer needs a name.';
+    if (seen.has(name)) return `Two layers are named "${name}": a Collider's Layer lists them by name.`;
+    seen.add(name);
+  }
+  return null;
+}
+
 /** The layer a collider naming this id is on: its own, or Default once the table no longer has it. */
 function layerOf(layers: readonly CollisionLayer[], id: string): CollisionLayer {
   return (

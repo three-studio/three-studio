@@ -2,7 +2,9 @@ import {
   conformPhysicsSettings,
   createDefaultLayer,
   createPhysicsSettings,
+  layerNamesProblem,
   layersTouch,
+  setLayersTouch,
   type CollisionLayer,
 } from '../src/index';
 import { describe, expect, it } from 'vitest';
@@ -46,6 +48,62 @@ describe('layersTouch', () => {
     expect(layersTouch(parted, 'gone', 'x')).toBe(false);
     expect(layersTouch(parted, 'x', 'gone')).toBe(false);
     expect(layersTouch(parted, 'gone', 'default')).toBe(true);
+  });
+});
+
+describe("the matrix's checkboxes", () => {
+  it('ticking a pair clears it on both sides; unticking writes it once, on the earlier layer', () => {
+    const both: CollisionLayer[] = [
+      createDefaultLayer(),
+      { id: 'a', name: 'A', ignores: ['b'] },
+      { id: 'b', name: 'B', ignores: ['a'] },
+    ];
+
+    const ticked = setLayersTouch(both, 'b', 'a', true);
+    expect(ticked).toEqual([
+      createDefaultLayer(),
+      { id: 'a', name: 'A', ignores: [] },
+      { id: 'b', name: 'B', ignores: [] },
+    ]);
+    expect(both[1]?.ignores).toEqual(['b']);
+
+    // One line in `project.json` per checkbox, on the same side whichever way it is asked.
+    const unticked = setLayersTouch(ticked, 'b', 'a', false);
+    expect(unticked).toEqual([
+      createDefaultLayer(),
+      { id: 'a', name: 'A', ignores: ['b'] },
+      { id: 'b', name: 'B', ignores: [] },
+    ]);
+    expect(setLayersTouch(unticked, 'a', 'b', false)).toEqual(unticked);
+    expect(layersTouch(unticked, 'a', 'b')).toBe(false);
+  });
+
+  it('a layer can be made to pass through itself, and back', () => {
+    const table: CollisionLayer[] = [createDefaultLayer(), { id: 'debris', name: 'Debris', ignores: [] }];
+
+    const apart = setLayersTouch(table, 'debris', 'debris', false);
+    expect(apart[1]).toEqual({ id: 'debris', name: 'Debris', ignores: ['debris'] });
+    expect(layersTouch(apart, 'debris', 'debris')).toBe(false);
+
+    expect(setLayersTouch(apart, 'debris', 'debris', true)).toEqual(table);
+  });
+});
+
+describe('a table that can be saved', () => {
+  it('says why a table cannot be saved', () => {
+    expect(layerNamesProblem(createPhysicsSettings().layers)).toBeNull();
+    expect(layerNamesProblem([createDefaultLayer(), { id: 'a', name: '  ', ignores: [] }])).toMatch(/name/i);
+    // As the Layer row would list them: two alike would read as one.
+    expect(
+      layerNamesProblem([
+        createDefaultLayer(),
+        { id: 'a', name: 'Ghost', ignores: [] },
+        { id: 'b', name: 'Ghost ', ignores: [] },
+      ]),
+    ).toMatch(/"Ghost"/);
+    expect(layerNamesProblem([createDefaultLayer(), { id: 'a', name: 'Default', ignores: [] }])).toMatch(
+      /"Default"/,
+    );
   });
 });
 

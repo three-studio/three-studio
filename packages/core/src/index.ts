@@ -48,7 +48,9 @@ export {
   DEFAULT_LAYER_ID,
   MAX_COLLISION_LAYERS,
   createDefaultLayer,
+  layerNamesProblem,
   layersTouch,
+  setLayersTouch,
 } from './project/layers';
 export type { CollisionLayer } from './project/layers';
 
