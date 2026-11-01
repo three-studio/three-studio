@@ -104,7 +104,10 @@ export function InspectorPanel() {
    */
   const locked = useSceneLocked();
   // What was tuned during Play: a kind tuned brings its rows, and a value tuned
-  // has to stay on screen, though the document did not move.
+  // has to stay on screen, though the document did not move. The lock as well:
+  // the rows show what was tuned only while the game runs, and the document's
+  // again from Stop. Left on screen after it, a tuned Y beside a Z then edited
+  // went into the document with the Z, as the row writes its whole vector.
   const tuningRevision = useTuningStore((s) => s.revision);
 
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
@@ -174,6 +177,7 @@ export function InspectorPanel() {
     prefabs,
     componentRevision,
     tuningRevision,
+    locked,
   ]);
 
   useEffect(() => {
@@ -221,7 +225,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision]);
+  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision, locked]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);
