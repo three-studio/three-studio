@@ -9,6 +9,7 @@ import {
   findComponent,
   type AssetEntry,
   type AssetKind,
+  type AssetSettings,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { close, prefabWith } from '../../core/test/fixtures';
@@ -173,6 +174,13 @@ describe('adding from the menu while the game runs', () => {
   });
 });
 
+/** A model's import settings with *Generate colliders* ticked. */
+function generatingColliders(): AssetSettings {
+  const settings = defaultSettings('model');
+  if (settings.kind !== 'model') throw new Error('not a model’s settings');
+  return { ...settings, generateColliders: true };
+}
+
 describe('a drop on the view', () => {
   const entry = (id: string, kind: AssetKind, name: string): AssetEntry => ({
     id,
@@ -197,6 +205,7 @@ describe('a drop on the view', () => {
           entry('crate', 'prefab', 'Crate'),
           entry('chime', 'audio', 'Chime'),
           entry('chair', 'model', 'Chair'),
+          { ...entry('ruins', 'model', 'Ruins'), settings: generatingColliders() },
           entry('brick', 'texture', 'Brick'),
         ],
         folders: [],
@@ -235,6 +244,26 @@ describe('a drop on the view', () => {
     expect(doc().scene.entities[sound!]!.transform.position).toEqual([0, 1, 0]);
     expect(findComponent(doc().scene, model!, 'model')?.assetId).toBe('chair');
     expect(doc().scene.entities[model!]!.transform.position).toEqual([4, 0, 0]);
+  });
+
+  it('places a model with the Collider its import settings ask for, in one undo step', () => {
+    placeDroppedAsset('ruins', [0, 0, 0]);
+    const [ruins] = selection();
+
+    // The one Add Component gives a model: a mesh built from its triangles.
+    expect(findComponent(doc().scene, ruins!, 'collider')?.shape).toEqual({ kind: 'mesh', build: 'triangles' });
+
+    doc().undo();
+    expect(doc().scene.entities[ruins!]).toBeUndefined();
+    expect(findComponent(doc().scene, ruins!, 'collider')).toBeUndefined();
+  });
+
+  it('places a model with none when its settings do not ask', () => {
+    placeDroppedAsset('chair', [0, 0, 0]);
+    const [chair] = selection();
+
+    expect(findComponent(doc().scene, chair!, 'model')?.assetId).toBe('chair');
+    expect(findComponent(doc().scene, chair!, 'collider')).toBeUndefined();
   });
 
   it('places nothing for an asset that is not placed, and says nothing', () => {

@@ -16,7 +16,7 @@ import {
   type SceneEntry,
 } from '@three-studio/core';
 import { AssetError } from '../assetFiles';
-import { readMaterialAssets, readPrefabAssets } from '../assetLibraries';
+import { readMaterialAssets, readPhysicsMaterialAssets, readPrefabAssets } from '../assetLibraries';
 import { scanAssets } from '../assetScan';
 import { resolveInside } from '../paths';
 import { findTemplate } from '../prebuilt';
@@ -235,8 +235,9 @@ async function planExport(
   // sidecars it finds missing or out of date, they also raced: a reader
   // catching a half-written one adopts the asset under a fresh id, and the
   // export ships a scene pointing at an id no longer on disk.
-  const [materials, prefabs] = await Promise.all([
+  const [materials, physicsMaterials, prefabs] = await Promise.all([
     readMaterialAssets(projectPath, manifest),
+    readPhysicsMaterialAssets(projectPath, manifest),
     readPrefabAssets(projectPath, manifest),
   ]);
   const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
@@ -324,6 +325,7 @@ async function planExport(
     // Only what a shipped scene links to. An unused material or prefab asset is
     // no more part of the build than an unused texture is.
     materials: pick(materials, referenced),
+    physicsMaterials: pick(physicsMaterials, referenced),
     prefabs: shippedPrefabs,
     scripts: scripts.file,
   });

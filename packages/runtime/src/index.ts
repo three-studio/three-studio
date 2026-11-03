@@ -77,9 +77,23 @@ export type {
   VoiceState,
 } from './audio/playback';
 
-/* Physics. */
-export { FIXED_STEP, PhysicsWorld, applyWorldTransform } from './physics/PhysicsWorld';
-export type { PhysicsBody } from './physics/PhysicsWorld';
+/* Physics. Our types only: nothing of Rapier's is on this barrel. */
+export { PhysicsWorld, applyWorldTransform, jointPose, worldPose } from './physics/PhysicsWorld';
+export type { DebugLines, PhysicsComponent } from './physics/PhysicsWorld';
+export { collectVertices, ownMeshes } from './physics/meshShape';
+export type {
+  BodyHandle,
+  CharacterController,
+  CharacterSettings,
+  Collision,
+  JointHandle,
+  PhysicsApi,
+  QuatLike,
+  QueryFilter,
+  QueryOptions,
+  RaycastHit,
+  Vec3Like,
+} from './physics/PhysicsApi';
 
 /* Scripting: the base class user scripts extend, and the registry the host compiles into. */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';

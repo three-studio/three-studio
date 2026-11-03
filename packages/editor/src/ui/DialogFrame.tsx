@@ -98,23 +98,36 @@ export function DialogFrame({
   );
 }
 
-/** One labelled control, laid out like the inspector so the two read alike. */
+/**
+ * One labelled control, laid out like the inspector so the two read alike.
+ *
+ * A `group` of several controls is a `div` rather than a `label`: a label hands
+ * a click anywhere on it to its first control, which for a list or a matrix is
+ * a button or a checkbox the click was never meant for.
+ */
 export function Field({
   label,
   hint,
+  group = false,
   children,
 }: {
   label: string;
   hint?: string;
+  group?: boolean;
   children: ReactNode;
 }) {
+  const Frame = group ? 'div' : 'label';
   return (
-    <label className="mb-2.5 flex items-start gap-3">
+    <Frame
+      role={group ? 'group' : undefined}
+      aria-label={group ? label : undefined}
+      className="mb-2.5 flex items-start gap-3"
+    >
       <span className="w-44 shrink-0 pt-1 text-2xs text-ink-muted">
         {label}
         {hint && <span className="mt-0.5 block text-2xs text-ink-dim">{hint}</span>}
       </span>
       <span className="min-w-0 flex-1">{children}</span>
-    </label>
+    </Frame>
   );
 }

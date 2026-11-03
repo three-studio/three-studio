@@ -15,6 +15,7 @@ export const particleEmitterComponent = defineComponent({
   // Named so the exporter ships the sprite, the loading bar counts it, and
   // deleting it does not claim nothing uses it.
   assets: (component) => [component.spriteId],
+  entities: () => [],
   icon: 'sparkles',
   placeable: () => true,
   runtime: true,

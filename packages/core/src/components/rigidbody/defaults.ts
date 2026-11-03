@@ -11,5 +11,8 @@ export function createRigidBody(): RigidBodyComponent {
     angularDamping: 0.05,
     gravityScale: 1,
     ccd: false,
+    interpolate: true,
+    lockPosition: [false, false, false],
+    lockRotation: [false, false, false],
   };
 }

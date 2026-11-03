@@ -232,6 +232,7 @@ beforeAll(async () => {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: main!.id, name: main!.name, scene },
     materials: {},
+    physicsMaterials: {},
     prefabs: {},
     rendering: settings.rendering,
     physics: settings.physics,

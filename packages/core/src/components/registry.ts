@@ -30,6 +30,7 @@ export type ComponentIcon =
   | 'camera'
   | 'file-code'
   | 'lightbulb'
+  | 'link'
   | 'move'
   | 'shapes'
   | 'sparkles'
@@ -59,10 +60,20 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * written before a sub-object gained a field comes back with `undefined`
    * inside it otherwise — the bug that shipped twice on this project. Each of
    * the three says so in its own module.
+   *
+   * The collider and the rigid body declare one for another reason, which their
+   * modules give: physics data is read against its factory, and what it does
+   * not know is dropped.
    */
   fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
   /** Asset ids this component points at. Empty for most types. */
   assets: (component: ComponentOfType<T>) => readonly (string | null)[];
+  /**
+   * Entity ids this component points at — a joint its Connected Body. Empty
+   * for most types. Asked of every type, as `assets` is, so that a new type
+   * answers in its own module.
+   */
+  entities: (component: ComponentOfType<T>) => readonly (string | null)[];
   /**
    * Strings that may name an asset, and count only when they do — declared by
    * the types whose fields do not say which they are.
@@ -181,6 +192,11 @@ export function componentAssets(component: ComponentDoc): readonly (string | nul
   return definition ? definition.assets(component as never) : [];
 }
 
+/** Entity ids a component points at, whatever its type; none for a type this build does not know. */
+export function componentEntities(component: ComponentDoc): readonly (string | null)[] {
+  return componentDefinition(component.type)?.entities(component as never) ?? [];
+}
+
 /** Strings a component holds that may name an asset; see `ComponentDefinition.assetCandidates`. */
 export function componentAssetCandidates(component: ComponentDoc): readonly string[] {
   return componentDefinition(component.type)?.assetCandidates?.(component as never) ?? [];
@@ -208,7 +224,7 @@ export function componentIsPlaceable(component: ComponentDoc): boolean {
  *
  * A type that declared no `fill` gets the default: its own factory underneath
  * what was stored, so nothing the author wrote is overwritten and nothing added
- * since is left `undefined`. See `ComponentDefinition.fill` for the three that
+ * since is left `undefined`. See `ComponentDefinition.fill` for the types that
  * need more than that.
  */
 export function fillComponent(stored: ComponentDoc): ComponentDoc {

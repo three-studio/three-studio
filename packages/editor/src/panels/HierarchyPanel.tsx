@@ -4,6 +4,7 @@ import {
   componentDefinition,
   findBrokenReferences,
   findComponent,
+  findMissingEntities,
   hasComponent,
   splitInstancedId,
   type ComponentIcon,
@@ -23,6 +24,7 @@ import {
   EyeOff,
   FileCode,
   Lightbulb,
+  Link,
   Move,
   Search,
   Shapes,
@@ -35,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { commandById, contextFor, contextForAsset, type CommandId } from '../commands/registry';
+import { COMPONENT_PANES } from '../components/panes';
 import {
   renameEntity,
   reparentSelection,
@@ -74,6 +77,7 @@ const COMPONENT_ICONS: Record<ComponentIcon, LucideIcon> = {
   camera: Camera,
   'file-code': FileCode,
   lightbulb: Lightbulb,
+  link: Link,
   move: Move,
   shapes: Shapes,
   sparkles: Sparkles,
@@ -116,6 +120,7 @@ const ICON_PRIORITY: Record<ComponentType, number> = {
   mesh: FALLS_THROUGH,
   model: FALLS_THROUGH,
   collider: FALLS_THROUGH,
+  joint: FALLS_THROUGH,
   rigidbody: FALLS_THROUGH,
   script: FALLS_THROUGH,
   playerController: FALLS_THROUGH,
@@ -145,6 +150,7 @@ export function HierarchyPanel() {
    * *listed* changes: an entity added, removed, renamed, hidden, reparented.
    */
   const structureRevision = useDocumentStore((s) => s.structureRevision);
+  const componentRevision = useDocumentStore((s) => s.componentRevision);
   // Subscribed to, not just read: editing a prefab asset changes what this tree
   // shows without changing a single entity in the document.
   const prefabs = useAssetStore((s) => s.prefabs);
@@ -183,7 +189,8 @@ export function HierarchyPanel() {
   );
 
   /*
-   * The rows whose components name an asset the project does not have.
+   * The rows whose components name an asset the project does not have, or an
+   * entity the scene does not: what each row's tooltip says of it.
    *
    * One walk for the whole tree rather than one question per row, which is the
    * same reason `selected` is built once above: this is asked for every row of
@@ -191,20 +198,28 @@ export function HierarchyPanel() {
    *
    * `revision` rather than the manifest itself, because the manifest is
    * replaced on every mutation and this only has to move when what the project
-   * *holds* changes.
+   * *holds* changes. `componentRevision` too, so choosing a joint's Connected
+   * Body again clears its mark at once.
    */
   const brokenBy = useMemo(() => {
-    const byEntity = new Map<string, string[]>();
-    for (const { entityId, assetId } of findBrokenReferences(expandedScene().scene, knownAssetIds())) {
+    const { scene } = expandedScene();
+    const assets = new Map<string, string[]>();
+    for (const { entityId, assetId } of findBrokenReferences(scene, knownAssetIds())) {
       // The environment is not a row. It is reported at load and shown in the
       // Inspector; there is nothing here to mark.
       if (entityId === null) continue;
-      const named = byEntity.get(entityId);
+      const named = assets.get(entityId);
       if (named) named.push(assetId);
-      else byEntity.set(entityId, [assetId]);
+      else assets.set(entityId, [assetId]);
+    }
+    const byEntity = new Map<string, string[]>();
+    const say = (entityId: string, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
+    for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
+    for (const { entityId, type } of findMissingEntities(scene)) {
+      say(entityId, `Its ${COMPONENT_PANES[type].label} names an entity this scene does not have`);
     }
     return byEntity;
-  }, [structureRevision, prefabs, assetRevision]);
+  }, [structureRevision, componentRevision, prefabs, assetRevision]);
 
   /* Only the rows that fit are rendered; the arithmetic is `rowWindow`. */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -413,9 +428,10 @@ export function HierarchyPanel() {
           // reparented during Play.
           const draggable = !locked && instance === null && renaming !== entity.id;
           // A row naming anything the project does not have — a prefab, a model,
-          // a texture in a material slot. It used to be prefabs only, and the
-          // reason applies to all of them: an entity that draws nothing reads as
-          // an entity that is empty.
+          // a texture in a material slot — or an entity the scene does not. It
+          // used to be prefabs only, and the reason applies to all of them: an
+          // entity that draws nothing reads as an entity that is empty, and a
+          // door whose frame was deleted reads as a door.
           const missing = brokenBy.get(entity.id);
 
           return (
@@ -512,7 +528,7 @@ export function HierarchyPanel() {
                 />
               ) : (
                 <span
-                  {...tooltip(missing ? `Not in this project: ${missing.join(', ')}` : undefined)}
+                  {...tooltip(missing?.join('. '))}
                   className={`min-w-0 flex-1 truncate ${entity.visible ? '' : 'opacity-45'} ${
                     missing ? 'text-error' : ''
                   }`}

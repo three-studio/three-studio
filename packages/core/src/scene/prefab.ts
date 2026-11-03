@@ -6,8 +6,10 @@ import {
   emptyComponentTables,
   entitiesWith,
   findComponent,
+  renameEntityReferences,
   type ComponentHost,
 } from './components';
+import { fillComponent } from '../components';
 import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
@@ -431,7 +433,9 @@ function instantiate(
     // `type: 'entity'` — holds an id local to the prefab, which nothing in the
     // expanded scene answers to. Without this a prefab whose script targets its
     // own turret looked up an id that does not exist, once per instance.
-    held = remapEntityReferences(held, prefab.entities, hostId);
+    held = renameEntityReferences(held, (id) =>
+      prefab.entities[id] === undefined ? undefined : instancedId(hostId, id),
+    );
 
     produced.entities.push(copy);
     for (const item of held) {
@@ -474,42 +478,6 @@ function instantiate(
 }
 
 /**
- * Rewrites references to the prefab's own entities so they name the copies.
- *
- * Matched by value rather than by a declared list of reference fields: which
- * properties hold an entity id is decided by a user's script at runtime, and
- * core cannot see that. An id is twelve random characters, so a string that
- * equals one and means something else does not happen in practice — and the
- * alternative, leaving the reference pointing into the asset, is a lookup that
- * silently returns nothing.
- */
-function remapEntityReferences(
-  components: readonly ComponentDoc[],
-  local: Record<string, EntityDoc>,
-  hostId: string,
-): ComponentDoc[] {
-  const rewrite = (value: unknown): unknown => {
-    if (typeof value === 'string') {
-      return local[value] === undefined ? value : instancedId(hostId, value);
-    }
-    if (Array.isArray(value)) return value.map(rewrite);
-    if (typeof value === 'object' && value !== null) {
-      const out: Record<string, unknown> = {};
-      for (const [key, inner] of Object.entries(value)) out[key] = rewrite(inner);
-      return out;
-    }
-    return value;
-  };
-
-  return components.map((component) => {
-    // `type` is never an id, and skipping it keeps the walk off the one string
-    // property every component has.
-    const { type, ...rest } = component as unknown as Record<string, unknown>;
-    return { type, ...(rewrite(rest) as object) } as ComponentDoc;
-  });
-}
-
-/**
  * Folds one override into an entity, in place.
  *
  * Exported because "apply overrides to the prefab" has to fold exactly the same
@@ -535,12 +503,16 @@ export function applyPrefabOverride(
     // used to be silent — an index still in range but pointing at a different
     // component, which is what the old scheme wrote onto the wrong one.
     if (index === -1) continue;
+    // Filled again once the override is spread: an override is stored data
+    // too, written against the type as it was. One saved by 0.6.0 as
+    // `{ shape: 'sphere', radius: 0.4 }` put a name where a collider's shape
+    // lives now, and the runtime built nothing from it. For every other type,
+    // the fill of a whole component is that same component.
     out[index] = {
-      ...out[index],
-      ...properties,
+      ...fillComponent({ ...out[index], ...properties } as ComponentDoc),
       // Never overridable: it is what this very lookup keys on.
       id: componentId,
-    } as ComponentDoc;
+    };
   }
   return out;
 }

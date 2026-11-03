@@ -70,6 +70,7 @@ async function snapshot(root: string): Promise<LaunchSnapshot> {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: entry!.id, name: entry!.name, scene },
     materials: {},
+    physicsMaterials: {},
     prefabs: {},
     rendering: settings.rendering,
     physics: settings.physics,

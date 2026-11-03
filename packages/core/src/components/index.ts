@@ -25,6 +25,7 @@ import './light';
 import './camera';
 import './rigidbody';
 import './collider';
+import './joint';
 import './audioSource';
 import './audioListener';
 import './script';
@@ -73,6 +74,7 @@ export {
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  componentEntities,
   componentIsPlaceable,
   defineComponent,
   fillComponent,

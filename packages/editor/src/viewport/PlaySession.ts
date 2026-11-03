@@ -21,6 +21,7 @@ import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/p
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { toastSlot } from '../state/toastStore';
+import { dropTuning, offerTuning, tuningEngine } from '../state/tuning';
 import { useViewportStore } from '../state/viewportStore';
 import type { Presentation } from './Presentation';
 
@@ -81,6 +82,7 @@ export function readPlayInputs(): LaunchSnapshot {
     // only a fallback for a window with no project, which a test alone reaches.
     entry: { id: sceneId ?? scene.id, name: currentSceneName(), scene },
     materials: assets.materials,
+    physicsMaterials: assets.physicsMaterials,
     prefabs: composed?.prefabs ?? assets.prefabs,
     rendering: project?.settings.rendering ?? createRenderingSettings(),
     physics: project?.settings.physics ?? createPhysicsSettings(),
@@ -182,6 +184,7 @@ export class PlaySession {
    */
   private startedFrom: SceneDoc | null = null;
   private unsubscribePlayState: (() => void) | null = null;
+  private unsubscribeScene: (() => void) | null = null;
   /**
    * Which start is the one somebody waits for: bumped at every press, every
    * Stop and `dispose`. A start that finds it moved after an await has been
@@ -216,6 +219,14 @@ export class PlaySession {
    */
   watch(): void {
     let previous = useEditorStore.getState().playState;
+    // What a Play tuned is against the scene it ran: another scene in the
+    // window drops it, its offer at Stop included.
+    let sceneId = useProjectStore.getState().sceneId;
+    this.unsubscribeScene = useProjectStore.subscribe((state) => {
+      if (state.sceneId === sceneId) return;
+      sceneId = state.sceneId;
+      dropTuning();
+    });
 
     this.unsubscribePlayState = useEditorStore.subscribe((state) => {
       const next = state.playState;
@@ -234,6 +245,8 @@ export class PlaySession {
         // Named from the press, before the compile and the load: what starts
         // is the window's scene, from Prefab Mode too.
         useViewportStore.getState().setRunningScene(useProjectStore.getState().sceneId);
+        // What the last Play tuned is about a game that has gone.
+        dropTuning();
         this.host.onPlayPressed();
         void this.beginPlay(this.session);
       }
@@ -317,6 +330,9 @@ export class PlaySession {
         // embedded material — the scene would look different the moment you
         // pressed Play, for no reason the author could see.
         materials: inputs.materials,
+        // And without this a collider linked to a physics material would play
+        // with its own values, for the same unseen reason.
+        physicsMaterials: inputs.physicsMaterials,
         prefabs: inputs.prefabs,
         // Play mode draws on this same renderer, so the running scene captures
         // its sky on the device the editor already holds.
@@ -412,6 +428,9 @@ export class PlaySession {
   private run(engine: Engine, sceneId: string | null): void {
     this.engine = engine;
     useViewportStore.getState().setRunningScene(sceneId);
+    // The Inspector tunes the window's scene: another scene's engine is handed
+    // nothing, and the window's, restarted or come back to, all of it.
+    tuningEngine(sceneId !== null && sceneId === running?.entry.id ? engine : null);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
     engine.onWarning = (warnings) => {
@@ -447,6 +466,9 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine = null;
     running = null;
+    tuningEngine(null);
+    // What the Play tuned, offered back now that the document can take it.
+    offerTuning();
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);
@@ -480,6 +502,7 @@ export class PlaySession {
   /** Stops the game and unsubscribes. The session is not usable afterwards. */
   dispose(): void {
     this.unsubscribePlayState?.();
+    this.unsubscribeScene?.();
     this.session += 1;
     // The host owns the engine, its loads in flight and its preloader. Disposing
     // the engine alone left all three alive, along with the `Input` listening on

@@ -5,6 +5,7 @@ import {
   conformMaterial,
   conformSettingsPatch,
   createBuildProfiles,
+  createDefaultLayer,
   createMaterial,
   createPhysicsSettings,
   createRenderingSettings,
@@ -102,6 +103,30 @@ describe('a settings patch', () => {
     const patch = conformSettingsPatch({ build: { active: 'x', profiles: {} } }, current);
     expect(Object.keys(patch.build?.profiles ?? {})).toEqual(Object.keys(current.build.profiles));
   });
+
+  it('keeps a layer the project does not have yet', () => {
+    // A table is a list, and `conform` reads a list as a tuple of the model's
+    // length: the patch that adds a layer came back with the current table.
+    const layers = [createDefaultLayer(), { id: 'player', name: 'Player', ignores: [] }];
+    const patch = conformSettingsPatch({ physics: { ...createPhysicsSettings(), layers } }, settings());
+    expect(patch.physics?.layers).toEqual(layers);
+  });
+
+  it('repairs a layer and keeps the rest of the section', () => {
+    const player = { id: 'player', name: 'Player', ignores: ['default'] };
+    const patch = conformSettingsPatch(
+      {
+        physics: {
+          ...createPhysicsSettings(),
+          gravity: [0, -3, 0],
+          layers: [createDefaultLayer(), player, { name: 'no id' }],
+        },
+      },
+      settings(),
+    );
+    expect(patch.physics?.layers).toEqual([createDefaultLayer(), player]);
+    expect(patch.physics?.gravity).toEqual([0, -3, 0]);
+  });
 });
 
 describe('a material', () => {
@@ -125,6 +150,11 @@ describe('a material', () => {
     expect(conformMaterial({ ...createMaterial(), side: 'sideways' }).side).toBe('front');
     expect(conformMaterial({ ...createMaterial(), side: 'double' }).side).toBe('double');
     expect(conformMaterial({ ...createMaterial(), wrap: 'wobble' }).wrap).toBe('repeat');
+  });
+
+  it('reads a union member only as an own key of its labels', () => {
+    // `in` walks the prototype, and every record has a `constructor`.
+    expect(conformMaterial({ side: 'constructor' }).side).toBe('front');
   });
 
   it('rejects a tuple of the wrong length', () => {

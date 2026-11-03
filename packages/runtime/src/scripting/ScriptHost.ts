@@ -5,7 +5,9 @@ import {
   type BehaviourContext,
   type BehaviourTarget,
 } from '../behaviour/Behaviour';
+import type { Collision } from '../physics/PhysicsApi';
 import { audioApiFor } from './audioApi';
+import { noBody, scriptPhysicsFor } from './scriptPhysics';
 import {
   Behaviour,
   RESERVED_PROPERTY_NAMES,
@@ -50,12 +52,33 @@ export function clearScripts(): void {
  */
 class ScriptBehaviour implements RuntimeBehaviour {
   private failed = false;
+  // Set for the hooks the script defines, and only those: a script that
+  // defines none is not listening, so the engine passes it by and never warns
+  // that it can hear nothing.
+  readonly onCollisionEnter?: (collision: Collision) => void;
+  readonly onCollisionExit?: (other: string) => void;
+  readonly onTriggerEnter?: (other: string) => void;
+  readonly onTriggerExit?: (other: string) => void;
 
   constructor(
     private readonly instance: Behaviour,
     private readonly label: string,
     private readonly ctx: BehaviourContext,
-  ) {}
+  ) {
+    if (instance.onCollisionEnter) {
+      this.onCollisionEnter = (collision) =>
+        this.guard('onCollisionEnter', () => instance.onCollisionEnter?.(collision));
+    }
+    if (instance.onCollisionExit) {
+      this.onCollisionExit = (other) => this.guard('onCollisionExit', () => instance.onCollisionExit?.(other));
+    }
+    if (instance.onTriggerEnter) {
+      this.onTriggerEnter = (other) => this.guard('onTriggerEnter', () => instance.onTriggerEnter?.(other));
+    }
+    if (instance.onTriggerExit) {
+      this.onTriggerExit = (other) => this.guard('onTriggerExit', () => instance.onTriggerExit?.(other));
+    }
+  }
 
   /** Self-contained setup, while other entities may still be under construction. */
   awake(): void {
@@ -137,9 +160,22 @@ registerBehaviour('script', (target: BehaviourTarget, ctx: BehaviourContext) => 
     (instance as unknown as Record<string, unknown>)[key] = value;
   }
 
+  const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);
   Object.assign(instance, {
     entity: target.entity,
     transform: target.object,
+    // With physics off — a host that has none, which is a test — the stand-in
+    // is silent: the line would be about the host, not the scene.
+    body:
+      physics.body(target.entity.id) ??
+      noBody(
+        ctx.physics &&
+          (() =>
+            ctx.warn(
+              `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
+            )),
+      ),
+    physics,
     input: ctx.input,
     scenes: ctx.scenes,
     // Bound to this entity, so `this.audio.play()` with no argument means "my

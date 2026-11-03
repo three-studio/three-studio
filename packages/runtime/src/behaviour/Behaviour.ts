@@ -3,7 +3,7 @@ import type { Camera, Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { SceneBinder } from '../SceneBinder';
 import type { Input } from '../input/Input';
-import type { PhysicsWorld } from '../physics/PhysicsWorld';
+import type { Collision, PhysicsApi } from '../physics/PhysicsApi';
 import type { StudioTime } from '../time/StudioTime';
 
 /**
@@ -45,7 +45,11 @@ export interface SceneApi {
 export interface BehaviourContext {
   readonly scene: SceneDoc;
   readonly binder: SceneBinder;
-  readonly physics: PhysicsWorld | null;
+  /**
+   * How a behaviour, a plugin's included, reaches physics: through our API,
+   * never Rapier's. `null` when the engine runs without physics.
+   */
+  readonly physics: PhysicsApi | null;
   readonly input: Input;
   /**
    * The one clock, shared with the shaders.
@@ -87,6 +91,10 @@ export interface BehaviourContext {
  *    first.
  *  - `postUpdate` runs after physics has resolved, which is where a camera has
  *    to be placed or it trails its subject by a frame.
+ *
+ * After each physics tick, four hooks hear what the entity's colliders, and
+ * those of children riding its body, started or stopped touching in it. A
+ * plugin hears collisions by being a behaviour on the entity.
  */
 export interface Behaviour {
   /**
@@ -100,6 +108,23 @@ export interface Behaviour {
   update?: (delta: number, ctx: BehaviourContext) => void;
   fixedUpdate?: (step: number, ctx: BehaviourContext) => void;
   postUpdate?: (ctx: BehaviourContext) => void;
+  /**
+   * One of this entity's colliders, or a collider of a child riding its body,
+   * began touching another. Runs after the physics tick it happened in. A
+   * collision needs a Dynamic body on one side: a Kinematic body, or a
+   * character, meeting a wall is not one.
+   */
+  onCollisionEnter?: (collision: Collision, ctx: BehaviourContext) => void;
+  /** They stopped touching. `other` names the entity whose Collider it was. */
+  onCollisionExit?: (other: string, ctx: BehaviourContext) => void;
+  /**
+   * A sensor of this entity, or of a child riding its body, was entered — or
+   * one of its colliders entered a sensor. A sensor sees anything that moves,
+   * never another Fixed collider.
+   */
+  onTriggerEnter?: (other: string, ctx: BehaviourContext) => void;
+  /** It left. */
+  onTriggerExit?: (other: string, ctx: BehaviourContext) => void;
   /** A camera the game should be rendered through, if this behaviour owns one. */
   readonly camera?: Camera;
   /** The scene is being left, while everything is still readable. */

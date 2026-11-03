@@ -8,8 +8,10 @@ import {
   IPC_INVOKE,
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
+  PHYSICS_MATERIAL_ASSET_VERSION,
   createEmptyScene,
   createMaterial,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
@@ -247,6 +249,38 @@ describe('the guards are reached, not merely written', () => {
     expect(written.color).toBe('#ff0000');
     expect(written.wrap).toBe(createMaterial().wrap);
     expect(written).not.toHaveProperty('trap');
+  });
+
+  it('writes a physics material only once it has been conformed', async () => {
+    const root = await project();
+    const path = 'assets/physics-materials/Ice.physics-material.json';
+    const file = join(root, ...path.split('/'));
+    const stored = async () => JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>;
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPhysicsMaterial, 1, 'Ice', {
+      friction: 'slippery',
+      restitutionCombine: 'sum',
+    });
+    expect(await stored()).toEqual({
+      version: PHYSICS_MATERIAL_ASSET_VERSION,
+      material: createPhysicsMaterial(),
+    });
+    expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8'))).toMatchObject({
+      id,
+      kind: 'physicsMaterial',
+    });
+
+    await invoke(IPC_INVOKE.assets.savePhysicsMaterial, 1, path, {
+      friction: 0.05,
+      restitutionCombine: 'sum',
+      trap: 1,
+    });
+    expect((await stored()).material).toEqual({ ...createPhysicsMaterial(), friction: 0.05 });
+
+    await invoke(IPC_INVOKE.assets.createMaterial, 1, 'Brick', createMaterial());
+    await expect(
+      invoke(IPC_INVOKE.assets.savePhysicsMaterial, 1, 'assets/materials/Brick.material.json', {}),
+    ).rejects.toThrow('is not a physics material asset');
   });
 
   it('conforms a settings patch, so `profiles: "oops"` does not mint four profiles', async () => {

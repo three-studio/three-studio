@@ -1,6 +1,6 @@
 import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
-import { colliderHalfHeight } from '../components/collider/defaults';
+import { originAboveFeet } from '../components/collider/geometry';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -114,9 +114,9 @@ const EYE_HEIGHT_FROM_FEET = 10;
  * Format 9 → 10: `eyeHeight` stops being measured from the entity's origin and
  * starts being measured from the character's feet.
  *
- * Raising each stored value by its collider's half height is what makes the
- * change invisible: the camera comes out at the height its author put it, and
- * the number now means what it says. An entity with no collider is left alone,
+ * Raising each stored value by how far its collider reaches below the origin
+ * is what makes the change invisible: the camera comes out at the height its
+ * author put it, and the number now means what it says. An entity with no collider is left alone,
  * because with nothing centred on the origin the origin already *was* the
  * reference — which is also exactly what fly mode does.
  *
@@ -138,8 +138,14 @@ function raiseEyeHeightToFeet(scene: SceneDoc): void {
     // The same collider the physics builds and the same one the controller
     // measures from: all three go through `findComponent`, so an entity
     // carrying two cannot have them disagree about which one is the body.
-    const half = colliderHalfHeight(collider);
-    for (const controller of Object.values(held)) controller.eyeHeight += half;
+    //
+    // Already filled, so always a shape this build reads. Every collider that
+    // reaches here was written before scene 11 and reads as the factory's 1 m
+    // box, its old shape not converted: the eye moves by that box's half, 0.5,
+    // rather than by the capsule it may have been — a finite number, where the
+    // shape read as written would have made it `NaN`.
+    const below = originAboveFeet(collider.shape);
+    for (const controller of Object.values(held)) controller.eyeHeight += below;
   }
 }
 

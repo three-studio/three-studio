@@ -5,6 +5,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  createDefaultLayer,
   createEmptyScene,
   serializeScene,
 } from '@three-studio/core';
@@ -80,6 +81,25 @@ describe('settings a project predates', () => {
     // one as of the version that wrote it, which is exactly the shape a setting
     // added later has to survive: kept where it spoke, filled where it did not.
     expect(project.settings.rendering.batching).toBe(true);
+  });
+
+  it('reads a hand-broken layer table entry by entry', async () => {
+    const root = await projectWith({
+      settings: {
+        physics: {
+          gravity: [0, -9.81, 0],
+          fixedTimestep: 1 / 60,
+          maxSubsteps: 5,
+          layers: [{ id: 'ghost', name: 'Ghost', ignores: ['default', 7] }, 'oops', { id: 'ghost' }],
+        },
+      },
+    });
+    const project = await readProject(root);
+
+    expect(project.settings.physics.layers).toEqual([
+      createDefaultLayer(),
+      { id: 'ghost', name: 'Ghost', ignores: ['default'] },
+    ]);
   });
 
   it('does not rewrite the file just by reading it', async () => {
@@ -170,7 +190,86 @@ async function formatOneProject(
   return { root, main: ids['main']!, loading: ids['Loading']! };
 }
 
+/*
+ * Format 2, written out by hand as 0.6.0 wrote it — every reference an id, and
+ * a physics section with no collision layers — for the same reason as format 1
+ * above. `fields` replaces any of its top-level fields, `settings` included.
+ */
+async function formatTwoProject(fields: Record<string, unknown> = {}): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'studio-format2-'));
+  await mkdir(join(root, SCENES_DIR), { recursive: true });
+  const document = createEmptyScene('main');
+  await writeFile(join(root, `${SCENES_DIR}/main.scene.json`), serializeScene(document), 'utf8');
+
+  await writeFile(
+    join(root, PROJECT_FILE_NAME),
+    JSON.stringify(
+      {
+        version: 2,
+        name: 'Shipped',
+        engineVersion: '0.6.0',
+        startScene: document.id,
+        settings: {
+          loadingScene: null,
+          rendering: {
+            forceWebGL: false,
+            antialias: true,
+            maxPixelRatio: 2,
+            shadows: true,
+            shadowMapSize: 2048,
+            exposure: 1,
+            batching: true,
+          },
+          physics: { gravity: [0, -9.81, 0], fixedTimestep: 1 / 60, maxSubsteps: 5 },
+          build: {
+            active: 'web',
+            profiles: {
+              web: {
+                name: 'Web',
+                target: 'web',
+                scenes: [document.id],
+                outputDir: null,
+                includeAllAssets: false,
+                title: 'Shipped',
+                basePath: '',
+              },
+            },
+          },
+        },
+        ...fields,
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+  return root;
+}
+
 describe('a project written in an older format', () => {
+  it('does not migrate a format 2 project again', async () => {
+    // Its references are ids already. A scene's path left in one shows whether
+    // the step from format 1, which would resolve it, ran.
+    const path = `${SCENES_DIR}/main.scene.json`;
+    const root = await formatTwoProject({ startScene: path });
+
+    const project = await readProject(root);
+
+    expect(project.startScene).toBe(path);
+    expect(project.version).toBe(3);
+  });
+
+  it('fills the collision layers a format 2 project predates', async () => {
+    const root = await formatTwoProject();
+    const before = await readFile(join(root, PROJECT_FILE_NAME), 'utf8');
+
+    const project = await readProject(root);
+
+    expect(project.settings.physics.layers).toEqual([createDefaultLayer()]);
+    expect(project.version).toBe(3);
+    expect(await readFile(join(root, PROJECT_FILE_NAME), 'utf8')).toBe(before);
+  });
+
   it('resolves the paths and names it holds into ids', async () => {
     const { root, main, loading } = await formatOneProject();
     const before = await readFile(join(root, PROJECT_FILE_NAME), 'utf8');

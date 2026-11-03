@@ -194,14 +194,15 @@ export interface ComponentSchema {
 
   /*
    * The three facets below are declared only by the types that have them, the
-   * way a runtime system declares a capability. Two panes are not fixed by the
-   * component's type: a mesh's geometry slot expands into the fields of
-   * whichever primitive it is, and a script's properties are whatever its
-   * source says today. For those two the *list* changes, not merely which of a
-   * fixed list is visible.
+   * way a runtime system declares a capability. Four panes are not fixed by
+   * the component's type: a mesh's geometry slot expands into the fields of
+   * whichever primitive it is, a collider's into those of its shape's kind, a
+   * joint's into those of its kind, and a script's properties are whatever its
+   * source says today. For those four the *list* changes, not merely which of
+   * a fixed list is visible.
    */
 
-  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`. */
+  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`, `collider` and `joint`. */
   geometryFields?(component: ComponentDoc): readonly FieldSpec[];
   /** Rows appended after the declared ones, from the document. Declared by `script`. */
   extraFields?(component: ComponentDoc): readonly FieldSpec[];
@@ -212,6 +213,12 @@ export interface ComponentSchema {
    * arrangement of `visibleWhen` bits could say that, which is what this is for.
    */
   paneKey?(component: ComponentDoc): string;
+  /**
+   * Its rows tune the running game during Play, where every other row is
+   * locked. The running world takes the value; the document does not. Declared
+   * by the components the world builds — `rigidbody`, `collider` and `joint`.
+   */
+  live?: true;
 }
 
 const RAD_TO_DEG = 180 / Math.PI;

@@ -17,6 +17,7 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
 import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock';
 import { useScriptStore } from '../state/scriptStore';
+import { useTuningStore } from '../state/tuning';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
 
@@ -96,8 +97,18 @@ export function InspectorPanel() {
    * ones included, and every action. A material edited during Play would show
    * nowhere — the game keeps the table it started with, and the edit view is
    * behind it — and its undo would wait for Stop with the rest.
+   *
+   * But the rows of the panes that tune the running game — a Rigid Body's, a
+   * Collider's, a Joint's —, which write the running world and not the
+   * document (`state/tuning`).
    */
   const locked = useSceneLocked();
+  // What was tuned during Play: a kind tuned brings its rows, and a value tuned
+  // has to stay on screen, though the document did not move. The lock as well:
+  // the rows show what was tuned only while the game runs, and the document's
+  // again from Stop. Left on screen after it, a tuned Y beside a Z then edited
+  // went into the document with the Z, as the row writes its whole vector.
+  const tuningRevision = useTuningStore((s) => s.revision);
 
   // The pane is rebuilt only when the *shape* of the entity changes; ordinary
   // value edits are pushed through `refresh`, which keeps focus and drag state.
@@ -107,10 +118,19 @@ export function InspectorPanel() {
   // Editing a shared material changes which fields exist without touching the
   // document, so the material table is part of the shape too.
   const materials = useAssetStore((s) => s.materials);
+  // A physics material's values, which a linked Collider's rows show: undoing
+  // an edit of one changes no entity, so only this can refresh them.
+  const physicsMaterials = useAssetStore((s) => s.physicsMaterials);
   // So are the assets themselves: a dropdown's options are computed when the
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
   const assetRevision = useAssetStore((s) => s.revision);
+  // So is the project's layer table, which a Collider's Layer row lists by name
+  // when the pane is built: a layer renamed in Project Settings kept its old
+  // name there until something else rebuilt the pane.
+  const layers = useProjectStore((s) =>
+    (s.project?.settings.physics.layers ?? []).map(({ id, name }) => `${id}:${name}`).join('|'),
+  );
   // With nothing selected the pane is the scene's own — Blender's Scene tab —
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
@@ -128,7 +148,7 @@ export function InspectorPanel() {
       return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
     }
     if (entityId !== undefined) {
-      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}`;
+      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
     }
 
     /*
@@ -139,7 +159,7 @@ export function InspectorPanel() {
      * selecting a different set of the same shapes is a different pane.
      */
     const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
-    return `${shapes}#${assetRevision}#${scriptRevision}`;
+    return `${shapes}#${assetRevision}#${scriptRevision}#${layers}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
@@ -152,9 +172,12 @@ export function InspectorPanel() {
     entity,
     scriptRevision,
     assetRevision,
+    layers,
     materials,
     prefabs,
     componentRevision,
+    tuningRevision,
+    locked,
   ]);
 
   useEffect(() => {
@@ -202,7 +225,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, prefabs, componentRevision, sceneName]);
+  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision, locked]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);

@@ -1,5 +1,6 @@
 import {
   createAudioSourceEntity,
+  createComponentForEntity,
   createModelEntity,
   isPlaceable,
   type AssetKind,
@@ -120,6 +121,13 @@ export function placeDroppedAsset(assetId: string, point: Vec3): void {
     asset.kind === 'audio'
       ? createAudioSourceEntity(assetId, asset.name)
       : createModelEntity(assetId, asset.name);
+  // What *Generate colliders* asks for: the Collider Add Component gives a
+  // model, a mesh built from its triangles, in the same undo step. A model is
+  // one entity until it is unpacked, every node of it its own, so one collider
+  // covers it all; Unpack hands each piece a copy. It was read by nothing.
+  if (asset.settings.kind === 'model' && asset.settings.generateColliders) {
+    template.components.push(createComponentForEntity('collider', template.components));
+  }
   // Positioned before insertion so the drop is a single undo step.
   template.entity.transform.position = position;
   addEntity(template);

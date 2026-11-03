@@ -1,5 +1,6 @@
 import {
   createEmptyScene,
+  createEntity,
   createMeshEntity,
   emptyManifest,
   field,
@@ -10,7 +11,7 @@ import {
 } from '@three-studio/core';
 import type { ScriptProperties } from '@three-studio/runtime';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { declaredControl, specFor, type KeyedField } from '../src/inspector/declaredFields';
+import { declaredControl, entityChoices, specFor, type KeyedField } from '../src/inspector/declaredFields';
 import { GEOMETRY_FIELDS, MATERIAL_FIELDS, type FieldSpec } from '../src/inspector/fields';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -115,6 +116,34 @@ describe('a script property, whichever variant it is', () => {
 
     expect(control('target').optionsProvider?.()).toEqual({ None: '', Crate: crate.entity.id });
     expect(bind('target').toModel?.(undefined)).toBe('');
+  });
+
+  it('tells apart entities that share a name', () => {
+    const scene = createEmptyScene();
+    const add = (name: string, parent: string | null = null): string => {
+      const { entity } = createEntity(name);
+      entity.parent = parent;
+      scene.entities[entity.id] = entity;
+      if (parent) scene.entities[parent]!.children.push(entity.id);
+      return entity.id;
+    };
+    const cart = add('Cart');
+    const chassis = add('Chassis', cart);
+    const wheel = add('Wheel', cart);
+    const spare = add('Wheel', cart);
+    const second = add('Cart (1)');
+    const secondChassis = add('Chassis', second);
+    const crate = add('Crate');
+
+    expect(entityChoices(scene)).toEqual({
+      Cart: cart,
+      'Cart / Chassis': chassis,
+      'Cart / Wheel': wheel,
+      'Cart / Wheel 2': spare,
+      'Cart (1)': second,
+      'Cart (1) / Chassis': secondChassis,
+      Crate: crate,
+    });
   });
 
   it('lists only the assets of the kind the script asked for', () => {

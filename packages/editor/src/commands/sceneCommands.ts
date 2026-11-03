@@ -1,25 +1,30 @@
 import {
   cloneSubtree,
+  bodyOf,
+  collidersOfBody,
   componentsOf,
   splitInstancedId,
+  createColliderShape,
   createComponentForEntity,
   createEntity,
   deleteComponent,
   findComponentById,
+  fitColliderShape,
   insertEntity,
   isAncestorOf,
   putComponent,
   removeSubtree,
+  renameEntityReferences,
   reparentEntity as reparentInScene,
+  setComponentsOf,
   type ComponentDoc,
   type ComponentType,
   type EntityTemplate,
-  type MaterialDef,
   type SceneDoc,
   type Transform,
 } from '@three-studio/core';
+import { collectVertices, type SceneBinder } from '@three-studio/runtime';
 import type { Matrix4 } from 'three/webgpu';
-import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
@@ -406,10 +411,21 @@ export function setTransform(
  * body with no collider passes through the world. Both are easy to hit and hard
  * to diagnose, so the pieces are added together — the same bargain Unity makes
  * when a CharacterController brings its own capsule.
+ *
+ * A body's colliders may be on its children, which ride it: a Rigid Body added
+ * over them brings none of its own. A player's must be its own, since its
+ * character sweeps that one.
+ *
+ * A joint holds the body its entity moves with, so on an entity that moves
+ * with none it brings a Rigid Body, as Unity's joints require one, and that
+ * body its Collider; on a child of a body it brings neither. On level geometry
+ * meant to stay put, set the new Rigid Body to Fixed, or put the joint on the
+ * side that moves.
  */
 const REQUIRED_COMPANIONS: Partial<Record<ComponentType, readonly ComponentType[]>> = {
   playerController: ['collider', 'rigidbody'],
   rigidbody: ['collider'],
+  joint: ['rigidbody', 'collider'],
 };
 
 /**
@@ -456,7 +472,12 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
 
   const toAdd: ComponentType[] = [type];
   for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
-    if (!present.has(companion)) toAdd.push(companion);
+    if (present.has(companion)) continue;
+    // Over the expanded scene, so the contents of a prefab placed under it count.
+    if (type === 'joint' && bodyOf(expandedScene().scene, id) !== null) continue;
+    const carries = (type === 'rigidbody' || type === 'joint') && companion === 'collider'
+      && collidersOfBody(expandedScene().scene, id).length > 0;
+    if (!carries) toAdd.push(companion);
   }
 
   mutate(`Add ${type}`, (draft) => {
@@ -478,12 +499,10 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
       // That box is what made the default player incoherent: centred on the
       // origin, it put a 1.6 m eye at 2.1 m above the floor on a character one
       // metre tall, and nothing on screen said where the extra half metre came
-      // from. 0.30 + 0.55 + 0.55 + 0.30 is 1.70 m standing, which `eyeHeight`
-      // is chosen against — see `createPlayerController`.
+      // from. 1.70 m standing is what `eyeHeight` is chosen against — see
+      // `createPlayerController`.
       if (component.type === 'collider' && type === 'playerController' && !guessable) {
-        component.shape = 'capsule';
-        component.radius = 0.3;
-        component.halfHeight = 0.55;
+        component.shape = { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 };
       }
       putComponent(draft, id, component);
     }
@@ -551,28 +570,83 @@ export function setComponentNestedField(
   if (typeof value === 'number' && !Number.isFinite(value)) return;
   mutate(
     'Edit component',
-    (scene) => {
-      const component = findComponentById(scene, id, componentId);
-      if (!component) {
-        editInstance(scene, id, (override, current) => {
-          overrideComponentPath(override, current, componentId, path, value);
-        });
-        return;
-      }
-
-      dropOverridesOnPrefabSwap(component, path, value);
-
-      let target = component as unknown as Record<string, unknown>;
-      for (const key of path.slice(0, -1)) {
-        const next = target[key];
-        if (typeof next !== 'object' || next === null) return;
-        target = next as Record<string, unknown>;
-      }
-      const last = path.at(-1);
-      if (last !== undefined) target[last] = value;
-    },
+    (scene) => writeComponentPath(scene, id, componentId, path, value),
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
+}
+
+/**
+ * One field of one component, written inside a recipe: the scene's own
+ * component, or an instance's as its override. Nothing for a component the
+ * scene no longer has.
+ */
+export function writeComponentPath(
+  scene: SceneDoc,
+  entityId: string,
+  componentId: string,
+  path: readonly string[],
+  value: unknown,
+): void {
+  const component = findComponentById(scene, entityId, componentId);
+  if (!component) {
+    editInstance(scene, entityId, (override, current) => {
+      overrideComponentPath(override, current, componentId, path, value);
+    });
+    return;
+  }
+
+  dropOverridesOnPrefabSwap(component, path, value);
+  writePath(component, path, value);
+}
+
+/**
+ * Writes `value` at `path` inside a component, or nothing where the path leaves
+ * the component's shape: a document's draft, and a copy tuned during Play.
+ *
+ * A copy of it. A value tuned during Play is written again at every read of
+ * its component, and the first `produce` froze it where it landed: a shape
+ * tuned and then a radius tuned under it, written into the same object, lost
+ * the radius without a word.
+ */
+export function writePath(target: object, path: readonly string[], value: unknown): void {
+  let current: unknown = target;
+  for (const key of path.slice(0, -1)) {
+    if (typeof current !== 'object' || current === null) return;
+    current = Reflect.get(current, key);
+  }
+  const last = path.at(-1);
+  if (last !== undefined && typeof current === 'object' && current !== null) {
+    Reflect.set(current, last, structuredClone(value));
+  }
+}
+
+/**
+ * Fits a collider around its entity's meshes, keeping its kind, rotation and
+ * rounding, as one undo step: Unity's Reset. A collider's size was copied from
+ * its mesh once, when it was added, and kept nothing in step afterwards.
+ *
+ * Read from the expanded scene, so an instance's inner collider fits too, and
+ * from the entity's own meshes, as physics builds a mesh collider from them:
+ * its children's are theirs. The binder is the edit view's, which holds those
+ * meshes as they are drawn, a model loaded through its cache included.
+ */
+export function fitColliderToMesh(id: string, componentId: string, binder: SceneBinder): void {
+  const { scene } = expandedScene();
+  const collider = findComponentById(scene, id, componentId);
+  if (collider?.type !== 'collider') return;
+
+  const container = binder.containerFor(id);
+  const vertices = container ? collectVertices(container, [1, 1, 1]) : null;
+  if (!vertices) {
+    const name = scene.entities[id]?.name ?? id;
+    notify({
+      kind: 'warning',
+      title: 'Nothing to fit to',
+      description: `"${name}" draws no mesh of its own. A Collider fits its own entity's meshes, not its children's.`,
+    });
+    return;
+  }
+  setComponentNestedField(id, componentId, ['shape'], fitColliderShape(collider.shape, vertices.positions));
 }
 
 /*
@@ -652,14 +726,22 @@ export function duplicateSelection(selection: Selection): void {
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
     (scene) => {
+      const renamed = new Map<string, string>();
       for (const id of ids) {
         const source = scene.entities[id];
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
         // keep theirs, which is what Unity and Blender do. It was computed per
         // cloned node before, which is one of the O(N) costs phase 7 collects.
-        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name));
+        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name), renamed);
         if (copyId) created.push(copyId);
+      }
+      // What the copies name among what was copied, the copy: a car and its
+      // trailer duplicated together left the new trailer hitched to the old car.
+      // What was not copied keeps the original, as Unity's Duplicate does.
+      for (const copyId of renamed.values()) {
+        const components = renameEntityReferences(componentsOf(scene, copyId), (id) => renamed.get(id));
+        setComponentsOf(scene, copyId, components);
       }
     },
     // The function form exists for this: the new ids are only known once the
@@ -688,25 +770,28 @@ export function redo(): void {
 }
 
 /**
- * Edits a shared material asset as one undo step.
+ * Edits a shared material asset as one undo step: a mesh's material or a
+ * collider's physics material, `save` writing the asset's kind and `noun`
+ * naming it in the entry.
  *
  * The write goes to a file rather than to the document, so there are no immer
  * patches to invert — the step carries the before and after values instead and
  * replays them by writing again. Without this, editing a linked material was
  * the one thing in the editor Cmd+Z could not take back.
  */
-export function setLinkedMaterialField(
-  assetId: string,
+export function setLinkedMaterialField<T>(
+  noun: string,
   label: string,
-  before: MaterialDef,
-  after: MaterialDef,
+  before: T,
+  after: T,
+  save: (material: T) => Promise<void>,
 ): void {
-  const write = (material: MaterialDef) => {
-    void useAssetStore.getState().saveMaterial(assetId, material);
+  const write = (material: T) => {
+    void save(material);
   };
 
   write(after);
-  useDocumentStore.getState().recordExternal(`Edit material ${label}`, {
+  useDocumentStore.getState().recordExternal(`Edit ${noun} ${label}`, {
     apply: () => write(after),
     revert: () => write(before),
   });

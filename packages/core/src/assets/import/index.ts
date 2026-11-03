@@ -8,6 +8,7 @@ import { TextureImporter } from './importers/TextureImporter';
 import { AudioImporter } from './importers/AudioImporter';
 import {
   MaterialImporter,
+  PhysicsMaterialImporter,
   PrefabImporter,
   ScriptImporter,
   ShaderImporter,
@@ -25,12 +26,14 @@ export * from './session';
  * an ordering rather than as a set:
  *
  *   * `.prefab.json` before `.material.*`, or a prefab would be a material.
+ *   * `.physics-material.json` before `.material.*` too, for the same reason.
  *   * `.material.ts` before `.ts`, or a TSL material would be a script.
  *   * a bare `.json` falls through to the material importer, which is where it
  *     landed before this list existed and where it must keep landing.
  */
 export const importers = new ImporterRegistry().register(
   new PrefabImporter(),
+  new PhysicsMaterialImporter(),
   new MaterialImporter(),
   new ScriptImporter(),
   new GltfImporter(),

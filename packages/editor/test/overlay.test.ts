@@ -1,25 +1,42 @@
 import {
+  colliderGeometry,
   createAudioSourceEntity,
   createCameraEntity,
+  createColliderShape,
+  createComponent,
   createEntity,
+  createJoint,
+  createJointMotion,
   createLightEntity,
   createMeshComponent,
   createMeshEntity,
   createRenderingSettings,
   findComponent,
+  jointFrame,
   putComponent,
   type AudioSourceComponent,
+  type BuiltShape,
+  type ColliderShape,
+  type ComponentDoc,
   type EntityTemplate,
+  type JointComponent,
+  type JointMotion,
+  type MeshBuild,
   type SceneDoc,
+  type Vec3,
 } from '@three-studio/core';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { worldPose } from '@three-studio/runtime/physics/PhysicsWorld';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import {
+  Box3,
+  BufferAttribute,
   CameraHelper,
   DirectionalLightHelper,
   HemisphereLightHelper,
   LineSegments,
+  Matrix4,
   Mesh,
   PerspectiveCamera,
   Quaternion,
@@ -30,7 +47,7 @@ import {
   type Object3D,
 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
-import { sceneWith } from '../../core/test/fixtures';
+import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 
 /*
@@ -420,9 +437,13 @@ describe('helpers on the selection', () => {
 
   it('never lets an annotation take a click', () => {
     const camera = createCameraEntity();
-    const scene = sceneWith([camera]);
+    // Lines are picked within a whole unit of them, so this ray, down the
+    // middle of a 1 m box, would land on its outline's edges.
+    const box = colliderEntity(createColliderShape('box'));
+    const scene = sceneWith([camera, box]);
     const { overlay, frame } = mount(scene);
-    frame(scene, [camera.entity.id]);
+    frame(scene, [camera.entity.id, box.entity.id]);
+    expect(annotations(overlay)).toHaveLength(2);
 
     // Asked of every object in the subtree, not of the group: three's helpers
     // hang their lines off children, and `Raycaster` walks to each of them.
@@ -574,6 +595,328 @@ function conesOf(root: Object3D | undefined): boolean[] {
     .map((lines) => lines.visible);
 }
 
+/** An entity carrying one collider of this shape. */
+function colliderEntity(shape: ColliderShape, components: ComponentDoc[] = []): EntityTemplate {
+  return createEntity('Collider', [{ ...createComponent('collider'), shape }, ...components]);
+}
+
+/** The position attribute of a collider's outline. */
+function positionsOf(object: Object3D | undefined): BufferAttribute {
+  if (!(object instanceof LineSegments)) throw new Error('no outline');
+  const positions = object.geometry.getAttribute('position');
+  if (!(positions instanceof BufferAttribute)) throw new Error('no positions');
+  return positions;
+}
+
+/**
+ * Where an outline's points are drawn. Through `matrix`: the annotation group
+ * sits at the world's origin, and an outline is placed by hand.
+ */
+function worldPoints(object: Object3D | undefined): Vector3[] {
+  const positions = positionsOf(object);
+  const matrix = object?.matrix ?? new Matrix4();
+  return Array.from({ length: positions.count }, (_, i) =>
+    new Vector3().fromBufferAttribute(positions, i).applyMatrix4(matrix),
+  );
+}
+
+/** How far a built primitive's outside reaches along each of its own axes, from its middle. */
+function reachOf(shape: BuiltShape): [number, number, number] {
+  switch (shape.kind) {
+    case 'box': {
+      const [x, y, z] = shape.halfExtents;
+      return [x + shape.rounding, y + shape.rounding, z + shape.rounding];
+    }
+    case 'sphere':
+      return [shape.radius, shape.radius, shape.radius];
+    case 'capsule':
+      return [shape.radius, shape.halfHeight + shape.radius, shape.radius];
+    case 'cylinder':
+    case 'cone': {
+      const across = shape.radius + shape.rounding;
+      return [across, shape.halfHeight + shape.rounding, across];
+    }
+    case 'mesh':
+      throw new Error('a mesh reaches as far as its vertices');
+  }
+}
+
+/** Within a millionth of a metre, axis by axis. */
+function expectAt(actual: Vector3, expected: readonly number[]): void {
+  actual.toArray().forEach((value, axis) => {
+    expect(Math.abs(value - (expected[axis] ?? Number.NaN))).toBeLessThan(1e-6);
+  });
+}
+
+describe('what a collider is built as', () => {
+  /*
+   * Each expectation is read from `colliderGeometry`, which the runtime builds
+   * from: these hold the outline against what physics builds, rather than
+   * stating its rules a second time.
+   */
+
+  it('draws each kind where physics builds it, on a scaled entity', () => {
+    const kinds = ['box', 'sphere', 'capsule', 'cylinder', 'cone'] as const;
+    for (const kind of kinds) {
+      for (const rounding of [0, 0.1]) {
+        const shape = { ...createColliderShape(kind), center: [0, 0.5, 0] satisfies Vec3 };
+        const rounded = 'rounding' in shape ? { ...shape, rounding } : shape;
+        const entity = colliderEntity(rounded);
+        entity.entity.transform.position = [1, 2, 3];
+        entity.entity.transform.scale = [1.5, 1, 1.5];
+        const scene = sceneWith([entity]);
+        const { overlay, frame } = mount(scene);
+
+        frame(scene, [entity.entity.id]);
+
+        const built = colliderGeometry(rounded, [1.5, 1, 1.5], undefined);
+        const middle = new Vector3(...built.position).add(new Vector3(1, 2, 3));
+        const reach = new Vector3(...reachOf(built.shape));
+        const drawn = new Box3().setFromPoints(worldPoints(annotations(overlay)[0]));
+        expectAt(drawn.min, middle.clone().sub(reach).toArray());
+        expectAt(drawn.max, middle.clone().add(reach).toArray());
+      }
+    }
+  });
+
+  it('turns with its rotation', () => {
+    const capsule = colliderEntity({ ...createColliderShape('capsule'), rotation: [0, 0, Math.PI / 2] });
+    const scene = sceneWith([capsule]);
+    const { overlay, frame } = mount(scene);
+
+    frame(scene, [capsule.entity.id]);
+
+    const { shape } = colliderGeometry(findColliderShape(scene, capsule), [1, 1, 1], undefined);
+    if (shape.kind !== 'capsule') throw new Error('not built as a capsule');
+    const drawn = new Box3().setFromPoints(worldPoints(annotations(overlay)[0]));
+    const along = shape.halfHeight + shape.radius;
+    expectAt(drawn.min, [-along, -shape.radius, -shape.radius]);
+    expectAt(drawn.max, [along, shape.radius, shape.radius]);
+  });
+
+  it('reads its entity’s pose as physics does, under a shear', () => {
+    // Turned inside a parent scaled unevenly, the entity's world matrix is
+    // sheared, and three decomposes it into a rotation 0.933 long. Its top
+    // alone cannot tell: composed with that rotation, a box keeps its height
+    // and is squeezed across, 4.81 m from its middle where physics builds it
+    // 5.00 m out.
+    const stretched = createEntity('Stretched');
+    stretched.entity.transform.scale = [10, 1, 1];
+    const turned = colliderEntity({ ...createColliderShape('box'), center: [0, 2, 0] });
+    turned.entity.transform.rotation = [0, Math.PI / 4, 0];
+    nest(stretched, turned);
+    const scene = sceneWith([stretched, turned]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [turned.entity.id]);
+
+    const container = binder.containerFor(turned.entity.id);
+    if (!container) throw new Error('no container');
+    const position = new Vector3();
+    const rotation = new Quaternion();
+    const scale = new Vector3();
+    worldPose(container, position, rotation, scale);
+    const built = colliderGeometry(findColliderShape(scene, turned), scale.toArray(), undefined);
+    if (built.shape.kind !== 'box') throw new Error('not built as a box');
+    const [hx, hy, hz] = built.shape.halfExtents;
+    const corners = [-1, 1].flatMap((x) =>
+      [-1, 1].flatMap((y) =>
+        [-1, 1].map((z) =>
+          new Vector3(x * hx, y * hy, z * hz)
+            .add(new Vector3(...built.position))
+            .applyQuaternion(rotation)
+            .add(position),
+        ),
+      ),
+    );
+    const expected = new Box3().setFromPoints(corners);
+    const drawn = new Box3().setFromPoints(worldPoints(annotations(overlay)[0]));
+    expectAt(drawn.min, expected.min.toArray());
+    expectAt(drawn.max, expected.max.toArray());
+    // Where a ball dropped on it rests, 0.5 m higher.
+    expect(Math.abs(drawn.max.y - 2.5)).toBeLessThan(1e-6);
+  });
+
+  it('draws a child’s collider at its own entity’s pose', () => {
+    const parent = createEntity('Parent', [createComponent('rigidbody')]);
+    parent.entity.transform.position = [0, 3, 0];
+    parent.entity.transform.rotation = [0, 0, Math.PI / 2];
+    parent.entity.transform.scale = [2, 2, 2];
+    const child = colliderEntity({ ...createColliderShape('box'), center: [0.5, 0, 0] });
+    child.entity.transform.position = [-1, 0, 0];
+    nest(parent, child);
+    const scene = sceneWith([parent, child]);
+    const { overlay, frame } = mount(scene);
+
+    frame(scene, [child.entity.id]);
+
+    // Turned and scaled with its parent, the child sits 2 m below it, and its
+    // box, 2 m across, 1 m above the child.
+    const drawn = new Box3().setFromPoints(worldPoints(annotations(overlay)[0]));
+    expectAt(drawn.min, [-1, 1, -1]);
+    expectAt(drawn.max, [1, 3, 1]);
+  });
+
+  it('rounds what it is told to, and stays the size drawn', () => {
+    const box = colliderEntity({ ...createColliderShape('box'), rounding: 0.1 });
+    const scene = sceneWith([box]);
+    const { overlay, frame } = mount(scene);
+
+    frame(scene, [box.entity.id]);
+
+    const points = worldPoints(annotations(overlay)[0]);
+    const drawn = new Box3().setFromPoints(points);
+    expectAt(drawn.min, [-0.5, -0.5, -0.5]);
+    expectAt(drawn.max, [0.5, 0.5, 0.5]);
+    const corner = new Vector3(0.5, 0.5, 0.5);
+    expect(Math.min(...points.map((point) => point.distanceTo(corner)))).toBeGreaterThan(0.05);
+  });
+
+  it('follows an edit while selected, and writes nothing when nothing changed', () => {
+    const box = colliderEntity(createColliderShape('box'));
+    const scene = sceneWith([box]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [box.entity.id]);
+
+    const collider = findComponent(scene, box.entity.id, 'collider');
+    if (!collider) throw new Error('no collider');
+    putComponent(scene, box.entity.id, {
+      ...collider,
+      shape: { ...createColliderShape('box'), size: [2, 1, 4] },
+    });
+    frame(scene, [box.entity.id]);
+
+    const drawn = new Box3().setFromPoints(worldPoints(annotations(overlay)[0]));
+    expectAt(drawn.max, [1, 0.5, 2]);
+
+    const { version } = positionsOf(annotations(overlay)[0]);
+    frame(scene, [box.entity.id]);
+    frame(scene, [box.entity.id]);
+    expect(positionsOf(annotations(overlay)[0]).version).toBe(version);
+  });
+});
+
+describe('what a mesh collider is built as', () => {
+  /*
+   * A Torus at its defaults, radius R and tube t, lying across its own z: its
+   * hole is what tells its triangles from its hull. Distances are measured from
+   * that axis.
+   */
+  const R = 0.4;
+  const t = 0.15;
+
+  const torus = (build: MeshBuild, ...components: ComponentDoc[]): EntityTemplate => {
+    const template = createMeshEntity('torus');
+    // At the origin, where its axis is the world's z; a new one stands on the ground.
+    template.entity.transform.position = [0, 0, 0];
+    template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } }, ...components);
+    return template;
+  };
+
+  /** Each point's distance from the torus's axis. */
+  const fromAxis = (points: readonly Vector3[]): number[] => points.map((point) => Math.hypot(point.x, point.y));
+
+  /** The outline drawn for the one entity selected, which draws something. */
+  function drawn(templates: readonly EntityTemplate[], selected: EntityTemplate): Vector3[] {
+    const scene = sceneWith(templates);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [selected.entity.id]);
+    const points = worldPoints(annotations(overlay)[0]);
+    expect(points.length).toBeGreaterThan(0);
+    return points;
+  }
+
+  it('draws Triangles as its triangles, hole included', () => {
+    const ring = torus('triangles');
+    const distances = fromAxis(drawn([ring], ring));
+
+    expect(Math.min(...distances.map((distance) => Math.abs(distance - (R - t))))).toBeLessThan(1e-3);
+  });
+
+  it('draws a Convex hull over the hole', () => {
+    const ring = torus('hull');
+    const distances = fromAxis(drawn([ring], ring));
+
+    expect(Math.min(...distances)).toBeGreaterThan(R - 1e-3);
+  });
+
+  it('draws Triangles as the hull a dynamic body makes of them, its own or an ancestor’s', () => {
+    const own = torus('triangles', createComponent('rigidbody'));
+    expect(Math.min(...fromAxis(drawn([own], own)))).toBeGreaterThan(R - 1e-3);
+
+    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const ridden = torus('triangles');
+    nest(cart, ridden);
+    expect(Math.min(...fromAxis(drawn([cart, ridden], ridden)))).toBeGreaterThan(R - 1e-3);
+  });
+
+  it('draws Convex parts as its triangles', () => {
+    // The parts exist only in the runtime, where V-HACD cuts them.
+    const parts = torus('parts');
+    const triangles = torus('triangles');
+
+    expect(drawn([parts], parts)).toEqual(drawn([triangles], triangles));
+  });
+
+  it('draws a flat mesh’s hull as its triangles, three hulling no flat soup', () => {
+    // three hands back a sliver of four of a disc's points, drawn as a triangle.
+    const disc = (build: MeshBuild): EntityTemplate => {
+      const template = createMeshEntity('circle');
+      template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } });
+      return template;
+    };
+    const hull = disc('hull');
+    const triangles = disc('triangles');
+
+    expect(drawn([hull], hull)).toEqual(drawn([triangles], triangles));
+  });
+
+  it('draws its own entity’s meshes, never its children’s', () => {
+    const base = createMeshEntity('box');
+    base.entity.transform.position = [0, 0, 0];
+    base.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build: 'hull' } });
+    const above = createMeshEntity('box');
+    above.entity.transform.position = [0, 3, 0];
+    nest(base, above);
+
+    const top = new Box3().setFromPoints(drawn([base, above], base)).max.y;
+    expect(Math.abs(top - 0.5)).toBeLessThan(1e-6);
+  });
+
+  it('follows its mesh, and a scale moves it without a rebuild', () => {
+    const ring = torus('triangles');
+    const scene = sceneWith([ring]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [ring.entity.id]);
+
+    const mesh = findComponent(scene, ring.entity.id, 'mesh');
+    if (mesh?.geometry.kind !== 'torus') throw new Error('no torus');
+    putComponent(scene, ring.entity.id, { ...mesh, geometry: { ...mesh.geometry, radius: 0.6 } });
+    frame(scene, [ring.entity.id]);
+    const outline = annotations(overlay)[0];
+    const reach = (): number => new Box3().setFromPoints(worldPoints(annotations(overlay)[0])).max.x;
+    expect(Math.abs(reach() - (0.6 + t))).toBeLessThan(1e-3);
+    const geometry = outline instanceof LineSegments ? outline.geometry : undefined;
+
+    const entity = scene.entities[ring.entity.id];
+    if (!entity) throw new Error('no entity');
+    const scaled: SceneDoc = {
+      ...scene,
+      entities: { ...scene.entities, [entity.id]: { ...entity, transform: { ...entity.transform, scale: [2, 2, 2] } } },
+    };
+    frame(scaled, [ring.entity.id]);
+    expect(Math.abs(reach() - 2 * (0.6 + t))).toBeLessThan(1e-3);
+    expect(outline instanceof LineSegments ? outline.geometry : undefined).toBe(geometry);
+  });
+});
+
+/** The shape of the one collider a template carries, as the scene holds it. */
+function findColliderShape(scene: SceneDoc, template: EntityTemplate): ColliderShape {
+  const collider = findComponent(scene, template.entity.id, 'collider');
+  if (!collider) throw new Error('no collider');
+  return collider.shape;
+}
+
 describe('teardown', () => {
   it('leaves both groups empty', () => {
     const scene = sceneWith([createLightEntity('spot'), createCameraEntity()]);
@@ -586,5 +929,162 @@ describe('teardown', () => {
 
     expect(overlay.markers.children).toHaveLength(0);
     expect(overlay.annotations.children).toHaveLength(0);
+  });
+});
+
+describe('where a joint holds', () => {
+  /** An entity carrying one joint of this motion, at this anchor. */
+  const jointEntity = (motion: JointMotion, anchor: Vec3 = [0, 0, 0]): EntityTemplate =>
+    createEntity('Joint', [{ ...createJoint(), motion, anchor }]);
+
+  /** The world pose physics reads the entity at. */
+  function poseOf(binder: SceneBinder, entityId: string) {
+    const container = binder.containerFor(entityId);
+    if (!container) throw new Error('no container');
+    const position = new Vector3();
+    const quaternion = new Quaternion();
+    const scale = new Vector3();
+    worldPose(container, position, quaternion, scale);
+    return { position, quaternion, scale };
+  }
+
+  /** Where physics builds the joint: the entity's pose with its anchor and axis on it. */
+  function heldAt(binder: SceneBinder, template: EntityTemplate) {
+    const joint = template.components[0] as JointComponent;
+    const { position, quaternion, scale } = poseOf(binder, template.entity.id);
+    const { anchor, axis } = jointFrame(joint, scale.toArray());
+    return {
+      anchor: new Vector3(...anchor).applyQuaternion(quaternion).add(position),
+      axis: new Vector3(...axis).applyQuaternion(quaternion),
+      origin: position,
+    };
+  }
+
+  const average = (points: readonly Vector3[]): Vector3 =>
+    points.reduce((sum, point) => sum.add(point), new Vector3()).divideScalar(points.length);
+
+  it('draws its anchor where physics builds it, on a scaled, turned entity', () => {
+    // A Fixed joint draws its cross alone, so every point is the cross's.
+    const welded = jointEntity(createJointMotion('fixed'), [0.5, 0, 0]);
+    welded.entity.transform.position = [1, 2, 3];
+    welded.entity.transform.scale = [2, 2, 2];
+    welded.entity.transform.rotation = [0, Math.PI / 2, 0];
+    const scene = sceneWith([welded]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [welded.entity.id]);
+
+    const drawn = average(worldPoints(annotations(overlay)[0]));
+    expectAt(drawn, heldAt(binder, welded).anchor.toArray());
+    // 1 m out along the entity's x, which the turn points down −z.
+    expectAt(drawn, [1, 2, 2]);
+  });
+
+  it("draws a hinge's axis, and its limits from where it was built", () => {
+    const motion = createJointMotion('hinge');
+    const door = jointEntity(
+      { ...motion, axis: [0, 1, 0], limits: { enabled: true, min: 0, max: Math.PI / 2 } },
+      [-0.5, 0, 0],
+    );
+    door.entity.transform.position = [2, 1, 0];
+    door.entity.transform.rotation = [0, Math.PI / 6, 0];
+    const scene = sceneWith([door]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [door.entity.id]);
+
+    const { anchor, axis, origin } = heldAt(binder, door);
+    const points = worldPoints(annotations(overlay)[0]);
+    const from = (point: Vector3) => point.clone().sub(anchor);
+    // The axis: 0.5 m each side of the anchor, along it.
+    for (const side of [-0.5, 0.5]) {
+      const end = anchor.clone().addScaledVector(axis, side);
+      expect(Math.min(...points.map((point) => point.distanceTo(end)))).toBeLessThan(1e-6);
+    }
+    // The needle, from the anchor, towards the door's own origin: its leaf.
+    const leaf = from(origin).normalize();
+    const tip = anchor.clone().addScaledVector(leaf, 0.5);
+    expect(Math.min(...points.map((point) => point.distanceTo(tip)))).toBeLessThan(1e-6);
+    // The arc, at 0.5 m in the plane across the axis, from the needle to 90°.
+    const across = points.filter(
+      (point) => Math.abs(from(point).length() - 0.5) < 1e-6 && Math.abs(from(point).dot(axis)) < 1e-6,
+    );
+    expect(across.length).toBeGreaterThan(4);
+    const sideways = axis.clone().cross(leaf);
+    for (const point of across) {
+      const angle = Math.atan2(from(point).dot(sideways), from(point).dot(leaf));
+      expect(angle).toBeGreaterThan(-1e-6);
+      expect(angle).toBeLessThan(Math.PI / 2 + 1e-6);
+    }
+  });
+
+  it("draws a slider's limits along its axis", () => {
+    const motion = createJointMotion('slider');
+    const lift = jointEntity({ ...motion, axis: [1, 1, 0], limits: { enabled: true, min: -1, max: 0.5 } });
+    lift.entity.transform.position = [0, 3, 0];
+    const scene = sceneWith([lift]);
+    const { overlay, binder, frame } = mount(scene);
+
+    frame(scene, [lift.entity.id]);
+
+    const { anchor, axis } = heldAt(binder, lift);
+    const along = worldPoints(annotations(overlay)[0]).map((point) => point.sub(anchor).dot(axis));
+    expect(Math.abs(Math.min(...along) + 1)).toBeLessThan(1e-6);
+    expect(Math.abs(Math.max(...along) - 0.5)).toBeLessThan(1e-6);
+  });
+
+  it('draws a joint on a child where the child is', () => {
+    const parent = createEntity('Door', [createComponent('rigidbody')]);
+    parent.entity.transform.position = [0, 3, 0];
+    parent.entity.transform.rotation = [0, 0, Math.PI / 2];
+    parent.entity.transform.scale = [2, 2, 2];
+    const hinge = jointEntity(createJointMotion('fixed'));
+    hinge.entity.transform.position = [-1, 0, 0];
+    nest(parent, hinge);
+    const scene = sceneWith([parent, hinge]);
+    const { overlay, frame } = mount(scene);
+
+    frame(scene, [hinge.entity.id]);
+
+    // Turned and scaled with its parent, the child sits 2 m below it.
+    expectAt(average(worldPoints(annotations(overlay)[0])), [0, 1, 0]);
+  });
+
+  it('follows an edit while selected, and writes nothing when nothing changed', () => {
+    const welded = jointEntity(createJointMotion('fixed'));
+    const scene = sceneWith([welded]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [welded.entity.id]);
+
+    const joint = findComponent(scene, welded.entity.id, 'joint');
+    if (!joint) throw new Error('no joint');
+    putComponent(scene, welded.entity.id, { ...joint, anchor: [0, 2, 0] });
+    frame(scene, [welded.entity.id]);
+    expectAt(average(worldPoints(annotations(overlay)[0])), [0, 2, 0]);
+
+    putComponent(scene, welded.entity.id, { ...joint, motion: createJointMotion('hinge') });
+    frame(scene, [welded.entity.id]);
+    const { version } = positionsOf(annotations(overlay)[0]);
+    frame(scene, [welded.entity.id]);
+    frame(scene, [welded.entity.id]);
+    expect(positionsOf(annotations(overlay)[0]).version).toBe(version);
+  });
+
+  it('never lets an annotation take a click', () => {
+    const hinge = jointEntity(createJointMotion('hinge'));
+    const scene = sceneWith([hinge]);
+    const { overlay, frame } = mount(scene);
+    frame(scene, [hinge.entity.id]);
+    expect(annotations(overlay)).toHaveLength(1);
+
+    // Down the hinge's axis, through its cross and its circle.
+    const raycaster = new Raycaster(new Vector3(0, 10, 0), new Vector3(0, -1, 0));
+    const hits: Intersection[] = [];
+    for (const object of annotations(overlay)) {
+      object.traverse((child) => {
+        child.raycast(raycaster, hits);
+      });
+    }
+    expect(hits).toHaveLength(0);
   });
 });

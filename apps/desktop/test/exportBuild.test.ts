@@ -20,9 +20,12 @@ import {
   SCENES_DIR,
   createBuildProfiles,
   createComponent,
+  createDefaultLayer,
+  createEntity,
   createMaterial,
   createMeshEntity,
   createAudioSourceEntity,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
@@ -38,7 +41,7 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { readMaterialAssets } from '../src/main/assetLibraries';
+import { readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { buildScripts } from '../src/main/scripts';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
@@ -268,6 +271,33 @@ describe('asset and material migration', () => {
     expect(materials['mat-old']?.tiling).toEqual([1, 1]);
     expect(materials['mat-old']?.displacementScale).toBeCloseTo(0.1);
   });
+
+  it('reads a physics material against its factory, and leaves out one a newer build wrote', async () => {
+    const { projectPath } = await makeProject();
+    const folder = join(projectPath, ASSETS_DIR, 'physics-materials');
+    await mkdir(folder, { recursive: true });
+    const write = async (name: string, id: string, contents: unknown) => {
+      const file = join(folder, `${name}.physics-material.json`);
+      await writeFile(file, JSON.stringify(contents), 'utf8');
+      await writeFile(
+        `${file}.meta.json`,
+        JSON.stringify({ version: 1, id, kind: 'physicsMaterial', importedAt: 1, hash: 'h' }),
+        'utf8',
+      );
+    };
+    await write('Ice', 'pm-ice', {
+      version: 1,
+      material: { friction: 0.05, frictionCombine: 'sum' },
+    });
+    await write('Future', 'pm-future', { version: 2, material: { friction: 0.05 } });
+
+    expect(await readPhysicsMaterialAssets(projectPath)).toEqual({
+      'pm-ice': { ...createPhysicsMaterial(), friction: 0.05 },
+    });
+    const materials = await readMaterialAssets(projectPath);
+    expect(materials).not.toHaveProperty('pm-ice');
+    expect(materials).not.toHaveProperty('pm-future');
+  });
 });
 
 describe('web export', () => {
@@ -381,6 +411,38 @@ describe('web export', () => {
     }
   });
 
+  it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const folder = join(projectPath, ASSETS_DIR, 'physics-materials');
+    await mkdir(folder, { recursive: true });
+    for (const [name, id] of [
+      ['Ice', 'pm-ice'],
+      ['Unused', 'pm-unused'],
+    ] as const) {
+      const file = join(folder, `${name}.physics-material.json`);
+      const material = { friction: 0.05, frictionCombine: 'sum' };
+      await writeFile(file, JSON.stringify({ version: 1, material }), 'utf8');
+      await writeFile(
+        `${file}.meta.json`,
+        JSON.stringify({ version: 1, id, kind: 'physicsMaterial', importedAt: 1, hash: 'h' }),
+        'utf8',
+      );
+    }
+    const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    insertEntity(scene, createEntity('Cube', [{ ...createComponent('collider'), materialId: 'pm-ice' }]));
+    await writeFile(scenePath, serializeScene(scene), 'utf8');
+
+    const outputDir = join(projectPath, '..', 'out-physics-materials');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const build = await buildOf(outputDir);
+    // Read against its factory: the rule it does not know is Average.
+    expect(build.physicsMaterials).toEqual({ 'pm-ice': { ...createPhysicsMaterial(), friction: 0.05 } });
+    expect(build.assets['pm-ice']).toMatch(/^assets\/physics-materials\/Ice\./);
+    expect(build.assets).not.toHaveProperty('pm-unused');
+  });
+
   it('renames an asset whose bytes changed, so a re-export is not served stale', async () => {
     /*
      * The bug this closes was silent and only ever hit people who had already
@@ -466,7 +528,12 @@ describe('web export', () => {
      * project tuned for low gravity played it in the editor and lost it in the
      * thing people download.
      */
-    const physics: PhysicsSettings = { gravity: [0, -3, 0], fixedTimestep: 1 / 120, maxSubsteps: 5 };
+    const physics: PhysicsSettings = {
+      ...createPhysicsSettings(),
+      gravity: [0, -3, 0],
+      fixedTimestep: 1 / 120,
+      layers: [createDefaultLayer(), { id: 'ghost', name: 'Ghost', ignores: ['default'] }],
+    };
     const { projectPath, templateRoot } = await makeProject(createRenderingSettings(), physics);
     const outputDir = join(projectPath, '..', 'out-physics');
 
@@ -474,7 +541,7 @@ describe('web export', () => {
 
     const build = await buildOf(outputDir);
     expect(build.physics).toEqual(physics);
-    expect(build.formatVersion).toBe(7);
+    expect(build.formatVersion).toBe(8);
   });
 
   it('tells the player which images its file names do not describe', async () => {

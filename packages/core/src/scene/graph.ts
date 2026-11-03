@@ -193,12 +193,16 @@ export function removeSubtree(scene: SceneDoc, id: string): string[] {
  * is what Unity and Blender do — a duplicated `Parent` gives `Parent (1)` whose
  * child is still `Child`. Naming is the caller's job because it is a question
  * about the whole document (what names are taken), not about this subtree.
+ *
+ * `renamed` gains each source id and its copy's, for the caller to make what
+ * the copies name follow them (`renameEntityReferences`).
  */
 export function cloneSubtree(
   scene: SceneDoc,
   sourceId: string,
   parentId: string | null,
   name?: string,
+  renamed?: Map<string, string>,
 ): string | null {
   const source = scene.entities[sourceId];
   if (!source || !isDocumentId(sourceId)) return null;
@@ -221,7 +225,8 @@ export function cloneSubtree(
     return null;
   }
 
-  for (const childId of source.children) cloneSubtree(scene, childId, copy.id);
+  renamed?.set(sourceId, copy.id);
+  for (const childId of source.children) cloneSubtree(scene, childId, copy.id, undefined, renamed);
   return copy.id;
 }
 

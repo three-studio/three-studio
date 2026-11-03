@@ -1,10 +1,12 @@
 import type { PrefabDoc } from '../scene/prefab';
+import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
   | 'model'
   | 'texture'
   | 'material'
+  | 'physicsMaterial'
   | 'prefab'
   | 'shader'
   | 'audio'
@@ -52,8 +54,17 @@ export const MATERIAL_ASSET_VERSION = 1;
  * can never mix two builds. `scenes` lists `{ id, name, path }`, which is
  * where `sceneNames` and `buildScenePath` went. Every field is required, and
  * the player reads this format and no other; see `BuildManifest`.
+ *
+ * 8 — `physics` carries the collision layers and the pairs that pass through
+ * each other. An export copies the player it came with, so this only lets a
+ * player of 7 dropped beside this data say so, rather than build every
+ * collider on one layer.
+ *
+ * And `physicsMaterials` carries the physics materials a shipped scene links
+ * to, by asset id: a player of 7 dropped beside this data would build every
+ * linked collider with its own values.
  */
-export const BUILD_FORMAT_VERSION = 7;
+export const BUILD_FORMAT_VERSION = 8;
 
 /**
  * Where everything is in an exported build, said once.
@@ -144,6 +155,11 @@ export interface BuildManifest {
    */
   materials: Record<string, MaterialDef>;
   /**
+   * The physics materials a shipped scene's colliders link to, by asset id, and
+   * only those, as for the materials.
+   */
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
+  /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
    * engine sees the scene.
    */
@@ -182,6 +198,24 @@ export interface BuildManifest {
 export interface MaterialAssetFile {
   version: number;
   material: MaterialDef;
+}
+
+/**
+ * Shape of `assets/physics-materials/<name>.physics-material.json`.
+ *
+ * A file of a later version is left out, and the colliders that link it play
+ * with their own values: a newer build may have given the material something
+ * this one would drop.
+ */
+export const PHYSICS_MATERIAL_ASSET_VERSION = 1;
+
+/**
+ * A physics material on disk: the same `PhysicsMaterialDef` a collider embeds,
+ * so saving a collider's own values as an asset is a move, as it is for a mesh.
+ */
+export interface PhysicsMaterialAssetFile {
+  version: number;
+  material: PhysicsMaterialDef;
 }
 
 /**
@@ -266,7 +300,11 @@ export interface ModelSettingsBase {
    * rotated when it was converted from something that did not.
    */
   upAxis: 'y' | 'z';
-  /** Builds a collider from the mesh when the model is placed. */
+  /**
+   * When the model is dropped into a scene, its entity gets the Collider Add
+   * Component would give it: a mesh built from the model's triangles. A model
+   * already placed keeps what it has.
+   */
   generateColliders: boolean;
   /** Off drops the file's materials for three's default, which is faster to look at. */
   importMaterials: boolean;
@@ -332,6 +370,10 @@ export interface PrefabSettings {
   kind: 'prefab';
 }
 
+export interface PhysicsMaterialSettings {
+  kind: 'physicsMaterial';
+}
+
 export interface MaterialSettings {
   kind: 'material';
   /**
@@ -386,6 +428,7 @@ export type AssetSettings =
   | ModelSettings
   | ScriptSettings
   | MaterialSettings
+  | PhysicsMaterialSettings
   | PrefabSettings
   | ShaderSettings
   | AudioSettings;

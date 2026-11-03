@@ -6,6 +6,7 @@ export const cameraComponent = defineComponent({
   type: 'camera',
   create: () => createCamera(),
   assets: () => [],
+  entities: () => [],
   icon: 'camera',
   placeable: () => true,
   runtime: true,

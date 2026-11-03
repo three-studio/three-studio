@@ -50,11 +50,17 @@ describe('every component type is measured, not defaulted', () => {
     }
   });
 
-  it('names the two lists that are not fixed by the type, and only those', () => {
-    // A mesh's geometry slot and a script's declared properties change the list
-    // itself, which no arrangement of bits can express. Everything else does.
+  it('names the four lists that are not fixed by the type, and only those', () => {
+    // A mesh's, a collider's and a joint's geometry slot and a script's
+    // declared properties change the list itself, which no arrangement of bits
+    // can express. Everything else does.
     const keys = COMPONENT_TYPES.map((type) => paneEntriesFor(createComponent(type)).key);
-    expect(keys.filter((key) => key.includes(':')).sort()).toEqual(['mesh:box', 'script:']);
+    expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
+      'collider:box',
+      'joint:hinge',
+      'mesh:box',
+      'script:',
+    ]);
   });
 });
 

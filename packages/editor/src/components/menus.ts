@@ -10,6 +10,7 @@ import { menu as audioListener } from './audioListener/menu';
 import { menu as audioSource } from './audioSource/menu';
 import { menu as camera } from './camera/menu';
 import { menu as collider } from './collider/menu';
+import { menu as joint } from './joint/menu';
 import { menu as light } from './light/menu';
 import { menu as mesh } from './mesh/menu';
 import { menu as model } from './model/menu';
@@ -30,6 +31,7 @@ const ADD_MENUS: Record<ComponentType, AddMenuGroup | null> = {
   camera,
   rigidbody,
   collider,
+  joint,
   audioSource,
   audioListener,
   script,

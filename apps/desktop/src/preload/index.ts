@@ -12,6 +12,7 @@ import type {
   ShortcutPreferences,
   MaterialDef,
   OpenProject,
+  PhysicsMaterialDef,
   PrefabDoc,
   Platform,
   ProjectContents,
@@ -127,6 +128,12 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
     savePrefab: (assetPath, prefab): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefab),
+    readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.readPhysicsMaterials),
+    createPhysicsMaterial: (name, material): Promise<string> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.createPhysicsMaterial, name, material),
+    savePhysicsMaterial: (assetPath, material): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.savePhysicsMaterial, assetPath, material),
     revealInFileManager: (assetPath): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.revealInFileManager, assetPath),
     pathForFile: (file): string => webUtils.getPathForFile(file),

@@ -3,7 +3,9 @@ import {
   PREFAB_FORMAT_VERSION,
   componentsOf,
   conformLaunchSnapshot,
+  createDefaultLayer,
   createMaterial,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabDoc,
   createRenderingSettings,
@@ -25,9 +27,14 @@ function snapshot(): LaunchSnapshot {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: 'scene-1', name: 'Level', scene: createStarterScene() },
     materials: { stone: createMaterial('#777777') },
+    physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' } },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
-    physics: { ...createPhysicsSettings(), gravity: [0, -3, 0] },
+    physics: {
+      ...createPhysicsSettings(),
+      gravity: [0, -3, 0],
+      layers: [createDefaultLayer(), { id: 'player', name: 'Player', ignores: ['default'] }],
+    },
     loadingScene: 'loading',
   };
 }
@@ -84,6 +91,17 @@ describe('a launch snapshot, where it arrives', () => {
     expect(material).not.toHaveProperty('trap');
   });
 
+  it('conforms each physics material', () => {
+    const conformed = conformLaunchSnapshot({
+      ...snapshot(),
+      physicsMaterials: { ice: { restitution: 0.5, frictionCombine: 'sum' }, broken: 'nothing' },
+    });
+
+    // The rule read as Average, the missing friction the factory's.
+    expect(conformed.physicsMaterials['ice']).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
+    expect(conformed.physicsMaterials['broken']).toEqual(createPhysicsMaterial());
+  });
+
   it('falls back on the factories’ settings, and on no loading scene', () => {
     const conformed = conformLaunchSnapshot({ ...snapshot(), rendering: 'x', loadingScene: 3 });
 
@@ -108,5 +126,16 @@ describe('a launch snapshot, where it arrives', () => {
 
   it('drops a field it does not know', () => {
     expect(conformLaunchSnapshot({ ...snapshot(), trap: 1 })).not.toHaveProperty('trap');
+  });
+
+  it('reads its layer table entry by entry', () => {
+    const sent = snapshot();
+    const conformed = conformLaunchSnapshot({
+      ...sent,
+      physics: { ...sent.physics, layers: [{ id: 'player', name: 'Player', ignores: [] }, 'oops'] },
+    });
+
+    expect(conformed.physics.layers).toEqual([createDefaultLayer(), { id: 'player', name: 'Player', ignores: [] }]);
+    expect(conformed.physics.gravity).toEqual([0, -3, 0]);
   });
 });

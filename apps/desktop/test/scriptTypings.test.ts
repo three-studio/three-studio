@@ -48,11 +48,33 @@ const PROBE = `import type {
   ScriptPropertyDef as PublishedProperty,
   StudioAudio,
   StudioInput,
+  StudioBody,
+  StudioJoint,
+  StudioPhysics,
+  Vec3Like as PublishedVec,
+  QuatLike as PublishedQuat,
+  CharacterController as PublishedCharacter,
+  CharacterSettings as PublishedSettings,
+  Collision as PublishedCollision,
+  QueryFilter as PublishedFilter,
+  RaycastHit as PublishedHit,
 } from '@three-studio/runtime';
 import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
 import type { SceneApi } from ${importable('packages/runtime/src/behaviour/Behaviour')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
 import type { AudioApi } from ${importable('packages/runtime/src/scripting/audioApi')};
+import type {
+  BodyHandle,
+  CharacterController,
+  CharacterSettings,
+  Collision,
+  JointHandle,
+  QuatLike,
+  QueryFilter,
+  RaycastHit,
+  Vec3Like,
+} from ${importable('packages/runtime/src/physics/PhysicsApi')};
+import type { ScriptPhysics } from ${importable('packages/runtime/src/scripting/scriptPhysics')};
 import type { FieldDef } from ${importable('packages/core/src/fields')};
 import type { AudioBus } from ${importable('packages/core/src/index')};
 
@@ -83,6 +105,47 @@ export const f: PublishedProperty = property;
 // that lost a member would let a script name a bus that does not.
 export const g: PublishedBus = bus;
 export const h: AudioBus = publishedBus;
+
+declare const body: BodyHandle;
+declare const physics: ScriptPhysics;
+declare const character: CharacterController;
+declare const vec: Vec3Like;
+declare const publishedVec: PublishedVec;
+declare const quat: QuatLike;
+declare const publishedQuat: PublishedQuat;
+declare const settings: CharacterSettings;
+declare const publishedSettings: PublishedSettings;
+
+export const i: StudioBody = body;
+export const j: StudioPhysics = physics;
+export const k: PublishedCharacter = character;
+// Both ways: what a script builds is what the runtime reads, field for field.
+export const l: PublishedVec = vec;
+export const m: Vec3Like = publishedVec;
+export const n: PublishedQuat = quat;
+export const o: QuatLike = publishedQuat;
+export const p: PublishedSettings = settings;
+export const q: CharacterSettings = publishedSettings;
+
+declare const collision: Collision;
+declare const publishedCollision: PublishedCollision;
+
+// Both ways: what the runtime hands a hook is what the script reads.
+export const r: PublishedCollision = collision;
+export const s: Collision = publishedCollision;
+
+declare const hit: RaycastHit;
+declare const filter: QueryFilter;
+declare const publishedFilter: PublishedFilter;
+
+export const t: PublishedHit = hit;
+
+declare const joint: JointHandle;
+
+export const w: StudioJoint = joint;
+// Both ways: the filter a script builds is the one the runtime reads.
+export const u: PublishedFilter = filter;
+export const v: QueryFilter = publishedFilter;
 `;
 
 /**

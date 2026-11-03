@@ -7,6 +7,7 @@ import {
   createEntity,
   createMaterial,
   createMeshEntity,
+  createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabInstance,
   createRenderingSettings,
@@ -47,6 +48,7 @@ function snapshot(): LaunchSnapshot {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: 'scene-1', name: 'Level 1', scene: createStarterScene() },
     materials: { stone: createMaterial('#808080') },
+    physicsMaterials: { ice: createPhysicsMaterial() },
     prefabs: {},
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
@@ -281,14 +283,16 @@ describe('the same launch', () => {
     expect(sameLaunchInputs(a, keysTurned)).toBe(true);
   });
 
-  it('is not a moved entity, a new material, another gravity, or the scene renamed', () => {
+  it('is not a moved entity, a new material, a changed physics material, another gravity, or the scene renamed', () => {
     const a = snapshot();
     const withMaterial = { ...a, materials: { ...a.materials, sand: createMaterial('#c2b280') } };
+    const slipperier = { ...a, physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } };
     const lighter = { ...a, physics: { ...a.physics, gravity: [0, -1.62, 0] as [number, number, number] } };
     const renamed = { ...a, entry: { ...a.entry, name: 'Level 2' } };
 
     expect(sameLaunchInputs(a, moved(a, 5))).toBe(false);
     expect(sameLaunchInputs(a, withMaterial)).toBe(false);
+    expect(sameLaunchInputs(a, slipperier)).toBe(false);
     expect(sameLaunchInputs(a, lighter)).toBe(false);
     expect(sameLaunchInputs(a, renamed)).toBe(false);
   });
@@ -402,6 +406,7 @@ describe('watching the window', () => {
     root.entity.name = 'Crate';
     useAssetStore.setState({
       materials: { [MATERIAL_ID]: createMaterial() },
+      physicsMaterials: { ice: createPhysicsMaterial() },
       prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
       // As the store's own does once the file is written: the table takes it.
       savePrefab: async (assetId: string, prefab: PrefabDoc) => {
@@ -453,6 +458,15 @@ describe('watching the window', () => {
       useAssetStore.setState((state) => ({
         materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
       }));
+      vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
+
+      expect(sent).toHaveLength(1);
+    });
+
+    it('a physics material changed', () => {
+      watch();
+
+      useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);

@@ -41,6 +41,7 @@ export function sameLaunchInputs(a: LaunchSnapshot, b: LaunchSnapshot): boolean 
     a.loadingScene === b.loadingScene &&
     sameData(a.entry.scene, b.entry.scene) &&
     sameData(a.materials, b.materials) &&
+    sameData(a.physicsMaterials, b.physicsMaterials) &&
     sameData(a.prefabs, b.prefabs) &&
     sameData(a.rendering, b.rendering) &&
     sameData(a.physics, b.physics)
@@ -235,7 +236,13 @@ export function watchLiveReload(target: EventTarget = window): () => void {
       if (state.scene !== before.scene) poke();
     }),
     useAssetStore.subscribe((state, before) => {
-      if (state.materials !== before.materials || state.prefabs !== before.prefabs) poke();
+      if (
+        state.materials !== before.materials ||
+        state.physicsMaterials !== before.physicsMaterials ||
+        state.prefabs !== before.prefabs
+      ) {
+        poke();
+      }
     }),
     useProjectStore.subscribe((state, before) => {
       if (state.project !== before.project || state.scenes !== before.scenes) poke();

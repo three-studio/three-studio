@@ -281,6 +281,138 @@ const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
     /** Fetches and shows, for a transition with nothing to display meanwhile. */
     go(scene: string): Promise<void>;
   }
+
+  /** A point, a direction or a velocity: metres, metres per second. three's \`Vector3\` is one. */
+  export interface Vec3Like { x: number; y: number; z: number }
+  /** A rotation. three's \`Quaternion\` is one. */
+  export interface QuatLike { x: number; y: number; z: number; w: number }
+
+  /**
+   * A body in the physics world, in world space: metres, seconds, kilograms, radians.
+   *
+   * Forces, impulses and velocities move a Dynamic body only: a Kinematic body is moved by
+   * its transform, a Fixed one stays put, and a character's by its controller. A vector or
+   * a rotation holding a NaN or an infinity is ignored, with the rest of the call.
+   */
+  export interface StudioBody {
+    /** Where the solver holds it, as of the last physics tick. */
+    readonly position: Readonly<Vec3Like>;
+    /** How the solver has it turned, as of the last physics tick. */
+    readonly rotation: Readonly<QuatLike>;
+    /** In kilograms: its Rigid Body's Mass. */
+    readonly mass: number;
+    /** \`false\` holds it out of the world: it touches nothing, and nothing touches it, and its joints hold nothing. */
+    enabled: boolean;
+    /** Metres per second. Assign a whole vector: \`body.linearVelocity = { x: 0, y: 5, z: 0 }\`. */
+    linearVelocity: Readonly<Vec3Like>;
+    /** Radians per second, about the world's axes. */
+    angularVelocity: Readonly<Vec3Like>;
+    /** Pushes it through the next physics tick, in newtons; at a world point \`at\` it turns it too. Call it in onFixedUpdate to push steadily. */
+    addForce(force: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+    /** A kick: changes its velocity at once by impulse / mass, in newton-seconds; at a world point \`at\` it turns it too. */
+    applyImpulse(impulse: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
+    /** Turns it through the next physics tick, in newton-metres. */
+    addTorque(torque: Readonly<Vec3Like>): void;
+    /** Changes its spin at once, in newton-metre-seconds. */
+    applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
+    /** Puts it, and its entity, there at once, keeping its velocities. Without a rotation it is moved, not turned. A joint holding it pulls it back: teleport what it is joined to as well. */
+    teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
+  }
+
+  /** A joint, as of the last physics tick. */
+  export interface StudioJoint {
+    /** How far it has moved since it was built: a hinge's angle in radians, right-handed about its axis, between -π and π; a slider's offset in metres. 0 for a Fixed or Spring joint. */
+    readonly position: number;
+    /** Whether its motor drives it. A Fixed or Spring joint has none. */
+    motorEnabled: boolean;
+    /** Radians per second for a hinge, metres per second for a slider. */
+    motorSpeed: number;
+    /** The most it pushes with: newton-metres for a hinge, newtons for a slider. */
+    motorMaxForce: number;
+  }
+
+  /** How a character meets the world. Every number is yours: the Player Controller's are 0.02, 0.87 (50°), 0.4, 0.2 and 0.4. */
+  export interface CharacterSettings {
+    /** The gap kept between it and what it touches, in metres. Small, never zero. */
+    readonly offset: number;
+    /** The steepest slope it walks up, in radians. */
+    readonly maxSlope: number;
+    /** The highest step it walks onto, in metres. */
+    readonly stepHeight: number;
+    /** How much free floor a step needs on top, in metres. */
+    readonly stepWidth: number;
+    /** How far below its feet the ground still holds it while it is not rising, in metres. */
+    readonly snapToGround: number;
+  }
+
+  /** A character its script moves. Its body is kinematic from the moment it is made. */
+  export interface CharacterController {
+    /** Moves it by up to \`translation\` this tick, sliding along what it meets, and turns it to \`rotation\`. Once per onFixedUpdate. Returns the part allowed. */
+    move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like>;
+    /** It stood on something after its last move, and was not leaving it. */
+    readonly grounded: boolean;
+  }
+
+  /** The physics world. An entity's id names the body it moves with: its own Rigid Body, or the nearest one above it. */
+  export interface StudioPhysics {
+    /** The project's gravity, in m/s². */
+    readonly gravity: Readonly<Vec3Like>;
+    /** \`null\` when the entity moves with no body. */
+    body(entityId: string): StudioBody | null;
+    /** The Joint on that entity, exactly the one that carries it, or null when it carries none or holds nothing. */
+    joint(entityId: string): StudioJoint | null;
+    /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
+    createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
+    /** The project's collision layers, Default first. A query names a layer by its id: find it here by its name. */
+    readonly layers: readonly { readonly id: string; readonly name: string }[];
+    /**
+     * The nearest Collider along a ray, within maxDistance metres, or null. Leaves out this entity's own body, and
+     * passes out of anything it starts inside. Sees the world as the last physics tick left it.
+     */
+    raycast(origin: Readonly<Vec3Like>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A ball swept from origin, its centre. As raycast. */
+    sphereCast(origin: Readonly<Vec3Like>, radius: number, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A box of full size, turned by rotation, swept from origin, its centre. As raycast. */
+    boxCast(origin: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** A capsule, its height from end to end along its own y, turned by rotation, swept from its centre. As raycast. */
+    capsuleCast(origin: Readonly<Vec3Like>, radius: number, height: number, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
+    /** The entities whose Colliders are in the ball or touch it, each once, but this entity's own body. */
+    overlapSphere(center: Readonly<Vec3Like>, radius: number, filter?: QueryFilter): readonly string[];
+    /** The same, for a box of full size, turned by rotation when one is given. */
+    overlapBox(center: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>, filter?: QueryFilter): readonly string[];
+  }
+
+  /** A collision that has just begun, as one side hears it. */
+  export interface Collision {
+    /** The entity whose Collider touched this one. this.physics.body(other) is the body it moves with. */
+    readonly other: string;
+    /** Where they touch, in world space: the middle of their contact points. */
+    readonly point: Readonly<Vec3Like>;
+    /** Unit, in world space: the way this side was pushed, away from the other. */
+    readonly normal: Readonly<Vec3Like>;
+    /** How hard they met, in newton-seconds: at least m·v for a body of mass m stopped from speed v. */
+    readonly impulse: number;
+  }
+
+  /** What a query sees. Left out, every layer and no sensor. */
+  export interface QueryFilter {
+    /** Ids of the collision layers it sees: find one by its name in this.physics.layers. A Collider is seen by its own layer. */
+    readonly layers?: readonly string[];
+    /** Sensors too. Left out, a ray passes through a trigger zone. */
+    readonly sensors?: boolean;
+  }
+
+  /** What a ray or a cast met first, in world space. */
+  export interface RaycastHit {
+    /** The entity whose Collider it met. this.physics.body(entity) is the body it moves with. */
+    readonly entity: string;
+    /** Where, on that Collider's surface. */
+    readonly point: Readonly<Vec3Like>;
+    /** Unit, out of that surface. */
+    readonly normal: Readonly<Vec3Like>;
+    /** How far it travelled to get there, in metres. */
+    readonly distance: number;
+  }
 `;
 
 /**
@@ -306,8 +438,27 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
   entity: `
     /** The entity this script is attached to. */
     readonly entity: { id: string; name: string };`,
-  transform: `    /** Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it. */
+  transform: `    /**
+     * Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it.
+     * A dynamic body, or the player, is put there and keeps its speed; a
+     * kinematic one moves there at the next tick, carrying what rests on it; a
+     * fixed one's collider stays where it is, and so does a collider riding an
+     * ancestor's body: it sits where the world was built.
+     */
     readonly transform: any;`,
+  body: `
+    /**
+     * The body this entity moves with: its own Rigid Body, or the nearest one above it — a
+     * wheel's is its car's. With no body behind it, it moves nothing, and its first change
+     * raises a warning.
+     */
+    readonly body: StudioBody;`,
+  physics: `    /**
+     * The physics world: gravity, any entity's body, the scene's joints, character controllers,
+     * the project's collision layers, and rays, casts and overlaps that leave out this entity's
+     * own body.
+     */
+    readonly physics: StudioPhysics;`,
   input: `    readonly input: StudioInput;`,
   audio: `    /** This entity's sounds, one-shot clips, and the buses. */
     readonly audio: StudioAudio;`,
@@ -326,6 +477,19 @@ const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
     onFixedUpdate?(step: number): void;`,
   onLateUpdate: `    /** After physics. Anything following a subject belongs here. */
     onLateUpdate?(): void;`,
+  onCollisionEnter: `
+    /**
+     * A Collider of this entity, or of a child riding its body, began touching another, after
+     * the physics tick it happened in. One side needs a Dynamic Rigid Body: a character walking
+     * into a wall hears nothing.
+     */
+    onCollisionEnter?(collision: Collision): void;`,
+  onCollisionExit: `    /** They stopped touching. \`other\` is the entity whose Collider it was. */
+    onCollisionExit?(other: string): void;`,
+  onTriggerEnter: `    /** A sensor of this entity was entered, or this entity entered one. A sensor sees whatever moves. */
+    onTriggerEnter?(other: string): void;`,
+  onTriggerExit: `    /** It left. */
+    onTriggerExit?(other: string): void;`,
   onSceneUnload: `    /** The scene is being left, and everything is still here to read. */
     onSceneUnload?(): void;`,
   onDestroy: `    onDestroy?(): void;`,

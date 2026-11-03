@@ -33,6 +33,17 @@ export interface FieldIO {
 }
 
 /**
+ * Gestures counted across every binder, so no two hand out the same number.
+ *
+ * A pane is rebuilt whenever the list of its rows changes — choosing a
+ * collider's Shape rebuilds it with the rows of the new kind — and a binder that
+ * counted from zero gave the first gesture on the new pane the coalesce key of
+ * the first one on the old: five kinds chosen one after another were one undo
+ * step.
+ */
+let gestureCount = 0;
+
+/**
  * A Tweakpane pane and the rows bound to it, kept in step with a source of
  * truth that is not the pane.
  *
@@ -44,8 +55,10 @@ export interface FieldIO {
 export class PaneBinder {
   readonly pane: Pane;
   private readonly fields: BoundField[] = [];
-  /** Bumped when a gesture ends so the next one opens a new undo entry. */
-  private gestures = 0;
+  /** The rows that tune the running game, which `setReadOnly` leaves enabled. */
+  private readonly live = new Set<BladeApi>();
+  /** Moved on when a gesture ends so the next one opens a new undo entry. */
+  private gestures = ++gestureCount;
   /** True while a change originates from this pane, to suppress self-refresh. */
   private writing = false;
   /** True while pulling values in from the source; see `edit`. */
@@ -87,7 +100,7 @@ export class PaneBinder {
   }
 
   endGesture(): void {
-    this.gestures += 1;
+    this.gestures = ++gestureCount;
   }
 
   /** Registers a hand-rolled binding so `refresh()` re-reads it too. */
@@ -95,8 +108,13 @@ export class PaneBinder {
     this.fields.push({ holder, read });
   }
 
-  /** One control, wired to whatever `io` says its value is. */
-  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO): void {
+  /**
+   * One control, wired to whatever `io` says its value is.
+   *
+   * @param live A row of a pane that tunes the running game: left enabled while
+   *   the game runs, when every other control is greyed.
+   */
+  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO, live = false): void {
     // What the declared type decides, which the row may still override: a
     // `vec3` converts because it is a vec3, but a row is free to say something
     // else about how its value reaches the control.
@@ -138,7 +156,9 @@ export class PaneBinder {
       ...(dynamicOptions ? { options: dynamicOptions } : {}),
     };
 
-    folder.addBinding(holder, 'value', params).on('change', (event) => {
+    const blade = folder.addBinding(holder, 'value', params);
+    if (live) this.live.add(blade);
+    blade.on('change', (event) => {
       // A change raised by `refresh()` is the source talking back, not the
       // user; acting on it would also bump the coalescing generation.
       if (this.pulling) return;
@@ -153,7 +173,7 @@ export class PaneBinder {
       // every later comparison answers `false` to, silently.
       if (typeof value === 'number' && !Number.isFinite(value)) return;
       io.write(value, { last: event.last, generation: this.gestures });
-      if (event.last) this.gestures += 1;
+      if (event.last) this.endGesture();
     });
 
     this.track(holder, read);
@@ -190,12 +210,15 @@ export class PaneBinder {
    * asset slots, buttons, monitors. And a disabled blade takes no pointer at all
    * (`.tp-v-disabled { pointer-events: none }`), so a greyed slider cannot be
    * dragged by its knob either.
+   *
+   * But a live row: it tunes the running game, and the document is not what it
+   * writes (`state/tuning`).
    */
   setReadOnly(readOnly: boolean): void {
     const walk = (blades: readonly BladeApi[]): void => {
       for (const blade of blades) {
         if ('children' in blade) walk((blade as FolderApi).children);
-        else blade.disabled = readOnly;
+        else blade.disabled = readOnly && !this.live.has(blade);
       }
     };
     walk(this.pane.children);

@@ -9,6 +9,7 @@ import {
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
+  conformPhysicsSettings,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
@@ -379,7 +380,10 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   // See the format rules in `README.md`.
   const settings = (project.settings ?? {}) as Partial<ProjectFile['settings']>;
   settings.rendering = { ...createRenderingSettings(), ...settings.rendering };
-  settings.physics = { ...createPhysicsSettings(), ...settings.physics };
+  // Read against its factory rather than spread over it: physics data keeps no
+  // field it does not know, and the layer table is a list read entry by entry,
+  // so a hand-broken one reaches neither the editor nor a running game.
+  settings.physics = conformPhysicsSettings(settings.physics);
   // Not `??=`: a profile written before a build option existed is missing that
   // one field, not the whole section, and only the profiles themselves know
   // which. `normalizeBuildProfiles` fills each from the factory.
@@ -401,7 +405,10 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
   // here on every save, and a current project must not read a directory to be
   // told it is already current. An old one walks twice on open — once here,
   // once in `openProject` — which the index of T-019 makes a warm `stat` each.
-  if (project.version < PROJECT_FORMAT_VERSION) {
+  // Gated on the format it translates rather than on the current one: format 3
+  // changed no reference, and a format 2 project would walk its scenes on every
+  // read until something wrote it, to translate references that are ids already.
+  if (project.version < 2) {
     adoptSceneIds(parsed as ProjectFile, await discoverScenes(projectPath));
   }
   // Stamped, so the object says which format it now conforms to. Nothing is

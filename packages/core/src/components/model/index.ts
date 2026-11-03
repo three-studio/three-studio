@@ -9,6 +9,7 @@ export const modelComponent = defineComponent({
   // does this scene use" both miss a material an imported model is drawing with,
   // which is how an asset still in use gets reported as unused.
   assets: (component) => [component.assetId, component.materialId],
+  entities: () => [],
   icon: 'box',
   placeable: () => true,
   runtime: true,

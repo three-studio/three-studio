@@ -27,6 +27,7 @@ export const COMPONENT_TYPES = [
   'camera',
   'rigidbody',
   'collider',
+  'joint',
   'audioSource',
   'audioListener',
   'script',
@@ -217,4 +218,38 @@ export function copyComponentsOf(
     const table = host.components[type] as Record<string, Record<string, ComponentDoc>>;
     table[toEntityId] = clone(held) as Record<string, ComponentDoc>;
   }
+}
+
+/**
+ * The components with each string that `rename` answers for replaced by its
+ * answer: references to entities that were copied, made to name the copies.
+ *
+ * Matched by value rather than by a declared list of reference fields: which
+ * properties hold an entity id is decided by a user's script at runtime, and
+ * core cannot see that. An id is twelve random characters, so a string that
+ * equals one and means something else does not happen in practice — and the
+ * alternative, leaving a reference pointing at the original, is a lookup that
+ * silently answers with the wrong entity, or with none.
+ */
+export function renameEntityReferences(
+  components: readonly ComponentDoc[],
+  rename: (id: string) => string | undefined,
+): ComponentDoc[] {
+  const rewrite = (value: unknown): unknown => {
+    if (typeof value === 'string') return rename(value) ?? value;
+    if (Array.isArray(value)) return value.map(rewrite);
+    if (typeof value === 'object' && value !== null) {
+      const out: Record<string, unknown> = {};
+      for (const [key, inner] of Object.entries(value)) out[key] = rewrite(inner);
+      return out;
+    }
+    return value;
+  };
+
+  return components.map((component) => {
+    // `type` is never an id, and skipping it keeps the walk off the one string
+    // property every component has.
+    const { type, ...rest } = component as unknown as Record<string, unknown>;
+    return { type, ...(rewrite(rest) as object) } as ComponentDoc;
+  });
 }

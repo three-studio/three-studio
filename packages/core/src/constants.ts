@@ -46,8 +46,22 @@ export const ENGINE_VERSION = '0.6.0';
  * that happened to declare a property called `audio` now has it refused with a
  * warning instead of silently overwriting the api. That is what the number is
  * for: the change is invisible until it is not.
+ *
+ * 3 — `Behaviour` gained `this.body` and `this.physics`: forces, impulses,
+ * torques, velocities and teleports on the body an entity moves with, any
+ * entity's body by id, gravity, and character controllers of a script's own. A
+ * bundle compiled against 2 never named them — but `body` and `physics` joined
+ * the reserved property names, so a script that declared a property called
+ * `body` now has it refused with a warning instead of silently replacing the
+ * api. And four hooks, `onCollisionEnter`, `onCollisionExit`, `onTriggerEnter`
+ * and `onTriggerExit`, which hear what the entity's colliders touch: their
+ * names joined the reserved ones too, so a property called `onTriggerEnter` is
+ * now refused with a warning. `this.physics` also gained rays, sphere, box and
+ * capsule casts, sphere and box overlaps, and the project's collision layers: a
+ * bundle compiled against them calls members an older build does not have. So
+ * did `joint(id)`, which reads a joint and drives its motor.
  */
-export const SCRIPT_API_VERSION = 2;
+export const SCRIPT_API_VERSION = 3;
 
 /**
  * Scene document format version. Bump on any schema change; `migrateScene`
@@ -63,6 +77,51 @@ export const SCRIPT_API_VERSION = 2;
  * shipped (`git show <tag>:packages/core/src/constants.ts`), not these notes:
  * they went on calling 9 and 10 unreleased after each had shipped. The same
  * holds for every format number in this file.
+ *
+ * 11 — the player controller decides the steepest slope it walks up and the
+ * highest step it climbs, `maxSlope` and `stepHeight`. The physics world held
+ * both, 50° and 0.4 m for every character, and they are the two numbers a
+ * level's ramps and stairs are built against.
+ *
+ * An older build keeps both fields — `fillComponent` copies through what it
+ * does not know — and walks every player with its own 50° and 0.4 m. A level
+ * built around a 0.5 m stair cannot be climbed there, and nothing says why.
+ * Refusing the file is the better failure.
+ *
+ * A rigid body's `interpolate`, `lockPosition` and `lockRotation` joined 11
+ * while no release carried it. An older build keeps them and ignores them: a
+ * body locked upright tumbles there, and a smooth one steps.
+ *
+ * So did the collider's shape, one of box, sphere, capsule, cylinder, cone and
+ * mesh, each with its own measures taken as drawn — a box by its full size, a
+ * capsule from end to end — set off its entity's centre, turned and rounded,
+ * and its friction and bounce, now a `material` of their own that says how
+ * each combines with the other collider's. An older build builds a
+ * cylinder or a cone as nothing at all, every shape at its entity's middle,
+ * and a mesh in convex parts as nothing at all either. An older
+ * build switches on `shape` as a name and builds nothing from an object, so
+ * every floor is gone, and its `colliderHalfHeight` falls through to
+ * `undefined`, so a player's eye is `NaN`. A collider written before 11 is not
+ * converted: it opens as a 1 m box (see `colliderComponent`).
+ *
+ * So did the compound body: a collider rides the nearest Rigid Body up the
+ * tree, at its entity's place on it, and a body weighs its Rigid Body's mass,
+ * shared among its colliders by volume. An older build leaves a child's
+ * collider a fixed body in mid-air, and weighs a body by its first collider.
+ * And a mesh Collider is built from its own entity's meshes: an older build
+ * welds its children's meshes in.
+ *
+ * And a collider names its collision layer by id, `layer`: two colliders meet
+ * only when their layers touch. An older build builds every collider on one
+ * layer, so a wall the player was meant to walk through stops it.
+ *
+ * And a collider may name a physics material asset, `materialId`, whose
+ * friction, bounce and rules it is built with. An older build builds it with
+ * its own values, so a puck made to slide grips there.
+ *
+ * And a scene may hold Joint components, which hold two bodies together as
+ * they were placed. An older build keeps them and builds none: a door falls
+ * off its hinge, and a chain falls apart.
  *
  * 10 — `playerController.eyeHeight` is measured from the character's feet
  * rather than from the entity's origin, and the controller gained a `fov`.
@@ -157,7 +216,7 @@ export const SCRIPT_API_VERSION = 2;
  * opening a new one: without it that build ignores the fields it has never
  * heard of and erases them on the first save.
  */
-export const SCENE_FORMAT_VERSION = 10;
+export const SCENE_FORMAT_VERSION = 11;
 
 /**
  * Separates an instance from the entity it produced, in an expanded id.
@@ -171,6 +230,16 @@ export const PREFAB_ID_SEPARATOR = '/';
 
 /**
  * `assets/prefabs/*.prefab.json`.
+ *
+ * 8 — the slope and step height of scene format 11, its rigid body's
+ * interpolation and locks, its collider's shapes, material, physics material
+ * asset and collision layer, its compound bodies, its mesh Colliders built
+ * from their own meshes, and its joints. A prefab holds the same
+ * `ComponentTables`, so it can hold a player controller an older build would
+ * walk with its own 50° and 0.4 m, a floor it would not build, a cart whose
+ * wheels it would leave in mid-air, a wall the player walks through, which it
+ * would build solid, a puck made to slide, which it would build gripping, and a
+ * door it would let fall off its hinge.
  *
  * 7 — the eye height and field of view of scene format 10. A prefab holds the
  * same `ComponentTables`, so it can hold a player controller — and this is the
@@ -203,10 +272,20 @@ export const PREFAB_ID_SEPARATOR = '/';
  * 2 — components carry an `id`, and prefab overrides name them by it rather
  * than by their position in the array.
  */
-export const PREFAB_FORMAT_VERSION = 7;
+export const PREFAB_FORMAT_VERSION = 8;
 
 /**
  * Project file format version, tracked separately from scenes.
+ *
+ * 3 — `settings.physics` gained the collision layers: a table of up to
+ * sixteen, each with an id and a name, and the pairs that pass through each
+ * other. An older build keeps the table and builds every collider on one
+ * layer, so a wall the player was meant to walk through stops it, and debris
+ * meant to fall past it knocks it over: a project that opens, runs and is
+ * quietly wrong. Its scenes are 11 and refused already; refusing the project
+ * says so once, when it is opened. Nothing to migrate: a format 2 file is
+ * filled from the factory, Default alone, which is why the step from 1 is
+ * gated on `< 2`.
  *
  * 2 — scenes are referenced by id rather than by path: `startScene`,
  * `loadingScene` and each build profile name an id: a reference
@@ -218,4 +297,4 @@ export const PREFAB_FORMAT_VERSION = 7;
  * refused projects that open correctly, which is the failure this version
  * number exists to prevent, not to cause.
  */
-export const PROJECT_FORMAT_VERSION = 2;
+export const PROJECT_FORMAT_VERSION = 3;

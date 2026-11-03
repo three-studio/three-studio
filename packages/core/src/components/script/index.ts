@@ -9,6 +9,8 @@ export const scriptComponent = defineComponent({
   // Every string property, since only the script knows which hold assets.
   assetCandidates: (component) =>
     Object.values(component.props).filter((value): value is string => typeof value === 'string'),
+  // A property may hold an entity's id, and only the script knows which.
+  entities: () => [],
   icon: 'file-code',
   placeable: () => true,
   runtime: true,

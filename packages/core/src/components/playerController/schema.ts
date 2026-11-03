@@ -33,6 +33,21 @@ export interface PlayerControllerComponent extends ComponentBase {
   moveSpeed: number;
   sprintMultiplier: number;
   jumpHeight: number;
+  /**
+   * The steepest slope the player walks up, in radians, shown in degrees: a
+   * ramp steeper than this is a wall. A level's ramps are built against it.
+   *
+   * This and `stepHeight` are the two numbers a level decides. The character's
+   * others — the gap it keeps, the floor a step needs on top, how far the
+   * ground holds it — are `PlayerController`'s.
+   */
+  maxSlope: number;
+  /**
+   * The highest step the player walks onto without jumping, in metres: a kerb
+   * or a stair under this is climbed, anything higher is a wall. A level's
+   * stairs are built against it.
+   */
+  stepHeight: number;
   mouseSensitivity: number;
   /**
    * How high the eye sits above the character's **feet** — the bottom of its
@@ -45,7 +60,7 @@ export interface PlayerControllerComponent extends ComponentBase {
    * Inspector could have told anyone that; the offset was only knowable by
    * reading `describeCollider`. Format 10 raises every stored value by its
    * collider's half height, so the camera does not move, and from then on the
-   * number means what its name says. See `colliderHalfHeight`.
+   * number means what its name says. See `originAboveFeet`.
    *
    * Read in FPS mode as the eye, and in TPS mode as the height of the point the
    * camera orbits — which is why the Inspector shows it in both.

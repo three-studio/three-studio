@@ -78,6 +78,7 @@ export function launchManifest(contents: LaunchContents): BuildManifest {
       .map((asset) => ({ entry: asset, path: launchAssetPath(asset) })),
     // Whole, and with Prefab Mode's unsaved edits in them: what Play would run.
     materials: snapshot.materials,
+    physicsMaterials: snapshot.physicsMaterials,
     prefabs: snapshot.prefabs,
     scripts: scripts === null ? null : 'scripts.mjs',
   });

@@ -22,6 +22,7 @@ import type { AudioListenerComponent } from '../components/audioListener/schema'
 import type { AudioSourceComponent } from '../components/audioSource/schema';
 import type { CameraComponent } from '../components/camera/schema';
 import type { ColliderComponent } from '../components/collider/schema';
+import type { JointComponent } from '../components/joint/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { MeshComponent } from '../components/mesh/schema';
 import type { ModelComponent } from '../components/model/schema';
@@ -38,6 +39,8 @@ import type { Hex, Transform, Vec3 } from './primitives';
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
 export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
+export type { CombineRule, PhysicsMaterialDef } from './physicsMaterial';
+export { COMBINE_RULE_LABELS } from './physicsMaterial';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
 /*
@@ -62,8 +65,23 @@ export {
 } from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
 export { CAMERA_PROJECTION_LABELS } from '../components/camera/schema';
-export type { ColliderComponent, ColliderShape } from '../components/collider/schema';
-export { COLLIDER_SHAPE_LABELS } from '../components/collider/schema';
+export type {
+  ColliderComponent,
+  ColliderShape,
+  ColliderShapeKind,
+  ColliderShapeOf,
+  MeshBuild,
+} from '../components/collider/schema';
+export { COLLIDER_SHAPE_LABELS, MESH_BUILD_LABELS } from '../components/collider/schema';
+export type {
+  JointComponent,
+  JointKind,
+  JointLimits,
+  JointMotion,
+  JointMotionOf,
+  JointMotor,
+} from '../components/joint/schema';
+export { JOINT_KIND_LABELS } from '../components/joint/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
@@ -99,6 +117,7 @@ export type ComponentDoc =
   | CameraComponent
   | RigidBodyComponent
   | ColliderComponent
+  | JointComponent
   | AudioSourceComponent
   | AudioListenerComponent
   | ScriptComponent

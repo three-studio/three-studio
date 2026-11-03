@@ -1,11 +1,14 @@
 import {
   componentsOf,
+  createColliderShape,
   createComponent,
+  createJoint,
   insertEntity,
   createEntity,
   createMeshEntity,
   createPrefabInstance,
   expandPrefabs,
+  findComponent,
   putComponent,
   instanceOwnerOf,
   instancedId,
@@ -119,6 +122,45 @@ describe('prefab expansion', () => {
     const parts = componentsOf(scene, built.id);
     expect(parts.find((c) => c.id === body!.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
     expect(parts.find((c) => c.id === mesh!.id)?.type).toBe('mesh');
+  });
+
+  it('cannot put a name where a collider’s shape lives, from an override written before scene 11', () => {
+    const prefab = treePrefab();
+    const collider = createComponent('collider');
+    putComponent(prefab, prefab.root, collider);
+
+    const host = instanceOf(prefab);
+    (host.components[0] as PrefabInstanceComponent).overrides = {
+      [prefab.root]: { components: { [collider.id]: { shape: 'sphere', radius: 0.4, isSensor: true } } },
+    };
+
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+      (c) => c.id === collider.id,
+    );
+
+    // Spread alone, the name sat where the union lives and the runtime built
+    // nothing. Filled, it is the factory box, the sensor kept, `radius` gone.
+    expect(built).toEqual({ ...collider, shape: createColliderShape('box'), isSensor: true });
+  });
+
+  it('lets a whole shape in an override win', () => {
+    const prefab = treePrefab();
+    const collider = createComponent('collider');
+    putComponent(prefab, prefab.root, collider);
+    const sphere = { kind: 'sphere', radius: 0.4 };
+
+    const host = instanceOf(prefab);
+    (host.components[0] as PrefabInstanceComponent).overrides = {
+      [prefab.root]: { components: { [collider.id]: { shape: sphere } } },
+    };
+
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+      (c) => c.id === collider.id,
+    );
+    // Filled from its own kind, as any stored shape is.
+    expect(built).toEqual({ ...collider, shape: { ...createColliderShape('sphere'), radius: 0.4 } });
   });
 
   it('follows the component it names when the prefab is reordered', () => {
@@ -325,6 +367,21 @@ describe('references inside a prefab', () => {
     // looking up an entity that does not exist.
     expect(script.props['target']).toBe(instancedId(host.entity.id, turret.entity.id));
     expect(script.props['speed']).toBe(3);
+  });
+
+  it('a joint in a prefab names the copy of its Connected Body', () => {
+    const frame = createMeshEntity('box');
+    frame.entity.name = 'Frame';
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
+    frame.entity.children = [door.entity.id];
+    door.entity.parent = frame.entity.id;
+    const prefab = prefabWith('Doorway', [frame, door], frame.entity.id);
+
+    const host = createEntity('Doorway', [createPrefabInstance('prefab-1')]);
+    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+
+    const joint = findComponent(scene, instancedId(host.entity.id, door.entity.id), 'joint');
+    expect(joint?.connectedEntity).toBe(instancedId(host.entity.id, frame.entity.id));
   });
 
   it('leaves values that only look like ids alone', () => {

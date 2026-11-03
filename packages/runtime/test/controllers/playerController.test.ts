@@ -1,6 +1,8 @@
 import {
+  createColliderShape,
   createComponent,
   createEntity,
+  createPhysicsSettings,
   createRenderingSettings,
   type ColliderComponent,
   type PlayerControllerComponent,
@@ -46,7 +48,10 @@ const STANDING_Y = 1;
 
 /** A capsule 1.70 m tall, so its centre — the entity's origin — is 0.85 m up. */
 function personCapsule(): ColliderComponent {
-  return { ...createComponent('collider'), shape: 'capsule', radius: 0.3, halfHeight: 0.55 };
+  return {
+    ...createComponent('collider'),
+    shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
+  };
 }
 
 /**
@@ -116,12 +121,12 @@ afterEach(() => {
  * fake would have to answer that question itself.
  */
 async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
-  // Nothing but a collider: `describeCollider` reads a box's half extents from
-  // the component, so the floor needs no geometry to stand on. Wide enough that
+  // Nothing but a collider: `describeCollider` reads a box's size from the
+  // component, so the floor needs no geometry to stand on. Wide enough that
   // a character walking at full speed for a second is still on it — a metre of
   // floor would have turned every movement test into a fall.
   const ground = createEntity('Ground', [
-    { ...createComponent('collider'), size: [20, 0.5, 20] as [number, number, number] },
+    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   ground.entity.transform.position = [0, -0.5, 0];
 
@@ -142,7 +147,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   binder.sync(scene);
   live.push(binder);
 
-  const physics = await PhysicsWorld.create({ gravity, fixedTimestep: STEP, maxSubsteps: 5 });
+  const physics = await PhysicsWorld.create({ ...createPhysicsSettings(), gravity, fixedTimestep: STEP });
   physics.build(scene, binder);
   live.push(physics);
 
@@ -177,6 +182,8 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
       for (let frame = 0; frame < Math.round(seconds / STEP); frame++) {
         controller.update(STEP, ctx);
         physics.step(STEP, (fixed) => controller.fixedUpdate(fixed, ctx));
+        // The world writes the player's entity, as it writes every body it drives.
+        physics.writeBack();
         controller.postUpdate();
         onFrame?.();
       }
@@ -299,6 +306,14 @@ describe('PlayerController places the eye above the feet', () => {
     // player's eye sat at 2.2 m on a character one metre tall.
     const box: ColliderComponent = { ...createComponent('collider') };
     expect(eyeAbove(0.5, 1.6, box)).toBeCloseTo(1.6, 6);
+  });
+
+  it('puts the eye at its eye height above the origin for a capsule centred at its feet', () => {
+    // Unity's Center: the capsule stands on the origin, which is then the feet.
+    const standing = personCapsule();
+    if (standing.shape.kind !== 'capsule') throw new Error('not a capsule');
+    standing.shape = { ...standing.shape, center: [0, 0.85, 0] };
+    expect(eyeAbove(0, 1.6, standing)).toBeCloseTo(1.6, 6);
   });
 
   it('treats the origin as the feet when there is no collider', () => {

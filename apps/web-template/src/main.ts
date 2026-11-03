@@ -157,7 +157,7 @@ async function boot(): Promise<void> {
 
   await loadScripts(build.scripts);
 
-  const { rendering, physics, materials, prefabs } = build;
+  const { rendering, physics, materials, physicsMaterials, prefabs } = build;
 
   const { renderer, backend } = await createRenderer({
     canvas,
@@ -183,6 +183,7 @@ async function boot(): Promise<void> {
     },
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
     materials,
+    physicsMaterials,
     prefabs,
     loadingScene: build.loadingScene,
     rendering,

@@ -130,6 +130,7 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
       null,
       commandEntry('undo', ctx),
       commandEntry('redo', ctx),
+      commandEntry('keepTuning', ctx),
       null,
       commandEntry('duplicate', ctx),
       commandEntry('delete', ctx),

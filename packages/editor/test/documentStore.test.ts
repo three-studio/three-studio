@@ -1,29 +1,43 @@
 import {
   componentsOf,
   createAudioSourceEntity,
+  createColliderShape,
+  createComponent,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createModelEntity,
+  createPrefabInstance,
+  createJoint,
+  createRenderingSettings,
   findComponent,
   instancedId,
   type AudioSourceComponent,
+  type ColliderComponent,
+  type EntityTemplate,
 } from '@three-studio/core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { SceneBinder } from '@three-studio/runtime/SceneBinder';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { prefabWith } from '../../core/test/fixtures';
 import {
   addComponentWithDependencies,
   addEntity,
   duplicateSelection,
   deleteSelection,
+  fitColliderToMesh,
   removeComponent,
   renameEntity,
   reparentEntity,
   setComponentNestedField,
   setTransform,
 } from '../src/commands/sceneCommands';
+import { unpackPrefabInstance } from '../src/commands/prefabCommands';
+import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
+import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
 
 /** A selection over the scene as it is drawn, for commands that take one. */
@@ -738,9 +752,9 @@ describe('the companions a player controller brings', () => {
     addComponentWithDependencies(empty.entity.id, 'playerController');
 
     const collider = findComponent(scene(), empty.entity.id, 'collider');
-    // 0.3 + 0.55 + 0.55 + 0.3 is 1.70 m standing, so the origin sits 0.85 m up
-    // and the 1.6 m default eye height lands where an eye belongs.
-    expect(collider).toMatchObject({ shape: 'capsule', radius: 0.3, halfHeight: 0.55 });
+    // 1.70 m standing, so the origin sits 0.85 m up and the 1.6 m default eye
+    // height lands where an eye belongs.
+    expect(collider).toMatchObject({ shape: { kind: 'capsule', radius: 0.3, height: 1.7 } });
 
     const player = findComponent(scene(), empty.entity.id, 'playerController');
     expect(player?.eyeHeight).toBe(1.6);
@@ -758,7 +772,9 @@ describe('the companions a player controller brings', () => {
 
     addComponentWithDependencies(ball.entity.id, 'playerController');
 
-    expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({ shape: 'sphere' });
+    expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({
+      shape: { kind: 'sphere' },
+    });
   });
 
   it('still gives the body a kinematic type', () => {
@@ -772,6 +788,170 @@ describe('the companions a player controller brings', () => {
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
     });
+  });
+});
+
+/*
+ * A Rigid Body brings a Collider so that it does not pass through the world, and
+ * a body whose colliders are on its children has one already: it rides them.
+ */
+describe('the companions a rigid body brings', () => {
+  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+
+  /** An empty entity "Cart", in the document, with these under it. */
+  function cartOver(...children: ReturnType<typeof createEntity>[]): string {
+    const cart = addEntity(createEntity('Cart'));
+    for (const child of children) addEntity(child, cart);
+    return cart;
+  }
+
+  const withCollider = () => {
+    const wheel = createMeshEntity('sphere');
+    wheel.components.push(createComponent('collider'));
+    return wheel;
+  };
+
+  it('brings no Collider to an entity whose children carry them', () => {
+    const cart = cartOver(withCollider(), withCollider());
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+  });
+
+  it('still brings one to an entity with nothing to collide with', () => {
+    const cart = cartOver(createMeshEntity('sphere'));
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+  });
+
+  it('counts no child that has a body of its own', () => {
+    const trailer = withCollider();
+    trailer.components.push(createComponent('rigidbody'));
+    const cart = cartOver(trailer);
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+  });
+
+  it('sees the colliders inside a prefab placed under it', () => {
+    const crate = withCollider();
+    useAssetStore.setState({ prefabs: { crate: prefabWith('Crate', [crate], crate.entity.id) } });
+    const cart = cartOver(createEntity('Crate', [createPrefabInstance('crate')]));
+
+    addComponentWithDependencies(cart, 'rigidbody');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+  });
+});
+
+/*
+ * A Joint holds the body its entity moves with, so on an entity that moves with
+ * none it brings a Rigid Body, as Unity's joints require one, and that body its
+ * Collider.
+ */
+describe('the companions a joint brings', () => {
+  it('brings a Rigid Body to a Cube, and that body its Collider', () => {
+    const cube = addEntity(createMeshEntity('box'));
+
+    addComponentWithDependencies(cube, 'joint');
+
+    expect(componentsOf(scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
+    expect(findComponent(scene(), cube, 'rigidbody')?.bodyType).toBe('dynamic');
+  });
+
+  it('brings none to a child of a body', () => {
+    const door = createMeshEntity('box');
+    door.components.push(createComponent('rigidbody'), createComponent('collider'));
+    const hinge = addEntity(createEntity('Hinge'), addEntity(door));
+
+    addComponentWithDependencies(hinge, 'joint');
+
+    expect(componentsOf(scene(), hinge).map((c) => c.type)).toEqual(['joint']);
+  });
+
+  it('brings none to an entity that has a Rigid Body', () => {
+    const cart = addEntity(createEntity('Cart', [createComponent('rigidbody')]));
+
+    addComponentWithDependencies(cart, 'joint');
+
+    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
+  });
+});
+
+/*
+ * A component names another entity by id — a joint its Connected Body, a
+ * script its target — so a copy made with that entity names the copy, as
+ * prefab expansion already does.
+ */
+describe('references to the entities copied with them', () => {
+  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+
+  /** A Frame, and a Door jointed to it. */
+  function doorway(): { frame: string; door: string } {
+    const frame = addEntity(createEntity('Frame', [createComponent('collider')]));
+    const door = addEntity(
+      createEntity('Door', [createComponent('rigidbody'), { ...createJoint(), connectedEntity: frame }]),
+    );
+    return { frame, door };
+  }
+
+  const copyOf = (name: string) =>
+    Object.values(scene().entities).find((entity) => entity.name === name)?.id;
+
+  it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
+    const { frame, door } = doorway();
+
+    duplicateSelection(sel([door, frame]));
+
+    const copiedFrame = copyOf('Frame (1)');
+    expect(copiedFrame).toBeDefined();
+    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(copiedFrame);
+    // The originals keep theirs.
+    expect(findComponent(scene(), door, 'joint')?.connectedEntity).toBe(frame);
+
+    doc().undo();
+    expect(Object.keys(scene().entities).sort()).toEqual([door, frame].sort());
+
+    duplicateSelection(sel([door]));
+    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(frame);
+  });
+
+  it("a script's entity property follows the copy too", () => {
+    const turret = addEntity(createEntity('Turret'));
+    const brain = addEntity(
+      createEntity('Brain', [{ ...createComponent('script'), assetId: 'aim', props: { target: turret } }]),
+      turret,
+    );
+
+    duplicateSelection(sel([turret]));
+
+    const copy = copyOf('Turret (1)')!;
+    const copiedBrain = scene().entities[copy]!.children[0]!;
+    expect(copiedBrain).not.toBe(brain);
+    expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
+  });
+
+  it('unpacking a prefab keeps its joint on the entity it named', () => {
+    const frame = createEntity('Frame', [createComponent('collider')]);
+    const door = createEntity('Door', [
+      createComponent('rigidbody'),
+      { ...createJoint(), connectedEntity: frame.entity.id },
+    ]);
+    frame.entity.children = [door.entity.id];
+    door.entity.parent = frame.entity.id;
+    useAssetStore.setState({ prefabs: { doorway: prefabWith('Doorway', [frame, door], frame.entity.id) } });
+    const host = addEntity(createEntity('Doorway', [createPrefabInstance('doorway')]));
+
+    unpackPrefabInstance(host);
+
+    const unpackedFrame = copyOf('Frame');
+    expect(unpackedFrame).toBeDefined();
+    expect(unpackedFrame).not.toBe(instancedId(host, frame.entity.id));
+    expect(findComponent(scene(), copyOf('Door')!, 'joint')?.connectedEntity).toBe(unpackedFrame);
   });
 });
 
@@ -800,5 +980,84 @@ describe('a selection after a scene swap', () => {
     const selected = [wall];
 
     expect(pruneSelection(scene(), selected)).toBe(selected);
+  });
+});
+
+describe('fitting a collider to its mesh', () => {
+  /** A binder holding the meshes as the edit view draws them, synced to the document. */
+  function drawnBinder(): SceneBinder {
+    const binder = new SceneBinder({ resolver: NULL_ASSET_RESOLVER, rendering: createRenderingSettings() });
+    binder.sync(expandedScene().scene);
+    return binder;
+  }
+
+  /** A Sphere of radius 1 whose Sphere collider is still 0.5, a sensor gripping at 0.2. */
+  function grownSphere(): { template: EntityTemplate; colliderId: string } {
+    const template = createMeshEntity('sphere');
+    const [mesh] = template.components;
+    if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
+    mesh.geometry = { ...mesh.geometry, radius: 1 };
+    const collider: ColliderComponent = {
+      ...createComponent('collider'),
+      shape: createColliderShape('sphere'),
+      isSensor: true,
+    };
+    collider.material.friction = 0.2;
+    template.components.push(collider);
+    return { template, colliderId: collider.id };
+  }
+
+  const colliderOf = (entityId: string, componentId: string): ColliderComponent => {
+    const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+    if (found?.type !== 'collider') throw new Error('no collider');
+    return found;
+  };
+
+  beforeEach(() => {
+    useToastStore.getState().clear();
+  });
+
+  it('fits a Sphere collider to its mesh and keeps everything else, in one undo step', () => {
+    const { template, colliderId } = grownSphere();
+    const entityId = addEntity(template);
+
+    fitColliderToMesh(entityId, colliderId, drawnBinder());
+
+    const fitted = colliderOf(entityId, colliderId);
+    if (fitted.shape.kind !== 'sphere') throw new Error('not a sphere');
+    expect(Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
+    fitted.shape.center.forEach((value) => expect(Math.abs(value)).toBeLessThan(1e-6));
+    expect(fitted.isSensor).toBe(true);
+    expect(fitted.material.friction).toBe(0.2);
+
+    doc().undo();
+    const before = colliderOf(entityId, colliderId);
+    expect(before.shape.kind === 'sphere' && before.shape.radius).toBe(0.5);
+  });
+
+  it('fits its own entity’s meshes, never its children’s', () => {
+    const { template, colliderId } = grownSphere();
+    const above = createMeshEntity('box');
+    above.entity.transform.position = [0, 3, 0];
+    const entityId = addEntity(template);
+    addEntity(above, entityId);
+
+    fitColliderToMesh(entityId, colliderId, drawnBinder());
+
+    const fitted = colliderOf(entityId, colliderId);
+    expect(fitted.shape.kind === 'sphere' && Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
+  });
+
+  it('says so, and writes nothing, when the entity draws no mesh of its own', () => {
+    const collider = createComponent('collider');
+    const entityId = addEntity(createEntity('Shelf', [collider]));
+    const { revision } = doc();
+
+    fitColliderToMesh(entityId, collider.id, drawnBinder());
+
+    expect(doc().revision).toBe(revision);
+    const warnings = useToastStore.getState().toasts.filter((toast) => toast.kind === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(`${warnings[0]?.title} ${warnings[0]?.description}`).toContain('"Shelf"');
   });
 });

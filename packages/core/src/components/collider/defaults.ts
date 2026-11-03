@@ -1,57 +1,76 @@
+import { conform, isMemberOf, oneOf } from '../../conform';
 import { createId } from '../../ids';
-import type { ComponentBase } from '../../scene/primitives';
+import { DEFAULT_LAYER_ID } from '../../project/layers';
+import { createPhysicsMaterial } from '../../scene/physicsMaterial';
+import type { GeometryDef } from '../../scene/geometry';
+import type { ComponentBase, Vec3 } from '../../scene/primitives';
 import type { MeshComponent } from '../mesh/schema';
-import type { ColliderComponent } from './schema';
+import {
+  COLLIDER_SHAPE_LABELS,
+  MESH_BUILD_LABELS,
+  type ColliderComponent,
+  type ColliderShape,
+  type ColliderShapeKind,
+  type ColliderShapeOf,
+} from './schema';
 
+/**
+ * Each kind's default, checked against its own member: a factory that gave a
+ * sphere a `size` would not compile.
+ */
+const SHAPE_FACTORIES: { readonly [K in ColliderShapeKind]: () => ColliderShapeOf<K> } = {
+  box: () => ({ kind: 'box', size: [1, 1, 1], rounding: 0, ...centred() }),
+  sphere: () => ({ kind: 'sphere', radius: 0.5, center: [0, 0, 0] }),
+  // The Capsule primitive's, caps included.
+  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2, ...centred() }),
+  // The Cylinder primitive's.
+  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1, rounding: 0, ...centred() }),
+  cone: () => ({ kind: 'cone', radius: 0.5, height: 1, rounding: 0, ...centred() }),
+  mesh: () => ({ kind: 'mesh', build: 'triangles' }),
+};
+
+/** At its entity's middle, turned as its entity is. */
+function centred(): { center: Vec3; rotation: Vec3 } {
+  return { center: [0, 0, 0], rotation: [0, 0, 0] };
+}
+
+/** A shape of this kind, at its defaults. */
+export function createColliderShape<K extends ColliderShapeKind>(kind: K): ColliderShapeOf<K> {
+  return SHAPE_FACTORIES[kind]();
+}
+
+/** A 1 m cube with the default material, which is what a bare entity gets. */
 export function createCollider(): ColliderComponent {
   return {
     id: createId(),
     type: 'collider',
-    shape: 'box',
-    size: [0.5, 0.5, 0.5],
-    radius: 0.5,
-    halfHeight: 0.5,
-    friction: 0.7,
-    restitution: 0,
+    shape: createColliderShape('box'),
+    material: createPhysicsMaterial(),
+    materialId: null,
     isSensor: false,
+    layer: DEFAULT_LAYER_ID,
   };
 }
 
 /**
- * How far the bottom of a collider sits below the entity's origin.
+ * A stored shape, read against the factory of the kind it names.
  *
- * Physics centres a shape on the body it hangs from — a capsule and a cuboid
- * both straddle the origin — so an entity's origin is its *middle*, not its
- * feet. Anything that wants to place something at ground level has to subtract
- * this, and `PlayerController` is the one that taught us so: `eyeHeight` was
- * measured from the origin, which put the default player's eye at 2.2 m for a
- * character 1 m tall, with no way to work out the offset from the Inspector.
- *
- * **Zero for a mesh-derived shape is an answer, not a shrug.** A triangle mesh
- * and a convex hull are built from the entity's own geometry in its own local
- * space, so the origin is already wherever the author put it — usually the
- * feet, for a model exported to stand on a floor. It is also the only answer
- * the scene migration can give, having no geometry to measure, and the two must
- * agree or a migrated scene and a running one would disagree about the ground.
- *
- * Unscaled, like `eyeHeight` itself: both are read in the entity's own units.
- * Physics does scale the shape (see `describeCollider`), so a player entity at
- * anything other than scale 1 keeps the mismatch it has always had — correcting
- * one half of it here would be a second, invisible change of behaviour on top
- * of the one that was wanted.
+ * Against that kind's factory rather than the collider's: the collider's is a
+ * box, and the wrong model for a stored sphere. A shape naming no kind this
+ * build knows — a later one, or the bare name every collider held before scene
+ * 11 — is the factory's box: its measures were written for another shape.
  */
-export function colliderHalfHeight(collider: ColliderComponent): number {
-  switch (collider.shape) {
-    case 'box':
-      return collider.size[1];
-    case 'sphere':
-      return collider.radius;
-    case 'capsule':
-      return collider.halfHeight + collider.radius;
-    case 'trimesh':
-    case 'convexHull':
-      return 0;
-  }
+export function conformColliderShape(value: unknown): ColliderShape {
+  const kind =
+    typeof value === 'object' && value !== null && 'kind' in value ? value.kind : undefined;
+  if (!isMemberOf(kind, COLLIDER_SHAPE_LABELS)) return createColliderShape('box');
+
+  // `conform` keeps the stored `kind`, the one just checked, and takes every
+  // other string as it finds it: `build` is a union, read against its members.
+  const shape = conform(value, createColliderShape(kind));
+  if (shape.kind !== 'mesh') return shape;
+  const build = oneOf(shape.build, MESH_BUILD_LABELS, createColliderShape('mesh').build);
+  return { ...shape, build };
 }
 
 /**
@@ -87,30 +106,45 @@ export function createColliderFor(siblings: readonly Sibling[]): ColliderCompone
     // A model's real shape is only known once it has loaded, so fall back to
     // the mesh it renders rather than an arbitrary box.
     const hasModel = siblings.some((c) => c.type === 'model');
-    if (hasModel) collider.shape = 'trimesh';
+    if (hasModel) collider.shape = createColliderShape('mesh');
     return collider;
   }
 
-  const geometry = mesh.geometry;
+  collider.shape = shapeOfGeometry(mesh.geometry);
+  return collider;
+}
+
+/** The collider a primitive is drawn as, measured as it is drawn. */
+function shapeOfGeometry(geometry: GeometryDef): ColliderShape {
   switch (geometry.kind) {
     case 'box':
-      collider.shape = 'box';
-      collider.size = [geometry.width / 2, geometry.height / 2, geometry.depth / 2];
-      break;
+      return {
+        ...createColliderShape('box'),
+        size: [geometry.width, geometry.height, geometry.depth],
+      };
     case 'sphere':
-      collider.shape = 'sphere';
-      collider.radius = geometry.radius;
-      break;
+      return { ...createColliderShape('sphere'), radius: geometry.radius };
     case 'capsule':
-      collider.shape = 'capsule';
-      collider.radius = geometry.radius;
-      collider.halfHeight = geometry.height / 2;
-      break;
-    case 'cylinder':
-      collider.shape = 'capsule';
-      collider.radius = Math.max(geometry.radiusTop, geometry.radiusBottom);
-      collider.halfHeight = geometry.height / 2;
-      break;
+      // three measures a capsule's straight part alone; a collider, end to end.
+      return {
+        ...createColliderShape('capsule'),
+        radius: geometry.radius,
+        height: geometry.height + 2 * geometry.radius,
+      };
+    case 'cylinder': {
+      const { radiusTop, radiusBottom, height } = geometry;
+      if (radiusTop === radiusBottom) {
+        return { ...createColliderShape('cylinder'), radius: radiusTop, height };
+      }
+      // A cone collider's apex points up, so one drawn apex down is turned over.
+      if (radiusTop === 0) return { ...createColliderShape('cone'), radius: radiusBottom, height };
+      if (radiusBottom === 0) {
+        const cone = createColliderShape('cone');
+        return { ...cone, radius: radiusTop, height, rotation: [Math.PI, 0, 0] };
+      }
+      // Any one radius would be wrong for a frustum, and its hull is exact.
+      return { kind: 'mesh', build: 'hull' };
+    }
     case 'plane':
     case 'circle':
     case 'ring':
@@ -119,22 +153,17 @@ export function createColliderFor(siblings: readonly Sibling[]): ColliderCompone
       // gets snapped straight through. The triangle mesh is the honest shape,
       // and its one hazard — catching on the diagonal where the two coplanar
       // triangles meet — is handled by Rapier's FIX_INTERNAL_EDGES.
-      collider.shape = 'trimesh';
-      break;
+      return createColliderShape('mesh');
     case 'torus':
     case 'torusKnot':
       // Concave: a convex hull would fill the hole, which is the whole point of
       // the shape.
-      collider.shape = 'trimesh';
-      break;
+      return createColliderShape('mesh');
     case 'tetrahedron':
     case 'octahedron':
     case 'dodecahedron':
     case 'icosahedron':
       // Convex by construction, and a hull is far cheaper than a triangle mesh.
-      collider.shape = 'convexHull';
-      break;
+      return { kind: 'mesh', build: 'hull' };
   }
-
-  return collider;
 }

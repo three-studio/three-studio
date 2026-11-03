@@ -1,4 +1,4 @@
-import { fieldOptions, type FieldDef } from '@three-studio/core';
+import { fieldOptions, type EntityDoc, type FieldDef, type SceneDoc } from '@three-studio/core';
 import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import type { BoundSpec, Declared } from './fields';
@@ -67,15 +67,7 @@ export function declaredControl(spec: Declared): {
 
     case 'entity':
       return {
-        optionsProvider: () => {
-          const scene = useDocumentStore.getState().scene;
-          return {
-            None: '',
-            ...Object.fromEntries(
-              Object.values(scene.entities).map((entity) => [entity.name, entity.id]),
-            ),
-          };
-        },
+        optionsProvider: () => ({ None: '', ...entityChoices(useDocumentStore.getState().scene) }),
       };
 
     case 'asset':
@@ -87,6 +79,45 @@ export function declaredControl(spec: Declared): {
         },
       };
   }
+}
+
+/**
+ * The scene's entities as a picker offers them: an id by its label.
+ *
+ * A name no other entity shares is its label. A shared one is labelled with
+ * its ancestors' names, `Cart (1) / Chassis`, and a path still shared gains its
+ * rank in the document's order, `Cart / Wheel 2`. Keyed by name alone, the
+ * last entity of each name was the only one listed, so a second cart's chassis
+ * could not be picked — and Duplicate keeps a copy's children's names.
+ */
+export function entityChoices(scene: SceneDoc): Record<string, string> {
+  const entities = Object.values(scene.entities);
+  const sharing = new Map<string, number>();
+  for (const { name } of entities) sharing.set(name, (sharing.get(name) ?? 0) + 1);
+
+  const ranks = new Map<string, number>();
+  const choices: Record<string, string> = {};
+  for (const entity of entities) {
+    const label = (sharing.get(entity.name) ?? 0) > 1 ? pathOf(scene, entity) : entity.name;
+    const rank = (ranks.get(label) ?? 0) + 1;
+    ranks.set(label, rank);
+    choices[rank === 1 ? label : `${label} ${rank}`] = entity.id;
+  }
+  return choices;
+}
+
+/** Its ancestors' names and its own, from the root. A cycle in a broken document ends the walk. */
+function pathOf(scene: SceneDoc, entity: EntityDoc): string {
+  const names = [entity.name];
+  const seen = new Set([entity.id]);
+  for (let above = entity.parent; above !== null && !seen.has(above); ) {
+    const parent = scene.entities[above];
+    if (!parent) break;
+    names.unshift(parent.name);
+    seen.add(above);
+    above = parent.parent;
+  }
+  return names.join(' / ');
 }
 
 /** The declared bounds, without the keys that were not declared. */

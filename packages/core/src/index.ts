@@ -34,6 +34,7 @@ export {
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
   basePathProblem,
+  conformPhysicsSettings,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
@@ -43,6 +44,15 @@ export {
   resolveScene,
   sceneName,
 } from './project/schema';
+export {
+  DEFAULT_LAYER_ID,
+  MAX_COLLISION_LAYERS,
+  createDefaultLayer,
+  layerNamesProblem,
+  layersTouch,
+  setLayersTouch,
+} from './project/layers';
+export type { CollisionLayer } from './project/layers';
 
 export {
   ASSET_MANIFEST_VERSION,
@@ -51,6 +61,7 @@ export {
   BUILD_FORMAT_VERSION,
   BUILD_LAYOUT,
   MATERIAL_ASSET_VERSION,
+  PHYSICS_MATERIAL_ASSET_VERSION,
   applyAssetChange,
   emptyAssetChange,
   emptyManifest,
@@ -75,6 +86,8 @@ export type {
   ModelSettings,
   ModelSettingsBase,
   ObjModelSettings,
+  PhysicsMaterialAssetFile,
+  PhysicsMaterialSettings,
   PrefabSettings,
   ScriptSettings,
   ShaderSettings,
@@ -117,13 +130,12 @@ export type {
  */
 export { field, fieldOptions, optionsFrom } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
+export { conform, conformPatch, isRecord } from './conform';
 export {
-  conform,
   conformAssetSettings,
   conformLayoutPreferences,
   conformShortcutPreferences,
   conformMaterial,
-  conformPatch,
   conformSettingsPatch,
 } from './guards';
 export type {
@@ -140,6 +152,7 @@ export {
   environmentAssets,
   findAssetUsage,
   findBrokenReferences,
+  findMissingEntities,
   findPrefabInstances,
   isUsed,
   totalUses,
@@ -174,11 +187,13 @@ export type {
   GeometryDef,
   GeometryKind,
   Hex,
+  JointComponent,
   LightComponent,
   LightKind,
   MaterialDef,
   MaterialSide,
   MeshComponent,
+  PhysicsMaterialDef,
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
@@ -214,11 +229,14 @@ export {
   BODY_TYPE_LABELS,
   CAMERA_PROJECTION_LABELS,
   COLLIDER_SHAPE_LABELS,
+  COMBINE_RULE_LABELS,
   DISTANCE_MODEL_LABELS,
   EMITTER_SHAPE_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
+  JOINT_KIND_LABELS,
   MATERIAL_SIDE_LABELS,
+  MESH_BUILD_LABELS,
   PLAYER_CONTROLLER_MODE_LABELS,
   TEXTURE_WRAP_LABELS,
   TOUCH_CONTROLS_LABELS,
@@ -227,9 +245,18 @@ export type {
   BackgroundMode,
   BodyType,
   ColliderShape,
+  ColliderShapeKind,
+  ColliderShapeOf,
+  CombineRule,
   DistanceModel,
   EnvironmentMode,
   FogMode,
+  JointKind,
+  JointLimits,
+  JointMotion,
+  JointMotionOf,
+  JointMotor,
+  MeshBuild,
   PlayerControllerMode,
   TouchControlsMode,
 } from './scene/schema';
@@ -244,6 +271,11 @@ export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
 export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
 export { createMaterial } from './scene/material';
+export {
+  conformPhysicsMaterial,
+  createPhysicsMaterial,
+  linkedPhysicsMaterial,
+} from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
 export { createAudioListenerEntity } from './components/audioListener/defaults';
@@ -274,6 +306,7 @@ export {
   hasComponent,
   isKnownComponentType,
   putComponent,
+  renameEntityReferences,
   setComponentsOf,
 } from './scene/components';
 export type { ComponentHost } from './scene/components';
@@ -284,6 +317,7 @@ export {
   componentAssets,
   componentDefinition,
   componentDefinitions,
+  componentEntities,
   createComponent,
   createComponentForEntity,
   defineComponent,
@@ -293,13 +327,18 @@ export {
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
 
+export { conformColliderShape, createColliderShape } from './components/collider/defaults';
 /*
- * How far a collider hangs below the entity's origin, which is the middle of
- * the shape rather than its base. Exported because the runtime needs the same
- * answer the scene migration used, and two of them would put a camera and a
- * capsule in different places.
+ * A collider as physics builds it, and how far it hangs below the entity's
+ * origin. Exported because the runtime builds from the same rules the scene
+ * migration measured with, and two of them would put a camera and a capsule in
+ * different places.
  */
-export { colliderHalfHeight } from './components/collider/defaults';
+export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
+export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
+export { conformJointMotion, createJoint, createJointMotion } from './components/joint/defaults';
+/* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
+export { jointFrame } from './components/joint/frame';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
 export { stableJson } from './json';
@@ -340,6 +379,10 @@ export type {
 
 export { capabilitiesOf } from './scene/capabilities';
 export type { EntityCapability } from './scene/capabilities';
+
+/* Which body each collider rides: the build, the warnings and the editor ask here. */
+export { bodyOf, collidersOfBody, jointEnds, physicsBodies } from './scene/bodies';
+export type { JointEnds } from './scene/bodies';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';

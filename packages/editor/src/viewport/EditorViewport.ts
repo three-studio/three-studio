@@ -5,7 +5,7 @@ import {
   type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
-import { FIXED_STEP, studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
+import { studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
 import {
   PerspectiveCamera,
   Vector3,
@@ -33,6 +33,7 @@ import { Picker } from './Picker';
 import { createEditorProjection } from './editorProjection';
 import type { Presentation } from './Presentation';
 import { ViewportInput } from './ViewportInput';
+import { PhysicsDebug } from './PhysicsDebug';
 import { PlaySession } from './PlaySession';
 import { ViewportRenderer } from './ViewportRenderer';
 import { gameTakesFocus, viewState, type ViewState } from './viewState';
@@ -109,6 +110,8 @@ export class EditorViewport {
 
   /** Play, Pause and Stop, and everything that has to happen around them. */
   private readonly play: PlaySession;
+  /** Rapier's debug view, laid over whichever engine runs. */
+  private readonly physicsDebug = new PhysicsDebug();
 
   /**
    * Whether the game is still owed the keyboard, and where the focus was at the
@@ -309,6 +312,7 @@ export class EditorViewport {
     this.gizmo.dispose();
     this.outline.dispose();
     this.overlay.dispose();
+    this.physicsDebug.dispose();
     this.binder.dispose();
     // Last, and it takes the loop, the observer, the three canvases and the
     // device with it.
@@ -556,10 +560,14 @@ export class EditorViewport {
       // Paused still renders, so the frame stays live and Step can advance it.
       if (playState === 'playing') engine.update(delta);
       else if (consumeStep()) {
+        // One tick of the project's step, as the engine reads it. A constant
+        // here was 1/60 whatever the project said: at 30 Hz every other Step
+        // ran no tick, and at 120 Hz every Step ran two.
+        //
         // The clock too, or the surfaces hold still through a step that moves
         // everything else. `step` is the one thing a zero timescale cannot veto.
-        studioTime.step(FIXED_STEP);
-        engine.update(FIXED_STEP);
+        studioTime.step(engine.fixedStep);
+        engine.update(engine.fixedStep);
       }
 
       // Paused means paused, including the part you can hear. The root gain
@@ -622,10 +630,21 @@ export class EditorViewport {
     // While the game starts it is the game too, unseen under the edit image
     // until its first frame is in, which is what brings it on top.
     if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView)) {
+    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView, this.overGame(engine))) {
       this.play.gameDrawn();
     }
     this.view.reportStats(time, this.controls.moveSpeed);
+  }
+
+  /**
+   * What is laid over the game: Rapier's debug view, while the Play bar's
+   * Physics is on. Read only then, and only while the game is seen, since the
+   * world hands new arrays at each tick it is read.
+   */
+  private overGame(engine: Engine): Scene | undefined {
+    if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return undefined;
+    const lines = engine.physicsDebug();
+    return lines === null ? undefined : this.physicsDebug.show(lines);
   }
 
 

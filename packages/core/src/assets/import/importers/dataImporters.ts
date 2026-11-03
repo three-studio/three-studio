@@ -1,5 +1,10 @@
 import { isTslMaterial, type AssetKind, type MaterialSettings } from '../../schema';
-import type { PrefabSettings, ScriptSettings, ShaderSettings } from '../../schema';
+import type {
+  PhysicsMaterialSettings,
+  PrefabSettings,
+  ScriptSettings,
+  ShaderSettings,
+} from '../../schema';
 import { AssetImporter } from '../AssetImporter';
 import { field, type FieldRow } from '../../../fields';
 
@@ -30,6 +35,24 @@ export class PrefabImporter extends AssetImporter<PrefabSettings> {
 
   defaultSettings(): PrefabSettings {
     return { kind: 'prefab' };
+  }
+}
+
+/** Registered before materials too, which take every `.json` left over (see `PrefabImporter`). */
+export class PhysicsMaterialImporter extends AssetImporter<PhysicsMaterialSettings> {
+  readonly id = 'physicsMaterial';
+  readonly kind: AssetKind = 'physicsMaterial';
+  readonly directory = 'physics-materials';
+  readonly extensions = [];
+  override readonly suffixes = ['.physics-material.json'];
+
+  /** The kind capitalised would read "PhysicsMaterial" in the import dialog. */
+  override get label(): string {
+    return 'Physics material';
+  }
+
+  defaultSettings(): PhysicsMaterialSettings {
+    return { kind: 'physicsMaterial' };
   }
 }
 

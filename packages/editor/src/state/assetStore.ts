@@ -7,6 +7,7 @@ import {
   type AssetKind,
   type AssetManifest,
   type MaterialDef,
+  type PhysicsMaterialDef,
   type PrefabDoc,
 } from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime';
@@ -35,6 +36,11 @@ interface AssetState {
    * synchronously; see `SceneBinder.setMaterialLibrary`.
    */
   materials: Record<string, MaterialDef>;
+  /**
+   * Every physics material, by asset id. Nothing in the edit view reads one:
+   * Play, a launch and the Inspector read the table itself.
+   */
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
   /** Every prefab, by asset id. Pushed into the binder the same way. */
   prefabs: Record<string, PrefabDoc>;
   loading: boolean;
@@ -55,6 +61,10 @@ interface AssetState {
   createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
   /** Writes back to a material asset, then re-reads so every user updates. */
   saveMaterial: (assetId: string, material: MaterialDef) => Promise<void>;
+  /** Writes a new physics material asset; returns its id. */
+  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  /** Writes back to a physics material asset, every collider linking it following. */
+  savePhysicsMaterial: (assetId: string, material: PhysicsMaterialDef) => Promise<void>;
   savePrefab: (assetId: string, prefab: PrefabDoc) => Promise<void>;
   remove: (assetPath: string) => Promise<void>;
   move: (assetPath: string, targetFolder: string) => Promise<void>;
@@ -137,6 +147,7 @@ function adopt(change: AssetChange): AssetChange {
 export const useAssetStore = create<AssetState>()((set, get) => ({
   manifest: emptyManifest(),
   materials: {},
+  physicsMaterials: {},
   prefabs: {},
   revision: 0,
   loading: false,
@@ -153,12 +164,13 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   refresh: () =>
     guard(set, async () => {
-      const [manifest, materials, prefabs] = await Promise.all([
+      const [manifest, materials, physicsMaterials, prefabs] = await Promise.all([
         window.studio.assets.list(),
         window.studio.assets.readMaterials(),
+        window.studio.assets.readPhysicsMaterials(),
         window.studio.assets.readPrefabs(),
       ]);
-      set({ manifest, materials, prefabs, revision: get().revision + 1 });
+      set({ manifest, materials, physicsMaterials, prefabs, revision: get().revision + 1 });
       useDocumentStore.getState().noteLibraryChange('materials');
       useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
@@ -186,6 +198,20 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     useDocumentStore.getState().noteLibraryChange('materials');
   },
 
+  createPhysicsMaterial: async (name, material) => {
+    const assetId = await window.studio.assets.createPhysicsMaterial(name, material);
+    await get().refresh();
+    return assetId;
+  },
+
+  savePhysicsMaterial: async (assetId, material) => {
+    const entry = get().byId(assetId);
+    if (!entry) return;
+    await window.studio.assets.savePhysicsMaterial(entry.path, material);
+    // In place as well, as `saveMaterial` does, so a slider does not snap back.
+    set({ physicsMaterials: { ...get().physicsMaterials, [assetId]: material } });
+  },
+
   savePrefab: async (assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
@@ -199,7 +225,21 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   remove: (assetPath) =>
     guard(set, async () => {
-      adopt(await window.studio.assets.remove(assetPath));
+      const change = await window.studio.assets.remove(assetPath);
+      const removed = new Set(change.removed);
+      const gone = new Set(get().manifest.assets.filter((a) => removed.has(a.path)).map((a) => a.id));
+      adopt(change);
+      if (gone.size === 0) return;
+      // Out of the tables too, which nothing reads again until a refresh: Play
+      // went on bouncing a ball by a physics material the hierarchy called gone,
+      // and a deleted material or prefab went on being drawn, where the delete
+      // dialog says what linked it shows nothing.
+      const kept = <T,>(table: Record<string, T>) =>
+        Object.fromEntries(Object.entries(table).filter(([id]) => !gone.has(id)));
+      const { materials, physicsMaterials, prefabs } = get();
+      set({ materials: kept(materials), physicsMaterials: kept(physicsMaterials), prefabs: kept(prefabs) });
+      useDocumentStore.getState().noteLibraryChange('materials');
+      useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
 
   move: (assetPath, targetFolder) =>
@@ -236,6 +276,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     set({
       manifest: emptyManifest(),
       materials: {},
+      physicsMaterials: {},
       prefabs: {},
       revision: get().revision + 1,
       error: null,
@@ -298,7 +339,8 @@ export function filterAndSortAssets(state: {
 
   const filtered = state.manifest.assets.filter((asset) => {
     if (state.kindFilter !== 'all' && asset.kind !== state.kindFilter) return false;
-    if (typeTerm !== null && !asset.kind.startsWith(typeTerm)) return false;
+    // The kind lowered as the query is: `t:physicsmaterial` is how it is typed.
+    if (typeTerm !== null && !asset.kind.toLowerCase().startsWith(typeTerm)) return false;
     if (folderTerm !== null && !asset.folder.toLowerCase().includes(folderTerm)) return false;
 
     if (!searching && asset.folder !== state.folder) return false;

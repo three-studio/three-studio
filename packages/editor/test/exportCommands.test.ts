@@ -17,7 +17,16 @@ import { useToastStore } from '../src/state/toastStore';
  * say nothing about it: the build simply did not look like the editor.
  */
 
-const KINDS: AssetKind[] = ['model', 'texture', 'material', 'prefab', 'shader', 'audio', 'script'];
+const KINDS: AssetKind[] = [
+  'model',
+  'texture',
+  'material',
+  'physicsMaterial',
+  'prefab',
+  'shader',
+  'audio',
+  'script',
+];
 
 function result(): ExportResult {
   return {

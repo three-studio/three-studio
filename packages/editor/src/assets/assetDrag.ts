@@ -13,9 +13,13 @@ export const ASSET_PATH_MIME = 'application/x-studio-asset-path';
  * good reason, since a page should not read what is being dragged over it
  * until it is dropped. Putting the kind in the type name is what lets a texture
  * slot light up for a texture and stay inert for a model.
+ *
+ * Lowercased, because a browser lowers a drag's formats both in `setData` and
+ * in `types`: a kind of two words, `physicsMaterial`, kept its capital here
+ * and its slot never accepted its tile.
  */
 export function assetKindMime(kind: AssetKind): string {
-  return `application/x-studio-asset-kind-${kind}`;
+  return `application/x-studio-asset-kind-${kind.toLowerCase()}`;
 }
 
 /** Sets every payload an asset drag can be read through. */

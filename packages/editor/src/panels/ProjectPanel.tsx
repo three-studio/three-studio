@@ -1,6 +1,7 @@
 import {
   ArrowDownAZ,
   ArrowUpAZ,
+  Atom,
   FilePlus2,
   FolderPlus,
   LayoutGrid,
@@ -11,6 +12,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import { createPhysicsMaterial } from '@three-studio/core';
 import { useEffect, useMemo, useState, type DragEvent } from 'react';
 import { childFolders, filterAndSortAssets, useAssetStore } from '../state/assetStore';
 import { askForText } from '../state/dialogStore';
@@ -148,6 +150,32 @@ export function ProjectPanel() {
           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-muted hover:bg-surface-3 hover:text-ink"
         >
           <FilePlus2 size={12} />
+        </button>
+
+        <button
+          type="button"
+          aria-label="New physics material"
+          {...tooltip('New physics material')}
+          onClick={() => {
+            // Writes no scene, so it is no command, and Play does not refuse it.
+            void askForText({
+              title: 'New Physics Material',
+              label: 'Name',
+              defaultValue: 'Physics Material',
+              confirmLabel: 'Create',
+            })
+              .then(async (name) => {
+                if (!name) return;
+                const store = useAssetStore.getState();
+                store.reveal(await store.createPhysicsMaterial(name, createPhysicsMaterial()));
+              })
+              .catch((cause: unknown) => {
+                console.error('[assets] could not create the physics material:', cause);
+              });
+          }}
+          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-ink-muted hover:bg-surface-3 hover:text-ink"
+        >
+          <Atom size={12} />
         </button>
 
         <div className="mx-1 flex min-w-24 flex-1 items-center gap-1 rounded-sm bg-surface-1 px-1.5">

@@ -52,6 +52,16 @@ describe('the importer registry', () => {
     expect(assetKindForFile('legacy.json')).toBe('material');
   });
 
+  it('a physics material is a kind of its own, and every other .json is still a material', () => {
+    expect(assetKindForFile('Ice.physics-material.json')).toBe('physicsMaterial');
+    expect(assetKindForFile('Stone.material.json')).toBe('material');
+    expect(assetKindForFile('legacy.json')).toBe('material');
+
+    expect(assetDisplayName('Ice.physics-material.json')).toBe('Ice');
+    expect(ASSET_KIND_INFO.physicsMaterial.directory).toBe('physics-materials');
+    expect(defaultSettings('physicsMaterial')).toEqual({ kind: 'physicsMaterial' });
+  });
+
   it('takes nothing it has no importer for, sidecars included', () => {
     expect(assetKindForFile('tree.glb.meta.json')).toBeUndefined();
     expect(assetKindForFile('notes.txt')).toBeUndefined();

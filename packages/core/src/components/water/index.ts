@@ -20,6 +20,7 @@ export const waterComponent = defineComponent({
   // Named so the exporter ships the normal map, the loading bar counts it, and
   // deleting it does not claim nothing uses it.
   assets: (component) => [component.normalMapId],
+  entities: () => [],
   icon: 'waves',
   placeable: () => true,
   runtime: true,

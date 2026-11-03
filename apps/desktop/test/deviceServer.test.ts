@@ -267,6 +267,7 @@ async function snapshot(root: string, exposure = 1): Promise<LaunchSnapshot> {
       scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
     },
     materials: {},
+    physicsMaterials: {},
     prefabs: {},
     rendering: { ...settings.rendering, exposure },
     physics: settings.physics,

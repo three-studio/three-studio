@@ -3,7 +3,7 @@ import {
   TOUCH_CONTROLS_LABELS,
   optionsFrom,
 } from '@three-studio/core';
-import type { ComponentSchema } from '../../inspector/fields';
+import { asDegrees, type ComponentSchema } from '../../inspector/fields';
 
 export const inspector: ComponentSchema = {
   label: 'Player Controller',
@@ -21,6 +21,21 @@ export const inspector: ComponentSchema = {
       type: 'number', min: 1, max: 5, step: 0.1,
     },
     { path: ['jumpHeight'], label: 'Jump height', type: 'number', min: 0, max: 10, step: 0.1 },
+    // Hidden in fly mode, where the player collides with nothing: no slope
+    // stops it and no step is in its way.
+    {
+      path: ['maxSlope'],
+      label: 'Max slope',
+      type: 'number', min: 0, max: 89, step: 1,
+      visibleWhen: (c) => c.type === 'playerController' && c.mode !== 'fly',
+      ...asDegrees,
+    },
+    {
+      path: ['stepHeight'],
+      label: 'Step height',
+      type: 'number', min: 0, max: 2, step: 0.05,
+      visibleWhen: (c) => c.type === 'playerController' && c.mode !== 'fly',
+    },
     {
       path: ['mouseSensitivity'],
       label: 'Mouse sensitivity',

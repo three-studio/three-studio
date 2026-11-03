@@ -23,6 +23,7 @@ export const meshComponent = defineComponent({
     return filled;
   },
   assets: (component) => [component.materialId, ...materialAssets(component.material)],
+  entities: () => [],
   icon: 'shapes',
   placeable: () => true,
   runtime: true,
