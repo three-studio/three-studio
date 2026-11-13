@@ -417,16 +417,29 @@ export interface ScriptedRecipe {
   readonly ballast: number;
   /** `Heavy`, the scene the loading screen is shown in front of. */
   readonly heavy: RenderRecipe;
+  /**
+   * A model of images `Heavy` holds besides its field, so that it has
+   * something to load. With nothing to preload a scene is ready at once, and
+   * the loading screen gets no frame: building its engine then blocks the
+   * thread in one piece.
+   */
+  readonly heavyImages: TexturesRecipe;
 }
 
 /**
  * Four scenes and 52 scripts. `A` and `B` hold 100 props and a `Director`;
- * `Loading` a spinning cube; `Heavy` the render recipe's field. 50 ballast
- * scripts of some 200 lines sit on entities of `A`, so a bundle is worth
- * retaining. The project sets no loading scene: the scenario makes `Loading`
- * one, after the switches it would otherwise stand in front of.
+ * `Loading` a spinning cube; `Heavy` the render recipe's field and a model of
+ * twelve 2 048² images. 50 ballast scripts of some 200 lines sit on entities
+ * of `A`, so a bundle is worth retaining. The project sets no loading scene:
+ * the scenario makes `Loading` one, after the switches it would otherwise
+ * stand in front of.
  */
-export const SCRIPTED: ScriptedRecipe = { props: 100, ballast: 50, heavy: RENDER };
+export const SCRIPTED: ScriptedRecipe = {
+  props: 100,
+  ballast: 50,
+  heavy: RENDER,
+  heavyImages: { primitives: 4, imageSide: 2048 },
+};
 
 /** What a ballast script's edit replaces: every edit → Play cycle bumps it. */
 export const BALLAST_REVISION = 'const REVISION = 0;';
@@ -509,6 +522,8 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
     ...ballastPaths(recipe).map((path, index): [string, string] => [path, ballastSource(index)]),
   ]);
   for (const [path, source] of sources) await writeFile(join(project.path, path), source, 'utf8');
+  const heavyModel = modelPathIn('heavy.glb');
+  await writeFile(join(project.path, heavyModel), writeGlb(texturesGlb(recipe.heavyImages)));
   const manifest = await scanAssets(project.path);
   const script = (path: string): string => assetAt(manifest, path).id;
 
@@ -538,7 +553,9 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   const start = (await createScene(project.path, 'A', serializeScene(a))).scene.id;
   await createScene(project.path, 'B', serializeScene(directed()));
   await createScene(project.path, 'Loading', serializeScene(loading));
-  await createScene(project.path, 'Heavy', serializeScene(renderScene(recipe.heavy)));
+  const heavy = renderScene(recipe.heavy);
+  place(heavy, createModelEntity(assetAt(manifest, heavyModel).id, 'Images'));
+  await createScene(project.path, 'Heavy', serializeScene(heavy));
   // `A` starts the game, and the scene `createProject` made is not one of the four.
   await setStartScene(project.path, start);
   await deleteScene(project.path, project.sceneId);

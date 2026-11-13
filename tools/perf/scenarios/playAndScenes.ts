@@ -1,0 +1,192 @@
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { openProject, updateProject } from '../../../apps/desktop/src/main/project';
+import { ballastPaths, writeScriptedProject } from '../generate/projects';
+import { type CdpSession, decodeNumberList, decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import { launchEditor } from '../launch/electron';
+import {
+  goThroughLoading,
+  pressPlay,
+  pressStop,
+  rendererCounts,
+  sceneApiFrom,
+  sceneLoaded,
+  setLoadingScene,
+  switchScenes,
+} from '../page/editor';
+import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
+import { median } from '../report/stats';
+import type { ScenarioContext } from './context';
+import { checkExit, heapReading } from './readings';
+
+/*
+ * S6 — Play and scenes: the scripted project of four scenes. Play's start —
+ * compile, import, engine, first frame; ten switches between `A` and `B`
+ * through the game's own scene API; a switch to `Heavy` behind `Loading`; and
+ * ten cycles of a ballast script edited on disk, Play, Stop.
+ *
+ * In that order: the switches run with no loading scene, which `SceneHost`
+ * would otherwise put up before every one of them, and Play starts on its
+ * first scene without one, so the cycles may follow it being set.
+ */
+
+const SWITCHES = 10;
+const CYCLES = 10;
+
+const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
+  ['play.firstFrameMs', { kind: 'timing', unit: 'ms' }],
+  ['switch.ms', { kind: 'timing', unit: 'ms' }],
+  ['switch.heapBytes', { kind: 'memory', unit: 'B' }],
+  ['switch.gpuBytes', { kind: 'memory', unit: 'B' }],
+  ['switch.heapGrowthBytes', { kind: 'reported', unit: 'B' }],
+  ['switch.gpuGrowthBytes', { kind: 'reported', unit: 'B' }],
+  ['loading.ms', { kind: 'timing', unit: 'ms' }],
+  ['loading.longestFrameMs', { kind: 'timing', unit: 'ms' }],
+  ['loading.frames', { kind: 'reported', unit: '' }],
+  ['cycles.heapBytes', { kind: 'memory', unit: 'B' }],
+  ['cycles.gpuBytes', { kind: 'memory', unit: 'B' }],
+  ['cycles.heapGrowthPerCycleBytes', { kind: 'reported', unit: 'B' }],
+  ['cycles.gpuGrowthPerCycleBytes', { kind: 'reported', unit: 'B' }],
+]);
+
+/** Bumps a ballast script's revision on disk: a new bundle at the next Play. */
+export async function editBallast(path: string, revision: number): Promise<void> {
+  const source = await readFile(path, 'utf8');
+  const edited = source.replace(/const REVISION = \d+;/, `const REVISION = ${revision};`);
+  if (edited === source) throw new Error(`${path} has no revision to bump`);
+  await writeFile(path, edited);
+}
+
+async function memoryNow(session: CdpSession): Promise<{ heap: number; gpu: number }> {
+  const heap = await heapReading(session);
+  const gpu = decodeNumbers(await runInPage(session, rendererCounts, undefined))['gpuBytes'] ?? Number.NaN;
+  return { heap: heap.heapBytes, gpu };
+}
+
+interface Subject {
+  readonly project: string;
+  readonly scenes: ReadonlyMap<string, string>;
+  readonly ballast: string;
+}
+
+function sceneId(subject: Subject, name: string): string {
+  const id = subject.scenes.get(name);
+  if (id === undefined) throw new Error(`the scripted project has no scene ${name}`);
+  return id;
+}
+
+async function measure(
+  context: ScenarioContext,
+  subject: Subject,
+  nextRevision: () => number,
+  label: string,
+): Promise<{ metrics: Record<string, number>; notes: string[] }> {
+  // Every launch starts with no loading scene: the last one set it.
+  await updateProject(subject.project, (project) => ({ ...project, settings: { ...project.settings, loadingScene: null } }));
+  const editor = await launchEditor({
+    repo: context.repo,
+    runDir: context.runDir,
+    project: subject.project,
+    mode: 'display',
+    label,
+    port: await freePort(),
+  });
+  try {
+    await runInPage(editor.session, sceneLoaded, undefined);
+    const play = decodeNumbers(await runInPage(editor.session, pressPlay, undefined, 300_000));
+    await runInPage(editor.session, sceneApiFrom, 'A');
+
+    const before = await memoryNow(editor.session);
+    const order = Array.from({ length: SWITCHES }, (_, index) => {
+      const name = index % 2 === 0 ? 'B' : 'A';
+      return { name, id: sceneId(subject, name) };
+    });
+    const switches = decodeNumberList(await runInPage(editor.session, switchScenes, order, 300_000));
+    const switched = await memoryNow(editor.session);
+    await runInPage(editor.session, pressStop, undefined);
+
+    await runInPage(editor.session, setLoadingScene, sceneId(subject, 'Loading'));
+    await runInPage(editor.session, pressPlay, undefined, 300_000);
+    await runInPage(editor.session, sceneApiFrom, 'A');
+    const loading = decodeNumbers(
+      await runInPage(
+        editor.session,
+        goThroughLoading,
+        { target: { name: 'Heavy', id: sceneId(subject, 'Heavy') }, loadingId: sceneId(subject, 'Loading') },
+        300_000,
+      ),
+    );
+    await runInPage(editor.session, pressStop, undefined);
+
+    const cyclesBefore = await memoryNow(editor.session);
+    for (let cycle = 0; cycle < CYCLES; cycle += 1) {
+      await editBallast(subject.ballast, nextRevision());
+      await runInPage(editor.session, pressPlay, undefined, 300_000);
+      await runInPage(editor.session, pressStop, undefined);
+    }
+    const cycled = await memoryNow(editor.session);
+
+    const exit = await editor.finish();
+    checkExit(label, 'display', exit);
+    context.say(
+      `${label}: Play ${play['gameShownMs']?.toFixed(0)} ms, switch ${median(switches).toFixed(0)} ms, loading ${loading['ms']?.toFixed(0)} ms`,
+    );
+    return {
+      metrics: {
+        'play.firstFrameMs': play['gameShownMs'] ?? Number.NaN,
+        'switch.ms': median(switches),
+        'switch.heapBytes': switched.heap,
+        'switch.gpuBytes': switched.gpu,
+        'switch.heapGrowthBytes': switched.heap - before.heap,
+        'switch.gpuGrowthBytes': switched.gpu - before.gpu,
+        'loading.ms': loading['ms'] ?? Number.NaN,
+        'loading.longestFrameMs': loading['longestFrameMs'] ?? Number.NaN,
+        'loading.frames': loading['frames'] ?? Number.NaN,
+        'cycles.heapBytes': cycled.heap,
+        'cycles.gpuBytes': cycled.gpu,
+        'cycles.heapGrowthPerCycleBytes': (cycled.heap - cyclesBefore.heap) / CYCLES,
+        'cycles.gpuGrowthPerCycleBytes': (cycled.gpu - cyclesBefore.gpu) / CYCLES,
+      },
+      notes: [
+        loading['sawLoading'] === 1
+          ? `Loading ran while Heavy loaded, ${loading['frames']} frames drawn meanwhile`
+          : 'Loading NEVER ran while Heavy loaded',
+      ],
+    };
+  } catch (error) {
+    editor.kill();
+    throw error;
+  }
+}
+
+export async function playAndScenesScenario(context: ScenarioContext): Promise<ScenarioResult> {
+  const parent = join(context.runDir, 'projects', 'S6');
+  await mkdir(parent, { recursive: true });
+  try {
+    const project = await writeScriptedProject(parent);
+    const opened = await openProject(project);
+    const [ballast] = ballastPaths();
+    if (ballast === undefined) throw new Error('the scripted recipe has no ballast script');
+    const subject: Subject = {
+      project,
+      scenes: new Map(opened.scenes.map((scene) => [scene.name, scene.id])),
+      ballast: join(project, ballast),
+    };
+    let revision = 0;
+    const nextRevision = (): number => {
+      revision += 1;
+      return revision;
+    };
+    await measure(context, subject, nextRevision, 'S6-warmup');
+    const launches: Record<string, number>[] = [];
+    let notes: string[] = [];
+    for (let n = 1; n <= context.launches; n += 1) {
+      const reading = await measure(context, subject, nextRevision, `S6-${n}`);
+      launches.push(reading.metrics);
+      if (n === 1) notes = reading.notes;
+    }
+    return { metrics: metricsOf(METRICS, launches), window: null, notes };
+  } finally {
+    await rm(parent, { recursive: true, force: true });
+  }
+}

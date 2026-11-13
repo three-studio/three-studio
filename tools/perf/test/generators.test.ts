@@ -186,7 +186,12 @@ describe('each recipe at a reduced size, opened by the app', () => {
   });
 
   it('scripted: four scenes, A first, no loading scene, every script found', async () => {
-    const recipe: ScriptedRecipe = { props: 10, ballast: 3, heavy: { props: 20, columns: 5 } };
+    const recipe: ScriptedRecipe = {
+      props: 10,
+      ballast: 3,
+      heavy: { props: 20, columns: 5 },
+      heavyImages: { primitives: 1, imageSide: 64 },
+    };
     const path = await writeScriptedProject(parent, recipe);
     const opened = await openProject(path);
     expect(opened.scenes.map((scene) => scene.name).sort()).toEqual(['A', 'B', 'Heavy', 'Loading']);
@@ -199,13 +204,15 @@ describe('each recipe at a reduced size, opened by the app', () => {
     }
     const counts = Object.fromEntries([...scenes].map(([name, scene]) => [name, entityCount(scene)]));
     // A: the props, a sun, a camera, the Director and one entity per ballast
-    // script; B the same without the ballast; Loading a cube, a sun and a camera.
-    expect(counts).toEqual({ A: 16, B: 13, Loading: 3, Heavy: 24 });
+    // script; B the same without the ballast; Loading a cube, a sun and a camera;
+    // Heavy the field and its model.
+    expect(counts).toEqual({ A: 16, B: 13, Loading: 3, Heavy: 25 });
 
     const manifest = await scanAssets(path);
     expect(manifest.assets.filter((asset) => asset.kind === 'script')).toHaveLength(2 + recipe.ballast);
     expect(ballastPaths(recipe).every((ballast) => manifest.assets.some((asset) => asset.path === ballast))).toBe(true);
-    // A Director in A and in B, the ballast in A, the Spinner in Loading.
-    expect(await references(path, [...scenes.values()])).toEqual({ resolved: 3 + recipe.ballast, unresolved: [] });
+    // A Director in A and in B, the ballast in A, the Spinner in Loading, the
+    // model in Heavy.
+    expect(await references(path, [...scenes.values()])).toEqual({ resolved: 4 + recipe.ballast, unresolved: [] });
   });
 });

@@ -10,6 +10,7 @@ import { type ScenarioResult, summaryOf } from './report/results';
 import { assetsScenario } from './scenarios/assets';
 import { bigAssetsScenario } from './scenarios/bigAssets';
 import type { Scenario, ScenarioContext } from './scenarios/context';
+import { playAndScenesScenario } from './scenarios/playAndScenes';
 import { playerScenario } from './scenarios/player';
 import { renderScenario } from './scenarios/render';
 import { sceneScaleScenario } from './scenarios/sceneScale';
@@ -37,6 +38,7 @@ const SCENARIOS: readonly { readonly id: string; readonly title: string; readonl
   { id: 'S2', title: 'scene scale', run: sceneScaleScenario },
   { id: 'S3', title: 'render', run: renderScenario },
   { id: 'S5', title: 'assets', run: assetsScenario },
+  { id: 'S6', title: 'Play and scenes', run: playAndScenesScenario },
   { id: 'S7', title: 'player', run: playerScenario },
 ];
 

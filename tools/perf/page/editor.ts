@@ -458,3 +458,95 @@ export async function assetAction(
   if (error !== null) throw new Error(`${action.kind} failed: ${error}`);
   return { ms };
 }
+
+/** Resolves once the running game has published its scene API from `name`: its Director has started. */
+export function sceneApiFrom(name: string): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const check = (): void => {
+      if (window.__perfScenes?.current === name) resolve({ readyMs: performance.now() - started });
+      else if (performance.now() - started > 120_000) reject(new Error(`scene ${name} never published its API`));
+      else setTimeout(check, 20);
+    };
+    check();
+  });
+}
+
+/**
+ * Goes to each scene in turn through the game's own scene API — what a
+ * script calls — each to the first frame after the viewport runs it: the
+ * times, in ms. The API reaches the host, so the first one published serves
+ * every switch.
+ */
+export function switchScenes(order: readonly { name: string; id: string }[]): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    const api = window.__perfScenes;
+    if (!stores || !api) {
+      reject(new Error('no stores, or no scene API published'));
+      return;
+    }
+    const times: number[] = [];
+    const next = (index: number): void => {
+      const target = order[index];
+      if (target === undefined) {
+        resolve(times);
+        return;
+      }
+      const started = performance.now();
+      const shown = (): void => {
+        if (stores.viewport.getState().runningScene === target.id) {
+          requestAnimationFrame(() => {
+            times.push(performance.now() - started);
+            next(index + 1);
+          });
+        } else if (performance.now() - started > 60_000) reject(new Error(`scene ${target.name} never ran`));
+        else requestAnimationFrame(shown);
+      };
+      api.go(target.name).then(shown, reject);
+    };
+    next(0);
+  });
+}
+
+/**
+ * Goes to `target` with the project's loading scene up meanwhile, to the
+ * target's first frame: how long, the longest frame on the way, how many
+ * frames were drawn, and 1 when the loading scene did run in between.
+ */
+export function goThroughLoading(args: { target: { name: string; id: string }; loadingId: string }): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    const api = window.__perfScenes;
+    if (!stores || !api) {
+      reject(new Error('no stores, or no scene API published'));
+      return;
+    }
+    const started = performance.now();
+    let last = started;
+    let longest = 0;
+    let frames = 0;
+    let sawLoading = 0;
+    const tick = (): void => {
+      const now = performance.now();
+      longest = Math.max(longest, now - last);
+      last = now;
+      frames += 1;
+      const running = stores.viewport.getState().runningScene;
+      if (running === args.loadingId) sawLoading = 1;
+      if (running === args.target.id) {
+        requestAnimationFrame(() => resolve({ ms: performance.now() - started, longestFrameMs: longest, frames, sawLoading }));
+      } else if (now - started > 120_000) reject(new Error(`scene ${args.target.name} never ran`));
+      else requestAnimationFrame(tick);
+    };
+    api.go(args.target.name).catch(reject);
+    requestAnimationFrame(tick);
+  });
+}
+
+/** Makes a scene the project's loading scene, or none, as the Project Settings dialog does. */
+export async function setLoadingScene(id: string | null): Promise<Record<string, number>> {
+  const saved = await window.studio.project.updateSettings({ loadingScene: id });
+  window.__studioStores?.project.getState().adoptProject(saved);
+  return { set: id === null ? 0 : 1 };
+}
