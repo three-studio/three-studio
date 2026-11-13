@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { heapOf, metricsOf } from '../report/results';
+import { heapOf, metricsOf, summaryOf } from '../report/results';
 
 describe('the metrics of a scenario', () => {
   const TABLE = new Map([
@@ -45,3 +45,23 @@ describe('the JS memory', () => {
     expect(() => heapOf({ usedSize: 1 })).toThrow();
   });
 });
+
+describe('the summary printed as a run goes', () => {
+  it('gives each metric its median and every launch, and says when a count moved between launches', () => {
+    const text = summaryOf('S3', {
+      metrics: {
+        'edit.frameMs': { kind: 'timing', unit: 'ms', launches: [8.3, 8.5, 8.5] },
+        'edit.drawCalls': { kind: 'count', unit: '', launches: [9010, 9006, 9010] },
+      },
+      window: null,
+      notes: ['edit: 10 B/frame at somewhere.ts:1'],
+    });
+    expect(text.split('\n')).toEqual([
+      '[perf] S3 edit.frameMs 8.50 ms (timing) — 8.30 / 8.50 / 8.50',
+      '[perf] S3 edit.drawCalls 9010 (count, LAUNCHES DIFFER) — 9010 / 9006 / 9010',
+      '[perf] S3 edit: 10 B/frame at somewhere.ts:1',
+      '',
+    ]);
+  });
+});
+

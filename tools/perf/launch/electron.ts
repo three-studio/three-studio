@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { finishRun } from '../page/editor';
@@ -140,6 +140,12 @@ function rendererErrorsIn(log: string): string {
 export async function launchEditor(launch: EditorLaunch): Promise<EditorInstance> {
   const command = editorCommand(launch, await electronBinary(launch.repo));
   await mkdir(join(launch.runDir, 'logs'), { recursive: true });
+  // Every launch on the default layout. The editor saves the dock's layout as
+  // it loads, and a saved layout comes back two pixels off: the edit canvas
+  // grew 4 × 2 device pixels a launch (1876 × 1146, 1880 × 1148, 1884 × 1150),
+  // and the GPU memory with it, 134 kB a launch. The rest of the application
+  // data stays, warm: the shader and code caches are what a warm-up is for.
+  await rm(join(launch.runDir, 'user-data', 'layouts.json'), { force: true });
   const logPath = join(launch.runDir, 'logs', `${launch.label}.log`);
   const log = await open(logPath, 'w');
   // A process group of its own, so that ending it ends the GPU and renderer

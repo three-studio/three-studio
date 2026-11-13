@@ -74,12 +74,18 @@ export function heapOf(reply: unknown): { heapBytes: number; heapUsedBytes: numb
   return { heapBytes: usedSize + backingStorageSize, heapUsedBytes: usedSize, heapBackingBytes: backingStorageSize };
 }
 
-/** A scenario's metrics as lines to print while the run goes: each one's median over the launches. */
+const shown = (value: number): string => (Number.isInteger(value) ? String(value) : value.toFixed(2));
+
+/**
+ * A scenario's metrics as lines to print while the run goes: each one's median,
+ * then every launch. A count that differs between launches says so: a count is
+ * judged identical from run to run, and one that moves within a run cannot be.
+ */
 export function summaryOf(id: string, result: ScenarioResult): string {
   const lines = Object.entries(result.metrics).map(([name, metric]) => {
-    const value = median(metric.launches);
-    const shown = Number.isInteger(value) ? String(value) : value.toFixed(2);
-    return `[perf] ${id} ${name} ${shown}${metric.unit === '' ? '' : ` ${metric.unit}`} (${metric.kind})`;
+    const unit = metric.unit === '' ? '' : ` ${metric.unit}`;
+    const differs = metric.kind === 'count' && new Set(metric.launches).size > 1 ? ', LAUNCHES DIFFER' : '';
+    return `[perf] ${id} ${name} ${shown(median(metric.launches))}${unit} (${metric.kind}${differs}) — ${metric.launches.map(shown).join(' / ')}`;
   });
   return `${[...lines, ...result.notes.map((note) => `[perf] ${id} ${note}`)].join('\n')}\n`;
 }
