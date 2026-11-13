@@ -1,8 +1,10 @@
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildScripts } from '../src/main/scripts';
+import { buildScripts, esbuildBinaryPath } from '../src/main/scripts';
 
 /*
  * Play compiles what is on disk, whatever was edited since the last build. A
@@ -80,5 +82,18 @@ describe('a build of an unchanged project', () => {
 
     expect(first.errors).toEqual([]);
     expect(second.code).toBe(first.code);
+  });
+});
+
+describe("esbuild's binary", () => {
+  it('is where esbuild installed it for this platform', () => {
+    // A packaged app names this path under `app.asar.unpacked` for esbuild,
+    // which would otherwise spawn it from inside the archive. An esbuild that
+    // moves its binary fails here, rather than in an installed editor that
+    // compiles no script.
+    const esbuildMain = createRequire(import.meta.url).resolve('esbuild');
+    const nodeModules = dirname(dirname(dirname(esbuildMain)));
+
+    expect(existsSync(esbuildBinaryPath(nodeModules))).toBe(true);
   });
 });

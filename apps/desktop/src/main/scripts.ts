@@ -10,7 +10,7 @@ import {
 // Type-only, so nothing of the runtime — three included — reaches the main
 // process. What is needed is the class's key set, and only the compiler reads it.
 import type { BehaviourMember } from '@three-studio/runtime';
-import { build, type Plugin } from 'esbuild';
+import type { Plugin } from 'esbuild';
 import { scanAssets } from './assetScan';
 import { resolveInside } from './paths';
 
@@ -64,6 +64,21 @@ const shimPlugin: Plugin = {
 };
 
 /**
+ * Where esbuild's install puts its native binary under a `node_modules`: in the
+ * package for this platform and architecture, as `esbuild.exe` on Windows.
+ *
+ * A packaged app has to say so. esbuild finds the binary with `require.resolve`,
+ * which answers a path inside `app.asar`, and spawns it from there:
+ * electron-builder unpacks the binary to `app.asar.unpacked`, but Electron
+ * redirects only `execFile` into it, never `spawn`, so every build failed with
+ * `spawn ENOTDIR` and an installed editor compiled no script at all.
+ */
+export function esbuildBinaryPath(nodeModules: string): string {
+  const binary = process.platform === 'win32' ? 'esbuild.exe' : join('bin', 'esbuild');
+  return join(nodeModules, '@esbuild', `${process.platform}-${process.arch}`, binary);
+}
+
+/**
  * What a bundle is compiled for, which decides what it carries besides the code.
  *
  * - `play`: Play and a device launch, on the author's machine. An inline source
@@ -104,6 +119,11 @@ export async function buildScripts(
   }
 
   try {
+    // Loaded here rather than at the top of the file: esbuild reads
+    // `ESBUILD_BINARY_PATH` once, as it loads, and the main bundle requires its
+    // imports before any line of `index.ts` runs — before a packaged app has set
+    // it (`esbuildBinaryPath`).
+    const { build } = await import('esbuild');
     const result = await build({
       // Left unnamed, so the bundle calls it `<stdin>`. Given a `sourcefile`,
       // esbuild writes it relative to the working directory resolved through

@@ -4,6 +4,7 @@ import { BrowserWindow, app, session } from 'electron';
 import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
 import { handleAssetProtocol, handleImportProtocol, registerAssetScheme } from './protocol';
+import { esbuildBinaryPath } from './scripts';
 import { applyContentSecurityPolicy } from './security';
 import { followWithSmokeDevice, runSmokeTest } from './smoke';
 import {
@@ -44,6 +45,15 @@ if (process.env['STUDIO_SMOKE_SOFTWARE_GPU']) {
 }
 
 const isDev = !app.isPackaged;
+
+// esbuild's binary, which a packaged app must name for it (`esbuildBinaryPath`).
+// Set before the first build loads esbuild; a path the environment already
+// gives is kept.
+if (app.isPackaged) {
+  process.env['ESBUILD_BINARY_PATH'] ??= esbuildBinaryPath(
+    join(process.resourcesPath, 'app.asar.unpacked', 'node_modules'),
+  );
+}
 
 void app.whenReady().then(() => {
   applyContentSecurityPolicy(session.defaultSession, isDev);
