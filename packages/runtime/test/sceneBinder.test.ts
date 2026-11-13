@@ -32,8 +32,8 @@ import { SceneBinder } from '../src/SceneBinder';
 import type { AssetResolver } from '../src/assets/AssetResolver';
 
 /*
- * The binder had no tests at all, which is why five of the twelve bugs in
- * `docs/refonte-scene/CONSTAT.md` live in it.
+ * The binder had no tests at all, which is why five of the twelve bugs found
+ * when the scene layer was rewritten lived in it.
  *
  * It is testable under Node without a GPU: `three/webgpu` imports and its
  * objects construct, and the binder only ever builds scene-graph objects. What
@@ -130,8 +130,8 @@ describe('binding a scene', () => {
 /*
  * The worst of the twelve. Three meshes named the same material asset, and
  * one texture change gave each of them its own copy, each replacement freeing
- * the one the previous mesh had just adopted. Written in the shape it must have
- * once phase 5 lands, not in the shape of the bug.
+ * the one the previous mesh had just adopted. Written in the shape of the fix,
+ * not in the shape of the bug.
  */
 describe('a material asset shared by several meshes', () => {
   const withColorMap = (): MaterialDef => ({ ...createMaterial(), colorMap: 'tex-1' });

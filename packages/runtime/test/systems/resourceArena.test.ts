@@ -6,10 +6,11 @@ import { ResourceArena, SharedMaterial } from '../../src/systems/ResourceArena';
  * The pool, the queue, and the one rule that ties them: **nothing is freed
  * inside a sync**.
  *
- * Two of the twelve bugs were here and neither was a wrong line. One was a
- * cadence — the queue was drained by whatever ran next rather than by the frame
- * — and the other was ownership, a `replace` freeing the value another holder had just
- * adopted. Both are properties of this class, and until phase 11 it was not one.
+ * Two of the twelve bugs found when the scene layer was rewritten were here,
+ * and neither was a wrong line. One was a cadence — the queue was drained by
+ * whatever ran next rather than by the frame — and the other was ownership, a
+ * `replace` freeing the value another holder had just adopted. Both are
+ * properties of this class, which was no class when they happened.
  */
 
 const material = () => new SharedMaterial({ material: new MeshStandardNodeMaterial(), textures: [] });

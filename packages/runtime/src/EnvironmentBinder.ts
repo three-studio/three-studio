@@ -109,8 +109,8 @@ export class EnvironmentBinder {
    * a buffer the previous frame drew with hands a destroyed buffer to a pass
    * still being encoded. That is a crash, not a dropped frame.
    *
-   * Two queues would be one too many: the binder kept its own until phase 11,
-   * and `beginFrame` emptied only the other.
+   * Two queues would be one too many: the binder once kept its own, and
+   * `beginFrame` emptied only the other.
    */
   private retire(disposable: Disposable): void {
     this.arena.retire(disposable);

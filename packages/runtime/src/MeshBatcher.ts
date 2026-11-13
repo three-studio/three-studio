@@ -397,7 +397,7 @@ export class MeshBatcher {
      *
      * **Measured, because reading it twice was not enough.** 3600 spheres in
      * one batch, 11M source triangles, one shadow-casting sun, the editor
-     * camera on the whole field — see T-056:
+     * camera on the whole field:
      *
      * | | drawn | median | p95 |
      * |---|---|---|---|

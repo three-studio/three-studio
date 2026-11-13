@@ -24,8 +24,8 @@ import type { ResourceArena } from './ResourceArena';
  * What the form buys beyond the split is the **`patch` against `'remount'`
  * contract**. Before it the decision was taken case by case, in three different
  * places, and nobody had noticed they disagreed: materials were patched in
- * place, lights and cameras too since phase 5, and a mesh had its own rules for
- * reusing a geometry. Now each system has to answer the question out loud.
+ * place, lights and cameras too, and a mesh had its own rules for reusing a
+ * geometry. Now each system has to answer the question out loud.
  */
 
 /** A direction to be lit from, and the colour of what is lighting. */

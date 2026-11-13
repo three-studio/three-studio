@@ -30,7 +30,7 @@ import { StudioTime } from '../../src/time/StudioTime';
  * which is the point of the split, and something the 1 564-line binder could
  * not offer: fourteen tests covered it, and not one of them could name a piece.
  *
- * The contract they all pin is `patch` against `'remount'`. Before phase 11 the
+ * The contract they all pin is `patch` against `'remount'`. Before the split the
  * decision was taken in three separate places that had never been compared:
  * materials patched in place, lights and cameras too, and a mesh with rules of
  * its own. Now each system has to answer out loud, and a test can ask.

@@ -163,9 +163,9 @@ describe('Voice', () => {
     expect(voice.state).toBe('stopped');
     expect(context.sources).toHaveLength(0);
     // And the pool lets go of it. This line is the one that matters: the two
-    // above passed for the whole of the first chantier while the voice sat in
-    // the pool for ever, holding a slot and a clip reference. A test that only
-    // asks an object about itself cannot see that.
+    // above passed from the start while the voice sat in the pool for ever,
+    // holding a slot and a clip reference. A test that only asks an object about
+    // itself cannot see that.
     engine.update();
     expect(engine.voices).toHaveLength(0);
   });

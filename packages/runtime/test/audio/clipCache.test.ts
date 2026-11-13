@@ -152,8 +152,8 @@ describe('AudioClipCache', () => {
   });
 
   it('says so when an asset asked to stream and was decoded instead', async () => {
-    // The setting has been persisted since the importer was written and is V2 in
-    // the runtime (CIBLE §16). Falling back to a decode is right — the sound
+    // The setting has been persisted since the importer was written, and the
+    // runtime does not stream yet. Falling back to a decode is right — the sound
     // plays — but it is the opposite of what the asset asked for, and the cost is
     // the whole reason someone chose it: minutes of audio resident rather than
     // streamed. Two documents already claimed this warning existed; it did not.

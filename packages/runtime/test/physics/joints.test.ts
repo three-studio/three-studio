@@ -33,7 +33,7 @@ afterAll(takeTheBrowserBack);
 /** Whom each entity's collider heard start touching, by entity id. */
 const heard = new Map<string, string[]>();
 
-// An Ear on every Collider, as F8's events file has: a plugin hears collisions
+// An Ear on every Collider, as `events.test.ts` has: a plugin hears collisions
 // by being a behaviour on the entity.
 registerBehaviour('collider', ({ entity }) => ({
   onCollisionEnter: ({ other }) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), other]),

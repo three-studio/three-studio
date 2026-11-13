@@ -51,7 +51,7 @@ type Hook = 'onCollisionEnter' | 'onCollisionExit' | 'onTriggerEnter' | 'onTrigg
 /** What each entity's collider heard, in order, by entity id. */
 const heard = new Map<string, [Hook, string][]>();
 
-// An Ear on every Collider, as F8's events file has.
+// An Ear on every Collider, as `events.test.ts` has.
 registerBehaviour('collider', ({ entity }) => {
   const record = (hook: Hook, other: string) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), [hook, other]]);
   return {
@@ -103,9 +103,9 @@ const spring = (stiffness: number, damping: number): JointMotion => ({
 const degrees = (angle: number) => (angle * Math.PI) / 180;
 
 /**
- * F12's pendulum: a 1 m box hinged to the world on z at (0, 2, 0), level to
- * start with. Slowed by a linear damping, so that it comes to hang: an angular
- * one barely slows a body turning about a pivot rather than about itself.
+ * `joints.test.ts`'s pendulum: a 1 m box hinged to the world on z at (0, 2, 0),
+ * level to start with. Slowed by a linear damping, so that it comes to hang: an
+ * angular one barely slows a body turning about a pivot rather than about itself.
  */
 function pendulum(): EntityTemplate {
   return withJoint(withBody('box', [1, 2, 0], { interpolate: false, linearDamping: 2 }), {
@@ -456,7 +456,8 @@ describe('a joint tuned while running', () => {
   });
 
   it('a hinge tuned to a slider slides along its axis', async () => {
-    // F12's slider, built as a hinge about the box's own centre: it holds still.
+    // `joints.test.ts`'s slider, built as a hinge about the box's own centre: it
+    // holds still.
     const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);
     rail.entity.transform.rotation = [degrees(20), 0, 0];
     const box = withJoint(withBody('box', [2, 3, 1], { interpolate: false }), {

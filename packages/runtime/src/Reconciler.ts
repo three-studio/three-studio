@@ -12,8 +12,8 @@ import { ENTITY_ID_KEY } from './systems/identity';
  * system that claims its type. Adding a renderable type is a folder under
  * `components/`, and this file does not change.
  *
- * The pairing key is the id phase 3 gave every component and phase 10 made the
- * storage key. Before it, builds were keyed by *position* in an array, so
+ * The pairing key is the id every component carries, which is also the key it
+ * is stored under. Before it, builds were keyed by *position* in an array, so
  * removing a component paired a cube's build with a sphere's definition — the
  * geometry key no longer matched, both were rebuilt, and the churn forced the
  * batch holding them to be rebuilt too.

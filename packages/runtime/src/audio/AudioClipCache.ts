@@ -179,7 +179,7 @@ export class AudioClipCache {
       if (settings?.kind === 'audio' && settings.loadMode === 'stream') {
         // Persisted since the importer was written, and not implemented: a
         // stream is a `MediaElementAudioSourceNode`, a different kind of node
-        // with its own limits, and it is V2 (CIBLE §16). Decoding it instead is
+        // with its own limits, and it was left for later. Decoding it instead is
         // the right fallback — the sound plays — but it is not what the asset
         // asked for, and the cost is the whole point of the setting: two minutes
         // of stereo is tens of megabytes resident. Said once per asset, here,

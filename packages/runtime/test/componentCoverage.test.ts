@@ -46,10 +46,10 @@ const RESOLVED_IN_CORE = new Set(['prefabInstance']);
 
 /*
  * The registry's `runtime` flag, checked against the package it makes a claim
- * about. Written in phase 9 for one reason: `audioSource` and `audioListener`
- * spent months editable and inert, and no test could have said so — the fact was
- * spread across a schema, a defaults file, an inspector table and a `switch`
- * branch that quietly returned null.
+ * about. Written for one reason: `audioSource` and `audioListener` spent months
+ * editable and inert, and no test could have said so — the fact was spread
+ * across a schema, a defaults file, an inspector table and a `switch` branch
+ * that quietly returned null.
  *
  * This is what makes the flag mean something. It fails when a type is added with
  * no system, and it fails when one claims a system it does not have.

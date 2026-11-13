@@ -12,10 +12,8 @@ import { FakeContext } from './fakeContext';
 import { flush, rig } from './rig';
 
 /*
- * The eleven ways audio can go wrong, walked one at a time.
- *
- * The list is the PRD's §22, and the rule it states is the only one that
- * matters: **no audio error may take the runtime or the editor down**. The
+ * The eleven ways audio can go wrong, walked one at a time, under the one rule
+ * that matters: **no audio error may take the runtime or the editor down**. The
  * pattern is `ScriptHost.guard` — one warning, once, and the source goes quiet
  * — so most of these assert two things: that the failure is contained, and that
  * it is *reported once* rather than every frame.
@@ -34,7 +32,7 @@ function mount(audio: AudioEngine | null, overrides = {}) {
   );
 }
 
-describe('§22 — nothing here may bring anything down', () => {
+describe('nothing here may bring anything down', () => {
   it('a missing asset: one warning, a failed handle, no voice', async () => {
     const { engine, warnings } = rig();
     const voice = engine.play({ assetId: 'gone' });

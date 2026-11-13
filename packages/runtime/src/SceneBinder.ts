@@ -37,10 +37,10 @@ export { isVisibleInHierarchy } from './MeshBatcher';
  * Whether what a view holds still matches the document, element by element.
  *
  * Not identity of the array — there is no array in the document to compare
- * against since phase 10. `componentsOf` builds a fresh one per call, so
- * comparing its identity would differ every sync and rebuild the whole scene
- * every frame. The elements still carry immer's identity, and that is what this
- * uses.
+ * against since components moved into its tables. `componentsOf` builds a fresh
+ * one per call, so comparing its identity would differ every sync and rebuild
+ * the whole scene every frame. The elements still carry immer's identity, and
+ * that is what this uses.
  */
 function sameComponents(a: readonly ComponentDoc[], b: readonly ComponentDoc[]): boolean {
   return a.length === b.length && a.every((component, index) => component === b[index]);
@@ -61,13 +61,13 @@ const _z = new Vector3();
  * That is what lets undo, save/load and the play-mode snapshot work without any
  * of them knowing about three.js.
  *
- * Since phase 11 this is a **coordinator**, not the whole layer. What a
- * component draws belongs to its system (`systems/`), what it holds on the GPU
- * belongs to the arena, pairing the two against the document belongs to the
- * `Reconciler`, and everything that belongs to no entity at all — the
- * background, the lighting, the sky, the fog — belongs to `EnvironmentBinder`.
- * What is left here is what none of them can answer alone: the hierarchy of
- * containers, and the batching, which reads every mesh in the scene at once.
+ * This is a **coordinator**, not the whole layer. What a component draws
+ * belongs to its system (`systems/`), what it holds on the GPU belongs to the
+ * arena, pairing the two against the document belongs to the `Reconciler`, and
+ * everything that belongs to no entity at all — the background, the lighting,
+ * the sky, the fog — belongs to `EnvironmentBinder`. What is left here is what
+ * none of them can answer alone: the hierarchy of containers, and the batching,
+ * which reads every mesh in the scene at once.
  *
  * Change detection is by object identity: immer preserves the identity of
  * anything a mutation did not touch, so a moved entity re-reads its transform
@@ -545,9 +545,10 @@ export class SceneBinder {
    * visibility and its transform.
    *
    * The component list is compared **element by element**. There is no array in
-   * the document to compare by identity since phase 10 — `componentsOf` builds a
-   * fresh one per call — but immer still preserves the identity of every
-   * component it did not touch, so this is exactly as precise as the old check.
+   * the document to compare by identity since components moved into its tables
+   * — `componentsOf` builds a fresh one per call — but immer still preserves the
+   * identity of every component it did not touch, so this is exactly as precise
+   * as the old check.
    */
   private syncEntity(entity: EntityDoc, components: readonly ComponentDoc[]): void {
     const container = this.reconciler.containerFor(entity.id);
@@ -590,10 +591,10 @@ export class SceneBinder {
       if (bound) {
         parent = bound;
       } else if (import.meta.env?.DEV) {
-        // Since phase 1 this is an impossible state: the tree layer refuses an
-        // edge to an entity the document does not hold. Falling back to the root
-        // in silence is exactly what hid it for months — an object visible and
-        // clickable in the viewport and present in no branch of the hierarchy.
+        // This is an impossible state: the tree layer refuses an edge to an
+        // entity the document does not hold. Falling back to the root in silence
+        // is exactly what hid it for months — an object visible and clickable in
+        // the viewport and present in no branch of the hierarchy.
         console.warn(
           `[binder] "${entity.id}" names parent "${entity.parent}", which has no view; attached to the root.`,
         );
