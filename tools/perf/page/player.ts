@@ -52,3 +52,58 @@ export function playerState(): Record<string, number> {
   }
   return state;
 }
+
+/** Resolves once the first frame after Play has been drawn: when, since navigation, in ms. */
+export function playerShown(): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const check = (): void => {
+      const player = window.__perfPlayer;
+      if (player?.state === 'failed') reject(new Error(`the player failed: ${player.error}`));
+      else if (player?.state === 'running' && player.firstFrameAt !== null) {
+        resolve({ firstFrameAt: player.firstFrameAt, startedAt: player.startedAt });
+      } else if (performance.now() - started > 120_000) reject(new Error('the player never showed a frame'));
+      else setTimeout(check, 20);
+    };
+    check();
+  });
+}
+
+/**
+ * Resolves once the game draws a steady frame: draw calls above zero and the
+ * same for `frames` frames running.
+ */
+export function settlePlayer(frames: number): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const player = window.__perfPlayer;
+    if (player?.state !== 'running') {
+      reject(new Error('the player is not running'));
+      return;
+    }
+    const started = performance.now();
+    let last = -1;
+    let steady = 0;
+    const tick = (): void => {
+      const calls = player.renderer.info.render.drawCalls;
+      steady = calls > 0 && calls === last ? steady + 1 : 0;
+      last = calls;
+      if (steady >= frames) resolve({ drawCalls: calls, settledMs: performance.now() - started });
+      else if (performance.now() - started > 60_000) reject(new Error(`the game's draw calls never settled (last ${calls})`));
+      else requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/** What the game drew in its last frame, and what its renderer holds. */
+export function playerCounts(): Record<string, number> {
+  const player = window.__perfPlayer;
+  if (player?.state !== 'running') throw new Error('the player is not running');
+  const { render, memory } = player.renderer.info;
+  return { drawCalls: render.drawCalls, gpuBytes: memory.total };
+}
+
+/** The page's size, which a frame's work depends on. */
+export function pageSize(): Record<string, number> {
+  return { innerWidth, innerHeight, devicePixelRatio };
+}

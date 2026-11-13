@@ -37,3 +37,25 @@ export interface FrameStats {
 export function frameStats(deltas: readonly number[]): FrameStats {
   return { median: median(deltas), p95: percentile(deltas, 95), max: Math.max(...deltas) };
 }
+
+/**
+ * The longest animation frame that started inside `span`, from `[start,
+ * duration]` pairs as a page reads them out of its buffer: the longest
+ * main-thread task a person waited through, between two moments.
+ */
+export function longestInside(
+  pairs: readonly number[],
+  span: { readonly from: number; readonly to: number },
+): { longestMs: number; inside: number } {
+  if (pairs.length % 2 !== 0) throw new Error('animation frames come as [start, duration] pairs');
+  let longestMs = 0;
+  let inside = 0;
+  for (let at = 0; at < pairs.length; at += 2) {
+    const start = pairs[at];
+    const duration = pairs[at + 1];
+    if (start === undefined || duration === undefined || start < span.from || start > span.to) continue;
+    inside += 1;
+    longestMs = Math.max(longestMs, duration);
+  }
+  return { longestMs, inside };
+}

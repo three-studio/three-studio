@@ -8,6 +8,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { conditionsNow, freeBytes } from './report/conditions';
 import { type ScenarioResult, summaryOf } from './report/results';
 import type { Scenario, ScenarioContext } from './scenarios/context';
+import { playerScenario } from './scenarios/player';
 import { renderScenario } from './scenarios/render';
 
 /*
@@ -30,6 +31,7 @@ const MINIMUM_FREE_BYTES = 3 * 1024 ** 3;
 /** The scenarios, in the order a run takes them. `-t S3` runs one. */
 const SCENARIOS: readonly { readonly id: string; readonly title: string; readonly run: Scenario }[] = [
   { id: 'S3', title: 'render', run: renderScenario },
+  { id: 'S7', title: 'player', run: playerScenario },
 ];
 
 /** `PERF_LAUNCHES`: measured launches per scenario, three unless it says otherwise. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { frameStats, median, percentile } from '../report/stats';
+import { frameStats, longestInside, median, percentile } from '../report/stats';
 
 describe('the statistics a run is judged on', () => {
   it('takes the middle value of an odd count', () => {
@@ -30,3 +30,25 @@ describe('the statistics a run is judged on', () => {
     expect(() => percentile([], 95)).toThrow();
   });
 });
+
+describe('the longest animation frame of a window', () => {
+  // [start, duration] pairs, as the page reads them from its buffer.
+  const frames = [100, 80, 900, 300, 1500, 120, 2600, 500];
+
+  it('is the longest whose start lies inside the window', () => {
+    expect(longestInside(frames, { from: 0, to: 2000 })).toEqual({ longestMs: 300, inside: 3 });
+  });
+
+  it('leaves out a frame that started before or after it', () => {
+    expect(longestInside(frames, { from: 1000, to: 2000 })).toEqual({ longestMs: 120, inside: 1 });
+  });
+
+  it('is zero when no long frame happened', () => {
+    expect(longestInside(frames, { from: 3000, to: 4000 })).toEqual({ longestMs: 0, inside: 0 });
+  });
+
+  it('refuses an odd list, which is not pairs', () => {
+    expect(() => longestInside([1, 2, 3], { from: 0, to: 10 })).toThrow();
+  });
+});
+

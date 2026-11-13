@@ -57,3 +57,21 @@ export function waitFrames(count: number): Promise<number> {
     requestAnimationFrame(tick);
   });
 }
+
+/**
+ * Every long animation frame the page has buffered, as `[start, duration]`
+ * pairs, flat. Read after the fact: the buffer keeps what happened before
+ * anyone observed it, which is the only way to see the frames of a start.
+ */
+export function animationFrames(): Promise<number[]> {
+  return new Promise((resolve) => {
+    const entries: PerformanceEntry[] = [];
+    const observer = new PerformanceObserver((list) => entries.push(...list.getEntries()));
+    observer.observe({ type: 'long-animation-frame', buffered: true });
+    setTimeout(() => {
+      entries.push(...observer.takeRecords());
+      observer.disconnect();
+      resolve(entries.flatMap((entry) => [entry.startTime, entry.duration]));
+    }, 200);
+  });
+}
