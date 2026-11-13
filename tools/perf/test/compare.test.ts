@@ -4,6 +4,7 @@ import {
   compareRuns,
   decodeRunResult,
   newestRun,
+  noiseOf,
   type RunResult,
 } from '../report/compare';
 import { alternate } from '../report/ab';
@@ -144,8 +145,27 @@ describe('an A/B', () => {
     expect(pair([103, 103, 103], [100, 100, 100])?.verdict).toBe('noise');
   });
 
-  it('measures the noise as the largest difference within a pair, against this tree’s median', () => {
-    expect(pair([100, 104, 100], [101, 100, 99])?.noise).toBeCloseTo(0.04);
+  it('reads each metric’s noise as how far its paired medians fell apart: one launch out of line is not noise', () => {
+    const rows = compareAb(
+      {
+        S3: {
+          metrics: { a: metric('timing', [100, 130, 100]), b: metric('timing', [102, 102, 102]), c: metric('reported', [1, 9, 1]) },
+          window: null,
+          notes: [],
+        },
+      },
+      {
+        S3: {
+          metrics: { a: metric('timing', [100, 100, 100]), b: metric('timing', [100, 100, 100]), c: metric('reported', [1, 1, 1]) },
+          window: null,
+          notes: [],
+        },
+      },
+    );
+    const noise = noiseOf(rows);
+    expect(noise['S3 a']).toBe(0);
+    expect(noise['S3 b']).toBeCloseTo(0.02);
+    expect(noise).not.toHaveProperty('S3 c');
   });
 
   it('alternates the other tree’s launch and this tree’s, and throws away the pair that prepared the projects', async () => {

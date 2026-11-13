@@ -13,6 +13,7 @@ import {
   compareRuns,
   decodeRunResult,
   newestRun,
+  noiseOf,
 } from './report/compare';
 import { type RunConditions, conditionsNow, freeBytes } from './report/conditions';
 import { type ScenarioResult, summaryOf } from './report/results';
@@ -158,8 +159,9 @@ describe('a performance run', () => {
     const finishedAt = new Date().toISOString();
     const scenarios = Object.fromEntries(results);
     const abRows = ab === null ? [] : compareAb(scenarios, Object.fromEntries(theirs));
-    const noise: Record<string, number> = {};
-    for (const row of abRows) if (row.noise !== null && row.kind !== 'reported') noise[`${row.scenario} ${row.metric}`] = row.noise;
+    // Noise is read on identical code only: against another commit, or with
+    // tracked changes, the medians' gap is the change being confirmed.
+    const noise = ab !== null && ab.against === measured.commit && !measured.trackedChanges ? noiseOf(abRows) : {};
     const result: RunResult = { version: RESULT_VERSION, kind: 'run', label, startedAt, finishedAt, conditions: measured, scenarios, noise };
     const resultFile = process.env['PERF_RESULT'];
     if (resultFile !== undefined) await writeFile(resultFile, `${JSON.stringify(result)}\n`);

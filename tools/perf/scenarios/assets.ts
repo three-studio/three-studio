@@ -46,7 +46,9 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['node.scanColdMs', { kind: 'timing', unit: 'ms' }],
   ['ipc.listMs', { kind: 'timing', unit: 'ms' }],
   ['ipc.listBytes', { kind: 'count', unit: 'B' }],
-  ['move.ms', { kind: 'timing', unit: 'ms' }],
+  // Shown, not judged: a move takes 5.6 ms, and on one commit against itself
+  // its medians fell 0.2 ms apart, 4.3 %, with forty moves a launch.
+  ['move.ms', { kind: 'reported', unit: 'ms' }],
   ['move.bytes', { kind: 'count', unit: 'B' }],
   ['renameFolder.ms', { kind: 'timing', unit: 'ms' }],
   ['renameFolder.bytes', { kind: 'count', unit: 'B' }],

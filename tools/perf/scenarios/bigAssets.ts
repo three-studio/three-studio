@@ -60,6 +60,19 @@ const RECIPES: readonly Recipe[] = [
   { name: 'textures', write: (parent) => writeTexturesProject(parent) },
 ];
 
+/**
+ * Timings shown and not judged: on one commit against itself their medians
+ * fell apart by more than half the budget. The big model's Play lands near
+ * 1 150 ms or near 1 300 ms, its longest task near 560 or 690 ms, launch after
+ * launch on the same code, with the system swapping (6.5 % and 15.6 % apart);
+ * the textures build's first frame, 3.1 %.
+ */
+const UNJUDGED: ReadonlySet<string> = new Set([
+  'geometry.play.firstFrameMs',
+  'geometry.play.longestTaskMs',
+  'textures.build.firstFrameMs',
+]);
+
 function recipeMetrics(name: string): [string, MetricSpec][] {
   const memory = (at: string): [string, MetricSpec][] => [
     [`${name}.${at}.heapBytes`, { kind: 'memory', unit: 'B' }],
@@ -67,9 +80,13 @@ function recipeMetrics(name: string): [string, MetricSpec][] {
     [`${name}.${at}.heapBackingBytes`, { kind: 'reported', unit: 'B' }],
     [`${name}.${at}.gpuBytes`, { kind: 'memory', unit: 'B' }],
   ];
+  const timing = (metric: string): [string, MetricSpec] => [
+    metric,
+    { kind: UNJUDGED.has(metric) ? 'reported' : 'timing', unit: 'ms' },
+  ];
   const timings = (at: string): [string, MetricSpec][] => [
-    [`${name}.${at}.firstFrameMs`, { kind: 'timing', unit: 'ms' }],
-    [`${name}.${at}.longestTaskMs`, { kind: 'timing', unit: 'ms' }],
+    timing(`${name}.${at}.firstFrameMs`),
+    timing(`${name}.${at}.longestTaskMs`),
   ];
   return [
     ...timings('edit'),

@@ -123,8 +123,11 @@ confirmation. Each tree measures with its own harness and its own generators: an
 format, or other editor internals.
 
 The A/B writes `<date>-<commit>-ab-<other commit>.md` and its twin beside the run's own report, which is made of
-this tree's side of the pairs. Run against this tree's own commit, an A/B measures each metric's noise — its
-largest paired difference on identical code — which the baseline records and later reports show beside each change.
+this tree's side of the pairs. Run against this tree's own commit, an A/B measures each metric's noise — how far its
+paired medians fall apart on identical code — which the baseline records and later reports show beside each change.
+Not the largest difference within a pair: with six launches a metric, one launch out of line put a dozen timings past
+half the budget whose medians agreed. A metric whose medians fell further apart than half the budget on the baseline
+is reported, not judged; its declaration says by how much.
 
 ## Traps
 

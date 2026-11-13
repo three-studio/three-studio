@@ -68,19 +68,19 @@ export function runMarkdown(result: RunResult, rows: readonly Row[], previous: R
   return `${lines.join('\n')}\n`;
 }
 
-/** An A/B's report: each tree's median over the pairs, the change, the verdict, and the noise. */
+/** An A/B's report: each tree's median over the pairs, the change and the verdict. */
 export function abMarkdown(result: RunResult, against: string, rows: readonly AbRow[]): string {
   const lines = header(result, `Performance A/B — ${result.conditions.commit} against ${against}`);
   lines.push(
     'Each tree measured with its own harness and its own projects, one launch at a time, alternating. A breach',
-    'that holds on the paired medians is *confirmed*; the noise is the largest difference within a pair.',
+    'that holds on the paired medians is *confirmed*. Against the run\'s own commit, Δ is each metric\'s noise.',
     '',
   );
   for (const scenario of new Set(rows.map((row) => row.scenario))) {
-    lines.push(`## ${scenario}`, '', '| Metric | This tree | Other tree | Unit | Kind | Δ | Verdict | Noise |', '|---|---|---|---|---|---|---|---|');
+    lines.push(`## ${scenario}`, '', '| Metric | This tree | Other tree | Unit | Kind | Δ | Verdict |', '|---|---|---|---|---|---|---|');
     for (const row of rows.filter((candidate) => candidate.scenario === scenario)) {
       lines.push(
-        `| ${row.metric} | ${shown(row.ours, row.unit)} | ${shown(row.theirs, row.unit)} | ${row.unit} | ${row.kind} | ${percent(row.delta)} | ${row.verdict} | ${percent(row.noise)} |`,
+        `| ${row.metric} | ${shown(row.ours, row.unit)} | ${shown(row.theirs, row.unit)} | ${row.unit} | ${row.kind} | ${percent(row.delta)} | ${row.verdict} |`,
       );
     }
     lines.push('');

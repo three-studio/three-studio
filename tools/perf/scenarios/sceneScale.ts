@@ -51,13 +51,17 @@ const MEASURED_FRAMES = 300;
 
 const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['node.decodeMs', { kind: 'timing', unit: 'ms' }],
-  ['node.encodeMs', { kind: 'timing', unit: 'ms' }],
+  // Shown, not judged: on one commit against itself its medians fell 2.6 %
+  // apart, more than half the budget.
+  ['node.encodeMs', { kind: 'reported', unit: 'ms' }],
   ['sceneBytes', { kind: 'count', unit: 'B' }],
   ['open.firstFrameMs', { kind: 'timing', unit: 'ms' }],
   ['open.heapBytes', { kind: 'memory', unit: 'B' }],
   ['open.heapUsedBytes', { kind: 'reported', unit: 'B' }],
   ['open.heapBackingBytes', { kind: 'reported', unit: 'B' }],
-  ['save.ms', { kind: 'timing', unit: 'ms' }],
+  // Shown, not judged: a save writes 16.7 MB, and on one commit against itself
+  // its medians fell 3.3 % apart, with nine saves a launch.
+  ['save.ms', { kind: 'reported', unit: 'ms' }],
   ['duplicate.ms', { kind: 'timing', unit: 'ms' }],
   ['undo.ms', { kind: 'timing', unit: 'ms' }],
   ['idle.frameMs', { kind: 'timing', unit: 'ms' }],

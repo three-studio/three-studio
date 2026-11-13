@@ -29,8 +29,8 @@ export interface RunResult {
   readonly conditions: RunConditions;
   readonly scenarios: Readonly<Record<string, ScenarioResult>>;
   /**
-   * Each metric's noise on identical code, `<scenario> <metric>` to the
-   * largest paired difference, from an A/B against the run's own commit. The
+   * Each metric's noise on identical code, `<scenario> <metric>` to how far
+   * its paired medians fell apart in an A/B against the run's own commit. The
    * baseline records it, and the runs after it show it beside their changes.
    */
   readonly noise: Readonly<Record<string, number>>;
@@ -195,8 +195,6 @@ export interface AbRow {
   readonly theirs: number | null;
   readonly delta: number | null;
   readonly verdict: AbVerdict;
-  /** The largest difference within a pair, relative to this tree's median. */
-  readonly noise: number | null;
 }
 
 /**
@@ -214,28 +212,31 @@ export function compareAb(
       const other = theirs[scenario]?.metrics[metric];
       const oursMedian = median(measured.launches);
       if (other === undefined) {
-        rows.push({ scenario, metric, kind: measured.kind, unit: measured.unit, ours: oursMedian, theirs: null, delta: null, verdict: 'not comparable', noise: null });
+        rows.push({ scenario, metric, kind: measured.kind, unit: measured.unit, ours: oursMedian, theirs: null, delta: null, verdict: 'not comparable' });
         continue;
       }
       const theirsMedian = median(other.launches);
       const delta = theirsMedian === 0 ? null : oursMedian / theirsMedian - 1;
-      const pairs = Math.min(measured.launches.length, other.launches.length);
-      let largest = 0;
-      for (let at = 0; at < pairs; at += 1) {
-        const mine = measured.launches[at];
-        const yours = other.launches[at];
-        if (mine !== undefined && yours !== undefined && oursMedian !== 0) {
-          largest = Math.max(largest, Math.abs(mine - yours) / Math.abs(oursMedian));
-        }
-      }
       const verdict: AbVerdict =
         measured.kind === 'reported'
           ? 'reported'
           : measured.kind === 'count'
             ? oursMedian === theirsMedian ? 'ok' : 'changed'
             : delta !== null && delta > BUDGET ? 'confirmed' : 'noise';
-      rows.push({ scenario, metric, kind: measured.kind, unit: measured.unit, ours: oursMedian, theirs: theirsMedian, delta, verdict, noise: largest });
+      rows.push({ scenario, metric, kind: measured.kind, unit: measured.unit, ours: oursMedian, theirs: theirsMedian, delta, verdict });
     }
   }
   return rows;
+}
+
+/**
+ * Each judged metric's noise, from an A/B of a commit against itself: how far
+ * its paired medians fell apart, which is what the budget reads. Not the
+ * largest difference within a pair: with six launches a metric, one launch out
+ * of line put a dozen timings past half the budget whose medians agreed.
+ */
+export function noiseOf(rows: readonly AbRow[]): Record<string, number> {
+  const noise: Record<string, number> = {};
+  for (const row of rows) if (row.kind !== 'reported' && row.delta !== null) noise[`${row.scenario} ${row.metric}`] = Math.abs(row.delta);
+  return noise;
 }
