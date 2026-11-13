@@ -1,7 +1,8 @@
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { chromeCommand } from '../launch/chrome';
-import { editorCommand, type EditorLaunch } from '../launch/electron';
+import { editorCommand, type EditorLaunch, shellEnvironment } from '../launch/electron';
+import { harnessCommand } from '../report/ab';
 
 /*
  * What the editor and Chrome are started with, read without starting them.
@@ -59,6 +60,41 @@ describe('an editor launch', () => {
     } finally {
       if (before === undefined) delete process.env['STUDIO_SMOKE_SHOT'];
       else process.env['STUDIO_SMOKE_SHOT'] = before;
+    }
+  });
+});
+
+describe('one launch by a tree’s own harness, in an A/B', () => {
+  const ours = { root: '/repo', scratch: '/scratch/run-1/ab-ours', result: '/scratch/run-1/logs/ours.json' };
+  const theirs = { root: '/scratch/run-1/ab-tree', scratch: '/scratch/run-1/ab-theirs', result: '/scratch/run-1/logs/theirs.json' };
+
+  it('is started alike for both trees: only the tree and its folders differ', () => {
+    const mine = harnessCommand(ours, 'S3');
+    const other = harnessCommand(theirs, 'S3');
+    expect(mine.args).toEqual(['vitest', 'run', '--config', 'tools/perf/vitest.config.ts', '-t', 'S3 —']);
+    expect({ ...mine, cwd: '', env: { ...mine.env, PERF_SCRATCH: '', PERF_RESULT: '' } }).toEqual({
+      ...other,
+      cwd: '',
+      env: { ...other.env, PERF_SCRATCH: '', PERF_RESULT: '' },
+    });
+    expect(mine.cwd).toBe('/repo');
+    expect(mine.env).toMatchObject({ PERF_LAUNCHES: '1', PERF_SCRATCH: '/scratch/run-1/ab-ours', PERF_RESULT: '/scratch/run-1/logs/ours.json' });
+  });
+
+  it('gets the shell’s environment, not what Vitest added for this run, nor this run’s own variables', () => {
+    // A `vite build` under Vitest's `NODE_ENV=test` keeps the bundles' development branches.
+    expect(process.env['NODE_ENV']).toBe('test');
+    vi.stubEnv('PERF_OUT', 'docs/architecture/perf');
+    vi.stubEnv('PERF_AGAINST', 'HEAD');
+    try {
+      const { env } = harnessCommand(ours, 'S3');
+      for (const key of ['NODE_ENV', 'TEST', 'VITEST', 'MODE', 'DEV', 'PROD', 'PERF_OUT', 'PERF_AGAINST']) {
+        expect(env[key], key).toBeUndefined();
+      }
+      expect(env['PATH']).toBe(process.env['PATH']);
+      expect(shellEnvironment(/^PERF_/)['NODE_ENV']).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });

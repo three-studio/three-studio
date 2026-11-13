@@ -112,7 +112,10 @@ PERF_AGAINST=<commit> npm run perf -- -t "S3 —"
 
 The A/B makes a worktree of that commit inside the run's folder, its `node_modules` this tree's, builds it, and
 alternates launches: the other tree's own harness for one (`PERF_LAUNCHES=1`, `PERF_RESULT`, its own
-`PERF_SCRATCH`), then this tree's, as many pairs as a run has launches. Each tree prepares its projects once and
+`PERF_SCRATCH`), then this tree's, started the same way, as many pairs as a run has launches. Each launch is a
+process of its own on both sides: a launch run in the A/B's own process found it warm — its JIT, its heap, the
+scenarios before — where the other tree's started cold, and on the same commit the warm scan of 3 000 assets came
+out a fifth apart. Each tree prepares its projects once and
 keeps them between its launches, so an A/B about doubles the time of what it confirms. A breach that holds on the
 paired medians is *confirmed*, and only a confirmed one stops a feature until the user decides; a count needs no
 confirmation. Each tree measures with its own harness and its own generators: an older tree may read another
@@ -148,3 +151,8 @@ Each of these cost a run before it was known.
   before Play was pressed. Stamp with `performance.now()` inside the callback.
 - **`pgrep -f` and `pkill -f` read a pattern opening with `--` as an option**, fail, and match nothing. A
   pattern such as `--user-data-dir=…` goes after `--`.
+- **Vitest's environment is not the shell's.** Vitest sets `NODE_ENV=test` and Vite's `import.meta.env` (`MODE`,
+  `DEV`, `PROD`, …) on `process.env` before the run, and a process the harness starts inherits them. A `vite build`
+  under `NODE_ENV=test` keeps the bundles' development branches: the first baseline's other tree, the same commit,
+  shipped a player chunk 101 bytes larger, and every count of S7 read *changed*. What the harness starts gets the
+  shell's environment (`shellEnvironment`).

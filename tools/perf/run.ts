@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
-import { type OtherTree, mergeLaunches, otherTree } from './report/ab';
+import { type Ab, abAgainst, mergeLaunches } from './report/ab';
 import {
   RESULT_VERSION,
   type RunResult,
@@ -37,8 +37,9 @@ import { sceneScaleScenario } from './scenarios/sceneScale';
  * prepared projects, for this tree's next run.
  *
  * `PERF_AGAINST=<commit>` makes the run an A/B: each scenario alternates one
- * launch of the other tree's harness with one of this tree's, and the run's
- * own report is made of this tree's side of the pairs.
+ * launch of the other tree's harness with one of this tree's, each in a
+ * process of its own, and the run's own report is made of this tree's side of
+ * the pairs.
  */
 
 const exec = promisify(execFile);
@@ -94,7 +95,7 @@ describe('a performance run', () => {
   let caffeinate: ChildProcess | null = null;
   let failed = false;
   let conditions: RunConditions | null = null;
-  let tree: OtherTree | null = null;
+  let ab: Ab | null = null;
   const results = new Map<string, ScenarioResult>();
   const theirs = new Map<string, ScenarioResult>();
   const context: ScenarioContext = {
@@ -121,7 +122,7 @@ describe('a performance run', () => {
     process.stdout.write(`[perf] ${JSON.stringify(conditions)}\n`);
     if (against !== undefined) {
       context.say(`A/B against ${against}: preparing the other tree`);
-      tree = await otherTree(repo, runDir, against);
+      ab = await abAgainst(repo, runDir, against);
     }
   }, 600_000);
 
@@ -133,7 +134,7 @@ describe('a performance run', () => {
 
   afterAll(async () => {
     caffeinate?.kill();
-    await tree?.remove().catch(() => undefined);
+    await ab?.remove().catch(() => undefined);
     if (!failed && conditions !== null && results.size > 0) await report(conditions);
     // Nothing may outlive the run. A launch ends its own process group; what
     // is found here is a launch that did not, and it is ended and named.
@@ -156,7 +157,7 @@ describe('a performance run', () => {
   async function report(measured: RunConditions): Promise<void> {
     const finishedAt = new Date().toISOString();
     const scenarios = Object.fromEntries(results);
-    const abRows = tree === null ? [] : compareAb(scenarios, Object.fromEntries(theirs));
+    const abRows = ab === null ? [] : compareAb(scenarios, Object.fromEntries(theirs));
     const noise: Record<string, number> = {};
     for (const row of abRows) if (row.noise !== null && row.kind !== 'reported') noise[`${row.scenario} ${row.metric}`] = row.noise;
     const result: RunResult = { version: RESULT_VERSION, kind: 'run', label, startedAt, finishedAt, conditions: measured, scenarios, noise };
@@ -172,10 +173,10 @@ describe('a performance run', () => {
     const markdown = runMarkdown(result, rows, previous);
     await writeFile(join(folder, `${name}.md`), markdown);
     await writeFile(join(folder, `${name}.json`), `${JSON.stringify(result, null, 2)}\n`);
-    if (tree !== null) {
-      const abName = reportName(finishedAt, measured.commit, `ab-${tree.commit}`);
-      const abResult = { ...result, kind: 'ab', against: { commit: tree.commit, scenarios: Object.fromEntries(theirs) } };
-      await writeFile(join(folder, `${abName}.md`), abMarkdown(result, tree.commit, abRows));
+    if (ab !== null) {
+      const abName = reportName(finishedAt, measured.commit, `ab-${ab.against}`);
+      const abResult = { ...result, kind: 'ab', against: { commit: ab.against, scenarios: Object.fromEntries(theirs) } };
+      await writeFile(join(folder, `${abName}.md`), abMarkdown(result, ab.against, abRows));
       await writeFile(join(folder, `${abName}.json`), `${JSON.stringify(abResult, null, 2)}\n`);
       const confirmed = abRows.filter((row) => row.verdict === 'confirmed' || row.verdict === 'changed');
       context.say(`A/B: ${confirmed.length === 0 ? 'nothing confirmed' : confirmed.map((row) => `${row.scenario} ${row.metric} ${row.verdict}`).join(', ')}`);
@@ -184,7 +185,7 @@ describe('a performance run', () => {
     context.say(`report: ${join(folder, `${name}.md`)}`);
 
     const suspected = rows.filter((row) => row.verdict === 'suspected' || row.verdict === 'changed');
-    if (suspected.length > 0 && previous !== null && tree === null) {
+    if (suspected.length > 0 && previous !== null && ab === null) {
       const ids = [...new Set(suspected.map((row) => row.scenario))];
       context.say(`suspected or changed: ${suspected.map((row) => `${row.scenario} ${row.metric} ${row.verdict}`).join(', ')}`);
       context.say(`confirm with: PERF_AGAINST=${previous.conditions.commit} npm run perf -- -t "${ids.map((id) => `${id} —`).join('|')}"`);
@@ -193,7 +194,7 @@ describe('a performance run', () => {
 
   for (const scenario of SCENARIOS) {
     it(`${scenario.id} — ${scenario.title}`, async () => {
-      if (tree === null) {
+      if (ab === null) {
         const result = await scenario.run(context);
         results.set(scenario.id, result);
         process.stdout.write(summaryOf(scenario.id, result));
@@ -205,8 +206,8 @@ describe('a performance run', () => {
       const ours: ScenarioResult[] = [];
       const others: ScenarioResult[] = [];
       for (let pair = 1; pair <= context.launches; pair += 1) {
-        others.push(await tree.launch(scenario.id, pair));
-        ours.push(await scenario.run({ ...context, launches: 1, keep: true, runDir: join(runDir, 'ab-ours') }));
+        others.push(await ab.theirs(scenario.id, pair));
+        ours.push(await ab.ours(scenario.id, pair));
       }
       const mine = mergeLaunches(ours);
       results.set(scenario.id, mine);

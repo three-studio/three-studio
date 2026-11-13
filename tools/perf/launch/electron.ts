@@ -37,15 +37,21 @@ export interface EditorLaunch {
 const HOLD_UNTIL_DONE =
   'new Promise((done) => { const wait = () => (window.__perfDone === true ? done(undefined) : setTimeout(wait, 100)); wait(); })';
 
+/** What Vitest puts on `process.env` before a run: its own flags, `NODE_ENV=test`, and Vite's `import.meta.env`. */
+const ADDED_BY_VITEST = /^(VITEST|TEST$|NODE_ENV$|MODE$|BASE_URL$|DEV$|PROD$|SSR$)/;
+
 /**
- * What a launch inherits from the shell, less what would steer it: a stray
- * `STUDIO_SMOKE_SHOT` or `ELECTRON_RENDERER_URL` from someone's terminal, or
- * Vitest's own variables, which the app was never run under.
+ * `process.env` as the shell gave it, less what Vitest added and the keys
+ * `drop` matches: what a process the harness starts inherits. The app was
+ * never run under Vitest's variables, and a `vite build` given its
+ * `NODE_ENV=test` keeps the bundles' development branches — an A/B's other
+ * tree built that way shipped a player chunk 101 bytes larger than this
+ * tree's, on the same commit.
  */
-function inheritedEnvironment(): Record<string, string> {
+export function shellEnvironment(drop: RegExp): Record<string, string> {
   const kept: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value === undefined || /^(STUDIO_|VITEST|ELECTRON_RENDERER_URL$|NODE_ENV$)/.test(key)) continue;
+    if (value === undefined || ADDED_BY_VITEST.test(key) || drop.test(key)) continue;
     kept[key] = value;
   }
   return kept;
@@ -69,7 +75,8 @@ export function editorCommand(
       ...(launch.mode === 'uncapped' ? ['--disable-frame-rate-limit', '--disable-gpu-vsync'] : []),
     ],
     env: {
-      ...inheritedEnvironment(),
+      // Less what would steer it: a stray `STUDIO_SMOKE_SHOT` or `ELECTRON_RENDERER_URL` from someone's terminal.
+      ...shellEnvironment(/^(STUDIO_|ELECTRON_RENDERER_URL$)/),
       STUDIO_SMOKE: '1',
       STUDIO_SMOKE_PROJECT: launch.project,
       STUDIO_SMOKE_SETTLE: '0',
