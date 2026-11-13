@@ -23,17 +23,20 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 /**
  * Every directory the rules cover: the source *and* the tests of every package
- * and every app.
+ * and every app, and every tool.
  *
  * Read from disk rather than listed, so a new app is covered the day it appears
- * rather than the day someone remembers this file.
+ * rather than the day someone remembers this file. A tool has no `src/` and
+ * `test/` split — the performance harness is code throughout — so its whole
+ * folder is read. It falls in the app layer: it may import everything below.
  */
 function scannedRoots(): string[] {
   const packages = WORKSPACE_PACKAGE_NAMES.map((name) => join(repoRoot, 'packages', name));
   const apps = readdirSync(join(repoRoot, 'apps')).map((name) => join(repoRoot, 'apps', name));
-  return [...packages, ...apps]
-    .flatMap((base) => [join(base, 'src'), join(base, 'test')])
-    .filter((dir) => existsSync(dir));
+  const tools = readdirSync(join(repoRoot, 'tools')).map((name) => join(repoRoot, 'tools', name));
+  return [...[...packages, ...apps].flatMap((base) => [join(base, 'src'), join(base, 'test')]), ...tools].filter(
+    (dir) => existsSync(dir) && statSync(dir).isDirectory(),
+  );
 }
 
 function sourceFiles(dir: string): string[] {

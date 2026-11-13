@@ -12,6 +12,7 @@
     "apps/*/test/**/*.ts",
     "apps/*/*.config.ts",
     "test/**/*.ts",
+    "tools/**/*.ts",
     "*.config.ts",
     "workspace-aliases.ts"
   ],

@@ -1,0 +1,50 @@
+# The performance harness
+
+Measures what the editor, Play, a device and an exported game cost — time, memory, draw calls — on generated
+projects, so that a change can say what it did to them in numbers rather than impressions.
+
+It measures the **production build**: the bundles `electron-builder` packages, run unpackaged by the Electron
+binary. A development build (unbundled modules, React's development build, the Vite client) says little about
+what ships, and a packaged app costs a minute and 400 MB of scratch per launch for numbers that do not differ.
+
+## Running it
+
+```sh
+npm run perf
+```
+
+builds the production bundles (`npm run build`), then runs `tools/perf/run.ts` under its own Vitest config
+(`tools/perf/vitest.config.ts`): one worker, one scenario after another. It launches the editor some thirty
+times and Chrome a few, each in the background and without taking the focus, so the Mac stays usable — but an
+idle Mac measures better, and the run records the load average.
+
+Every launch gets its own application data (`--user-data-dir` inside the run's folder), so a run never reads
+or writes `~/Library/Application Support/Three Studio`.
+
+The harness's own tests — the generators, the statistics, the CDP decoding — are in `test/` and run with
+`npm test`.
+
+## The projects
+
+Each scenario writes the scratch projects it measures, with the app's own code (`generate/projects.ts`): the
+layout from `createProject`, sidecars and asset ids from `scanAssets`, scenes from `createScene` and
+`saveScene`, models through `writeGlb`. Deterministic in everything measured; only the ids are random.
+
+| Recipe | What | Written in |
+|---|---|---|
+| `render` | September's scene: 3 000 props on a 60 × 50 grid (6 shapes × 6 colours, 36 batches), a ground, a shadowed sun, 90 × 90 water, a main camera, the analytic sky; 3 004 entities, 5.4 MB | 0.1 s |
+| `large` | 1 000 groups of 9 low-poly children on a 40 × 25 grid, a ground, a sun, a camera; 10 003 entities, 17 MB | 0.3 s |
+| `assets` | the starter scene and 3 000 16 × 16 PNGs of distinct colours, in 30 folders | 3 s |
+| `geometry` | one GLB, 331 MB: 30 groups × 50 meshes, each its own displaced 71 × 71 grid (float positions, normals and uvs, 16-bit indices), 8 untextured materials; about 15 million triangles; loaded as written | 6 s |
+| `textures` | one GLB, 66 MB: 8 quads, each material with a base colour, a normal and a metallic-roughness PNG of 4096²; the default import caps them at 2 048 | 8 s |
+| `scripted` | scenes `A` and `B` (100 props and a `Director` each), `Loading` (a spinning cube), `Heavy` (the `render` field); 50 ballast scripts of 200 lines on entities of `A`; no loading scene set | 0.3 s |
+
+Times on an M1 Pro. Two recipes depend on the import pipeline, and say so:
+
+- **`geometry` is loaded as written.** A new model above 2 MB is loaded through a copy whose geometry is
+  quantised and meshopt-encoded, a quarter of the size. Right after the scan that makes its sidecar, the
+  generator turns `compressGeometry` off, removes the copy, and scans again, which writes the `.none` marker:
+  the editor, Play and the export read the source. A change to those rules fails the generators' test first.
+- **`textures` keeps the default import**, which is what a user gets. In Node the scan cannot scale an
+  embedded image (it takes Electron's `nativeImage`), so the capped copy is built by the editor's own first
+  scan — the scenario's warm-up launch, before which an export would ship the 4096² sources.
