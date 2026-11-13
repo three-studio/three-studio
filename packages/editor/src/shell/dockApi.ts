@@ -6,11 +6,6 @@ let api: DockviewApi | null = null;
 
 export function setDockApi(next: DockviewApi | null): void {
   api = next;
-  // Dockview owns the layout imperatively and publishes nothing to React, so
-  // in development it is reachable for inspection and for automated checks.
-  if (import.meta.env.DEV) {
-    (globalThis as unknown as Record<string, unknown>)['__studioDockApi'] = next;
-  }
 }
 
 /** The live dockview API, or `null` before the dock has mounted. */

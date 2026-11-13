@@ -23,6 +23,10 @@ import type { WindowRole } from '@three-studio/core';
  */
 const WINDOW_ROLES: Record<WindowRole, true> = { launcher: true, editor: true };
 
+function isWindowRole(value: string): value is WindowRole {
+  return Object.hasOwn(WINDOW_ROLES, value);
+}
+
 /**
  * A value the main process put in `additionalArguments`.
  *
@@ -52,6 +56,8 @@ export interface WindowIdentity {
   windowRole: WindowRole;
   projectPath: string | null;
   sceneId: string | null;
+  /** The smoke harness drives this window; see `StudioBridge.smoke`. */
+  smoke: boolean;
 }
 
 /**
@@ -67,8 +73,11 @@ export interface WindowIdentity {
 export function windowIdentity(argv: readonly string[], search: string): WindowIdentity {
   const role = argValue(argv, 'studio-role');
   return {
-    windowRole: role !== null && Object.hasOwn(WINDOW_ROLES, role) ? (role as WindowRole) : 'launcher',
+    windowRole: role !== null && isWindowRole(role) ? role : 'launcher',
     projectPath: argValue(argv, 'studio-project'),
     sceneId: queryValue(search, 'scene'),
+    // In argv like the role: fixed for the window's life, and replayed by a
+    // reload. A switch with no value, so only the exact argument counts.
+    smoke: argv.includes('--studio-smoke'),
   };
 }

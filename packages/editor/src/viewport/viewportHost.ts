@@ -15,11 +15,6 @@ let current: EditorViewport | null = null;
 export function acquireViewport(): Promise<EditorViewport> {
   pending ??= Viewport.create().then((viewport) => {
     current = viewport;
-    // Dev-only handle: the scene graph is otherwise unreachable from devtools
-    // and from the headless smoke check.
-    if (import.meta.env.DEV) {
-      (globalThis as unknown as Record<string, unknown>)['__studioViewport'] = viewport;
-    }
     return viewport;
   });
   return pending;

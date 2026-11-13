@@ -23,6 +23,7 @@ describe('what a window was told it is', () => {
       windowRole: 'editor',
       projectPath: '/projects/Races',
       sceneId: null,
+      smoke: false,
     });
   });
 
@@ -97,5 +98,26 @@ describe('a role that is not one', () => {
   it('keeps a role that is one', () => {
     expect(windowIdentity(['--studio-role=editor'], '').windowRole).toBe('editor');
     expect(windowIdentity(['--studio-role=launcher'], '').windowRole).toBe('launcher');
+  });
+});
+
+describe('a window the smoke harness drives', () => {
+  /*
+   * A switch with no value, so only the exact argument says yes. A production
+   * build installs the editor's devtools handles on this answer alone, and a
+   * near miss that said yes would ship them to a window nobody is measuring.
+   */
+
+  it('is one when argv carries the switch', () => {
+    expect(windowIdentity([...editorOf('/projects/Races'), '--studio-smoke'], '').smoke).toBe(true);
+  });
+
+  it('is not one when argv does not', () => {
+    expect(windowIdentity(editorOf('/projects/Races'), '').smoke).toBe(false);
+  });
+
+  it('is not one for an argument that only starts the same', () => {
+    expect(windowIdentity(['--studio-smoke=1'], '').smoke).toBe(false);
+    expect(windowIdentity(['--studio-smokey'], '').smoke).toBe(false);
   });
 });

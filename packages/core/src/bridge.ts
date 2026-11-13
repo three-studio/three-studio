@@ -439,6 +439,15 @@ export interface StudioBridge {
     readonly chrome: string;
     readonly node: string;
   };
+  /**
+   * The smoke harness drives this window.
+   *
+   * The editor then exposes its stores, its viewport and its dock on `window`
+   * in a production build too, which is the only way to measure a production
+   * build: without them neither draw calls, GPU memory nor Play can be read.
+   * Fixed for the window's life, so it travels in argv like the role.
+   */
+  readonly smoke: boolean;
   readonly project: ProjectApi;
   readonly assets: AssetApi;
   readonly scripts: ScriptApi;
@@ -476,7 +485,7 @@ type Invocable<T> = {
 };
 
 /**
- * The bridge's namespaces: everything on it that is not one of the five values.
+ * The bridge's namespaces: everything on it that is not one of the six values.
  *
  * Named as an exclusion rather than as a shape, and that is not a taste. An
  * `interface` has no implicit index signature, so `ProjectApi extends
@@ -491,7 +500,7 @@ type Invocable<T> = {
  */
 type ApiGroups = Omit<
   StudioBridge,
-  'platform' | 'windowRole' | 'projectPath' | 'sceneId' | 'versions'
+  'platform' | 'windowRole' | 'projectPath' | 'sceneId' | 'versions' | 'smoke'
 >;
 
 /** One channel name per invocable member, and the compiler counts them. */

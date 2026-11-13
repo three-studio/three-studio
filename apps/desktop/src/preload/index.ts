@@ -56,6 +56,7 @@ const bridge: StudioBridge = {
     chrome: process.versions.chrome ?? '',
     node: process.versions.node ?? '',
   },
+  smoke: identity.smoke,
   project: {
     listRecent: (): Promise<ProjectSummary[]> => ipcRenderer.invoke(IPC_INVOKE.project.listRecent),
     pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC_INVOKE.project.pickDirectory),

@@ -223,15 +223,22 @@ function createWindow(options: WindowOptions): BrowserWindow {
       // Editor state is worthless if the GPU process throttles in the background
       // while a build or a bake is running.
       backgroundThrottling: false,
-      // Read by the preload before the first render; see `WindowRole`.
+      // Read by the preload before the first render; see `WindowRole`. The
+      // harness's switch too (`StudioBridge.smoke`): it is fixed for the life
+      // of the window, which is what argv may carry.
       additionalArguments: [
         `--studio-role=${options.role}`,
         ...(options.projectPath === undefined ? [] : [`--studio-project=${options.projectPath}`]),
+        ...(smokeTest() ? ['--studio-smoke'] : []),
       ],
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  // Under the harness a window comes up without taking the focus. A run opens
+  // dozens of them while the person goes on working: each would take the
+  // keyboard from what they are typing in, and a key landing in the editor runs
+  // its shortcut on the scene being measured.
+  win.once('ready-to-show', () => (smokeTest() ? win.showInactive() : win.show()));
 
   if (isDev) {
     // Renderer logs are invisible from the terminal otherwise, which makes
