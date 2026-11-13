@@ -6,6 +6,7 @@ import {
   newestRun,
   type RunResult,
 } from '../report/compare';
+import { alternate } from '../report/ab';
 import type { RunConditions } from '../report/conditions';
 import type { Metric, ScenarioResult } from '../report/results';
 import { runMarkdown } from '../report/write';
@@ -145,6 +146,20 @@ describe('an A/B', () => {
 
   it('measures the noise as the largest difference within a pair, against this tree’s median', () => {
     expect(pair([100, 104, 100], [101, 100, 99])?.noise).toBeCloseTo(0.04);
+  });
+
+  it('alternates the other tree’s launch and this tree’s, and throws away the pair that prepared the projects', async () => {
+    const calls: string[] = [];
+    const launch =
+      (side: string) =>
+      async (scenario: string, pair: number): Promise<ScenarioResult> => {
+        calls.push(`${side} ${scenario} ${pair}`);
+        return { metrics: { t: metric('timing', [pair]) }, window: null, notes: [] };
+      };
+    const pairs = await alternate(2, 'S3', { ours: launch('ours'), theirs: launch('theirs') });
+    expect(calls).toEqual(['theirs S3 0', 'ours S3 0', 'theirs S3 1', 'ours S3 1', 'theirs S3 2', 'ours S3 2']);
+    expect(pairs.ours.map((result) => result.metrics['t']?.launches)).toEqual([[1], [2]]);
+    expect(pairs.theirs.map((result) => result.metrics['t']?.launches)).toEqual([[1], [2]]);
   });
 });
 

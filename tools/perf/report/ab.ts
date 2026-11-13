@@ -107,6 +107,30 @@ export async function abAgainst(repo: string, runDir: string, commit: string): P
   };
 }
 
+/**
+ * One scenario's pairs: the other tree's launch, then this tree's. Pair 0 is
+ * thrown away. Each tree prepares its projects in it, and that launch shares
+ * its process with the generation of hundreds of megabytes and the warm-up
+ * launch: on the same commit, S1's Play came out 16–19 % slower in that pair
+ * than in the pairs after it, and S7's first frame up to 70 %.
+ */
+export async function alternate(
+  pairs: number,
+  scenario: string,
+  ab: Pick<Ab, 'ours' | 'theirs'>,
+): Promise<{ ours: ScenarioResult[]; theirs: ScenarioResult[] }> {
+  const ours: ScenarioResult[] = [];
+  const theirs: ScenarioResult[] = [];
+  for (let pair = 0; pair <= pairs; pair += 1) {
+    const other = await ab.theirs(scenario, pair);
+    const mine = await ab.ours(scenario, pair);
+    if (pair === 0) continue;
+    theirs.push(other);
+    ours.push(mine);
+  }
+  return { ours, theirs };
+}
+
 /** Launches of one scenario, gathered into one result: their values side by side, in order. */
 export function mergeLaunches(results: readonly ScenarioResult[]): ScenarioResult {
   const [first] = results;

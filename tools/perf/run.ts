@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
-import { type Ab, abAgainst, mergeLaunches } from './report/ab';
+import { type Ab, abAgainst, alternate, mergeLaunches } from './report/ab';
 import {
   RESULT_VERSION,
   type RunResult,
@@ -200,18 +200,12 @@ describe('a performance run', () => {
         process.stdout.write(summaryOf(scenario.id, result));
         return;
       }
-      // An A/B: one launch of the other tree, then one of this tree, as many
-      // times as a run has launches. Each side keeps its prepared projects in
-      // a folder of its own, so only the first pair pays for them.
-      const ours: ScenarioResult[] = [];
-      const others: ScenarioResult[] = [];
-      for (let pair = 1; pair <= context.launches; pair += 1) {
-        others.push(await ab.theirs(scenario.id, pair));
-        ours.push(await ab.ours(scenario.id, pair));
-      }
-      const mine = mergeLaunches(ours);
+      // An A/B: as many pairs as a run has launches. Each side keeps its
+      // prepared projects in a folder of its own, so only pair 0 pays for them.
+      const pairs = await alternate(context.launches, scenario.id, ab);
+      const mine = mergeLaunches(pairs.ours);
       results.set(scenario.id, mine);
-      theirs.set(scenario.id, mergeLaunches(others));
+      theirs.set(scenario.id, mergeLaunches(pairs.theirs));
       process.stdout.write(summaryOf(scenario.id, mine));
     });
   }

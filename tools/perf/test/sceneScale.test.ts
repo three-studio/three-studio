@@ -19,7 +19,7 @@ describe('the selection scenario 2 duplicates', () => {
 describe('the scene read and written in Node', () => {
   it('times a decode and an encode on the scene text, and decodes what was written', () => {
     const text = serializeScene(largeScene({ groups: 12, columns: 4, childrenPerGroup: 9 }));
-    const timings = nodeTimings(text, 3);
+    const timings = nodeTimings(text, 1, 3);
     expect(timings.decodeMs).toBeGreaterThan(0);
     expect(timings.encodeMs).toBeGreaterThan(0);
     expect(timings.entities).toBe(123);

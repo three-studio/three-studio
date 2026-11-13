@@ -115,8 +115,9 @@ alternates launches: the other tree's own harness for one (`PERF_LAUNCHES=1`, `P
 `PERF_SCRATCH`), then this tree's, started the same way, as many pairs as a run has launches. Each launch is a
 process of its own on both sides: a launch run in the A/B's own process found it warm — its JIT, its heap, the
 scenarios before — where the other tree's started cold, and on the same commit the warm scan of 3 000 assets came
-out a fifth apart. Each tree prepares its projects once and
-keeps them between its launches, so an A/B about doubles the time of what it confirms. A breach that holds on the
+out a fifth apart. Each tree prepares its projects once, in a pair 0 that is thrown away — that launch shares its
+process with the generation and the warm-up launch, and S1's Play came out 16–19 % slower in it — and keeps them
+between its launches: an A/B takes about two and a half times what it confirms. A breach that holds on the
 paired medians is *confirmed*, and only a confirmed one stops a feature until the user decides; a count needs no
 confirmation. Each tree measures with its own harness and its own generators: an older tree may read another
 format, or other editor internals.

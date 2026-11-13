@@ -30,8 +30,8 @@ import { checkExit, heapReading } from './readings';
 
 /*
  * S6 — Play and scenes: the scripted project of four scenes. Play's start —
- * compile, import, engine, first frame; ten switches between `A` and `B`
- * through the game's own scene API; a switch to `Heavy` behind `Loading`; and
+ * compile, import, engine, first frame — five times; thirty switches between
+ * `A` and `B` through the game's own scene API; a switch to `Heavy` behind `Loading`; and
  * ten cycles of a ballast script edited on disk, Play, Stop.
  *
  * In that order: the switches run with no loading scene, which `SceneHost`
@@ -39,7 +39,12 @@ import { checkExit, heapReading } from './readings';
  * first scene without one, so the cycles may follow it being set.
  */
 
-const SWITCHES = 10;
+/**
+ * The medians of five Plays and thirty switches: one Play a launch moved by
+ * 5 % from one launch to the next, and ten switches by 3.7 %.
+ */
+const PLAYS = 5;
+const SWITCHES = 30;
 const CYCLES = 10;
 
 const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
@@ -113,7 +118,12 @@ async function measure(
   });
   try {
     await runInPage(editor.session, sceneLoaded, undefined);
-    const play = decodeNumbers(await runInPage(editor.session, pressPlay, undefined, 300_000));
+    // The last Play stays running, for the switches.
+    const plays: number[] = [];
+    for (let n = 1; n <= PLAYS; n += 1) {
+      if (n > 1) await runInPage(editor.session, pressStop, undefined);
+      plays.push(decodeNumbers(await runInPage(editor.session, pressPlay, undefined, 300_000))['gameShownMs'] ?? Number.NaN);
+    }
     await runInPage(editor.session, sceneApiFrom, 'A');
 
     const before = await memoryNow(editor.session);
@@ -151,11 +161,11 @@ async function measure(
     const exit = await editor.finish();
     checkExit(label, 'display', exit);
     context.say(
-      `${label}: Play ${play['gameShownMs']?.toFixed(0)} ms, switch ${median(switches).toFixed(0)} ms, loading ${loading['ms']?.toFixed(0)} ms`,
+      `${label}: Play ${median(plays).toFixed(0)} ms, switch ${median(switches).toFixed(0)} ms, loading ${loading['ms']?.toFixed(0)} ms`,
     );
     return {
       metrics: {
-        'play.firstFrameMs': play['gameShownMs'] ?? Number.NaN,
+        'play.firstFrameMs': median(plays),
         'switch.ms': median(switches),
         'switch.heapBytes': switched.heap,
         'switch.gpuBytes': switched.gpu,

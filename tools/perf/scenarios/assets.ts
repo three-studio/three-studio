@@ -26,9 +26,20 @@ import { checkExit } from './readings';
 /**
  * Each gesture this many times, there and back: a move takes a few
  * milliseconds, and six samples left its median moving by a fifth from one run
- * to the next.
+ * to the next; twenty still left it 2.6 % apart across an A/B of one commit.
  */
-const GESTURES = 10;
+const GESTURES = 20;
+
+/**
+ * The scan's untimed passes, then its timed ones. Each launch of an A/B is a
+ * process of its own, and the first scans of a fresh process are the JIT's:
+ * five scans timed from cold came out a fifth slower than five after the
+ * preparation had scanned once.
+ */
+const SCAN_WARMUPS = 3;
+const SCANS = 9;
+const COLD_SCANS = 5;
+const LISTS = 9;
 
 const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['node.scanWarmMs', { kind: 'timing', unit: 'ms' }],
@@ -93,17 +104,18 @@ export async function ipcBytes(
   };
 }
 
-/** The scan, five times warm and three times with its index removed, the medians. */
+/** The scan warm, and with its index removed, the medians. */
 async function scanTimings(project: string): Promise<{ warm: number; cold: number }> {
   const timed = async (): Promise<number> => {
     const started = performance.now();
     await scanAssets(project);
     return performance.now() - started;
   };
+  for (let n = 0; n < SCAN_WARMUPS; n += 1) await scanAssets(project);
   const warm: number[] = [];
-  for (let n = 0; n < 5; n += 1) warm.push(await timed());
+  for (let n = 0; n < SCANS; n += 1) warm.push(await timed());
   const cold: number[] = [];
-  for (let n = 0; n < 3; n += 1) {
+  for (let n = 0; n < COLD_SCANS; n += 1) {
     // What a fresh checkout or a deleted cache finds: every sidecar read again.
     await rm(join(project, CACHE_DIR, 'assets.index.json'), { force: true });
     cold.push(await timed());
@@ -130,7 +142,7 @@ async function measureEditor(
     const ms = async (action: Parameters<typeof assetAction>[0]): Promise<number> =>
       decodeNumbers(await runInPage(editor.session, assetAction, action, 120_000))['ms'] ?? Number.NaN;
     const lists: number[] = [];
-    for (let n = 0; n < 5; n += 1) {
+    for (let n = 0; n < LISTS; n += 1) {
       lists.push(decodeNumbers(await runInPage(editor.session, listAssets, undefined, 60_000))['ms'] ?? Number.NaN);
     }
     const moves: number[] = [];

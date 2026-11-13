@@ -37,8 +37,15 @@ import { MISSED_START, captureView, checkExit, heapReading, oneWindow, readTwice
 
 /** The Hierarchy's row, in CSS pixels (`ROW_HEIGHT`, `hierarchyWindow.ts`). */
 const ROW_HEIGHT = 24;
-const GESTURES = 3;
-const NODE_REPETITIONS = 5;
+/**
+ * Each gesture nine times, and the scene decoded and encoded nine times after
+ * three passes untimed: with three of each, a save's median moved by 15 % from
+ * one launch to the next, and the first decodes of a fresh process are the
+ * JIT's — the baseline's A/B read the decode 8 % apart on the same commit.
+ */
+const GESTURES = 9;
+const NODE_WARMUPS = 3;
+const NODE_REPETITIONS = 9;
 const WARMUP_FRAMES = 60;
 const MEASURED_FRAMES = 300;
 
@@ -79,23 +86,27 @@ export function subtreeSize(scene: SceneDoc, ids: readonly string[]): number {
 }
 
 /**
- * The scene decoded and encoded `repetitions` times each in Node, the medians:
- * what the decoders F7 writes are held to.
+ * The scene decoded and encoded `repetitions` times each in Node after
+ * `warmups` untimed passes, the medians: what the decoders F7 writes are held to.
  */
-export function nodeTimings(text: string, repetitions: number): { decodeMs: number; encodeMs: number; entities: number } {
+export function nodeTimings(
+  text: string,
+  warmups: number,
+  repetitions: number,
+): { decodeMs: number; encodeMs: number; entities: number } {
   const decodes: number[] = [];
   const encodes: number[] = [];
   let scene: SceneDoc | null = null;
-  for (let n = 0; n < repetitions; n += 1) {
+  for (let n = 0; n < warmups + repetitions; n += 1) {
     const started = performance.now();
     scene = deserializeScene(text);
-    decodes.push(performance.now() - started);
+    if (n >= warmups) decodes.push(performance.now() - started);
   }
   if (scene === null) throw new Error('no repetition ran');
-  for (let n = 0; n < repetitions; n += 1) {
+  for (let n = 0; n < warmups + repetitions; n += 1) {
     const started = performance.now();
     serializeScene(scene);
-    encodes.push(performance.now() - started);
+    if (n >= warmups) encodes.push(performance.now() - started);
   }
   return { decodeMs: median(decodes), encodeMs: median(encodes), entities: Object.keys(scene.entities).length };
 }
@@ -283,7 +294,7 @@ export async function sceneScaleScenario(context: ScenarioContext): Promise<Scen
     const notes = [`Duplicate added ${subject.added} entities to ${subject.ids.length}, and Undo took them back, every time`];
     for (let n = 1; n <= context.launches; n += 1) {
       await copyFile(subject.snapshot, subject.scenePath);
-      const node = nodeTimings(saved, NODE_REPETITIONS);
+      const node = nodeTimings(saved, NODE_WARMUPS, NODE_REPETITIONS);
       const displayed = await measureDisplayed(context, subject, `S2-${n}`);
       await copyFile(subject.snapshot, subject.scenePath);
       const uncapped = await measureUncapped(context, subject, `S2-${n}-uncapped`);
