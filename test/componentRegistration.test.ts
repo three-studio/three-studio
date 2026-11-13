@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMPONENT_TYPES } from '@three-studio/core';
+import { COMPONENT_TYPES, assertDefined } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 
 /*
@@ -38,7 +38,9 @@ function typeFolders(pkg: string): string[] {
 /** The `import './<type>';` lines of a registering index, in order. */
 function registeringImports(pkg: string): string[] {
   const source = readFileSync(join(repoRoot, 'packages', pkg, 'src/components/index.ts'), 'utf8');
-  return [...source.matchAll(/^import '\.\/([A-Za-z]+)';$/gm)].map((match) => match[1]!).sort();
+  return [...source.matchAll(/^import '\.\/([A-Za-z]+)';$/gm)]
+    .map((match) => assertDefined(match[1], 'the folder of a registering import'))
+    .sort();
 }
 
 describe('core knows about every component folder it has', () => {
@@ -71,14 +73,16 @@ describe('the runtime knows about every component folder it has', () => {
       'utf8',
     );
     const block = /const DRAWN_TYPES = \[([^\]]*)\]/.exec(source)?.[1] ?? '';
-    const listed = [...block.matchAll(/'([A-Za-z]+)'/g)].map((match) => match[1]!).sort();
+    const listed = [...block.matchAll(/'([A-Za-z]+)'/g)]
+      .map((match) => assertDefined(match[1], 'the type of a `DRAWN_TYPES` entry'))
+      .sort();
 
     expect(listed).toEqual(typeFolders('runtime'));
   });
 
   it('draws a subset of what core declares, never something core has never heard of', () => {
     const unknown = typeFolders('runtime').filter(
-      (type) => !(COMPONENT_TYPES as readonly string[]).includes(type),
+      (type) => !COMPONENT_TYPES.some((declared) => declared === type),
     );
     expect(unknown).toEqual([]);
   });

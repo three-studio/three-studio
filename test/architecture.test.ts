@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertDefined } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { WORKSPACE_PACKAGE_NAMES, workspaceAliases } from '../workspace-aliases';
 
@@ -79,7 +80,9 @@ function specifiers(file: string): string[] {
   const found: string[] = [];
   for (const pattern of [STATIC_IMPORT, DYNAMIC_IMPORT]) {
     const re = new RegExp(pattern.source, pattern.flags);
-    for (let m = re.exec(src); m !== null; m = re.exec(src)) found.push(m[1]!);
+    for (let m = re.exec(src); m !== null; m = re.exec(src)) {
+      found.push(assertDefined(m[1], 'the specifier of a matched import'));
+    }
   }
   return found;
 }
@@ -140,8 +143,14 @@ function resolveSpecifier(from: string, spec: string): Resolution {
   return /\.tsx?$/.test(path) ? { kind: 'file', path } : { kind: 'external' };
 }
 
-/** file -> the files it imports. Both are absolute paths. */
-const graph = new Map<string, string[]>(
+/**
+ * file -> the files it imports. Both are absolute paths.
+ *
+ * Declared read-only because it is: built here, once, and only read by the
+ * rules below. Without the type, a `new Map` at a module's top level reads as
+ * state that somebody fills later, and is counted as such.
+ */
+const graph: ReadonlyMap<string, readonly string[]> = new Map(
   files.map((file) => [
     file,
     [
@@ -262,6 +271,9 @@ function cycles(): string[][] {
   const onStack = new Set<string>();
   const stack: string[] = [];
   const found: string[][] = [];
+  // A file is given its low-link when it is first reached, and every file read
+  // below has been reached.
+  const lowOf = (file: string): number => assertDefined(low.get(file), 'the low-link of a reached file');
 
   for (const start of files) {
     if (index.has(start)) continue;
@@ -274,10 +286,10 @@ function cycles(): string[][] {
     onStack.add(start);
 
     while (work.length > 0) {
-      const frame = work[work.length - 1]!;
+      const frame = assertDefined(work[work.length - 1], 'the frame on top of the work stack');
       const edges = graph.get(frame.node) ?? [];
       if (frame.next < edges.length) {
-        const next = edges[frame.next]!;
+        const next = assertDefined(edges[frame.next], 'the next edge of the frame');
         frame.next += 1;
         if (!index.has(next)) {
           index.set(next, counter);
@@ -287,18 +299,19 @@ function cycles(): string[][] {
           onStack.add(next);
           work.push({ node: next, next: 0 });
         } else if (onStack.has(next)) {
-          low.set(frame.node, Math.min(low.get(frame.node)!, index.get(next)!));
+          const reachedAt = assertDefined(index.get(next), 'the index of a file on the stack');
+          low.set(frame.node, Math.min(lowOf(frame.node), reachedAt));
         }
         continue;
       }
 
       work.pop();
       const parent = work[work.length - 1];
-      if (parent) low.set(parent.node, Math.min(low.get(parent.node)!, low.get(frame.node)!));
+      if (parent) low.set(parent.node, Math.min(lowOf(parent.node), lowOf(frame.node)));
       if (low.get(frame.node) === index.get(frame.node)) {
         const component: string[] = [];
         for (;;) {
-          const popped = stack.pop()!;
+          const popped = assertDefined(stack.pop(), 'the file on top of the component stack');
           onStack.delete(popped);
           component.push(popped);
           if (popped === frame.node) break;
@@ -311,7 +324,8 @@ function cycles(): string[][] {
     }
   }
 
-  return found.sort((a, b) => a[0]!.localeCompare(b[0]!));
+  // A component holds at least the file that closed it, so `''` orders nothing.
+  return found.sort((a, b) => (a[0] ?? '').localeCompare(b[0] ?? ''));
 }
 
 /*

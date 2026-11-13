@@ -131,6 +131,7 @@ export type {
 export { field, fieldOptions, optionsFrom } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
 export { conform, conformPatch, isRecord } from './conform';
+export { assertDefined } from './assert';
 export {
   conformAssetSettings,
   conformLayoutPreferences,
