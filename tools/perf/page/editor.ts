@@ -235,3 +235,185 @@ export function deleteEntity(entityId: string): Promise<Record<string, number>> 
     requestAnimationFrame(check);
   });
 }
+
+/**
+ * Resolves at the first frame drawn with every one of these entities bound:
+ * when, in ms since navigation. `late` is 1 when they all were already bound
+ * when this was asked — the start was missed.
+ */
+export function firstFrameWithEntities(ids: readonly string[]): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const allBound = (): boolean => {
+      const binder = window.__studioViewport?.binder;
+      return binder !== undefined && ids.every((id) => binder.getObject(id) !== undefined);
+    };
+    const late = allBound() ? 1 : 0;
+    const asked = performance.now();
+    const check = (): void => {
+      if (allBound()) requestAnimationFrame(() => resolve({ firstFrameAt: performance.now(), late }));
+      else if (performance.now() - asked > 300_000) reject(new Error('the entities were never all bound'));
+      else requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
+/**
+ * One edit, then the editor's own Save — Cmd+S on the window, where the
+ * shortcuts listen — and how long until the document reads as saved, in ms.
+ */
+export function editAndSave(entityId: string): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    if (!stores) {
+      reject(new Error('no stores'));
+      return;
+    }
+    const scene = stores.document;
+    scene.getState().mutate('Nudge', (draft) => {
+      const entity = draft.entities[entityId];
+      if (entity) entity.transform.position[1] += 0.01;
+    });
+    const pressed = performance.now();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 's', code: 'KeyS', metaKey: true, bubbles: true }));
+    const check = (): void => {
+      const state = scene.getState();
+      if (state.savedRevision === state.revision) resolve({ saveMs: performance.now() - pressed });
+      else if (performance.now() - pressed > 60_000) reject(new Error('the scene was never saved'));
+      else setTimeout(check, 1);
+    };
+    check();
+  });
+}
+
+/**
+ * Duplicates what `ids` names with Cmd+D, then undoes it with Cmd+Z, each to
+ * the first frame after the binder holds the result: how long each took, in
+ * ms. The editor has no paste; Duplicate is the gesture that adds a thousand
+ * entities in one undo entry.
+ */
+export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    const binder = window.__studioViewport?.binder;
+    if (!stores || !binder) {
+      reject(new Error('no stores or no viewport'));
+      return;
+    }
+    const before = new Set(Object.keys(stores.document.getState().scene.entities));
+    const key = (letter: string): KeyboardEvent =>
+      new KeyboardEvent('keydown', { key: letter, code: `Key${letter.toUpperCase()}`, metaKey: true, bubbles: true });
+    const until = (done: () => boolean, then: () => void, what: string, started: number): void => {
+      const check = (): void => {
+        if (done()) requestAnimationFrame(then);
+        else if (performance.now() - started > 120_000) reject(new Error(`${what} never finished`));
+        else requestAnimationFrame(check);
+      };
+      check();
+    };
+    stores.editor.getState().setSelection(ids);
+    const duplicated = performance.now();
+    window.dispatchEvent(key('d'));
+    const added = (): string[] => Object.keys(stores.document.getState().scene.entities).filter((id) => !before.has(id));
+    let made: string[] = [];
+    until(
+      () => {
+        made = added();
+        return made.length > 0 && made.every((id) => binder.getObject(id) !== undefined);
+      },
+      () => {
+        const duplicateMs = performance.now() - duplicated;
+        const undone = performance.now();
+        window.dispatchEvent(key('z'));
+        until(
+          () => added().length === 0 && made.every((id) => binder.getObject(id) === undefined),
+          () => resolve({ duplicateMs, undoMs: performance.now() - undone, added: made.length }),
+          'the undo',
+          undone,
+        );
+      },
+      'the duplicate',
+      duplicated,
+    );
+  });
+}
+
+/**
+ * The time between frames while one entity is moved every frame through the
+ * document, under one coalescing key — the write the gizmo makes per frame of
+ * a drag. `frames` of them, after `warmup` thrown away.
+ */
+export function dragDeltas(args: { entityId: string; warmup: number; frames: number }): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    if (!stores) {
+      reject(new Error('no stores'));
+      return;
+    }
+    const deltas: number[] = [];
+    let last = -1;
+    let seen = 0;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0 && seen > args.warmup) deltas.push(now - last);
+      last = now;
+      seen += 1;
+      stores.document.getState().mutate(
+        'Move',
+        (draft) => {
+          const entity = draft.entities[args.entityId];
+          if (entity) entity.transform.position[0] += 0.01;
+        },
+        { coalesceKey: 'perf-drag' },
+      );
+      if (deltas.length < args.frames) requestAnimationFrame(tick);
+      else resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/**
+ * The time between frames while the Hierarchy scrolls `rows` rows a frame: the
+ * list is the element whose content is `rowCount` rows tall.
+ */
+export function scrollDeltas(args: {
+  rowCount: number;
+  rowHeight: number;
+  rows: number;
+  warmup: number;
+  frames: number;
+}): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const list = [...document.querySelectorAll('div')].find(
+      (element) => element.scrollHeight >= args.rowCount * args.rowHeight && getComputedStyle(element).overflowY === 'auto',
+    );
+    if (!list) {
+      reject(new Error(`no element scrolls ${args.rowCount} rows tall`));
+      return;
+    }
+    list.scrollTop = 0;
+    const deltas: number[] = [];
+    let last = -1;
+    let seen = 0;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0 && seen > args.warmup) deltas.push(now - last);
+      last = now;
+      seen += 1;
+      list.scrollTop += args.rows * args.rowHeight;
+      if (deltas.length < args.frames) requestAnimationFrame(tick);
+      else resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/** Where the Hierarchy's list stands: its first row on screen, and how many rows it holds. */
+export function hierarchyScroll(args: { rowCount: number; rowHeight: number }): Record<string, number> {
+  const list = [...document.querySelectorAll('div')].find(
+    (element) => element.scrollHeight >= args.rowCount * args.rowHeight && getComputedStyle(element).overflowY === 'auto',
+  );
+  if (!list) throw new Error(`no element scrolls ${args.rowCount} rows tall`);
+  return { firstRow: Math.floor(list.scrollTop / args.rowHeight), rows: Math.round(list.scrollHeight / args.rowHeight) };
+}
