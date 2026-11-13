@@ -70,7 +70,7 @@ const DEVELOPMENT_CSP = [
  * Writing plain text is all it allows — reading the clipboard is
  * `clipboard-read`, and stays refused.
  */
-const ALLOWED_PERMISSIONS = new Set([
+const ALLOWED_PERMISSIONS: ReadonlySet<string> = new Set([
   'pointerLock',
   'fullscreen',
   'keyboardLock',

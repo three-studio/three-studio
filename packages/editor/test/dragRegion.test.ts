@@ -17,7 +17,7 @@ import { describe, expect, it } from 'vitest';
 
 const editorSrc = fileURLToPath(new URL('../src', import.meta.url));
 
-const ALLOWED = new Set([join('shell', 'TitleBar.tsx'), join('launcher', 'LauncherApp.tsx')]);
+const ALLOWED: ReadonlySet<string> = new Set([join('shell', 'TitleBar.tsx'), join('launcher', 'LauncherApp.tsx')]);
 
 /** A box made to drag: the utility in a class list, or the property written inline. */
 const DRAGS: readonly RegExp[] = [

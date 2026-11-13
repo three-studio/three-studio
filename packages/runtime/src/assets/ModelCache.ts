@@ -22,7 +22,7 @@ import { describeNodes, resolveNode, type ModelShape } from './modelNodes';
  */
 const TEXTURE_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.texture.extensions);
 /** Formats whose extension already says they store light rather than pixels. */
-const HDR_EXTENSIONS = new Set(['hdr', 'exr']);
+const HDR_EXTENSIONS: ReadonlySet<string> = new Set(['hdr', 'exr']);
 
 /** A loaded master and whether its pixels have actually arrived. */
 interface TextureEntry {

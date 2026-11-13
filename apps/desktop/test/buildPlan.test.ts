@@ -6,7 +6,7 @@ import { BuildCollisionError, BuildPlan } from '../src/main/build/buildPlan';
  * it, a companion and an asset that wanted the same path simply overwrote each
  * other on the disk, and a volume that ignores case made two names one file.
  */
-const roots = new Set(['index.html', 'assets', 'scenes', 'build.json']);
+const roots: ReadonlySet<string> = new Set(['index.html', 'assets', 'scenes', 'build.json']);
 const asset = (assetId: string) => ({ kind: 'asset', assetId, assetKind: 'texture' }) as const;
 
 describe('a build plan', () => {

@@ -42,7 +42,7 @@ function mentionsOutsideCaseLabel(type: string): number {
  * component is honoured — just not here. It is the one type where `runtime: true`
  * and "nothing in this package builds it" are both true.
  */
-const RESOLVED_IN_CORE = new Set(['prefabInstance']);
+const RESOLVED_IN_CORE: ReadonlySet<string> = new Set(['prefabInstance']);
 
 /*
  * The registry's `runtime` flag, checked against the package it makes a claim

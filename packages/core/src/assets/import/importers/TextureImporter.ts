@@ -3,7 +3,7 @@ import { AssetImporter } from '../AssetImporter';
 import { field, type FieldRow } from '../../../fields';
 
 /** Formats whose extension already says they store light rather than pixels. */
-const HDR_EXTENSIONS = new Set(['hdr', 'exr']);
+const HDR_EXTENSIONS: ReadonlySet<string> = new Set(['hdr', 'exr']);
 
 /**
  * Images, whether they end up on a surface or in the sky.

@@ -19,7 +19,7 @@ import { sceneWith } from './fixtures';
  * only clue was a stack trace in the console.
  */
 
-const KNOWN = new Set(['model-1', 'tex-1']);
+const KNOWN: ReadonlySet<string> = new Set(['model-1', 'tex-1']);
 
 describe('what a scene names and the project does not have', () => {
   it('names the entity and the id, so both ends of the break are reachable', () => {
