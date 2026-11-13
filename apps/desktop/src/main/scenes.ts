@@ -69,8 +69,8 @@ import { ProjectError, discoverScenes, readProject, updateProject } from './proj
  * than splicing its own result into the list it already had. Splicing means a
  * second copy of the ordering and shadowing rules `discoverScenes` owns, and a
  * second copy of a rule is how two answers come to disagree — which is the
- * whole reason `project.json` stopped holding this list. T-019 is what makes
- * the second walk cheap.
+ * whole reason `project.json` stopped holding this list. `scenes.index.json`,
+ * under `.studio/`, is what makes the second walk cheap.
  */
 
 /**

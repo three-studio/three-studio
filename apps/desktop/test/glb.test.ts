@@ -728,8 +728,8 @@ describe('compressing the geometry', () => {
      * length. The encoder would be told a smaller count and would describe the
      * wrong bytes.
      *
-     * The reference model does this 44 times over: T-002's own layout left 46
-     * bytes of padding across its index accessors.
+     * The reference model does this 44 times over: the layout before this one
+     * left 46 bytes of padding across its index accessors.
      */
     const runs = [0, 1, 2, 2, 1, 3, 3, 1, 0, 1, 2, 3];
     const index = Buffer.alloc(runs.length * 4);
