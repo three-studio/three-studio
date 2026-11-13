@@ -4,7 +4,7 @@ import { createMeshComponent } from '../components/mesh/defaults';
 import { SCENE_FORMAT_VERSION } from '../constants';
 import { createId } from '../ids';
 import { emptyComponentTables, setComponentsOf } from './components';
-import { createEntity, type EntityTemplate } from './entity';
+import { createEntity } from './entity';
 import { createBoxGeometry } from './geometry';
 
 /*

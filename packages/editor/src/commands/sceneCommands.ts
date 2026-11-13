@@ -11,7 +11,6 @@ import {
   findComponentById,
   fitColliderShape,
   insertEntity,
-  isAncestorOf,
   putComponent,
   removeSubtree,
   renameEntityReferences,

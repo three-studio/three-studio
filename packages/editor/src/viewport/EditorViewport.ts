@@ -3,7 +3,6 @@ import {
   createRenderingSettings,
   type ExpandedScene,
   type RenderingSettings,
-  type SceneDoc,
 } from '@three-studio/core';
 import { studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
 import {

@@ -32,7 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
-import type { Hex, Transform, Vec3 } from './primitives';
+import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
 

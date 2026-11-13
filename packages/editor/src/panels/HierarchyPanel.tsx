@@ -1,16 +1,12 @@
 import {
   COMPONENT_TYPES,
-  capabilitiesOf,
   componentDefinition,
   findBrokenReferences,
-  findComponent,
   findMissingEntities,
   hasComponent,
   splitInstancedId,
   type ComponentIcon,
   type ComponentType,
-  type EntityDoc,
-  type ExpandedScene,
   type SceneDoc,
 } from '@three-studio/core';
 import {
@@ -48,7 +44,7 @@ import { commandEntry } from '../shell/commandEntry';
 import { knownAssetIds } from '../state/brokenReport';
 import { expandedScene } from '../state/expansion';
 import { isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
-import { buildRows, type Row } from './hierarchyRows';
+import { buildRows } from './hierarchyRows';
 import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
 import { Selection } from '../state/selection';
 import { useAssetStore } from '../state/assetStore';

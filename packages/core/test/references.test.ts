@@ -15,7 +15,6 @@ import {
   isUsed,
   totalUses,
   type MeshComponent,
-  type PrefabInstanceComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { prefabWith } from './fixtures';

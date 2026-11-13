@@ -2,7 +2,6 @@ import {
   GEOMETRY_LABELS,
   colliderGeometry,
   createColliderShape,
-  createComponent,
   createComponentForEntity,
   createMeshEntity,
   createModelEntity,

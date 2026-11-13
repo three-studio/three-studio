@@ -15,7 +15,6 @@ import {
   createRenderingSettings,
   fieldOptions,
   type ComponentDoc,
-  type ComponentType,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';

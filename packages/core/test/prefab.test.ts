@@ -43,7 +43,14 @@ function treePrefab(): PrefabDoc {
   return prefabWith('Tree', [trunk, leaves], trunk.entity.id);
 }
 
-function instanceOf(prefab: PrefabDoc, at: [number, number, number] = [0, 0, 0]) {
+/**
+ * An entity that places a prefab.
+ *
+ * `_prefab` is never read: the instance names `'prefab-1'`, the id `library`
+ * serves whichever prefab it is given under. It stays so that each call says
+ * which prefab it places.
+ */
+function instanceOf(_prefab: PrefabDoc, at: [number, number, number] = [0, 0, 0]) {
   const host = createEntity('Tree', [
     createPrefabInstance('prefab-1'),
   ]);
@@ -446,7 +453,7 @@ describe('creating a prefab from a scene', () => {
 describe('prefab variants', () => {
   it('is one entity holding an instance of the base', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Autumn Tree', base, 'prefab-1');
+    const variant = prefabVariantOf('Autumn Tree', 'prefab-1');
 
     expect(Object.keys(variant.entities)).toHaveLength(1);
     expect(variantBaseOf(variant)).toBe('prefab-1');
@@ -456,7 +463,7 @@ describe('prefab variants', () => {
 
   it('draws the base, and follows a change to it', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Autumn Tree', base, 'prefab-1');
+    const variant = prefabVariantOf('Autumn Tree', 'prefab-1');
     const host = createEntity('Tree', [
       createPrefabInstance('prefab-2'),
     ]);
@@ -477,7 +484,7 @@ describe('prefab variants', () => {
 
   it('keeps its own overrides while following everything else', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Short Tree', base, 'prefab-1');
+    const variant = prefabVariantOf('Short Tree', 'prefab-1');
     // The override a variant carries lives on its root's instance component —
     // set in Prefab Mode, because a scene cannot reach two prefabs deep.
     const rootInstance = componentsOf(variant, variant.root)[0] as PrefabInstanceComponent;

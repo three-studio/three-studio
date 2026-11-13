@@ -1,6 +1,6 @@
 import { type GeometryDef } from '../../scene/geometry';
 import { type MaterialDef } from '../../scene/material';
-import type { ComponentBase, Hex } from '../../scene/primitives';
+import type { ComponentBase } from '../../scene/primitives';
 
 export interface MeshComponent extends ComponentBase {
   type: 'mesh';

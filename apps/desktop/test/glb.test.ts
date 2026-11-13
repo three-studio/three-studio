@@ -85,7 +85,7 @@ const options = (
 });
 
 /** Stands in for the scaler: shorter bytes, so every offset after it moves. */
-const shrink = (bytes: Buffer, mimeType: string): Buffer | null =>
+const shrink = (_bytes: Buffer, mimeType: string): Buffer | null =>
   mimeType === 'image/jpeg' ? Buffer.from('SM') : null;
 
 describe('reading and writing the container', () => {

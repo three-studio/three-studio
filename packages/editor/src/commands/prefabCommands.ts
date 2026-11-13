@@ -20,7 +20,6 @@ import {
   splitInstancedId,
   type EntityDoc,
   type PrefabDoc,
-  type PrefabInstanceComponent,
 } from '@three-studio/core';
 import { useAssetStore } from '../state/assetStore';
 import { defineCommand, type EditorContext } from './command';
@@ -154,7 +153,7 @@ export async function createPrefabVariant(baseAssetId: string): Promise<string |
   if (name === null) return null;
 
   try {
-    const variant = prefabVariantOf(name, base, baseAssetId);
+    const variant = prefabVariantOf(name, baseAssetId);
     const assetId = await useAssetStore.getState().createPrefab(name, variant);
     notify({
       kind: 'success',

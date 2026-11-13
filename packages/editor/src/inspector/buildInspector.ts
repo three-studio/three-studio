@@ -9,7 +9,6 @@ import {
 import type { FolderApi } from 'tweakpane';
 import {
   renameEntity,
-  setComponentNestedField,
   setEntityVisible,
   setEnvironmentField,
   setLinkedMaterialField,

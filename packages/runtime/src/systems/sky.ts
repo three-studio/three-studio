@@ -1,6 +1,6 @@
 import type { SkySettings } from '@three-studio/core';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
-import { nodeObject, uniform, vec4 } from 'three/tsl';
+import { nodeObject, uniform } from 'three/tsl';
 import {
   MathUtils,
   PMREMGenerator,
@@ -38,43 +38,40 @@ const RADIANCE_SIZE = 256;
 type SkyUniformKey = Exclude<keyof SkySettings, 'elevation' | 'azimuth' | 'sunDisc'>;
 
 /**
- * Pairs a setting with the uniform it drives, keeping the key literal.
- *
- * Written through a generic rather than as a `Record` so that reading it back
- * needs no cast: `Object.entries` widens a key to `string`, and indexing
- * `SkySettings` with that is exactly the assertion this file should not need.
- */
-const bindUniform = <K extends SkyUniformKey>(
-  key: K,
-  uniform: (sky: SkyMesh) => { value: number },
-): { key: K; uniform: (sky: SkyMesh) => { value: number } } => ({ key, uniform });
-
-/**
  * Where each setting lands on the mesh.
  *
  * A table rather than eight assignments, so a uniform three adds is one line
  * here beside one line in `SkySettings`, instead of a hunt for wherever the
  * others happen to be written.
+ *
+ * Keyed by setting, and checked against every one of them: a setting with
+ * nowhere to go is a compile error here rather than a slider that quietly does
+ * nothing — which is the failure a table like this invites, and the only reason
+ * it is worth having over eight assignments. That proof used to be a constant
+ * beside the table that nothing read, there for its type alone.
+ *
+ * Each entry says its key a second time, and the check holds it to the first.
+ * It is what lets the loop that applies them read `settings[key]` with no
+ * cast: `Object.entries` would widen the key to `string`, and indexing
+ * `SkySettings` with that is exactly the assertion this file should not need.
  */
-const UNIFORMS = [
-  bindUniform('turbidity', (sky) => sky.turbidity),
-  bindUniform('rayleigh', (sky) => sky.rayleigh),
-  bindUniform('mieCoefficient', (sky) => sky.mieCoefficient),
-  bindUniform('mieDirectionalG', (sky) => sky.mieDirectionalG),
-  bindUniform('cloudCoverage', (sky) => sky.cloudCoverage),
-  bindUniform('cloudDensity', (sky) => sky.cloudDensity),
-  bindUniform('cloudScale', (sky) => sky.cloudScale),
-  bindUniform('cloudElevation', (sky) => sky.cloudElevation),
-  bindUniform('cloudSpeed', (sky) => sky.cloudSpeed),
-];
+const UNIFORM_OF = {
+  turbidity: { key: 'turbidity', uniform: (sky) => sky.turbidity },
+  rayleigh: { key: 'rayleigh', uniform: (sky) => sky.rayleigh },
+  mieCoefficient: { key: 'mieCoefficient', uniform: (sky) => sky.mieCoefficient },
+  mieDirectionalG: { key: 'mieDirectionalG', uniform: (sky) => sky.mieDirectionalG },
+  cloudCoverage: { key: 'cloudCoverage', uniform: (sky) => sky.cloudCoverage },
+  cloudDensity: { key: 'cloudDensity', uniform: (sky) => sky.cloudDensity },
+  cloudScale: { key: 'cloudScale', uniform: (sky) => sky.cloudScale },
+  cloudElevation: { key: 'cloudElevation', uniform: (sky) => sky.cloudElevation },
+  cloudSpeed: { key: 'cloudSpeed', uniform: (sky) => sky.cloudSpeed },
+} satisfies { [K in SkyUniformKey]: { key: K; uniform: (sky: SkyMesh) => { value: number } } };
 
 /**
- * A setting with nowhere to go is a compile error here rather than a slider
- * that quietly does nothing — which is the failure a table like this invites,
- * and the only reason it is worth having over eight assignments.
+ * The table as a list, read once here: `apply` walks it on every document
+ * sync, a drag's frames included, and must allocate nothing to do so.
  */
-type UnboundUniform = Exclude<SkyUniformKey, (typeof UNIFORMS)[number]['key']>;
-const _everyUniformIsBound: [UnboundUniform] extends [never] ? true : UnboundUniform = true;
+const UNIFORMS = Object.values(UNIFORM_OF);
 
 /**
  * The analytic sky: one mesh to look at, one capture to be lit by.

@@ -160,7 +160,7 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
  * the root: edit the base and every variant follows, override on the variant
  * and only it differs.
  */
-export function prefabVariantOf(name: string, base: PrefabDoc, baseAssetId: string): PrefabDoc {
+export function prefabVariantOf(name: string, baseAssetId: string): PrefabDoc {
   const root = createEntity(name, [createPrefabInstance(baseAssetId)]);
   const components = emptyComponentTables();
   components.prefabInstance[root.entity.id] = Object.fromEntries(

@@ -12,7 +12,6 @@ import {
   createMeshEntity,
   sceneName,
   type MeshComponent,
-  type PrefabInstanceComponent,
   type EntityTemplate,
   type SceneDoc,
 } from '@three-studio/core';

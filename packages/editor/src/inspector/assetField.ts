@@ -295,7 +295,6 @@ class AssetFieldView implements View {
   readonly locate: HTMLButtonElement;
   readonly clear: HTMLButtonElement;
   readonly preview: HTMLElement;
-  private readonly kind: AssetKind;
   private readonly tooltip = new PreviewTooltip();
 
   constructor(
@@ -304,8 +303,6 @@ class AssetFieldView implements View {
     private readonly emptyLabel: string,
     private readonly viewProps: ViewProps,
   ) {
-    this.kind = kind;
-
     this.element = document.createElement('div');
     this.element.classList.add('tp-asset');
     this.element.style.cssText = 'display:flex;align-items:center;gap:3px;';

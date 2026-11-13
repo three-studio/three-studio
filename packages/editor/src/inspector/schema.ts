@@ -2,12 +2,8 @@ import {
   BACKGROUND_MODE_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
-  SUN_CUSTOM,
   optionsFrom,
-  type ComponentDoc,
-  type ComponentType,
   type EnvironmentDef,
-  type MaterialDef,
   type SceneDoc,
   type SkySettings,
 } from '@three-studio/core';
