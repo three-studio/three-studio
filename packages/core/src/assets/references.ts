@@ -62,10 +62,10 @@ export function totalUses(usage: AssetUsage): number {
 /**
  * Every asset id a component points at, directly or through its material.
  *
- * Asked of the component's own type since phase 9. This was a `switch` with four
- * branches of which three were identical, and it is the list that has to agree
- * with what the exporter ships: a slot named in one and not the other is either
- * a texture that does not arrive or a delete that claims nothing uses it.
+ * Asked of the component's own type. This was a `switch` with four branches of
+ * which three were identical, and it is the list that has to agree with what
+ * the exporter ships: a slot named in one and not the other is either a texture
+ * that does not arrive or a delete that claims nothing uses it.
  */
 function componentNames(component: ComponentDoc): readonly (string | null)[] {
   return componentAssets(component);

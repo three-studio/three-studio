@@ -277,7 +277,7 @@ describe('createComponentForEntity', () => {
  * quietly: a type added with no system either arrives here or arrives claiming a
  * system it does not have, and `componentCoverage.test.ts` catches that.
  *
- * Audio was that gap, and the chantier closed it: both types now build a voice
+ * Audio was that gap, and it is closed: both types now build a voice
  * through `registerBehaviour`. The list is empty, and the test stays — it is
  * what will name the next type someone adds to the schema and forgets to give a
  * runtime, which is the failure this whole registry exists to make visible.

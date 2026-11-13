@@ -208,7 +208,7 @@ describe('cloning a subtree', () => {
     const childCopyId = copyId === null ? undefined : scene.entities[copyId]?.children[0];
 
     // What Unity and Blender do. Renaming every node was also how the copy paid
-    // O(N) per cloned entity for a fresh name — one of phase 7's costs.
+    // O(N) per cloned entity for a fresh name.
     expect(childCopyId === undefined ? undefined : scene.entities[childCopyId]?.name).toBe('Child');
   });
 

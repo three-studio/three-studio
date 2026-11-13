@@ -8,7 +8,7 @@ import type { SceneDoc } from './schema';
 
 /*
  * `visitEntities` was here, a depth-first walk from the scene roots, and it was
- * removed in phase 1 with no caller it ever had.
+ * removed with no caller it ever had.
  *
  * It looked like the canonical traversal the four hand-written walks should have
  * used, and it fitted none of them: `buildRows` descends conditionally and over

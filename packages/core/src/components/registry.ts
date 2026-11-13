@@ -12,7 +12,7 @@ import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/sche
  * defaults, in the inspector and in reference extraction — and nowhere at all
  * at runtime. The component was editable and did nothing, and eight separate
  * files could not show that. A table with a column for it could, which is what
- * `runtime` below was for, and the audio chantier closed the gap that column
+ * `runtime` below was for, and the runtime's sound closed the gap that column
  * had been pointing at since it was added.
  *
  * This follows a pattern the repo already had and applied in exactly one place:
@@ -92,10 +92,10 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    *
    * `false` means the component can be added and edited and will do nothing.
    * The pair that made this flag necessary — `audioSource` and `audioListener`
-   * — turned `true` with the audio chantier, and **nothing is `false` today**.
-   * That is the outcome the flag was for, not its retirement: the value is that
-   * the next authorable-but-inert type is a value someone can assert on rather
-   * than a discovery.
+   * — turned `true` once the runtime played sound, and **nothing is `false`
+   * today**. That is the outcome the flag was for, not its retirement: the value
+   * is that the next authorable-but-inert type is a value someone can assert on
+   * rather than a discovery.
    */
   readonly runtime: boolean;
   /**

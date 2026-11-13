@@ -4,8 +4,8 @@ import { createAudioSource } from './defaults';
 /**
  * A sound placed in the world.
  *
- * `runtime: true` since the audio chantier. What builds it is a behaviour and
- * not a system — `registerBehaviour('audioSource', …)` in
+ * `runtime: true` since the runtime plays sound. What builds it is a behaviour
+ * and not a system — `registerBehaviour('audioSource', …)` in
  * `packages/runtime/src/behaviour/audio.ts` — because a source draws nothing:
  * it holds a voice, and a voice is a Web Audio graph, not an `Object3D`.
  *

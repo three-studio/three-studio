@@ -29,9 +29,9 @@ import { conform, conformPatch, isRecord, oneOf } from './conform';
  * until now it was spread straight into `project.json`. The same held for asset
  * sidecars, material files and layout preferences.
  *
- * The rule is the repo's own, from `docs/ARCHITECTURE.md`: **defend at the
- * boundary, not at every read site.** One check where the value arrives, so
- * that everything downstream can go on assuming the shape it is declared with.
+ * The rule is the repo's own: **defend at the boundary, not at every read
+ * site.** One check where the value arrives, so that everything downstream can
+ * go on assuming the shape it is declared with.
  *
  * By hand and in `core`, because `core` may not take a dependency — the
  * architecture test says so — and because a schema library would be a second

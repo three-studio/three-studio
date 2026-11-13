@@ -214,9 +214,9 @@ function fillMissingFields(scene: SceneDoc): void {
  * Moves components out of the entities and into the tables — format 3 → 4.
  *
  * Reads the array's **order** while it still means something: a document
- * written before phase 3 has no component ids, and the only way to give it the
- * same ones the prefab it points at will get is to derive them from where the
- * components already are. See `componentIdAt`.
+ * written before components carried ids of their own has none, and the only way
+ * to give it the same ones the prefab it points at will get is to derive them
+ * from where the components already are. See `componentIdAt`.
  *
  * The legacy array is **deleted**, not left in place. Keeping it would be the
  * "add fields, never remove them" rule applied where it does the opposite of

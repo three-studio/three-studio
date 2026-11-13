@@ -155,9 +155,9 @@ export interface EntityDoc {
  * component of the entity.
  *
  * Each level earns its place. **Type first** — `Object.keys(components.light)`
- * is the query that motivated the phase. **Entity second** — deleting, cloning
+ * is the query that motivated them. **Entity second** — deleting, cloning
  * or instancing an entity moves one key per type rather than one per component.
- * **Component id last** — the identity phase 3 established, which is what a
+ * **Component id last** — the component's own identity, which is what a
  * prefab override names; keying by a slot index would be a position again, and
  * would reopen the override defect for any entity carrying two components of one type.
  *
