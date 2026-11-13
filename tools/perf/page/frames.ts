@@ -17,3 +17,43 @@ export function countFrames(ms: number): Promise<Record<string, number>> {
     requestAnimationFrame(tick);
   });
 }
+
+/**
+ * The time between frames, `frames` of them, after `warmup` frames thrown
+ * away: the first frames after a change pay for compiles and uploads, and are
+ * not what the scene costs.
+ *
+ * Read with `performance.now()` inside the callback, as September's readings
+ * were: the callback's argument is when the frame began, and that moves with
+ * whatever held the frame's callbacks up.
+ */
+export function frameDeltas(args: { warmup: number; frames: number }): Promise<number[]> {
+  return new Promise((resolve) => {
+    const deltas: number[] = [];
+    let last = -1;
+    let seen = 0;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0 && seen > args.warmup) deltas.push(now - last);
+      last = now;
+      seen += 1;
+      if (deltas.length < args.frames) requestAnimationFrame(tick);
+      else resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/** Resolves after `count` frames, with how long they took. */
+export function waitFrames(count: number): Promise<number> {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    let left = count;
+    const tick = (): void => {
+      left -= 1;
+      if (left > 0) requestAnimationFrame(tick);
+      else resolve(performance.now() - started);
+    };
+    requestAnimationFrame(tick);
+  });
+}

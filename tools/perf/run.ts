@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { conditionsNow, freeBytes } from './report/conditions';
+import { type ScenarioResult, summaryOf } from './report/results';
+import type { Scenario, ScenarioContext } from './scenarios/context';
+import { renderScenario } from './scenarios/render';
 
 /*
  * A performance run: the scenarios, one after another, against the production
@@ -24,6 +27,18 @@ const repo = fileURLToPath(new URL('../..', import.meta.url));
 /** The space the biggest scenario needs at its peak, with room to spare: below it, nothing is written. */
 const MINIMUM_FREE_BYTES = 3 * 1024 ** 3;
 
+/** The scenarios, in the order a run takes them. `-t S3` runs one. */
+const SCENARIOS: readonly { readonly id: string; readonly title: string; readonly run: Scenario }[] = [
+  { id: 'S3', title: 'render', run: renderScenario },
+];
+
+/** `PERF_LAUNCHES`: measured launches per scenario, three unless it says otherwise. */
+function launchesWanted(): number {
+  const wanted = Number(process.env['PERF_LAUNCHES'] ?? '3');
+  if (!Number.isInteger(wanted) || wanted < 1) throw new Error(`PERF_LAUNCHES must be a whole number above 0`);
+  return wanted;
+}
+
 /** Every process whose command line names the run's folder: the editors and Chromes it launched. */
 async function processesIn(runDir: string): Promise<string[]> {
   try {
@@ -38,6 +53,14 @@ describe('a performance run', () => {
   const runDir = named ?? join(tmpdir(), 'three-studio-perf', new Date().toISOString().replace(/[:.]/g, '-'));
   let caffeinate: ChildProcess | null = null;
   let failed = false;
+  const results = new Map<string, ScenarioResult>();
+  const context: ScenarioContext = {
+    repo,
+    runDir,
+    launches: launchesWanted(),
+    shots: process.env['PERF_SHOTS'] ?? null,
+    say: (line) => void process.stdout.write(`[perf] ${line}\n`),
+  };
 
   beforeAll(async () => {
     const free = await freeBytes(runDir);
@@ -45,6 +68,7 @@ describe('a performance run', () => {
       throw new Error(`${(free / 1024 ** 3).toFixed(1)} GB free where the run would write; it needs 3 GB.`);
     }
     await mkdir(runDir, { recursive: true });
+    if (context.shots !== null) await mkdir(context.shots, { recursive: true });
     // The display kept awake for as long as this worker lives: a sleeping
     // display stops the frames being measured.
     caffeinate = spawn('caffeinate', ['-dimsu', '-w', String(process.pid)], { stdio: 'ignore' });
@@ -75,4 +99,12 @@ describe('a performance run', () => {
     await writeFile(join(runDir, 'conditions.json'), `${JSON.stringify(conditions, null, 2)}\n`);
     process.stdout.write(`[perf] ${JSON.stringify(conditions)}\n`);
   });
+
+  for (const scenario of SCENARIOS) {
+    it(`${scenario.id} — ${scenario.title}`, async () => {
+      const result = await scenario.run(context);
+      results.set(scenario.id, result);
+      process.stdout.write(summaryOf(scenario.id, result));
+    });
+  }
 });

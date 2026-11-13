@@ -291,6 +291,15 @@ export function decodeNumbers(value: unknown): Record<string, number> {
   return numbers;
 }
 
+/** A page function's list of numbers: frame deltas. */
+export function decodeNumberList(value: unknown): number[] {
+  if (!Array.isArray(value)) throw new Error('a page function answered something that is not a list');
+  return value.map((entry: unknown, index) => {
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) throw new Error(`entry ${index} is not a number: ${String(entry)}`);
+    return entry;
+  });
+}
+
 /** A page function's list of strings. */
 export function decodeStrings(value: unknown): string[] {
   if (!Array.isArray(value)) throw new Error('a page function answered something that is not a list');
