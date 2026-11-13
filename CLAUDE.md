@@ -19,9 +19,16 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   a déjà fait perdre une matinée à quelqu'un.** Faites de même. Un commentaire qui se contente de
   reformuler le code est du bruit ; un commentaire qui explique le problème ou l'échec ayant motivé
   le code est utile.
-- **Ajoutez des champs, n'en supprimez jamais, dans tout ce qui est persisté.** Remplissez les champs
-  manquants à partir de la factory propre au type, jamais à partir d'une seconde liste. Laissez les
-  données non reconnues exactement telles qu'elles ont été trouvées.
+- **Jusqu'à la 1.0.0, un format persisté change en changeant de version.** Tout changement de format
+  incrémente son numéro de version. Un fichier d'une autre version est refusé avec un diagnostic s'il
+  fait partie du projet (`project.json`, scènes, prefabs, assets et leurs sidecars). S'il fait partie
+  des données de l'application (dispositions des panneaux, raccourcis, disposition du clavier, projets
+  récents, réglages des appareils, certificat), il n'est pas lu : l'éditeur repart des valeurs par
+  défaut et le dit une fois. Pas de code de migration : n'en ajoutez pas, et celui qui reste est appelé
+  à disparaître. Les données d'un type inconnu, comme le composant d'un module absent, restent
+  exactement telles qu'elles ont été trouvées. **À partir de la 1.0.0, la règle additive revient :**
+  ajoutez des champs, n'en supprimez jamais, et remplissez les champs manquants à partir de la factory
+  propre au type, jamais à partir d'une seconde liste.
 - **Une référence est un identifiant** — jamais un nom, jamais un chemin.
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
