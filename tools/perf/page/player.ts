@@ -27,8 +27,12 @@ export function listenForPlayer(): void {
       firstFrameAt: null,
     };
     window.__perfPlayer = player;
-    requestAnimationFrame((now) => {
-      if (window.__perfPlayer?.state === 'running') window.__perfPlayer.firstFrameAt = now;
+    // Read in the callback, not taken from its argument: the argument is when
+    // the frame began, and a frame whose callbacks a long task held up began
+    // before `start` was called — stamped that way, the first frame came before
+    // the press.
+    requestAnimationFrame(() => {
+      if (window.__perfPlayer?.state === 'running') window.__perfPlayer.firstFrameAt = performance.now();
     });
   });
 }

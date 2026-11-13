@@ -156,11 +156,33 @@ export class CdpSession {
     });
   }
 
-  send(method: string, params: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  /**
+   * One call, answered within `timeoutMs` or refused.
+   *
+   * Bounded because some calls never answer: `Page.captureScreenshot` hangs for
+   * good in the uncapped mode, and an evaluate can wait on a page whose GPU
+   * process is gone. Unbounded, a run waited for Vitest's own timeout, half an
+   * hour, and left the app running behind it.
+   */
+  send(method: string, params: Record<string, unknown> = {}, timeoutMs = 60_000): Promise<Record<string, unknown>> {
     this.nextId += 1;
     const id = this.nextId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { method, resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`${method}: no answer within ${timeoutMs} ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        method,
+        resolve: (result) => {
+          clearTimeout(timer);
+          resolve(result);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
       this.socket.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -229,13 +251,26 @@ export function pageFunctionProblems(source: string, moduleNames: readonly strin
   return problems;
 }
 
-/** Runs `fn(arg)` in the page and answers what it returned, undecoded. Throws what the page threw. */
-export async function runInPage<A>(session: CdpSession, fn: (arg: A) => unknown, arg: A): Promise<unknown> {
-  const reply = await session.send('Runtime.evaluate', {
-    expression: `(${fn.toString()})(${JSON.stringify(arg) ?? 'undefined'})`,
-    awaitPromise: true,
-    returnByValue: true,
-  });
+/**
+ * Runs `fn(arg)` in the page and answers what it returned, undecoded. Throws
+ * what the page threw, and refuses after `timeoutMs` — a function that waits
+ * on a load passes the time the load may take.
+ */
+export async function runInPage<A>(
+  session: CdpSession,
+  fn: (arg: A) => unknown,
+  arg: A,
+  timeoutMs = 120_000,
+): Promise<unknown> {
+  const reply = await session.send(
+    'Runtime.evaluate',
+    {
+      expression: `(${fn.toString()})(${JSON.stringify(arg) ?? 'undefined'})`,
+      awaitPromise: true,
+      returnByValue: true,
+    },
+    timeoutMs,
+  );
   const thrown = reply['exceptionDetails'];
   if (isRecord(thrown)) {
     const exception = thrown['exception'];

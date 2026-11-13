@@ -88,6 +88,14 @@ export interface EditorExit {
   readonly code: number | null;
   /** What the smoke harness printed after `[smoke] renderer errors:` — `none` when there were none. */
   readonly rendererErrors: string;
+  /**
+   * How many times Chromium said its GPU process died. Once per uncapped
+   * launch, at start: `--disable-frame-rate-limit` crashes the first GPU process
+   * of Electron 43 (exit code 11), Chromium starts another before the editor
+   * asks for a device, and the editor runs as it should. Reported, so that one
+   * at any other time is seen.
+   */
+  readonly gpuProcessCrashes: number;
 }
 
 export interface EditorInstance {
@@ -188,13 +196,17 @@ export async function launchEditor(launch: EditorLaunch): Promise<EditorInstance
       logPath,
       kill,
       finish: async () => {
-        await runInPage(session, finishRun, undefined);
+        // The window may already be gone — a launch that failed — and the app
+        // then exits by itself, or is ended below.
+        await runInPage(session, finishRun, undefined, 10_000).catch(() => undefined);
         session.close();
         const code = await Promise.race([exited, delay(60_000, 'timeout' as const)]);
         if (code === 'timeout') kill();
+        const text = await readFile(logPath, 'utf8');
         return {
           code: code === 'timeout' ? null : code,
-          rendererErrors: rendererErrorsIn(await readFile(logPath, 'utf8')),
+          rendererErrors: rendererErrorsIn(text),
+          gpuProcessCrashes: text.split('GPU process exited unexpectedly').length - 1,
         };
       },
     };

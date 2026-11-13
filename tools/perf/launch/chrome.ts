@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { promisify } from 'node:util';
 import { CdpSession, browserEndpoint, collectErrors, freePort, listTargets } from './cdp';
@@ -16,7 +16,7 @@ import { CdpSession, browserEndpoint, collectErrors, freePort, listTargets } fro
 
 const run = promisify(execFile);
 
-export function chromeCommand(profile: string, port: number): { command: string; args: string[] } {
+export function chromeCommand(profile: string, port: number, log: string): { command: string; args: string[] } {
   return {
     command: 'open',
     args: [
@@ -24,6 +24,12 @@ export function chromeCommand(profile: string, port: number): { command: string;
       '-n',
       '-a',
       'Google Chrome',
+      // Chrome's own output, which `open` would otherwise drop: the one place it
+      // says why it did not start, or did not listen.
+      '--stdout',
+      log,
+      '--stderr',
+      log,
       '--args',
       `--user-data-dir=${profile}`,
       `--remote-debugging-port=${port}`,
@@ -47,9 +53,14 @@ export interface ChromeInstance {
   close(): Promise<void>;
 }
 
+/**
+ * Whether a process of this profile's Chrome still runs. The `--` matters: a
+ * pattern opening with `--user-data-dir` is otherwise read as an option, pgrep
+ * fails, and the answer was always no — so a Chrome was never ended.
+ */
 async function processesOf(profile: string): Promise<boolean> {
   try {
-    await run('pgrep', ['-f', `--user-data-dir=${profile}`]);
+    await run('pgrep', ['-f', '--', `--user-data-dir=${profile}`]);
     return true;
   } catch {
     return false;
@@ -59,7 +70,9 @@ async function processesOf(profile: string): Promise<boolean> {
 export async function launchChrome(runDir: string): Promise<ChromeInstance> {
   const profile = await mkdtemp(join(runDir, 'chrome-'));
   const port = await freePort();
-  const command = chromeCommand(profile, port);
+  await mkdir(join(runDir, 'logs'), { recursive: true });
+  const log = join(runDir, 'logs', `${basename(profile)}.log`);
+  const command = chromeCommand(profile, port, log);
   await new Promise<void>((resolve, reject) => {
     spawn(command.command, command.args, { stdio: 'ignore' })
       .once('exit', (code) => (code === 0 ? resolve() : reject(new Error(`open exited ${code}`))))
@@ -84,7 +97,10 @@ export async function launchChrome(runDir: string): Promise<ChromeInstance> {
       page = (await listTargets(port))?.find((target) => target.type === 'page') ?? null;
       if (page === null) await delay(50);
     }
-    if (page === null) throw new Error('Chrome opened no page');
+    if (page === null) {
+      const said = await readFile(log, 'utf8').catch(() => '');
+      throw new Error(`Chrome opened no page on port ${port}. It said:\n${said.slice(-2000)}`);
+    }
     const session = await CdpSession.open(page.webSocketDebuggerUrl);
     const errors = collectErrors(session);
     await session.send('Runtime.enable');

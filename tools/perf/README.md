@@ -68,3 +68,24 @@ Times on an M1 Pro. Two recipes depend on the import pipeline, and say so:
 - **`textures` keeps the default import**, which is what a user gets. In Node the scan cannot scale an
   embedded image (it takes Electron's `nativeImage`), so the capped copy is built by the editor's own first
   scan — the scenario's warm-up launch, before which an export would ship the 4096² sources.
+
+## Traps
+
+Each of these cost a run before it was known.
+
+- **The uncapped mode crashes the first GPU process.** On Electron 43, `--disable-frame-rate-limit` makes the
+  GPU process exit at start (`GPU process exited unexpectedly: exit_code=11` in the launch's log). Chromium
+  starts another before the editor asks for a device, and the editor runs as it should: no renderer error,
+  the frame no longer held to the display. Every uncapped launch reports one (`gpuProcessCrashes`); one in a
+  display launch, or two in any, is a real crash.
+- **Uncapped, the compositor never captures.** `Page.captureScreenshot`, with or without
+  `optimizeForSpeed`, and the screencast never answer in that mode. A capture of an uncapped launch reads the
+  canvas instead (`toDataURL` inside a frame callback, before the frame is presented).
+- **No CDP call is unbounded.** Every `send` refuses after its timeout (60 s unless the call says otherwise),
+  so a call that never answers fails its launch, not the run: unbounded, the run waited for Vitest's
+  half-hour timeout and left the editor running behind it.
+- **A frame callback's argument is when the frame began.** A frame whose callbacks a long task held up began
+  before whatever was called during that task — stamped with its argument, the player's first frame came
+  before Play was pressed. Stamp with `performance.now()` inside the callback.
+- **`pgrep -f` and `pkill -f` read a pattern opening with `--` as an option**, fail, and match nothing. A
+  pattern such as `--user-data-dir=…` goes after `--`.

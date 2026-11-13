@@ -65,9 +65,17 @@ describe('an editor launch', () => {
 
 describe('a Chrome launch', () => {
   it('opens a fresh profile behind the person’s work, with nothing throttled', () => {
-    const { command, args } = chromeCommand('/scratch/run-1/chrome-1', 9666);
+    const { command, args } = chromeCommand('/scratch/run-1/chrome-1', 9666, '/scratch/run-1/logs/chrome-1.log');
     expect(command).toBe('open');
-    expect(args.slice(0, 5)).toEqual(['-g', '-n', '-a', 'Google Chrome', '--args']);
+    expect(args.slice(0, 4)).toEqual(['-g', '-n', '-a', 'Google Chrome']);
+    // Its output kept, since `open` drops it: the one place Chrome says why it did not listen.
+    expect(args.slice(4, 9)).toEqual([
+      '--stdout',
+      '/scratch/run-1/logs/chrome-1.log',
+      '--stderr',
+      '/scratch/run-1/logs/chrome-1.log',
+      '--args',
+    ]);
     expect(args).toEqual(
       expect.arrayContaining([
         '--user-data-dir=/scratch/run-1/chrome-1',
