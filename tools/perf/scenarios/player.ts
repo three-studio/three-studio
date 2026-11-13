@@ -1,12 +1,14 @@
-import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { isRecord } from '@three-studio/core';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { readProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
+import { stringAt } from '../launch/cdp';
 import { serveFolder } from '../launch/serve';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
-import type { ScenarioContext } from './context';
+import { type ScenarioContext, finished, prepared } from './context';
 import { folderBytes, measureBuild, oneWindow, warmFiles } from './readings';
 
 /*
@@ -57,29 +59,45 @@ function metricTable(chunks: Iterable<string>): ReadonlyMap<string, MetricSpec> 
   ]);
 }
 
-export async function playerScenario(context: ScenarioContext): Promise<ScenarioResult> {
-  const projects = join(context.runDir, 'projects', 'S7');
-  const out = join(context.runDir, 'exports', 'S7');
-  await mkdir(projects, { recursive: true });
-  try {
-    const project = await writeRenderProject(projects);
-    const { build } = (await readProject(project)).settings;
-    const profile = build.profiles[build.active];
-    if (!profile) throw new Error('the render project has no active build profile');
-    await exportBuild(project, profile, out, [context.repo]);
+interface PlayerSubject {
+  readonly project: string;
+  /** The exported build. */
+  readonly out: string;
+}
 
+function decodeSubject(value: unknown): PlayerSubject {
+  if (!isRecord(value)) throw new Error('not a subject');
+  return { project: stringAt(value, 'project'), out: stringAt(value, 'out') };
+}
+
+export async function playerScenario(context: ScenarioContext): Promise<ScenarioResult> {
+  const subject = await prepared(
+    context,
+    'S7',
+    async (folder) => {
+      const project = await writeRenderProject(folder);
+      const { build } = (await readProject(project)).settings;
+      const profile = build.profiles[build.active];
+      if (!profile) throw new Error('the render project has no active build profile');
+      const out = join(folder, 'export');
+      await exportBuild(project, profile, out, [context.repo]);
+      return { project, out };
+    },
+    decodeSubject,
+  );
+  try {
     const chunks = await chunkTable([
       join(context.repo, 'apps/web-template/dist/player'),
       join(context.repo, 'apps/web-template/dist-device'),
     ]);
-    const fixed: Record<string, number> = { 'export.bytes': await folderBytes(out) };
+    const fixed: Record<string, number> = { 'export.bytes': await folderBytes(subject.out) };
     for (const [name, sizes] of chunks) {
       fixed[`chunk.${name}.bytes`] = sizes.bytes;
       fixed[`chunk.${name}.gzipBytes`] = sizes.gzipBytes;
     }
 
-    await warmFiles(out);
-    const server = await serveFolder(out);
+    await warmFiles(subject.out);
+    const server = await serveFolder(subject.out);
     try {
       const launches: Record<string, number>[] = [];
       const windows: Record<string, number>[] = [];
@@ -95,7 +113,6 @@ export async function playerScenario(context: ScenarioContext): Promise<Scenario
       await server.close();
     }
   } finally {
-    await rm(projects, { recursive: true, force: true });
-    await rm(out, { recursive: true, force: true });
+    await finished(context, 'S7');
   }
 }

@@ -1,16 +1,16 @@
-import { mkdir, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { basename, join, posix } from 'node:path';
-import { ASSETS_DIR, CACHE_DIR } from '@three-studio/core';
+import { ASSETS_DIR, CACHE_DIR, isRecord } from '@three-studio/core';
 import { readMaterialAssets, readPhysicsMaterialAssets, readPrefabAssets } from '../../../apps/desktop/src/main/assetLibraries';
 import { moveAsset, renameAssetFolder } from '../../../apps/desktop/src/main/assetMutations';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { ASSETS, assetTextures, writeAssetsProject } from '../generate/projects';
-import { decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import { decodeNumbers, freePort, numberAt, recordAt, runInPage, stringAt } from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import { assetAction, assetsLoaded, listAssets } from '../page/editor';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import { median } from '../report/stats';
-import type { ScenarioContext } from './context';
+import { type ScenarioContext, finished, prepared } from './context';
 import { checkExit } from './readings';
 
 /*
@@ -23,7 +23,12 @@ import { checkExit } from './readings';
  * be shown what crossed, and the main process's answer is what crosses.
  */
 
-const GESTURES = 3;
+/**
+ * Each gesture this many times, there and back: a move takes a few
+ * milliseconds, and six samples left its median moving by a fifth from one run
+ * to the next.
+ */
+const GESTURES = 10;
 
 const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['node.scanWarmMs', { kind: 'timing', unit: 'ms' }],
@@ -155,32 +160,60 @@ async function measureEditor(
   }
 }
 
+interface Prepared {
+  readonly project: string;
+  readonly subject: Subject;
+  readonly bytes: { readonly list: number; readonly move: number; readonly renameFolder: number; readonly refresh: number };
+}
+
+function decodePrepared(value: unknown): Prepared {
+  if (!isRecord(value)) throw new Error('not a subject');
+  const subject = recordAt(value, 'subject');
+  const bytes = recordAt(value, 'bytes');
+  return {
+    project: stringAt(value, 'project'),
+    subject: { asset: stringAt(subject, 'asset'), to: stringAt(subject, 'to'), folder: stringAt(subject, 'folder') },
+    bytes: {
+      list: numberAt(bytes, 'list'),
+      move: numberAt(bytes, 'move'),
+      renameFolder: numberAt(bytes, 'renameFolder'),
+      refresh: numberAt(bytes, 'refresh'),
+    },
+  };
+}
+
 export async function assetsScenario(context: ScenarioContext): Promise<ScenarioResult> {
-  const parent = join(context.runDir, 'projects', 'S5');
-  await mkdir(parent, { recursive: true });
+  const ready = await prepared(
+    context,
+    'S5',
+    async (folder) => {
+      const project = await writeAssetsProject(folder);
+      const [first] = assetTextures(ASSETS);
+      if (first === undefined) throw new Error('the assets recipe has no texture');
+      const subject: Subject = { asset: first.path, to: 'textures/pack-01', folder: 'textures/pack-02' };
+      const bytes = await ipcBytes(project, subject);
+      await measureEditor(context, project, subject, 'S5-warmup');
+      return { project, subject, bytes };
+    },
+    decodePrepared,
+  );
   try {
-    const project = await writeAssetsProject(parent);
-    const [first] = assetTextures(ASSETS);
-    if (first === undefined) throw new Error('the assets recipe has no texture');
-    const subject: Subject = { asset: first.path, to: 'textures/pack-01', folder: 'textures/pack-02' };
-    const bytes = await ipcBytes(project, subject);
-    await measureEditor(context, project, subject, 'S5-warmup');
     const launches: Record<string, number>[] = [];
     for (let n = 1; n <= context.launches; n += 1) {
-      const scan = await scanTimings(project);
-      const editor = await measureEditor(context, project, subject, `S5-${n}`);
+      const scan = await scanTimings(ready.project);
+      const editor = await measureEditor(context, ready.project, ready.subject, `S5-${n}`);
       launches.push({
         'node.scanWarmMs': scan.warm,
         'node.scanColdMs': scan.cold,
-        'ipc.listBytes': bytes.list,
-        'move.bytes': bytes.move,
-        'renameFolder.bytes': bytes.renameFolder,
-        'refresh.bytes': bytes.refresh,
+        'ipc.listBytes': ready.bytes.list,
+        'move.bytes': ready.bytes.move,
+        'renameFolder.bytes': ready.bytes.renameFolder,
+        'refresh.bytes': ready.bytes.refresh,
         ...editor,
       });
     }
     return { metrics: metricsOf(METRICS, launches), window: null, notes: [] };
   } finally {
-    await rm(parent, { recursive: true, force: true });
+    await finished(context, 'S5');
   }
 }

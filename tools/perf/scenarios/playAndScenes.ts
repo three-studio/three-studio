@@ -1,8 +1,17 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isRecord } from '@three-studio/core';
 import { openProject, updateProject } from '../../../apps/desktop/src/main/project';
 import { ballastPaths, writeScriptedProject } from '../generate/projects';
-import { type CdpSession, decodeNumberList, decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import {
+  type CdpSession,
+  decodeNumberList,
+  decodeNumbers,
+  freePort,
+  recordAt,
+  runInPage,
+  stringAt,
+} from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import {
   goThroughLoading,
@@ -16,7 +25,7 @@ import {
 } from '../page/editor';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import { median } from '../report/stats';
-import type { ScenarioContext } from './context';
+import { type ScenarioContext, finished, prepared } from './context';
 import { checkExit, heapReading } from './readings';
 
 /*
@@ -65,12 +74,23 @@ async function memoryNow(session: CdpSession): Promise<{ heap: number; gpu: numb
 
 interface Subject {
   readonly project: string;
-  readonly scenes: ReadonlyMap<string, string>;
+  /** The scenes' ids by name. */
+  readonly scenes: Readonly<Record<string, string>>;
   readonly ballast: string;
 }
 
+function decodeSubject(value: unknown): Subject {
+  if (!isRecord(value)) throw new Error('not a subject');
+  const scenes = recordAt(value, 'scenes');
+  return {
+    project: stringAt(value, 'project'),
+    scenes: Object.fromEntries(Object.keys(scenes).map((name) => [name, stringAt(scenes, name)])),
+    ballast: stringAt(value, 'ballast'),
+  };
+}
+
 function sceneId(subject: Subject, name: string): string {
-  const id = subject.scenes.get(name);
+  const id = subject.scenes[name];
   if (id === undefined) throw new Error(`the scripted project has no scene ${name}`);
   return id;
 }
@@ -164,24 +184,30 @@ async function measure(
 }
 
 export async function playAndScenesScenario(context: ScenarioContext): Promise<ScenarioResult> {
-  const parent = join(context.runDir, 'projects', 'S6');
-  await mkdir(parent, { recursive: true });
+  let revision = 0;
+  const nextRevision = (): number => {
+    revision += 1;
+    return revision;
+  };
+  const subject = await prepared(
+    context,
+    'S6',
+    async (folder) => {
+      const project = await writeScriptedProject(folder);
+      const opened = await openProject(project);
+      const [ballast] = ballastPaths();
+      if (ballast === undefined) throw new Error('the scripted recipe has no ballast script');
+      const made: Subject = {
+        project,
+        scenes: Object.fromEntries(opened.scenes.map((scene) => [scene.name, scene.id])),
+        ballast: join(project, ballast),
+      };
+      await measure(context, made, nextRevision, 'S6-warmup');
+      return made;
+    },
+    decodeSubject,
+  );
   try {
-    const project = await writeScriptedProject(parent);
-    const opened = await openProject(project);
-    const [ballast] = ballastPaths();
-    if (ballast === undefined) throw new Error('the scripted recipe has no ballast script');
-    const subject: Subject = {
-      project,
-      scenes: new Map(opened.scenes.map((scene) => [scene.name, scene.id])),
-      ballast: join(project, ballast),
-    };
-    let revision = 0;
-    const nextRevision = (): number => {
-      revision += 1;
-      return revision;
-    };
-    await measure(context, subject, nextRevision, 'S6-warmup');
     const launches: Record<string, number>[] = [];
     let notes: string[] = [];
     for (let n = 1; n <= context.launches; n += 1) {
@@ -191,6 +217,6 @@ export async function playAndScenesScenario(context: ScenarioContext): Promise<S
     }
     return { metrics: metricsOf(METRICS, launches), window: null, notes };
   } finally {
-    await rm(parent, { recursive: true, force: true });
+    await finished(context, 'S6');
   }
 }

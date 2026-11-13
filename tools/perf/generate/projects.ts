@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   ASSETS_DIR,
@@ -282,6 +282,14 @@ export interface AssetsRecipe {
 /** September's: 3 000 16 × 16 PNGs of distinct colours, in 30 folders. */
 export const ASSETS: AssetsRecipe = { textures: 3000, folders: 30 };
 
+/**
+ * Every texture's modification time, fixed. The manifest carries each file's
+ * `mtimeMs`, a decimal whose digits vary with the moment it was written, so
+ * the manifest's bytes — a count, judged identical — moved by a few bytes
+ * from one generation to the next.
+ */
+const ASSET_TIME_SECONDS = Date.UTC(2026, 0, 1) / 1000;
+
 const ASSET_SIDE = 16;
 
 /**
@@ -323,6 +331,7 @@ export async function writeAssetsProject(parent: string, recipe: AssetsRecipe = 
       },
     });
     await writeFile(file, png);
+    await utimes(file, ASSET_TIME_SECONDS, ASSET_TIME_SECONDS);
   }
   await scanAssets(project.path);
   return project.path;

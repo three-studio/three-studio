@@ -1,11 +1,19 @@
-import { mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, entitiesWith } from '@three-studio/core';
+import { deserializeScene, entitiesWith, isRecord } from '@three-studio/core';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { openProject, readProject } from '../../../apps/desktop/src/main/project';
 import { writeGeometryProject, writeTexturesProject } from '../generate/projects';
-import { type CdpSession, decodeNumberList, decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import {
+  type CdpSession,
+  decodeNumberList,
+  decodeNumbers,
+  freePort,
+  runInPage,
+  stringAt,
+  stringsAt,
+} from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import { serveFolder } from '../launch/serve';
 import {
@@ -19,7 +27,7 @@ import {
 import { animationFrames, waitFrames } from '../page/frames';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import { longestInside } from '../report/stats';
-import type { ScenarioContext } from './context';
+import { type ScenarioContext, finished, prepared } from './context';
 import {
   MISSED_START,
   captureView,
@@ -185,46 +193,75 @@ async function modelFiles(folder: string): Promise<string[]> {
   return found;
 }
 
+interface RecipeSubject {
+  readonly project: string;
+  readonly entityId: string;
+  /** The exported build. */
+  readonly out: string;
+  /** What was read while preparing: the file the model loads from, what the export ships, the disk's peak. */
+  readonly notes: readonly string[];
+}
+
+function decodeSubject(value: unknown): RecipeSubject {
+  if (!isRecord(value)) throw new Error('not a subject');
+  return {
+    project: stringAt(value, 'project'),
+    entityId: stringAt(value, 'entityId'),
+    out: stringAt(value, 'out'),
+    notes: stringsAt(value, 'notes'),
+  };
+}
+
+/**
+ * A model written, opened once to warm the caches, and exported. The warm-up
+ * also builds `textures`' capped copy, which only the editor's own scan can
+ * make (in Node it cannot scale an embedded image): the export ships what it
+ * finds.
+ */
+async function prepareRecipe(context: ScenarioContext, recipe: Recipe, folder: string): Promise<RecipeSubject> {
+  const project = await recipe.write(folder);
+  const entityId = await modelEntityOf(project);
+  await measureEditor(context, recipe, project, entityId, `S1-${recipe.name}-warmup`);
+  const model = (await scanAssets(project)).assets.find((asset) => asset.kind === 'model');
+  const { build } = (await readProject(project)).settings;
+  const profile = build.profiles[build.active];
+  if (!profile) throw new Error(`the ${recipe.name} project has no active build profile`);
+  const out = join(folder, 'export');
+  await exportBuild(project, profile, out, [context.repo]);
+  // Read where the disk is fullest: the model, its copy if it has one, the
+  // export beside them, and the harness's application data. The run's own
+  // folder, not the volume's free space: with the system swapping, that moved
+  // by gigabytes the run did not write.
+  const peakBytes = await folderBytes(context.runDir);
+  return {
+    project,
+    entityId,
+    out,
+    notes: [
+      `${recipe.name}: loaded from ${model?.importedPath ?? 'its source'}, ${model?.sizeBytes ?? 0} B as written`,
+      `${recipe.name}: the export ships ${(await modelFiles(out)).join(', ')} of models`,
+      `${recipe.name}: the run's folder holds ${(peakBytes / 1024 ** 2).toFixed(0)} MB at the peak`,
+    ],
+  };
+}
+
 async function runRecipe(
   context: ScenarioContext,
   recipe: Recipe,
 ): Promise<{ launches: Record<string, number>[]; window: Readonly<Record<string, number>> | null; notes: string[] }> {
-  const parent = join(context.runDir, 'projects', `S1-${recipe.name}`);
-  const out = join(context.runDir, 'exports', `S1-${recipe.name}`);
-  await mkdir(parent, { recursive: true });
+  const id = `S1-${recipe.name}`;
+  const subject = await prepared(context, id, (folder) => prepareRecipe(context, recipe, folder), decodeSubject);
   try {
-    const project = await recipe.write(parent);
-    const entityId = await modelEntityOf(project);
-    // Not recorded. It also builds `textures`' capped copy, which only the
-    // editor's own scan can make (in Node it cannot scale an embedded image):
-    // the export below ships what it finds.
-    await measureEditor(context, recipe, project, entityId, `S1-${recipe.name}-warmup`);
-    const model = (await scanAssets(project)).assets.find((asset) => asset.kind === 'model');
-    const { build } = (await readProject(project)).settings;
-    const profile = build.profiles[build.active];
-    if (!profile) throw new Error(`the ${recipe.name} project has no active build profile`);
-    await exportBuild(project, profile, out, [context.repo]);
-    // Read where the disk is fullest: the model, its copy if it has one, the
-    // export beside them, and the harness's application data. The run's own
-    // folder, not the volume's free space: with the system swapping, that moved
-    // by gigabytes the run did not write.
-    const peakBytes = await folderBytes(context.runDir);
-    const notes = [
-      `${recipe.name}: loaded from ${model?.importedPath ?? 'its source'}, ${model?.sizeBytes ?? 0} B as written`,
-      `${recipe.name}: the export ships ${(await modelFiles(out)).join(', ')} of models`,
-      `${recipe.name}: the run's folder holds ${(peakBytes / 1024 ** 2).toFixed(0)} MB at the peak`,
-    ];
-
     const editors: Record<string, number>[] = [];
     const windows: Record<string, number>[] = [];
     for (let n = 1; n <= context.launches; n += 1) {
-      const reading = await measureEditor(context, recipe, project, entityId, `S1-${recipe.name}-${n}`);
+      const reading = await measureEditor(context, recipe, subject.project, subject.entityId, `S1-${recipe.name}-${n}`);
       editors.push(reading.metrics);
       windows.push(reading.window);
     }
     const window = oneWindow(`S1 ${recipe.name}`, windows);
-    await warmFiles(out);
-    const server = await serveFolder(out);
+    await warmFiles(subject.out);
+    const server = await serveFolder(subject.out);
     try {
       const launches: Record<string, number>[] = [];
       const builds: Record<string, number>[] = [];
@@ -242,13 +279,12 @@ async function runRecipe(
         launches.push({ ...editor, ...placed });
       }
       oneWindow(`S1 ${recipe.name}'s builds`, builds);
-      return { launches, window, notes };
+      return { launches, window, notes: [...subject.notes] };
     } finally {
       await server.close();
     }
   } finally {
-    await rm(parent, { recursive: true, force: true });
-    await rm(out, { recursive: true, force: true });
+    await finished(context, id);
   }
 }
 

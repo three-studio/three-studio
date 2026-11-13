@@ -69,7 +69,66 @@ Times on an M1 Pro. Two recipes depend on the import pipeline, and say so:
   embedded image (it takes Electron's `nativeImage`), so the capped copy is built by the editor's own first
   scan — the scenario's warm-up launch, before which an export would ship the 4096² sources.
 
+## Options
+
+| Variable | Effect |
+|---|---|
+| `PERF_OUT=<folder>` | Writes the run's report there, `<date>-<commit>-<label>.md` and its `.json` twin, compared with the newest run already in it. Without it the report is printed, and both files stay in the run's folder |
+| `PERF_LABEL=<label>` | Names the run in its file name and its title; `run` otherwise |
+| `PERF_LAUNCHES=<n>` | Measured launches per scenario; three otherwise |
+| `PERF_SHOTS=<folder>` | A capture per reading, for checkpoints |
+| `PERF_SCRATCH=<folder>` | The run's folder, kept whole at the end, with each scenario's prepared projects: the next run of this tree there goes straight to its measured launches |
+| `PERF_RESULT=<file>` | The run's result JSON, alone: what an A/B reads from the other tree |
+| `PERF_AGAINST=<commit>` | An A/B against that commit (below) |
+| `-t S3` | One scenario, or several: `-t "S1 —\|S3 —"` |
+
+These, the `vitest.config.ts` path and the result JSON — metrics by name, each with its kind, its unit and its
+launches — are the interface an older tree keeps: later versions add variables and metrics, and none renames these.
+A tree reads another's result through a decoder that leaves out a metric of a kind it does not know, and calls one
+the other lacks *not comparable*.
+
+## Reading a run
+
+Each metric is one of four kinds:
+
+- a **count** must stay identical: draw calls, triangles, bytes over IPC, chunk sizes. A count that moves is
+  *changed*, and the feature that moved it says why;
+- a **timing** or a **memory** is judged on its median over the launches, against the previous run's: within +5 %
+  it is *ok*, beyond it *suspected* (D23). JS memory is the V8 heap plus the ArrayBuffers behind it;
+- a **reported** value — a p95, a maximum, a growth, an allocation rate — is shown, never judged.
+
+The previous run is the newest run JSON in `PERF_OUT` by its finish; an A/B's twin is never taken. Timings and
+memory are *not comparable* when the machine, the system, Electron's Chromium, Chrome, three, the power source or
+Low Power Mode differ, or the scenario's window: an A/B decides then.
+
+## Confirming a breach
+
+A suspected breach does not stop a feature: one launch of a busy Mac moves a median by 5 %. The run prints the
+command that confirms it, an A/B against the previous run's commit:
+
+```sh
+PERF_AGAINST=<commit> npm run perf -- -t "S3 —"
+```
+
+The A/B makes a worktree of that commit inside the run's folder, its `node_modules` this tree's, builds it, and
+alternates launches: the other tree's own harness for one (`PERF_LAUNCHES=1`, `PERF_RESULT`, its own
+`PERF_SCRATCH`), then this tree's, as many pairs as a run has launches. Each tree prepares its projects once and
+keeps them between its launches, so an A/B about doubles the time of what it confirms. A breach that holds on the
+paired medians is *confirmed*, and only a confirmed one stops a feature until the user decides; a count needs no
+confirmation. Each tree measures with its own harness and its own generators: an older tree may read another
+format, or other editor internals.
+
+The A/B writes `<date>-<commit>-ab-<other commit>.md` and its twin beside the run's own report, which is made of
+this tree's side of the pairs. Run against this tree's own commit, an A/B measures each metric's noise — its
+largest paired difference on identical code — which the baseline records and later reports show beside each change.
+
 ## Traps
+
+- **September's: a layout saved by one launch decides the next.** The editor saves the dock's layout as it loads,
+  and a layout comes back two pixels off: the edit canvas grew 4 × 2 device pixels a launch, the GPU memory with it.
+  Every launch removes the harness's `layouts.json` first.
+- **September's: a frame held to the display measures the display.** At 120 Hz a median frame time does not move
+  until a frame misses its slot; frame costs are read *uncapped*.
 
 Each of these cost a run before it was known.
 

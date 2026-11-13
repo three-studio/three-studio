@@ -1,9 +1,17 @@
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, serializeScene, type SceneDoc } from '@three-studio/core';
+import { deserializeScene, isRecord, serializeScene, type SceneDoc } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeLargeProject } from '../generate/projects';
-import { decodeNumberList, decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import {
+  decodeNumberList,
+  decodeNumbers,
+  freePort,
+  numberAt,
+  runInPage,
+  stringAt,
+  stringsAt,
+} from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import {
   dragDeltas,
@@ -18,7 +26,7 @@ import {
 import { frameDeltas } from '../page/frames';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import { frameStats, median } from '../report/stats';
-import type { ScenarioContext } from './context';
+import { type ScenarioContext, finished, prepared } from './context';
 import { MISSED_START, captureView, checkExit, heapReading, oneWindow, readTwiceAtMost } from './readings';
 
 /*
@@ -94,13 +102,33 @@ export function nodeTimings(text: string, repetitions: number): { decodeMs: numb
 
 interface Subject {
   readonly project: string;
-  readonly text: string;
+  /** The scene file the editor opens, and saves into. */
+  readonly scenePath: string;
+  /**
+   * The scene as the warm-up's saves left it, copied back before each measured
+   * launch: the saves nudge an entity, and every launch — of either tree, in an
+   * A/B — opens the same file and weighs the same bytes.
+   */
+  readonly snapshot: string;
   readonly ids: readonly string[];
   readonly groups: readonly string[];
   /** What a duplicate of the groups adds: the groups and their children. */
   readonly added: number;
   /** One prop, the kind of entity a drag holds, batched with its like. */
   readonly dragged: string;
+}
+
+function decodeSubject(value: unknown): Subject {
+  if (!isRecord(value)) throw new Error('not a subject');
+  return {
+    project: stringAt(value, 'project'),
+    scenePath: stringAt(value, 'scenePath'),
+    snapshot: stringAt(value, 'snapshot'),
+    ids: stringsAt(value, 'ids'),
+    groups: stringsAt(value, 'groups'),
+    added: numberAt(value, 'added'),
+    dragged: stringAt(value, 'dragged'),
+  };
 }
 
 /** Open, save, duplicate and undo, in a displayed launch. */
@@ -221,41 +249,44 @@ async function measureUncapped(
   }
 }
 
+async function prepare(context: ScenarioContext, folder: string): Promise<Subject> {
+  const project = await writeLargeProject(folder);
+  const opened = await openProject(project);
+  const scenePath = join(project, opened.scenePath);
+  const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+  const groups = groupsToSelect(scene, 100);
+  const [first] = groups;
+  const dragged = first === undefined ? undefined : scene.entities[first]?.children[0];
+  if (dragged === undefined) throw new Error('the large scene has no prop in its first group');
+  const subject: Subject = {
+    project,
+    scenePath,
+    snapshot: join(folder, 'scene.snapshot.json'),
+    ids: Object.keys(scene.entities),
+    groups,
+    added: subtreeSize(scene, groups),
+    dragged,
+  };
+  // Not recorded: the caches, and the scene file as the editor's own save writes it.
+  await measureDisplayed(context, subject, 'S2-warmup');
+  await measureUncapped(context, subject, 'S2-warmup-uncapped');
+  await copyFile(scenePath, subject.snapshot);
+  return subject;
+}
+
 export async function sceneScaleScenario(context: ScenarioContext): Promise<ScenarioResult> {
-  const parent = join(context.runDir, 'projects', 'S2');
-  await mkdir(parent, { recursive: true });
+  const subject = await prepared(context, 'S2', (folder) => prepare(context, folder), decodeSubject);
   try {
-    const project = await writeLargeProject(parent);
-    const opened = await openProject(project);
-    const scenePath = join(project, opened.scenePath);
-    const text = await readFile(scenePath, 'utf8');
-    const scene = deserializeScene(text);
-    const groups = groupsToSelect(scene, 100);
-    const [first] = groups;
-    const dragged = first === undefined ? undefined : scene.entities[first]?.children[0];
-    if (dragged === undefined) throw new Error('the large scene has no prop in its first group');
-    const subject: Subject = {
-      project,
-      text,
-      ids: Object.keys(scene.entities),
-      groups,
-      added: subtreeSize(scene, groups),
-      dragged,
-    };
-
-    // Not recorded: the caches, and the scene file as the editor's own save writes it.
-    await measureDisplayed(context, subject, 'S2-warmup');
-    await measureUncapped(context, subject, 'S2-warmup-uncapped');
-    const saved = await readFile(scenePath, 'utf8');
-    const measured: Subject = { ...subject, text: saved };
-
+    const saved = await readFile(subject.snapshot, 'utf8');
     const launches: Record<string, number>[] = [];
     const windows: Record<string, number>[] = [];
     const notes = [`Duplicate added ${subject.added} entities to ${subject.ids.length}, and Undo took them back, every time`];
     for (let n = 1; n <= context.launches; n += 1) {
+      await copyFile(subject.snapshot, subject.scenePath);
       const node = nodeTimings(saved, NODE_REPETITIONS);
-      const displayed = await measureDisplayed(context, measured, `S2-${n}`);
-      const uncapped = await measureUncapped(context, measured, `S2-${n}-uncapped`);
+      const displayed = await measureDisplayed(context, subject, `S2-${n}`);
+      await copyFile(subject.snapshot, subject.scenePath);
+      const uncapped = await measureUncapped(context, subject, `S2-${n}-uncapped`);
       windows.push(uncapped.window);
       if (n === 1) notes.push(...uncapped.notes);
       launches.push({
@@ -268,6 +299,6 @@ export async function sceneScaleScenario(context: ScenarioContext): Promise<Scen
     }
     return { metrics: metricsOf(METRICS, launches), window: oneWindow('S2', windows), notes };
   } finally {
-    await rm(parent, { recursive: true, force: true });
+    await finished(context, 'S2');
   }
 }

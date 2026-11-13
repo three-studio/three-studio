@@ -1,9 +1,18 @@
-import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, entitiesWith, findComponent } from '@three-studio/core';
+import { deserializeScene, entitiesWith, findComponent, isRecord } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
-import { type CdpSession, decodeNumberList, decodeNumbers, freePort, runInPage } from '../launch/cdp';
+import {
+  type CdpSession,
+  decodeNumberList,
+  decodeNumbers,
+  freePort,
+  numberAt,
+  recordAt,
+  runInPage,
+  stringAt,
+  vec3At,
+} from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import {
   poseEditorCamera,
@@ -17,8 +26,8 @@ import {
 import { frameDeltas } from '../page/frames';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import { frameStats } from '../report/stats';
-import type { ScenarioContext } from './context';
-import { allocationsOver, captureView, checkExit, heapReading } from './readings';
+import { type ScenarioContext, finished, prepared } from './context';
+import { allocationsOver, captureView, checkExit, heapReading, oneWindow } from './readings';
 
 /*
  * S3 — Render: September's field of 3 004 entities, in the edit view and in
@@ -132,28 +141,46 @@ async function measure(
   }
 }
 
+interface RenderSubject {
+  readonly project: string;
+  readonly pose: CameraPose;
+}
+
+function decodeSubject(value: unknown): RenderSubject {
+  if (!isRecord(value)) throw new Error('not a subject');
+  const pose = recordAt(value, 'pose');
+  return {
+    project: stringAt(value, 'project'),
+    pose: { position: vec3At(pose, 'position'), rotation: vec3At(pose, 'rotation'), fov: numberAt(pose, 'fov') },
+  };
+}
+
 export async function renderScenario(context: ScenarioContext): Promise<ScenarioResult> {
-  const projects = join(context.runDir, 'projects', 'S3');
-  await mkdir(projects, { recursive: true });
+  const subject = await prepared(
+    context,
+    'S3',
+    async (folder) => {
+      const project = await writeRenderProject(folder);
+      const pose = await mainCameraPose(project);
+      // Not recorded: compiles the pipelines, warms the disk cache and the
+      // harness's application data, as a person's second launch would find them.
+      await measure(context, project, pose, 'S3-warmup');
+      return { project, pose };
+    },
+    decodeSubject,
+  );
   try {
-    const project = await writeRenderProject(projects);
-    const pose = await mainCameraPose(project);
-    // Not recorded: compiles the pipelines, warms the disk cache and the
-    // harness's application data, as a person's second launch would find them.
-    await measure(context, project, pose, 'S3-warmup');
     const launches: Record<string, number>[] = [];
-    let window: Record<string, number> | null = null;
+    const windows: Record<string, number>[] = [];
     let notes: string[] = [];
     for (let n = 1; n <= context.launches; n += 1) {
-      const reading = await measure(context, project, pose, `S3-${n}`);
+      const reading = await measure(context, subject.project, subject.pose, `S3-${n}`);
       launches.push(reading.metrics);
-      if (window === null) {
-        window = reading.window;
-        notes = reading.notes;
-      }
+      windows.push(reading.window);
+      if (n === 1) notes = reading.notes;
     }
-    return { metrics: metricsOf(METRICS, launches), window, notes };
+    return { metrics: metricsOf(METRICS, launches), window: oneWindow('S3', windows), notes };
   } finally {
-    await rm(projects, { recursive: true, force: true });
+    await finished(context, 'S3');
   }
 }

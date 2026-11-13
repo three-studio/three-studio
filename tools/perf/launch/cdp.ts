@@ -52,6 +52,25 @@ export function numberAt(record: Record<string, unknown>, key: string): number {
   return value;
 }
 
+export function vec3At(record: Record<string, unknown>, key: string): [number, number, number] {
+  const value = record[key];
+  if (!Array.isArray(value) || value.length !== 3) throw new Error(`expected three numbers at "${key}"`);
+  const [x, y, z]: unknown[] = value;
+  if (typeof x !== 'number' || typeof y !== 'number' || typeof z !== 'number') {
+    throw new Error(`expected three numbers at "${key}"`);
+  }
+  return [x, y, z];
+}
+
+export function stringsAt(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) throw new Error(`expected a list at "${key}"`);
+  return value.map((entry: unknown, index) => {
+    if (typeof entry !== 'string') throw new Error(`expected a string at "${key}[${index}]"`);
+    return entry;
+  });
+}
+
 export interface CdpTarget {
   readonly type: string;
   readonly url: string;
