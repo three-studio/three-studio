@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { afterAll, beforeAll, beforeEach, describe, it } from 'vitest';
 import { conditionsNow, freeBytes } from './report/conditions';
 import { type ScenarioResult, summaryOf } from './report/results';
+import { bigAssetsScenario } from './scenarios/bigAssets';
 import type { Scenario, ScenarioContext } from './scenarios/context';
 import { playerScenario } from './scenarios/player';
 import { renderScenario } from './scenarios/render';
@@ -30,6 +31,7 @@ const MINIMUM_FREE_BYTES = 3 * 1024 ** 3;
 
 /** The scenarios, in the order a run takes them. `-t S3` runs one. */
 const SCENARIOS: readonly { readonly id: string; readonly title: string; readonly run: Scenario }[] = [
+  { id: 'S1', title: 'big assets', run: bigAssetsScenario },
   { id: 'S3', title: 'render', run: renderScenario },
   { id: 'S7', title: 'player', run: playerScenario },
 ];

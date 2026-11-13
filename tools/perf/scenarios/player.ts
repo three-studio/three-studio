@@ -4,15 +4,10 @@ import { gzipSync } from 'node:zlib';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { readProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
-import { decodeNumberList, decodeNumbers, runInPage } from '../launch/cdp';
-import { launchChrome } from '../launch/chrome';
 import { serveFolder } from '../launch/serve';
-import { animationFrames } from '../page/frames';
-import { listenForPlayer, pageSize, playerCounts, playerShown, settlePlayer } from '../page/player';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
-import { longestInside } from '../report/stats';
 import type { ScenarioContext } from './context';
-import { allocationsOver, captureView, heapReading } from './readings';
+import { measureBuild, oneWindow, warmFiles } from './readings';
 
 /*
  * S7 — Player: the render scene exported, as a person's browser first sees it.
@@ -21,8 +16,6 @@ import { allocationsOver, captureView, heapReading } from './readings';
  * from a local server, unthrottled, in a fresh Chrome profile per launch —
  * every launch a first visit, so there is no warm-up to throw away.
  */
-
-const ALLOCATION_FRAMES = 300;
 
 /** A chunk's file name less the hash Vite puts before `.js`: `main.023189e1.js` is `main`. */
 const HASHED_CHUNK = /^(.+)\.[A-Za-z0-9_-]{8}\.js$/;
@@ -72,49 +65,6 @@ function metricTable(chunks: Iterable<string>): ReadonlyMap<string, MetricSpec> 
   ]);
 }
 
-async function measure(
-  context: ScenarioContext,
-  url: string,
-  label: string,
-): Promise<{ metrics: Record<string, number>; window: Record<string, number>; notes: string[] }> {
-  const chrome = await launchChrome(context.runDir);
-  try {
-    // In place before the build's first byte: it hears the player announce
-    // itself, presses Play, and stamps the first frame after.
-    await chrome.session.send('Page.addScriptToEvaluateOnNewDocument', { source: `(${listenForPlayer.toString()})();` });
-    await chrome.session.send('Page.navigate', { url });
-    const shown = decodeNumbers(await runInPage(chrome.session, playerShown, undefined, 150_000));
-    const firstFrameMs = shown['firstFrameAt'] ?? Number.NaN;
-    const longest = longestInside(decodeNumberList(await runInPage(chrome.session, animationFrames, undefined)), {
-      from: 0,
-      to: firstFrameMs,
-    });
-    await runInPage(chrome.session, settlePlayer, 30);
-    const window = decodeNumbers(await runInPage(chrome.session, pageSize, undefined));
-    const counts = decodeNumbers(await runInPage(chrome.session, playerCounts, undefined));
-    const heap = await heapReading(chrome.session);
-    const allocations = await allocationsOver(chrome.session, ALLOCATION_FRAMES, context.repo);
-    if (context.shots !== null) await captureView(chrome.session, 'game', 'display', join(context.shots, `${label}.png`));
-    if (chrome.errors.length > 0) throw new Error(`${label}: the page logged errors: ${chrome.errors.join(' | ')}`);
-    context.say(`${label}: first frame at ${firstFrameMs.toFixed(0)} ms, longest task ${longest.longestMs.toFixed(0)} ms`);
-    return {
-      metrics: {
-        firstFrameMs,
-        longestTaskMs: longest.longestMs,
-        ...counts,
-        ...heap,
-        allocBytesPerFrame: allocations.bytesPerFrame,
-      },
-      window,
-      notes: allocations.sites.map(
-        (site) => `${(site.bytes / ALLOCATION_FRAMES).toFixed(0)} B/frame at ${site.where.replace(url, '')}`,
-      ),
-    };
-  } finally {
-    await chrome.close();
-  }
-}
-
 export async function playerScenario(context: ScenarioContext): Promise<ScenarioResult> {
   const projects = join(context.runDir, 'projects', 'S7');
   const out = join(context.runDir, 'exports', 'S7');
@@ -136,20 +86,19 @@ export async function playerScenario(context: ScenarioContext): Promise<Scenario
       fixed[`chunk.${name}.gzipBytes`] = sizes.gzipBytes;
     }
 
+    await warmFiles(out);
     const server = await serveFolder(out);
     try {
       const launches: Record<string, number>[] = [];
-      let window: Record<string, number> | null = null;
+      const windows: Record<string, number>[] = [];
       let notes: string[] = [];
       for (let n = 1; n <= context.launches; n += 1) {
-        const reading = await measure(context, server.url, `S7-${n}`);
+        const reading = await measureBuild(context, server.url, `S7-${n}`, { allocations: true });
         launches.push({ ...fixed, ...reading.metrics });
-        if (window === null) {
-          window = reading.window;
-          notes = reading.notes;
-        }
+        windows.push(reading.window);
+        if (n === 1) notes = reading.notes;
       }
-      return { metrics: metricsOf(metricTable(chunks.keys()), launches), window, notes };
+      return { metrics: metricsOf(metricTable(chunks.keys()), launches), window: oneWindow('S7', windows), notes };
     } finally {
       await server.close();
     }

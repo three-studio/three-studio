@@ -337,16 +337,25 @@ function assetAt(manifest: AssetManifest, path: string): AssetManifest['assets']
   return entry;
 }
 
-/** A scene holding one model, with a sun and a camera to see it by, sized to a field of `half`. */
+/**
+ * A scene holding one model, with a sun sized to a field of `half` and a main
+ * camera: over the field, or at `cameraAt` looking down -z when given.
+ */
 async function saveModelScene(
   project: { path: string; scenePath: string; sceneId: string },
   manifest: AssetManifest,
   modelPath: string,
   half: { x: number; z: number },
+  cameraAt?: readonly [number, number, number],
 ): Promise<void> {
   const scene = createEmptyScene();
   placeSun(scene, half);
-  placeCamera(scene, half);
+  if (cameraAt === undefined) placeCamera(scene, half);
+  else {
+    const camera = place(scene, createCameraEntity());
+    componentOf(camera, 'camera').isMain = true;
+    camera.entity.transform.position = [...cameraAt];
+  }
   place(scene, createModelEntity(assetAt(manifest, modelPath).id, 'Model'));
   await saveAsStartScene(project, scene);
 }
@@ -393,8 +402,9 @@ export async function writeTexturesProject(parent: string, recipe: TexturesRecip
   const project = await newProject('Textures', parent);
   const modelPath = modelPathIn('textures.glb');
   await writeFile(join(project.path, modelPath), writeGlb(texturesGlb(recipe)));
-  // The quads stand in a row 20 m long.
-  await saveModelScene(project, await scanAssets(project.path), modelPath, { x: 12, z: 6 });
+  // The quads stand in a row 20 m long, facing +z: Play's camera stands back
+  // just far enough to show the whole row, so the images are drawn large.
+  await saveModelScene(project, await scanAssets(project.path), modelPath, { x: 12, z: 6 }, [0, 1, 18]);
   return project.path;
 }
 

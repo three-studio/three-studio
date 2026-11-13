@@ -125,7 +125,10 @@ export function windowShape(): Record<string, number> {
   };
 }
 
-/** Presses Play the way the toolbar does, and resolves once the game is on screen: how long that took, in ms. */
+/**
+ * Presses Play the way the toolbar does, and resolves once the game is on
+ * screen: how long that took, and when the press was, in ms since navigation.
+ */
 export function pressPlay(): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
@@ -136,7 +139,7 @@ export function pressPlay(): Promise<Record<string, number>> {
     const pressed = performance.now();
     stores.editor.getState().play();
     const check = (): void => {
-      if (stores.viewport.getState().gameShown) resolve({ gameShownMs: performance.now() - pressed });
+      if (stores.viewport.getState().gameShown) resolve({ gameShownMs: performance.now() - pressed, pressedAt: pressed });
       else if (stores.viewport.getState().rendererError !== null) reject(new Error('the renderer failed during Play'));
       else if (performance.now() - pressed > 120_000) reject(new Error('the game never showed'));
       else requestAnimationFrame(check);
@@ -174,5 +177,61 @@ export function canvasImage(view: string): Promise<string> {
       const canvas = document.querySelector(`canvas[data-view="${view}"]`);
       resolve(canvas instanceof HTMLCanvasElement ? canvas.toDataURL('image/png') : '');
     });
+  });
+}
+
+/**
+ * Resolves at the first frame drawn with the entity's model in it: when, in ms
+ * since navigation. `late` is 1 when the model was already there when this was
+ * asked — the start was missed, and the reading is refused.
+ *
+ * The model's meshes, not `binder.whenLoaded()`: that answers "no model is
+ * loading", which is as true before the model's load has begun as after it.
+ */
+export function firstFrameWithModel(entityId: string): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const hasMesh = (): boolean => {
+      let found = false;
+      window.__studioViewport?.binder.getObject(entityId)?.traverse((child) => {
+        if ('isMesh' in child && child.isMesh === true) found = true;
+      });
+      return found;
+    };
+    const late = hasMesh() ? 1 : 0;
+    const asked = performance.now();
+    const check = (): void => {
+      if (hasMesh()) requestAnimationFrame(() => resolve({ firstFrameAt: performance.now(), late }));
+      else if (performance.now() - asked > 600_000) reject(new Error('the model never arrived'));
+      else requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
+/**
+ * Selects an entity and deletes it with the editor's own key: `Delete`, on the
+ * window, where the shortcuts listen. Resolves once the document no longer
+ * holds it.
+ */
+export function deleteEntity(entityId: string): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const stores = window.__studioStores;
+    if (!stores) {
+      reject(new Error('no stores'));
+      return;
+    }
+    stores.editor.getState().setSelection([entityId]);
+    const pressed = performance.now();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', bubbles: true }));
+    const check = (): void => {
+      if (stores.document.getState().scene.entities[entityId] === undefined) {
+        resolve({ deletedMs: performance.now() - pressed });
+      } else if (performance.now() - pressed > 10_000) {
+        reject(new Error('Delete did not delete the entity'));
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
   });
 }

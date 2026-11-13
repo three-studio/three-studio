@@ -85,6 +85,7 @@ describe('a Chrome launch', () => {
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
         '--disable-background-timer-throttling',
+        '--window-position=0,0',
       ]),
     );
     expect(args.at(-1)).toBe('about:blank');

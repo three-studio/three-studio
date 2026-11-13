@@ -39,6 +39,11 @@ export function chromeCommand(profile: string, port: number, log: string): { com
       '--disable-backgrounding-occluded-windows',
       '--disable-renderer-backgrounding',
       '--disable-background-timer-throttling',
+      // On the main screen, always. Left to itself the window opens on
+      // whichever screen macOS picks, and a 1080p screen halves the pixel ratio:
+      // the 331 MB model's build read 395 MB of GPU memory there and 454 MB on
+      // the laptop's.
+      '--window-position=0,0',
       '--window-size=1512,945',
       'about:blank',
     ],
