@@ -959,7 +959,7 @@ describe('quantising the positions', () => {
   it('gives two nodes carrying one mesh the same wrapper', () => {
     const source = placed(CORNERS);
     source.json.nodes!.push({ mesh: 0, translation: [100, 0, 0] });
-    source.json.scenes = [{ nodes: [0, 1] }];
+    source.json['scenes'] = [{ nodes: [0, 1] }];
     const rewritten = rewriteGlb(source, shortening);
     const nodes = rewritten?.json.nodes ?? [];
 
@@ -1004,7 +1004,7 @@ describe('quantising the positions', () => {
     // wrapper above it would do nothing and the model would be drawn at the
     // size of a unit cube.
     const source = placed(CORNERS, { skin: 0 });
-    source.json.skins = [{ joints: [0] }];
+    source.json['skins'] = [{ joints: [0] }];
 
     expect(rewriteGlb(source, shortening)).toBeNull();
   });

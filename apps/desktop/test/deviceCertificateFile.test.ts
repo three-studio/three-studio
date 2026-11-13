@@ -131,7 +131,7 @@ describe('a certificate made again', () => {
     expect(made.renewed).toBe(true);
     expect(made.fingerprint).not.toBe(fingerprintOf(contents));
     expect(made.names).toEqual([...needed, '192.168.1.42']);
-    expect(certificateNames((await written(file)).certificate as string)).toEqual(made.names);
+    expect(certificateNames((await written(file))['certificate'] as string)).toEqual(made.names);
   });
 
   it('keeps 32 names, letting the oldest go', async () => {
@@ -163,7 +163,7 @@ describe('a certificate made again', () => {
     const made = await ensureDeviceCertificate(file, NAMES, NOW);
 
     expect(made.renewed).toBe(true);
-    expect((await written(file)).version).toBe(CERTIFICATE_VERSION);
+    expect((await written(file))['version']).toBe(CERTIFICATE_VERSION);
   });
 
   it.each([
@@ -192,8 +192,8 @@ describe('a certificate made again', () => {
     const made = await ensureDeviceCertificate(file, NAMES, NOW);
 
     const found = await written(file);
-    expect(found.key).toBe(made.key);
-    expect(found.certificate).toBe(made.certificate);
+    expect(found['key']).toBe(made.key);
+    expect(found['certificate']).toBe(made.certificate);
     expect(new X509Certificate(made.certificate).checkPrivateKey(createPrivateKey(made.key))).toBe(
       true,
     );
@@ -205,6 +205,6 @@ describe('a certificate made again', () => {
 
     await ensureDeviceCertificate(file, NAMES, NOW);
 
-    expect((await written(file)).future).toEqual({ a: [1, 'b'] });
+    expect((await written(file))['future']).toEqual({ a: [1, 'b'] });
   });
 });

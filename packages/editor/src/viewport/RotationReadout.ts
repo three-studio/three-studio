@@ -201,7 +201,8 @@ export class RotationReadout {
     geometry.setAttribute('position', this.positions);
 
     this.arcMaterial = new MeshBasicNodeMaterial({
-      color: HANDLE_COLOURS.X,
+      // No colour: the readout is built hidden, and `show` writes the arc's
+      // colour as it makes it visible, so one given here is never seen.
       transparent: true,
       opacity: 0.3,
       side: DoubleSide,
@@ -249,7 +250,7 @@ export class RotationReadout {
 
     this.root.visible = true;
     this.arcMaterial.color.setHex(
-      (handle === null ? undefined : HANDLE_COLOURS[handle]) ?? HANDLE_COLOURS.XYZE ?? 0x787878,
+      (handle === null ? undefined : HANDLE_COLOURS[handle]) ?? HANDLE_COLOURS['XYZE'] ?? 0x787878,
     );
 
     const radius = RING_RADIUS * unit;

@@ -309,7 +309,7 @@ describe('the token', () => {
     const answer = await ask(`/${TOKEN}`);
 
     expect(answer.status).toBe(308);
-    expect(answer.headers.location).toBe(`/${TOKEN}/`);
+    expect(answer.headers['location']).toBe(`/${TOKEN}/`);
   });
 });
 
@@ -434,14 +434,14 @@ describe('a device’s message', () => {
     });
 
     expect(answer.status).toBe(403);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused past 64 KB, and closes the connection', async () => {
     const answer = await post('hello', Buffer.alloc(64 * 1024 + 1, 0x20));
 
     expect(answer.status).toBe(413);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused when it is not JSON', async () => {
@@ -540,7 +540,7 @@ describe('a device’s frame', () => {
       withheld: 100,
     });
     expect(refused.status).toBe(403);
-    expect(refused.headers.connection).toBe('close');
+    expect(refused.headers['connection']).toBe('close');
 
     expect((await upload(`?request=${request}`)).status).toBe(204);
     await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
@@ -556,7 +556,7 @@ describe('a device’s frame', () => {
 
     const refused = await upload(query, { withheld: 100 });
     expect(refused.status).toBe(400);
-    expect(refused.headers.connection).toBe('close');
+    expect(refused.headers['connection']).toBe('close');
 
     expect((await upload(`?request=${request}`)).status).toBe(204);
     await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
@@ -567,7 +567,7 @@ describe('a device’s frame', () => {
     const answer = await upload('?request=Ab3dE6gH9jK2mN5p', { withheld: 100 });
 
     expect(answer.status).toBe(409);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused, unread, once its request has been answered', async () => {
@@ -578,7 +578,7 @@ describe('a device’s frame', () => {
     const again = await upload(`?request=${request}`, { withheld: 100 });
 
     expect(again.status).toBe(409);
-    expect(again.headers.connection).toBe('close');
+    expect(again.headers['connection']).toBe('close');
     await stream.close();
   });
 
@@ -591,7 +591,7 @@ describe('a device’s frame', () => {
     });
 
     expect(answer.status).toBe(415);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
     await expect(frame).rejects.toThrow('Mac · Safari sent something that is not a PNG.');
     await stream.close();
   });
@@ -602,7 +602,7 @@ describe('a device’s frame', () => {
     const answer = await upload(`?request=${request}`, { withheld: 32 * 1024 * 1024 + 1 });
 
     expect(answer.status).toBe(413);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
     await expect(frame).rejects.toThrow(
       'The frame from Mac · Safari is over 32 MB. Lower the pixel ratio under Launch options.',
     );
@@ -721,14 +721,14 @@ describe('the assets', () => {
     expect(answer.body.toString()).toBe('scaled bytes');
     expect(answer.headers['content-type']).toBe('image/png');
     expect(answer.headers['cache-control']).toBe('no-cache');
-    expect(answer.headers.etag).toMatch(/^W\/"/);
+    expect(answer.headers['etag']).toMatch(/^W\/"/);
   });
 
   it('answers 304 with no body when the device’s copy is current', async () => {
     const first = await ask(under('game/assets/tex-brick/brick.png'));
 
     const again = await ask(under('game/assets/tex-brick/brick.png'), {
-      headers: { 'if-none-match': String(first.headers.etag) },
+      headers: { 'if-none-match': String(first.headers['etag']) },
     });
 
     expect(again.status).toBe(304);
@@ -808,7 +808,7 @@ describe('the player', () => {
 
     expect(icon.status).toBe(200);
     expect(icon.headers['content-type']).toBe('image/svg+xml');
-    expect(icon.headers.etag).toMatch(/^W\/"/);
+    expect(icon.headers['etag']).toMatch(/^W\/"/);
   });
 });
 

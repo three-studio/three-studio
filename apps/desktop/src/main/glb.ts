@@ -531,7 +531,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   const sharing = new Map<number, Set<number>>();
   (json.meshes ?? []).forEach((mesh, index) => {
     for (const primitive of mesh.primitives ?? []) {
-      const at = primitive.attributes?.POSITION;
+      const at = primitive.attributes?.['POSITION'];
       if (at === undefined) continue;
       const found = sharing.get(at);
       if (found) found.add(index);
@@ -568,7 +568,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     for (const primitive of mesh.primitives ?? []) {
       if (primitive.targets !== undefined) return null;
 
-      const at = primitive.attributes?.POSITION;
+      const at = primitive.attributes?.['POSITION'];
       const accessor = at === undefined ? undefined : accessors[at];
       if (at === undefined || accessor === undefined) return null;
       if (accessor.componentType !== FLOAT || accessor.type !== 'VEC3') return null;
@@ -608,7 +608,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
 
       wrapped.set(index, box);
       for (const primitive of mesh.primitives ?? []) {
-        const at = primitive.attributes?.POSITION;
+        const at = primitive.attributes?.['POSITION'];
         if (at !== undefined) boxes.set(at, box);
       }
     });
@@ -681,7 +681,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
         narrowed.add(indices);
       }
 
-      const normal = primitive.attributes?.NORMAL;
+      const normal = primitive.attributes?.['NORMAL'];
       const normals = normal === undefined ? undefined : accessors[normal];
       if (
         options.quantizeNormals &&

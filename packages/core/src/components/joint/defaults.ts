@@ -50,7 +50,7 @@ export function createJoint(): JointComponent {
  * for a stored slider. A kind this build does not know is the factory's hinge.
  */
 export function conformJointMotion(value: unknown): JointMotion {
-  const kind = isRecord(value) ? value.kind : undefined;
+  const kind = isRecord(value) ? value['kind'] : undefined;
   if (!isMemberOf(kind, JOINT_KIND_LABELS)) return createJointMotion('hinge');
   return conform(value, createJointMotion(kind));
 }

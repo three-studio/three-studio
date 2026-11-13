@@ -93,7 +93,7 @@ function iconButton(document: Document, name: keyof typeof ICONS, title: string)
   // The editor's tooltip, which `ui/Tooltip`'s host reads off any element,
   // React's or not — a `title` would have macOS draw one of its own as well.
   // The label keeps the name the `title` used to give the button.
-  button.dataset.tooltip = title;
+  button.dataset['tooltip'] = title;
   button.setAttribute('aria-label', title);
   button.classList.add('tp-btnv_b');
   button.style.cssText =

@@ -220,8 +220,8 @@ describe('the guards are reached, not merely written', () => {
     // `side` is a closed union, so a member nobody declared falls back to the
     // factory's; `roughness` is a number and a string does not fit; and a field
     // the model does not name is dropped rather than carried into the file.
-    expect(written.side).toBe('front');
-    expect(written.roughness).toBe(0.75);
+    expect(written['side']).toBe('front');
+    expect(written['roughness']).toBe(0.75);
     expect(written).not.toHaveProperty('trap');
   });
 
@@ -246,8 +246,8 @@ describe('the guards are reached, not merely written', () => {
       IPC_INVOKE.assets.readMaterials,
       1,
     ))[id]!;
-    expect(written.color).toBe('#ff0000');
-    expect(written.wrap).toBe(createMaterial().wrap);
+    expect(written['color']).toBe('#ff0000');
+    expect(written['wrap']).toBe(createMaterial().wrap);
     expect(written).not.toHaveProperty('trap');
   });
 
@@ -275,7 +275,7 @@ describe('the guards are reached, not merely written', () => {
       restitutionCombine: 'sum',
       trap: 1,
     });
-    expect((await stored()).material).toEqual({ ...createPhysicsMaterial(), friction: 0.05 });
+    expect((await stored())['material']).toEqual({ ...createPhysicsMaterial(), friction: 0.05 });
 
     await invoke(IPC_INVOKE.assets.createMaterial, 1, 'Brick', createMaterial());
     await expect(
@@ -322,7 +322,7 @@ describe('the guards are reached, not merely written', () => {
     const build = (await (await fetch(manifest)).json()) as {
       materials: Record<string, Record<string, unknown>>;
     };
-    expect(build.materials['stone']!.side).toBe('front');
+    expect(build.materials['stone']!['side']).toBe('front');
     expect(build.materials['stone']).not.toHaveProperty('trap');
   });
 
@@ -416,8 +416,8 @@ describe('the guards are reached, not merely written', () => {
     ) as Record<string, unknown>;
     // These are handed straight back to dockview on the next launch, so the
     // shapes it cannot read have to be gone before they are stored.
-    expect(written.working).toBeNull();
-    expect(written.templates).toEqual([]);
+    expect(written['working']).toBeNull();
+    expect(written['templates']).toEqual([]);
     expect(written).not.toHaveProperty('trap');
   });
 });
@@ -513,8 +513,8 @@ describe('a new device link', () => {
     await invoke(IPC_INVOKE.devices.regenerateToken, 1);
 
     const written = JSON.parse(await readFile(devicesFile.path, 'utf8')) as Record<string, unknown>;
-    expect(written.token).not.toBe(found.token);
-    expect(written).toEqual({ ...found, token: written.token });
+    expect(written['token']).not.toBe(found['token']);
+    expect(written).toEqual({ ...found, token: written['token'] });
     // Put back, so that every other test here finds the file it was given.
     await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   });
