@@ -18,13 +18,13 @@ import {
 } from '../page/editor';
 import { animationFrames, waitFrames } from '../page/frames';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
-import { freeBytes } from '../report/conditions';
 import { longestInside } from '../report/stats';
 import type { ScenarioContext } from './context';
 import {
   MISSED_START,
   captureView,
   checkExit,
+  folderBytes,
   heapReading,
   measureBuild,
   oneWindow,
@@ -192,7 +192,6 @@ async function runRecipe(
   const parent = join(context.runDir, 'projects', `S1-${recipe.name}`);
   const out = join(context.runDir, 'exports', `S1-${recipe.name}`);
   await mkdir(parent, { recursive: true });
-  const freeBefore = await freeBytes(parent);
   try {
     const project = await recipe.write(parent);
     const entityId = await modelEntityOf(project);
@@ -205,13 +204,15 @@ async function runRecipe(
     const profile = build.profiles[build.active];
     if (!profile) throw new Error(`the ${recipe.name} project has no active build profile`);
     await exportBuild(project, profile, out, [context.repo]);
-    // Read where the disk is fullest: the model, its copy if it has one, and
-    // the export beside them.
-    const peakBytes = freeBefore - (await freeBytes(parent));
+    // Read where the disk is fullest: the model, its copy if it has one, the
+    // export beside them, and the harness's application data. The run's own
+    // folder, not the volume's free space: with the system swapping, that moved
+    // by gigabytes the run did not write.
+    const peakBytes = await folderBytes(context.runDir);
     const notes = [
       `${recipe.name}: loaded from ${model?.importedPath ?? 'its source'}, ${model?.sizeBytes ?? 0} B as written`,
       `${recipe.name}: the export ships ${(await modelFiles(out)).join(', ')} of models`,
-      `${recipe.name}: ${(peakBytes / 1024 ** 2).toFixed(0)} MB of disk at the peak`,
+      `${recipe.name}: the run's folder holds ${(peakBytes / 1024 ** 2).toFixed(0)} MB at the peak`,
     ];
 
     const editors: Record<string, number>[] = [];

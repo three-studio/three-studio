@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type CdpSession, decodeNumberList, decodeNumbers, recordAt, runInPage } from '../launch/cdp';
 import { launchChrome } from '../launch/chrome';
@@ -181,4 +181,13 @@ export function oneWindow(label: string, windows: readonly Readonly<Record<strin
   const other = windows.find((window) => JSON.stringify(window) !== shape);
   if (other !== undefined) throw new Error(`${label}: the launches saw ${shape} and ${JSON.stringify(other)}`);
   return first;
+}
+
+/** What a folder and everything in it weigh on disk, in bytes. */
+export async function folderBytes(path: string): Promise<number> {
+  const info = await stat(path);
+  if (!info.isDirectory()) return info.size;
+  let total = 0;
+  for (const entry of await readdir(path)) total += await folderBytes(join(path, entry));
+  return total;
 }

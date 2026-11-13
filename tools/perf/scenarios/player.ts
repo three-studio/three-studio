@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
@@ -7,7 +7,7 @@ import { writeRenderProject } from '../generate/projects';
 import { serveFolder } from '../launch/serve';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
 import type { ScenarioContext } from './context';
-import { measureBuild, oneWindow, warmFiles } from './readings';
+import { folderBytes, measureBuild, oneWindow, warmFiles } from './readings';
 
 /*
  * S7 — Player: the render scene exported, as a person's browser first sees it.
@@ -37,14 +37,6 @@ export async function chunkTable(folders: readonly string[]): Promise<Map<string
     }
   }
   return new Map([...table].sort(([a], [b]) => a.localeCompare(b)));
-}
-
-async function folderBytes(path: string): Promise<number> {
-  const info = await stat(path);
-  if (!info.isDirectory()) return info.size;
-  let total = 0;
-  for (const entry of await readdir(path)) total += await folderBytes(join(path, entry));
-  return total;
 }
 
 function metricTable(chunks: Iterable<string>): ReadonlyMap<string, MetricSpec> {
