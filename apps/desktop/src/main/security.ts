@@ -18,10 +18,16 @@ const SERVED_SCHEMES = `${ASSET_SCHEME}: ${IMPORT_SCHEME}:`;
  *
  * `blob:` is required in script-src and worker-src — three.js loaders spawn
  * blob workers (DRACO, KTX2) and compiled user scripts are imported as blobs.
+ *
+ * `'wasm-unsafe-eval'` lets WebAssembly compile, and nothing else: `eval` and
+ * `new Function` stay refused. Rapier and meshopt's decoder are WebAssembly.
+ * Without it a packaged build started no game, since every Play creates the
+ * physics world, and loaded no compressed model — while development, whose
+ * policy has `'unsafe-eval'` for Vite, showed nothing wrong.
  */
 const PRODUCTION_CSP = [
   "default-src 'self'",
-  "script-src 'self' blob:",
+  "script-src 'self' 'wasm-unsafe-eval' blob:",
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${SERVED_SCHEMES}`,
   "font-src 'self' data:",
@@ -71,8 +77,13 @@ const ALLOWED_PERMISSIONS = new Set([
   'clipboard-sanitized-write',
 ]);
 
+/** The policy every page of the app is served with. */
+export function contentSecurityPolicy(isDev: boolean): string {
+  return isDev ? DEVELOPMENT_CSP : PRODUCTION_CSP;
+}
+
 export function applyContentSecurityPolicy(target: Session, isDev: boolean): void {
-  const policy = isDev ? DEVELOPMENT_CSP : PRODUCTION_CSP;
+  const policy = contentSecurityPolicy(isDev);
 
   target.webRequest.onHeadersReceived((details, callback) => {
     callback({
