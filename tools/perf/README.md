@@ -24,6 +24,26 @@ or writes `~/Library/Application Support/Three Studio`.
 The harness's own tests — the generators, the statistics, the CDP decoding — are in `test/` and run with
 `npm test`.
 
+## How a launch is driven
+
+- **The editor** (`launch/electron.ts`): the Electron binary on `apps/desktop`, under the smoke harness
+  (`STUDIO_SMOKE=1`, the project given, a setup that holds the window up until the driver sets
+  `window.__perfDone`), with `--remote-debugging-port`, and in the *uncapped* mode
+  `--disable-frame-rate-limit --disable-gpu-vsync`. Its own process group, ended whole on failure; its output
+  in `<run>/logs/<label>.log`, where the harness prints `[smoke] renderer errors:`.
+- **Attached once the editor's document has committed.** The page target exists before that document does,
+  and running script in the empty one it starts with — `Runtime.evaluate`, `Runtime.enable` — makes
+  Electron's sandboxed preload fail ("Cannot destructure property 'preloadScripts' of
+  'binding.startupData'"), which the harness counts as a renderer error. `Page.getFrameTree` runs no script;
+  polled until the frame is the editor's, it lets the driver in about a quarter of a second after
+  navigation, well before a scene is drawn.
+- **Page functions** (`page/`) are TypeScript, typechecked against the editor's own declarations
+  (`packages/editor/src/devtools.ts`) and the harness's (`page/globals.ts`), and run with `toString()` through
+  `Runtime.evaluate`. Each is whole in itself: no import but types, nothing from its module's scope.
+  `test/pageFunctions.test.ts` holds every one to that.
+- **Chrome** (`launch/chrome.ts`), for exported builds: `open -g -n` on a fresh profile in the run's folder, so
+  every launch is a first visit behind the person's work; served from `127.0.0.1` (`launch/serve.ts`).
+
 ## The projects
 
 Each scenario writes the scratch projects it measures, with the app's own code (`generate/projects.ts`): the
