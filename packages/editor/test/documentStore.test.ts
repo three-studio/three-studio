@@ -241,8 +241,8 @@ describe('document store', () => {
 
 /*
  * What one user action has to carry: the document change, the selection that
- * goes with it, and what it means for the file on disk. Three independent
- * writes across two stores before phase 2, of which undo took back one.
+ * goes with it, and what it means for the file on disk. It used to be three
+ * independent writes across two stores, of which undo took back one.
  */
 describe('what a transaction carries', () => {
   it('leaves no selection pointing at an entity undo has removed', () => {

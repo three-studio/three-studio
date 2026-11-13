@@ -21,11 +21,11 @@ import { Selection } from '../src/state/selection';
  * One description per gesture, and every caller derives from it.
  *
  * The defect that motivated the registry: two paths to the same gesture that
- * answered the opposite. `useShortcuts` asked `Selection.can('group')` — which a
- * lock refuses — and the Add menu asked `selection.length === 0`, which it does
- * not. A padlock that stopped the shortcut and not the menu, which is the padlock defect in a
- * second costume: phase 4 wired the capability once and three callers out of
- * four used it.
+ * answered the opposite. `useShortcuts` asked `Selection.can('group')` — which
+ * a lock refuses — and the Add menu asked `selection.length === 0`, which it
+ * does not. A padlock that stopped the shortcut and not the menu, which is the
+ * padlock defect in a second costume: the capability was wired once and three
+ * callers out of four used it.
  */
 
 const doc = () => useDocumentStore.getState();

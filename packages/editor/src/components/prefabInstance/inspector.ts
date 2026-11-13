@@ -12,9 +12,9 @@ import { usePrefabModeStore } from '../../state/prefabModeStore';
  *
  * The buttons are still not *drawn* greyed — Tweakpane builds each one once, and
  * keeping its enabled state current would mean subscribing the Inspector to
- * every mutation, which is exactly what T-057 measured and refused. What they no
- * longer do is disagree about the outcome: `run` re-checks `can()`. Recorded in
- * `RESTES.md`.
+ * every mutation, which was measured and refused: a cube being dragged refreshed
+ * another's Inspector 60 times a second. What they no longer do is disagree
+ * about the outcome: `run` re-checks `can()`.
  */
 
 export const inspector: ComponentSchema = {

@@ -113,9 +113,9 @@ export class SingleTarget implements EntityTarget {
  * first entity's value and writes all of them in one transaction, so editing a
  * field is one undo step however many objects are behind it.
  *
- * `buildInspector` does not know this class exists — it only ever saw
- * `EntityTarget`, which is why phase 4 built that interface before there was
- * anything to put behind it.
+ * `buildInspector` reads it as an `EntityTarget`, which is why that interface
+ * was built before there was anything to put behind it; a field only asks
+ * whether several stand behind it, to read the first one's value.
  */
 export class MultiTarget implements EntityTarget {
   constructor(private readonly entityIds: readonly string[]) {}

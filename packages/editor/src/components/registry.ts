@@ -52,7 +52,7 @@ export interface AddMenuGroup {
  * `shell/addMenu.ts` is what turns that into an `onSelect` calling
  * `addEntityInView`. The split is not tidiness — it is what keeps the viewport
  * off the command side, since the same declarations are read by the overlay,
- * and `state/projectStore` still reaches into the viewport (lot 4).
+ * and `state/projectStore` still reaches into the viewport.
  */
 export type AddMenuEntry = { readonly label: string; readonly create: () => EntityTemplate } | null;
 

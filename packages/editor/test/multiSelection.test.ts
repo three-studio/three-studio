@@ -23,7 +23,7 @@ import { expandedScene } from '../src/state/expansion';
 import { Selection } from '../src/state/selection';
 
 /*
- * The gestures, now that phase 4 has handed over `Selection` and its filters.
+ * The gestures that run through `Selection` and its filters.
  * What is tested here is the part that is easy to get wrong: one undo step per
  * gesture, and the filters that stop an entity being moved twice.
  */

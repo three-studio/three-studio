@@ -156,8 +156,9 @@ export function setEntityVisible(id: string, visible: boolean): void {
 }
 
 /**
- * No caller yet: phase 4 gives it one, in `capabilitiesOf`. Kept rather than
- * deleted and rewritten — the padlock in the hierarchy is meant to reach it.
+ * No caller yet: the lock already works — `capabilitiesOf` refuses what a
+ * locked entity may not do — but nothing in the interface sets it. Kept rather
+ * than deleted and rewritten — the padlock in the hierarchy is meant to reach it.
  */
 export function setEntityLocked(id: string, locked: boolean): void {
   mutate(locked ? 'Lock entity' : 'Unlock entity', (scene) => {
@@ -272,10 +273,10 @@ export function groupSelection(selection: Selection): string | null {
  * One transaction, and one coalesce key for the whole gesture, so a drag of
  * thirty objects is a single undo step rather than thirty times sixty of them.
  *
- * `transformable()` is the filter phase 4 wrote and tested: it drops locked
- * entities and — the part that is easy to get wrong — the members of the
- * selection that are descendants of another member, which would otherwise be
- * moved twice, once on their own and once under their parent.
+ * `transformable()` is `Selection`'s tested filter: it drops locked entities
+ * and — the part that is easy to get wrong — the members of the selection that
+ * are descendants of another member, which would otherwise be moved twice, once
+ * on their own and once under their parent.
  */
 export function transformSelection(
   selection: Selection,
@@ -522,9 +523,9 @@ export function removeComponent(id: string, componentId: string): void {
  * the swap they name nothing. Dropped and said out loud, rather than kept as
  * entries that quietly never apply again.
  *
- * Lived inside `setComponentField` until phase 3, which has no callers — so the
- * guard was unreachable, and the Inspector, which goes through
- * `setComponentNestedField`, swapped a prefab without it ever running.
+ * It lived inside `setComponentField`, which had no callers — so the guard was
+ * unreachable, and the Inspector, which goes through `setComponentNestedField`,
+ * swapped a prefab without it ever running.
  */
 function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly string[], value: unknown): void {
   if (component.type !== 'prefabInstance') return;
@@ -732,7 +733,7 @@ export function duplicateSelection(selection: Selection): void {
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
         // keep theirs, which is what Unity and Blender do. It was computed per
-        // cloned node before, which is one of the O(N) costs phase 7 collects.
+        // cloned node before, each one O(N).
         const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name), renamed);
         if (copyId) created.push(copyId);
       }

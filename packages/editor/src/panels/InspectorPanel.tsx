@@ -73,11 +73,11 @@ export function InspectorPanel() {
   /*
    * And the components, which the entity above cannot speak for.
    *
-   * Since phase 10 a component lives in `scene.components`, not in its entity,
-   * so **adding, editing or removing one moves nothing in `watched`**. The panel
-   * therefore showed a freshly added component only once something else happened
-   * to wake it — a gizmo drag, a reselection — and undoing an edit to a
-   * component field left the value that had just been taken back on screen.
+   * A component lives in `scene.components`, not in its entity, so **adding,
+   * editing or removing one moves nothing in `watched`**. The panel therefore
+   * showed a freshly added component only once something else happened to wake
+   * it — a gizmo drag, a reselection — and undoing an edit to a component field
+   * left the value that had just been taken back on screen.
    */
   const componentRevision = useDocumentStore((s) => s.componentRevision);
 

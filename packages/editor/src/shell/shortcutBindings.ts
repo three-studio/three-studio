@@ -102,9 +102,9 @@ export async function loadShortcutBindings(): Promise<void> {
 /**
  * Rebinds one key and writes it, or frees it when given `null`.
  *
- * There is no interface for this yet — see `RESTES.md`. It exists so that the
- * table is genuinely remappable rather than merely readable, and so the check
- * that a remap survives a restart has something to call.
+ * There is no interface for this yet: only `shortcuts.json`, edited by hand. It
+ * exists so that the table is genuinely remappable rather than merely readable,
+ * and so the check that a remap survives a restart has something to call.
  */
 export async function rebind(binding: ShortcutBinding, command: CommandId | null): Promise<void> {
   applyShortcutOverrides({ ...overrides, [binding]: command });

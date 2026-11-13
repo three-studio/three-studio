@@ -78,7 +78,7 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
    * selection this bar already subscribes to — so the entries cannot go stale,
    * and reading the registry adds no subscription of its own. Watching the
    * document from here would re-render the bar once per frame of a gizmo drag,
-   * which phase 7 removed.
+   * as it once did.
    */
   const ctx = { selection: Selection.of(selection, expandedScene().scene) };
 

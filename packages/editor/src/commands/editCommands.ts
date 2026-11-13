@@ -21,8 +21,8 @@ import {
  * Cmd+G asked `Selection.can('group')`, which a lock refuses; Add ▸ Group
  * Selection asked `selection.length === 0`, which it does not — so the menu
  * grouped the object the shortcut had just refused to touch. A padlock that
- * stops one path and not the other is the padlock defect in a second costume: phase 4 wired the
- * capability once, and three callers out of four used it.
+ * stops one path and not the other is the padlock defect in a second costume:
+ * the capability was wired once, and three callers out of four used it.
  *
  * Counted before the registry was written: nine activation decisions across four
  * files, with `duplicate` written three times and `delete` three times. And two

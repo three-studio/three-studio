@@ -98,7 +98,7 @@ function touchesHierarchy(patches: readonly Patch[]): boolean {
  * Development only, and only for a patch set that touched the tree. Both halves
  * were measured rather than assumed: validating every mutation cost 0.8ms of a
  * 13ms frame at 2000 entities, on a drag that cannot break an edge in the first
- * place — see the phase 1 entry in `docs/refonte-scene/JOURNAL.md`.
+ * place.
  */
 function assertHierarchy(scene: SceneDoc, patches: readonly Patch[], label: string): void {
   if (!import.meta.env.DEV || !touchesHierarchy(patches)) return;

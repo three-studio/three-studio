@@ -271,8 +271,7 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
       skyField('cloudElevation', 'Cloud Height', { min: 0, max: 1, step: 0.01 }),
       // Authored, and inert until three fixes `SkyMesh`: its `time` uniform is
       // never updated, so the clouds hold still at any speed. Not a fault of
-      // this application — a plain TSL material animates fine beside it. See
-      // `docs/three-skymesh-clouds/`.
+      // this application — a plain TSL material animates fine beside it.
       skyField('cloudSpeed', 'Cloud Drift', { min: 0, max: 0.001, step: 0.00001 }),
     ],
   },

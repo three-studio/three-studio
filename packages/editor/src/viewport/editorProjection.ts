@@ -137,7 +137,7 @@ function buildGrid(): Group {
  * scene that renders black reads as a broken editor rather than as "you have
  * not added a light yet", which is why this exists at all, and it is the one
  * overlay that changes what a build would *show* rather than what it draws on
- * top. T-012 is what makes it say so out loud.
+ * top, which is why the viewport's stats say "Editor default" while it is on.
  */
 function buildFallbackLighting(): Group {
   const group = new Group();

@@ -132,8 +132,8 @@ function affectedEntities(patches: readonly Patch[]): {
  * per-frame wake-up this project keeps finding and removing.
  *
  * Its counter is **strictly increasing**, which the store's `revision` is not:
- * that one is the save marker and goes back down on undo (phase 2). Two ideas,
- * two numbers — sharing one would make an undo look like a rewind of the log.
+ * that one is the save marker and goes back down on undo. Two ideas, two
+ * numbers — sharing one would make an undo look like a rewind of the log.
  */
 export const revisionLog = {
   entries: [] as Change[],

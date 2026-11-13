@@ -23,7 +23,7 @@ import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorP
  * — and until this file nothing compared any two of them. That is how a project
  * asking for 4096 shadow maps got 4096 in the viewport, 2048 the moment Play was
  * pressed, and 2048 in the build: three answers, no test that could hold them up
- * against each other. T-009 fixed that one; this is what stops the next.
+ * against each other. That one is fixed; this is what stops the next.
  *
  * **What it does not cover, and cannot:**
  *
@@ -31,9 +31,9 @@ import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorP
  *   still render differently if the renderer is configured differently.
  * - *The renderer's own state* — tone mapping, exposure, pixel ratio, MSAA. The
  *   guarantee there is at the type level instead, and it is the stronger one:
- *   since T-009 `createRenderer` and `SceneBinder` take the same
- *   `RenderingSettings`, from one producer per mode, so a mode cannot answer for
- *   itself without `tsc` naming it. A type cannot be skipped the way a test can.
+ *   `createRenderer` and `SceneBinder` take the same `RenderingSettings`, from
+ *   one producer per mode, so a mode cannot answer for itself without `tsc`
+ *   naming it. A type cannot be skipped the way a test can.
  * - *Timing.* A glTF or a texture arrives whenever it arrives; `whenLoaded` is
  *   awaited on both sides so this compares two settled scenes, not two races.
  * - *The exported build.* It runs no engine here. `apps/desktop/test/exportBuild.test.ts`
@@ -107,7 +107,10 @@ function fixture(): SceneDoc {
   return scene;
 }
 
-/** Project settings a build would carry; 4096 is the divergence T-009 closed. */
+/**
+ * Project settings a build would carry; 4096 is the shadow map size the modes
+ * once disagreed on.
+ */
 function settings(overrides: Partial<RenderingSettings> = {}): RenderingSettings {
   return { ...createRenderingSettings(), shadowMapSize: 4096, ...overrides };
 }
@@ -185,10 +188,11 @@ describe('the edit view and Play project a scene the same way', () => {
   it('fails that comparison the moment the two disagree about batching', async () => {
     const scene = fixture();
 
-    // The disagreement T-008 made impossible to express: the viewport batching
-    // while the game does not. It used to be two defaults written separately in
-    // two files, one of them commented as the opposite of what it did — they
-    // agreed by accident, and nothing would have said so when they stopped.
+    // The disagreement one setting now makes impossible to express: the
+    // viewport batching while the game does not. It used to be two defaults
+    // written separately in two files, one of them commented as the opposite of
+    // what it did — they agreed by accident, and nothing would have said so
+    // when they stopped.
     const view = await editView(scene, settings({ batching: true }));
     const running = await play(scene, settings({ batching: false }));
 

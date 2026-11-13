@@ -338,7 +338,6 @@ const KNOWN_CYCLES: string[][] = [
    * The only one of the four that is a real cycle of values, and it closes on a
    * layer violation: `state/projectStore.ts` imports the viewport to call
    * `peekViewport()?.binder.setAssetResolver(...)`. A store owns no renderer.
-   * Closed in lot 4.
    */
   [
     'packages/editor/src/commands/sceneFiles.ts',

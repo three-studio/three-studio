@@ -75,12 +75,11 @@ interface EditorState {
   /**
    * The entity a view has been asked to put into inline edit, or `null`.
    *
-   * Here rather than in the panel's own `useState`, and the reason is the whole
-   * of T-063. Renaming is the one gesture a command cannot finish: what it does
-   * is put a *row* into edit mode, and only the hierarchy has rows. That used to
-   * be wired through a mutable module slot in `commands/` — a command registry
-   * containing a callback registry — filled by nobody, so `rename.run()` did
-   * nothing at all.
+   * Here rather than in the panel's own `useState`, because renaming is the one
+   * gesture a command cannot finish: what it does is put a *row* into edit
+   * mode, and only the hierarchy has rows. That used to be wired through a
+   * mutable module slot in `commands/` — a command registry containing a
+   * callback registry — filled by nobody, so `rename.run()` did nothing at all.
    *
    * A field a command writes and a view reads is the same shape `assetStore`
    * already uses for `revealed`, and it is deliberately **not** an event bus: it
@@ -96,7 +95,7 @@ interface EditorState {
    * A field a command writes and a view reads, the same shape as `renaming`
    * above: opening it is a gesture, and a gesture reached from a key has to go
    * through the registry or it needs a fourth spelling of "which key does what",
-   * which is exactly what T-064 removed.
+   * which is exactly what the binding table removed.
    */
   paletteOpen: boolean;
   /**

@@ -148,8 +148,8 @@ describe('the editor audition', () => {
   /*
    * `setMasterVolume` clamps with `Math.max(0, v)`, and `Math.max(0, NaN)` is
    * `NaN`. A root gain at `NaN` silences everything while every comparison
-   * against it answers `false` — the property that made `spatialBlend: NaN` so
-   * expensive to find in phase 7. Refused at the boundary, as there.
+   * against it answers `false` — the property that once made `spatialBlend: NaN`
+   * so expensive to find. Refused at the boundary, as that one was.
    */
   it('refuses a level that is not a number', async () => {
     const { context, preview } = harness();

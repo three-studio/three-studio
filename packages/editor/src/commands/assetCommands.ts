@@ -66,8 +66,8 @@ async function deleteAsset(asset: AssetEntry): Promise<void> {
  * for, dispatched by a menu, a key or a palette — none of which is in a position
  * to do anything with a return value.
  *
- * Recorded in `RESTES.md`, because a command palette (milestone 8.4) would
- * plausibly want "New Folder", and that is the day to reopen it.
+ * The command palette would plausibly want "New Folder" one day, and that is
+ * the day to reopen this.
  */
 
 /** Everything under a folder, itself included. */
@@ -247,16 +247,15 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
  * **Neither removes a divergence, and that is worth saying plainly.** The Edit
  * and scene-file families each found callers guarding in their own words and
  * getting it wrong; here the three call sites already went through one function
- * and asked nothing. What the table buys is what T-062 is for — a gesture with
- * an id, a label and a verdict is one a command palette can list (8.4) and a
- * script can name — and the target-carrying context these two need is the same
- * one the remaining families will use.
+ * and asked nothing. What the table buys is that a gesture with an id, a label
+ * and a verdict is one the command palette can list and a script can name — and
+ * the target-carrying context these two need is the same one the remaining
+ * families will use.
  *
- * **`revealAsset` brings a panel forward, and that is not milestone 8.5.** That
- * one is about `playCommands` reaching into the dock *as a side effect* of
- * starting the game. Here, putting the Project panel in front **is** the
- * gesture: "show me this asset" with the panel left behind whatever is on top of
- * it has not happened.
+ * **`revealAsset` brings a panel forward, and that is not what Play once did.**
+ * Play reached into the dock *as a side effect* of starting the game. Here,
+ * putting the Project panel in front **is** the gesture: "show me this asset"
+ * with the panel left behind whatever is on top of it has not happened.
  */
 
 /** The asset this context names, or `undefined` if it names none or it is gone. */

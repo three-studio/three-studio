@@ -45,7 +45,7 @@ export function buildAddMenu(): MenuEntry[] {
     // The other half, and the one that is actually asked for: an empty is
     // trivial to make, and dragging five objects into it one at a time is not.
     //
-    // Through the registry since phase 12. This entry asked
+    // Through the registry. This entry once asked
     // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
     // object was refused by the shortcut and grouped by the menu.
     commandEntry('group'),

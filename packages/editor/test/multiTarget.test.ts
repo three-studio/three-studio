@@ -17,9 +17,8 @@ import { MultiTarget } from '../src/inspector/target';
  * Several entities presented as one — Godot's `MultiNodeEdit`, Unity's
  * `serializedObject` with multiple targets.
  *
- * `buildInspector` does not know this class exists: it only ever saw
- * `EntityTarget`, which is why phase 4 built that interface before there was
- * anything to put behind it.
+ * `buildInspector` reads it as an `EntityTarget`, which is why that interface
+ * was built before there was anything to put behind it.
  *
  * Two things this file used to check are gone with what they checked. A reading
  * was `{ value, mixed }`, and `mixed` was the dash Unity and Unreal show when

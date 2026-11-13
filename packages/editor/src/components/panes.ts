@@ -7,13 +7,13 @@
  * `ComponentDoc` is an error here, in `overlays.ts` and in `menus.ts`, and in
  * none of them is it a silently empty panel.
  *
- * Three files rather than one, and the reason is a cycle rather than a taste.
- * A pane reaches the commands and the stores — extracting a material opens a
+ * Three files rather than one, and the reason is a cycle rather than a taste. A
+ * pane reaches the commands and the stores — extracting a material opens a
  * dialog, a prefab row runs half of `prefabCommands` — while the overlay is
  * read from inside the viewport. `state/projectStore` still imports the
- * viewport (the layer violation lot 4 closes), so one module importing both
- * halves puts `markerStyles` inside that knot. Splitting by the side of the
- * editor that asks keeps each import going one way.
+ * viewport, a layer violation, so one module importing both halves puts
+ * `markerStyles` inside that knot. Splitting by the side of the editor that
+ * asks keeps each import going one way.
  */
 import type { ComponentDoc, ComponentType } from '@three-studio/core';
 import {

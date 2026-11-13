@@ -116,8 +116,8 @@ export class InspectorBinding {
     this.buildHeader(entity);
     this.buildTransform(entity.id);
 
-    // Through the target, so this loop does not know whether it is editing one
-    // entity or forty. Phase 8 swaps in a `MultiTarget` and nothing here moves.
+    // Through the target, so `buildComponent` does not know whether it is
+    // editing one entity or forty: `buildMulti` hands it a `MultiTarget`.
     const target = new SingleTarget(entity.id);
     for (const component of target.components()) {
       this.buildComponent(entity.id, component, target);

@@ -66,7 +66,7 @@ type EachWith<D, E> = D extends unknown ? D & E : never;
  * declared variant. `FieldDef` does have an `asset` variant, but it means the
  * plain dropdown a script property gets today; the two are one idea with two
  * controls, and making them one is a change to what a designer sees rather
- * than to how a pane is written. See `docs/chantier`.
+ * than to how a pane is written.
  */
 export interface AssetSlotParams {
   view: 'asset';

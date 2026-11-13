@@ -20,7 +20,7 @@ import { editorAudioContext } from './context';
  * vitest runs under node, where `AudioContext` and `requestAnimationFrame` are
  * types with no values behind them. Without the seam this whole file is
  * unreachable from a test — and it is the file the frame loop lives in, which is
- * where two of the bugs in phase 7 were.
+ * where two of audio's bugs were.
  */
 export interface AudioPreviewOptions {
   /** `null` where the window has no Web Audio, which the audition tolerates. */
@@ -34,10 +34,10 @@ export interface AudioPreviewOptions {
 /**
  * What the editor plays when nothing is running.
  *
- * A second `AudioEngine` on the same context as play mode, kept apart from it by
- * a root gain each. That separation is the whole requirement of the
- * PRD's §9: stopping the game must not stop an audition, and auditioning a clip
- * must not appear in the game's mix.
+ * A second `AudioEngine` on the same context as play mode, kept apart from it
+ * by a root gain each. That separation is the whole requirement: stopping the
+ * game must not stop an audition, and auditioning a clip must not appear in the
+ * game's mix.
  *
  * One voice at a time, deliberately. Auditioning is a question — "what does this
  * sound like" — and two answers at once is not a better answer.

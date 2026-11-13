@@ -16,9 +16,9 @@ import { Selection } from '../state/selection';
  * What a gesture acts on.
  *
  * Read at the moment it is needed and never kept, which is what stops a command
- * deciding against a stale selection — the defect `CIBLE.md` attributed to the
- * Add menu. It can also be *supplied*: the hierarchy's context menu acts on the
- * row that was right-clicked, which is not always what is selected.
+ * deciding against a stale selection, as the Add menu once did. It can also be
+ * *supplied*: the hierarchy's context menu acts on the row that was
+ * right-clicked, which is not always what is selected.
  */
 export interface EditorContext {
   readonly selection: Selection;
