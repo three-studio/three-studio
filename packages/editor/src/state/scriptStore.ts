@@ -20,14 +20,6 @@ interface ScriptState {
   displayName: (assetId: string) => string | null;
 }
 
-/**
- * The surface a compiled script bundle is allowed to reach.
- *
- * Published on a global rather than imported, because the bundle must not pull
- * its own copy of the runtime — that would mean a second three.js in memory and
- * `instanceof` failing across the boundary. The build aliases `@three-studio/runtime`
- * to a shim that reads this.
- */
 /** Kept alive so stack traces from the running bundle stay resolvable. */
 let previousBundleUrl: string | null = null;
 
@@ -38,6 +30,14 @@ let previousBundleUrl: string | null = null;
  */
 let importedCode: string | null = null;
 
+/**
+ * The surface a compiled script bundle is allowed to reach.
+ *
+ * Published on a global rather than imported, because the bundle must not pull
+ * its own copy of the runtime — that would mean a second three.js in memory and
+ * `instanceof` failing across the boundary. The build resolves
+ * `@three-studio/runtime` to a shim that reads this.
+ */
 function publishScriptApi(): void {
   (globalThis as unknown as Record<string, unknown>)['__STUDIO_SCRIPT_API__'] = {
     version: SCRIPT_API_VERSION,
@@ -67,15 +67,10 @@ export const useScriptStore = create<ScriptState>()((set, get) => ({
         return false;
       }
 
-      // The code already imported is the code on disk, so the classes
-      // registered match the source. Re-importing would discard live state for
-      // no reason.
-      // The code itself is compared, not the build's `unchanged`: that flag is
-      // measured against the main process's last build, which every window,
-      // the export and each device launch share. Once a launch had compiled an
-      // edited script, Play's own build answered `unchanged`, and Play ran the
-      // classes from before the edit. After a reload, nothing has been
-      // imported yet, whatever the main process has cached.
+      // The main process compiles on every call, so code equal to what was
+      // imported means the sources did not change, and the classes registered
+      // match them. Importing it again would discard live state for nothing,
+      // and hold a second copy of the same bundle.
       if (result.code === importedCode) {
         set({ warnings: result.warnings });
         return true;

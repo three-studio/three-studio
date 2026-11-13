@@ -3,13 +3,14 @@ import { join } from 'node:path';
 import {
   CACHE_DIR,
   SCRIPT_API_VERSION,
+  isRecord,
   type AssetEntry,
   type ScriptBuildResult,
 } from '@three-studio/core';
 // Type-only, so nothing of the runtime — three included — reaches the main
 // process. What is needed is the class's key set, and only the compiler reads it.
 import type { BehaviourMember } from '@three-studio/runtime';
-import { build, type Message } from 'esbuild';
+import { build, type Plugin } from 'esbuild';
 import { scanAssets } from './assetScan';
 import { resolveInside } from './paths';
 
@@ -42,23 +43,25 @@ export default api;
 `;
 
 /**
- * Compiles every script asset in the project into one ES module.
- *
- * A generated entry file imports each script and registers it against its asset
- * id, so the runtime resolves a `script` component without knowing anything
- * about how the code was built.
+ * Serves `@three-studio/runtime` to the bundle as {@link SHIM_SOURCE}, from
+ * memory, as the entry is. Both were files under the project's `.studio/`, and
+ * now that every build compiles, every build would rewrite them: two builds of
+ * one project at once — Play and a device launch — could each read the other's
+ * half-written copy.
  */
-/**
- * Fingerprint of the script sources, so an unchanged project rebuilds nothing.
- *
- * Play compiles every time, which is what makes "edit, press Play" the whole
- * loop — but running esbuild and re-importing the bundle on a project nobody
- * has touched is pure latency on every single Play.
- */
-const lastBuilds = new Map<
-  ScriptBuildPurpose,
-  { projectPath: string; signature: string; result: ScriptBuildResult }
->();
+const shimPlugin: Plugin = {
+  name: 'studio-runtime-shim',
+  setup(builder) {
+    builder.onResolve({ filter: /^@three-studio\/runtime$/ }, (args) => ({
+      path: args.path,
+      namespace: 'studio',
+    }));
+    builder.onLoad({ filter: /.*/, namespace: 'studio' }, () => ({
+      contents: SHIM_SOURCE,
+      loader: 'js',
+    }));
+  },
+};
 
 /**
  * What a bundle is compiled for, which decides what it carries besides the code.
@@ -70,6 +73,25 @@ const lastBuilds = new Map<
  */
 export type ScriptBuildPurpose = 'play' | 'export';
 
+/**
+ * Compiles every script asset in the project into one ES module, from what is
+ * on disk, on every call.
+ *
+ * A generated entry imports each script and registers it against its asset id,
+ * so the runtime resolves a `script` component without knowing anything about
+ * how the code was built.
+ *
+ * There is no cache. The one this replaced was keyed on the script assets'
+ * paths, sizes and times, while esbuild also bundles whatever a script imports:
+ * after an edit to a `.json` data asset or to a helper outside `assets/`, Play
+ * kept running the old code, and since the cache lived in the main process,
+ * closing the window did not clear it — only relaunching the app did. All it
+ * saved was esbuild's run, measured at 13 ms for 100 files and 50 ms for 350 on
+ * an M1 Pro. The renderer still imports nothing when the code is the code it
+ * already holds, so an unchanged project keeps its scripts' state and no second
+ * copy of the bundle — which rests on the same input compiling to the same
+ * text, as esbuild's does.
+ */
 export async function buildScripts(
   projectPath: string,
   purpose: ScriptBuildPurpose = 'play',
@@ -77,39 +99,17 @@ export async function buildScripts(
   const manifest = await scanAssets(projectPath);
   const scripts = manifest.assets.filter((asset) => asset.kind === 'script');
 
-  const signature = scripts
-    .map((script) => `${script.path}:${script.sizeBytes}:${script.modifiedAt}`)
-    .sort()
-    .join('|');
-
-  const lastBuild = lastBuilds.get(purpose);
-  if (lastBuild && lastBuild.projectPath === projectPath && lastBuild.signature === signature) {
-    return { ...lastBuild.result, unchanged: true };
-  }
-
-  const cacheDir = join(projectPath, CACHE_DIR);
-  await mkdir(cacheDir, { recursive: true });
-
-  const shimPath = join(cacheDir, 'studio-runtime-shim.mjs');
-  await writeFile(shimPath, SHIM_SOURCE, 'utf8');
-
-  const remember = (result: ScriptBuildResult): ScriptBuildResult => {
-    // A failed build is cached too, so a broken file does not re-run esbuild on
-    // every Play just to produce the same error.
-    lastBuilds.set(purpose, { projectPath, signature, result });
-    return result;
-  };
-
   if (scripts.length === 0) {
-    return remember({ code: 'export {};\n', errors: [], warnings: [], scriptCount: 0 });
+    return { code: 'export {};\n', errors: [], warnings: [], scriptCount: 0 };
   }
-
-  const entryPath = join(cacheDir, 'script-entry.mjs');
-  await writeFile(entryPath, generateEntry(projectPath, scripts), 'utf8');
 
   try {
     const result = await build({
-      entryPoints: [entryPath],
+      // Left unnamed, so the bundle calls it `<stdin>`. Given a `sourcefile`,
+      // esbuild writes it relative to the working directory resolved through
+      // symlinks — and a project behind one, as every temp folder on macOS is
+      // (`/var` is `/private/var`), put the author's own path into the bundle.
+      stdin: { contents: generateEntry(projectPath, scripts), resolveDir: projectPath, loader: 'js' },
       bundle: true,
       write: false,
       format: 'esm',
@@ -124,22 +124,53 @@ export async function buildScripts(
       // Scripts are authored in TypeScript; types are stripped, not checked.
       // Type errors surface in the editor's own typecheck, not at play time.
       loader: { '.ts': 'ts', '.js': 'js' },
-      alias: { '@three-studio/runtime': shimPath },
+      plugins: [shimPlugin],
     });
 
-    return remember({
+    return {
       code: result.outputFiles[0]?.text ?? 'export {};\n',
       errors: [],
       warnings: result.warnings.map(formatMessage),
       scriptCount: scripts.length,
-    });
+    };
   } catch (cause) {
-    const failure = cause as { errors?: Message[] };
-    const errors = failure.errors?.map(formatMessage) ?? [
-      cause instanceof Error ? cause.message : String(cause),
-    ];
-    return remember({ code: 'export {};\n', errors, warnings: [], scriptCount: scripts.length });
+    return {
+      code: 'export {};\n',
+      errors: buildErrorsOf(cause),
+      warnings: [],
+      scriptCount: scripts.length,
+    };
   }
+}
+
+/** What a message to the author needs of an esbuild message. esbuild's `Message` is one. */
+interface BuildMessage {
+  readonly text: string;
+  readonly location: { readonly file: string; readonly line: number; readonly column: number } | null;
+}
+
+function isBuildMessage(value: unknown): value is BuildMessage {
+  if (!isRecord(value) || typeof value['text'] !== 'string') return false;
+  const location = value['location'];
+  return (
+    location === null ||
+    (isRecord(location) &&
+      typeof location['file'] === 'string' &&
+      typeof location['line'] === 'number' &&
+      typeof location['column'] === 'number')
+  );
+}
+
+/**
+ * The errors a failed build gives the author. esbuild rejects with an error
+ * whose `errors` are its messages; whatever else throws — the service failing to
+ * start, a file it could not read — is reported in its own words.
+ */
+function buildErrorsOf(cause: unknown): string[] {
+  const reported = isRecord(cause) ? cause['errors'] : undefined;
+  const messages = Array.isArray(reported) ? reported.filter(isBuildMessage) : [];
+  if (messages.length > 0) return messages.map(formatMessage);
+  return [cause instanceof Error ? cause.message : String(cause)];
 }
 
 function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): string {
@@ -618,7 +649,7 @@ export async function createScript(projectPath: string, name: string): Promise<s
   return relative;
 }
 
-function formatMessage(message: Message): string {
+function formatMessage(message: BuildMessage): string {
   const where = message.location
     ? `${message.location.file}:${message.location.line}:${message.location.column}`
     : '';

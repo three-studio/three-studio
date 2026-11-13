@@ -329,13 +329,6 @@ export interface ScriptBuildResult {
   errors: string[];
   warnings: string[];
   scriptCount: number;
-  /**
-   * No script source changed since the main process last compiled — for
-   * whoever asked: any window, an export, a device launch. It says nothing of
-   * what one window has imported, so the editor compares `code` with the
-   * bundle it imported instead.
-   */
-  unchanged?: boolean;
 }
 
 export interface ScriptApi {

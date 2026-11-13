@@ -58,7 +58,7 @@ describe('script typings and tsconfig', () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-shim-'));
     await writeScriptTypings(project);
 
-    // The shim is written next to the bundle at build time; its check is what
+    // The shim is compiled into the bundle at build time; its check is what
     // turns "a method vanished" into a sentence instead of a TypeError deep in
     // someone's behaviour.
     const typings = await readFile(join(project, CACHE_DIR, 'studio-runtime.d.ts'), 'utf8');

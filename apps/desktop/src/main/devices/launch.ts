@@ -47,8 +47,8 @@ export interface Launch {
 /**
  * A launch, from the editor's snapshot and the project's files.
  *
- * Saves nothing, and copies nothing: what it writes is what Play writes — the
- * script entry under `.studio/`, and sidecars a scan repairs.
+ * Saves nothing, and copies nothing: what it writes is what Play writes, the
+ * sidecars a scan repairs.
  *
  * One step after the other, never two at once. `buildScripts` scans the assets
  * itself, and a scan writes the sidecars it finds missing or stale: two at once
