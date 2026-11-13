@@ -417,3 +417,44 @@ export function hierarchyScroll(args: { rowCount: number; rowHeight: number }): 
   if (!list) throw new Error(`no element scrolls ${args.rowCount} rows tall`);
   return { firstRow: Math.floor(list.scrollTop / args.rowHeight), rows: Math.round(list.scrollHeight / args.rowHeight) };
 }
+
+/** Resolves once the Project panel's store holds `count` assets: the project's scan has arrived. */
+export function assetsLoaded(count: number): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const started = performance.now();
+    const check = (): void => {
+      const assets = window.__studioStores?.asset.getState().manifest.assets.length ?? 0;
+      if (assets >= count) resolve({ assets, loadedAt: performance.now() });
+      else if (performance.now() - started > 120_000) reject(new Error(`the store holds ${assets} assets, not ${count}`));
+      else setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
+/** One `studio.assets.list()` — the scan, over IPC — timed in ms. */
+export async function listAssets(): Promise<Record<string, number>> {
+  const started = performance.now();
+  await window.studio.assets.list();
+  return { ms: performance.now() - started };
+}
+
+/**
+ * One store action, as the Project panel calls it, timed in ms: the IPC, the
+ * main process's work, and the store adopting what came back. Refused when
+ * the store says it failed, since a failed move times nothing.
+ */
+export async function assetAction(
+  action: { kind: 'move'; path: string; folder: string } | { kind: 'renameFolder'; folder: string; name: string } | { kind: 'refresh' },
+): Promise<Record<string, number>> {
+  const store = window.__studioStores?.asset;
+  if (!store) throw new Error('no stores');
+  const started = performance.now();
+  if (action.kind === 'move') await store.getState().move(action.path, action.folder);
+  else if (action.kind === 'renameFolder') await store.getState().renameFolder(action.folder, action.name);
+  else await store.getState().refresh();
+  const ms = performance.now() - started;
+  const error = store.getState().error;
+  if (error !== null) throw new Error(`${action.kind} failed: ${error}`);
+  return { ms };
+}
