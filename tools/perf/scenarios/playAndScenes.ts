@@ -101,7 +101,9 @@ async function measure(
       const name = index % 2 === 0 ? 'B' : 'A';
       return { name, id: sceneId(subject, name) };
     });
-    const switches = decodeNumberList(await runInPage(editor.session, switchScenes, order, 300_000));
+    const switches = decodeNumberList(
+      await runInPage(editor.session, switchScenes, { order, loadingId: sceneId(subject, 'Loading') }, 300_000),
+    );
     const switched = await memoryNow(editor.session);
     await runInPage(editor.session, pressStop, undefined);
 
@@ -148,6 +150,8 @@ async function measure(
         'cycles.gpuGrowthPerCycleBytes': (cycled.gpu - cyclesBefore.gpu) / CYCLES,
       },
       notes: [
+        `${SWITCHES} switches between A and B, no frame of Loading among them`,
+        `the heap ${cycled.heap > cyclesBefore.heap ? 'grew' : 'did not grow'} over ${CYCLES} edit → Play cycles`,
         loading['sawLoading'] === 1
           ? `Loading ran while Heavy loaded, ${loading['frames']} frames drawn meanwhile`
           : 'Loading NEVER ran while Heavy loaded',

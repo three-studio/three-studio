@@ -476,9 +476,13 @@ export function sceneApiFrom(name: string): Promise<Record<string, number>> {
  * Goes to each scene in turn through the game's own scene API — what a
  * script calls — each to the first frame after the viewport runs it: the
  * times, in ms. The API reaches the host, so the first one published serves
- * every switch.
+ * every switch. Refused if the loading scene ever runs in between: these
+ * switches are timed with none.
  */
-export function switchScenes(order: readonly { name: string; id: string }[]): Promise<number[]> {
+export function switchScenes(args: {
+  order: readonly { name: string; id: string }[];
+  loadingId: string;
+}): Promise<number[]> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
     const api = window.__perfScenes;
@@ -488,14 +492,16 @@ export function switchScenes(order: readonly { name: string; id: string }[]): Pr
     }
     const times: number[] = [];
     const next = (index: number): void => {
-      const target = order[index];
+      const target = args.order[index];
       if (target === undefined) {
         resolve(times);
         return;
       }
       const started = performance.now();
       const shown = (): void => {
-        if (stores.viewport.getState().runningScene === target.id) {
+        const running = stores.viewport.getState().runningScene;
+        if (running === args.loadingId) reject(new Error('the loading scene ran between two switches'));
+        else if (running === target.id) {
           requestAnimationFrame(() => {
             times.push(performance.now() - started);
             next(index + 1);
