@@ -15,7 +15,7 @@ import {
   newestRun,
   noiseOf,
 } from './report/compare';
-import { type RunConditions, conditionsNow, freeBytes } from './report/conditions';
+import { type RunConditions, conditionsNow, freeBytes, screenLocked } from './report/conditions';
 import { type ScenarioResult, summaryOf } from './report/results';
 import { abMarkdown, reportName, runMarkdown } from './report/write';
 import { assetsScenario } from './scenarios/assets';
@@ -109,6 +109,13 @@ describe('a performance run', () => {
   };
 
   beforeAll(async () => {
+    // Before anything is written or launched: see `screenLocked`.
+    if (await screenLocked()) {
+      throw new Error(
+        'The screen is locked. A run measures what the display shows, and a locked Mac turns its display off ten seconds ' +
+          'after any wake: unlock it, and run again.',
+      );
+    }
     const free = await freeBytes(runDir);
     if (free < MINIMUM_FREE_BYTES) {
       throw new Error(`${(free / 1024 ** 3).toFixed(1)} GB free where the run would write; it needs 3 GB.`);

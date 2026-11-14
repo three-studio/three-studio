@@ -155,6 +155,12 @@ Each of these cost a run before it was known.
   before Play was pressed. Stamp with `performance.now()` inside the callback.
 - **`pgrep -f` and `pkill -f` read a pattern opening with `--` as an option**, fail, and match nothing. A
   pattern such as `--user-data-dir=…` goes after `--`.
+- **A locked screen ends a launch ten seconds in.** A locked Mac turns its display back off ten seconds after
+  anything wakes it — the run's own `caffeinate -u` does — and nothing holds it on, `caffeinate -d` included. When
+  the display goes off, the debugging connection of the launch under way closes: `Runtime.evaluate: the connection
+  closed`, with no renderer error and nothing in the launch's log, at the same point of the same scenario every
+  time. An editor launched alone lives through it and goes on drawing, so the launch is not what to look at. A run
+  asks the IO registry before it starts (`IOConsoleLocked`), and refuses a locked screen in so many words.
 - **Vitest's environment is not the shell's.** Vitest sets `NODE_ENV=test` and Vite's `import.meta.env` (`MODE`,
   `DEV`, `PROD`, …) on `process.env` before the run, and a process the harness starts inherits them. A `vite build`
   under `NODE_ENV=test` keeps the bundles' development branches: the first baseline's other tree, the same commit,

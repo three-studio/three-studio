@@ -38,6 +38,31 @@ export function lowPowerModeOn(pmset: string): boolean {
   return /^\s*lowpowermode\s+1\b/m.test(pmset);
 }
 
+/**
+ * `ioreg -n Root -d1` lists `"IOConsoleLocked" = Yes` on the registry's root
+ * while the screen is locked.
+ */
+export function screenLockedIn(ioregRoot: string): boolean {
+  return /"IOConsoleLocked"\s*=\s*Yes\b/.test(ioregRoot);
+}
+
+/**
+ * Whether the screen is locked, which no run survives.
+ *
+ * A locked Mac turns its display back off ten seconds after anything wakes it —
+ * the run's own `caffeinate -u` does — and no assertion holds it on: not
+ * `caffeinate -d`, not an app made for it. When the display goes off, the
+ * debugging connection of the launch under way closes. The first run met on a
+ * locked screen failed ten seconds in with `Runtime.evaluate: the connection
+ * closed`, three times over, and nothing in that sentence says a password is
+ * what is missing. An editor launched alone lives through the display going off
+ * and goes on drawing, which is why the lock is asked about, not guessed from a
+ * launch.
+ */
+export async function screenLocked(): Promise<boolean> {
+  return screenLockedIn(await output('ioreg', ['-n', 'Root', '-d1']));
+}
+
 export interface RunConditions {
   readonly machine: string;
   readonly os: string;
