@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAYER_ID,
+  SCENE_FORMAT_VERSION,
   Registry,
   combineDisposables,
   componentAssets,
@@ -318,7 +319,7 @@ describe('fill', () => {
   it('is what the scene migration goes through', () => {
     const entity = createEntity('Thing', [{ id: 'c1', type: 'light' } as unknown as ComponentDoc]);
     const scene: SceneDoc = {
-      version: 1,
+      version: SCENE_FORMAT_VERSION,
       id: fixedId('scene', 's1'),
       name: 'Main',
       entities: new Map([[entity.entity.id, entity.entity]]),

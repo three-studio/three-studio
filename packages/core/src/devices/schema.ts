@@ -121,9 +121,9 @@ function libraryOf(value: unknown): Map<AssetId, unknown> {
  *
  * Whatever the renderer sent: a project's own script can call the bridge with
  * anything, and what it sends becomes the files a phone downloads. Each part
- * goes through the repair its kind already has — a scene and a prefab through
- * their migrations, which keep what a newer editor wrote; a material and the
- * settings against their factories. A field this does not know is dropped:
+ * goes through the reading its kind already has — a scene and a prefab as a
+ * file is read, which keeps a component of a type this build does not define
+ * as found; a material and the settings against their factories. A field this does not know is dropped:
  * nothing here is kept on disk, and the renderer that sends it ships in the
  * same build.
  *

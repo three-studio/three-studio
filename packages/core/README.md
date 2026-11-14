@@ -31,9 +31,8 @@ activateCore(registries);
 const scene = createStarterScene();
 const json = serializeScene(scene);
 
-// Takes the text, not a parsed object: reading is where the versioned migrations
-// run, so a document written by an older build loads without losing the fields
-// this build does not know about.
+// Takes the text, not a parsed object: reading is where the format is checked,
+// and a document of another format is refused rather than converted.
 const restored = deserializeScene(registries, json);
 ```
 
@@ -48,8 +47,9 @@ const restored = deserializeScene(registries, json);
 | **Assets** | the manifest, `.meta.json` sidecars, the importer registry and its per-format settings |
 | **Serialization** | versioned read/write for scenes, prefabs and projects |
 
-Every on-disk format carries a version and migrates forward through its own factory. Unknown fields
-are left untouched rather than dropped.
+Every on-disk format carries a version. Until 1.0.0 a file of another version is refused, with
+diagnostics, and nothing converts it; a component of a type this build does not define is kept
+exactly as found.
 
 ## Status
 

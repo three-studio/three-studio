@@ -1,5 +1,6 @@
 import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { isRecord } from '../conform';
+import { formatDiagnostics, versionRefusal } from '../decoded';
 import {
   createAssetId,
   idMapOf,
@@ -44,7 +45,7 @@ import type {
  *
  * It reuses `EntityDoc` rather than inventing a shape of its own, which is the
  * whole reason this is cheap — one schema, one binder, one serialiser, one
- * migration. Godot goes further and makes a prefab just another scene; we stop
+ * reader. Godot goes further and makes a prefab just another scene; we stop
  * short of that only because our scenes carry an environment block a prefab has
  * no use for.
  */
@@ -608,41 +609,13 @@ export function applyPrefabOverride(
 }
 
 /**
- * The scene format a prefab of a given version was written alongside.
+ * A parsed prefab file, as a document of this format: its entity table an
+ * object keyed by id, which the document keeps in a Map.
  *
- * Prefab 7 is scene 10 and everything before it is scene 9 or earlier, which is
- * all a version-gated migration needs to know: it asks "is this older than the
- * format that changed" and nothing finer. Each entry on `PREFAB_FORMAT_VERSION`
- * already records the correspondence in prose; this is the one line of it that
- * code reads.
+ * A file of any other format is refused before anything else in it is read,
+ * as a scene is: nothing converts an older prefab (`PREFAB_FORMAT_VERSION`).
  *
- * Returning 9 for everything below 7 rather than mapping each number is
- * deliberate. The map would claim a precision nobody has — prefab 3 and scene 4
- * were the same change, prefab 5 was scene 7 — and every pass in `migrateScene`
- * except one is gated on the data, so a number that is merely *old enough* is
- * the whole requirement. The day a second semantic migration lands between two
- * prefab versions, this becomes a table and the tests here say so.
- *
- * Written `>= 7` rather than `< 7` so that a file whose `version` is missing or
- * is not a number — which the type says cannot happen and a hand-edited file
- * can — comes out as *old* and is migrated, instead of being waved through as
- * current. `readPrefabAssets` checks only the upper bound, so this is the last
- * place that can be wrong about a prefab's age, and against `undefined` the
- * safe answer is the comparison that does the work rather than the one that
- * skips it.
- */
-function sceneFormatOfPrefab(version: unknown): number {
-  return typeof version === 'number' && version >= 7 ? SCENE_FORMAT_VERSION : 9;
-}
-
-/**
- * Fills in what a prefab written by an older editor lacks, from the JSON a file
- * holds: its entity table an object keyed by id, which the document keeps in a
- * Map.
- *
- * It holds `EntityDoc`s, so it inherits every problem a scene has and the same
- * answer: one pass at the boundary, filling from each type's own factory. See
- * the format rules in the README.
+ * It holds `EntityDoc`s, so it is mended as a scene is, by the same walk.
  *
  * @param assetId The id the place that read it knows: its sidecar's, or its key
  *   in a library. A file's own `id` field is what an older build wrote and what
@@ -653,6 +626,10 @@ function sceneFormatOfPrefab(version: unknown): number {
  */
 export function migratePrefab(registries: CoreRegistries, input: unknown, assetId?: AssetId): PrefabDoc {
   if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
+  const version = input['version'];
+  if (version !== PREFAB_FORMAT_VERSION) {
+    throw new SceneFormatError(formatDiagnostics('Prefab file', versionRefusal(version, PREFAB_FORMAT_VERSION).diagnostics));
+  }
   const id = assetId ?? input['id'];
   if (!isAssetId(id)) throw new SceneFormatError('Prefab file has no id of its own.');
   // The entity every other one hangs under. Without an id for it there is no
@@ -663,14 +640,7 @@ export function migratePrefab(registries: CoreRegistries, input: unknown, assetI
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
   const asScene = migrateScene(registries, {
-    // Its **own** age, not the current format. This used to say
-    // `SCENE_FORMAT_VERSION`, which told `migrateScene` the document had
-    // nothing left to do. That was harmless for as long as every pass in there
-    // was gated on the data — and it stopped being harmless the moment one was
-    // gated on the version: a prefab holding a player controller would have
-    // kept an eye height at the old meaning, and placed its camera half a
-    // collider too high with nothing anywhere saying why.
-    version: sceneFormatOfPrefab(input['version']),
+    version: SCENE_FORMAT_VERSION,
     id,
     name: input['name'],
     entities: input['entities'],
@@ -733,8 +703,8 @@ export function deserializePrefab(registries: CoreRegistries, json: string, asse
  *
  * The manifest keeps each as the JSON a file holds, keyed by asset id, and a
  * document keeps its entities in a Map, which JSON cannot say: the player reads
- * every one through the migration, as the editor reads a file, under the id the
- * manifest names it by. A key that is not an id names no prefab.
+ * every one as the editor reads a file, under the id the manifest names it by.
+ * A key that is not an id names no prefab.
  */
 export function prefabsFromJson(
   registries: CoreRegistries,

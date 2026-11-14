@@ -5,7 +5,6 @@ import {
   ASSET_META_VERSION,
   MATERIAL_ASSET_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
-  PREFAB_FORMAT_VERSION,
   assertDefined,
   assetKindInfo,
   conformPhysicsMaterial,
@@ -111,16 +110,11 @@ export async function readPrefabAssets(
       .map(async (asset) => {
         try {
           const text = await readFile(resolveInside(projectPath, asset.path), 'utf8');
-          const parsed: unknown = JSON.parse(text);
-          // Left out, as a prefab of a newer build always was: the migration
-          // would stamp it current and read its fields as this build's.
-          if (!isRecord(parsed)) return;
-          const version = parsed['version'];
-          if (typeof version === 'number' && version > PREFAB_FORMAT_VERSION) return;
           prefabs.set(asset.id, deserializePrefab(registries, text, asset.id));
         } catch {
-          // One unreadable prefab must not cost the others; the instances that
-          // point at it render empty and say so.
+          // Left out: a prefab that cannot be read, or one of another format,
+          // which nothing converts. One must not cost the others; the instances
+          // that point at it render empty and say so.
         }
       }),
   );

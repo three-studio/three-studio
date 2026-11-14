@@ -166,6 +166,11 @@ describe('a project of another format', () => {
       expect(decoded).toEqual(versionRefusal(version, PROJECT_FORMAT_VERSION));
     },
   );
+
+  it('is any but 4, this build\'s own', () => {
+    expect(PROJECT_FORMAT_VERSION).toBe(4);
+    expect(decodeProjectFile({ ...created(), version: 3 })).toEqual(versionRefusal(3, 4));
+  });
 });
 
 describe('a table of collision layers', () => {

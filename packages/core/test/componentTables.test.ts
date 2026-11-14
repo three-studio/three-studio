@@ -1,5 +1,4 @@
 import {
-  SCENE_FORMAT_VERSION,
   assertDefined,
   cloneSubtree,
   componentsOf,
@@ -474,58 +473,5 @@ describe('the references a component holds to other entities', () => {
     expect(asked).toContain(door);
     expect(asked).not.toContain('');
     expect(renamed).toMatchObject({ props: { target: copy, empty: '', count: 3 } });
-  });
-});
-
-describe('a document written before the tables existed', () => {
-  /** Format 3: components in an array on each entity, with ids. */
-  function formatThree(): string {
-    const cube = createMeshEntity('box');
-    const scene = sceneWith([cube]);
-    const raw = JSON.parse(serializeScene(registries, scene)) as Record<string, unknown>;
-    raw['version'] = 3;
-    delete raw['components'];
-    const entities = raw['entities'] as Record<string, Record<string, unknown>>;
-    assertDefined(entities[cube.entity.id], 'the cube in the file')['components'] = [
-      { id: 'c1', type: 'mesh', geometry: { kind: 'box' }, material: { color: '#ffffff' } },
-      { id: 'c2', type: 'collider', shape: 'sphere' },
-      { id: 'c3', type: 'collider', shape: 'box' },
-    ];
-    return JSON.stringify(raw);
-  }
-
-  it('moves every component into the tables, in the order it had', () => {
-    const scene = deserializeScene(registries, formatThree());
-    const entityId = [...scene.entities.keys()][0]!;
-
-    expect(componentsOf(registries, scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
-    // Told apart by id: a shape stored as a name reads as the factory's box now.
-    expect(findComponent(scene, entityId, 'collider')?.id).toBe('c2');
-    expect(scene.version).toBe(SCENE_FORMAT_VERSION);
-  });
-
-  it('leaves nothing behind on the entity', () => {
-    const scene = deserializeScene(registries, formatThree());
-    const entity = [...scene.entities.values()][0] as unknown as Record<string, unknown>;
-
-    // Kept, the stale array would be re-imported on the next load and would
-    // quietly overwrite every edit made since. An editor that reads format 3
-    // refuses a format 4 document anyway, so keeping it helps nobody.
-    expect(entity['components']).toBeUndefined();
-  });
-
-  it('is left exactly as it is the second time through', () => {
-    const once = deserializeScene(registries, formatThree());
-    const twice = deserializeScene(registries, serializeScene(registries, once));
-
-    // The pass runs at the boundary and has to be idempotent, or a scene saved
-    // and reopened has its components migrated against an array that is no
-    // longer there.
-    //
-    // Compared as the *file* rather than with a plain `JSON.stringify`: keys
-    // are sorted on the way out now, so a freshly migrated document and the
-    // same document read back differ in key order and in nothing else — and
-    // plain stringify calls that a difference. See `stableJson`.
-    expect(serializeScene(registries, twice)).toBe(serializeScene(registries, once));
   });
 });

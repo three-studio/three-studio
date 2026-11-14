@@ -514,9 +514,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     createPrefab: (_event, name: string, prefabJson: string, assetId?: AssetId): Promise<AssetId> => {
       // `deserializePrefab` rather than `conform`, and the difference is who
       // wrote the data. A prefab has been read off the disk, possibly written
-      // by a build that knew a component type this one does not, and the
-      // migration is the one repair that keeps such a type instead of
-      // inventing a shape for it. Conforming it would drop the author's work
+      // by a build that knew a component type this one does not, and reading
+      // it as a file is what keeps such a type as found instead of inventing
+      // a shape for it. Conforming it would drop the author's work
       // on the round trip.
       //
       // The id is handed to it as well, which is where a script that calls the

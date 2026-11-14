@@ -15,6 +15,7 @@ import {
   putComponent,
   serializeScene,
   stableJson,
+  SCENE_FORMAT_VERSION,
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -270,5 +271,28 @@ describe('a scene through a file', () => {
     expect(componentsOfType(scene, 'mesh').size).toBe(0);
     expect(scene.unknownComponents.has(fixedId('componentType', '__proto__'))).toBe(true);
     expect(Object.getPrototypeOf(JSON.parse(serializeScene(registries, scene)).components)).toBe(Object.prototype);
+  });
+});
+
+/*
+ * Until 1.0.0 a format that moves is a file this build refuses, with words
+ * saying so, rather than one it converts: no migration code is kept. One line,
+ * before anything else in the file is read, so an older scene reads as older
+ * and not as broken in every field that moved since.
+ */
+describe('a scene of another format', () => {
+  it.each([[11], [13], ['12'], [undefined]])('is refused at version %j, in one line', (version) => {
+    const file = JSON.parse(serializeScene(registries, createEmptyScene()));
+    file.version = version;
+    // Malformed besides, which the refusal does not get as far as saying.
+    file.entities = 'none';
+
+    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+      new RegExp(`^Scene file\\nversion: written in .*; this build reads format ${SCENE_FORMAT_VERSION} and does not convert it$`),
+    );
+  });
+
+  it('is this build\'s own at 12', () => {
+    expect(SCENE_FORMAT_VERSION).toBe(12);
   });
 });

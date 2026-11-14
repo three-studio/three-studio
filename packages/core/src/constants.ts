@@ -70,237 +70,60 @@ export const ENGINE_VERSION = '0.6.0';
 export const SCRIPT_API_VERSION = 4;
 
 /**
- * Scene document format version. Bump on any schema change; `migrateScene`
- * fills what is missing and rejects anything written by a newer build, rather
- * than silently loading a shape this code no longer understands.
+ * Scene document format version.
  *
- * **A number takes more changes only while no release carries it.** Three
- * entries below fold fields into a number instead of taking the next one, and
- * each leans on that number not having shipped: no build outside this tree
- * could read it and miss them. Once a release carries it, such a build exists,
- * and only the next number makes it refuse the file rather than open it and be
- * quietly wrong. Ask the latest release tag whether the current number has
- * shipped (`git show <tag>:packages/core/src/constants.ts`), not these notes:
- * they went on calling 9 and 10 unreleased after each had shipped. The same
- * holds for every format number in this file.
+ * **Until 1.0.0, a format that changes takes the next number, a file of any
+ * other number is refused — older or newer, in one diagnostic naming both —
+ * and nothing converts it.** Converting was a ladder of passes, each written
+ * once and run on every load after, each a place where an old file could be
+ * read as something its author never wrote; and a file a newer build wrote
+ * holds fields whose meaning this build cannot know. From 1.0.0 the additive
+ * rule returns: fields are added, never removed, and filled from their type.
  *
- * 11 — the player controller decides the steepest slope it walks up and the
- * highest step it climbs, `maxSlope` and `stepHeight`. The physics world held
- * both, 50° and 0.4 m for every character, and they are the two numbers a
- * level's ramps and stairs are built against.
+ * **A number takes more changes only while no release carries it.** A change
+ * may join the current number instead of taking the next one only while no
+ * build outside this tree reads it: once a release carries it, such a build
+ * exists, and only the next number makes it refuse the file rather than open it
+ * and be quietly wrong. Ask the latest release tag whether the current number
+ * has shipped (`git show <tag>:packages/core/src/constants.ts`). The same holds
+ * for every format number in this file.
  *
- * An older build keeps both fields — `fillComponent` copies through what it
- * does not know — and walks every player with its own 50° and 0.4 m. A level
- * built around a 0.5 m stair cannot be climbed there, and nothing says why.
- * Refusing the file is the better failure.
- *
- * A rigid body's `interpolate`, `lockPosition` and `lockRotation` joined 11
- * while no release carried it. An older build keeps them and ignores them: a
- * body locked upright tumbles there, and a smooth one steps.
- *
- * So did the collider's shape, one of box, sphere, capsule, cylinder, cone and
- * mesh, each with its own measures taken as drawn — a box by its full size, a
- * capsule from end to end — set off its entity's centre, turned and rounded,
- * and its friction and bounce, now a `material` of their own that says how
- * each combines with the other collider's. An older build builds a
- * cylinder or a cone as nothing at all, every shape at its entity's middle,
- * and a mesh in convex parts as nothing at all either. An older
- * build switches on `shape` as a name and builds nothing from an object, so
- * every floor is gone, and its `colliderHalfHeight` falls through to
- * `undefined`, so a player's eye is `NaN`. A collider written before 11 is not
- * converted: it opens as a 1 m box (see `colliderComponent`).
- *
- * So did the compound body: a collider rides the nearest Rigid Body up the
- * tree, at its entity's place on it, and a body weighs its Rigid Body's mass,
- * shared among its colliders by volume. An older build leaves a child's
- * collider a fixed body in mid-air, and weighs a body by its first collider.
- * And a mesh Collider is built from its own entity's meshes: an older build
- * welds its children's meshes in.
- *
- * And a collider names its collision layer by id, `layer`: two colliders meet
- * only when their layers touch. An older build builds every collider on one
- * layer, so a wall the player was meant to walk through stops it.
- *
- * And a collider may name a physics material asset, `materialId`, whose
- * friction, bounce and rules it is built with. An older build builds it with
- * its own values, so a puck made to slide grips there.
- *
- * And a scene may hold Joint components, which hold two bodies together as
- * they were placed. An older build keeps them and builds none: a door falls
- * off its hinge, and a chain falls apart.
- *
- * 10 — `playerController.eyeHeight` is measured from the character's feet
- * rather than from the entity's origin, and the controller gained a `fov`.
- *
- * **The first entry here that changes what a field means rather than adding
- * one**, which is why it is also the first that cannot be migrated by filling
- * from a factory: `migrateScene` raises every stored value by its collider's
- * half height, so the camera stays exactly where its author put it while the
- * number starts meaning what its name says. See `raiseEyeHeightToFeet`.
- *
- * That is what makes the bump load-bearing in both directions. An older build
- * reading a format 10 scene does not lose a field — it reads the same number
- * with the old meaning and puts the eye half a collider too high, which is a
- * scene that opens, runs, and is quietly wrong. Refusing the file is far better
- * than a camera that is 0.85 m out with nothing to point at.
- *
- * `fov` rides along rather than taking an 11 of its own: it defaults to the 70
- * that was hard-coded in the controller, so it changes nothing by existing, and
- * 10 was not released yet — it existed in this working tree and nowhere else.
- *
- * `touchControls` and `touchLookSpeed` — the on-screen sticks — ride along for
- * the same two reasons: both default to what a build without them did, and 10
- * was still unreleased. Same call `water.speed` got inside 9.
- *
- * 9 — the `water` component. An older build has no system for it, so it opens
- * the scene, keeps the component byte for byte — `adoptComponentTables` files an
- * unknown type under its own table and never touches the body — and draws
- * nothing where the water is. A scene built around an ocean is then not a scene
- * that half-works, it is one that is silently missing its subject, which is the
- * same call 8 and 5 made.
- *
- * `water.speed`, `water.direction` and `water.choppiness` were added to that
- * same 9 rather than under a 10 of their own, because 9 was not released yet:
- * it existed in this working tree and nowhere else. `fillComponent` merges a
- * water component from its factory, so a scene already saved as 9 picks the
- * three up on opening — the same reasoning `sky.cloudSpeed` was folded into 6
- * with.
- *
- * 7 — a `model` says which node of its file it draws (`nodePath`, `nodeName`)
- * and which shared material it draws with (`materialId`). The first is what
- * `unpackModel` writes: one imported file becomes one entity per node, and a
- * build that ignores `nodePath` draws the **whole model** at every one of them.
- * That is not a lost field, it is a scene that looks like a hundred copies of
- * itself, so refusing the file is much the better failure.
- *
- * 8 — an audio source gained the seven playback fields the engine needs and it
- * never had: `mute`, `detune`, `startOffset`, `delay`, `fadeIn`, `fadeOut` and
- * `priority`. The fields themselves survive an older build untouched —
- * `fillComponent` spreads the stored component over the factory, so what it has
- * never heard of it copies through. The bump is not about losing them.
- *
- * It is about what an older build *does*. Every build before this one carries
- * `runtime: false` on `audioSource`: it opens the scene, shows the source, and
- * plays nothing at all. A level whose design depends on a sound is not a level
- * that half-works there, it is one that is silently not what it says — and
- * refusing the file is the better failure, as it was for 5.
- *
- * 6 — the environment gained the four knobs three has always had and we never
- * exposed — background blur, background intensity, a shared rotation — plus a
- * source for the image-based lighting and an analytic `sky` block. Two reasons
- * this is a bump rather than a quiet addition, and the second is the strong
- * one: an older build erases the new fields on its first save, and
- * `backgroundMode` gained a third value it would fall off the end of.
- *
- * `sky.cloudSpeed` was added to that same 6 rather than under a 7 of its own,
- * because 6 was never released: it exists in this working tree and in projects
- * written by builds of this same piece of work. `fillMissingFields` merges the
- * sky a level deeper from its factory, so a scene already saved as 6 picks the
- * field up on opening.
- *
- * 5 — two more light kinds, `rectArea` and `projector`, and the `shadow`
- * settings every casting kind now carries. An older build does not merely lose
- * the new fields, it falls off the end of an exhaustive `switch` on the light
- * kind and attaches `undefined` to the scene. Refusing the file is the better
- * failure.
- *
- * 4 — components live in `scene.components`, by type then by entity then by
- * their own id, instead of in an array on each entity. The array is read once
- * for its order — which is the only thing in it that is not derivable — and
- * removed.
- *
- * 3 — every component carries an `id`, and prefab overrides name a component by
- * it rather than by its position. A document written before it gets ids derived
- * from where its components already are, so a scene and the prefabs it places
- * agree without either being able to read the other.
- *
- * 2 — the environment gained a background mode and its texture, an IBL slot
- * and its intensity, and a fog mode with an exponential density.
- *
- * `fillMissingFields` already migrates them from the factory, so the bump is
- * not what makes an old scene open. It is what stops an *older* editor from
- * opening a new one: without it that build ignores the fields it has never
- * heard of and erases them on the first save.
+ * 12 — the first format read with nothing converted: a scene of 11 or earlier
+ * is refused, where it used to be filled and converted on every load. What the
+ * earlier numbers changed is in git's history, with the code that converted
+ * them.
  */
-export const SCENE_FORMAT_VERSION = 11;
+export const SCENE_FORMAT_VERSION = 12;
 
 /**
  * Separates an instance from the entity it produced, in an expanded id.
  *
- * Here rather than beside the prefab code because both ends of the format need
- * it and they cannot import each other: `serialization.ts` reads it to migrate
- * override keys, and `prefab.ts` — which builds those ids — already imports
- * `serialization.ts`. Never present in a stored id.
+ * Read by `prefab.ts`, which builds those ids, and by the graph and the editor,
+ * which take them apart. Never present in a stored id.
  */
 export const PREFAB_ID_SEPARATOR = '/';
 
 /**
- * `assets/prefabs/*.prefab.json`.
+ * `assets/prefabs/*.prefab.json`. A prefab holds the same component tables as
+ * a scene, so it moves with the scene's format, and is refused at any other
+ * number and never converted, as a scene is (see `SCENE_FORMAT_VERSION`).
  *
- * 8 — the slope and step height of scene format 11, its rigid body's
- * interpolation and locks, its collider's shapes, material, physics material
- * asset and collision layer, its compound bodies, its mesh Colliders built
- * from their own meshes, and its joints. A prefab holds the same
- * `ComponentTables`, so it can hold a player controller an older build would
- * walk with its own 50° and 0.4 m, a floor it would not build, a cart whose
- * wheels it would leave in mid-air, a wall the player walks through, which it
- * would build solid, a puck made to slide, which it would build gripping, and a
- * door it would let fall off its hinge.
- *
- * 7 — the eye height and field of view of scene format 10. A prefab holds the
- * same `ComponentTables`, so it can hold a player controller — and this is the
- * first format change that alters what a stored number *means*, so a prefab
- * that missed the migration would place its camera half a collider too high
- * with nothing to say so.
- *
- * That makes this number load-bearing in a way the ones below it are not.
- * `migratePrefab` borrows `migrateScene`, and it used to hand it
- * `SCENE_FORMAT_VERSION` — telling it the document was already current. For a
- * migration that only fills missing fields that is harmless; for one gated on
- * the version it would silently skip every prefab in the project. The
- * correspondence recorded in each entry here is now read by code, not only by
- * people: see `migratePrefab`.
- *
- * 6 — the water component of scene format 9. A prefab holds the same
- * `ComponentTables`, so it can hold a water surface an older build cannot draw.
- *
- * 5 — the model node and material of scene format 7. A prefab holds the same
- * `ComponentTables`, so it can hold a model split across a dozen entities —
- * which is exactly what `makePrefab` on an unpacked model produces.
- *
- * 4 — the light kinds and shadow settings of scene format 5. A prefab can hold
- * a light, so it can hold one an older build cannot build.
- *
- * 3 — components live in `prefab.components`, the same block a scene carries.
- * A prefab is a scene without an environment, and it is migrated by the same
- * function; the two format numbers move together for that reason.
- *
- * 2 — components carry an `id`, and prefab overrides name them by it rather
- * than by their position in the array.
+ * 9 — the format of scene 12.
  */
-export const PREFAB_FORMAT_VERSION = 8;
+export const PREFAB_FORMAT_VERSION = 9;
 
 /**
- * Project file format version, tracked separately from scenes.
+ * Project file format version, apart from the scenes' and prefabs' and moved
+ * with them: it changes with **any** change in any file of a project,
+ * `project.json` or not.
  *
- * 3 — `settings.physics` gained the collision layers: a table of up to
- * sixteen, each with an id and a name, and the pairs that pass through each
- * other. An older build keeps the table and builds every collider on one
- * layer, so a wall the player was meant to walk through stops it, and debris
- * meant to fall past it knocks it over: a project that opens, runs and is
- * quietly wrong. Its scenes are 11 and refused already; refusing the project
- * says so once, when it is opened. Nothing to migrate: a format 2 file is
- * filled from the factory, Default alone, which is why the step from 1 is
- * gated on `< 2`.
+ * That is what refuses an older project whole, once, when it is opened —
+ * before any scene of it is read — rather than letting it open and refuse its
+ * scenes one by one as they are reached, or a prefab in the middle of Play. A
+ * file of another number is refused in one diagnostic naming both, and nothing
+ * converts it (see `SCENE_FORMAT_VERSION`).
  *
- * 2 — scenes are referenced by id rather than by path: `startScene`,
- * `loadingScene` and each build profile name an id: a reference
- * that is a path or a name is a reference that renaming breaks.
- *
- * Not bumped when `scenes` left this file. Every reference in a format 2
- * project still means exactly what it meant — the field that went is the one
- * nothing reads any more, because the directory answers it. Bumping would have
- * refused projects that open correctly, which is the failure this version
- * number exists to prevent, not to cause.
+ * 4 — scenes 12 and prefabs 9; and `project.json` itself is decoded, every
+ * field of the kind it is declared and no other.
  */
-export const PROJECT_FORMAT_VERSION = 3;
+export const PROJECT_FORMAT_VERSION = 4;

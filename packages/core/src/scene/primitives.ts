@@ -37,9 +37,8 @@ export interface Transform {
  * component to a prefab slid every override of every instance onto the wrong
  * one, and removing one paired a cube's build with a sphere's component.
  *
- * Opaque. The migration happens to mint `<entityId>:<index>` — see
- * `serialization.ts` for why that particular shape — and nothing may read it
- * back out. An id that can be parsed into a position is a position again.
+ * Opaque: nothing may read anything back out of it. An id that can be parsed
+ * into a position is a position again.
  */
 export interface ComponentBase {
   id: ComponentId;

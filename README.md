@@ -61,7 +61,7 @@ thing as a static web build** that runs in any browser.
 ### Scene & entities
 - Full **scene graph**: parenting, grouping, reordering, visibility, lock.
 - **Undo / redo** on every mutation, multi-selection, duplicate, delete.
-- Multiple **scenes per project**, each versioned and migrated on load.
+- Multiple **scenes per project**, each versioned; a file of another format is refused at open, with words saying why.
 - **Prefabs**: make, instance, override per-instance, unpack.
 
 ### Components
@@ -264,8 +264,9 @@ dependency-free and `runtime` editor-free.
 ## 🤝 Contributing
 
 It's a POC, so the bar is simple: `npm run typecheck` and `npm test` both green, and a test that
-would have caught the bug you fixed. Formats on disk are versioned — never remove a field, migrate
-through the type's own factory, and leave unknown data untouched.
+would have caught the bug you fixed. Formats on disk are versioned: until 1.0.0 a format that changes
+takes the next version, a file of another version is refused rather than converted, and data of an
+unknown type is kept exactly as found.
 
 ## 📄 License
 

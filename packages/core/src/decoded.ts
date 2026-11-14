@@ -313,7 +313,7 @@ export class RecordReader {
  * line, not one per field that moved since — which would be thousands for a
  * large scene, and would read as damage rather than age.
  */
-export function versionRefusal(found: unknown, reads: number): Decoded<never> {
+export function versionRefusal(found: unknown, reads: number): Extract<Decoded<never>, { readonly ok: false }> {
   const written = isUsableNumber(found)
     ? `written in format ${found}`
     : `written in no format this build knows (found ${shown(found)})`;

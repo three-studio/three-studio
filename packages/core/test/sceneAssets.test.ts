@@ -1,4 +1,5 @@
 import {
+  SCENE_FORMAT_VERSION,
   assertDefined,
   collectSceneAssets,
   createEmptyScene,
@@ -48,7 +49,7 @@ const TEX_WOOD = fixedId('asset', 'tex-wood');
 
 function sceneWith(templates: EntityTemplate[]): SceneDoc {
   const scene: SceneDoc = {
-    version: 1,
+    version: SCENE_FORMAT_VERSION,
     id: fixedId('scene', 'scene'),
     name: 'Main',
     entities: new Map(templates.map(({ entity }) => [entity.id, entity])),

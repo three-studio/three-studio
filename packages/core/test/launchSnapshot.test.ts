@@ -2,7 +2,6 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   PREFAB_FORMAT_VERSION,
   assertDefined,
-  componentsOf,
   conformLaunchSnapshot,
   createDefaultLayer,
   createMaterial,
@@ -56,28 +55,6 @@ function snapshot(): LaunchSnapshot {
       layers: [createDefaultLayer(), { id: 'player', name: 'Player', ignores: ['default'] }],
     },
     loadingScene: fixedId('scene', 'loading'),
-  };
-}
-
-/** A prefab as an older editor wrote it: its components inside the entity, with no ids. */
-function oldPrefab(): unknown {
-  return {
-    version: 1,
-    id: 'prefab-1',
-    name: 'Tree',
-    root: 'trunk',
-    entities: {
-      trunk: {
-        id: 'trunk',
-        name: 'Trunk',
-        parent: null,
-        children: [],
-        transform: { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] },
-        visible: true,
-        locked: false,
-        components: [{ type: 'rigidbody' }, { type: 'collider' }],
-      },
-    },
   };
 }
 
@@ -174,21 +151,25 @@ describe('a launch snapshot, where it arrives', () => {
     expect(conformLaunchSnapshot(registries, { ...wire, loadingScene: '' }).snapshot.loadingScene).toBeNull();
   });
 
-  it('migrates a prefab an older editor wrote, and drops one that is not text', () => {
+  it('reads each prefab under the id it arrived by, and drops one that is not text', () => {
     const { prefabs } = conformLaunchSnapshot(registries, {
       ...sent(),
-      prefabs: { tree: JSON.stringify(oldPrefab()), broken: { not: 'text' } },
+      prefabs: { tree: sent().prefabs[CRATE], broken: { not: 'text' } },
     }).snapshot;
 
     const tree = assertDefined(prefabs.get(TREE), 'the tree prefab');
     expect(tree.version).toBe(PREFAB_FORMAT_VERSION);
-    // Under the id it arrived by, whatever the file said of its own.
+    // Under the id it arrived by, whatever the text said of its own.
     expect(tree.id).toBe(TREE);
-    expect(componentsOf(registries, tree, fixedId('entity', 'trunk')).map((component) => component.id)).toEqual([
-      'trunk:0',
-      'trunk:1',
-    ]);
     expect(prefabs.has(BROKEN)).toBe(false);
+  });
+
+  it('refuses a prefab of another format, which nothing converts, as it refuses a scene', () => {
+    const older = JSON.stringify({ ...JSON.parse(sent().prefabs[CRATE] ?? '{}'), version: PREFAB_FORMAT_VERSION - 1 });
+
+    expect(() => conformLaunchSnapshot(registries, { ...sent(), prefabs: { tree: older } })).toThrow(
+      `Prefab file\nversion: written in format ${PREFAB_FORMAT_VERSION - 1}`,
+    );
   });
 
   it('refuses a prefab whose text is not JSON, as it refuses a scene', () => {

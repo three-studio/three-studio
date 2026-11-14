@@ -359,9 +359,9 @@ export type { CoreRegistries } from './registries';
 export { conformColliderShape, createColliderShape } from './components/collider/defaults';
 /*
  * A collider as physics builds it, and how far it hangs below the entity's
- * origin. Exported because the runtime builds from the same rules the scene
- * migration measured with, and two of them would put a camera and a capsule in
- * different places.
+ * origin. Exported because the runtime's physics and its player controller
+ * build from the same rules, and two of them would put a camera and a capsule
+ * in different places.
  */
 export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
 export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';

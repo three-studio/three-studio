@@ -1,4 +1,5 @@
 import {
+  PREFAB_FORMAT_VERSION,
   applyPrefabOverride,
   assertDefined,
   componentsOf,
@@ -24,6 +25,7 @@ import {
   instanceOwnerOf,
   instancedId,
   prefabFromEntities,
+  prefabJsonOf,
   prefabToScene,
   prefabVariantOf,
   prefabsFromJson,
@@ -106,13 +108,14 @@ describe('a prefab as text', () => {
     expect(serializePrefab(registries, deserializePrefab(registries, text))).toBe(text);
   });
 
-  it('is read through the migration, which fills what an older editor left out', () => {
-    const older = jsonOf({ ...treePrefab(), version: 1, components: undefined });
+  it.each([[8], [10], [undefined]])('is refused at version %j, in one line and nothing converted', (version) => {
+    // Without an id or a root besides, which the refusal does not get as far as saying.
+    const older = jsonOf({ ...prefabJsonOf(treePrefab()), version, id: undefined, root: undefined });
 
-    const read = deserializePrefab(registries, older);
-
-    expect(read.version).toBe(treePrefab().version);
-    expect(componentsOf(registries, read, read.root)).toEqual([]);
+    expect(() => deserializePrefab(registries, older)).toThrow(
+      new RegExp(`^Prefab file\\nversion: written in .*; this build reads format ${PREFAB_FORMAT_VERSION} and does not convert it$`),
+    );
+    expect(PREFAB_FORMAT_VERSION).toBe(9);
   });
 
   it('is refused in words when it is not JSON', () => {
