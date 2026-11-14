@@ -1,4 +1,4 @@
-import { createId, type AssetId } from '../../ids';
+import { createComponentId, type AssetId } from '../../ids';
 import type { PrefabInstanceComponent } from './schema';
 
 /**
@@ -8,5 +8,5 @@ import type { PrefabInstanceComponent } from './schema';
  * every one of them had to be found again the day components gained an id.
  */
 export function createPrefabInstance(assetId: AssetId | '' = ''): PrefabInstanceComponent {
-  return { id: createId(), type: 'prefabInstance', assetId, overrides: {} };
+  return { id: createComponentId(), type: 'prefabInstance', assetId, overrides: {} };
 }

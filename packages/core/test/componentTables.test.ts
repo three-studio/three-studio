@@ -22,6 +22,7 @@ import {
   serializeScene,
   validateHierarchy,
   type ColliderComponent,
+  type ComponentId,
   type LightComponent,
   type MeshComponent,
   type SceneDoc,
@@ -56,9 +57,11 @@ describe('the tables themselves', () => {
     // The three levels are type, entity, component id. A Map is copied and
     // frozen by immer in one step, where a record of ten thousand keys is
     // frozen key by key.
-    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<string, Map<string, MeshComponent>>>();
-    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<string, Map<string, LightComponent>>>();
-    expectTypeOf<SceneDoc['components']['collider']>().toEqualTypeOf<Map<string, Map<string, ColliderComponent>>>();
+    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<string, Map<ComponentId, MeshComponent>>>();
+    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<string, Map<ComponentId, LightComponent>>>();
+    expectTypeOf<SceneDoc['components']['collider']>().toEqualTypeOf<
+      Map<string, Map<ComponentId, ColliderComponent>>
+    >();
   });
 
   it('start empty, one for every type this build knows', () => {

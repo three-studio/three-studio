@@ -1,9 +1,9 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import type { PlayerControllerComponent } from './schema';
 
 export function createPlayerController(): PlayerControllerComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'playerController',
     mode: 'fps',
     moveSpeed: 6,

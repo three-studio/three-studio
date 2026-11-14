@@ -1,5 +1,5 @@
 import { conform, isMemberOf, isRecord } from '../../conform';
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { JOINT_KIND_LABELS, type JointComponent, type JointKind, type JointMotion, type JointMotionOf } from './schema';
 
 /*
@@ -35,7 +35,7 @@ export function createJointMotion<K extends JointKind>(kind: K): JointMotionOf<K
 /** A hinge held to the world at its entity's origin. */
 export function createJoint(): JointComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'joint',
     motion: createJointMotion('hinge'),
     connectedEntity: null,

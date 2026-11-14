@@ -99,7 +99,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/core/test/assetImporters.test.ts', { as: 4, nonNull: 17 }],
   ['packages/core/test/buildProfile.test.ts', { as: 2 }],
   ['packages/core/test/collider.test.ts', { as: 3, nonNull: 1 }],
-  ['packages/core/test/componentIdMigration.test.ts', { as: 9, nonNull: 3 }],
+  ['packages/core/test/componentIdMigration.test.ts', { as: 8, nonNull: 3 }],
   ['packages/core/test/componentTables.test.ts', { as: 5, nonNull: 10 }],
   ['packages/core/test/entityDefaults.test.ts', { as: 1 }],
   ['packages/core/test/fixtures.ts', { nonNull: 1 }],

@@ -1,4 +1,4 @@
-import type { AssetId, AudioSourceComponent } from '@three-studio/core';
+import type { AssetId, AudioSourceComponent, ComponentId } from '@three-studio/core';
 import {
   AudioEngine,
   type AssetResolver,
@@ -52,7 +52,7 @@ export class AudioPreview {
   private voice: VoiceHandle | null = null;
   private frame: number | null = null;
   /** What is being auditioned, when it came from a component rather than a clip. */
-  private source: { entityId: string; componentId: string; object: Object3D | null } | null = null;
+  private source: { entityId: string; componentId: ComponentId; object: Object3D | null } | null = null;
   /** Where the ear last was, for an engine that does not exist yet. */
   private pose: [Vec3Tuple, Vec3Tuple, Vec3Tuple] | null = null;
   /** How loud auditions are, for an engine that does not exist yet either. */
@@ -128,7 +128,7 @@ export class AudioPreview {
    */
   playSource(
     entityId: string,
-    componentId: string,
+    componentId: ComponentId,
     component: AudioSourceComponent,
     object: Object3D | null,
   ): void {

@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import {
   FLAT_KINDS,
@@ -12,7 +12,7 @@ import type { MeshComponent } from './schema';
 
 export function createMeshComponent(kind: GeometryKind): MeshComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'mesh',
     geometry: createGeometry(kind),
     material: createMaterial(),

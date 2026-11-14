@@ -32,7 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
-import type { AssetId, SceneId } from '../ids';
+import type { AssetId, ComponentId, SceneId } from '../ids';
 import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
@@ -179,7 +179,7 @@ export interface EntityDoc {
  * `scene/components.ts`, or iterate the Map itself.
  */
 export type ComponentTables = {
-  [K in ComponentType]: Map<string, Map<string, ComponentOfType<K>>>;
+  [K in ComponentType]: Map<string, Map<ComponentId, ComponentOfType<K>>>;
 };
 
 /**

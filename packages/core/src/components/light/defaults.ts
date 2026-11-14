@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { LightComponent, LightKind, ShadowSettings } from './schema';
 
@@ -51,7 +51,7 @@ const SHADOW_CASTERS: ReadonlySet<LightKind> = new Set([
 
 export function createLight(kind: LightKind): LightComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'light',
     kind,
     color: '#ffffff',

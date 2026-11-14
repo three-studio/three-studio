@@ -4,6 +4,7 @@ import {
   linkedPhysicsMaterial,
   type AssetId,
   type ComponentDoc,
+  type ComponentId,
   type EntityDoc,
   type SceneDoc,
 } from '@three-studio/core';
@@ -383,7 +384,7 @@ function currentEntity(entityId: string): EntityDoc | undefined {
   return expandedScene().scene.entities.get(entityId);
 }
 
-function currentComponent(entityId: string, componentId: string): ComponentDoc | undefined {
+function currentComponent(entityId: string, componentId: ComponentId): ComponentDoc | undefined {
   return findComponentById(expandedScene().scene, entityId, componentId);
 }
 

@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { ParticleEmitterComponent } from './schema';
 
@@ -15,7 +15,7 @@ import type { ParticleEmitterComponent } from './schema';
  */
 export function createParticleEmitter(): ParticleEmitterComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'particleEmitter',
     count: 200,
     // A ball rather than a point, for the reason above: an emitter with a

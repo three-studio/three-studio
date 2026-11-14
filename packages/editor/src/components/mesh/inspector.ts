@@ -1,4 +1,4 @@
-import type { ComponentDoc, MaterialDef } from '@three-studio/core';
+import type { ComponentDoc, ComponentId, MaterialDef } from '@three-studio/core';
 import { setComponentNestedField } from '../../commands/sceneCommands';
 import {
   GEOMETRY_FIELDS,
@@ -19,7 +19,7 @@ import { expandedScene } from '../../state/expansion';
  */
 async function extractMaterial(
   entityId: string,
-  componentId: string,
+  componentId: ComponentId,
   material: MaterialDef,
 ): Promise<void> {
   const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Material';

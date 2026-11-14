@@ -1,9 +1,9 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { AudioListenerComponent } from './schema';
 
 export function createAudioListener(): AudioListenerComponent {
-  return { id: createId(), type: 'audioListener', masterVolume: 1 };
+  return { id: createComponentId(), type: 'audioListener', masterVolume: 1 };
 }
 
 /** The ear, as its own entity, for a scene that wants it off the camera. */

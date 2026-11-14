@@ -354,7 +354,9 @@ const WRITERS: Readonly<Record<string, () => EditorContext>> = {
   unpackModel: () => contextFor([chair]),
   // With something tuned during Play to keep.
   keepTuning: () => {
-    useTuningStore.setState({ values: [{ entityId: first, componentId: 'any', path: ['castShadow'], value: false }] });
+    useTuningStore.setState({
+      values: [{ entityId: first, componentId: fixedId('component', 'any'), path: ['castShadow'], value: false }],
+    });
     return currentContext();
   },
 };

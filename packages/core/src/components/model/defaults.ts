@@ -1,4 +1,4 @@
-import { createId, type AssetId } from '../../ids';
+import { createComponentId, type AssetId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { ModelComponent } from './schema';
 
@@ -13,7 +13,7 @@ import type { ModelComponent } from './schema';
  */
 export function createModel(): ModelComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'model',
     assetId: '',
     nodePath: '',

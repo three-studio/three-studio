@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
+import type { ComponentDoc, ComponentId, ComponentType, EntityDoc } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
 import { buildSystems, type AnySystem } from './components';
 import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
@@ -32,7 +32,7 @@ export interface EntityView {
   /** Carries the entity transform; every component object is its child. */
   container: Group;
   /** By component id, so a removal cannot slide the others along. */
-  mounted: Map<string, Mounted>;
+  mounted: Map<ComponentId, Mounted>;
   /** The document's components as of the last sync, compared element by element. */
   components: readonly ComponentDoc[];
   /** `null` until the first sync, so a new view always applies its transform. */
@@ -73,7 +73,7 @@ export class Reconciler {
    * Empty rather than absent for anything unmounted, so a caller polling every
    * frame does not have to tell "no such entity" from "nothing built yet".
    */
-  objectsOf(entityId: string, componentId: string): readonly Object3D[] {
+  objectsOf(entityId: string, componentId: ComponentId): readonly Object3D[] {
     return this.views.get(entityId)?.mounted.get(componentId)?.handle.objects ?? [];
   }
 
@@ -241,7 +241,7 @@ export class Reconciler {
     return found;
   }
 
-  private drop(view: EntityView, componentId: string, ctx: SystemContext): void {
+  private drop(view: EntityView, componentId: ComponentId, ctx: SystemContext): void {
     const mounted = view.mounted.get(componentId);
     if (!mounted) return;
     this.detach(view, mounted.handle);

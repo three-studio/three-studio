@@ -17,6 +17,7 @@ import {
   reparentEntity as reparentInScene,
   setComponentsOf,
   type ComponentDoc,
+  type ComponentId,
   type ComponentType,
   type EntityTemplate,
   type SceneDoc,
@@ -509,7 +510,7 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
   });
 }
 
-export function removeComponent(id: string, componentId: string): void {
+export function removeComponent(id: string, componentId: ComponentId): void {
   mutate('Remove component', (scene) => {
     deleteComponent(scene, id, componentId);
   });
@@ -562,7 +563,7 @@ function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly strin
 /** Nested update for material and geometry blocks inside a mesh component. */
 export function setComponentNestedField(
   id: string,
-  componentId: string,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
   options?: { coalesceKey?: string },
@@ -583,7 +584,7 @@ export function setComponentNestedField(
 export function writeComponentPath(
   scene: SceneDoc,
   entityId: string,
-  componentId: string,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
 ): void {
@@ -630,7 +631,7 @@ export function writePath(target: object, path: readonly string[], value: unknow
  * its children's are theirs. The binder is the edit view's, which holds those
  * meshes as they are drawn, a model loaded through its cache included.
  */
-export function fitColliderToMesh(id: string, componentId: string, binder: SceneBinder): void {
+export function fitColliderToMesh(id: string, componentId: ComponentId, binder: SceneBinder): void {
   const { scene } = expandedScene();
   const collider = findComponentById(scene, id, componentId);
   if (collider?.type !== 'collider') return;

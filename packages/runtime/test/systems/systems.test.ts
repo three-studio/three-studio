@@ -141,7 +141,7 @@ describe('the mesh system', () => {
     const component: MeshComponent = { ...createMeshComponent('box'), materialId: MAT_1 };
 
     const one = system.mount('a', component, ctx);
-    const two = system.mount('b', { ...component, id: 'other' }, ctx);
+    const two = system.mount('b', { ...component, id: fixedId('component', 'other') }, ctx);
 
     expect(two.material).toBe(one.material);
     expect(arena.sizes.materials).toBe(1);

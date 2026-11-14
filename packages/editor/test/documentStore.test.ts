@@ -17,6 +17,7 @@ import {
   serializeScene,
   type AudioSourceComponent,
   type ColliderComponent,
+  type ComponentId,
   type EntityTemplate,
 } from '@three-studio/core';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
@@ -1064,7 +1065,7 @@ describe('fitting a collider to its mesh', () => {
   }
 
   /** A Sphere of radius 1 whose Sphere collider is still 0.5, a sensor gripping at 0.2. */
-  function grownSphere(): { template: EntityTemplate; colliderId: string } {
+  function grownSphere(): { template: EntityTemplate; colliderId: ComponentId } {
     const template = createMeshEntity('sphere');
     const [mesh] = template.components;
     if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
@@ -1079,7 +1080,7 @@ describe('fitting a collider to its mesh', () => {
     return { template, colliderId: collider.id };
   }
 
-  const colliderOf = (entityId: string, componentId: string): ColliderComponent => {
+  const colliderOf = (entityId: string, componentId: ComponentId): ColliderComponent => {
     const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
     if (found?.type !== 'collider') throw new Error('no collider');
     return found;

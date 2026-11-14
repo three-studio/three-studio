@@ -1,10 +1,10 @@
-import { createId, type AssetId } from '../../ids';
+import { createComponentId, type AssetId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { AudioSourceComponent } from './schema';
 
 export function createAudioSource(): AudioSourceComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'audioSource',
     assetId: '',
     // Defaults to fully positional: a sound placed on an entity in 3D space is

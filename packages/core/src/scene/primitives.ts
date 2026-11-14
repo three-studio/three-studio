@@ -15,6 +15,8 @@
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
+import type { ComponentId } from '../ids';
+
 export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
 /** `#rrggbb`. */
@@ -40,5 +42,5 @@ export interface Transform {
  * back out. An id that can be parsed into a position is a position again.
  */
 export interface ComponentBase {
-  id: string;
+  id: ComponentId;
 }

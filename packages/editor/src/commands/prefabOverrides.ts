@@ -3,6 +3,7 @@ import {
   prefabInstanceOf,
   splitInstancedId,
   type ComponentDoc,
+  type ComponentId,
   type PrefabOverride,
   type SceneDoc,
 } from '@three-studio/core';
@@ -54,7 +55,7 @@ export function editInstance(
 export function overrideComponentPath(
   override: PrefabOverride,
   current: readonly ComponentDoc[],
-  componentId: string,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
 ): void {

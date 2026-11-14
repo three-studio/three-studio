@@ -523,26 +523,29 @@ export function applyPrefabOverride(
     entity.transform = { ...entity.transform, ...override.transform } as Transform;
   }
 
-  const out = [...components];
-  for (const [componentId, properties] of Object.entries(override.components ?? {})) {
-    const index = out.findIndex((candidate) => candidate.id === componentId);
-    // The prefab no longer has that component: drop the stale override rather
-    // than fail. Unity does the same, and by id this now covers the case that
-    // used to be silent — an index still in range but pointing at a different
-    // component, which is what the old scheme wrote onto the wrong one.
-    if (index === -1) continue;
+  const named = override.components ?? {};
+  // Walked by the components the prefab has, each carrying its id, and the
+  // override looked up by that id: an override is never read back for the id it
+  // is keyed by. One naming a component the prefab no longer has is not reached,
+  // which drops it rather than fails, as Unity does. By id this also covers the
+  // case that used to be silent — an index still in range but pointing at a
+  // different component, which is what the old scheme wrote onto the wrong one.
+  return components.map((component): ComponentDoc => {
+    // Own keys only: an id is what a file wrote, and `named['constructor']`
+    // would answer with `Object`.
+    const properties = Object.hasOwn(named, component.id) ? named[component.id] : undefined;
+    if (properties === undefined) return component;
     // Filled again once the override is spread: an override is stored data
     // too, written against the type as it was. One saved by 0.6.0 as
     // `{ shape: 'sphere', radius: 0.4 }` put a name where a collider's shape
     // lives now, and the runtime built nothing from it. For every other type,
     // the fill of a whole component is that same component.
-    out[index] = {
-      ...fillComponent({ ...out[index], ...properties } as ComponentDoc),
+    return {
+      ...fillComponent({ ...component, ...properties } as ComponentDoc),
       // Never overridable: it is what this very lookup keys on.
-      id: componentId,
+      id: component.id,
     };
-  }
-  return out;
+  });
 }
 
 /**

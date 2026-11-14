@@ -2,7 +2,7 @@ import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
-import { idMapOf, isComponentId, isEntityId } from '../ids';
+import { idMapOf, isComponentId, isEntityId, type ComponentId } from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -297,7 +297,9 @@ function adoptComponentTables(scene: SceneDoc): void {
     if (!Array.isArray(legacy)) continue;
 
     for (const [index, component] of legacy.entries()) {
-      const id = component.id ?? componentIdAt(entity.id, index);
+      // Its own where it has one that is an id, and the one its place gives it
+      // where it has none, which is every component this was written for.
+      const id = isComponentId(component.id) ? component.id : componentIdAt(entity.id, index);
       if (isKnownComponentType(component.type)) {
         putComponent(scene, entity.id, { ...component, id });
         continue;
@@ -348,8 +350,12 @@ function setOwn<V>(parent: Record<string, V>, key: string, value: V): void {
  * back out of it: an id that can be turned into a position is a position, and a
  * position is the bug this replaces.
  */
-function componentIdAt(entityId: string, index: number): string {
-  return `${entityId}:${index}`;
+function componentIdAt(entityId: string, index: number): ComponentId {
+  const id = `${entityId}:${index}`;
+  // It holds a colon, so it is never empty and the check cannot fail: it is what
+  // narrows the text to an id, where a cast would claim that it is one.
+  if (!isComponentId(id)) throw new SceneFormatError(`No component id can be made of "${id}".`);
+  return id;
 }
 
 /**
@@ -376,11 +382,12 @@ function rekeyOverrides(scene: SceneDoc): void {
         // build its own ids.
         const localEntityId = path.split(PREFAB_ID_SEPARATOR).at(-1) ?? path;
 
-        const rekeyed: Record<string, Record<string, unknown>> = {};
+        const rekeyed: Record<ComponentId, Record<string, unknown>> = {};
         for (const [key, properties] of Object.entries(override.components)) {
           const index = Number(key);
-          rekeyed[Number.isInteger(index) && key === String(index) ? componentIdAt(localEntityId, index) : key] =
-            properties;
+          const id = Number.isInteger(index) && key === String(index) ? componentIdAt(localEntityId, index) : key;
+          // A key that is no id names no component, which is the empty one alone.
+          if (isComponentId(id)) rekeyed[id] = properties;
         }
         override.components = rekeyed;
       }

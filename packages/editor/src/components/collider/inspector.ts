@@ -9,6 +9,7 @@ import {
   optionsFrom,
   type ColliderShapeKind,
   type ComponentDoc,
+  type ComponentId,
   type PhysicsMaterialDef,
   type Vec3,
 } from '@three-studio/core';
@@ -96,7 +97,7 @@ const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
  */
 async function extractPhysicsMaterial(
   entityId: string,
-  componentId: string,
+  componentId: ComponentId,
   material: PhysicsMaterialDef,
 ): Promise<void> {
   const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Collider';

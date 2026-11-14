@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import { SUN_FROM_SKY } from '../../scene/water';
 import type { WaterComponent } from './schema';
@@ -16,7 +16,7 @@ import type { WaterComponent } from './schema';
  */
 export function createWater(): WaterComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'water',
     geometry: { kind: 'plane', width: 50, height: 50, widthSegments: 1, heightSegments: 1 },
     normalMapId: null,

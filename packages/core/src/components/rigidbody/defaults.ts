@@ -1,9 +1,9 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import type { RigidBodyComponent } from './schema';
 
 export function createRigidBody(): RigidBodyComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'rigidbody',
     bodyType: 'dynamic',
     mass: 1,

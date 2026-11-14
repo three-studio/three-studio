@@ -1,6 +1,6 @@
 import type { ColliderComponent } from '../components/collider/schema';
 import { createModel } from '../components/model/defaults';
-import { createId, type AssetId } from '../ids';
+import { createComponentId, type AssetId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
@@ -144,7 +144,7 @@ export function entitiesFromNodes(
       node.draws
         ? [
             { ...createModel(), assetId, nodePath: node.path, nodeName: node.name },
-            ...colliders.map((collider) => ({ ...structuredClone(collider), id: createId() })),
+            ...colliders.map((collider) => ({ ...structuredClone(collider), id: createComponentId() })),
           ]
         : [],
     );

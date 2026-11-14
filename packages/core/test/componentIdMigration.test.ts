@@ -4,10 +4,12 @@ import {
   componentsOf,
   deserializeScene,
   findComponent,
+  fixedId,
+  idMapOf,
+  isComponentId,
   migratePrefab,
   putComponent,
   serializeScene,
-  type ComponentDoc,
   type PrefabInstanceComponent,
   type SceneDoc,
 } from '@three-studio/core';
@@ -195,15 +197,17 @@ describe('a prefab that gains a component', () => {
     // An author adds a light at the front of the trunk. Every override recorded
     // against the rigidbody and the collider used to move one place along: mass
     // landed on the collider, `isSensor` on nothing at all.
-    putComponent(prefab, 'trunk', { id: 'added-later', type: 'audioListener', masterVolume: 1 });
+    putComponent(prefab, 'trunk', { id: fixedId('component', 'added-later'), type: 'audioListener', masterVolume: 1 });
 
     const byId = new Map(
       componentsOf(prefab, 'trunk').map((component) => [component.id, component]),
     );
     const overrides = overrideComponents(scene, 'host', 'trunk');
 
-    for (const [componentId, patch] of Object.entries(overrides)) {
-      const target = byId.get(componentId) as ComponentDoc | undefined;
+    // The keys of an override are text in the file, and read as ids here, as the
+    // expansion reads each component's own id against them.
+    for (const [componentId, patch] of idMapOf(overrides, isComponentId)) {
+      const target = byId.get(componentId);
       expect(target).toBeDefined();
       // And it is still the component the author meant, not its neighbour.
       if (componentId === 'trunk:1') expect(target?.type).toBe('rigidbody');

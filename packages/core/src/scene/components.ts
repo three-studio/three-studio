@@ -1,3 +1,4 @@
+import type { ComponentId } from '../ids';
 import type {
   ComponentDoc,
   ComponentOfType,
@@ -109,7 +110,7 @@ export function copyComponentTables(tables: ComponentTables): ComponentTables {
 export function tableOf(
   tables: ComponentTables,
   type: ComponentType,
-): Map<string, Map<string, ComponentDoc>> {
+): Map<string, Map<ComponentId, ComponentDoc>> {
   return tables[type];
 }
 
@@ -122,7 +123,7 @@ export function tableOf(
 export function componentsOfType<T extends ComponentType>(
   host: ComponentHost,
   type: T,
-): ReadonlyMap<string, ReadonlyMap<string, ComponentOfType<T>>> {
+): ReadonlyMap<string, ReadonlyMap<ComponentId, ComponentOfType<T>>> {
   return host.components[type];
 }
 
@@ -202,7 +203,7 @@ export function findComponents<T extends ComponentType>(
 export function findComponentById(
   host: ComponentHost,
   entityId: string,
-  componentId: string,
+  componentId: ComponentId,
 ): ComponentDoc | undefined {
   for (const type of COMPONENT_TYPES) {
     const found = tableOf(host.components, type).get(entityId)?.get(componentId);
@@ -243,7 +244,7 @@ export function putComponent(
 export function deleteComponent(
   host: ComponentHost,
   entityId: string,
-  componentId: string,
+  componentId: ComponentId,
 ): boolean {
   for (const type of COMPONENT_TYPES) {
     const table = tableOf(host.components, type);
@@ -298,7 +299,7 @@ export function copyComponentsOf(
     const table = tableOf(host.components, type);
     const held = table.get(fromEntityId);
     if (held === undefined) continue;
-    const copy = new Map<string, ComponentDoc>();
+    const copy = new Map<ComponentId, ComponentDoc>();
     for (const [id, component] of held) copy.set(id, clone(component));
     table.set(toEntityId, copy);
   }

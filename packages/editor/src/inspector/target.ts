@@ -3,6 +3,7 @@ import {
   findComponentById,
   findComponents,
   type ComponentDoc,
+  type ComponentId,
   type ComponentType,
   type EntityDoc,
   type SceneDoc,
@@ -227,7 +228,7 @@ function nthOfType(
 class SingleComponentTarget implements ComponentTarget {
   constructor(
     private readonly entityId: string,
-    private readonly componentId: string,
+    private readonly componentId: ComponentId,
     readonly representative: ComponentDoc,
   ) {}
 

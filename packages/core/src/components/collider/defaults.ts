@@ -1,5 +1,5 @@
 import { conform, isMemberOf, oneOf } from '../../conform';
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { DEFAULT_LAYER_ID } from '../../project/layers';
 import { createPhysicsMaterial } from '../../scene/physicsMaterial';
 import type { GeometryDef } from '../../scene/geometry';
@@ -42,7 +42,7 @@ export function createColliderShape<K extends ColliderShapeKind>(kind: K): Colli
 /** A 1 m cube with the default material, which is what a bare entity gets. */
 export function createCollider(): ColliderComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'collider',
     shape: createColliderShape('box'),
     material: createPhysicsMaterial(),

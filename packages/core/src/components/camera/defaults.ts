@@ -1,10 +1,10 @@
-import { createId } from '../../ids';
+import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { CameraComponent, CameraProjection } from './schema';
 
 export function createCamera(projection: CameraProjection = 'perspective'): CameraComponent {
   return {
-    id: createId(),
+    id: createComponentId(),
     type: 'camera',
     projection,
     fov: 60,

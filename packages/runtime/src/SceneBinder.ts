@@ -5,6 +5,7 @@ import {
   skySunDirection,
   type AssetId,
   type ComponentDoc,
+  type ComponentId,
   type EntityDoc,
   type MaterialDef,
   type RenderingSettings,
@@ -422,7 +423,7 @@ export class SceneBinder {
    * replaces its objects, and the identity of this array's first element is
    * exactly how a caller notices.
    */
-  objectsFor(entityId: string, componentId: string): readonly Object3D[] {
+  objectsFor(entityId: string, componentId: ComponentId): readonly Object3D[] {
     return this.reconciler.objectsOf(entityId, componentId);
   }
 

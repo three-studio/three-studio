@@ -1,6 +1,7 @@
 import {
   COMPONENT_TYPES,
   componentsOfType,
+  type ComponentId,
   type ComponentType,
   type SceneDoc,
 } from '@three-studio/core';
@@ -23,7 +24,7 @@ interface Mounted {
 /** Entity id and component id, which is what identifies one annotation. */
 type Key = string;
 
-const keyOf = (entityId: string, componentId: string): Key => `${entityId}/${componentId}`;
+const keyOf = (entityId: string, componentId: ComponentId): Key => `${entityId}/${componentId}`;
 
 /**
  * Mounts three's helpers on the selection, and takes them down when it changes.

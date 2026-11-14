@@ -493,7 +493,7 @@ describe('a tune the world cannot take', () => {
 
     // A collider whose id the entity does not carry; a Rigid Body on level
     // geometry, which has none; an entity the scene does not have.
-    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: 'gone', isSensor: true });
+    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: fixedId('component', 'gone'), isSensor: true });
     rig.engine.tune(floor.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'dynamic' });
     rig.engine.tune('nobody', { ...colliderOf(floor), isSensor: true });
     rig.run(1);

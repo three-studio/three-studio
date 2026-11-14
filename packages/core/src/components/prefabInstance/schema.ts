@@ -1,4 +1,4 @@
-import type { AssetId } from '../../ids';
+import type { AssetId, ComponentId } from '../../ids';
 import type { ComponentBase, Transform } from '../../scene/primitives';
 
 /**
@@ -31,5 +31,5 @@ export interface PrefabOverride {
   visible?: boolean;
   transform?: Partial<Transform>;
   /** By component id inside the prefab entity, then by property name. */
-  components?: Record<string, Record<string, unknown>>;
+  components?: Record<ComponentId, Record<string, unknown>>;
 }

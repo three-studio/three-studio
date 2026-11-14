@@ -1,4 +1,5 @@
 import {
+  applyPrefabOverride,
   assertDefined,
   componentsOf,
   createColliderShape,
@@ -284,7 +285,7 @@ describe('prefab expansion', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab);
     (host.components[0] as PrefabInstanceComponent).overrides = {
-      [prefab.root]: { components: { 'gone-long-ago': { castShadow: false } } },
+      [prefab.root]: { components: { [fixedId('component', 'gone-long-ago')]: { castShadow: false } } },
     };
 
     // The prefab was restructured after the override was recorded. Unity has
@@ -374,6 +375,57 @@ describe('prefab expansion', () => {
     const second = expandPrefabs(sceneWith([edited]), library(prefab), first);
 
     expect(second.scene.entities.get(instancedId(host.entity.id, prefab.root))?.name).toBe('Edited');
+  });
+});
+
+/*
+ * One override folded into one entity, which is what the expansion does for each
+ * entity it places and what "apply overrides" does to the prefab: the same
+ * function, so that the two cannot disagree about what an override means.
+ */
+describe('folding one override into an entity', () => {
+  /** A copy of a prefab's root, and the mesh and the rigid body it holds. */
+  function bodied() {
+    const prefab = treePrefab();
+    putComponent(prefab, prefab.root, createComponent('rigidbody'));
+    const [mesh, body] = componentsOf(prefab, prefab.root);
+    return {
+      entity: structuredClone(assertDefined(prefab.entities.get(prefab.root), 'the prefab root')),
+      mesh: assertDefined(mesh, 'its mesh'),
+      body: assertDefined(body, 'its rigid body'),
+    };
+  }
+
+  it('reaches the component it names, and no other', () => {
+    const { entity, mesh, body } = bodied();
+
+    const folded = applyPrefabOverride(entity, [mesh, body], { components: { [body.id]: { mass: 12 } } });
+
+    expect(folded.find((component) => component.id === body.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
+    // The very same object: nothing named it.
+    expect(folded.find((component) => component.id === mesh.id)).toBe(mesh);
+  });
+
+  it('drops an override that names a component the prefab lost', () => {
+    const { entity, mesh, body } = bodied();
+
+    const folded = applyPrefabOverride(entity, [mesh, body], {
+      components: { [fixedId('component', 'lost-long-ago')]: { mass: 12 } },
+    });
+
+    // Not an error and not a new component: the prefab was restructured after
+    // the override was recorded, and forgetting it is the answer Unity gives.
+    expect(folded).toEqual([mesh, body]);
+  });
+
+  it('never lets an override change the id it is looked up by', () => {
+    const { entity, mesh, body } = bodied();
+
+    const folded = applyPrefabOverride(entity, [mesh, body], {
+      components: { [body.id]: { id: 'somebody-else', mass: 12 } },
+    });
+
+    expect(folded.map((component) => component.id)).toEqual([mesh.id, body.id]);
   });
 });
 
