@@ -1,5 +1,5 @@
 import { isRecord } from '../conform';
-import { shown, type DecodePath, type Decoded, type Diagnostic } from '../decoded';
+import { invalid, shown, type DecodePath, type Decoded, type Diagnostic } from '../decoded';
 import { planFields, type Infer, type Schema } from '../fieldSchema';
 import { createComponentId, isComponentId, type AssetId, type EntityId } from '../ids';
 import type { Component } from '../scene/primitives';
@@ -55,6 +55,12 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
   readonly id: C['type'];
   /** What the type is called wherever the editor names it: a pane's heading, the Add Component menu, a message. */
   readonly label: string;
+  /**
+   * The version of the type's fields, for a type written as a schema: moved
+   * whenever they change, so that data written with other fields is refused
+   * by name rather than read as if it were this type's.
+   */
+  readonly version?: number;
   /** A blank one, for "Add Component" and for filling a stored one's gaps. */
   create(): C;
   /**
@@ -166,9 +172,9 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
  *
  * Everything the definition answers about the data comes from the schema: the
  * blank component is its defaults under a new id, the decoder checks a stored
- * one field by field, and the assets it names are its asset fields. The type's
- * TypeScript type is `Component<Id, Infer<typeof schema>>`, which the type's
- * own file adds to `ComponentTypes`.
+ * one field by field, and the assets and entities it names are its asset and
+ * entity fields. The type's TypeScript type is `Component<Id, Infer<typeof
+ * schema>>`, which the type's own file adds to `ComponentTypes`.
  *
  * The plan is computed here, once, so a schema that contradicts itself fails
  * where the type is defined, the first time anything imports it.
@@ -184,18 +190,21 @@ export function defineComponent<const Id extends string, const S extends Schema>
    */
   readonly id: Id & Component<Id, Infer<S>>['type'];
   readonly label: string;
+  /** See `ComponentDefinition.version`. A type starts at 1. */
+  readonly version: number;
   readonly schema: S;
   readonly runtime: boolean;
   readonly addable: boolean;
   /** Left out, a component of the type is a place in the world, which all but two kinds of light are. */
   readonly placeable?: (component: Component<Id, Infer<S>>) => boolean;
 }): ComponentDefinition<Component<Id, Infer<S>>> {
-  const { id: type, label, schema, runtime, addable } = description;
+  const { id: type, label, version, schema, runtime, addable } = description;
   const plan = planFields(schema);
 
   return {
     id: type,
     label,
+    version,
     schema,
     runtime,
     addable,
@@ -203,9 +212,7 @@ export function defineComponent<const Id extends string, const S extends Schema>
     // components sharing one would be edited together.
     create: () => ({ ...structuredClone(plan.defaults), id: createComponentId(), type }),
     decode: (value, path) => {
-      if (!isRecord(value)) {
-        return { ok: false, diagnostics: [{ code: 'field.invalid', message: `expected a component, found ${shown(value)}`, path }] };
-      }
+      if (!isRecord(value)) return { ok: false, diagnostics: [invalid(path, 'a component', value)] };
       // What every component carries is checked here, and the rest is the
       // schema's: `id` and `type` are no fields of it.
       const { id, type: storedType, ...fields } = value;
@@ -214,17 +221,14 @@ export function defineComponent<const Id extends string, const S extends Schema>
         return { ok: true, value: { ...decoded.value, id, type } };
       }
       const diagnostics: Diagnostic[] = [];
-      if (!isComponentId(id)) {
-        diagnostics.push({ code: 'field.invalid', message: `expected a component id, found ${shown(id)}`, path: [...path, 'id'] });
-      }
-      if (storedType !== type) {
-        diagnostics.push({ code: 'field.invalid', message: `expected ${shown(type)}, found ${shown(storedType)}`, path: [...path, 'type'] });
-      }
+      if (!isComponentId(id)) diagnostics.push(invalid([...path, 'id'], 'a component id', id));
+      if (storedType !== type) diagnostics.push(invalid([...path, 'type'], shown(type), storedType));
       if (!decoded.ok) diagnostics.push(...decoded.diagnostics);
       return { ok: false, diagnostics };
     },
     assets: (component) => plan.assets(component),
-    entities: () => [],
+    entities: (component) => plan.entities(component),
+    assetCandidates: (component) => plan.candidates(component),
     placeable: description.placeable ?? (() => true),
   };
 }

@@ -2,7 +2,7 @@ import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
-import { describeDiagnostics, type Diagnostic } from '../decoded';
+import { formatDiagnostics, type Diagnostic } from '../decoded';
 import {
   idMapOf,
   isComponentId,
@@ -338,7 +338,7 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
     }
   }
   if (refused.length > 0) {
-    throw new SceneFormatError(`Scene file holds components this build cannot read.\n${describeDiagnostics(refused)}`);
+    throw new SceneFormatError(formatDiagnostics('Scene file holds components this build cannot read.', refused));
   }
 
   rekeyOverrides(scene);

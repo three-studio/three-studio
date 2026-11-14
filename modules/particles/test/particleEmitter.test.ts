@@ -159,7 +159,7 @@ describe('a scene holding a particle emitter', () => {
     });
 
     expect(() => deserializeScene(registries, malformed)).toThrow(
-      /components\.particleEmitter\.\w+\.\w+\.radius: expected a finite number, found "wide"[\s\S]*\.burst: is no field of this type/,
+      /components\.particleEmitter\.\w+\.\w+\.radius: expected a finite number, found "wide"[\s\S]*\.burst: is no field this build reads/,
     );
   });
 

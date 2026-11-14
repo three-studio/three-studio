@@ -1,10 +1,11 @@
-import type {
-  ComponentDoc,
-  ComponentHost,
-  ComponentTypeId,
-  EntityId,
-  Schema,
-  SchemaField,
+import {
+  conditionHolds,
+  type ComponentDoc,
+  type ComponentHost,
+  type ComponentTypeId,
+  type EntityId,
+  type Schema,
+  type SchemaField,
 } from '@three-studio/core';
 import type { EditorRegistries } from '../registries';
 import {
@@ -45,8 +46,12 @@ function bounds(field: { readonly min?: number; readonly max?: number; readonly 
   };
 }
 
-/** One field as the row that edits it. */
-function rowOf(key: string, field: SchemaField): FieldSpec {
+/**
+ * One field as the row that edits it; `null` for a kind with no row derived
+ * yet. Only the kinds a flat type holds are drawn here, and no type this build
+ * registers holds another.
+ */
+function rowOf(key: string, field: SchemaField): FieldSpec | null {
   const path = [key];
   const { label } = field;
   switch (field.type) {
@@ -63,6 +68,13 @@ function rowOf(key: string, field: SchemaField): FieldSpec {
       // Nothing to declare: the control is built from the value, a checkbox
       // for a boolean and a picker for `#rrggbb`.
       return { path, label };
+    case 'string':
+    case 'vec2':
+    case 'entity':
+    case 'object':
+    case 'union':
+    case 'custom':
+      return null;
   }
 }
 
@@ -70,12 +82,14 @@ function rowOf(key: string, field: SchemaField): FieldSpec {
 export function derivePane(id: ComponentTypeId, schema: Schema): ComponentPane {
   const fields: PaneEntry[] = [];
   for (const [key, field] of Object.entries(schema)) {
+    const row = rowOf(key, field);
+    if (row === null) continue;
     if (field.separatorBefore) fields.push({ kind: 'separator' });
     const condition = field.shownWhen;
     fields.push(
       condition === undefined
-        ? rowOf(key, field)
-        : { ...rowOf(key, field), visibleWhen: (component) => Reflect.get(component, condition.field) === condition.equals },
+        ? row
+        : { ...row, visibleWhen: (component) => conditionHolds(condition, Reflect.get(component, condition.field)) },
     );
   }
   return { id, fields };

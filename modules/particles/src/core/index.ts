@@ -27,6 +27,7 @@ declare module '@three-studio/core' {
 export const particleEmitterType = defineComponent({
   id: 'particleEmitter',
   label: 'Particles',
+  version: 1,
   schema: particleEmitterSchema,
   runtime: true,
   addable: true,
