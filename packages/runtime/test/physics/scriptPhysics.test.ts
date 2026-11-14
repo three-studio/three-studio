@@ -76,6 +76,21 @@ class KickOther extends Behaviour {
   }
 }
 
+/** Asks for what no entity answers to: the empty id a script makes of a value it never filled. */
+class AskForNothing extends Behaviour {
+  static body: BodyHandle | null | undefined;
+  static joint: unknown;
+  static character: CharacterController | null | undefined;
+  static entity: unknown;
+
+  override onStart() {
+    AskForNothing.body = this.physics.body('');
+    AskForNothing.joint = this.physics.joint('');
+    AskForNothing.character = this.physics.createCharacterController('', SETTINGS);
+    AskForNothing.entity = this.resolve('');
+  }
+}
+
 /**
  * Walks 4 m/s along −z on a character of its own, falling as the world pulls it.
  *
@@ -156,6 +171,24 @@ describe('a script moving bodies', () => {
     expect(KickOther.nobody).toBeNull();
     // It never touched `this.body`, so nothing is said about the body it lacks.
     expect(rig.engine.warnings.filter((line) => line.includes('Kicker'))).toEqual([]);
+  });
+
+  it('is answered null for an id that is none, by every way a script has of naming an entity', async () => {
+    AskForNothing.body = undefined;
+    AskForNothing.joint = undefined;
+    AskForNothing.character = undefined;
+    AskForNothing.entity = undefined;
+    const asker = withScript(createEntity('Asker'), AskForNothing);
+
+    await physicsRig([asker]);
+
+    // `''` is what a script holds for an entity property it never filled, and it
+    // names nothing: the body, the joint, the character and the handle are all
+    // asked, and none of them is the first entity there is.
+    expect(AskForNothing.body).toBeNull();
+    expect(AskForNothing.joint).toBeNull();
+    expect(AskForNothing.character).toBeNull();
+    expect(AskForNothing.entity).toBeNull();
   });
 
   it('walks a character of its own on its own settings, climbing the step they clear', async () => {

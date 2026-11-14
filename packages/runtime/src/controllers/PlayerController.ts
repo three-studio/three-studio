@@ -2,6 +2,7 @@ import {
   findComponent,
   originAboveFeet,
   type ColliderComponent,
+  type EntityId,
   type PlayerControllerComponent,
 } from '@three-studio/core';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
@@ -126,7 +127,7 @@ export class PlayerController implements Behaviour {
     private readonly component: PlayerControllerComponent,
     private readonly object: Object3D,
     physics: PhysicsApi | null,
-    entityId: string,
+    entityId: EntityId,
     /**
      * The entity's collider as the *document* describes it, not as Rapier built
      * it. The same component `PhysicsWorld` shapes the body from, and the same

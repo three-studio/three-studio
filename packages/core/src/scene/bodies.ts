@@ -1,3 +1,4 @@
+import type { EntityId } from '../ids';
 import { componentsOfType, entitiesWith, hasComponent } from './components';
 import type { JointComponent, SceneDoc } from './schema';
 
@@ -20,9 +21,9 @@ import type { JointComponent, SceneDoc } from './schema';
  */
 
 /** Every body the scene builds, by the entity it sits on, with the entities whose colliders it carries. */
-export function physicsBodies(scene: SceneDoc): ReadonlyMap<string, readonly string[]> {
+export function physicsBodies(scene: SceneDoc): ReadonlyMap<EntityId, readonly EntityId[]> {
   const withBody = new Set(entitiesWith(scene, 'rigidbody'));
-  const bodies = new Map<string, string[]>([...withBody].map((entityId) => [entityId, []]));
+  const bodies = new Map<EntityId, EntityId[]>([...withBody].map((entityId) => [entityId, []]));
   for (const entityId of entitiesWith(scene, 'collider')) {
     const body = riddenBy(scene, entityId, withBody) ?? entityId;
     const carried = bodies.get(body);
@@ -33,7 +34,7 @@ export function physicsBodies(scene: SceneDoc): ReadonlyMap<string, readonly str
 }
 
 /** The entities whose colliders a body on `entityId` would carry, whether it holds its Rigid Body yet or not. */
-export function collidersOfBody(scene: SceneDoc, entityId: string): readonly string[] {
+export function collidersOfBody(scene: SceneDoc, entityId: EntityId): readonly EntityId[] {
   const withBody = new Set(entitiesWith(scene, 'rigidbody')).add(entityId);
   return entitiesWith(scene, 'collider').filter(
     (collider) => riddenBy(scene, collider, withBody) === entityId,
@@ -50,13 +51,13 @@ export function collidersOfBody(scene: SceneDoc, entityId: string): readonly str
  * gathering the table first: the cost is the entity's depth, whatever the scene
  * holds.
  */
-export function bodyOf(scene: SceneDoc, entityId: string): string | null {
+export function bodyOf(scene: SceneDoc, entityId: EntityId): EntityId | null {
   return riddenBy(scene, entityId, componentsOfType(scene, 'rigidbody'));
 }
 
 /** The bodies a joint holds together, by the entity each sits on, or why it holds none. `other: null` is the world. */
 export type JointEnds =
-  | { readonly holds: true; readonly own: string; readonly other: string | null }
+  | { readonly holds: true; readonly own: EntityId; readonly other: EntityId | null }
   | { readonly holds: false; readonly why: 'noBody' | 'gone' | 'otherNoBody' | 'same' };
 
 /**
@@ -66,7 +67,7 @@ export type JointEnds =
  * Here for the reason this module is: the build and the engine's warnings must
  * agree, so that the warnings name exactly the joints the world left out.
  */
-export function jointEnds(scene: SceneDoc, entityId: string, joint: JointComponent): JointEnds {
+export function jointEnds(scene: SceneDoc, entityId: EntityId, joint: JointComponent): JointEnds {
   const own = movesWith(scene, entityId);
   if (own === null) return { holds: false, why: 'noBody' };
   if (joint.connectedEntity === null) return { holds: true, own, other: null };
@@ -83,7 +84,7 @@ export function jointEnds(scene: SceneDoc, entityId: string, joint: JointCompone
  * own fixed body when it carries a Collider with none above it. The world
  * builds a body for exactly those, under that entity's id.
  */
-function movesWith(scene: SceneDoc, entityId: string): string | null {
+function movesWith(scene: SceneDoc, entityId: EntityId): EntityId | null {
   return bodyOf(scene, entityId) ?? (hasComponent(scene, entityId, 'collider') ? entityId : null);
 }
 
@@ -97,11 +98,11 @@ function movesWith(scene: SceneDoc, entityId: string): string | null {
  */
 function riddenBy(
   scene: SceneDoc,
-  entityId: string,
-  bodies: Pick<ReadonlySet<string>, 'has'>,
-): string | null {
-  const seen = new Set<string>();
-  let current: string | null = entityId;
+  entityId: EntityId,
+  bodies: Pick<ReadonlySet<EntityId>, 'has'>,
+): EntityId | null {
+  const seen = new Set<EntityId>();
+  let current: EntityId | null = entityId;
   while (current !== null && !seen.has(current)) {
     if (bodies.has(current)) return current;
     seen.add(current);

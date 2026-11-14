@@ -1,4 +1,11 @@
-import type { AssetId, GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
+import {
+  isEntityId,
+  type AssetId,
+  type EntityId,
+  type GeometryDef,
+  type MaterialDef,
+  type MeshComponent,
+} from '@three-studio/core';
 import { Mesh, type BufferGeometry, type Material, type Texture } from 'three/webgpu';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import {
@@ -57,7 +64,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     return handle.materialKey;
   }
 
-  mount(entityId: string, component: MeshComponent, ctx: SystemContext): MeshHandle {
+  mount(entityId: EntityId, component: MeshComponent, ctx: SystemContext): MeshHandle {
     const handle = this.build(component, undefined, ctx);
     handle.mesh.userData[ENTITY_ID_KEY] = entityId;
     ctx.invalidate();
@@ -81,7 +88,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
   ): MeshHandle {
     const entityId: unknown = handle.mesh.userData[ENTITY_ID_KEY];
     const rebuilt = this.build(next, handle, ctx);
-    if (typeof entityId === 'string') rebuilt.mesh.userData[ENTITY_ID_KEY] = entityId;
+    if (isEntityId(entityId)) rebuilt.mesh.userData[ENTITY_ID_KEY] = entityId;
     // Geometry or material may have changed, and both are in the batch key.
     ctx.invalidate();
     return rebuilt;

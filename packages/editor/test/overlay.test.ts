@@ -19,6 +19,7 @@ import {
   type BuiltShape,
   type ColliderShape,
   type ComponentDoc,
+  type EntityId,
   type EntityTemplate,
   type JointComponent,
   type JointMotion,
@@ -71,7 +72,7 @@ function mount(scene: SceneDoc): {
   binder: SceneBinder;
   camera: PerspectiveCamera;
   /** Re-runs a frame: the binder, then the overlay, as the viewport does. */
-  frame: (next?: SceneDoc, selection?: readonly string[]) => void;
+  frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
     resolver: NULL_ASSET_RESOLVER,
@@ -83,7 +84,7 @@ function mount(scene: SceneDoc): {
   camera.position.set(0, 0, 10);
 
   let current = scene;
-  const frame = (next?: SceneDoc, selection: readonly string[] = []): void => {
+  const frame = (next?: SceneDoc, selection: readonly EntityId[] = []): void => {
     current = next ?? current;
     binder.sync(current);
     overlay.sync(current, undefined);
@@ -939,7 +940,7 @@ describe('where a joint holds', () => {
     createEntity('Joint', [{ ...createJoint(), motion, anchor }]);
 
   /** The world pose physics reads the entity at. */
-  function poseOf(binder: SceneBinder, entityId: string) {
+  function poseOf(binder: SceneBinder, entityId: EntityId) {
     const container = binder.containerFor(entityId);
     if (!container) throw new Error('no container');
     const position = new Vector3();

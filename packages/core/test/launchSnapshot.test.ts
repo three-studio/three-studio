@@ -43,7 +43,9 @@ function snapshot(): LaunchSnapshot {
     materials: new Map([[STONE, createMaterial('#777777')]]),
     physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' }]]),
     // Under the id it is filed by, as a prefab read from a library always is.
-    prefabs: new Map([[CRATE, { ...createPrefabDoc('Crate', [], emptyComponentTables(), ''), id: CRATE }]]),
+    prefabs: new Map([
+      [CRATE, { ...createPrefabDoc('Crate', [], emptyComponentTables(), fixedId('entity', 'root')), id: CRATE }],
+    ]),
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: {
       ...createPhysicsSettings(),
@@ -171,7 +173,7 @@ describe('a launch snapshot, where it arrives', () => {
     expect(tree.version).toBe(PREFAB_FORMAT_VERSION);
     // Under the id it arrived by, whatever the file said of its own.
     expect(tree.id).toBe(TREE);
-    expect(componentsOf(tree, 'trunk').map((component) => component.id)).toEqual([
+    expect(componentsOf(tree, fixedId('entity', 'trunk')).map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
     ]);

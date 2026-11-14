@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import type { Patch } from 'immer';
 
 /*
@@ -38,8 +39,8 @@ export interface HistoryEntry {
   label: string;
   patches: Patch[];
   inverse: Patch[];
-  selectionBefore: readonly string[];
-  selectionAfter: readonly string[];
+  selectionBefore: readonly EntityId[];
+  selectionAfter: readonly EntityId[];
   /** Non-null while the entry may absorb further edits from the same gesture. */
   coalesceKey: string | null;
   external?: ExternalEdit | undefined;
@@ -105,8 +106,8 @@ export interface NewEntry {
   label: string;
   patches: Patch[];
   inverse: Patch[];
-  selectionBefore: readonly string[];
-  selectionAfter: readonly string[];
+  selectionBefore: readonly EntityId[];
+  selectionAfter: readonly EntityId[];
   coalesceKey: string | null;
   external?: ExternalEdit | undefined;
 }

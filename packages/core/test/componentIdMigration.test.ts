@@ -10,6 +10,7 @@ import {
   migratePrefab,
   putComponent,
   serializeScene,
+  type EntityId,
   type PrefabInstanceComponent,
   type SceneDoc,
 } from '@three-studio/core';
@@ -31,6 +32,9 @@ import { describe, expect, it } from 'vitest';
  * already is: `<entityId>:<index>`. Both sides compute the same string from
  * what they already hold, so neither needs the other.
  */
+
+const HOST = fixedId('entity', 'host');
+const TRUNK = fixedId('entity', 'trunk');
 
 /** A prefab as an older editor wrote it: components with no ids. */
 function oldPrefab(): unknown {
@@ -94,19 +98,19 @@ function oldScene(): string {
   });
 }
 
-const overridesOf = (scene: SceneDoc, entityId: string): Record<string, unknown> => {
+const overridesOf = (scene: SceneDoc, entityId: EntityId): Record<string, unknown> => {
   const instance = findComponent(scene, entityId, 'prefabInstance') as PrefabInstanceComponent;
   return instance.overrides as unknown as Record<string, unknown>;
 };
 
-const overrideComponents = (scene: SceneDoc, entityId: string, key: string): Record<string, unknown> =>
+const overrideComponents = (scene: SceneDoc, entityId: EntityId, key: string): Record<string, unknown> =>
   (overridesOf(scene, entityId)[key] as { components: Record<string, unknown> }).components;
 
 describe('giving components an identity', () => {
   it('stamps every component of a scene written without ids', () => {
     const scene = deserializeScene(oldScene());
 
-    expect(componentsOf(scene, 'host')[0]?.id).toBe('host:0');
+    expect(componentsOf(scene, HOST)[0]?.id).toBe('host:0');
     expect(scene.version).toBe(SCENE_FORMAT_VERSION);
   });
 
@@ -115,7 +119,7 @@ describe('giving components an identity', () => {
 
     // The ids the scene's overrides will be remapped onto, computed on the other
     // side of the wall without either file knowing about the other.
-    expect(componentsOf(prefab, 'trunk').map((component) => component.id)).toEqual([
+    expect(componentsOf(prefab, TRUNK).map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
       'trunk:2',
@@ -125,7 +129,7 @@ describe('giving components an identity', () => {
 
   it('rekeys overrides from position to component id', () => {
     const scene = deserializeScene(oldScene());
-    const direct = overrideComponents(scene, 'host', 'trunk');
+    const direct = overrideComponents(scene, HOST, 'trunk');
 
     expect(Object.keys(direct).sort()).toEqual(['trunk:1', 'trunk:2']);
     expect(direct['trunk:1']).toEqual({ mass: 12 });
@@ -134,7 +138,7 @@ describe('giving components an identity', () => {
 
   it('rekeys an override that reaches two prefabs deep', () => {
     const scene = deserializeScene(oldScene());
-    const nested = overrideComponents(scene, 'host', 'inner/lampRoot');
+    const nested = overrideComponents(scene, HOST, 'inner/lampRoot');
 
     // The key is a path; the entity it names is its last segment, and that is
     // what the inner prefab used to build its own component ids.
@@ -182,7 +186,7 @@ describe('giving components an identity', () => {
     raw.entities['host']!.components[0]!['id'] = 'chosen-by-someone-else';
 
     const scene = deserializeScene(JSON.stringify(raw));
-    expect(componentsOf(scene, 'host')[0]?.id).toBe('chosen-by-someone-else');
+    expect(componentsOf(scene, HOST)[0]?.id).toBe('chosen-by-someone-else');
   });
 });
 
@@ -197,12 +201,12 @@ describe('a prefab that gains a component', () => {
     // An author adds a light at the front of the trunk. Every override recorded
     // against the rigidbody and the collider used to move one place along: mass
     // landed on the collider, `isSensor` on nothing at all.
-    putComponent(prefab, 'trunk', { id: fixedId('component', 'added-later'), type: 'audioListener', masterVolume: 1 });
+    putComponent(prefab, TRUNK, { id: fixedId('component', 'added-later'), type: 'audioListener', masterVolume: 1 });
 
     const byId = new Map(
-      componentsOf(prefab, 'trunk').map((component) => [component.id, component]),
+      componentsOf(prefab, TRUNK).map((component) => [component.id, component]),
     );
-    const overrides = overrideComponents(scene, 'host', 'trunk');
+    const overrides = overrideComponents(scene, HOST, 'trunk');
 
     // The keys of an override are text in the file, and read as ids here, as the
     // expansion reads each component's own id against them.

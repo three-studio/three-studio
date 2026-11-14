@@ -1,6 +1,7 @@
 import {
   capabilitiesOf,
   createRenderingSettings,
+  type EntityId,
   type ExpandedScene,
   type RenderingSettings,
 } from '@three-studio/core';
@@ -649,7 +650,7 @@ export class EditorViewport {
 
   private syncSelection(): void {
     const { selection, transformMode, showGizmos, showGrid } = useEditorStore.getState();
-    const resolve = (id: string) => this.binder.getObject(id);
+    const resolve = (id: EntityId) => this.binder.getObject(id);
 
     this.grid.visible = showGrid;
 
@@ -726,9 +727,9 @@ export class EditorViewport {
    * have to be taken down.
    */
   private expandDirty(
-    dirty: ReadonlySet<string> | undefined,
+    dirty: ReadonlySet<EntityId> | undefined,
     sources: ExpandedScene['sources'],
-  ): ReadonlySet<string> | undefined {
+  ): ReadonlySet<EntityId> | undefined {
     if (dirty === undefined) return undefined;
 
     const expanded = new Set(dirty);
@@ -781,7 +782,7 @@ export class EditorViewport {
      */
     const invalidated = changes.materials
       ? this.binder.setMaterialLibrary(useAssetStore.getState().materials)
-      : new Set<string>();
+      : new Set<EntityId>();
 
     const dirty = changes.prefabs ? undefined : this.expandDirty(entities, expanded.sources);
     const merged = dirty === undefined ? undefined : new Set([...dirty, ...invalidated]);

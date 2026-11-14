@@ -6,6 +6,7 @@ import {
   type ComponentDoc,
   type ComponentId,
   type EntityDoc,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import type { FolderApi } from 'tweakpane';
@@ -47,9 +48,9 @@ const DEG_TO_RAD = Math.PI / 180;
  * scene per window rather than tabs.
  */
 export type InspectorTarget =
-  | { kind: 'entity'; entityId: string }
+  | { kind: 'entity'; entityId: EntityId }
   /** Several, edited as one. `ids` are in selection order; the first decides the shape. */
-  | { kind: 'entities'; ids: readonly string[] }
+  | { kind: 'entities'; ids: readonly EntityId[] }
   | { kind: 'scene' };
 
 /**
@@ -103,13 +104,15 @@ export class InspectorBinding {
    * field would put forty objects on top of each other. Unity does the same — the
    * multiple-object inspector starts at the components.
    */
-  private buildMulti(ids: readonly string[]): void {
+  private buildMulti(ids: readonly EntityId[]): void {
     const target = new MultiTarget(ids);
     const folder = this.binder.pane.addFolder({ title: `${ids.length} objects selected` });
     folder.addBinding({ value: ids.length }, 'value', { label: 'Objects', readonly: true });
 
+    const first = ids[0];
+    if (first === undefined) return;
     for (const component of target.components()) {
-      this.buildComponent(ids[0] ?? '', component, target);
+      this.buildComponent(first, component, target);
     }
   }
 
@@ -204,7 +207,7 @@ export class InspectorBinding {
     this.binder.track(visible, () => currentEntity(entity.id)?.visible ?? true);
   }
 
-  private buildTransform(entityId: string): void {
+  private buildTransform(entityId: EntityId): void {
     const folder = this.binder.pane.addFolder({ title: 'Transform' });
 
     this.bindVector(folder, entityId, 'position', 'Position', 1);
@@ -218,7 +221,7 @@ export class InspectorBinding {
    */
   private bindVector(
     folder: FolderApi,
-    entityId: string,
+    entityId: EntityId,
     key: 'position' | 'rotation' | 'scale',
     label: string,
     scale: number,
@@ -256,7 +259,7 @@ export class InspectorBinding {
   }
 
   private buildComponent(
-    entityId: string,
+    entityId: EntityId,
     target: ComponentTarget,
     owner: EntityTarget,
   ): void {
@@ -300,7 +303,7 @@ export class InspectorBinding {
 
   private bindField(
     folder: FolderApi,
-    entityId: string,
+    entityId: EntityId,
     target: ComponentTarget,
     spec: FieldSpec,
     owner: EntityTarget,
@@ -377,14 +380,14 @@ function currentScene(): SceneDoc {
   return useDocumentStore.getState().scene;
 }
 
-function currentEntity(entityId: string): EntityDoc | undefined {
+function currentEntity(entityId: EntityId): EntityDoc | undefined {
   // The expanded scene, not the document. A prefab instance's contents are
   // drawn and selectable, but the document has never heard of their ids — read
   // from it alone and the panel goes blank for anything inside a prefab.
   return expandedScene().scene.entities.get(entityId);
 }
 
-function currentComponent(entityId: string, componentId: ComponentId): ComponentDoc | undefined {
+function currentComponent(entityId: EntityId, componentId: ComponentId): ComponentDoc | undefined {
   return findComponentById(expandedScene().scene, entityId, componentId);
 }
 
@@ -398,7 +401,7 @@ function currentComponent(entityId: string, componentId: ComponentId): Component
  * During Play, with what was tuned on it and on the asset it links: what the
  * running game is built with.
  */
-export function effectiveComponent(entityId: string, component: ComponentDoc): ComponentDoc {
+export function effectiveComponent(entityId: EntityId, component: ComponentDoc): ComponentDoc {
   const { materials } = useAssetStore.getState();
   const tuned = tunedComponent(entityId, component);
   if (tuned.type === 'mesh' && tuned.materialId !== null) {
@@ -469,7 +472,7 @@ export function linkedMaterial(
  * a mesh linked to a shared material shows the shared values' rows, so the
  * predicates have to be asked about the material actually on screen.
  */
-export function inspectorSignature(entityId: string | undefined): string {
+export function inspectorSignature(entityId: EntityId | undefined): string {
   const scene = expandedScene().scene;
   if (entityId === undefined || !scene.entities.has(entityId)) return '';
   const parts = componentsOf(scene, entityId).map((component) => {

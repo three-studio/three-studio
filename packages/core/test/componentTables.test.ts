@@ -15,14 +15,17 @@ import {
   findComponent,
   findComponentById,
   findComponents,
+  fixedId,
   hasComponent,
   insertEntity,
   putComponent,
   removeSubtree,
+  renameEntityReferences,
   serializeScene,
   validateHierarchy,
   type ColliderComponent,
   type ComponentId,
+  type EntityId,
   type LightComponent,
   type MeshComponent,
   type SceneDoc,
@@ -44,7 +47,7 @@ import { sceneWith } from './fixtures';
  */
 
 /** A scene of `count` cubes, one of which also carries a light. */
-function lit(count: number): { scene: SceneDoc; ids: string[]; litId: string } {
+function lit(count: number): { scene: SceneDoc; ids: EntityId[]; litId: EntityId } {
   const cubes = [...Array(count)].map(() => createMeshEntity('box'));
   const scene = sceneWith(cubes);
   const litId = cubes[0]!.entity.id;
@@ -57,10 +60,10 @@ describe('the tables themselves', () => {
     // The three levels are type, entity, component id. A Map is copied and
     // frozen by immer in one step, where a record of ten thousand keys is
     // frozen key by key.
-    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<string, Map<ComponentId, MeshComponent>>>();
-    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<string, Map<ComponentId, LightComponent>>>();
+    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<EntityId, Map<ComponentId, MeshComponent>>>();
+    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<EntityId, Map<ComponentId, LightComponent>>>();
     expectTypeOf<SceneDoc['components']['collider']>().toEqualTypeOf<
-      Map<string, Map<ComponentId, ColliderComponent>>
+      Map<EntityId, Map<ComponentId, ColliderComponent>>
     >();
   });
 
@@ -121,7 +124,7 @@ describe('listing the components of one type on an entity', () => {
     const scene = sceneWith([cube]);
 
     expect(findComponents(scene, cube.entity.id, 'light')).toEqual([]);
-    expect(findComponents(scene, 'nobody', 'mesh')).toEqual([]);
+    expect(findComponents(scene, fixedId('entity', 'nobody'), 'mesh')).toEqual([]);
   });
 
   it('answers a copy of the list, so a caller may delete while it walks', () => {
@@ -277,6 +280,25 @@ describe('an entity that comes and goes', () => {
     expect(copy.id).toBe(source.id);
     expect(copy).not.toBe(source);
     expect(validateHierarchy(scene)).toEqual([]);
+  });
+});
+
+describe('the references a component holds to other entities', () => {
+  it('asks about what is an id and nothing else, and renames what it is told to', () => {
+    const door = fixedId('entity', 'door');
+    const copy = fixedId('entity', 'door-copy');
+    const script = { ...createComponent('script'), props: { target: door, empty: '', count: 3 } };
+    const asked: string[] = [];
+
+    const [renamed] = renameEntityReferences([script], (id) => {
+      asked.push(id);
+      return id === door ? copy : undefined;
+    });
+
+    // An empty string names no entity, so `rename` is never handed one.
+    expect(asked).toContain(door);
+    expect(asked).not.toContain('');
+    expect(renamed).toMatchObject({ props: { target: copy, empty: '', count: 3 } });
   });
 });
 

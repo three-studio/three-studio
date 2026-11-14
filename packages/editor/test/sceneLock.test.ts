@@ -7,6 +7,7 @@ import {
   fixedId,
   instancedId,
   type AssetId,
+  type EntityId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -44,7 +45,7 @@ const play = () => useEditorStore.getState().play();
 const pause = () => useEditorStore.getState().togglePause();
 const stop = () => useEditorStore.getState().stop();
 const playState = () => useEditorStore.getState().playState;
-const x = (id: string) => assertDefined(doc().scene.entities.get(id), 'the entity').transform.position[0];
+const x = (id: EntityId) => assertDefined(doc().scene.entities.get(id), 'the entity').transform.position[0];
 
 interface Spied {
   apply: Mock<() => void>;
@@ -60,14 +61,14 @@ const real = (({ savePrefab, saveMaterial, createPrefab, createMaterial }) => ({
   createMaterial,
 }))(useAssetStore.getState());
 
-let first = '';
-let second = '';
+let first: EntityId;
+let second: EntityId;
 /** A prefab instance carrying an override. */
-let crate = '';
+let crate: EntityId;
 /** The entity that instance produces, by its expanded id. */
-let produced = '';
+let produced: EntityId;
 /** A model entity that still draws its whole file. */
-let chair = '';
+let chair: EntityId;
 /** The external edits riding the two entries, the one Undo would take and the one Redo would. */
 let undoable: Spied;
 let redoable: Spied;

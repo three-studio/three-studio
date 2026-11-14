@@ -1,4 +1,4 @@
-import { bodyOf, type EntityDoc, type SceneDoc } from '@three-studio/core';
+import { bodyOf, isEntityId, type EntityDoc, type EntityId, type SceneDoc } from '@three-studio/core';
 import type {
   BodyHandle,
   CharacterController,
@@ -46,7 +46,7 @@ export function scriptPhysicsFor(
 ): ScriptPhysics {
   // An entity with colliders and no Rigid Body on or above it is level
   // geometry, a fixed body of its own: `bodyOf` names none, and its own id does.
-  const bodyEntity = (entityId: string) => bodyOf(scene, entityId) ?? entityId;
+  const bodyEntity = (entityId: EntityId): EntityId => bodyOf(scene, entityId) ?? entityId;
   // Read once, as `this.body` is. An entity with no body leaves nothing out.
   const own = bodyEntity(caller.id);
   const layerIds = new Set(physics?.layers.map(({ id }) => id));
@@ -66,10 +66,12 @@ export function scriptPhysicsFor(
   return {
     gravity: physics?.gravity ?? ZERO,
     layers: physics?.layers ?? [],
-    body: (entityId) => physics?.body(bodyEntity(entityId)) ?? null,
-    joint: (entityId) => physics?.joint(entityId) ?? null,
+    // The ids a script passes are text: one that is no id names no entity, and
+    // is answered as an entity with nothing is.
+    body: (entityId) => (isEntityId(entityId) ? physics?.body(bodyEntity(entityId)) ?? null : null),
+    joint: (entityId) => (isEntityId(entityId) ? physics?.joint(entityId) ?? null : null),
     createCharacterController: (entityId, settings) =>
-      physics?.createCharacterController(bodyEntity(entityId), settings) ?? null,
+      isEntityId(entityId) ? physics?.createCharacterController(bodyEntity(entityId), settings) ?? null : null,
     // With no physics, nothing is asked, and so nothing is said.
     raycast: (origin, direction, maxDistance, options) =>
       physics?.raycast(origin, direction, maxDistance, scoped(options)) ?? null,

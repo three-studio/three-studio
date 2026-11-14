@@ -10,6 +10,7 @@ import {
   type ColliderShapeKind,
   type ComponentDoc,
   type ComponentId,
+  type EntityId,
   type PhysicsMaterialDef,
   type Vec3,
 } from '@three-studio/core';
@@ -96,7 +97,7 @@ const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
  * collider on its own values rather than linked to an id that does not exist.
  */
 async function extractPhysicsMaterial(
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
   material: PhysicsMaterialDef,
 ): Promise<void> {

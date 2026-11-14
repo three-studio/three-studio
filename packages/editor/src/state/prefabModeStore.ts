@@ -2,6 +2,7 @@ import {
   prefabToScene,
   sceneToPrefab,
   type AssetId,
+  type EntityId,
   type PrefabDoc,
   type SceneDoc,
 } from '@three-studio/core';
@@ -30,7 +31,7 @@ interface PrefabFrame {
   name: string;
   /** What to put back when this frame is left — the scene, or the prefab above. */
   scene: SceneDoc;
-  selection: readonly string[];
+  selection: readonly EntityId[];
   /**
    * The undo stack of what was set aside, and where its file stood.
    *

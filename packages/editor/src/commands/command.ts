@@ -1,4 +1,4 @@
-import type { AssetId, SceneId } from '@three-studio/core';
+import type { AssetId, EntityId, SceneId } from '@three-studio/core';
 import { expandedScene } from '../state/expansion';
 import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
@@ -56,7 +56,7 @@ export function currentContext(): EditorContext {
 }
 
 /** The context for a specific set of ids — a right-click outside the selection. */
-export function contextFor(ids: readonly string[]): EditorContext {
+export function contextFor(ids: readonly EntityId[]): EditorContext {
   return { selection: Selection.of(ids, expandedScene().scene) };
 }
 

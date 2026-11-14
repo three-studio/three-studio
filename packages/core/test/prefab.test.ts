@@ -122,6 +122,12 @@ describe('a prefab as text', () => {
     expect(deserializePrefab(text, TREE).id).toBe(TREE);
   });
 
+  it('is refused when its root is not an id, where every copy would hang under an entity named nothing', () => {
+    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: '' }))).toThrow('no root entity');
+    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: 7 }))).toThrow('no root entity');
+    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: undefined }))).toThrow('no root entity');
+  });
+
   it('holds its entities in a Map once read', () => {
     const read = deserializePrefab(serializePrefab(treePrefab()));
 
@@ -595,19 +601,34 @@ describe('reading an expanded id', () => {
     // The predicate the whole editor keys on: whether an edit is a document
     // change or an override, whether Delete applies, whether the hierarchy
     // tints the row.
-    expect(splitInstancedId('abc123')).toBeNull();
-    expect(splitInstancedId('host/local')).toEqual({ owner: 'host', local: 'local', depth: 1 });
+    expect(splitInstancedId(fixedId('entity', 'abc123'))).toBeNull();
+    expect(splitInstancedId(fixedId('entity', 'host/local'))).toEqual({
+      owner: fixedId('entity', 'host'),
+      local: fixedId('entity', 'local'),
+      depth: 1,
+    });
   });
 
   it('counts the prefabs crossed, so a nested entity is not mistaken for an editable one', () => {
     // Depth 2 was placed by a prefab, not by the scene: there is no component in
     // the document to hang an override on, and pretending otherwise would write
     // one that expansion silently ignores.
-    expect(splitInstancedId('host/inner/leaf')).toEqual({
-      owner: 'host',
-      local: 'inner/leaf',
+    expect(splitInstancedId(fixedId('entity', 'host/inner/leaf'))).toEqual({
+      owner: fixedId('entity', 'host'),
+      local: fixedId('entity', 'inner/leaf'),
       depth: 2,
     });
+  });
+
+  it('is nothing for an id with an empty half, which names no entity on either side', () => {
+    // The owner, the local path and each prefab crossed on the way are entity
+    // ids, and an id is never empty. Split at the first separator, `/x` would
+    // have been an instance with no owner.
+    expect(splitInstancedId(fixedId('entity', '/x'))).toBeNull();
+    expect(splitInstancedId(fixedId('entity', 'host/'))).toBeNull();
+    expect(splitInstancedId(fixedId('entity', 'host//leaf'))).toBeNull();
+    expect(splitInstancedId(fixedId('entity', 'host/inner/'))).toBeNull();
+    expect(instanceOwnerOf(fixedId('entity', '/x'))).toBeNull();
   });
 });
 

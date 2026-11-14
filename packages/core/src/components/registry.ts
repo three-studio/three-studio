@@ -1,4 +1,4 @@
-import type { AssetId } from '../ids';
+import type { AssetId, EntityId } from '../ids';
 import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/schema';
 
 /*
@@ -76,9 +76,10 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   /**
    * Entity ids this component points at — a joint its Connected Body. Empty
    * for most types. Asked of every type, as `assets` is, so that a new type
-   * answers in its own module.
+   * answers in its own module. `''` and `null` are the slots that name none, as
+   * they are for `assets`.
    */
-  entities: (component: ComponentOfType<T>) => readonly (string | null)[];
+  entities: (component: ComponentOfType<T>) => readonly (EntityId | '' | null)[];
   /**
    * Strings that may name an asset, and count only when they do — declared by
    * the types whose fields do not say which they are.
@@ -198,7 +199,7 @@ export function componentAssets(component: ComponentDoc): readonly (AssetId | ''
 }
 
 /** Entity ids a component points at, whatever its type; none for a type this build does not know. */
-export function componentEntities(component: ComponentDoc): readonly (string | null)[] {
+export function componentEntities(component: ComponentDoc): readonly (EntityId | '' | null)[] {
   return componentDefinition(component.type)?.entities(component as never) ?? [];
 }
 

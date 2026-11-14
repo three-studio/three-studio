@@ -11,6 +11,7 @@ import {
   linkedPhysicsMaterial,
   physicsBodies,
   type AssetId,
+  type EntityId,
   type JointComponent,
   type MaterialDef,
   type PhysicsMaterialDef,
@@ -202,7 +203,7 @@ export class Engine {
   /** Exposed for diagnostics; drive them through `update`, not directly. */
   readonly behaviours: Behaviour[] = [];
   /** The behaviours that hear what colliders touch, by the entity each sits on. */
-  private readonly listeners = new Map<string, Behaviour[]>();
+  private readonly listeners = new Map<EntityId, Behaviour[]>();
 
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private readonly world: PhysicsWorld | null;
@@ -280,7 +281,7 @@ export class Engine {
     const bodies = physicsBodies(scene);
     const players = new Set(entitiesWith(scene, 'playerController'));
     // Which body each collider rides: the one whose type it is built for.
-    const riding = new Map<string, string>();
+    const riding = new Map<EntityId, EntityId>();
     for (const [body, carried] of bodies) {
       for (const entityId of carried) riding.set(entityId, body);
     }
@@ -518,7 +519,7 @@ export class Engine {
    * `physicsDebug` is: retuning the world's components is no behaviour's
    * business. Nothing with physics off.
    */
-  tune(entityId: string, component: PhysicsComponent): void {
+  tune(entityId: EntityId, component: PhysicsComponent): void {
     this.world?.tune(entityId, component);
   }
 
@@ -701,7 +702,7 @@ export class Engine {
    *
    * Unguarded, as `update` is: a script's hook is guarded by its own behaviour.
    */
-  private tell(event: PhysicsEvent, side: ColliderOwner, other: string, sign: 1 | -1): void {
+  private tell(event: PhysicsEvent, side: ColliderOwner, other: EntityId, sign: 1 | -1): void {
     const listening = [
       ...(this.listeners.get(side.entity) ?? []),
       ...(side.body === side.entity ? [] : (this.listeners.get(side.body) ?? [])),
@@ -778,7 +779,7 @@ function unit(x: number, y: number, z: number): [number, number, number] {
 }
 
 /** What keeps a joint from doing its work, said as `checkPhysicsSetup` says it, or `null`. */
-function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent): string | null {
+function jointProblem(scene: SceneDoc, entityId: EntityId, joint: JointComponent): string | null {
   const name = scene.entities.get(entityId)?.name;
   const other = joint.connectedEntity === null ? undefined : scene.entities.get(joint.connectedEntity)?.name;
   const ends = jointEnds(scene, entityId, joint);
@@ -795,7 +796,7 @@ function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent):
     }
   }
   // The world is not Dynamic, and two Fixed bodies joined are harmless to build.
-  const dynamic = (bodyId: string | null) =>
+  const dynamic = (bodyId: EntityId | null) =>
     bodyId !== null && findComponent(scene, bodyId, 'rigidbody')?.bodyType === 'dynamic';
   if (dynamic(ends.own) || dynamic(ends.other)) return null;
   return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities.get(ends.own)?.name}" or of what it is connected to Dynamic.`;

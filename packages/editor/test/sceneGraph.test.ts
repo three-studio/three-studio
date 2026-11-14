@@ -1,4 +1,4 @@
-import { createEmptyScene, createId, createMeshEntity } from '@three-studio/core';
+import { createEmptyScene, createMeshEntity, fixedId } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { addEntity, reparentEntity } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -27,7 +27,7 @@ describe('the reparent command', () => {
 
     // What `HierarchyPanel.onDrop` passes when a row a prefab produced is the
     // drop target: an `owner/local` id that names nothing in the document.
-    reparentEntity(cube.entity.id, `${createId()}/root`);
+    reparentEntity(cube.entity.id, fixedId('entity', 'host/root'));
 
     expect(scene().entities.get(cube.entity.id)?.parent).toBeNull();
     expect(scene().rootOrder).toContain(cube.entity.id);

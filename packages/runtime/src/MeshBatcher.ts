@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { BatchedMesh, Mesh, type Object3D } from 'three/webgpu';
 import type { Reconciler } from './Reconciler';
 import { resolveEntityId } from './systems/identity';
@@ -97,7 +98,7 @@ export class MeshBatcher {
      * Entities whose light casts a shadow. Empty means per-instance culling is
      * safe; see `createBatch`.
      */
-    private readonly shadowCasters: ReadonlySet<string>,
+    private readonly shadowCasters: ReadonlySet<EntityId>,
   ) {}
 
   /** Set once by `SceneBinder` from the project's rendering settings. */
@@ -148,7 +149,7 @@ export class MeshBatcher {
    * @param full Whether the sync that called this re-read the whole scene.
    * @param ids What that sync was told was dirty.
    */
-  sync(full: boolean, ids: ReadonlySet<string>): void {
+  sync(full: boolean, ids: ReadonlySet<EntityId>): void {
     if (!this.enabled) {
       this.clear();
       return;
@@ -512,7 +513,7 @@ export class MeshBatcher {
    * A batch is one `Object3D`, so a raycast hit names the group and an instance
    * id rather than an entity. Only the member the slot holds can answer.
    */
-  resolveBatchHit(object: Object3D, batchId: number): string | undefined {
+  resolveBatchHit(object: Object3D, batchId: number): EntityId | undefined {
     for (const group of this.batches.values()) {
       if (group.mesh !== object) continue;
       const mesh = group.bySlot.get(batchId);
@@ -548,7 +549,7 @@ export class MeshBatcher {
    *   what changed, and writing 2000 matrices to move one cube was most of what
    *   a keystroke cost.
    */
-  updateBatches(only?: ReadonlySet<string>): void {
+  updateBatches(only?: ReadonlySet<EntityId>): void {
     if (this.batches.size === 0) return;
     this.root.updateMatrixWorld(true);
 

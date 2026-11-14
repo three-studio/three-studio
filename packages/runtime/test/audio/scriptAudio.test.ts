@@ -1,4 +1,10 @@
-import { createAudioSource, createEntity, fixedId, type AudioSourceComponent } from '@three-studio/core';
+import {
+  createAudioSource,
+  createEntity,
+  fixedId,
+  type AudioSourceComponent,
+  type EntityId,
+} from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
@@ -17,6 +23,8 @@ import { flush, rig } from './rig';
  */
 
 const STEP = fixedId('asset', 'step');
+const ME = fixedId('entity', 'me');
+const DOOR = fixedId('entity', 'door');
 
 function context(audio: AudioEngine | null): BehaviourContext {
   return { audio, warn: () => {} } as unknown as BehaviourContext;
@@ -25,7 +33,7 @@ function context(audio: AudioEngine | null): BehaviourContext {
 /** Builds a source behaviour the way the engine does, so it registers itself. */
 function mountSource(
   engine: AudioEngine,
-  entityId: string,
+  entityId: EntityId,
   overrides: Partial<AudioSourceComponent> = {},
 ): Object3D {
   const object = new Group();
@@ -38,8 +46,8 @@ function mountSource(
 describe('this.audio', () => {
   it('plays the source on the script`s own entity when told nothing else', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    mountSource(engine, 'me');
-    const api = audioApiFor(engine, 'me');
+    mountSource(engine, ME);
+    const api = audioApiFor(engine, ME);
 
     const voice = api.play();
     await flush();
@@ -49,22 +57,34 @@ describe('this.audio', () => {
 
   it('plays another entity`s source when named', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    mountSource(engine, 'me');
-    mountSource(engine, 'door');
-    const api = audioApiFor(engine, 'me');
+    mountSource(engine, ME);
+    mountSource(engine, DOOR);
+    const api = audioApiFor(engine, ME);
 
     api.play('door');
     await flush();
     expect(engine.voices).toHaveLength(1);
   });
 
+  it('plays nothing for a target that is not an id', async () => {
+    const { engine } = rig({ step: { duration: 10 } });
+    mountSource(engine, ME);
+    const api = audioApiFor(engine, ME);
+
+    // What a script passes is text, and `''` names no entity, so no source is
+    // found on it — the entity the script sits on is not played in its place.
+    expect(api.play('')).toBeNull();
+    await flush();
+    expect(engine.voices).toHaveLength(0);
+  });
+
   it('plays every source on an entity, because two is legal', async () => {
     // A door that creaks and slams carries one component each, and "play" means
     // the entity rather than whichever was added first.
     const { engine } = rig({ step: { duration: 10 } });
-    mountSource(engine, 'door');
-    mountSource(engine, 'door');
-    const api = audioApiFor(engine, 'door');
+    mountSource(engine, DOOR);
+    mountSource(engine, DOOR);
+    const api = audioApiFor(engine, DOOR);
 
     api.play();
     await flush();
@@ -73,8 +93,8 @@ describe('this.audio', () => {
 
   it('restarts rather than layering a second copy, as Unity does', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    mountSource(engine, 'me');
-    const api = audioApiFor(engine, 'me');
+    mountSource(engine, ME);
+    const api = audioApiFor(engine, ME);
 
     api.play();
     await flush();
@@ -87,8 +107,8 @@ describe('this.audio', () => {
 
   it('stops what it started', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    mountSource(engine, 'me');
-    const api = audioApiFor(engine, 'me');
+    mountSource(engine, ME);
+    const api = audioApiFor(engine, ME);
 
     api.play();
     await flush();
@@ -99,7 +119,7 @@ describe('this.audio', () => {
 
   it('plays a clip nothing in the scene refers to', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    const api = audioApiFor(engine, 'me');
+    const api = audioApiFor(engine, ME);
 
     const voice = api.playClip('step', { volume: 0.5, bus: 'ui' });
     await flush();
@@ -108,7 +128,7 @@ describe('this.audio', () => {
 
   it('plays nothing for an id that is not one', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    const api = audioApiFor(engine, 'me');
+    const api = audioApiFor(engine, ME);
 
     // What a script passes is whatever it made of a value: `''` is no clip, and
     // asked of the engine it would be a voice that can only fail.
@@ -119,7 +139,7 @@ describe('this.audio', () => {
 
   it('reaches the buses, which is what a settings screen needs', () => {
     const { engine } = rig();
-    const api = audioApiFor(engine, 'me');
+    const api = audioApiFor(engine, ME);
 
     api.setBusVolume('music', 0.25);
     expect(api.bus('music')?.volume).toBe(0.25);
@@ -134,7 +154,7 @@ describe('this.audio', () => {
   it('does nothing at all, quietly, when the host handed over no audio', () => {
     // A browser with no Web Audio, or a test. A script must not have to ask
     // whether sound exists before asking for it.
-    const api = audioApiFor(null, 'me');
+    const api = audioApiFor(null, ME);
     expect(() => {
       api.play();
       api.stop();

@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it, vi } from 'vitest';
 import { showPanel } from '../src/shell/dockApi';
 import { panelForChange, watchPanelFocus, type FocusInputs } from '../src/shell/panelFocus';
@@ -98,7 +99,7 @@ describe('what the stores ask for', () => {
     // not read cannot be handed to it.
     const stop = watchPanelFocus();
     try {
-      useEditorStore.getState().setSelection(['crate']);
+      useEditorStore.getState().setSelection([fixedId('entity', 'crate')]);
       useEditorStore.getState().clearSelection();
       expect(showPanel).not.toHaveBeenCalled();
 

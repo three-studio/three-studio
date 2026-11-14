@@ -1,4 +1,4 @@
-import type { LightComponent } from '@three-studio/core';
+import type { EntityId, LightComponent } from '@three-studio/core';
 import {
   AmbientLight,
   Color,
@@ -41,7 +41,7 @@ export interface LightHandle extends SystemHandle {
  * one. Sixty a second, none of them freed.
  */
 export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
-  mount(entityId: string, component: LightComponent, ctx: SystemContext): LightHandle {
+  mount(entityId: EntityId, component: LightComponent, ctx: SystemContext): LightHandle {
     const light = buildLight(component);
     applyShadow(light, component, ctx.shadowMapSize);
     const texture = applyCookie(light, component, ctx, null);

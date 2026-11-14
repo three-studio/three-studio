@@ -1,4 +1,10 @@
-import type { ComponentDoc, ComponentId, ComponentType, EntityDoc } from '@three-studio/core';
+import type {
+  ComponentDoc,
+  ComponentId,
+  ComponentType,
+  EntityDoc,
+  EntityId,
+} from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
 import { buildSystems, type AnySystem } from './components';
 import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
@@ -40,7 +46,7 @@ export interface EntityView {
 }
 
 export class Reconciler {
-  private readonly views = new Map<string, EntityView>();
+  private readonly views = new Map<EntityId, EntityView>();
 
   /**
    * One system per type that draws, built for this reconciler alone.
@@ -53,11 +59,11 @@ export class Reconciler {
    */
   private readonly systems: ReadonlyMap<ComponentType, AnySystem> = buildSystems();
 
-  view(entityId: string): EntityView | undefined {
+  view(entityId: EntityId): EntityView | undefined {
     return this.views.get(entityId);
   }
 
-  all(): ReadonlyMap<string, EntityView> {
+  all(): ReadonlyMap<EntityId, EntityView> {
     return this.views;
   }
 
@@ -73,7 +79,7 @@ export class Reconciler {
    * Empty rather than absent for anything unmounted, so a caller polling every
    * frame does not have to tell "no such entity" from "nothing built yet".
    */
-  objectsOf(entityId: string, componentId: ComponentId): readonly Object3D[] {
+  objectsOf(entityId: EntityId, componentId: ComponentId): readonly Object3D[] {
     return this.views.get(entityId)?.mounted.get(componentId)?.handle.objects ?? [];
   }
 
@@ -85,12 +91,12 @@ export class Reconciler {
    * a view into existence — that would mount a container for an id the document
    * has already dropped, and nothing would ever take it down again.
    */
-  peekContainer(entityId: string): Group | undefined {
+  peekContainer(entityId: EntityId): Group | undefined {
     return this.views.get(entityId)?.container;
   }
 
   /** The container an entity's objects hang under, made on first sight. */
-  containerFor(entityId: string): Group {
+  containerFor(entityId: EntityId): Group {
     const existing = this.views.get(entityId);
     if (existing) return existing.container;
 
@@ -112,7 +118,7 @@ export class Reconciler {
    * shadow map. Rebuilding wholesale was costing 240ms per inspector drag on a
    * subdivided ground.
    */
-  reconcile(entityId: string, components: readonly ComponentDoc[], ctx: SystemContext): void {
+  reconcile(entityId: EntityId, components: readonly ComponentDoc[], ctx: SystemContext): void {
     const view = this.views.get(entityId);
     if (!view) return;
 
@@ -156,7 +162,7 @@ export class Reconciler {
   }
 
   /** Drops everything one entity has, and forgets it. */
-  remove(entityId: string, ctx: SystemContext): EntityView | undefined {
+  remove(entityId: EntityId, ctx: SystemContext): EntityView | undefined {
     const view = this.views.get(entityId);
     if (!view) return undefined;
 
@@ -177,7 +183,7 @@ export class Reconciler {
    * followed by a rebuild under the same id produces a new one, and the old
    * handle's model would otherwise be attached to a container nothing draws.
    */
-  attachLate(entityId: string, handle: SystemHandle, object: Object3D): boolean {
+  attachLate(entityId: EntityId, handle: SystemHandle, object: Object3D): boolean {
     const view = this.views.get(entityId);
     if (!view) return false;
     for (const mounted of view.mounted.values()) {
@@ -216,8 +222,8 @@ export class Reconciler {
    *
    * @returns The entity ids this touched, so the caller can sync exactly those.
    */
-  entitiesUsingMaterialAssets(): Set<string> {
-    const found = new Set<string>();
+  entitiesUsingMaterialAssets(): Set<EntityId> {
+    const found = new Set<EntityId>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
         const asset = mounted.system.materialAsset?.(mounted.handle) ?? null;
@@ -231,8 +237,8 @@ export class Reconciler {
    * Entity ids whose builds came from a system that loads, for a resolver
    * change that invalidates them all.
    */
-  entitiesThatLoad(): Set<string> {
-    const found = new Set<string>();
+  entitiesThatLoad(): Set<EntityId> {
+    const found = new Set<EntityId>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
         if (mounted.system.whenLoaded) found.add(entityId);

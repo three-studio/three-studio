@@ -1,4 +1,5 @@
-import { createId } from '../ids';
+import { PREFAB_ID_SEPARATOR } from '../constants';
+import { createEntityId, type EntityId } from '../ids';
 import {
   COMPONENT_TYPES,
   copyComponentsOf,
@@ -6,7 +7,6 @@ import {
   setComponentsOf,
 } from './components';
 import type { EntityTemplate } from './entity';
-import { splitInstancedId } from './prefab';
 import { collectDescendants, cycles, isAncestorOf } from './query';
 import type { EntityDoc, SceneDoc } from './schema';
 
@@ -40,13 +40,17 @@ import type { EntityDoc, SceneDoc } from './schema';
  * An `owner/local` id names an entity prefab expansion produced. It is not in
  * `scene.entities`, so writing an edge to it produces exactly the defect this module exists for: a `parent`
  * pointing at nothing, and an entity in no children list at all.
+ *
+ * By the separator alone, and not by whether the id splits: an id with an empty
+ * half names no entity the expansion produced and is still not one the
+ * document's own tree can hold.
  */
-function isDocumentId(id: string): boolean {
-  return splitInstancedId(id) === null;
+function isDocumentId(id: EntityId): boolean {
+  return !id.includes(PREFAB_ID_SEPARATOR);
 }
 
 /** The list `parentId` holds its children in, or `undefined` if there is none. */
-function siblingsOf(scene: SceneDoc, parentId: string | null): string[] | undefined {
+function siblingsOf(scene: SceneDoc, parentId: EntityId | null): EntityId[] | undefined {
   if (parentId === null) return scene.rootOrder;
   return scene.entities.get(parentId)?.children;
 }
@@ -58,7 +62,7 @@ function siblingsOf(scene: SceneDoc, parentId: string | null): string[] | undefi
  * anything: checking afterwards would leave an entity detached from a move that
  * then turned out to be illegal.
  */
-function canLink(scene: SceneDoc, id: string, parentId: string | null): boolean {
+function canLink(scene: SceneDoc, id: EntityId, parentId: EntityId | null): boolean {
   if (!isDocumentId(id) || !scene.entities.has(id)) return false;
   if (parentId === null) return true;
   if (parentId === id) return false;
@@ -69,7 +73,7 @@ function canLink(scene: SceneDoc, id: string, parentId: string | null): boolean 
 }
 
 /** Detaches `id` from whichever list holds it, leaving `parent` as it was. */
-export function unlinkEntity(scene: SceneDoc, id: string): boolean {
+export function unlinkEntity(scene: SceneDoc, id: EntityId): boolean {
   const entity = scene.entities.get(id);
   if (!entity) return false;
 
@@ -92,8 +96,8 @@ export function unlinkEntity(scene: SceneDoc, id: string): boolean {
  */
 export function linkEntity(
   scene: SceneDoc,
-  id: string,
-  parentId: string | null,
+  id: EntityId,
+  parentId: EntityId | null,
   index?: number,
 ): boolean {
   if (!canLink(scene, id, parentId)) return false;
@@ -120,7 +124,7 @@ export function linkEntity(
 export function insertEntity(
   scene: SceneDoc,
   template: EntityTemplate,
-  parentId: string | null = null,
+  parentId: EntityId | null = null,
   index?: number,
 ): boolean {
   const { entity } = template;
@@ -149,8 +153,8 @@ export function insertEntity(
  */
 export function reparentEntity(
   scene: SceneDoc,
-  id: string,
-  parentId: string | null,
+  id: EntityId,
+  parentId: EntityId | null,
   index?: number,
 ): boolean {
   // Asked first, and this is the whole of it: `isAncestorOf` answers `false`
@@ -168,7 +172,7 @@ export function reparentEntity(
  * selection above all, which is how an undo of an Add leaves the gizmo pointing
  * at an entity that no longer exists.
  */
-export function removeSubtree(scene: SceneDoc, id: string): string[] {
+export function removeSubtree(scene: SceneDoc, id: EntityId): EntityId[] {
   if (!isDocumentId(id) || !scene.entities.has(id)) return [];
 
   const removed = [id, ...collectDescendants(scene, id)];
@@ -199,17 +203,17 @@ export function removeSubtree(scene: SceneDoc, id: string): string[] {
  */
 export function cloneSubtree(
   scene: SceneDoc,
-  sourceId: string,
-  parentId: string | null,
+  sourceId: EntityId,
+  parentId: EntityId | null,
   name?: string,
-  renamed?: Map<string, string>,
-): string | null {
+  renamed?: Map<EntityId, EntityId>,
+): EntityId | null {
   const source = scene.entities.get(sourceId);
   if (!source || !isDocumentId(sourceId)) return null;
 
   const copy: EntityDoc = {
     ...deepCopy(source),
-    id: createId(),
+    id: createEntityId(),
     name: name ?? source.name,
     parent: null,
     children: [],
@@ -262,8 +266,8 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   const problems: string[] = [];
 
   /** Which list claims each entity, so being in two is visible. */
-  const claimedBy = new Map<string, string[]>();
-  const claim = (id: string, by: string) => {
+  const claimedBy = new Map<EntityId, string[]>();
+  const claim = (id: EntityId, by: string) => {
     const holders = claimedBy.get(id);
     if (holders) holders.push(by);
     else claimedBy.set(id, [by]);

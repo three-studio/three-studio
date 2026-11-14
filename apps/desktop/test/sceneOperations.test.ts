@@ -14,6 +14,7 @@ import {
   deserializeScene,
   fixedId,
   serializeScene,
+  type EntityId,
   type ProjectFile,
   type SceneId,
 } from '@three-studio/core';
@@ -348,7 +349,7 @@ describe('what these operations write', () => {
    * original was the file that went out of reach.
    */
   describe('a scene made from a window’s document', () => {
-    async function savedAs(root: string): Promise<{ document: string; wall: string }> {
+    async function savedAs(root: string): Promise<{ document: string; wall: EntityId }> {
       const document = deserializeScene(
         await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
       );

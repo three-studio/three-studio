@@ -32,7 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
-import type { AssetId, ComponentId, SceneId } from '../ids';
+import type { AssetId, ComponentId, EntityId, SceneId } from '../ids';
 import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
@@ -135,11 +135,11 @@ export type ComponentOfType<T extends ComponentType> = Extract<ComponentDoc, { t
 // --- entities and scene -----------------------------------------------------
 
 export interface EntityDoc {
-  id: string;
+  id: EntityId;
   name: string;
-  parent: string | null;
+  parent: EntityId | null;
   /** Explicit ordering; the hierarchy panel renders in this order. */
-  children: string[];
+  children: EntityId[];
   transform: Transform;
   visible: boolean;
   /** Excluded from picking and locked against gizmo edits. */
@@ -179,7 +179,7 @@ export interface EntityDoc {
  * `scene/components.ts`, or iterate the Map itself.
  */
 export type ComponentTables = {
-  [K in ComponentType]: Map<string, Map<ComponentId, ComponentOfType<K>>>;
+  [K in ComponentType]: Map<EntityId, Map<ComponentId, ComponentOfType<K>>>;
 };
 
 /**
@@ -344,9 +344,9 @@ export interface SceneDoc {
    * record's are text. A file keeps the object it always was: `deserializeScene`
    * reads it into a Map and `serializeScene` writes the Map out as one.
    */
-  entities: Map<string, EntityDoc>;
+  entities: Map<EntityId, EntityDoc>;
   /** See `ComponentTables`. Entities hold identity and place; this holds the rest. */
   components: ComponentTables;
-  rootOrder: string[];
+  rootOrder: EntityId[];
   environment: EnvironmentDef;
 }

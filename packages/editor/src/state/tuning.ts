@@ -5,6 +5,7 @@ import {
   type AssetId,
   type ComponentDoc,
   type ComponentId,
+  type EntityId,
   type PhysicsMaterialDef,
 } from '@three-studio/core';
 import type { Engine } from '@three-studio/runtime';
@@ -28,7 +29,7 @@ import { toastSlot } from './toastStore';
 
 /** A value tuned during Play, at a path of one component, as the Inspector wrote it. */
 export interface Tuned {
-  readonly entityId: string;
+  readonly entityId: EntityId;
   readonly componentId: ComponentId;
   readonly path: readonly string[];
   readonly value: unknown;
@@ -114,7 +115,7 @@ export function keepTuning(): void {
   if (isSceneLocked() || !hasTuning()) return;
   const { values, materials } = useTuningStore.getState();
   const { scene } = expandedScene();
-  const writes: { entityId: string; componentId: ComponentId; key: string; value: unknown }[] = [];
+  const writes: { entityId: EntityId; componentId: ComponentId; key: string; value: unknown }[] = [];
   for (const { entityId, componentId, path } of values) {
     const [key] = path;
     const seen = writes.some(
@@ -168,7 +169,7 @@ export function tuningEngine(next: Engine | null): void {
 
 /** Records a component's value as tuned, and hands the running game the component with it. */
 export function tuneComponentField(
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
   path: readonly string[],
   value: unknown,
@@ -209,12 +210,12 @@ export function tunePhysicsMaterialField(assetId: AssetId, key: string, value: u
  * By entity and component id: an expanded prefab keeps its components' own ids
  * under each instance's entity, so a component id alone repeats.
  */
-export function tunedComponent<C extends ComponentDoc>(entityId: string, component: C): C {
+export function tunedComponent<C extends ComponentDoc>(entityId: EntityId, component: C): C {
   return isSceneLocked() ? withTuned(entityId, component) : component;
 }
 
 /** The component with what was tuned on it, the game running or not. */
-function withTuned<C extends ComponentDoc>(entityId: string, component: C): C {
+function withTuned<C extends ComponentDoc>(entityId: EntityId, component: C): C {
   const tuned = useTuningStore
     .getState()
     .values.filter((value) => value.entityId === entityId && value.componentId === component.id);
@@ -242,7 +243,7 @@ function within(path: readonly string[], prefix: readonly string[]): boolean {
  * Hands the running game a component with what was tuned on it, when it is one
  * the world builds: a Rigid Body, a Collider or a Joint.
  */
-function handTo(running: Engine, entityId: string, componentId: ComponentId): void {
+function handTo(running: Engine, entityId: EntityId, componentId: ComponentId): void {
   const component = findComponentById(expandedScene().scene, entityId, componentId);
   if (!component) return;
   const tuned = tunedComponent(entityId, component);

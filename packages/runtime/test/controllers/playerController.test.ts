@@ -4,6 +4,7 @@ import {
   createEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   type ColliderComponent,
   type PlayerControllerComponent,
   type SceneDoc,
@@ -289,7 +290,7 @@ describe('PlayerController places the eye above the feet', () => {
     const object = new Object3D();
     object.position.set(0, groundY, 0);
     const component = { ...createComponent('playerController'), eyeHeight };
-    const controller = new PlayerController(component, object, null, 'player', collider);
+    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), collider);
     controller.postUpdate();
     return controller.camera.position.y;
   }
@@ -325,7 +326,7 @@ describe('PlayerController places the eye above the feet', () => {
   it('takes the field of view from the component, and follows it', () => {
     const object = new Object3D();
     const component = { ...createComponent('playerController'), fov: 85 };
-    const controller = new PlayerController(component, object, null, 'player', undefined);
+    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), undefined);
 
     expect(controller.camera.fov).toBe(85);
 

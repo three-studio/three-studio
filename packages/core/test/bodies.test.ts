@@ -12,6 +12,7 @@ import {
   jointEnds,
   physicsBodies,
   type EntityDoc,
+  type EntityId,
   type EntityTemplate,
   type JointComponent,
 } from '@three-studio/core';
@@ -79,15 +80,15 @@ describe('physicsBodies', () => {
     const parts = Object.values(tree());
     const props = Array.from({ length: 200 }, (_, i) => createEntity(`Prop ${i}`));
     const scene = sceneWith([...parts, ...props]);
-    const read = new Set<string>();
+    const read = new Set<EntityId>();
     const watched = {
       ...scene,
-      entities: new (class extends Map<string, EntityDoc> {
-        override get(id: string) {
+      entities: new (class extends Map<EntityId, EntityDoc> {
+        override get(id: EntityId) {
           read.add(id);
           return super.get(id);
         }
-        override has(id: string) {
+        override has(id: EntityId) {
           read.add(id);
           return super.has(id);
         }
@@ -154,12 +155,12 @@ describe('jointEnds', () => {
     nest(a, b, c);
     const scene = sceneWith([a, b, c, d, e]);
     const id = (template: EntityTemplate) => template.entity.id;
-    const joint = (connectedEntity: string | null): JointComponent => ({ ...createJoint(), connectedEntity });
+    const joint = (connectedEntity: EntityId | null): JointComponent => ({ ...createJoint(), connectedEntity });
 
     expect(jointEnds(scene, id(c), joint(null))).toEqual({ holds: true, own: id(a), other: null });
     expect(jointEnds(scene, id(c), joint(id(d)))).toEqual({ holds: true, own: id(a), other: id(d) });
     expect(jointEnds(scene, id(c), joint(id(e)))).toEqual({ holds: false, why: 'otherNoBody' });
-    expect(jointEnds(scene, id(c), joint('gone'))).toEqual({ holds: false, why: 'gone' });
+    expect(jointEnds(scene, id(c), joint(fixedId('entity', 'gone')))).toEqual({ holds: false, why: 'gone' });
     expect(jointEnds(scene, id(e), joint(null))).toEqual({ holds: false, why: 'noBody' });
     expect(jointEnds(scene, id(b), joint(id(a)))).toEqual({ holds: false, why: 'same' });
   });

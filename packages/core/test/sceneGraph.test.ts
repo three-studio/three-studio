@@ -6,6 +6,7 @@ import {
   cycles,
   collectDescendants,
   deserializeScene,
+  fixedId,
   insertEntity,
   isAncestorOf,
   linkEntity,
@@ -49,7 +50,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     // (`owner/local`) name nothing in the document. This is the defect exactly: the move
     // used to leave the cube with a parent that does not exist and in no
     // children list at all — gone from the tree, still drawn in the viewport.
-    expect(reparentEntity(scene, cube.entity.id, 'someInstance/root')).toBe(false);
+    expect(reparentEntity(scene, cube.entity.id, fixedId('entity', 'someInstance/root'))).toBe(false);
     expect(scene.entities.get(cube.entity.id)?.parent).toBeNull();
     expect(scene.rootOrder).toContain(cube.entity.id);
     expect(validateHierarchy(scene)).toEqual([]);
@@ -61,7 +62,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
 
     // What a prefab places is not the scene's to move: the next expansion would
     // put it straight back where the asset says.
-    expect(reparentEntity(scene, 'someInstance/root', parent.entity.id)).toBe(false);
+    expect(reparentEntity(scene, fixedId('entity', 'someInstance/root'), parent.entity.id)).toBe(false);
     expect(validateHierarchy(scene)).toEqual([]);
   });
 
@@ -88,7 +89,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
 
     // The point of checking before unlinking: a refusal found halfway through
     // would leave the entity in no list, which is the very state to avoid.
-    reparentEntity(scene, child.entity.id, 'gone');
+    reparentEntity(scene, child.entity.id, fixedId('entity', 'gone'));
     expect(scene.entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
     expect(validateHierarchy(scene)).toEqual([]);
   });
@@ -105,7 +106,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([]);
 
-    expect(insertEntity(scene, cube, 'gone')).toBe(false);
+    expect(insertEntity(scene, cube, fixedId('entity', 'gone'))).toBe(false);
     // Half-inserted is worse than not inserted: an entity in the table and in no
     // list is exactly what nothing can reach.
     expect(scene.entities.get(cube.entity.id)).toBeUndefined();
@@ -182,8 +183,8 @@ describe('removing a subtree', () => {
 
   it('refuses an id the document does not hold, and says so', () => {
     const scene = sceneWith([createMeshEntity('box')]);
-    expect(removeSubtree(scene, 'gone')).toEqual([]);
-    expect(removeSubtree(scene, 'someInstance/root')).toEqual([]);
+    expect(removeSubtree(scene, fixedId('entity', 'gone'))).toEqual([]);
+    expect(removeSubtree(scene, fixedId('entity', 'someInstance/root'))).toEqual([]);
   });
 });
 
@@ -259,7 +260,7 @@ describe('validating a document broken by hand', () => {
 
   it('names a dangling child reference', () => {
     const parent = createEntity('Parent');
-    parent.entity.children = ['ghost'];
+    parent.entity.children = [fixedId('entity', 'ghost')];
     const scene = sceneWith([parent]);
 
     expect(validateHierarchy(scene).join('\n')).toContain('not in the table');
@@ -302,7 +303,7 @@ describe('walking a document that contains a cycle', () => {
     // Reachable by hand-editing a file. An editor that freezes on open is worse
     // than one that shows the file repaired.
     expect(collectDescendants(scene, a.entity.id)).toEqual([b.entity.id]);
-    expect(isAncestorOf(scene, 'nobody', a.entity.id)).toBe(false);
+    expect(isAncestorOf(scene, fixedId('entity', 'nobody'), a.entity.id)).toBe(false);
   });
 
   it('is repaired on load rather than refused', () => {

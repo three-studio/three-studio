@@ -404,7 +404,7 @@ describe('a joint tuned while running', () => {
     const hook = block([0, 3, 0], [0.2, 0.2, 0.2]);
     const box = withJoint(withBody('box', [0, 2, 0], { interpolate: false, linearDamping: 2 }), {
       anchor: [0, 1, 0],
-      connectedEntity: 'gone',
+      connectedEntity: fixedId('entity', 'gone'),
       motion: hinge([0, 0, 1]),
     });
     const rig = await physicsRig([hook, box]);
@@ -495,7 +495,7 @@ describe('a tune the world cannot take', () => {
     // geometry, which has none; an entity the scene does not have.
     rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: fixedId('component', 'gone'), isSensor: true });
     rig.engine.tune(floor.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'dynamic' });
-    rig.engine.tune('nobody', { ...colliderOf(floor), isSensor: true });
+    rig.engine.tune(fixedId('entity', 'nobody'), { ...colliderOf(floor), isSensor: true });
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);

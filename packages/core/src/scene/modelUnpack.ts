@@ -1,6 +1,6 @@
 import type { ColliderComponent } from '../components/collider/schema';
 import { createModel } from '../components/model/defaults';
-import { createComponentId, type AssetId } from '../ids';
+import { createComponentId, type AssetId, type EntityId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
@@ -49,7 +49,7 @@ export interface ModelNode {
 export interface UnpackedEntity {
   template: EntityTemplate;
   /** The entity id of the template above; `null` on the root alone. */
-  parentId: string | null;
+  parentId: EntityId | null;
 }
 
 /** What a node with no name of its own is called in the hierarchy. */
@@ -123,7 +123,7 @@ export function entitiesFromNodes(
    * of its own, which is how its child lands where it did without anyone
    * composing a matrix.
    */
-  const entityOf = new Map<string, string | null>();
+  const entityOf = new Map<string, EntityId | null>();
 
   for (const node of nodes) {
     const parentId = node.parentPath === null ? null : entityOf.get(node.parentPath) ?? null;

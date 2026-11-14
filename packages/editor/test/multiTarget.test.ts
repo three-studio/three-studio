@@ -5,6 +5,7 @@ import {
   createEntity,
   createMeshEntity,
   putComponent,
+  type EntityId,
   type MeshComponent,
 } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -99,7 +100,7 @@ describe('writing to several entities', () => {
 
     mesh.write(['castShadow'], false, { coalesceKey: 'multi' });
 
-    const meshOf = (id: string) => componentsOf(doc().scene, id)[0] as MeshComponent;
+    const meshOf = (id: EntityId) => componentsOf(doc().scene, id)[0] as MeshComponent;
     expect(meshOf(a.entity.id).castShadow).toBe(false);
     expect(meshOf(b.entity.id).castShadow).toBe(false);
     // One entry for however many objects — the coalesce key is what merges them.

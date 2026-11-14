@@ -1,4 +1,9 @@
-import { splitInstancedId, type EntityDoc, type ExpandedScene } from '@three-studio/core';
+import {
+  splitInstancedId,
+  type EntityDoc,
+  type EntityId,
+  type ExpandedScene,
+} from '@three-studio/core';
 import { expandedChildren } from '../state/expansion';
 
 /** One line of the hierarchy, already flattened and indented. */
@@ -7,7 +12,7 @@ export interface Row {
   depth: number;
   hasChildren: boolean;
   /** Set for an entity a prefab produced: shown, selectable, but not the scene's. */
-  instance: { owner: string; local: string; depth: number } | null;
+  instance: { owner: EntityId; local: EntityId; depth: number } | null;
 }
 
 /**
@@ -26,7 +31,7 @@ export interface Row {
  */
 export function buildRows(
   expanded: ExpandedScene,
-  collapsed: ReadonlySet<string>,
+  collapsed: ReadonlySet<EntityId>,
   filter: string,
 ): Row[] {
   const scene = expanded.scene;
@@ -34,12 +39,12 @@ export function buildRows(
   const needle = filter.trim().toLowerCase();
   const produced = expandedChildren(expanded);
 
-  const childrenOf = (entity: EntityDoc): readonly string[] => {
+  const childrenOf = (entity: EntityDoc): readonly EntityId[] => {
     const extra = produced.get(entity.id);
     return extra ? [...entity.children, ...extra] : entity.children;
   };
 
-  const walk = (ids: readonly string[], depth: number) => {
+  const walk = (ids: readonly EntityId[], depth: number) => {
     for (const id of ids) {
       const entity = scene.entities.get(id);
       if (!entity) continue;

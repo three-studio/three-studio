@@ -1,4 +1,4 @@
-import type { ComponentId } from '../ids';
+import { isEntityId, type ComponentId, type EntityId } from '../ids';
 import type {
   ComponentDoc,
   ComponentOfType,
@@ -110,7 +110,7 @@ export function copyComponentTables(tables: ComponentTables): ComponentTables {
 export function tableOf(
   tables: ComponentTables,
   type: ComponentType,
-): Map<string, Map<ComponentId, ComponentDoc>> {
+): Map<EntityId, Map<ComponentId, ComponentDoc>> {
   return tables[type];
 }
 
@@ -123,12 +123,12 @@ export function tableOf(
 export function componentsOfType<T extends ComponentType>(
   host: ComponentHost,
   type: T,
-): ReadonlyMap<string, ReadonlyMap<ComponentId, ComponentOfType<T>>> {
+): ReadonlyMap<EntityId, ReadonlyMap<ComponentId, ComponentOfType<T>>> {
   return host.components[type];
 }
 
 /** Entities carrying at least one component of this type. */
-export function entitiesWith(host: ComponentHost, type: ComponentType): string[] {
+export function entitiesWith(host: ComponentHost, type: ComponentType): EntityId[] {
   return [...host.components[type].keys()];
 }
 
@@ -147,7 +147,7 @@ export function entitiesWith(host: ComponentHost, type: ComponentType): string[]
  * A fresh array each call: nothing may compare its identity to decide whether
  * anything changed. See `SceneBinder.syncEntity`, which compares the elements.
  */
-export function componentsOf(host: ComponentHost, entityId: string): ComponentDoc[] {
+export function componentsOf(host: ComponentHost, entityId: EntityId): ComponentDoc[] {
   const out: ComponentDoc[] = [];
   for (const type of COMPONENT_TYPES) {
     const held = tableOf(host.components, type).get(entityId);
@@ -159,7 +159,7 @@ export function componentsOf(host: ComponentHost, entityId: string): ComponentDo
 /** Whether the entity holds one of these at all. */
 export function hasComponent(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   type: ComponentType,
 ): boolean {
   const held = host.components[type].get(entityId);
@@ -169,7 +169,7 @@ export function hasComponent(
 /** First component of the given type on an entity, or `undefined`. */
 export function findComponent<T extends ComponentType>(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   type: T,
 ): ComponentOfType<T> | undefined {
   const held = host.components[type].get(entityId);
@@ -187,7 +187,7 @@ export function findComponent<T extends ComponentType>(
  */
 export function findComponents<T extends ComponentType>(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   type: T,
 ): ComponentOfType<T>[] {
   const held = host.components[type].get(entityId);
@@ -202,7 +202,7 @@ export function findComponents<T extends ComponentType>(
  */
 export function findComponentById(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
 ): ComponentDoc | undefined {
   for (const type of COMPONENT_TYPES) {
@@ -223,7 +223,7 @@ export function findComponentById(
  */
 export function putComponent(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   component: ComponentDoc,
 ): void {
   const table = tableOf(host.components, component.type);
@@ -243,7 +243,7 @@ export function putComponent(
  */
 export function deleteComponent(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
 ): boolean {
   for (const type of COMPONENT_TYPES) {
@@ -259,7 +259,7 @@ export function deleteComponent(
 /** Replaces everything an entity carries. */
 export function setComponentsOf(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
   components: readonly ComponentDoc[],
 ): void {
   dropComponentsOf(host, entityId);
@@ -273,7 +273,7 @@ export function setComponentsOf(
  * unreachable and still serialised — the same family of silent leak, and
  * as invisible.
  */
-export function dropComponentsOf(host: ComponentHost, entityId: string): void {
+export function dropComponentsOf(host: ComponentHost, entityId: EntityId): void {
   for (const type of COMPONENT_TYPES) tableOf(host.components, type).delete(entityId);
 }
 
@@ -291,8 +291,8 @@ export function dropComponentsOf(host: ComponentHost, entityId: string): void {
  */
 export function copyComponentsOf(
   host: ComponentHost,
-  fromEntityId: string,
-  toEntityId: string,
+  fromEntityId: EntityId,
+  toEntityId: EntityId,
   clone: <T>(value: T) => T,
 ): void {
   for (const type of COMPONENT_TYPES) {
@@ -315,13 +315,16 @@ export function copyComponentsOf(
  * equals one and means something else does not happen in practice — and the
  * alternative, leaving a reference pointing at the original, is a lookup that
  * silently answers with the wrong entity, or with none.
+ *
+ * Each string is checked as the id it would have to be before `rename` is asked
+ * about it, so `rename` is only ever handed an id.
  */
 export function renameEntityReferences(
   components: readonly ComponentDoc[],
-  rename: (id: string) => string | undefined,
+  rename: (id: EntityId) => EntityId | undefined,
 ): ComponentDoc[] {
   const rewrite = (value: unknown): unknown => {
-    if (typeof value === 'string') return rename(value) ?? value;
+    if (typeof value === 'string') return (isEntityId(value) ? rename(value) : undefined) ?? value;
     if (Array.isArray(value)) return value.map(rewrite);
     if (typeof value === 'object' && value !== null) {
       const out: Record<string, unknown> = {};

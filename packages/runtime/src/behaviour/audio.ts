@@ -1,4 +1,4 @@
-import type { AudioListenerComponent, AudioSourceComponent } from '@three-studio/core';
+import type { AudioListenerComponent, AudioSourceComponent, EntityId } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { PlayRequest, Vec3Tuple, VoiceHandle } from '../audio/playback';
@@ -188,18 +188,18 @@ export class AudioSourceBehaviour implements Behaviour {
  * has already been torn down. The same shape `internalContext` uses in
  * `ScriptApi`, and for the same reason.
  */
-const sources = new WeakMap<AudioEngine, Map<string, AudioSourceBehaviour[]>>();
+const sources = new WeakMap<AudioEngine, Map<EntityId, AudioSourceBehaviour[]>>();
 
 /** Every source on an entity. Several is legal — a door can creak and slam. */
 export function audioSourcesOn(
   audio: AudioEngine,
-  entityId: string,
+  entityId: EntityId,
 ): readonly AudioSourceBehaviour[] {
   return sources.get(audio)?.get(entityId) ?? [];
 }
 
-function remember(audio: AudioEngine, entityId: string, behaviour: AudioSourceBehaviour): void {
-  const byEntity = sources.get(audio) ?? new Map<string, AudioSourceBehaviour[]>();
+function remember(audio: AudioEngine, entityId: EntityId, behaviour: AudioSourceBehaviour): void {
+  const byEntity = sources.get(audio) ?? new Map<EntityId, AudioSourceBehaviour[]>();
   sources.set(audio, byEntity);
   byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), behaviour]);
 }

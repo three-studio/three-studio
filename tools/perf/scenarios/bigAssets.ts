@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, entitiesWith, isRecord } from '@three-studio/core';
+import { deserializeScene, entitiesWith, isRecord, type EntityId } from '@three-studio/core';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { openProject, readProject } from '../../../apps/desktop/src/main/project';
@@ -9,6 +9,7 @@ import {
   type CdpSession,
   decodeNumberList,
   decodeNumbers,
+  entityIdAt,
   freePort,
   runInPage,
   stringAt,
@@ -105,7 +106,7 @@ function recipeMetrics(name: string): [string, MetricSpec][] {
 const METRICS: ReadonlyMap<string, MetricSpec> = new Map(RECIPES.flatMap((recipe) => recipeMetrics(recipe.name)));
 
 /** The entity holding the model, read from the start scene with the app's own code. */
-async function modelEntityOf(projectPath: string): Promise<string> {
+async function modelEntityOf(projectPath: string): Promise<EntityId> {
   const scene = deserializeScene((await openProject(projectPath)).sceneJson);
   const [entityId] = entitiesWith(scene, 'model');
   if (entityId === undefined) throw new Error('the scene holds no model');
@@ -132,7 +133,7 @@ async function measureEditor(
   context: ScenarioContext,
   recipe: Recipe,
   project: string,
-  entityId: string,
+  entityId: EntityId,
   label: string,
 ): Promise<{ metrics: Record<string, number>; window: Record<string, number> }> {
   return readTwiceAtMost(label, async (attempt) => {
@@ -212,7 +213,7 @@ async function modelFiles(folder: string): Promise<string[]> {
 
 interface RecipeSubject {
   readonly project: string;
-  readonly entityId: string;
+  readonly entityId: EntityId;
   /** The exported build. */
   readonly out: string;
   /** What was read while preparing: the file the model loads from, what the export ships, the disk's peak. */
@@ -223,7 +224,7 @@ function decodeSubject(value: unknown): RecipeSubject {
   if (!isRecord(value)) throw new Error('not a subject');
   return {
     project: stringAt(value, 'project'),
-    entityId: stringAt(value, 'entityId'),
+    entityId: entityIdAt(value, 'entityId'),
     out: stringAt(value, 'out'),
     notes: stringsAt(value, 'notes'),
   };

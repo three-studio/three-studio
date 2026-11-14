@@ -1,4 +1,4 @@
-import type { ParticleEmitterComponent } from '@three-studio/core';
+import type { EntityId, ParticleEmitterComponent } from '@three-studio/core';
 import { attribute, texture, time, uniform, vec2, vec3 } from 'three/tsl';
 import {
   AdditiveBlending,
@@ -90,7 +90,7 @@ export class ParticleEmitterSystem extends ComponentSystem<
   ParticleEmitterHandle
 > {
   mount(
-    entityId: string,
+    entityId: EntityId,
     component: ParticleEmitterComponent,
     ctx: SystemContext,
   ): ParticleEmitterHandle {

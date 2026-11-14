@@ -1,4 +1,4 @@
-import type { CameraComponent } from '@three-studio/core';
+import type { CameraComponent, EntityId } from '@three-studio/core';
 import { OrthographicCamera, PerspectiveCamera, type Object3D } from 'three/webgpu';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
@@ -18,7 +18,7 @@ export interface CameraHandle extends SystemHandle {
  * `disposable.dispose is not a function` on the first Stop.
  */
 export class CameraSystem extends ComponentSystem<CameraComponent, CameraHandle> {
-  mount(entityId: string, component: CameraComponent, _ctx: SystemContext): CameraHandle {
+  mount(entityId: EntityId, component: CameraComponent, _ctx: SystemContext): CameraHandle {
     const camera = buildCamera(component);
     camera.userData[ENTITY_ID_KEY] = entityId;
     return { camera, projection: component.projection, objects: [camera] };

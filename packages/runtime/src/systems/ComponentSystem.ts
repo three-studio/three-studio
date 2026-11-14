@@ -3,6 +3,7 @@ import type {
   ComponentDoc,
   ComponentOfType,
   ComponentType,
+  EntityId,
   Hex,
   MaterialDef,
   Vec3,
@@ -114,7 +115,7 @@ export interface SystemContext {
    * @returns Whether it was taken. `false` means the arrival is stale and the
    *   system should forget it rather than hold an object nothing draws.
    */
-  attach(entityId: string, handle: SystemHandle, object: Object3D): boolean;
+  attach(entityId: EntityId, handle: SystemHandle, object: Object3D): boolean;
 }
 
 /**
@@ -129,7 +130,7 @@ export interface SystemContext {
  */
 export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHandle> {
   /** Builds what this component draws. Called once, on first sight. */
-  abstract mount(entityId: string, component: T, ctx: SystemContext): H;
+  abstract mount(entityId: EntityId, component: T, ctx: SystemContext): H;
 
   /**
    * Writes a new definition onto what is already there.

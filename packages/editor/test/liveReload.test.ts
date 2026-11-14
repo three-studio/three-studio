@@ -361,7 +361,7 @@ const realSavePrefab = useAssetStore.getState().savePrefab;
 /** What each relaunch sent, in order, as it crossed the bridge: its documents are text. */
 let sent: LaunchSnapshotJson[] = [];
 const stops: (() => void)[] = [];
-let cube = '';
+let cube = fixedId('entity', 'cube');
 
 /** The entry scene a relaunch sent, read back from its text. */
 const sentScene = (index: number) =>

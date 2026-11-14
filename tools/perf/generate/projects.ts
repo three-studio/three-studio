@@ -19,6 +19,7 @@ import {
   type AssetManifest,
   type ComponentDoc,
   type ComponentOfType,
+  type EntityId,
   type EntityTemplate,
   type GeometryDef,
   type SceneDoc,
@@ -65,7 +66,7 @@ function cycle<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-function place(scene: SceneDoc, template: EntityTemplate, parentId: string | null = null): EntityTemplate {
+function place(scene: SceneDoc, template: EntityTemplate, parentId: EntityId | null = null): EntityTemplate {
   if (!insertEntity(scene, template, parentId)) throw new Error(`could not insert ${template.entity.name}`);
   return template;
 }

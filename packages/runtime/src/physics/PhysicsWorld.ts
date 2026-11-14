@@ -5,6 +5,7 @@ import {
   entityWorldMatrixPath,
   findComponent,
   findComponents,
+  isEntityId,
   jointEnds,
   linkedPhysicsMaterial,
   physicsBodies,
@@ -15,6 +16,7 @@ import {
   type ColliderShape,
   type CombineRule,
   type EntityDoc,
+  type EntityId,
   type JointComponent,
   type PhysicsMaterialDef,
   type PhysicsSettings,
@@ -409,15 +411,15 @@ interface Frame {
 
 /** An entity whose colliders a body carries: its id, its object, and its colliders. */
 interface Carrier {
-  readonly entityId: string;
+  readonly entityId: EntityId;
   readonly object: Object3D;
   readonly colliders: readonly ColliderComponent[];
 }
 
 /** The entity a collider was built from, and the entity whose body it rides: the same one on its own body. */
 export interface ColliderOwner {
-  readonly entity: string;
-  readonly body: string;
+  readonly entity: EntityId;
+  readonly body: EntityId;
 }
 
 /**
@@ -490,7 +492,7 @@ export class PhysicsWorld implements PhysicsApi {
   readonly gravity: Readonly<Vec3Like>;
   readonly layers: readonly Readonly<{ id: string; name: string }>[];
   private readonly world: RAPIER.World;
-  private readonly bodies = new Map<string, Body>();
+  private readonly bodies = new Map<EntityId, Body>();
   /** Drained before each step, so the events of a world nobody listens to cannot pile up. */
   private readonly events = new RAPIER.EventQueue(true);
   /**
@@ -515,7 +517,7 @@ export class PhysicsWorld implements PhysicsApi {
    * Each entity's Joints, holding or not, in table order: the Inspector adds
    * one, a hand-edited file may hold two.
    */
-  private readonly joints = new Map<string, Joint[]>();
+  private readonly joints = new Map<EntityId, Joint[]>();
   /** The scene the world was built from, whose bodies a tuned joint holds again. */
   private scene: SceneDoc | null = null;
   private accumulator = 0;
@@ -724,7 +726,7 @@ export class PhysicsWorld implements PhysicsApi {
    * out of step with the first. A component the world did not build changes
    * nothing. The document is not the world's to write.
    */
-  tune(entityId: string, component: PhysicsComponent): void {
+  tune(entityId: EntityId, component: PhysicsComponent): void {
     switch (component.type) {
       case 'rigidbody':
         this.tuneBody(entityId, component);
@@ -759,12 +761,17 @@ export class PhysicsWorld implements PhysicsApi {
     this.version += 1;
   }
 
+  /**
+   * The ids below come from a behaviour, which holds them as text: each is read
+   * as the id it has to be, and one that is none finds nothing.
+   */
   body(entityId: string): BodyHandle | null {
-    return this.bodies.get(entityId) ?? null;
+    return isEntityId(entityId) ? (this.bodies.get(entityId) ?? null) : null;
   }
 
   /** The first Joint on the entity that holds: one tuned to hold nothing reads as none. */
   joint(entityId: string): JointHandle | null {
+    if (!isEntityId(entityId)) return null;
     return this.joints.get(entityId)?.find((joint) => joint.holds) ?? null;
   }
 
@@ -772,7 +779,7 @@ export class PhysicsWorld implements PhysicsApi {
     entityId: string,
     settings: CharacterSettings,
   ): CharacterController | null {
-    const body = this.bodies.get(entityId);
+    const body = isEntityId(entityId) ? this.bodies.get(entityId) : undefined;
     // One driver to a body: a second controller would set its target on every
     // tick too, and whichever moved it last would win, silently.
     if (!body?.collider || body.driver === 'controller') return null;
@@ -878,7 +885,7 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /** A Rigid Body tuned on the body built from it. Level geometry has none, and takes none. */
-  private tuneBody(entityId: string, rigidbody: RigidBodyComponent): void {
+  private tuneBody(entityId: EntityId, rigidbody: RigidBodyComponent): void {
     const body = this.bodies.get(entityId);
     if (!body?.rigidbody || body.rigidbody.id !== rigidbody.id) return;
     const moved = rigidbody.bodyType !== body.rigidbody.bodyType;
@@ -946,7 +953,7 @@ export class PhysicsWorld implements PhysicsApi {
    * The two bodies a joint holds, as they were built, by the rule the Engine's
    * warnings read; `null` when it holds nothing.
    */
-  private endsOf(entityId: string, joint: JointComponent): JointBodies | null {
+  private endsOf(entityId: EntityId, joint: JointComponent): JointBodies | null {
     const ends = this.scene && jointEnds(this.scene, entityId, joint);
     if (!ends?.holds) return null;
     const own = this.bodies.get(ends.own);
@@ -1066,7 +1073,8 @@ export class PhysicsWorld implements PhysicsApi {
    * caller is left out whole.
    */
   private scope(options: QueryOptions | undefined, startsIn: (collider: RAPIER.Collider) => boolean): Scope {
-    const excluded = options?.exclude === undefined ? undefined : this.bodies.get(options.exclude)?.rapier;
+    const exclude = options?.exclude;
+    const excluded = exclude !== undefined && isEntityId(exclude) ? this.bodies.get(exclude)?.rapier : undefined;
     const bits = options?.layers === undefined ? undefined : this.bitsOf(options.layers);
     return [
       options?.sensors ? undefined : RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
@@ -1138,7 +1146,7 @@ export class PhysicsWorld implements PhysicsApi {
     const held = queryShape(shape);
     if (!turn || !held || !isFiniteVec(center)) return [];
     // An entity's two colliders in it are one entity.
-    const found = new Set<string>();
+    const found = new Set<EntityId>();
     this.world.intersectionsWithShape(
       center,
       turn,

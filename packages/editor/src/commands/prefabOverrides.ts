@@ -4,6 +4,7 @@ import {
   splitInstancedId,
   type ComponentDoc,
   type ComponentId,
+  type EntityId,
   type PrefabOverride,
   type SceneDoc,
 } from '@three-studio/core';
@@ -21,7 +22,7 @@ import { expandedScene } from '../state/expansion';
  */
 export function editInstance(
   scene: SceneDoc,
-  id: string,
+  id: EntityId,
   apply: (override: PrefabOverride, current: readonly ComponentDoc[]) => void,
 ): void {
   const parts = splitInstancedId(id);

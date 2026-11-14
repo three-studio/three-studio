@@ -5,6 +5,7 @@ import {
   expandPrefabs,
   fixedId,
   instancedId,
+  type EntityId,
   type EntityTemplate,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -19,7 +20,7 @@ import { buildRows } from '../src/panels/hierarchyRows';
  * 0.5ms was the mutation that triggered it.
  */
 
-const NONE: ReadonlySet<string> = new Set();
+const NONE: ReadonlySet<EntityId> = new Set();
 const TREE = fixedId('asset', 'tree');
 
 /** An expansion of a scene holding no prefabs, which is most scenes. */

@@ -1,6 +1,7 @@
 import {
   expandPrefabs,
   type AssetId,
+  type EntityId,
   type ExpandedScene,
   type PrefabDoc,
   type SceneDoc,
@@ -67,7 +68,7 @@ export function expandedScene(): ExpandedScene {
 }
 
 /** The entity as it is drawn — an instance's contents included. */
-export function expandedEntity(id: string) {
+export function expandedEntity(id: EntityId) {
   return expandedScene().scene.entities.get(id);
 }
 
@@ -79,8 +80,8 @@ export function expandedEntity(id: string) {
  * once per expansion rather than searched per row, which is the difference
  * between O(n) and O(n²) on a scene full of instances.
  */
-export function expandedChildren(expanded: ExpandedScene): Map<string, string[]> {
-  const extra = new Map<string, string[]>();
+export function expandedChildren(expanded: ExpandedScene): Map<EntityId, EntityId[]> {
+  const extra = new Map<EntityId, EntityId[]>();
 
   for (const entity of expanded.scene.entities.values()) {
     if (entity.parent === null) continue;

@@ -9,6 +9,7 @@ import {
   importerForFile,
   type AssetEntry,
   type AssetId,
+  type EntityId,
   type FieldDef,
   type TextureSettings,
 } from '@three-studio/core';
@@ -126,7 +127,7 @@ describe('a script property, whichever variant it is', () => {
 
   it('tells apart entities that share a name', () => {
     const scene = createEmptyScene();
-    const add = (name: string, parent: string | null = null): string => {
+    const add = (name: string, parent: EntityId | null = null): EntityId => {
       const { entity } = createEntity(name);
       entity.parent = parent;
       scene.entities.set(entity.id, entity);

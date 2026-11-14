@@ -10,6 +10,7 @@ import {
   deserializeScene,
   fixedId,
   serializeScene,
+  type EntityId,
   type PrefabDoc,
   type ProjectFile,
   type SceneEntry,
@@ -183,9 +184,9 @@ async function cancel(): Promise<void> {
 }
 
 const CRATE = fixedId('asset', 'prefab-crate');
-let crateRoot = '';
+let crateRoot: EntityId;
 /** An entity of the scene's own, which no prefab holds. */
-let wall = '';
+let wall: EntityId;
 
 function named(name: string) {
   const template = createMeshEntity('box');

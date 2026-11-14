@@ -1,5 +1,5 @@
 import { createServer } from 'node:net';
-import { isRecord } from '@three-studio/core';
+import { isEntityId, isRecord, type EntityId } from '@three-studio/core';
 
 /*
  * The Chrome DevTools Protocol, over Node's own `WebSocket` and `fetch`: the
@@ -67,6 +67,22 @@ export function stringsAt(record: Record<string, unknown>, key: string): string[
   if (!Array.isArray(value)) throw new Error(`expected a list at "${key}"`);
   return value.map((entry: unknown, index) => {
     if (typeof entry !== 'string') throw new Error(`expected a string at "${key}[${index}]"`);
+    return entry;
+  });
+}
+
+/** An entity id out of a record that was kept as text between two launches. */
+export function entityIdAt(record: Record<string, unknown>, key: string): EntityId {
+  const value = record[key];
+  if (!isEntityId(value)) throw new Error(`expected an entity id at "${key}"`);
+  return value;
+}
+
+export function entityIdsAt(record: Record<string, unknown>, key: string): EntityId[] {
+  const value = record[key];
+  if (!Array.isArray(value)) throw new Error(`expected a list at "${key}"`);
+  return value.map((entry: unknown, index) => {
+    if (!isEntityId(entry)) throw new Error(`expected an entity id at "${key}[${index}]"`);
     return entry;
   });
 }

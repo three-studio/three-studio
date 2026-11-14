@@ -4,6 +4,7 @@ import {
   findComponent,
   type ColliderComponent,
   type ComponentDoc,
+  type EntityId,
   type MeshBuild,
   type SceneDoc,
 } from '@three-studio/core';
@@ -53,7 +54,7 @@ export class ColliderOutline implements ComponentHelper<'collider'> {
 }
 
 class ColliderLines extends LineSegments<BufferGeometry, LineBasicMaterial> {
-  private readonly entityId: string | undefined;
+  private readonly entityId: EntityId | undefined;
   private positions = new BufferAttribute(new Float32Array(0), 3);
   /**
    * What a mesh collider's lines were drawn from. Rebuilt only when it changes —

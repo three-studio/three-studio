@@ -8,6 +8,7 @@ import {
   fixedId,
   type AssetId,
   type ColliderComponent,
+  type EntityId,
   type MeshComponent,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
@@ -65,13 +66,13 @@ afterEach(() => {
 });
 
 /** A Cube whose Collider grips by its own 0.7, linking `materialId`. */
-function cubeLinking(materialId: AssetId | null): string {
+function cubeLinking(materialId: AssetId | null): EntityId {
   const cube = createEntity('Cube', [{ ...createComponent('collider'), materialId }]);
   doc().replaceScene(sceneWith([cube]));
   return cube.entity.id;
 }
 
-const colliderOf = (entityId: string): ColliderComponent =>
+const colliderOf = (entityId: EntityId): ColliderComponent =>
   findComponent(doc().scene, entityId, 'collider')!;
 
 describe('a linked physics material', () => {
@@ -118,7 +119,7 @@ describe('a linked physics material', () => {
 });
 
 describe('the collider’s two actions', () => {
-  const run = (entityId: string, title: string): void => {
+  const run = (entityId: EntityId, title: string): void => {
     const action = COMPONENT_PANES.collider.fields.find(
       (entry): entry is ActionSpec => isAction(entry) && entry.title === title,
     );

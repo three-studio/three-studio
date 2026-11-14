@@ -1,9 +1,11 @@
 import {
   capabilitiesOf,
+  createEmptyScene,
   isAncestorOf,
   splitInstancedId,
   type EntityCapability,
   type EntityDoc,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import { useEditorStore } from './editorStore';
@@ -29,10 +31,10 @@ import { expandedScene } from './expansion';
  * is a real entity here even though the document has never heard of it.
  */
 export class Selection {
-  private readonly members: ReadonlySet<string>;
+  private readonly members: ReadonlySet<EntityId>;
 
   private constructor(
-    readonly ids: readonly string[],
+    readonly ids: readonly EntityId[],
     private readonly scene: SceneDoc,
   ) {
     this.members = new Set(ids);
@@ -43,7 +45,7 @@ export class Selection {
    * nor evicts the one-entry cache. Its scene is never consulted: every method
    * short-circuits on having no ids.
    */
-  private static readonly EMPTY = new Selection([], { entities: {} } as unknown as SceneDoc);
+  private static readonly EMPTY = new Selection([], createEmptyScene());
 
   static empty(): Selection {
     return Selection.EMPTY;
@@ -58,7 +60,7 @@ export class Selection {
    * mutation did not touch, which makes reference equality an exact "nothing
    * moved" — the same trick `expansion.ts` uses.
    */
-  static of(ids: readonly string[], scene: SceneDoc): Selection {
+  static of(ids: readonly EntityId[], scene: SceneDoc): Selection {
     if (cache && cache.ids === ids && cache.scene === scene) return cache.value;
     const value = new Selection(
       // Dropped rather than carried: an id naming nothing makes every filter
@@ -89,11 +91,11 @@ export class Selection {
   }
 
   /** The last one picked: the single Inspector's subject, and the gizmo's pivot. */
-  get primary(): string | null {
+  get primary(): EntityId | null {
     return this.ids.at(-1) ?? null;
   }
 
-  has(id: string): boolean {
+  has(id: EntityId): boolean {
     return this.members.has(id);
   }
 
@@ -111,19 +113,19 @@ export class Selection {
    * and never reused, though the multi-object gizmo needs exactly the same
    * subset — which is why it lives here now. Unity calls it `SelectionMode.TopLevel`.
    */
-  roots(): readonly string[] {
+  roots(): readonly EntityId[] {
     return this.ids.filter(
       (id) => !this.ids.some((other) => other !== id && isAncestorOf(this.scene, other, id)),
     );
   }
 
   /** Only the ids the document itself holds — nothing a prefab produced. */
-  documentOnly(): readonly string[] {
+  documentOnly(): readonly EntityId[] {
     return this.ids.filter((id) => splitInstancedId(id) === null);
   }
 
   /** What a transform gesture may actually move. Godot publishes the same list. */
-  transformable(): readonly string[] {
+  transformable(): readonly EntityId[] {
     return this.roots().filter((id) => capabilitiesOf(this.scene, id).has('translate'));
   }
 
@@ -137,7 +139,7 @@ export class Selection {
    * and `capabilities.ts` says so at the top. Mixing the two would make a
    * miscomputed capability able to corrupt a document.
    */
-  reparentable(): readonly string[] {
+  reparentable(): readonly EntityId[] {
     return this.roots().filter(
       (id) => splitInstancedId(id) === null && capabilitiesOf(this.scene, id).has('reparent'),
     );
@@ -166,4 +168,4 @@ export class Selection {
   }
 }
 
-let cache: { ids: readonly string[]; scene: SceneDoc; value: Selection } | null = null;
+let cache: { ids: readonly EntityId[]; scene: SceneDoc; value: Selection } | null = null;

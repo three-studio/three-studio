@@ -7,6 +7,7 @@ import {
   createRenderingSettings,
   fixedId,
   type AssetId,
+  type EntityId,
   type LightComponent,
   type MaterialDef,
   type MeshComponent,
@@ -68,7 +69,7 @@ afterEach(() => {
 });
 
 /** The `Mesh` a mesh component produced, under the entity's container. */
-function meshOf(binder: SceneBinder, entityId: string): Mesh {
+function meshOf(binder: SceneBinder, entityId: EntityId): Mesh {
   const found = binder.getObject(entityId)?.children.find((child) => child instanceof Mesh);
   if (!(found instanceof Mesh)) throw new Error(`no mesh bound for ${entityId}`);
   return found;
@@ -201,7 +202,7 @@ describe('a model that arrives late', () => {
  */
 describe('editing a light', () => {
   /** Counts `dispose` on whatever the binder builds for this entity.entity. */
-  function watch(binder: SceneBinder, entityId: string): { disposed: number; light: Object3D } {
+  function watch(binder: SceneBinder, entityId: EntityId): { disposed: number; light: Object3D } {
     const light = binder.getObject(entityId)?.children.find((child) => 'isLight' in child);
     if (!light) throw new Error('no light bound');
     const counter = { disposed: 0, light };

@@ -1,3 +1,4 @@
+import { isEntityId, type EntityId } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 
 /**
@@ -18,12 +19,16 @@ export const ENTITY_ID_KEY = 'studioEntityId';
  *
  * A raycast lands on a mesh, a model's child, or a batch's member; only the
  * chain above it says which entity that is.
+ *
+ * What `userData` holds is whatever was put there, so it is read as an id and
+ * not trusted to be one: an object carrying anything else is passed over, and
+ * the walk goes on to its parent, as it does for an object carrying nothing.
  */
-export function resolveEntityId(object: Object3D | null): string | undefined {
+export function resolveEntityId(object: Object3D | null): EntityId | undefined {
   let current: Object3D | null = object;
   while (current) {
     const id: unknown = current.userData[ENTITY_ID_KEY];
-    if (typeof id === 'string') return id;
+    if (isEntityId(id)) return id;
     current = current.parent;
   }
   return undefined;

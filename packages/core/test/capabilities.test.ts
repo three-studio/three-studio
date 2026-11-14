@@ -56,7 +56,7 @@ describe('a locked entity', () => {
 });
 
 describe('an entity a prefab produced', () => {
-  const producedId = instancedId('host', 'trunk');
+  const producedId = instancedId(fixedId('entity', 'host'), fixedId('entity', 'trunk'));
 
   /**
    * The entity as the *expanded* scene holds it — under its produced id, which

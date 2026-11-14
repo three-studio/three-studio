@@ -2,7 +2,7 @@ import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
-import { idMapOf, isComponentId, isEntityId, type ComponentId } from '../ids';
+import { idMapOf, isComponentId, isEntityId, type ComponentId, type EntityId } from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -409,7 +409,7 @@ function rekeyOverrides(scene: SceneDoc): void {
  * landed.
  */
 function repairHierarchy(scene: SceneDoc): void {
-  const exists = (id: string) => scene.entities.has(id);
+  const exists = (id: EntityId) => scene.entities.has(id);
 
   scene.rootOrder = scene.rootOrder.filter(exists);
 
@@ -422,15 +422,16 @@ function repairHierarchy(scene: SceneDoc): void {
   // cannot see one: every edge of a cycle points at an entity that exists. The
   // re-homing pass below then puts it in `rootOrder`.
   for (const chain of cycles(scene)) {
-    const entity = scene.entities.get(chain[0] ?? '');
+    const first = chain[0];
+    const entity = first === undefined ? undefined : scene.entities.get(first);
     if (!entity) continue;
-    const parent = scene.entities.get(entity.parent ?? '');
+    const parent = entity.parent === null ? undefined : scene.entities.get(entity.parent);
     if (parent) parent.children = parent.children.filter((child) => child !== entity.id);
     entity.parent = null;
   }
 
   // Re-home anything that lost its parent and is not already a root.
-  const referenced = new Set<string>(scene.rootOrder);
+  const referenced = new Set<EntityId>(scene.rootOrder);
   for (const entity of scene.entities.values()) {
     for (const child of entity.children) referenced.add(child);
   }

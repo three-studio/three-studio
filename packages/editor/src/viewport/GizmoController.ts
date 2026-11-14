@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Box3, Matrix4, Object3D, Quaternion, Vector3, type PerspectiveCamera } from 'three/webgpu';
 import { transformSelection } from '../commands/sceneCommands';
@@ -214,7 +215,7 @@ export class GizmoController {
    */
   update(
     selection: Selection,
-    resolve: (id: string) => Object3D | undefined,
+    resolve: (id: EntityId) => Object3D | undefined,
     bounds: Box3 | null,
     mode: TransformMode,
   ): void {

@@ -3,6 +3,7 @@ import {
   componentsOfType,
   type ComponentId,
   type ComponentType,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import { OVERLAYS } from '../../components/overlays';
@@ -24,7 +25,7 @@ interface Mounted {
 /** Entity id and component id, which is what identifies one annotation. */
 type Key = string;
 
-const keyOf = (entityId: string, componentId: ComponentId): Key => `${entityId}/${componentId}`;
+const keyOf = (entityId: EntityId, componentId: ComponentId): Key => `${entityId}/${componentId}`;
 
 /**
  * Mounts three's helpers on the selection, and takes them down when it changes.
@@ -68,7 +69,7 @@ export class SelectionHelpers {
    * Every lookup is against a component table restricted to the selected ids, so
    * the cost is the size of the selection rather than the size of the scene.
    */
-  update(scene: SceneDoc, selection: readonly string[]): void {
+  update(scene: SceneDoc, selection: readonly EntityId[]): void {
     const live = new Set<Key>();
 
     for (const [type, helper] of this.helpers) {

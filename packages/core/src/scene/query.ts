@@ -1,3 +1,4 @@
+import type { EntityId } from '../ids';
 import type { SceneDoc } from './schema';
 
 /*
@@ -21,12 +22,12 @@ import type { SceneDoc } from './schema';
  */
 
 /** Every descendant of `id`, excluding `id` itself, in depth-first order. */
-export function collectDescendants(scene: SceneDoc, id: string): string[] {
-  const out: string[] = [];
+export function collectDescendants(scene: SceneDoc, id: EntityId): EntityId[] {
+  const out: EntityId[] = [];
   // A cycle would otherwise loop for ever, and this runs on delete — where the
   // document may already be in the state that made the cycle worth finding.
-  const seen = new Set<string>([id]);
-  const stack: string[] = [];
+  const seen = new Set<EntityId>([id]);
+  const stack: EntityId[] = [];
   // A loop rather than `push(...children)`: the spread passes one argument per
   // child, and a node with a very high degree overflows the argument limit.
   for (const child of scene.entities.get(id)?.children ?? []) stack.push(child);
@@ -50,8 +51,8 @@ export function collectDescendants(scene: SceneDoc, id: string): string[] {
  * that passed and is not one — this is not an existence check, and mistaking it
  * for one is how an entity ends up in no branch of the tree. Callers wanting both want `graph.reparentEntity`.
  */
-export function isAncestorOf(scene: SceneDoc, ancestorId: string, id: string): boolean {
-  const seen = new Set<string>();
+export function isAncestorOf(scene: SceneDoc, ancestorId: EntityId, id: EntityId): boolean {
+  const seen = new Set<EntityId>();
   let current = scene.entities.get(id)?.parent ?? null;
   while (current !== null && !seen.has(current)) {
     if (current === ancestorId) return true;
@@ -74,17 +75,17 @@ export function isAncestorOf(scene: SceneDoc, ancestorId: string, id: string): b
  * exists. What gives it away is that a cycle is unreachable from `rootOrder`, so
  * the hierarchy panel simply does not draw the entities caught in it.
  */
-export function cycles(scene: SceneDoc): string[][] {
-  const found: string[][] = [];
+export function cycles(scene: SceneDoc): EntityId[][] {
+  const found: EntityId[][] = [];
   /** Ids already known to reach a root, or to belong to a cycle reported below. */
-  const settled = new Set<string>();
+  const settled = new Set<EntityId>();
 
   for (const start of scene.entities.keys()) {
     if (settled.has(start)) continue;
 
-    const path: string[] = [];
-    const onPath = new Set<string>();
-    let current: string | null = start;
+    const path: EntityId[] = [];
+    const onPath = new Set<EntityId>();
+    let current: EntityId | null = start;
 
     while (current !== null && !settled.has(current)) {
       if (onPath.has(current)) {
@@ -103,10 +104,10 @@ export function cycles(scene: SceneDoc): string[][] {
 }
 
 /** Chain of ids from the root down to `id`, inclusive. */
-export function entityWorldMatrixPath(scene: SceneDoc, id: string): string[] {
-  const path: string[] = [];
-  const seen = new Set<string>();
-  let current: string | null = id;
+export function entityWorldMatrixPath(scene: SceneDoc, id: EntityId): EntityId[] {
+  const path: EntityId[] = [];
+  const seen = new Set<EntityId>();
+  let current: EntityId | null = id;
   while (current !== null && !seen.has(current)) {
     path.unshift(current);
     seen.add(current);

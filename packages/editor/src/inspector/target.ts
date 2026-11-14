@@ -6,6 +6,7 @@ import {
   type ComponentId,
   type ComponentType,
   type EntityDoc,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import { removeComponent, setComponentNestedField } from '../commands/sceneCommands';
@@ -93,7 +94,7 @@ export function readPath(source: unknown, path: readonly string[]): unknown {
  * alone leaves the panel blank for anything inside one.
  */
 export class SingleTarget implements EntityTarget {
-  constructor(private readonly entityId: string) {}
+  constructor(private readonly entityId: EntityId) {}
 
   private get entity(): EntityDoc | undefined {
     return expandedScene().scene.entities.get(this.entityId);
@@ -120,7 +121,7 @@ export class SingleTarget implements EntityTarget {
  * whether several stand behind it, to read the first one's value.
  */
 export class MultiTarget implements EntityTarget {
-  constructor(private readonly entityIds: readonly string[]) {}
+  constructor(private readonly entityIds: readonly EntityId[]) {}
 
   private get entities(): EntityDoc[] {
     const scene = expandedScene().scene;
@@ -172,15 +173,15 @@ export class MultiTarget implements EntityTarget {
 
 class MultiComponentTarget implements ComponentTarget {
   constructor(
-    private readonly entityIds: readonly string[],
+    private readonly entityIds: readonly EntityId[],
     readonly type: ComponentType,
     private readonly nth: number,
     readonly representative: ComponentDoc,
   ) {}
 
-  private each(): { entityId: string; component: ComponentDoc }[] {
+  private each(): { entityId: EntityId; component: ComponentDoc }[] {
     const scene = expandedScene().scene;
-    const out: { entityId: string; component: ComponentDoc }[] = [];
+    const out: { entityId: EntityId; component: ComponentDoc }[] = [];
     for (const entityId of this.entityIds) {
       const component = scene.entities.has(entityId)
         ? nthOfType(scene, entityId, this.type, this.nth)
@@ -218,7 +219,7 @@ class MultiComponentTarget implements ComponentTarget {
 /** The `nth` component of a given type on an entity, in the order it is shown. */
 function nthOfType(
   scene: SceneDoc,
-  entityId: string,
+  entityId: EntityId,
   type: ComponentType,
   nth: number,
 ): ComponentDoc | undefined {
@@ -227,7 +228,7 @@ function nthOfType(
 
 class SingleComponentTarget implements ComponentTarget {
   constructor(
-    private readonly entityId: string,
+    private readonly entityId: EntityId,
     private readonly componentId: ComponentId,
     readonly representative: ComponentDoc,
   ) {}

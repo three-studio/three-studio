@@ -5,6 +5,7 @@ import {
   isPlaceable,
   type AssetId,
   type AssetKind,
+  type EntityId,
   type EntityTemplate,
   type Transform,
   type Vec3,
@@ -70,7 +71,7 @@ export function canAddInView(): boolean {
  * `null` while the game runs: refused, said in the toast, with nothing measured
  * or added — the menu greys its entries, and this is the refusal itself.
  */
-export function addEntityInView(template: EntityTemplate): string | null {
+export function addEntityInView(template: EntityTemplate): EntityId | null {
   if (!canAddInView()) {
     refuseWhileLocked();
     return null;

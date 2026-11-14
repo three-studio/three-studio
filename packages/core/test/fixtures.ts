@@ -4,6 +4,7 @@ import {
   emptyComponentTables,
   fixedId,
   setComponentsOf,
+  type EntityId,
   type EntityTemplate,
   type PrefabDoc,
   type SceneDoc,
@@ -56,7 +57,7 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
 export function prefabWith(
   name: string,
   templates: readonly EntityTemplate[],
-  root: string,
+  root: EntityId,
 ): PrefabDoc {
   const components = emptyComponentTables();
   const host = { components };

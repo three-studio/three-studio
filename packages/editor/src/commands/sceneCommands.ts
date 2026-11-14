@@ -19,6 +19,7 @@ import {
   type ComponentDoc,
   type ComponentId,
   type ComponentType,
+  type EntityId,
   type EntityTemplate,
   type SceneDoc,
   type Transform,
@@ -83,7 +84,7 @@ const mutate = (
   useDocumentStore.getState().mutate(label, recipe, options);
 };
 
-export function addEntity(template: EntityTemplate, parentId: string | null = null): string {
+export function addEntity(template: EntityTemplate, parentId: EntityId | null = null): EntityId {
   const { entity } = template;
   mutate(
     `Add ${entity.name}`,
@@ -137,7 +138,7 @@ export function deleteSelection(selection: Selection): void {
   );
 }
 
-export function renameEntity(id: string, name: string): void {
+export function renameEntity(id: EntityId, name: string): void {
   const trimmed = name.trim();
   if (trimmed === '') return;
   mutate('Rename entity', (scene) => {
@@ -147,7 +148,7 @@ export function renameEntity(id: string, name: string): void {
   });
 }
 
-export function setEntityVisible(id: string, visible: boolean): void {
+export function setEntityVisible(id: EntityId, visible: boolean): void {
   mutate(visible ? 'Show entity' : 'Hide entity', (scene) => {
     const entity = scene.entities.get(id);
     if (entity) entity.visible = visible;
@@ -160,14 +161,14 @@ export function setEntityVisible(id: string, visible: boolean): void {
  * locked entity may not do — but nothing in the interface sets it. Kept rather
  * than deleted and rewritten — the padlock in the hierarchy is meant to reach it.
  */
-export function setEntityLocked(id: string, locked: boolean): void {
+export function setEntityLocked(id: EntityId, locked: boolean): void {
   mutate(locked ? 'Lock entity' : 'Unlock entity', (scene) => {
     const entity = scene.entities.get(id);
     if (entity) entity.locked = locked;
   });
 }
 
-export function reparentEntity(id: string, parentId: string | null, index?: number): void {
+export function reparentEntity(id: EntityId, parentId: EntityId | null, index?: number): void {
   const scene = useDocumentStore.getState().scene;
 
   // Said out loud, like `removeEntities` does, because it is a drop the
@@ -208,7 +209,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
  * same thing: making the parent is the easy half, and moving five objects into
  * it one drag at a time is the half nobody wants to do.
  */
-export function groupSelection(selection: Selection): string | null {
+export function groupSelection(selection: Selection): EntityId | null {
   const scene = useDocumentStore.getState().scene;
 
   // `roots()` is the filter that used to live here and nowhere else, though the
@@ -338,7 +339,7 @@ export function transformSelection(
  */
 export function reparentSelection(
   selection: Selection,
-  parentId: string | null,
+  parentId: EntityId | null,
   index?: number,
 ): void {
   const scene = useDocumentStore.getState().scene;
@@ -377,7 +378,7 @@ export function reparentSelection(
 }
 
 export function setTransform(
-  id: string,
+  id: EntityId,
   patch: Partial<Transform>,
   options?: { coalesceKey?: string },
 ): void {
@@ -460,7 +461,7 @@ export function componentFits(type: ComponentType, present: ReadonlySet<Componen
 }
 
 /** Adds a component along with anything it needs, as one undo step. */
-export function addComponentWithDependencies(id: string, type: ComponentType): void {
+export function addComponentWithDependencies(id: EntityId, type: ComponentType): void {
   const scene = useDocumentStore.getState().scene;
   if (!scene.entities.has(id)) return;
 
@@ -510,7 +511,7 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
   });
 }
 
-export function removeComponent(id: string, componentId: ComponentId): void {
+export function removeComponent(id: EntityId, componentId: ComponentId): void {
   mutate('Remove component', (scene) => {
     deleteComponent(scene, id, componentId);
   });
@@ -562,7 +563,7 @@ function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly strin
  */
 /** Nested update for material and geometry blocks inside a mesh component. */
 export function setComponentNestedField(
-  id: string,
+  id: EntityId,
   componentId: ComponentId,
   path: readonly string[],
   value: unknown,
@@ -583,7 +584,7 @@ export function setComponentNestedField(
  */
 export function writeComponentPath(
   scene: SceneDoc,
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
   path: readonly string[],
   value: unknown,
@@ -631,7 +632,7 @@ export function writePath(target: object, path: readonly string[], value: unknow
  * its children's are theirs. The binder is the edit view's, which holds those
  * meshes as they are drawn, a model loaded through its cache included.
  */
-export function fitColliderToMesh(id: string, componentId: ComponentId, binder: SceneBinder): void {
+export function fitColliderToMesh(id: EntityId, componentId: ComponentId, binder: SceneBinder): void {
   const { scene } = expandedScene();
   const collider = findComponentById(scene, id, componentId);
   if (collider?.type !== 'collider') return;
@@ -722,7 +723,7 @@ export function duplicateSelection(selection: Selection): void {
   // nowhere in the document to live.
   const ids = selection.documentOnly();
   if (ids.length === 0) return;
-  const created: string[] = [];
+  const created: EntityId[] = [];
   // The names in use, read once from the document itself. Every root used to
   // ask for them again through the immer draft, whose proxy makes each read of
   // an entity several times dearer than a plain object's: a hundred roots of a
@@ -732,7 +733,7 @@ export function duplicateSelection(selection: Selection): void {
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
     (scene) => {
-      const renamed = new Map<string, string>();
+      const renamed = new Map<EntityId, EntityId>();
       for (const id of ids) {
         const source = scene.entities.get(id);
         if (!source) continue;

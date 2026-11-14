@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, type GeometryDef, type WaterComponent } from '@three-studio/core';
+import { SUN_CUSTOM, type EntityId, type GeometryDef, type WaterComponent } from '@three-studio/core';
 import {
   BackSide,
   DoubleSide,
@@ -46,7 +46,7 @@ export interface WaterHandle extends SystemHandle {
 export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
   private readonly direction = new Vector3();
 
-  mount(entityId: string, component: WaterComponent, ctx: SystemContext): WaterHandle {
+  mount(entityId: EntityId, component: WaterComponent, ctx: SystemContext): WaterHandle {
     const geometryKey = geometryKeyOf(component.geometry);
     const geometry = ctx.arena.geometry(geometryKey, () => buildGeometry(component.geometry));
     const { texture, map } = this.normalMap(component, ctx);

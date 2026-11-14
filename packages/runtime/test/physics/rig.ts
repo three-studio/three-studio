@@ -12,6 +12,7 @@ import {
   type ColliderComponent,
   type ComponentOfType,
   type ComponentType,
+  type EntityId,
   type EntityTemplate,
   type GeometryKind,
   type JointComponent,
@@ -63,11 +64,11 @@ export interface PhysicsRig {
    * a new body and a character are. A test comparing the two builds its bodies
    * with `{ interpolate: false }`, or compares them at rest.
    */
-  drawn(entityId: string): Pose;
+  drawn(entityId: EntityId): Pose;
   /** Where the solver holds its body, read through the API a behaviour reads it through. */
-  solved(entityId: string): Pose;
+  solved(entityId: EntityId): Pose;
   /** The entity's body, as a behaviour is handed it. */
-  body(entityId: string): BodyHandle;
+  body(entityId: EntityId): BodyHandle;
 }
 
 /**
@@ -97,7 +98,7 @@ export async function physicsRig(
   onTestFinished(() => engine.dispose());
 
   const step = physicsSettings.fixedTimestep;
-  const body = (entityId: string): BodyHandle => {
+  const body = (entityId: EntityId): BodyHandle => {
     const built = engine.physics?.body(entityId);
     if (!built) throw new Error(`No body was built for "${entityId}".`);
     return built;

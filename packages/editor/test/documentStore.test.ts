@@ -18,6 +18,7 @@ import {
   type AudioSourceComponent,
   type ColliderComponent,
   type ComponentId,
+  type EntityId,
   type EntityTemplate,
 } from '@three-studio/core';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
@@ -45,13 +46,15 @@ import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
 
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
 
 const doc = () => useDocumentStore.getState();
 const scene = () => useDocumentStore.getState().scene;
 const dirty = () => selectDirty(useDocumentStore.getState());
 const selection = () => useEditorStore.getState().selection;
 const CLIP = fixedId('asset', 'clip');
+const LID = fixedId('entity', 'lid');
+const GONE = fixedId('entity', 'gone');
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -104,7 +107,7 @@ describe('what the document refuses to take', () => {
   });
 });
 
-function read(entityId: string, componentId: string): AudioSourceComponent {
+function read(entityId: EntityId, componentId: string): AudioSourceComponent {
   const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
   if (found?.type !== 'audioSource') throw new Error('no audio source');
   return found;
@@ -213,7 +216,7 @@ describe('document store', () => {
     const seen = doc().changesSince(0).revision;
 
     renameEntity(cube.entity.id, 'Renamed');
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([cube.entity.id]);
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([cube.entity.id]);
   });
 
   it('duplicates a subtree under a fresh set of ids', () => {
@@ -369,7 +372,7 @@ describe('what a transaction carries', () => {
   it('keeps a selection made inside a prefab instance', () => {
     const host = createEntity('Host');
     addEntity(host);
-    const produced = `${host.entity.id}/root`;
+    const produced = instancedId(host.entity.id, fixedId('entity', 'root'));
     useEditorStore.getState().setSelection([produced]);
 
     renameEntity(host.entity.id, 'Renamed');
@@ -452,7 +455,7 @@ describe('knowing whether the work is saved', () => {
     expect(doc()).toMatchObject({ revision, savedRevision, structureRevision, componentRevision });
     expect(dirty()).toBe(true);
     const changes = doc().changesSince(seen);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(changes.environment).toBe(false);
     expect(changes.revision).toBe(seen);
 
@@ -541,14 +544,14 @@ describe('asking what changed since', () => {
 
     renameEntity(b.entity.id, 'First change');
     const forFirst = doc().changesSince(first);
-    expect([...(forFirst.entities as ReadonlySet<string>)]).toEqual([b.entity.id]);
+    expect([...(forFirst.entities as ReadonlySet<EntityId>)]).toEqual([b.entity.id]);
 
     renameEntity(a.entity.id, 'Second change');
 
     // The consumer that never read is still owed both, and the other one's read
     // took nothing away from it. Under the old drained buffer it would have been
     // owed nothing at all.
-    const ids = doc().changesSince(second).entities as ReadonlySet<string>;
+    const ids = doc().changesSince(second).entities as ReadonlySet<EntityId>;
     expect([...ids].sort()).toEqual([a.entity.id, b.entity.id].sort());
   });
 
@@ -563,7 +566,7 @@ describe('asking what changed since', () => {
 
     const added = createMeshEntity('sphere');
     addEntity(added);
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([added.entity.id]);
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([added.entity.id]);
   });
 
   it('names only what was deleted', () => {
@@ -578,7 +581,7 @@ describe('asking what changed since', () => {
     // `rootOrder` names nothing: it is an ordering, and it decides what the
     // hierarchy lists rather than what is drawn. What left is named by the
     // `entities.<id>` removal in the same mutation.
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([gone.entity.id]);
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([gone.entity.id]);
   });
 
   it('reports a pure reorder as structural but touching nothing', () => {
@@ -595,7 +598,7 @@ describe('asking what changed since', () => {
 
     // The hierarchy has to redraw its list; the binder has nothing to do, since
     // the order of `rootOrder` changes nothing about the scene graph.
-    expect((doc().changesSince(seen).entities as ReadonlySet<string>).size).toBe(0);
+    expect((doc().changesSince(seen).entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(doc().structureRevision).toBeGreaterThan(structure);
   });
 
@@ -604,7 +607,7 @@ describe('asking what changed since', () => {
     const seen = doc().changesSince(0).revision;
 
     const again = doc().changesSince(seen);
-    expect((again.entities as ReadonlySet<string>).size).toBe(0);
+    expect((again.entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(again.environment).toBe(false);
     expect(again.materials).toBe(false);
     expect(again.prefabs).toBe(false);
@@ -633,7 +636,7 @@ describe('asking what changed since', () => {
 
     const changes = doc().changesSince(seen);
     expect(changes.environment).toBe(true);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
   });
 
   it('reports a library change without naming an entity', () => {
@@ -645,7 +648,7 @@ describe('asking what changed since', () => {
 
     const changes = doc().changesSince(seen);
     expect(changes.materials).toBe(true);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
   });
 
   it('keeps the two asset tables apart, because they need opposite answers', () => {
@@ -686,7 +689,7 @@ describe('asking what changed since', () => {
     const changes = doc().changesSince(seen);
     expect(changes.revision).toBeGreaterThan(seen);
     expect(doc().revision).toBeLessThan(marker);
-    expect([...(changes.entities as ReadonlySet<string>)]).toEqual([cube.entity.id]);
+    expect([...(changes.entities as ReadonlySet<EntityId>)]).toEqual([cube.entity.id]);
   });
 });
 
@@ -705,7 +708,7 @@ describe('revision counters', () => {
     return { structure: state.structureRevision, component: state.componentRevision };
   };
 
-  const meshComponentId = (entityId: string) =>
+  const meshComponentId = (entityId: EntityId) =>
     componentsOf(scene(), entityId).find((component) => component.type === 'mesh')!.id;
 
   it('counts a value written inside a component as a component change only', () => {
@@ -863,7 +866,7 @@ describe('the companions a rigid body brings', () => {
   afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** An empty entity "Cart", in the document, with these under it. */
-  function cartOver(...children: ReturnType<typeof createEntity>[]): string {
+  function cartOver(...children: ReturnType<typeof createEntity>[]): EntityId {
     const cart = addEntity(createEntity('Cart'));
     for (const child of children) addEntity(child, cart);
     return cart;
@@ -958,7 +961,7 @@ describe('references to the entities copied with them', () => {
   afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** A Frame, and a Door jointed to it. */
-  function doorway(): { frame: string; door: string } {
+  function doorway(): { frame: EntityId; door: EntityId } {
     const frame = addEntity(createEntity('Frame', [createComponent('collider')]));
     const door = addEntity(
       createEntity('Door', [createComponent('rigidbody'), { ...createJoint(), connectedEntity: frame }]),
@@ -1037,7 +1040,7 @@ describe('a selection after a scene swap', () => {
   it("keeps an id whose entity is there, and one whose instance's owner is", () => {
     const wall = addEntity(createEntity('Wall'));
     const crate = addEntity(createEntity('Crate'));
-    const inside = instancedId(crate, 'lid');
+    const inside = instancedId(crate, LID);
 
     expect(pruneSelection(scene(), [wall, inside])).toEqual([wall, inside]);
   });
@@ -1045,7 +1048,7 @@ describe('a selection after a scene swap', () => {
   it('drops an id that names nothing', () => {
     const wall = addEntity(createEntity('Wall'));
 
-    expect(pruneSelection(scene(), [wall, 'gone', instancedId('gone', 'lid')])).toEqual([wall]);
+    expect(pruneSelection(scene(), [wall, GONE, instancedId(GONE, LID)])).toEqual([wall]);
   });
 
   it('hands back the same array when nothing went, so no subscriber sees a change', () => {
@@ -1080,7 +1083,7 @@ describe('fitting a collider to its mesh', () => {
     return { template, colliderId: collider.id };
   }
 
-  const colliderOf = (entityId: string, componentId: ComponentId): ColliderComponent => {
+  const colliderOf = (entityId: EntityId, componentId: ComponentId): ColliderComponent => {
     const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
     if (found?.type !== 'collider') throw new Error('no collider');
     return found;

@@ -1,4 +1,4 @@
-import { entitiesWith, type SceneDoc } from '@three-studio/core';
+import { entitiesWith, type EntityId, type SceneDoc } from '@three-studio/core';
 import { ENTITY_ID_KEY, isVisibleInHierarchy, type SceneBinder } from '@three-studio/runtime';
 import {
   Group,
@@ -68,7 +68,7 @@ export class EntityMarkers {
   private readonly materials = new Map<MarkerStyle, MeshBasicNodeMaterial>();
   /** Built on first use, like the others, and freed with them. */
   private selected: MeshBasicNodeMaterial | null = null;
-  private readonly markers = new Map<string, Marker>();
+  private readonly markers = new Map<EntityId, Marker>();
 
   constructor(private readonly binder: SceneBinder) {
     this.root.name = 'EntityMarkers';
@@ -88,7 +88,7 @@ export class EntityMarkers {
    *
    * @param dirty Entity ids to re-read; `undefined` re-reads everything.
    */
-  sync(scene: SceneDoc, dirty: ReadonlySet<string> | undefined): void {
+  sync(scene: SceneDoc, dirty: ReadonlySet<EntityId> | undefined): void {
     const ids = dirty ?? this.candidates(scene);
 
     for (const id of ids) {
@@ -128,7 +128,7 @@ export class EntityMarkers {
   update(
     camera: PerspectiveCamera,
     viewportHeight: number,
-    selected: ReadonlySet<string>,
+    selected: ReadonlySet<EntityId>,
   ): void {
     for (const [id, marker] of this.markers) {
       // Swapped rather than tinted: one material per state is shared by every
@@ -176,7 +176,7 @@ export class EntityMarkers {
    * entity that just lost its light is in no table any more, and dropping it is
    * this pass's job.
    */
-  private candidates(scene: SceneDoc): ReadonlySet<string> {
+  private candidates(scene: SceneDoc): ReadonlySet<EntityId> {
     const ids = new Set(this.markers.keys());
     for (const type of MARKED_TYPES) {
       for (const id of entitiesWith(scene, type)) ids.add(id);
@@ -184,7 +184,7 @@ export class EntityMarkers {
     return ids;
   }
 
-  private drop(id: string, marker: Marker): void {
+  private drop(id: EntityId, marker: Marker): void {
     // The mesh owns neither its geometry nor its material — both are shared and
     // freed once, in `dispose`. Detaching is the whole of the teardown.
     marker.mesh.removeFromParent();

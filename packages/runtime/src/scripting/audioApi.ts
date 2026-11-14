@@ -1,4 +1,4 @@
-import { isAssetId, type AudioBus } from '@three-studio/core';
+import { isAssetId, isEntityId, type AudioBus, type EntityId } from '@three-studio/core';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { BusState } from '../audio/AudioMixer';
 import type { PlayRequest, VoiceHandle } from '../audio/playback';
@@ -48,12 +48,16 @@ export interface AudioApi {
 }
 
 /** The api for one script, bound to the entity it is attached to. */
-export function audioApiFor(audio: AudioEngine | null, ownEntityId: string): AudioApi {
+export function audioApiFor(audio: AudioEngine | null, ownEntityId: EntityId): AudioApi {
   // Every source on the entity, because two are legal — a door that creaks and
   // slams carries one component each — and a script saying "play" means all of
-  // them rather than whichever happened to be added first.
-  const sourcesOf = (target: string | undefined) =>
-    audio === null ? [] : audioSourcesOn(audio, target ?? ownEntityId);
+  // them rather than whichever happened to be added first. A target is text a
+  // script passes, read as an id: one that is none names no entity, and has no
+  // sources.
+  const sourcesOf = (target: string | undefined) => {
+    const entityId = target ?? ownEntityId;
+    return audio === null || !isEntityId(entityId) ? [] : audioSourcesOn(audio, entityId);
+  };
 
   return {
     play: (target) => {

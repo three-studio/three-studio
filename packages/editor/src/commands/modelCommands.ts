@@ -4,6 +4,7 @@ import {
   findComponent,
   findComponents,
   insertEntity,
+  type EntityId,
   type ModelNode,
 } from '@three-studio/core';
 import { askToConfirm } from '../state/dialogStore';
@@ -37,7 +38,7 @@ const CONFIRM_ABOVE = 200;
  * The host keeps its place, its name and everything else the author put on it;
  * only the `model` goes, replaced by the sub-tree it was drawing.
  */
-export async function unpackModel(entityId: string): Promise<void> {
+export async function unpackModel(entityId: EntityId): Promise<void> {
   const document = useDocumentStore.getState();
   const host = document.scene.entities.get(entityId);
   const component = findComponent(document.scene, entityId, 'model');

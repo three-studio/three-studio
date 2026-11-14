@@ -4,7 +4,7 @@
  * handles `devtools.ts` declares on `window`.
  */
 
-import type { SceneId } from '@three-studio/core';
+import type { EntityId, SceneId } from '@three-studio/core';
 
 /** Which of the editor's handles the window has, and whether it believes it has the focus: 1 or 0 each. */
 export function editorHandles(): Record<string, number> {
@@ -190,7 +190,7 @@ export function canvasImage(view: string): Promise<string> {
  * The model's meshes, not `binder.whenLoaded()`: that answers "no model is
  * loading", which is as true before the model's load has begun as after it.
  */
-export function firstFrameWithModel(entityId: string): Promise<Record<string, number>> {
+export function firstFrameWithModel(entityId: EntityId): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const hasMesh = (): boolean => {
       let found = false;
@@ -215,7 +215,7 @@ export function firstFrameWithModel(entityId: string): Promise<Record<string, nu
  * window, where the shortcuts listen. Resolves once the document no longer
  * holds it.
  */
-export function deleteEntity(entityId: string): Promise<Record<string, number>> {
+export function deleteEntity(entityId: EntityId): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
     if (!stores) {
@@ -243,7 +243,7 @@ export function deleteEntity(entityId: string): Promise<Record<string, number>> 
  * when, in ms since navigation. `late` is 1 when they all were already bound
  * when this was asked — the start was missed.
  */
-export function firstFrameWithEntities(ids: readonly string[]): Promise<Record<string, number>> {
+export function firstFrameWithEntities(ids: readonly EntityId[]): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const allBound = (): boolean => {
       const binder = window.__studioViewport?.binder;
@@ -264,7 +264,7 @@ export function firstFrameWithEntities(ids: readonly string[]): Promise<Record<s
  * One edit, then the editor's own Save — Cmd+S on the window, where the
  * shortcuts listen — and how long until the document reads as saved, in ms.
  */
-export function editAndSave(entityId: string): Promise<Record<string, number>> {
+export function editAndSave(entityId: EntityId): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
     if (!stores) {
@@ -294,7 +294,7 @@ export function editAndSave(entityId: string): Promise<Record<string, number>> {
  * ms. The editor has no paste; Duplicate is the gesture that adds a thousand
  * entities in one undo entry.
  */
-export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string, number>> {
+export function duplicateAndUndo(ids: readonly EntityId[]): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
     const binder = window.__studioViewport?.binder;
@@ -316,8 +316,8 @@ export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string,
     stores.editor.getState().setSelection(ids);
     const duplicated = performance.now();
     window.dispatchEvent(key('d'));
-    const added = (): string[] => [...stores.document.getState().scene.entities.keys()].filter((id) => !before.has(id));
-    let made: string[] = [];
+    const added = (): EntityId[] => [...stores.document.getState().scene.entities.keys()].filter((id) => !before.has(id));
+    let made: EntityId[] = [];
     until(
       () => {
         made = added();
@@ -345,7 +345,7 @@ export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string,
  * document, under one coalescing key — the write the gizmo makes per frame of
  * a drag. `frames` of them, after `warmup` thrown away.
  */
-export function dragDeltas(args: { entityId: string; warmup: number; frames: number }): Promise<number[]> {
+export function dragDeltas(args: { entityId: EntityId; warmup: number; frames: number }): Promise<number[]> {
   return new Promise((resolve, reject) => {
     const stores = window.__studioStores;
     if (!stores) {

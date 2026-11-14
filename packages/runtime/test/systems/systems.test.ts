@@ -65,13 +65,28 @@ function context(materials: ReadonlyMap<AssetId, ReturnType<typeof createMateria
 
 const MAT_1 = fixedId('asset', 'mat-1');
 
+/** The entities these tests mount on, by the name each is called by. */
+const CUBE = fixedId('entity', 'cube');
+const CUBE_1 = fixedId('entity', 'cube-1');
+const ENTITY_A = fixedId('entity', 'a');
+const ENTITY_B = fixedId('entity', 'b');
+const SUN = fixedId('entity', 'sun');
+const SKY = fixedId('entity', 'sky');
+const CASTER = fixedId('entity', 'caster');
+const WINDOW = fixedId('entity', 'window');
+const PROJECTOR = fixedId('entity', 'projector');
+const CAM = fixedId('entity', 'cam');
+const CHAIR_ENTITY = fixedId('entity', 'chair');
+const LAKE = fixedId('entity', 'lake');
+const POND = fixedId('entity', 'pond');
+
 describe('the mesh system', () => {
   it('keeps the geometry, the material and the mesh across an edit that touches none', () => {
     const { ctx, arena } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
 
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
     const next: MeshComponent = { ...component, castShadow: false };
     const second = system.patch(first, component, next, ctx);
 
@@ -88,7 +103,7 @@ describe('the mesh system', () => {
     const { ctx, arena } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = { ...component, geometry: { ...component.geometry, width: 4 } as MeshComponent['geometry'] };
     const second = system.patch(first, component, next, ctx);
@@ -106,7 +121,7 @@ describe('the mesh system', () => {
     const { ctx } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = {
       ...component,
@@ -124,7 +139,7 @@ describe('the mesh system', () => {
     const { ctx } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = {
       ...component,
@@ -140,8 +155,8 @@ describe('the mesh system', () => {
     const system = new MeshSystem();
     const component: MeshComponent = { ...createMeshComponent('box'), materialId: MAT_1 };
 
-    const one = system.mount('a', component, ctx);
-    const two = system.mount('b', { ...component, id: fixedId('component', 'other') }, ctx);
+    const one = system.mount(ENTITY_A, component, ctx);
+    const two = system.mount(ENTITY_B, { ...component, id: fixedId('component', 'other') }, ctx);
 
     expect(two.material).toBe(one.material);
     expect(arena.sizes.materials).toBe(1);
@@ -156,7 +171,7 @@ describe('the mesh system', () => {
     const { ctx, arena } = context(new Map([[MAT_1, createMaterial('#00ff00')]]));
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     let disposed = 0;
     first.material.dispose = () => void (disposed += 1);
@@ -175,11 +190,11 @@ describe('the mesh system', () => {
     const system = new MeshSystem();
     const component = createMeshComponent('box');
 
-    const handle = system.mount('cube-1', component, ctx);
-    expect(handle.mesh.userData[ENTITY_ID_KEY]).toBe('cube-1');
+    const handle = system.mount(CUBE_1, component, ctx);
+    expect(handle.mesh.userData[ENTITY_ID_KEY]).toBe(CUBE_1);
 
     const patched = system.patch(handle, component, { ...component, castShadow: false }, ctx);
-    expect(patched.mesh.userData[ENTITY_ID_KEY]).toBe('cube-1');
+    expect(patched.mesh.userData[ENTITY_ID_KEY]).toBe(CUBE_1);
   });
 });
 
@@ -218,7 +233,7 @@ describe('the light system', () => {
        * moved the shadow camera, which is centred on the light's position.
        */
       const { ctx } = context();
-      const handle = new LightSystem().mount('sun', light(kind), ctx);
+      const handle = new LightSystem().mount(SUN, light(kind), ctx);
 
       expect(handle.light.position.toArray()).toEqual([0, 0, 0]);
     },
@@ -238,7 +253,7 @@ describe('the light system', () => {
      * light "fixed the lighting".
      */
     const { ctx } = context();
-    const handle = new LightSystem().mount('sky', light('hemisphere'), ctx);
+    const handle = new LightSystem().mount(SKY, light('hemisphere'), ctx);
 
     expect(handle.light.position.toArray()).toEqual([0, 1, 0]);
     expect(handle.light.position.length()).toBeGreaterThan(0);
@@ -248,7 +263,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     const patched = system.patch(handle, component, { ...component, intensity: 9 }, ctx);
 
@@ -264,19 +279,19 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     expect(system.patch(handle, component, light('hemisphere'), ctx)).toBe('remount');
     expect(handle.light).toBeInstanceOf(DirectionalLight);
 
-    const remounted = system.mount('sun', light('hemisphere'), ctx);
+    const remounted = system.mount(SUN, light('hemisphere'), ctx);
     expect(remounted.light).toBeInstanceOf(HemisphereLight);
   });
 
   it('retires the light rather than disposing it where it stands', () => {
     const { ctx, arena } = context();
     const system = new LightSystem();
-    const handle = system.mount('sun', light('point'), ctx);
+    const handle = system.mount(SUN, light('point'), ctx);
 
     let disposed = 0;
     (handle.light as unknown as { dispose: () => void }).dispose = () => void (disposed += 1);
@@ -298,7 +313,7 @@ describe('the light system', () => {
     const system = new LightSystem();
     for (const kind of ['directional', 'point', 'spot', 'projector'] as const) {
       const { ctx } = context();
-      const handle = system.mount('caster', light(kind), ctx);
+      const handle = system.mount(CASTER, light(kind), ctx);
       const shadow = (handle.light as DirectionalLight).shadow;
 
       expect(shadow.mapSize.toArray(), kind).toEqual([1024, 1024]);
@@ -312,7 +327,7 @@ describe('the light system', () => {
     // it no shadow path at all. `applyShadow` tests for the object rather than
     // listing kinds, so this is what stops it writing onto `undefined`.
     const { ctx } = context();
-    const handle = new LightSystem().mount('window', light('rectArea'), ctx);
+    const handle = new LightSystem().mount(WINDOW, light('rectArea'), ctx);
 
     expect(handle.light).toBeInstanceOf(RectAreaLight);
     expect((handle.light as RectAreaLight & { shadow?: unknown }).shadow).toBeUndefined();
@@ -322,7 +337,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = { ...light('rectArea'), width: 4, height: 2 };
-    const handle = system.mount('window', component, ctx);
+    const handle = system.mount(WINDOW, component, ctx);
     expect((handle.light as RectAreaLight).width).toBe(4);
 
     const patched = system.patch(handle, component, { ...component, height: 7 }, ctx);
@@ -341,7 +356,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     const next = { ...component, shadow: { ...component.shadow, bias: -0.0004, orthoSize: 40 } };
     const patched = system.patch(handle, component, next, ctx);
@@ -364,7 +379,7 @@ describe('the light system', () => {
 
     const system = new LightSystem();
     const component = { ...light('projector'), mapId: fixedId('asset', 'gobo-a') };
-    const handle = system.mount('projector', component, ctx);
+    const handle = system.mount(PROJECTOR, component, ctx);
 
     const first = (handle.light as ProjectorLight).map;
     expect(first).not.toBeNull();
@@ -388,7 +403,7 @@ describe('the light system', () => {
 
   it('gives a projector no cookie when its slot is empty', () => {
     const { ctx } = context();
-    const handle = new LightSystem().mount('projector', light('projector'), ctx);
+    const handle = new LightSystem().mount(PROJECTOR, light('projector'), ctx);
 
     expect((handle.light as ProjectorLight).map).toBeNull();
     expect(handle.texture).toBeNull();
@@ -408,7 +423,7 @@ describe('the camera system', () => {
     const { ctx } = context();
     const system = new CameraSystem();
     const component = camera('perspective');
-    const handle = system.mount('cam', component, ctx);
+    const handle = system.mount(CAM, component, ctx);
 
     const patched = system.patch(handle, component, { ...component, fov: 30 }, ctx);
     expect(patched).not.toBe('remount');
@@ -419,10 +434,10 @@ describe('the camera system', () => {
     const { ctx } = context();
     const system = new CameraSystem();
     const component = camera('perspective');
-    const handle = system.mount('cam', component, ctx);
+    const handle = system.mount(CAM, component, ctx);
 
     expect(system.patch(handle, component, camera('orthographic'), ctx)).toBe('remount');
-    expect(system.mount('cam', camera('orthographic'), ctx).camera).toBeInstanceOf(
+    expect(system.mount(CAM, camera('orthographic'), ctx).camera).toBeInstanceOf(
       OrthographicCamera,
     );
   });
@@ -430,7 +445,7 @@ describe('the camera system', () => {
   it('frees nothing, because a camera has no dispose', () => {
     const { ctx, arena } = context();
     const system = new CameraSystem();
-    const handle = system.mount('cam', camera('perspective'), ctx);
+    const handle = system.mount(CAM, camera('perspective'), ctx);
 
     // Adding a camera to the disposables alongside the lights threw
     // `disposable.dispose is not a function` on the first Stop.
@@ -489,7 +504,7 @@ describe('the model system', () => {
     const { models, asked } = stubCache();
     const system = new ModelSystem();
 
-    system.mount('chair', modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' }), {
+    system.mount(CHAIR_ENTITY, modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' }), {
       ...ctx,
       models,
     });
@@ -505,7 +520,7 @@ describe('the model system', () => {
     const { models, asked } = stubCache();
     const system = new ModelSystem();
 
-    system.mount('chair', modelComponent(), { ...ctx, models });
+    system.mount(CHAIR_ENTITY, modelComponent(), { ...ctx, models });
     await system.whenLoaded();
 
     expect(asked).toEqual(['whole:chair']);
@@ -517,7 +532,7 @@ describe('the model system', () => {
     const system = new ModelSystem();
     const attached: Object3D[] = [];
 
-    const handle = system.mount('chair', modelComponent(), {
+    const handle = system.mount(CHAIR_ENTITY, modelComponent(), {
       ...ctx,
       models,
       attach: (_entityId, _handle, object: Object3D) => {
@@ -545,7 +560,7 @@ describe('the model system', () => {
     const { models } = stubCache(false);
     const system = new ModelSystem();
 
-    const handle = system.mount('chair', modelComponent(), { ...ctx, models });
+    const handle = system.mount(CHAIR_ENTITY, modelComponent(), { ...ctx, models });
     await system.whenLoaded();
 
     // The whole point of drawing a box: the picker reads this off whatever the
@@ -560,7 +575,7 @@ describe('the model system', () => {
     const ctxWith = { ...ctx, models };
     const component = modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' });
 
-    const handle = system.mount('chair', component, ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, component, ctxWith);
 
     // A different node is a different object; a checkbox is not worth a network
     // fetch and a parse.
@@ -582,7 +597,7 @@ describe('the model system', () => {
     const plain = modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' });
     const linked = { ...plain, materialId: SHARED };
 
-    const handle = system.mount('chair', linked, ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, linked, ctxWith);
     await system.whenLoaded();
     expect(arena.sizes.materials).toBe(1);
 
@@ -604,7 +619,7 @@ describe('the model system', () => {
     const system = new ModelSystem();
     const ctxWith = { ...ctx, models };
 
-    const handle = system.mount('chair', modelComponent({ materialId: SHARED }), ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, modelComponent({ materialId: SHARED }), ctxWith);
     await system.whenLoaded();
     system.unmount(handle, ctxWith);
 
@@ -620,7 +635,7 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount('lake', createWater(), ctx);
+    const handle = system.mount(LAKE, createWater(), ctx);
 
     expect(handle.objects).toHaveLength(1);
     expect(handle.water.isWaterSurface).toBe(true);
@@ -634,8 +649,8 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const first = system.mount('a', createWater(), ctx);
-    const second = system.mount('b', createWater(), ctx);
+    const first = system.mount(ENTITY_A, createWater(), ctx);
+    const second = system.mount(ENTITY_B, createWater(), ctx);
 
     // `null` on the handle is what says "not mine to retire".
     expect(first.texture).toBeNull();
@@ -647,7 +662,7 @@ describe('the water system', () => {
     const system = new WaterSystem();
     const component = createWater();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
       mounted,
       component,
@@ -671,7 +686,7 @@ describe('the water system', () => {
     const system = new WaterSystem();
     const component = createWater();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(mounted, component, { ...component, resolutionScale: 1 }, ctx);
 
     // three's addon bakes this into the shader, so the surface had to be thrown
@@ -686,7 +701,7 @@ describe('the water system', () => {
     const system = new WaterSystem();
     const component = createWater();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
       mounted,
       component,
@@ -716,12 +731,12 @@ describe('the water system', () => {
     };
     const system = new WaterSystem();
 
-    const linked = system.mount('lake', createWater(), ctx);
+    const linked = system.mount(LAKE, createWater(), ctx);
     expect(linked.water.sunColor.value.getHexString()).toBe('ff0000');
     expect(linked.water.sunDirection.value.y).toBeCloseTo(1);
 
     const own = system.mount(
-      'pond',
+      POND,
       { ...createWater(), sunSource: SUN_CUSTOM, sunColor: '#00ff00' },
       ctx,
     );
@@ -732,7 +747,7 @@ describe('the water system', () => {
     const { ctx, arena } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount('lake', createWater(), ctx);
+    const handle = system.mount(LAKE, createWater(), ctx);
     expect(arena.sizes.geometries).toBe(1);
 
     let disposed = 0;

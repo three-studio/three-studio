@@ -2,11 +2,13 @@ import {
   SUN_FROM_SKY,
   componentsOf,
   findComponent,
+  isEntityId,
   skySunDirection,
   type AssetId,
   type ComponentDoc,
   type ComponentId,
   type EntityDoc,
+  type EntityId,
   type MaterialDef,
   type RenderingSettings,
   type SceneDoc,
@@ -165,9 +167,9 @@ export class SceneBinder {
    * Entities whose light casts a shadow. Empty means per-instance culling is
    * safe; see `createBatch`.
    */
-  private readonly shadowCasters = new Set<string>();
+  private readonly shadowCasters = new Set<EntityId>();
   /** Entities detached by a removal, to be re-parented from the document. */
-  private readonly orphaned = new Set<string>();
+  private readonly orphaned = new Set<EntityId>();
 
   /**
    * Draws what can be drawn together. On or off by the project's settings, the
@@ -196,12 +198,12 @@ export class SceneBinder {
   }
 
   /** Writes the world matrices of what moved into the batches holding it. */
-  updateBatches(only?: ReadonlySet<string>): void {
+  updateBatches(only?: ReadonlySet<EntityId>): void {
     this.batcher.updateBatches(only);
   }
 
   /** The entity a click on a batch landed on. */
-  resolveBatchHit(object: Object3D, batchId: number): string | undefined {
+  resolveBatchHit(object: Object3D, batchId: number): EntityId | undefined {
     return this.batcher.resolveBatchHit(object, batchId);
   }
 
@@ -249,7 +251,7 @@ export class SceneBinder {
       invalidate: () => {
         this.batcher.invalidate();
       },
-      attach: (entityId: string, handle: SystemHandle, object: Object3D) =>
+      attach: (entityId: EntityId, handle: SystemHandle, object: Object3D) =>
         this.reconciler.attachLate(entityId, handle, object),
     };
   }
@@ -285,7 +287,7 @@ export class SceneBinder {
    *   sync exactly those. Handing back `undefined` — "reconcile everything" —
    *   was costing a full pass over the scene per material tint.
    */
-  setMaterialLibrary(materials: ReadonlyMap<AssetId, MaterialDef>): ReadonlySet<string> {
+  setMaterialLibrary(materials: ReadonlyMap<AssetId, MaterialDef>): ReadonlySet<EntityId> {
     const previous = this.materials;
     this.materials = materials;
 
@@ -339,8 +341,8 @@ export class SceneBinder {
 
 
   /**
-   * @param dirty Entity ids to re-read. A set containing `'*'`, or `undefined`,
-   *   forces a full reconcile (initial load, undo of a structural change).
+   * @param dirty Entity ids to re-read. `undefined` forces a full reconcile
+   *   (initial load, undo of a structural change).
    */
   /**
    * Frees what the previous frame let go of. Call once per rendered frame.
@@ -353,11 +355,11 @@ export class SceneBinder {
     this.arena.flush();
   }
 
-  sync(scene: SceneDoc, dirty?: ReadonlySet<string>): void {
+  sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
     // Held for `sunOf`, which answers about the scene rather than about one
     // entity and so cannot be given its subject as an argument.
     this.scene = scene;
-    const full = dirty === undefined || dirty.has('*');
+    const full = dirty === undefined;
     const ids = full
       ? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()])
       : dirty;
@@ -412,7 +414,7 @@ export class SceneBinder {
   }
 
 
-  getObject(entityId: string): Object3D | undefined {
+  getObject(entityId: EntityId): Object3D | undefined {
     return this.reconciler.view(entityId)?.container;
   }
 
@@ -423,7 +425,7 @@ export class SceneBinder {
    * replaces its objects, and the identity of this array's first element is
    * exactly how a caller notices.
    */
-  objectsFor(entityId: string, componentId: ComponentId): readonly Object3D[] {
+  objectsFor(entityId: EntityId, componentId: ComponentId): readonly Object3D[] {
     return this.reconciler.objectsOf(entityId, componentId);
   }
 
@@ -438,7 +440,7 @@ export class SceneBinder {
    * the entity exists, which keeps the overlay's "rebuild when the source
    * changes" rule working unchanged.
    */
-  containerFor(entityId: string): Object3D | undefined {
+  containerFor(entityId: EntityId): Object3D | undefined {
     return this.reconciler.peekContainer(entityId);
   }
 
@@ -459,6 +461,9 @@ export class SceneBinder {
       return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
     }
 
+    // A source is text a component holds, and is read as the id it has to be
+    // before the scene is asked about it.
+    if (!isEntityId(source)) return null;
     const light = findComponent(scene, source, 'light');
     const container = this.reconciler.peekContainer(source);
     if (!light || !container) return null;
@@ -472,7 +477,7 @@ export class SceneBinder {
   }
 
   /** Walks up from a raycast hit to the entity that owns it. */
-  static resolveEntityId(object: Object3D | null): string | undefined {
+  static resolveEntityId(object: Object3D | null): EntityId | undefined {
     return resolveEntityId(object);
   }
 
@@ -492,8 +497,8 @@ export class SceneBinder {
   }
 
   /** Every camera the document defines, for play mode to choose from. */
-  collectCameras(scene: SceneDoc): { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
-    const cameras: { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
+  collectCameras(scene: SceneDoc): { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
+    const cameras: { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
     for (const [id, view] of this.reconciler.all()) {
       if (!scene.entities.has(id)) continue;
       const component = findComponent(scene, id, 'camera');
@@ -615,7 +620,7 @@ export class SceneBinder {
    * root until something else touched it. Detaching the container is enough;
    * `attachToParent` re-reads the document for whatever is still in it.
    */
-  private removeEntity(id: string): void {
+  private removeEntity(id: EntityId): void {
     const view = this.reconciler.view(id);
     if (!view) return;
 
@@ -627,7 +632,7 @@ export class SceneBinder {
       const owner: unknown = child.userData[ENTITY_ID_KEY];
       // Noted, because a detached child whose own entity is not in this sync's
       // dirty set would be reattached by nothing and simply vanish.
-      if (typeof owner === 'string' && owner !== id) {
+      if (isEntityId(owner) && owner !== id) {
         child.removeFromParent();
         this.orphaned.add(owner);
       }

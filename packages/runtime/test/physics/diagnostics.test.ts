@@ -2,6 +2,7 @@ import {
   createComponent,
   createDefaultLayer,
   createEntity,
+  fixedId,
   type EntityTemplate,
   createPhysicsSettings,
   createRenderingSettings,
@@ -130,7 +131,7 @@ describe('the physics set-up, with joints', () => {
   };
 
   it('says so of a joint whose Connected Body is gone', async () => {
-    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: 'gone' }), 'Door');
+    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: fixedId('entity', 'gone') }), 'Door');
     await saidOf('Door', [door], 'Connected Body');
   });
 

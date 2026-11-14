@@ -1,3 +1,4 @@
+import type { EntityId } from '../../ids';
 import type { ComponentBase, Vec3 } from '../../scene/primitives';
 
 /**
@@ -74,7 +75,7 @@ export interface JointComponent extends ComponentBase {
    * entity moves with — its own Rigid Body, the nearest one up the tree, or its
    * own fixed body if it is level geometry. `null` holds it to the world.
    */
-  connectedEntity: string | null;
+  connectedEntity: EntityId | null;
   /** Where it holds, in this entity's frame and units: a door's hinge on its edge. */
   anchor: Vec3;
   /** Whether its two bodies collide with each other. Off, a door can sit against its frame and two links overlap. */

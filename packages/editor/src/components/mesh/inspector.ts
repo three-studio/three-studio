@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentId, MaterialDef } from '@three-studio/core';
+import type { ComponentDoc, ComponentId, EntityId, MaterialDef } from '@three-studio/core';
 import { setComponentNestedField } from '../../commands/sceneCommands';
 import {
   GEOMETRY_FIELDS,
@@ -18,7 +18,7 @@ import { expandedScene } from '../../state/expansion';
  * pointing at its own material rather than at an id that does not exist.
  */
 async function extractMaterial(
-  entityId: string,
+  entityId: EntityId,
   componentId: ComponentId,
   material: MaterialDef,
 ): Promise<void> {

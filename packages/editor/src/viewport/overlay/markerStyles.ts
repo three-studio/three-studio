@@ -1,4 +1,10 @@
-import { COMPONENT_TYPES, hasComponent, type ComponentType, type SceneDoc } from '@three-studio/core';
+import {
+  COMPONENT_TYPES,
+  hasComponent,
+  type ComponentType,
+  type EntityId,
+  type SceneDoc,
+} from '@three-studio/core';
 import { OVERLAYS } from '../../components/overlays';
 import type { EntityMarker } from '../../components/registry';
 
@@ -41,7 +47,7 @@ const PRIORITY: readonly ComponentType[] = COMPONENT_TYPES.filter(
 export const MARKED_TYPES: readonly ComponentType[] = PRIORITY;
 
 /** Whether the entity contributes no geometry of its own. */
-export function drawsNothing(scene: SceneDoc, entityId: string): boolean {
+export function drawsNothing(scene: SceneDoc, entityId: EntityId): boolean {
   return !RENDERS.some((type) => hasComponent(scene, entityId, type));
 }
 
@@ -59,7 +65,7 @@ export function drawsNothing(scene: SceneDoc, entityId: string): boolean {
  * Every lookup below is against a component table, never a walk of the entity
  * table.
  */
-export function markerStyleFor(scene: SceneDoc, entityId: string): MarkerStyle | undefined {
+export function markerStyleFor(scene: SceneDoc, entityId: EntityId): MarkerStyle | undefined {
   if (!scene.entities.has(entityId)) return undefined;
   if (!drawsNothing(scene, entityId)) return undefined;
 

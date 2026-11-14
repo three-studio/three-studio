@@ -155,7 +155,7 @@ describe('counting prefab instances', () => {
 describe('who names an entity that is gone', () => {
   it('a joint naming an entity the scene does not have names a missing entity', () => {
     const frame = createEntity('Frame');
-    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: 'gone' }]);
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: fixedId('entity', 'gone') }]);
     const free = createEntity('Free', [createJoint()]);
     const held = createEntity('Held', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
 
@@ -165,7 +165,7 @@ describe('who names an entity that is gone', () => {
   });
 
   it('reaches what a prefab places, through the expanded scene', () => {
-    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: 'gone' }]);
+    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: fixedId('entity', 'gone') }]);
     const prefab = prefabWith('Door', [door], door.entity.id);
     const host = createEntity('Doorway', [createPrefabInstance(PREFAB)]);
 

@@ -7,6 +7,7 @@ import {
   createTransform,
   fixedId,
   instancedId,
+  type EntityId,
 } from '@three-studio/core';
 import { Matrix4 } from 'three/webgpu';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -32,8 +33,9 @@ import { Selection } from '../src/state/selection';
 
 const doc = () => useDocumentStore.getState();
 const TREE = fixedId('asset', 'tree');
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
-const at = (id: string) => doc().scene.entities.get(id)?.transform.position ?? [];
+const INNER = fixedId('entity', 'inner');
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
+const at = (id: EntityId) => doc().scene.entities.get(id)?.transform.position ?? [];
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -171,7 +173,7 @@ describe("a selection mixing the document and a prefab's contents", () => {
 
     // An id the document does not hold: `transformSelection` has to send it down
     // the override path, as a single transform already does.
-    const produced = `${cube.entity.id}/inner`;
+    const produced = instancedId(cube.entity.id, INNER);
     expect(() =>
       transformSelection(sel([cube.entity.id, produced]), new Matrix4().makeTranslation(1, 0, 0)),
     ).not.toThrow();
@@ -184,7 +186,7 @@ describe("a selection mixing the document and a prefab's contents", () => {
     const target = createEntity('Target');
     addEntity(target);
 
-    reparentSelection(sel([`${host.entity.id}/inner`]), target.entity.id);
+    reparentSelection(sel([instancedId(host.entity.id, INNER)]), target.entity.id);
     // Nothing to do, and nothing thrown: the next expansion would undo it anyway.
     expect(doc().scene.entities.get(target.entity.id)?.children).toEqual([]);
   });

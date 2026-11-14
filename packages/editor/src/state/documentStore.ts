@@ -1,4 +1,10 @@
-import { createEmptyScene, splitInstancedId, validateHierarchy, type SceneDoc } from '@three-studio/core';
+import {
+  createEmptyScene,
+  splitInstancedId,
+  validateHierarchy,
+  type EntityId,
+  type SceneDoc,
+} from '@three-studio/core';
 import { applyPatches, enableMapSet, enablePatches, produceWithPatches, type Patch } from 'immer';
 import { create } from 'zustand';
 import { useEditorStore } from './editorStore';
@@ -38,7 +44,7 @@ export interface MutationOptions {
    * Setting the selection *after* `mutate` was the defect: the change was not in
    * the entry, so undo could not take it back.
    */
-  select?: readonly string[] | ((scene: SceneDoc) => readonly string[]);
+  select?: readonly EntityId[] | ((scene: SceneDoc) => readonly EntityId[]);
 }
 
 /**
@@ -51,7 +57,10 @@ export interface MutationOptions {
  * `local` half no longer resolves — coarser, but wrong in the harmless
  * direction, where the alternative clears a selection the user can see.
  */
-export function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
+export function pruneSelection(
+  scene: SceneDoc,
+  selection: readonly EntityId[],
+): readonly EntityId[] {
   const kept = selection.filter((id) => {
     const parts = splitInstancedId(id);
     return scene.entities.has(parts === null ? id : parts.owner);

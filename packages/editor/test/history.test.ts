@@ -1,4 +1,10 @@
-import { createEmptyScene, createEntity, createMeshEntity, serializeScene } from '@three-studio/core';
+import {
+  createEmptyScene,
+  createEntity,
+  createMeshEntity,
+  serializeScene,
+  type EntityId,
+} from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addEntity,
@@ -16,7 +22,7 @@ import { Selection } from '../src/state/selection';
 import { expandedScene } from '../src/state/expansion';
 
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
 
 /*
  * The round-trip property, the measure that pays for itself

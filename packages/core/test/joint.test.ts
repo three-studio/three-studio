@@ -2,6 +2,7 @@ import {
   createJoint,
   createJointMotion,
   fillComponent,
+  fixedId,
   jointFrame,
   type ComponentDoc,
   type JointComponent,
@@ -41,8 +42,9 @@ describe('a stored joint', () => {
   });
 
   it('keeps the entity it names, and the world it is held to', () => {
-    const named = fillComponent({ ...createJoint(), connectedEntity: 'frame' }) as JointComponent;
-    expect(named.connectedEntity).toBe('frame');
+    const frame = fixedId('entity', 'frame');
+    const named = fillComponent({ ...createJoint(), connectedEntity: frame }) as JointComponent;
+    expect(named.connectedEntity).toBe(frame);
     expect((fillComponent(createJoint()) as JointComponent).connectedEntity).toBeNull();
   });
 });

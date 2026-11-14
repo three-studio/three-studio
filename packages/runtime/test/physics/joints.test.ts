@@ -1,6 +1,7 @@
 import {
   createEntity,
   createJointMotion,
+  type EntityId,
   type EntityTemplate,
   type JointLimits,
   type JointMotion,
@@ -66,7 +67,7 @@ function pendulum(limits?: Partial<JointLimits>, body?: Partial<RigidBodyCompone
 }
 
 /** How far a body has turned about z, right-handed, from where it was built level. */
-function turnAboutZ(rig: PhysicsRig, entityId: string): number {
+function turnAboutZ(rig: PhysicsRig, entityId: EntityId): number {
   const { quaternion } = rig.solved(entityId);
   return 2 * Math.atan2(quaternion.z, quaternion.w);
 }
@@ -84,7 +85,7 @@ function wheel(motor?: Partial<JointMotor>): EntityTemplate {
  * of its frame ever came off `pivot`, how far it ever left the plane z = 0, and
  * the lowest its centre went.
  */
-function swing(rig: PhysicsRig, entityId: string, anchor: Vector3, pivot: Vector3, seconds: number) {
+function swing(rig: PhysicsRig, entityId: EntityId, anchor: Vector3, pivot: Vector3, seconds: number) {
   let farthest = 0;
   let offPlane = 0;
   let lowest = Number.POSITIVE_INFINITY;

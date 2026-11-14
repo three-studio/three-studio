@@ -1,4 +1,4 @@
-import type { EntityDoc, FieldDef } from '@three-studio/core';
+import { isEntityId, type EntityDoc, type FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { BehaviourContext } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
@@ -231,7 +231,9 @@ export abstract class Behaviour {
 
   /** Resolves an `entity` property to a live handle, or `null` if it is unset. */
   protected resolve(entityId: string | null | undefined): EntityHandle | null {
-    if (!entityId) return null;
+    // What a script holds is text, and what it names is read as an id before
+    // the scene is asked: an empty one, or one that is not text, names nothing.
+    if (!isEntityId(entityId)) return null;
     const ctx = internalContext.get(this);
     const doc = ctx?.scene.entities.get(entityId);
     const object = ctx?.binder.getObject(entityId);

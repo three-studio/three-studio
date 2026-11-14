@@ -1,16 +1,17 @@
 import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, isRecord, serializeScene, type SceneDoc } from '@three-studio/core';
+import { deserializeScene, isRecord, serializeScene, type EntityId, type SceneDoc } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeLargeProject } from '../generate/projects';
 import {
   decodeNumberList,
   decodeNumbers,
+  entityIdAt,
+  entityIdsAt,
   freePort,
   numberAt,
   runInPage,
   stringAt,
-  stringsAt,
 } from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import {
@@ -72,14 +73,14 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
 ]);
 
 /** The first `count` groups at the root — entities with children — in the scene's order. */
-export function groupsToSelect(scene: SceneDoc, count: number): string[] {
+export function groupsToSelect(scene: SceneDoc, count: number): EntityId[] {
   const groups = scene.rootOrder.filter((id) => (scene.entities.get(id)?.children.length ?? 0) > 0);
   if (groups.length < count) throw new Error(`the scene has ${groups.length} groups, not ${count}`);
   return groups.slice(0, count);
 }
 
 /** How many entities these and everything under them make. */
-export function subtreeSize(scene: SceneDoc, ids: readonly string[]): number {
+export function subtreeSize(scene: SceneDoc, ids: readonly EntityId[]): number {
   let total = 0;
   const pending = [...ids];
   for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
@@ -125,12 +126,12 @@ interface Subject {
    * A/B — opens the same file and weighs the same bytes.
    */
   readonly snapshot: string;
-  readonly ids: readonly string[];
-  readonly groups: readonly string[];
+  readonly ids: readonly EntityId[];
+  readonly groups: readonly EntityId[];
   /** What a duplicate of the groups adds: the groups and their children. */
   readonly added: number;
   /** One prop, the kind of entity a drag holds, batched with its like. */
-  readonly dragged: string;
+  readonly dragged: EntityId;
 }
 
 function decodeSubject(value: unknown): Subject {
@@ -139,10 +140,10 @@ function decodeSubject(value: unknown): Subject {
     project: stringAt(value, 'project'),
     scenePath: stringAt(value, 'scenePath'),
     snapshot: stringAt(value, 'snapshot'),
-    ids: stringsAt(value, 'ids'),
-    groups: stringsAt(value, 'groups'),
+    ids: entityIdsAt(value, 'ids'),
+    groups: entityIdsAt(value, 'groups'),
     added: numberAt(value, 'added'),
-    dragged: stringAt(value, 'dragged'),
+    dragged: entityIdAt(value, 'dragged'),
   };
 }
 

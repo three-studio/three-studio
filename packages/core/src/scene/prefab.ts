@@ -1,6 +1,13 @@
 import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { isRecord } from '../conform';
-import { createAssetId, idMapOf, isAssetId, type AssetId } from '../ids';
+import {
+  createAssetId,
+  idMapOf,
+  isAssetId,
+  isEntityId,
+  type AssetId,
+  type EntityId,
+} from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -49,17 +56,17 @@ export interface PrefabDoc {
   id: AssetId;
   name: string;
   /** Ids are local to the prefab, and stay stable so overrides keep pointing. */
-  entities: Map<string, EntityDoc>;
+  entities: Map<EntityId, EntityDoc>;
   /** The same block a scene carries — see `ComponentTables`. */
   components: ComponentTables;
-  root: string;
+  root: EntityId;
 }
 
 export function createPrefabDoc(
   name: string,
   entities: EntityDoc[],
   components: ComponentTables,
-  root: string,
+  root: EntityId,
 ): PrefabDoc {
   return {
     version: PREFAB_FORMAT_VERSION,
@@ -78,7 +85,7 @@ export function createPrefabDoc(
  * components of exactly those entities. Taking the whole block would put every
  * other entity's components in the prefab; taking none loses them.
  */
-function componentsFor(host: ComponentHost, ids: readonly string[]): ComponentTables {
+function componentsFor(host: ComponentHost, ids: readonly EntityId[]): ComponentTables {
   const tables = emptyComponentTables();
   const wanted = new Set(ids);
   for (const type of COMPONENT_TYPES) {
@@ -97,7 +104,7 @@ function componentsFor(host: ComponentHost, ids: readonly string[]): ComponentTa
  * Where an instance sits is the instance's business, and a prefab that
  * remembered where it was first made would drop every copy in the same spot.
  */
-export function prefabFromEntities(name: string, scene: SceneDoc, rootId: string): PrefabDoc {
+export function prefabFromEntities(name: string, scene: SceneDoc, rootId: EntityId): PrefabDoc {
   const ids = [rootId, ...collectDescendants(scene, rootId)];
   const entities = ids
     .map((id) => scene.entities.get(id))
@@ -199,20 +206,31 @@ export function variantBaseOf(prefab: PrefabDoc): AssetId | null {
   return only && instance && instance.assetId !== '' ? instance.assetId : null;
 }
 
-/** The id an instance's copy of a prefab entity gets in the expanded scene. */
-export function instancedId(instanceId: string, localId: string): string {
-  return `${instanceId}${PREFAB_ID_SEPARATOR}${localId}`;
+/**
+ * The id an instance's copy of a prefab entity gets in the expanded scene: an
+ * entity id of its own, `owner/local`, composed of two that are not empty.
+ */
+export function instancedId(instanceId: EntityId, localId: EntityId): EntityId {
+  const id = `${instanceId}${PREFAB_ID_SEPARATOR}${localId}`;
+  // It holds the separator, so it is never empty and the check cannot fail: it
+  // is what narrows the text to an id, where a cast would claim that it is one.
+  if (!isEntityId(id)) throw new Error(`No entity id can be made of "${id}".`);
+  return id;
 }
 
 /** The instance an expanded id belongs to, or `null` for a scene's own entity. */
-export function instanceOwnerOf(id: string): string | null {
+export function instanceOwnerOf(id: EntityId): EntityId | null {
   const index = id.indexOf(PREFAB_ID_SEPARATOR);
-  return index === -1 ? null : id.slice(0, index);
+  if (index === -1) return null;
+  const owner = id.slice(0, index);
+  return isEntityId(owner) ? owner : null;
 }
 
 /**
  * Splits an expanded id into the instance that placed it and the id it has
- * inside that prefab. `null` for an entity the document holds itself.
+ * inside that prefab. `null` for an entity the document holds itself, and for
+ * an id with an empty half: the owner and every id on the path after it name an
+ * entity, and an id is never empty.
  *
  * `local` is the whole path from the instance to the entity — `lampRoot` for
  * something the prefab holds directly, `inner/lampRoot` for something a prefab
@@ -220,17 +238,18 @@ export function instanceOwnerOf(id: string): string | null {
  * `depth` counts the prefabs crossed, for anything that wants to say so.
  */
 export function splitInstancedId(
-  id: string,
-): { owner: string; local: string; depth: number } | null {
+  id: EntityId,
+): { owner: EntityId; local: EntityId; depth: number } | null {
   const index = id.indexOf(PREFAB_ID_SEPARATOR);
   if (index === -1) return null;
 
-  const rest = id.slice(index + 1);
-  return {
-    owner: id.slice(0, index),
-    local: rest,
-    depth: rest.split(PREFAB_ID_SEPARATOR).length,
-  };
+  const owner = id.slice(0, index);
+  const local = id.slice(index + 1);
+  const path = local.split(PREFAB_ID_SEPARATOR);
+  if (!isEntityId(owner) || !isEntityId(local) || !path.every((segment) => isEntityId(segment))) {
+    return null;
+  }
+  return { owner, local, depth: path.length };
 }
 
 /**
@@ -244,7 +263,7 @@ export function splitInstancedId(
  */
 export function prefabInstanceOf(
   host: ComponentHost,
-  entityId: string,
+  entityId: EntityId,
 ): PrefabInstanceComponent | undefined {
   return findComponent(host, entityId, 'prefabInstance');
 }
@@ -285,7 +304,7 @@ export function expandPrefabs(
 
   const entities = new Map(scene.entities);
   const components = copyComponentTables(scene.components);
-  const sources = new Map<string, InstanceSource>();
+  const sources = new Map<EntityId, InstanceSource>();
 
   const adopt = (produced: Produced): void => {
     for (const entity of produced.entities) entities.set(entity.id, entity);
@@ -333,7 +352,7 @@ export function expandPrefabs(
 export interface ExpandedScene {
   scene: SceneDoc;
   /** What each instance produced, so the next expansion can reuse it. */
-  sources: Map<string, InstanceSource>;
+  sources: Map<EntityId, InstanceSource>;
 }
 
 /** One instance's contents: the entities, and the components they carry. */
@@ -401,8 +420,8 @@ function sameChain(
  */
 function findInstances(
   scene: SceneDoc,
-): { entityId: string; component: PrefabInstanceComponent }[] {
-  const found: { entityId: string; component: PrefabInstanceComponent }[] = [];
+): { entityId: EntityId; component: PrefabInstanceComponent }[] {
+  const found: { entityId: EntityId; component: PrefabInstanceComponent }[] = [];
   for (const entityId of entitiesWith(scene, 'prefabInstance')) {
     // One per entity: a second would produce the same ids as the first and
     // silently overwrite half of it.
@@ -423,13 +442,22 @@ function findInstances(
  * reach through nesting the same way, and for the same reason.
  */
 interface OverrideLayer {
-  overrides: Record<string, PrefabOverride>;
-  /** Empty where the layer was written; `inner/` one prefab in; `a/b/` two. */
-  prefix: string;
+  overrides: Record<EntityId, PrefabOverride>;
+  /**
+   * Where the layer was written, as the entity it reaches through: `null` for
+   * the instance's own, `inner` one prefab in, `a/b` two. An id, which is what
+   * an override is keyed by.
+   */
+  prefix: EntityId | null;
+}
+
+/** The key a layer holds an override for `local` under, from where the layer was written. */
+function overrideKey(prefix: EntityId | null, local: EntityId): EntityId {
+  return prefix === null ? local : instancedId(prefix, local);
 }
 
 function instantiate(
-  hostId: string,
+  hostId: EntityId,
   prefab: PrefabDoc,
   component: PrefabInstanceComponent,
   prefabs: PrefabLibrary,
@@ -441,7 +469,7 @@ function instantiate(
   // Nearest first, so the ones further out are applied last and win: what the
   // scene says about an object beats what the variant that placed it says,
   // which in turn beats the base. Same order of authority as Unity's.
-  const layers: OverrideLayer[] = [{ overrides: component.overrides, prefix: '' }, ...inherited];
+  const layers: OverrideLayer[] = [{ overrides: component.overrides, prefix: null }, ...inherited];
 
   for (const local of prefab.entities.values()) {
     const copy: EntityDoc = {
@@ -459,7 +487,7 @@ function instantiate(
     let held = componentsOf(prefab, local.id).map((held) => structuredClone(held));
 
     for (const layer of layers) {
-      const override = layer.overrides[`${layer.prefix}${local.id}`];
+      const override = layer.overrides[overrideKey(layer.prefix, local.id)];
       if (override) held = applyPrefabOverride(copy, held, override);
     }
     // A component that points at another entity — a script property declared
@@ -495,7 +523,7 @@ function instantiate(
       [...ancestry, inner.assetId],
       layers.map((layer) => ({
         overrides: layer.overrides,
-        prefix: `${layer.prefix}${local.id}${PREFAB_ID_SEPARATOR}`,
+        prefix: overrideKey(layer.prefix, local.id),
       })),
     );
     produced.entities.push(...nested.entities);
@@ -596,6 +624,10 @@ export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
   if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
   const id = assetId ?? input['id'];
   if (!isAssetId(id)) throw new SceneFormatError('Prefab file has no id of its own.');
+  // The entity every other one hangs under. Without an id for it there is no
+  // instance to make: each copy would be parented to an entity named "".
+  const root = input['root'];
+  if (!isEntityId(root)) throw new SceneFormatError('Prefab file has no root entity.');
 
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
@@ -612,10 +644,9 @@ export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
     name: input['name'],
     entities: input['entities'],
     components: input['components'],
-    rootOrder: [input['root']],
+    rootOrder: [root],
     environment: createEmptyScene().environment,
   });
-  const root = input['root'];
 
   return {
     version: PREFAB_FORMAT_VERSION,
@@ -623,7 +654,7 @@ export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
     name: asScene.name,
     entities: asScene.entities,
     components: asScene.components,
-    root: typeof root === 'string' ? root : '',
+    root,
   };
 }
 

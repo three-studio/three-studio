@@ -472,7 +472,7 @@ describe('scene migration', () => {
       environment: createEnvironment(),
     });
 
-    const model = findComponent(deserializeScene(json), 'e1', 'model')!;
+    const model = findComponent(deserializeScene(json), fixedId('entity', 'e1'), 'model')!;
 
     // `''` is what "the whole file" has always meant, so the scene draws exactly
     // what it drew — which is the only way to add a field to a persisted format

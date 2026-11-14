@@ -1,4 +1,10 @@
-import { createEntity, createMeshEntity, instancedId, type EntityTemplate } from '@three-studio/core';
+import {
+  createEntity,
+  createMeshEntity,
+  fixedId,
+  instancedId,
+  type EntityTemplate,
+} from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { Selection } from '../src/state/selection';
@@ -44,14 +50,14 @@ describe('counting', () => {
     const selection = Selection.of([a.entity.id], scene);
 
     expect(selection.has(a.entity.id)).toBe(true);
-    expect(selection.has('nobody')).toBe(false);
+    expect(selection.has(fixedId('entity', 'nobody'))).toBe(false);
   });
 
   it('drops ids the scene no longer holds', () => {
     const a = createMeshEntity('box');
     const scene = sceneWith([a]);
 
-    expect(Selection.of([a.entity.id, 'ghost'], scene).ids).toEqual([a.entity.id]);
+    expect(Selection.of([a.entity.id, fixedId('entity', 'ghost')], scene).ids).toEqual([a.entity.id]);
   });
 });
 
@@ -80,7 +86,7 @@ describe('the named filters', () => {
     const produced = createEntity('Trunk');
     // As the expanded scene has it: a real entity under an instanced id.
     Object.defineProperty(produced.entity, 'id', {
-      value: instancedId(host.entity.id, 'trunk'),
+      value: instancedId(host.entity.id, fixedId('entity', 'trunk')),
     });
     const scene = sceneWith([host, produced]);
 

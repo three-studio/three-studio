@@ -3,6 +3,7 @@ import {
   createLightEntity,
   createMeshEntity,
   createRenderingSettings,
+  type EntityId,
 } from '@three-studio/core';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
@@ -94,7 +95,7 @@ describe('what gets a box', () => {
      */
     const box = createMeshEntity('box');
     const { outline, binder } = outlineFor([box]);
-    const resolve = (id: string) => binder.getObject(id);
+    const resolve = (id: EntityId) => binder.getObject(id);
 
     outline.update([box.entity.id], resolve);
     expect(outline.root.children).toHaveLength(1);

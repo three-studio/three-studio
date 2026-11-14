@@ -69,7 +69,7 @@ const ALPHA = fixedId('scene', 'alpha');
 const BETA = fixedId('scene', 'beta');
 
 function snapshot(): LaunchSnapshot {
-  const crate = createPrefabDoc('Crate', [], emptyComponentTables(), '');
+  const crate = createPrefabDoc('Crate', [], emptyComponentTables(), fixedId('entity', 'root'));
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: ENTRY, name: 'Level', scene: createStarterScene() },

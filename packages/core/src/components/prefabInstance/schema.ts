@@ -1,4 +1,4 @@
-import type { AssetId, ComponentId } from '../../ids';
+import type { AssetId, ComponentId, EntityId } from '../../ids';
 import type { ComponentBase, Transform } from '../../scene/primitives';
 
 /**
@@ -23,7 +23,7 @@ export interface PrefabInstanceComponent extends ComponentBase {
    * having: the prefab says what a tree is, the override says this one is
    * shorter.
    */
-  overrides: Record<string, PrefabOverride>;
+  overrides: Record<EntityId, PrefabOverride>;
 }
 
 export interface PrefabOverride {

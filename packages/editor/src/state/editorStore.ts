@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { create } from 'zustand';
 
 /** What the gizmo does with the current selection. Mirrors Unity's Q/W/E/R. */
@@ -71,7 +72,7 @@ interface EditorState {
    */
   fullScreen: boolean;
   stepRequested: boolean;
-  selection: readonly string[];
+  selection: readonly EntityId[];
   /**
    * The entity a view has been asked to put into inline edit, or `null`.
    *
@@ -88,7 +89,7 @@ interface EditorState {
    * being edited", which is a question about the editor and not about the panel
    * that happens to draw it.
    */
-  renaming: string | null;
+  renaming: EntityId | null;
   /**
    * Whether the command palette is up.
    *
@@ -131,10 +132,10 @@ interface EditorState {
   toggleGrid: () => void;
   toggleStats: () => void;
   togglePhysicsDebug: () => void;
-  setSelection: (ids: readonly string[]) => void;
+  setSelection: (ids: readonly EntityId[]) => void;
   clearSelection: () => void;
   /** Asks whichever view holds this entity to edit its name in place. */
-  beginRename: (entityId: string) => void;
+  beginRename: (entityId: EntityId) => void;
   /** Cleared by the view when the field closes, committed or abandoned. */
   endRename: () => void;
   openPalette: () => void;

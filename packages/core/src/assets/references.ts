@@ -1,6 +1,6 @@
 import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
 import { materialAssets } from '../components/materialAssets';
-import { isAssetId, type AssetId } from '../ids';
+import { isAssetId, type AssetId, type EntityId } from '../ids';
 import { COMPONENT_TYPES, tableOf, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
@@ -29,7 +29,7 @@ export function environmentAssets(environment: EnvironmentDef): readonly (AssetI
  */
 export interface AssetUsage {
   /** Entities in the scene, by id. */
-  entities: string[];
+  entities: EntityId[];
   /** Material assets whose texture slots name it. */
   materials: AssetId[];
   /** Prefab assets whose contents name it. */
@@ -88,7 +88,7 @@ export function findAssetUsage(
 ): AssetUsage {
   const usage: AssetUsage = { entities: [], materials: [], prefabs: [], environment: false };
 
-  const named = new Set<string>();
+  const named = new Set<EntityId>();
   for (const [entityId, component] of eachComponent(scene)) {
     if (componentNames(component).includes(assetId)) named.add(entityId);
   }
@@ -120,7 +120,7 @@ export function findAssetUsage(
  * and a prefab — which is what these two functions have to guarantee, since one
  * says an asset ships and the other says nothing references it.
  */
-function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> {
+function* eachComponent(host: ComponentHost): Generator<[EntityId, ComponentDoc]> {
   for (const type of COMPONENT_TYPES) {
     for (const [entityId, held] of tableOf(host.components, type)) {
       for (const component of held.values()) yield [entityId, component];
@@ -153,7 +153,7 @@ export function unknownComponentTypes(host: ComponentHost): string[] {
 /** An id a document names that nothing in the project answers to. */
 export interface BrokenReference {
   /** The entity whose component names it; `null` for the scene's environment. */
-  entityId: string | null;
+  entityId: EntityId | null;
   assetId: AssetId;
 }
 
@@ -183,7 +183,7 @@ export function findBrokenReferences(
   const broken: BrokenReference[] = [];
   const seen = new Set<string>();
 
-  const note = (entityId: string | null, assetId: AssetId | '' | null): void => {
+  const note = (entityId: EntityId | null, assetId: AssetId | '' | null): void => {
     // `''` is a slot the author has not filled, which is not the same thing as
     // one pointing at something gone: an empty Texture field is how a material
     // says it has no normal map.
@@ -217,8 +217,8 @@ export function findBrokenReferences(
  * Play. `null` and `''` are empty slots, as an asset's are. Give it the
  * expanded scene to reach what prefab instances place.
  */
-export function findMissingEntities(scene: SceneDoc): { entityId: string; type: ComponentType }[] {
-  const missing: { entityId: string; type: ComponentType }[] = [];
+export function findMissingEntities(scene: SceneDoc): { entityId: EntityId; type: ComponentType }[] {
+  const missing: { entityId: EntityId; type: ComponentType }[] = [];
   for (const [entityId, component] of eachComponent(scene)) {
     const gone = componentEntities(component).some(
       (id) => id !== null && id !== '' && !scene.entities.has(id),
@@ -306,7 +306,7 @@ export function collectSceneAssets(
  * "can I delete this" but "how many objects does editing this touch", which is
  * what makes an Apply safe to press.
  */
-export function findPrefabInstances(assetId: AssetId | '', scene: SceneDoc): string[] {
+export function findPrefabInstances(assetId: AssetId | '', scene: SceneDoc): EntityId[] {
   return [...scene.components.prefabInstance]
     .filter(([, held]) => [...held.values()].some((component) => component.assetId === assetId))
     .map(([entityId]) => entityId);

@@ -1,4 +1,4 @@
-import type { AssetId, ModelComponent } from '@three-studio/core';
+import type { AssetId, EntityId, ModelComponent } from '@three-studio/core';
 import { Mesh, type Material, type Object3D } from 'three/webgpu';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
@@ -64,7 +64,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     return handle.materialKey;
   }
 
-  mount(entityId: string, component: ModelComponent, ctx: SystemContext): ModelHandle {
+  mount(entityId: EntityId, component: ModelComponent, ctx: SystemContext): ModelHandle {
     const handle: ModelHandle = {
       assetId: component.assetId,
       nodePath: component.nodePath,
@@ -212,7 +212,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     }
   }
 
-  private load(entityId: string, handle: ModelHandle, ctx: SystemContext): void {
+  private load(entityId: EntityId, handle: ModelHandle, ctx: SystemContext): void {
     const { assetId } = handle;
     if (assetId === '') return;
 
@@ -276,7 +276,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
    * drew, and `unmount` would have to know about it.
    */
   private place(
-    entityId: string,
+    entityId: EntityId,
     handle: ModelHandle,
     ctx: SystemContext,
     object: Object3D,

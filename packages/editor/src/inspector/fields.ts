@@ -19,6 +19,7 @@ import {
   type AssetKind,
   type ComponentDoc,
   type ComponentId,
+  type EntityId,
   type FieldDef,
   type GeometryKind,
 } from '@three-studio/core';
@@ -133,7 +134,7 @@ export interface ActionSpec {
    */
   label?: string;
   visibleWhen?: (component: ComponentDoc) => boolean;
-  run: (context: { entityId: string; componentId: ComponentId; component: ComponentDoc }) => void;
+  run: (context: { entityId: EntityId; componentId: ComponentId; component: ComponentDoc }) => void;
 }
 
 /**

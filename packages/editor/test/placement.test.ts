@@ -13,6 +13,8 @@ import {
   type AssetId,
   type AssetKind,
   type AssetSettings,
+  type EntityId,
+  type EntityTemplate,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { close, prefabWith } from '../../core/test/fixtures';
@@ -86,9 +88,14 @@ describe('the transform a template needs to land on a point', () => {
   });
 });
 
+/** The id the Add menu gives an entity it placed. */
+function addedInView(template: EntityTemplate): EntityId {
+  return assertDefined(addEntityInView(template), 'the entity the Add menu placed');
+}
+
 describe('adding from the menu', () => {
   it('goes to the root', () => {
-    const id = addEntityInView(createMeshEntity('box'))!;
+    const id = addedInView(createMeshEntity('box'));
 
     expect(doc().scene.rootOrder).toContain(id);
     expect(doc().scene.entities.get(id)?.parent).toBeNull();
@@ -106,7 +113,7 @@ describe('adding from the menu', () => {
     const selected = addEntity(createEntity('Parent'));
     useEditorStore.getState().setSelection([selected]);
 
-    const id = addEntityInView(createMeshEntity('box'))!;
+    const id = addedInView(createMeshEntity('box'));
 
     expect(doc().scene.entities.get(id)?.parent).toBeNull();
     expect(doc().scene.entities.get(selected)?.children).toEqual([]);
@@ -114,7 +121,7 @@ describe('adding from the menu', () => {
   });
 
   it('leaves an ambient light at the origin', () => {
-    const id = addEntityInView(createLightEntity('ambient'))!;
+    const id = addedInView(createLightEntity('ambient'));
 
     expect(doc().scene.entities.get(id)?.transform.position).toEqual([0, 0, 0]);
   });
@@ -123,7 +130,7 @@ describe('adding from the menu', () => {
     const selected = addEntity(createEntity('Parent'));
     useEditorStore.getState().setSelection([selected]);
 
-    const id = addEntityInView(createMeshEntity('box'))!;
+    const id = addedInView(createMeshEntity('box'));
     expect(useEditorStore.getState().selection).toEqual([id]);
 
     doc().undo();

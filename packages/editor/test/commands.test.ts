@@ -10,6 +10,8 @@ import {
   findComponent,
   fixedId,
   putComponent,
+  type EntityDoc,
+  type EntityId,
   type ProjectFile,
   type SceneEntry,
   type SceneId,
@@ -47,7 +49,7 @@ beforeEach(() => {
 });
 
 /** A locked cube, selected. Everything below is a question about it. */
-function lockedAndSelected(): string {
+function lockedAndSelected(): EntityId {
   const cube = createMeshEntity('box');
   const id = addEntity(cube);
   doc().mutate('Lock', (draft) => {
@@ -257,7 +259,7 @@ describe('a gesture aimed at an asset', () => {
 
 describe('the two prefab menus ask one question', () => {
   /** A cube that is an instance of prefab `p1`, selected, with no overrides yet. */
-  async function instanceOfAPrefab(): Promise<string> {
+  async function instanceOfAPrefab(): Promise<EntityId> {
     const { useAssetStore } = await import('../src/state/assetStore');
     const id = addEntity(createMeshEntity('box'));
     doc().mutate('Instance', (draft) => {
@@ -271,9 +273,9 @@ describe('the two prefab menus ask one question', () => {
             version: 1,
             id: PREFAB,
             name: 'Crate',
-            entities: new Map(),
+            entities: new Map<EntityId, EntityDoc>(),
             components: emptyComponentTables(),
-            root: '',
+            root: fixedId('entity', 'crate-root'),
           },
         ],
       ]),
@@ -304,7 +306,7 @@ describe('the two prefab menus ask one question', () => {
     const id = await instanceOfAPrefab();
     doc().mutate('Override', (draft) => {
       const component = findComponent(draft, id, 'prefabInstance');
-      if (component) component.overrides = { local: { name: 'Renamed' } };
+      if (component) component.overrides = { [fixedId('entity', 'local')]: { name: 'Renamed' } };
     });
 
     expect(commandById('applyPrefabOverrides').can()).toBe(true);

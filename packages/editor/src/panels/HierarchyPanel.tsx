@@ -7,6 +7,7 @@ import {
   splitInstancedId,
   type ComponentIcon,
   type ComponentType,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import {
@@ -43,7 +44,7 @@ import { instanceInfo } from '../commands/prefabCommands';
 import { commandEntry } from '../shell/commandEntry';
 import { knownAssetIds } from '../state/brokenReport';
 import { expandedScene } from '../state/expansion';
-import { isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
+import { draggedEntityIds, isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
 import { buildRows } from './hierarchyRows';
 import { ROW_HEIGHT, rowWindow } from './hierarchyWindow';
 import { Selection } from '../state/selection';
@@ -127,7 +128,7 @@ const RANKED_TYPES = COMPONENT_TYPES.filter((type) => ICON_PRIORITY[type] !== FA
   (a, b) => ICON_PRIORITY[a] - ICON_PRIORITY[b],
 );
 
-function entityIcon(scene: SceneDoc, entityId: string): LucideIcon {
+function entityIcon(scene: SceneDoc, entityId: EntityId): LucideIcon {
   for (const type of RANKED_TYPES) {
     if (!hasComponent(scene, entityId, type)) continue;
     const icon = componentDefinition(type)?.icon;
@@ -160,17 +161,17 @@ export function HierarchyPanel() {
   const expanded = expandedScene().scene;
   const selected = Selection.of(selection, expanded);
 
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(new Set());
   const [filter, setFilter] = useState('');
   // The store's, not this panel's: a command has to be able to start a rename,
   // and only something outside the panel can be reached from a menu, a key or a
   // palette. See `editorStore.renaming`.
   const renaming = useEditorStore((s) => s.renaming);
   const endRename = useEditorStore((s) => s.endRename);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<EntityId | null>(null);
   /** The row a between-rows drop would land above, for the insertion line. */
-  const [dropBetween, setDropBetween] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; entityId: string } | null>(null);
+  const [dropBetween, setDropBetween] = useState<EntityId | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; entityId: EntityId } | null>(null);
   /*
    * Read-only while the game runs: nothing edits the scene until Stop. What
    * stays is everything that only reads it — the search, folding, selecting,
@@ -199,7 +200,7 @@ export function HierarchyPanel() {
    */
   const brokenBy = useMemo(() => {
     const { scene } = expandedScene();
-    const assets = new Map<string, string[]>();
+    const assets = new Map<EntityId, string[]>();
     for (const { entityId, assetId } of findBrokenReferences(scene, knownAssetIds())) {
       // The environment is not a row. It is reported at load and shown in the
       // Inspector; there is nothing here to mark.
@@ -208,8 +209,8 @@ export function HierarchyPanel() {
       if (named) named.push(assetId);
       else assets.set(entityId, [assetId]);
     }
-    const byEntity = new Map<string, string[]>();
-    const say = (entityId: string, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
+    const byEntity = new Map<EntityId, string[]>();
+    const say = (entityId: EntityId, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
     for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
     for (const { entityId, type } of findMissingEntities(scene)) {
       say(entityId, `Its ${COMPONENT_PANES[type].label} names an entity this scene does not have`);
@@ -234,7 +235,7 @@ export function HierarchyPanel() {
   const { first, last, above, below } = rowWindow(rows.length, scrollTop, height);
   const visibleRows = rows.slice(first, last);
 
-  const toggleCollapsed = (id: string) =>
+  const toggleCollapsed = (id: EntityId) =>
     setCollapsed((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -242,7 +243,7 @@ export function HierarchyPanel() {
       return next;
     });
 
-  const onRowClick = (event: MouseEvent, id: string) => {
+  const onRowClick = (event: MouseEvent, id: EntityId) => {
     if (event.shiftKey) {
       // A range, from whatever was picked last. `null` when either end is off
       // the list — a filter can hide the anchor — and the click is then plain.
@@ -262,7 +263,7 @@ export function HierarchyPanel() {
   };
 
   /** Row actions only — creating objects stays in the Add menu of the menu bar. */
-  const openMenu = (event: MouseEvent, entityId: string) => {
+  const openMenu = (event: MouseEvent, entityId: EntityId) => {
     event.preventDefault();
     event.stopPropagation();
     // Right-clicking outside the selection acts on what was clicked, not on a
@@ -271,7 +272,7 @@ export function HierarchyPanel() {
     setMenu({ x: event.clientX, y: event.clientY, entityId });
   };
 
-  const menuItems = (entityId: string): MenuEntry[] => {
+  const menuItems = (entityId: EntityId): MenuEntry[] => {
     const targets = selected.has(entityId) ? selected : Selection.of([entityId], expandedScene().scene);
     const many = targets.isMultiple;
     const instance = splitInstancedId(entityId);
@@ -362,7 +363,7 @@ export function HierarchyPanel() {
    *   before, though `reparentEntity` has always taken an index — the panel
    *   simply never passed one.
    */
-  const onDrop = (event: DragEvent, targetId: string | null, index?: number) => {
+  const onDrop = (event: DragEvent, targetId: EntityId | null, index?: number) => {
     event.preventDefault();
     event.stopPropagation();
     setDropTarget(null);
@@ -378,8 +379,9 @@ export function HierarchyPanel() {
     }
 
     // The whole selection travels, not just the row under the pointer — which is
-    // what dragging one of several highlighted rows plainly means.
-    const ids = dragged.split(' ').filter((id) => id !== '');
+    // what dragging one of several highlighted rows plainly means. Read as ids:
+    // the payload is text, and an empty piece of it names no entity.
+    const ids = draggedEntityIds(dragged);
     reparentSelection(Selection.of(ids, expandedScene().scene), targetId, index);
   };
 

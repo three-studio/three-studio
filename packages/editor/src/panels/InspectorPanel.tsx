@@ -1,4 +1,10 @@
-import { addableTypes, componentsOf, splitInstancedId, type AssetId } from '@three-studio/core';
+import {
+  addableTypes,
+  componentsOf,
+  splitInstancedId,
+  type AssetId,
+  type EntityId,
+} from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
@@ -291,7 +297,7 @@ export function InspectorPanel() {
  * that lands somewhere unexpected — on the instance, not on the prefab — is
  * indistinguishable from one that did nothing.
  */
-function PrefabBanner({ id, depth, locked }: { id: string; depth: number; locked: boolean }) {
+function PrefabBanner({ id, depth, locked }: { id: EntityId; depth: number; locked: boolean }) {
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-prefab/10 px-2 py-1.5">
       <Boxes size={12} className="shrink-0 text-prefab" />
