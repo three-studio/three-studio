@@ -11,7 +11,6 @@ import {
   type ExportResult,
   type MaterialDef,
   type PhysicsMaterialDef,
-  type PrefabDoc,
   type ProjectContents,
   type ProjectFile,
   type ProjectSettings,
@@ -21,7 +20,7 @@ import {
   type DeviceScreenshot,
   type DeviceServerStatus,
   type DeviceSettingsPatch,
-  type LaunchSnapshot,
+  type LaunchSnapshotJson,
   type OpenProject,
   type PortHolder,
   type ProjectSummary,
@@ -36,8 +35,9 @@ import {
   conformSettingsPatch,
   conformDeviceSettingsPatch,
   conformLaunchSnapshot,
+  deserializePrefab,
   isDeviceId,
-  migratePrefab,
+  jsonOf,
   type BridgeHandlers,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
@@ -499,23 +499,27 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return createMaterialAsset(requireProject(), name, conformMaterial(material));
     },
 
-    readPrefabs: (): Promise<Record<string, PrefabDoc>> => readPrefabAssets(requireProject()),
+    readPrefabs: async (): Promise<Record<string, string>> => {
+      const prefabs = await readPrefabAssets(requireProject());
+      return Object.fromEntries(Object.entries(prefabs).map(([id, prefab]) => [id, jsonOf(prefab)]));
+    },
 
-    createPrefab: (_event, name: string, prefab: PrefabDoc, assetId?: string): Promise<string> => {
-      // `migratePrefab` rather than `conform`, and the difference is who wrote
-      // the data. A prefab has been read off the disk, possibly written by a
-      // build that knew a component type this one does not, and the migration
-      // is the one repair that keeps such a type instead of inventing a shape
-      // for it. Conforming it would drop the author's work on the round trip.
-      return createPrefabAsset(requireProject(), name, migratePrefab(prefab), assetId);
+    createPrefab: (_event, name: string, prefabJson: string, assetId?: string): Promise<string> => {
+      // `deserializePrefab` rather than `conform`, and the difference is who
+      // wrote the data. A prefab has been read off the disk, possibly written
+      // by a build that knew a component type this one does not, and the
+      // migration is the one repair that keeps such a type instead of
+      // inventing a shape for it. Conforming it would drop the author's work
+      // on the round trip.
+      return createPrefabAsset(requireProject(), name, deserializePrefab(prefabJson), assetId);
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
       return saveMaterialAsset(requireProject(), assetPath, conformMaterial(material));
     },
 
-    savePrefab: (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
-      return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
+    savePrefab: (_event, assetPath: string, prefabJson: string): Promise<void> => {
+      return savePrefabAsset(requireProject(), assetPath, deserializePrefab(prefabJson));
     },
 
     readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
@@ -611,7 +615,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     stop: (): Promise<DeviceServerStatus> => deps.devices.stop(),
 
-    launch: (_event, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> =>
+    launch: (_event, snapshot: LaunchSnapshotJson): Promise<DeviceServerStatus | null> =>
       // Conformed here, where it arrives: it is whatever the renderer sent, and
       // it becomes the files a phone downloads. See `conformLaunchSnapshot`.
       deps.devices.launch(requireProject(), conformLaunchSnapshot(snapshot)),

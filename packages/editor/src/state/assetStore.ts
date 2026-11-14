@@ -1,7 +1,9 @@
 import {
   applyAssetChange,
   assetUrl,
+  deserializePrefab,
   emptyManifest,
+  jsonOf,
   type AssetChange,
   type AssetEntry,
   type AssetKind,
@@ -164,19 +166,21 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
 
   refresh: () =>
     guard(set, async () => {
-      const [manifest, materials, physicsMaterials, prefabs] = await Promise.all([
+      const [manifest, materials, physicsMaterials, prefabTexts] = await Promise.all([
         window.studio.assets.list(),
         window.studio.assets.readMaterials(),
         window.studio.assets.readPhysicsMaterials(),
         window.studio.assets.readPrefabs(),
       ]);
+      const prefabs: Record<string, PrefabDoc> = {};
+      for (const [id, text] of Object.entries(prefabTexts)) prefabs[id] = deserializePrefab(text);
       set({ manifest, materials, physicsMaterials, prefabs, revision: get().revision + 1 });
       useDocumentStore.getState().noteLibraryChange('materials');
       useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
 
   createPrefab: async (name, prefab, assetId) => {
-    const created = await window.studio.assets.createPrefab(name, prefab, assetId);
+    const created = await window.studio.assets.createPrefab(name, jsonOf(prefab), assetId);
     await get().refresh();
     return created;
   },
@@ -215,7 +219,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   savePrefab: async (assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
-    await window.studio.assets.savePrefab(entry.path, prefab);
+    await window.studio.assets.savePrefab(entry.path, jsonOf(prefab));
     // Updated in place as well as written: every instance re-expands from this
     // table, and waiting for a re-read would show the old shape in between.
     const prefabs = { ...get().prefabs, [assetId]: prefab };

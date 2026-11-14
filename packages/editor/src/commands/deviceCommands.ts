@@ -1,5 +1,6 @@
 import {
   deviceLabel,
+  encodeLaunchSnapshot,
   type DeviceInfo,
   type DeviceLaunchOptions,
   type DeviceServerStatus,
@@ -181,15 +182,17 @@ function launchedNotes(status: DeviceServerStatus): string[] {
 }
 
 /**
- * The one call that launches, by hand or for live reload. A launch that became
- * current is this window's, kept with the snapshot it sent, and lifts a pause
- * of live reload: a launch got through. The devices' lines of the launches
- * before it leave the Console here, before the caller says what happened.
- * `null` — a newer launch, from any window, or a stop dropped it while it was
- * prepared — leaves everything as it was.
+ * The one call that launches, by hand or for live reload. The snapshot crosses
+ * the bridge encoded, its documents as text; what the window keeps is the
+ * snapshot itself, which live reload compares the next one with. A launch that
+ * became current is this window's, kept with the snapshot it sent, and lifts a
+ * pause of live reload: a launch got through. The devices' lines of the
+ * launches before it leave the Console here, before the caller says what
+ * happened. `null` — a newer launch, from any window, or a stop dropped it
+ * while it was prepared — leaves everything as it was.
  */
 async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
-  const status = await window.studio.devices.launch(snapshot);
+  const status = await window.studio.devices.launch(encodeLaunchSnapshot(snapshot));
   if (status === null) return null;
   const launch = status.launch;
   if (launch !== null) {

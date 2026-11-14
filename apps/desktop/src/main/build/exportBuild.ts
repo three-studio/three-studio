@@ -6,6 +6,7 @@ import {
   unknownComponentTypes,
   basePathProblem,
   deserializeScene,
+  jsonOf,
   normalizeBasePath,
   type AssetEntry,
   type BuildProfile,
@@ -329,7 +330,7 @@ async function planExport(
     prefabs: shippedPrefabs,
     scripts: scripts.file,
   });
-  plan.addBytes(BUILD_LAYOUT.manifest, JSON.stringify(build, null, 2), { kind: 'manifest' });
+  plan.addBytes(BUILD_LAYOUT.manifest, jsonOf(build, 2), { kind: 'manifest' });
 
   /*
    * GitHub Pages runs Jekyll, which leaves out every path starting with `_` —

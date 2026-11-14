@@ -27,9 +27,12 @@ import {
   createAudioSourceEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabDoc,
+  createPrefabInstance,
   createRenderingSettings,
   createStarterScene,
   deserializeScene,
+  emptyComponentTables,
   insertEntity,
   putComponent,
   serializeScene,
@@ -41,7 +44,7 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
+import { createPrefabAsset, readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { buildScripts } from '../src/main/scripts';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
@@ -409,6 +412,34 @@ describe('web export', () => {
     for (const gone of ['assets.json', 'materials.json', 'prefabs.json']) {
       expect(files).not.toContain(gone);
     }
+  });
+
+  it('writes the manifest in the order its fields are declared, a prefab among them', async () => {
+    /*
+     * A document holds Maps, and the manifest is written by the encoder for
+     * messages, which keeps the order things were built in. The writer for files
+     * sorts every key, and would put `assetSettings` first and rewrite every
+     * export's bytes: nothing about the format moved, so no export's does.
+     */
+    const { projectPath, templateRoot } = await makeProject();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+    const prefabId = await createPrefabAsset(projectPath, 'Crate', prefab);
+    // Only what a shipped scene places is shipped.
+    const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    insertEntity(scene, createEntity('Crate', [createPrefabInstance(prefabId)]));
+    await writeFile(scenePath, serializeScene(scene), 'utf8');
+
+    const outputDir = join(projectPath, '..', 'out-order');
+    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+
+    const text = await readFile(join(outputDir, ...BUILD_LAYOUT.manifest.split('/')), 'utf8');
+    const build = manifestOf(text);
+    expect(text.startsWith('{\n  "formatVersion": ')).toBe(true);
+    expect(Object.keys(build)).not.toEqual(Object.keys(build).sort());
+    expect(Object.keys(build.prefabs)).toEqual([prefabId]);
+    expect(build.prefabs[prefabId]).toMatchObject({ name: 'Crate', root: crate.entity.id });
   });
 
   it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {

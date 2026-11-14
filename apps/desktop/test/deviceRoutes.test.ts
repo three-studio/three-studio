@@ -8,10 +8,12 @@ import {
   CACHE_DIR,
   LAUNCH_SNAPSHOT_VERSION,
   SCENES_DIR,
+  conformLaunchSnapshot,
   createDeviceLaunchOptions,
   createEmptyScene,
   createMeshEntity,
   deserializeScene,
+  encodeLaunchSnapshot,
   insertEntity,
   serializeScene,
   type BuildManifest,
@@ -238,7 +240,7 @@ beforeAll(async () => {
     physics: settings.physics,
     loadingScene: null,
   };
-  const prepared = await prepareLaunch(root, snapshot);
+  const prepared = await prepareLaunch(root, conformLaunchSnapshot(encodeLaunchSnapshot(snapshot)));
 
   // A scaled copy, given by hand: what a device should download in place of
   // the source, under the source's name.

@@ -1,3 +1,5 @@
+import { isRecord } from './conform';
+
 /**
  * `JSON.stringify` with every object's keys in a fixed order, indented for a
  * diff.
@@ -37,14 +39,35 @@ export function stableJson(value: unknown): string {
 }
 
 function sortKeys(_key: string, value: unknown): unknown {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  if (!isRecord(value)) return value;
 
+  // A Map is the object it stands for: a document keeps its containers in
+  // Maps, and `JSON.stringify` writes a Map as `{}`.
+  const record = value instanceof Map ? Object.fromEntries(value) : value;
   // A fresh object, because insertion is the only way to set key order.
   // `JSON.stringify` calls the replacer again for each of these values, so one
   // pass covers the whole tree.
   const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = (value as Record<string, unknown>)[key];
+  for (const key of Object.keys(record).sort()) {
+    sorted[key] = record[key];
   }
   return sorted;
+}
+
+/**
+ * `JSON.stringify` that writes a Map as the object it stands for, in the order
+ * the Map holds its entries.
+ *
+ * For what is only going to be parsed again: a message over the bridge or to a
+ * device, a build's manifest. It does not sort, which is what `stableJson` does
+ * for a file a person reads, and what costs it most of its time: sorting
+ * allocates a copy of every object in the tree. The manifest's bytes are what
+ * `JSON.stringify` always wrote, and stay so.
+ */
+export function jsonOf(value: unknown, indent?: number): string {
+  return JSON.stringify(value, mapsAsObjects, indent);
+}
+
+function mapsAsObjects(_key: string, value: unknown): unknown {
+  return value instanceof Map ? Object.fromEntries(value) : value;
 }

@@ -12,8 +12,8 @@ import {
   type DeviceServerStatus,
   type DeviceSettings,
   type DeviceSettingsPatch,
-  type LaunchSnapshot,
   type PortHolder,
+  type ReceivedLaunch,
 } from '@three-studio/core';
 import { atomicWrite } from '../atomicWrite';
 import { findDeviceClient, findTemplate } from '../prebuilt';
@@ -230,10 +230,10 @@ export class DeviceServer {
    * the launch it made, to know whether the devices still run its scene,
    * would take another window's for its own.
    */
-  async launch(projectPath: string, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
+  async launch(projectPath: string, received: ReceivedLaunch): Promise<DeviceServerStatus | null> {
     const ticket = (this.ticket += 1);
     this.overtakenBy = 'launch';
-    const prepared = await prepareLaunch(projectPath, snapshot);
+    const prepared = await prepareLaunch(projectPath, received);
     if (ticket !== this.ticket) return this.dropped();
     await this.start();
     if (ticket !== this.ticket) return this.dropped();

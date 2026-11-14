@@ -355,7 +355,7 @@ export { conformJointMotion, createJoint, createJointMotion } from './components
 export { jointFrame } from './components/joint/frame';
 
 export { deserializeScene, serializeScene } from './scene/serialization';
-export { stableJson } from './json';
+export { jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */
@@ -364,6 +364,7 @@ export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 export {
   applyPrefabOverride,
   createPrefabDoc,
+  deserializePrefab,
   expandPrefabs,
   instanceOwnerOf,
   instancedId,
@@ -373,6 +374,7 @@ export {
   prefabToScene,
   prefabVariantOf,
   sceneToPrefab,
+  serializePrefab,
   splitInstancedId,
   variantBaseOf,
 } from './scene/prefab';
@@ -424,8 +426,8 @@ export {
 } from './scene/graph';
 
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
-export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot } from './devices/schema';
-export type { LaunchSnapshot } from './devices/schema';
+export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot, encodeLaunchSnapshot } from './devices/schema';
+export type { LaunchSnapshot, LaunchSnapshotJson, ReceivedLaunch } from './devices/schema';
 /* The device server's settings: per machine, never in a project. */
 export {
   DEFAULT_DEVICE_PORT,

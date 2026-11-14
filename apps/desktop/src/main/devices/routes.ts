@@ -11,6 +11,7 @@ import {
   findScene,
   isDeviceId,
   isRequestId,
+  jsonOf,
   type AssetEntry,
   type DeviceLaunchOptions,
   type DeviceTransport,
@@ -392,7 +393,7 @@ async function answer(
   if (`${head}/${part}` === BUILD_LAYOUT.manifest && within.length === 0) {
     trace(200);
     const manifest = applyLaunchOptions(launch.manifest, routes.launchOptions());
-    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', JSON.stringify(manifest));
+    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', jsonOf(manifest));
     return;
   }
   if (part === 'scripts.mjs' && within.length === 0) {

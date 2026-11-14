@@ -23,7 +23,6 @@ export type Counts = { readonly [K in Kind]?: number };
  * `ReadonlyMap` is a table.
  */
 export const RECORD: ReadonlyMap<string, Counts> = new Map([
-  ['apps/desktop/src/main/assetLibraries.ts', { as: 1 }],
   ['apps/desktop/src/main/assetScan.ts', { as: 2 }],
   ['apps/desktop/src/main/build/buildFiles.ts', { as: 7, nonNull: 1 }],
   ['apps/desktop/src/main/build/buildPath.ts', { as: 1 }],
@@ -89,9 +88,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/core/src/components/index.ts', { as: 1 }],
   ['packages/core/src/components/registry.ts', { as: 8, state: 1 }],
   ['packages/core/src/conform.ts', { as: 7 }],
-  ['packages/core/src/devices/schema.ts', { as: 3 }],
   ['packages/core/src/guards.ts', { as: 6, nonNull: 1 }],
-  ['packages/core/src/json.ts', { as: 1 }],
   ['packages/core/src/logFormat.ts', { as: 2, nonNull: 1 }],
   ['packages/core/src/project/schema.ts', { nonNull: 1 }],
   ['packages/core/src/scene/components.ts', { as: 10 }],
@@ -112,7 +109,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/core/test/fixtures.ts', { nonNull: 1 }],
   ['packages/core/test/guards.test.ts', { as: 1, nonNull: 1 }],
   ['packages/core/test/joint.test.ts', { as: 7 }],
-  ['packages/core/test/launchSnapshot.test.ts', { nonNull: 2 }],
   ['packages/core/test/prefab.test.ts', { as: 14, nonNull: 17 }],
   ['packages/core/test/references.test.ts', { as: 2 }],
   ['packages/core/test/registry.test.ts', { as: 28 }],
@@ -203,7 +199,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/test/inspectorSchema.test.ts', { as: 3 }],
   ['packages/editor/test/layoutStorage.test.ts', { as: 7 }],
   ['packages/editor/test/linkedMaterial.test.ts', { as: 4, nonNull: 4, state: 1 }],
-  ['packages/editor/test/liveReload.test.ts', { as: 4, nonNull: 15, state: 3 }],
+  ['packages/editor/test/liveReload.test.ts', { as: 4, nonNull: 10, state: 3 }],
   ['packages/editor/test/multiSelection.test.ts', { nonNull: 34 }],
   ['packages/editor/test/multiTarget.test.ts', { as: 2, nonNull: 1 }],
   ['packages/editor/test/overlay.test.ts', { as: 3 }],

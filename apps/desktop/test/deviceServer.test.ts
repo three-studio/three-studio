@@ -11,10 +11,12 @@ import {
   ASSETS_DIR,
   DEVICE_BODY_LIMIT,
   LAUNCH_SNAPSHOT_VERSION,
+  conformLaunchSnapshot,
   deserializeScene,
+  encodeLaunchSnapshot,
   type DeviceLogs,
   type DeviceServerStatus,
-  type LaunchSnapshot,
+  type ReceivedLaunch,
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeviceServer } from '../src/main/devices/DeviceServer';
@@ -239,7 +241,7 @@ const launchLine = (id: string | undefined): string => `"type":"launch","launch"
 async function launchOn(
   devices: DeviceServer,
   root: string,
-  launch?: LaunchSnapshot,
+  launch?: ReceivedLaunch,
 ): Promise<DeviceServerStatus> {
   const status = await devices.launch(root, launch ?? (await snapshot(root)));
   if (status === null) throw new Error('the launch was dropped');
@@ -256,23 +258,26 @@ async function project(script?: string): Promise<string> {
   return root;
 }
 
-async function snapshot(root: string, exposure = 1): Promise<LaunchSnapshot> {
+/** The window's scene, as the main process has it once the window has sent it: written, then read back. */
+async function snapshot(root: string, exposure = 1): Promise<ReceivedLaunch> {
   const [entry] = await discoverScenes(root);
   const { settings } = await readProject(root);
-  return {
-    version: LAUNCH_SNAPSHOT_VERSION,
-    entry: {
-      id: entry!.id,
-      name: entry!.name,
-      scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
-    },
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
-    rendering: { ...settings.rendering, exposure },
-    physics: settings.physics,
-    loadingScene: null,
-  };
+  return conformLaunchSnapshot(
+    encodeLaunchSnapshot({
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: {
+        id: entry!.id,
+        name: entry!.name,
+        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+      },
+      materials: {},
+      physicsMaterials: {},
+      prefabs: {},
+      rendering: { ...settings.rendering, exposure },
+      physics: settings.physics,
+      loadingScene: null,
+    }),
+  );
 }
 
 describe('a server that is stopped', () => {

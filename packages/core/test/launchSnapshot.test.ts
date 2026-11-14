@@ -1,6 +1,7 @@
 import {
   LAUNCH_SNAPSHOT_VERSION,
   PREFAB_FORMAT_VERSION,
+  assertDefined,
   componentsOf,
   conformLaunchSnapshot,
   createDefaultLayer,
@@ -11,6 +12,8 @@ import {
   createRenderingSettings,
   createStarterScene,
   emptyComponentTables,
+  encodeLaunchSnapshot,
+  serializeScene,
   type LaunchSnapshot,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -20,6 +23,10 @@ import { describe, expect, it } from 'vitest';
  * process. It is whatever the renderer sent — a project's own script can call
  * the bridge — and it becomes the files a phone downloads, so every value below
  * that is not a factory's is deliberately wrong.
+ *
+ * It crosses as the window writes it: the entry scene and each prefab are text,
+ * since a document holds Maps and Electron does not promise a Map survives its
+ * bridge. Play keeps its documents in memory and encodes nothing.
  */
 
 function snapshot(): LaunchSnapshot {
@@ -61,81 +68,112 @@ function oldPrefab(): unknown {
   };
 }
 
-describe('a launch snapshot, where it arrives', () => {
-  it('comes back as it was sent when it is well formed', () => {
-    const sent = snapshot();
+/** The snapshot as the window sends it. */
+const sent = () => encodeLaunchSnapshot(snapshot());
 
-    expect(conformLaunchSnapshot(structuredClone(sent))).toEqual(sent);
+describe('a launch snapshot, as it is sent', () => {
+  it('carries its entry scene and each prefab as text, and everything else as it is', () => {
+    const original = snapshot();
+
+    const wire = encodeLaunchSnapshot(original);
+
+    expect(wire.version).toBe(LAUNCH_SNAPSHOT_VERSION);
+    expect(wire.entry).toEqual({ id: 'scene-1', name: 'Level', sceneJson: expect.any(String) });
+    expect(JSON.parse(wire.entry.sceneJson)).toEqual(JSON.parse(serializeScene(original.entry.scene)));
+    expect(wire.prefabs).toEqual({ crate: expect.any(String) });
+    expect(wire.materials).toEqual(original.materials);
+    expect(wire.loadingScene).toBe('loading');
+  });
+});
+
+describe('a launch snapshot, where it arrives', () => {
+  it('comes back as it was sent when it is well formed, with the entry scene as it arrived', () => {
+    const original = snapshot();
+    const wire = encodeLaunchSnapshot(original);
+
+    const received = conformLaunchSnapshot(structuredClone(wire));
+
+    expect(received.snapshot).toEqual(original);
+    expect(received.entryJson).toBe(wire.entry.sceneJson);
   });
 
   it.each([
-    ['a version it does not know', { ...snapshot(), version: 2 }],
-    ['no version', { ...snapshot(), version: undefined }],
-    ['an entry without an id', { ...snapshot(), entry: { name: 'Level', scene: createStarterScene() } }],
-    ['an entry without a name', { ...snapshot(), entry: { id: 'scene-1', scene: createStarterScene() } }],
-    ['no entry', { ...snapshot(), entry: null }],
+    ['a version it does not know', { ...sent(), version: 1 }],
+    ['no version', { ...sent(), version: undefined }],
+    ['an entry without an id', { ...sent(), entry: { name: 'Level', sceneJson: sent().entry.sceneJson } }],
+    ['an entry without a name', { ...sent(), entry: { id: 'scene-1', sceneJson: sent().entry.sceneJson } }],
+    ['an entry scene that is not text', { ...sent(), entry: { ...sent().entry, sceneJson: createStarterScene() } }],
+    ['an entry scene that is not JSON', { ...sent(), entry: { ...sent().entry, sceneJson: '{ not json' } }],
+    ['an entry scene that is not a scene', { ...sent(), entry: { ...sent().entry, sceneJson: '[]' } }],
+    ['the documents as objects, as version 1 sent them', { ...sent(), entry: { id: 'scene-1', name: 'Level', scene: createStarterScene() } }],
+    ['no entry', { ...sent(), entry: null }],
     ['not an object', 'snapshot'],
   ])('is refused with %s', (_why, value) => {
     expect(() => conformLaunchSnapshot(value)).toThrow();
   });
 
   it('conforms each material', () => {
-    const sent = {
-      ...snapshot(),
+    const wire = {
+      ...sent(),
       materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
     };
 
-    const material = conformLaunchSnapshot(sent).materials['stone']!;
+    const { materials } = conformLaunchSnapshot(wire).snapshot;
+    const material = assertDefined(materials['stone'], 'the stone material');
 
     expect(material.side).toBe(createMaterial().side);
     expect(material).not.toHaveProperty('trap');
   });
 
   it('conforms each physics material', () => {
-    const conformed = conformLaunchSnapshot({
-      ...snapshot(),
+    const { physicsMaterials } = conformLaunchSnapshot({
+      ...sent(),
       physicsMaterials: { ice: { restitution: 0.5, frictionCombine: 'sum' }, broken: 'nothing' },
-    });
+    }).snapshot;
 
     // The rule read as Average, the missing friction the factory's.
-    expect(conformed.physicsMaterials['ice']).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
-    expect(conformed.physicsMaterials['broken']).toEqual(createPhysicsMaterial());
+    expect(physicsMaterials['ice']).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
+    expect(physicsMaterials['broken']).toEqual(createPhysicsMaterial());
   });
 
   it('falls back on the factories’ settings, and on no loading scene', () => {
-    const conformed = conformLaunchSnapshot({ ...snapshot(), rendering: 'x', loadingScene: 3 });
+    const { snapshot: conformed } = conformLaunchSnapshot({ ...sent(), rendering: 'x', loadingScene: 3 });
 
     expect(conformed.rendering).toEqual(createRenderingSettings());
     expect(conformed.loadingScene).toBeNull();
   });
 
-  it('migrates a prefab an older editor wrote, and drops one that is not an object', () => {
-    const conformed = conformLaunchSnapshot({
-      ...snapshot(),
-      prefabs: { tree: oldPrefab(), broken: 'nothing' },
-    });
+  it('migrates a prefab an older editor wrote, and drops one that is not text', () => {
+    const { prefabs } = conformLaunchSnapshot({
+      ...sent(),
+      prefabs: { tree: JSON.stringify(oldPrefab()), broken: { not: 'text' } },
+    }).snapshot;
 
-    const tree = conformed.prefabs['tree']!;
+    const tree = assertDefined(prefabs['tree'], 'the tree prefab');
     expect(tree.version).toBe(PREFAB_FORMAT_VERSION);
     expect(componentsOf(tree, 'trunk').map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
     ]);
-    expect(conformed.prefabs).not.toHaveProperty('broken');
+    expect(prefabs).not.toHaveProperty('broken');
+  });
+
+  it('refuses a prefab whose text is not JSON, as it refuses a scene', () => {
+    expect(() => conformLaunchSnapshot({ ...sent(), prefabs: { tree: '{ not json' } })).toThrow('not valid JSON');
   });
 
   it('drops a field it does not know', () => {
-    expect(conformLaunchSnapshot({ ...snapshot(), trap: 1 })).not.toHaveProperty('trap');
+    expect(conformLaunchSnapshot({ ...sent(), trap: 1 }).snapshot).not.toHaveProperty('trap');
   });
 
   it('reads its layer table entry by entry', () => {
-    const sent = snapshot();
-    const conformed = conformLaunchSnapshot({
-      ...sent,
-      physics: { ...sent.physics, layers: [{ id: 'player', name: 'Player', ignores: [] }, 'oops'] },
-    });
+    const wire = sent();
+    const { physics } = conformLaunchSnapshot({
+      ...wire,
+      physics: { ...wire.physics, layers: [{ id: 'player', name: 'Player', ignores: [] }, 'oops'] },
+    }).snapshot;
 
-    expect(conformed.physics.layers).toEqual([createDefaultLayer(), { id: 'player', name: 'Player', ignores: [] }]);
-    expect(conformed.physics.gravity).toEqual([0, -3, 0]);
+    expect(physics.layers).toEqual([createDefaultLayer(), { id: 'player', name: 'Player', ignores: [] }]);
+    expect(physics.gravity).toEqual([0, -3, 0]);
   });
 });

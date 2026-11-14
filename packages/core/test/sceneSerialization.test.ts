@@ -3,8 +3,10 @@ import {
   createEmptyScene,
   createEntity,
   deserializeScene,
+  jsonOf,
   putComponent,
   serializeScene,
+  stableJson,
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -101,5 +103,43 @@ describe('a scene serialises to one file however it was built', () => {
     expect(written.rootOrder).toEqual(rootOrder);
     expect(written.entities[parent.id]!.children).toEqual(parent.children);
     expect(written.entities[parent.id]!.transform.position).toEqual([3, 1, 2]);
+  });
+});
+
+/*
+ * A document holds its containers in Maps, and a Map is `{}` to
+ * `JSON.stringify`: written as it stands, an entity table would reach the file,
+ * the bridge and a device as nothing at all, and nothing in the types says so.
+ * So the two writers know Maps, each for its own reader. A file is for a person
+ * and a diff, and sorts keys. A message is only parsed, and keeps the order it
+ * was built in, which is what makes it cheap.
+ */
+describe('a Map in a document', () => {
+  const nested = () => ({
+    b: new Map([
+      ['y', { n: 1 }],
+      ['x', { n: 2 }],
+    ]),
+    a: [new Map([['k', 3]])],
+  });
+
+  it('is written to a file as the object it stands for, its keys sorted', () => {
+    expect(stableJson(nested())).toBe(stableJson({ a: [{ k: 3 }], b: { x: { n: 2 }, y: { n: 1 } } }));
+    expect(stableJson(new Map([['a', 1]]))).toBe('{\n  "a": 1\n}');
+  });
+
+  it('is written to a message as the object it stands for, in its own order', () => {
+    expect(jsonOf(nested())).toBe('{"b":{"y":{"n":1},"x":{"n":2}},"a":[{"k":3}]}');
+  });
+
+  it('is a Map inside a Map, written as objects all the way down', () => {
+    expect(jsonOf(new Map([['outer', new Map([['inner', 1]])]]))).toBe('{"outer":{"inner":1}}');
+  });
+
+  it('leaves everything else as JSON.stringify writes it, an indent included', () => {
+    const plain = { b: [1, { c: null, d: undefined }], a: 'x', e: new Date(0) };
+
+    expect(jsonOf(plain)).toBe(JSON.stringify(plain));
+    expect(jsonOf(plain, 2)).toBe(JSON.stringify(plain, null, 2));
   });
 });

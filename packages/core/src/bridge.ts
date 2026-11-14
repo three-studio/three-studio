@@ -11,7 +11,7 @@ import type {
   DeviceScreenshot,
   DeviceServerStatus,
   DeviceSettingsPatch,
-  LaunchSnapshot,
+  LaunchSnapshotJson,
 } from './devices/schema';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
@@ -23,7 +23,6 @@ import type {
   SceneEntry,
 } from './project/schema';
 import type { PhysicsMaterialDef } from './scene/physicsMaterial';
-import type { PrefabDoc } from './scene/prefab';
 import type { MaterialDef } from './scene/schema';
 
 /**
@@ -293,10 +292,15 @@ export interface AssetApi {
   readMaterials: () => Promise<Record<string, MaterialDef>>;
   /** Writes a new material asset and returns its id. */
   createMaterial: (name: string, material: MaterialDef) => Promise<string>;
-  /** Every prefab in the project, by asset id. Read in one go, like materials. */
-  readPrefabs: () => Promise<Record<string, PrefabDoc>>;
-  /** Writes a new prefab asset and returns its id. */
-  createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
+  /**
+   * Every prefab in the project, by asset id, each as the JSON of its document.
+   * Read in one go, like materials. Text because a document holds Maps, which
+   * Electron does not promise its bridge carries: the window reads each with
+   * `deserializePrefab`.
+   */
+  readPrefabs: () => Promise<Record<string, string>>;
+  /** Writes a new prefab asset from its document's JSON and returns its id. */
+  createPrefab: (name: string, prefabJson: string, assetId?: string) => Promise<string>;
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   /** Every physics material in the project, by asset id. Read in one go, like materials. */
@@ -305,7 +309,8 @@ export interface AssetApi {
   createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
   /** Overwrites an existing physics material asset, by project-relative path. */
   savePhysicsMaterial: (assetPath: string, material: PhysicsMaterialDef) => Promise<void>;
-  savePrefab: (assetPath: string, prefab: PrefabDoc) => Promise<void>;
+  /** Overwrites an existing prefab asset, by project-relative path, with its document's JSON. */
+  savePrefab: (assetPath: string, prefabJson: string) => Promise<void>;
   /**
    * Opens the containing folder in the OS file browser, the file selected.
    *
@@ -373,7 +378,7 @@ export interface DevicesApi {
    * prepared. That is how a window knows whether the devices run its launch,
    * which a status of the moment cannot say.
    */
-  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus | null>;
+  launch: (snapshot: LaunchSnapshotJson) => Promise<DeviceServerStatus | null>;
   /**
    * Writes what the renderer may change — the port, the address a link is made
    * of, the transport, live reload — and moves a running server onto a new

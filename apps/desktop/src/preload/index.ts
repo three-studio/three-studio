@@ -13,7 +13,6 @@ import type {
   MaterialDef,
   OpenProject,
   PhysicsMaterialDef,
-  PrefabDoc,
   Platform,
   ProjectContents,
   ProjectFile,
@@ -121,14 +120,14 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.readMaterials),
     createMaterial: (name, material): Promise<string> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createMaterial, name, material),
-    readPrefabs: (): Promise<Record<string, PrefabDoc>> =>
+    readPrefabs: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPrefabs),
-    createPrefab: (name, prefab, assetId): Promise<string> =>
-      ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefab, assetId),
+    createPrefab: (name, prefabJson, assetId): Promise<string> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefabJson, assetId),
     saveMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
-    savePrefab: (assetPath, prefab): Promise<void> =>
-      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefab),
+    savePrefab: (assetPath, prefabJson): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefabJson),
     readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPhysicsMaterials),
     createPhysicsMaterial: (name, material): Promise<string> =>

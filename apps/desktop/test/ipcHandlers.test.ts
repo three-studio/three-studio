@@ -9,12 +9,19 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
+  assertDefined,
   createEmptyScene,
   createMaterial,
+  createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabDoc,
   createRenderingSettings,
+  deserializePrefab,
   deserializeScene,
+  emptyComponentTables,
+  jsonOf,
+  serializePrefab,
   serializeScene,
   type AssetManifest,
   type DeviceServerStatus,
@@ -305,7 +312,7 @@ describe('the guards are reached, not merely written', () => {
       entry: {
         id: entry!.id,
         name: entry!.name,
-        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+        sceneJson: await readFile(join(root, entry!.path), 'utf8'),
       },
       materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
       prefabs: {},
@@ -324,6 +331,71 @@ describe('the guards are reached, not merely written', () => {
     };
     expect(build.materials['stone']!['side']).toBe('front');
     expect(build.materials['stone']).not.toHaveProperty('trap');
+  });
+
+  it('serves the entry scene exactly as the window wrote it, and refuses a snapshot from before documents were text', async () => {
+    const root = await project();
+    const entry = assertDefined((await discoverScenes(root))[0], 'the project’s scene');
+    // Compact, which no writer of ours produces: re-encoded, it would come out
+    // indented and key-sorted, and the bytes would say so.
+    const sceneJson = JSON.stringify(deserializeScene(await readFile(join(root, entry.path), 'utf8')));
+    const snapshot = {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: { id: entry.id, name: entry.name, sceneJson },
+      materials: {},
+      physicsMaterials: {},
+      prefabs: {},
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      loadingScene: null,
+    };
+
+    const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, snapshot);
+
+    const local = assertDefined(
+      status.urls.find((url) => url.address === 'localhost'),
+      'the address of this computer',
+    ).url.replace('localhost', '127.0.0.1');
+    const manifestUrl = `${local}${BUILD_LAYOUT.manifest}`;
+    const build = await (await fetch(manifestUrl)).json();
+    const served = await (await fetch(new URL(build.scenes[0].path, manifestUrl))).text();
+    expect(served).toBe(sceneJson);
+
+    const before = { ...snapshot, version: 1, entry: { id: entry.id, name: entry.name, scene: {} } };
+    await expect(invoke(IPC_INVOKE.devices.launch, 1, before)).rejects.toThrow('version 1');
+  });
+
+  it('takes a prefab as text, writes the codec’s bytes, and reads it back equal', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+    // Written as a window writes a message: in the order the document was built.
+    const sent = jsonOf(prefab);
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', sent);
+
+    // The file is the codec's, key-sorted for a diff, whatever order it arrived in.
+    const created = await readFile(file, 'utf8');
+    expect(created).toBe(serializePrefab(deserializePrefab(sent)));
+    expect(Object.keys(JSON.parse(created))).toEqual(Object.keys(JSON.parse(created)).sort());
+
+    const renamed = { ...deserializePrefab(sent), name: 'Renamed' };
+    await invoke(IPC_INVOKE.assets.savePrefab, 1, 'assets/prefabs/Crate.prefab.json', jsonOf(renamed));
+    expect(await readFile(file, 'utf8')).toBe(serializePrefab(renamed));
+
+    const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
+    expect(Object.keys(read)).toEqual([id]);
+    expect(deserializePrefab(assertDefined(read[id], 'the prefab read'))).toEqual(renamed);
+  });
+
+  it('refuses a prefab that is not JSON, and writes nothing', async () => {
+    const root = await project();
+
+    await expect(invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', '{ not json')).rejects.toThrow(
+      'not valid JSON',
+    );
+    await expect(readFile(join(root, 'assets', 'prefabs', 'Crate.prefab.json'), 'utf8')).rejects.toThrow();
   });
 
   it('never lets a settings patch choose the token or the version', async () => {

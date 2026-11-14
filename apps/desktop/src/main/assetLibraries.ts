@@ -11,12 +11,13 @@ import {
   createId,
   createMaterial,
   defaultSettings,
+  deserializePrefab,
   isRecord,
   safeFileName,
+  serializePrefab,
   stableJson,
   type AssetManifest,
   type AssetMeta,
-  migratePrefab,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
@@ -97,11 +98,14 @@ export async function readPrefabAssets(
       .filter((asset) => asset.kind === 'prefab' && asset.path.endsWith(PREFAB_EXTENSION))
       .map(async (asset) => {
         try {
-          const parsed = JSON.parse(
-            await readFile(resolveInside(projectPath, asset.path), 'utf8'),
-          ) as PrefabDoc;
-          if (parsed.version > PREFAB_FORMAT_VERSION) return;
-          prefabs[asset.id] = migratePrefab(parsed);
+          const text = await readFile(resolveInside(projectPath, asset.path), 'utf8');
+          const parsed: unknown = JSON.parse(text);
+          // Left out, as a prefab of a newer build always was: the migration
+          // would stamp it current and read its fields as this build's.
+          if (!isRecord(parsed)) return;
+          const version = parsed['version'];
+          if (typeof version === 'number' && version > PREFAB_FORMAT_VERSION) return;
+          prefabs[asset.id] = deserializePrefab(text);
         } catch {
           // One unreadable prefab must not cost the others; the instances that
           // point at it render empty and say so.
@@ -135,7 +139,7 @@ export async function createPrefabAsset(
     PREFAB_EXTENSION,
   );
   const file = resolveInside(projectPath, posix.join(directory, fileName));
-  await writeFile(file, stableJson(prefab), 'utf8');
+  await writeFile(file, serializePrefab(prefab), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
@@ -316,7 +320,7 @@ export async function savePrefabAsset(
     throw new AssetError(`${assetPath} is not a prefab asset.`);
   }
 
-  await writeFile(file, stableJson(prefab), 'utf8');
+  await writeFile(file, serializePrefab(prefab), 'utf8');
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.

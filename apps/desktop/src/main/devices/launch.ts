@@ -1,9 +1,8 @@
 import {
   createId,
-  serializeScene,
   type AssetEntry,
   type BuildManifest,
-  type LaunchSnapshot,
+  type ReceivedLaunch,
   type SceneEntry,
 } from '@three-studio/core';
 import { scanAssets } from '../assetScan';
@@ -28,7 +27,7 @@ export interface Launch {
   readonly sceneName: string;
   /** The window's id for the entry scene: the one id answered from memory. */
   readonly entryId: string;
-  /** The scene on screen, serialized once. */
+  /** The scene on screen, as the window sent it. */
   readonly entryJson: string;
   /**
    * As `launchManifest` made it. Kept whole rather than written once: the
@@ -61,8 +60,9 @@ export interface Launch {
  */
 export async function prepareLaunch(
   projectPath: string,
-  snapshot: LaunchSnapshot,
+  received: ReceivedLaunch,
 ): Promise<Launch> {
+  const { snapshot, entryJson } = received;
   const compiled = await buildScripts(projectPath);
   if (compiled.errors.length > 0) {
     throw new Error(`Scripts did not compile:\n${compiled.errors.join('\n')}`);
@@ -80,7 +80,7 @@ export async function prepareLaunch(
     projectPath,
     sceneName: snapshot.entry.name,
     entryId: snapshot.entry.id,
-    entryJson: serializeScene(snapshot.entry.scene),
+    entryJson,
     manifest,
     scripts,
     assets: new Map(

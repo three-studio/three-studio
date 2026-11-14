@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import {
   ASSETS_DIR,
   LAUNCH_SNAPSHOT_VERSION,
+  conformLaunchSnapshot,
   createMeshEntity,
   deserializeScene,
+  encodeLaunchSnapshot,
   insertEntity,
-  serializeScene,
-  type LaunchSnapshot,
+  type ReceivedLaunch,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
@@ -57,37 +58,40 @@ async function project(script: string | null = SCRIPT): Promise<string> {
 
 /**
  * The window's scene as the editor holds it: the scene on disk, with an entity
- * nobody has saved yet.
+ * nobody has saved yet. As the main process has it once the window has sent it:
+ * written, then read back.
  */
-async function snapshot(root: string): Promise<LaunchSnapshot> {
+async function snapshot(root: string): Promise<ReceivedLaunch> {
   const [entry] = await discoverScenes(root);
   const scene = deserializeScene(await readFile(join(root, entry!.path), 'utf8'));
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
   const { settings } = await readProject(root);
-  return {
-    version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id: entry!.id, name: entry!.name, scene },
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
-    rendering: settings.rendering,
-    physics: settings.physics,
-    loadingScene: settings.loadingScene,
-  };
+  return conformLaunchSnapshot(
+    encodeLaunchSnapshot({
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: { id: entry!.id, name: entry!.name, scene },
+      materials: {},
+      physicsMaterials: {},
+      prefabs: {},
+      rendering: settings.rendering,
+      physics: settings.physics,
+      loadingScene: settings.loadingScene,
+    }),
+  );
 }
 
 describe('a launch', () => {
-  it('serves the scene on screen, though a file on disk claims its id', async () => {
+  it('serves the scene on screen as the window sent it, though a file on disk claims its id', async () => {
     const root = await project();
     const shown = await snapshot(root);
 
     const launch = await prepareLaunch(root, shown);
 
-    expect(launch.entryId).toBe(shown.entry.id);
-    expect(launch.sceneName).toBe(shown.entry.name);
-    expect(launch.entryJson).toBe(serializeScene(shown.entry.scene));
+    expect(launch.entryId).toBe(shown.snapshot.entry.id);
+    expect(launch.sceneName).toBe(shown.snapshot.entry.name);
+    expect(launch.entryJson).toBe(shown.entryJson);
     expect(launch.entryJson).toContain('Unsaved Crate');
     expect(launch.projectPath).toBe(root);
     expect(launch.id).toMatch(/^[A-Za-z0-9]+$/);
@@ -100,7 +104,7 @@ describe('a launch', () => {
     const launch = await prepareLaunch(root, shown);
 
     const expected = launchManifest({
-      snapshot: shown,
+      snapshot: shown.snapshot,
       scenes: await discoverScenes(root),
       assets: (await scanAssets(root)).assets,
       title: 'Races',

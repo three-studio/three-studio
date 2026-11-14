@@ -5,6 +5,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  encodeLaunchSnapshot,
   type DeviceInfo,
   type DeviceLogs,
   type DeviceServerStatus,
@@ -206,7 +207,7 @@ describe('Launch on Devices', () => {
     await launchOnDevices();
 
     expect(bridge.calls.map((call) => call.method)).toEqual(['launch']);
-    expect(bridge.calls[0]!.args[0]).toEqual(launchSnapshot());
+    expect(bridge.calls[0]!.args[0]).toEqual(encodeLaunchSnapshot(launchSnapshot()));
   });
 
   it('keeps the launch it made, with the snapshot it sent, once it is current', async () => {
@@ -218,7 +219,8 @@ describe('Launch on Devices', () => {
 
     const own = useDeviceStore.getState().ownLaunch;
     expect(own?.id).toBe('launch-7');
-    expect(own?.snapshot).toBe(bridge.calls[0]!.args[0]);
+    // Kept as the window has it, though it crossed the bridge written as text.
+    expect(own && encodeLaunchSnapshot(own.snapshot)).toEqual(bridge.calls[0]!.args[0]);
   });
 
   it('leaves nothing behind when a newer launch or a stop dropped it', async () => {

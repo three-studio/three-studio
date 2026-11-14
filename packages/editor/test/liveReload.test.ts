@@ -1,6 +1,7 @@
 import {
   LAUNCH_SNAPSHOT_VERSION,
   PROJECT_FORMAT_VERSION,
+  assertDefined,
   createBuildProfiles,
   createDeviceLaunchOptions,
   createEmptyScene,
@@ -12,8 +13,11 @@ import {
   createPrefabInstance,
   createRenderingSettings,
   createStarterScene,
+  deserializePrefab,
+  deserializeScene,
   type DeviceServerStatus,
   type LaunchSnapshot,
+  type LaunchSnapshotJson,
   type PrefabDoc,
   type ProjectFile,
 } from '@three-studio/core';
@@ -346,10 +350,14 @@ function running(launch: string, overrides: Partial<DeviceServerStatus> = {}): D
 const doc = () => useDocumentStore.getState();
 const realSavePrefab = useAssetStore.getState().savePrefab;
 
-/** What each relaunch sent, in order. */
-let sent: LaunchSnapshot[] = [];
+/** What each relaunch sent, in order, as it crossed the bridge: its documents are text. */
+let sent: LaunchSnapshotJson[] = [];
 const stops: (() => void)[] = [];
 let cube = '';
+
+/** The entry scene a relaunch sent, read back from its text. */
+const sentScene = (index: number) =>
+  deserializeScene(assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson);
 
 /** Every relaunch's callbacks, run. */
 async function settle(): Promise<void> {
@@ -384,7 +392,7 @@ describe('watching the window', () => {
     vi.stubGlobal('window', {
       studio: {
         devices: {
-          launch: async (snapshot: LaunchSnapshot) => {
+          launch: async (snapshot: LaunchSnapshotJson) => {
             sent.push(snapshot);
             // As the server's next status would say: this launch is current.
             const status = running(`L${sent.length + 1}`);
@@ -437,7 +445,7 @@ describe('watching the window', () => {
       await settle();
 
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.entry.scene.entities[cube]!.transform.position[0]).toBe(4);
+      expect(sentScene(0).entities[cube]!.transform.position[0]).toBe(4);
       expect(useDeviceStore.getState().ownLaunch?.id).toBe('L2');
     });
 
@@ -449,7 +457,7 @@ describe('watching the window', () => {
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.entry.scene.entities[cube]!.transform.position[0]).toBe(0);
+      expect(sentScene(0).entities[cube]!.transform.position[0]).toBe(0);
     });
 
     it('a material changed', () => {
@@ -540,8 +548,9 @@ describe('watching the window', () => {
     vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.entry.scene).toBe(scene);
-    expect(sent[0]!.prefabs[PREFAB_ID]!.entities[inside]).toBeDefined();
+    expect(sentScene(0)).toEqual(scene);
+    const prefab = deserializePrefab(assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'));
+    expect(prefab.entities[inside]).toBeDefined();
   });
 
   describe('holds while', () => {

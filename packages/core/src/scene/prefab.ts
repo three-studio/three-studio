@@ -1,5 +1,6 @@
 import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { createId } from '../ids';
+import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
   componentsOf,
@@ -14,7 +15,7 @@ import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
 import { collectDescendants } from './query';
-import { migrateScene } from './serialization';
+import { migrateScene, SceneFormatError } from './serialization';
 import type {
   ComponentDoc,
   ComponentTables,
@@ -578,4 +579,32 @@ export function migratePrefab(prefab: PrefabDoc): PrefabDoc {
     entities: asScene.entities,
     components: asScene.components,
   };
+}
+
+/**
+ * A prefab file's text: key-sorted and indented as a scene's is, so that it
+ * reads in a diff. Also what the bridge carries, in and out: the main process
+ * writes this, and decodes what the editor sends before it writes it.
+ */
+export function serializePrefab(prefab: PrefabDoc): string {
+  return stableJson(prefab);
+}
+
+/**
+ * A prefab file's text, read as a document of the current format.
+ *
+ * `JSON.parse` hands back `any`, typed here as the document it should be and
+ * checked only as far as the migration reads it: no decoder checks a prefab's
+ * fields yet.
+ */
+export function deserializePrefab(json: string): PrefabDoc {
+  let parsed: PrefabDoc;
+  try {
+    parsed = JSON.parse(json);
+  } catch (cause) {
+    throw new SceneFormatError(
+      `Prefab file is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+  }
+  return migratePrefab(parsed);
 }

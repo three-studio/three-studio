@@ -7,6 +7,7 @@ import {
   createEntity,
   createMeshEntity,
   createPrefabInstance,
+  deserializePrefab,
   expandPrefabs,
   findComponent,
   putComponent,
@@ -16,7 +17,9 @@ import {
   prefabToScene,
   prefabVariantOf,
   sceneToPrefab,
+  serializePrefab,
   splitInstancedId,
+  stableJson,
   variantBaseOf,
   type PrefabDoc,
   type PrefabInstanceComponent,
@@ -59,6 +62,35 @@ function instanceOf(_prefab: PrefabDoc, at: [number, number, number] = [0, 0, 0]
 }
 
 const library = (prefab: PrefabDoc) => ({ get: (id: string) => (id === 'prefab-1' ? prefab : undefined) });
+
+/*
+ * A prefab file is the document as text, written as a scene is: key-sorted, so
+ * that it diffs. The same text is what the bridge carries, in and out.
+ */
+describe('a prefab as text', () => {
+  it('is written key-sorted, and read back as it was', () => {
+    const prefab = treePrefab();
+
+    const text = serializePrefab(prefab);
+
+    expect(text).toBe(stableJson(prefab));
+    expect(deserializePrefab(text)).toEqual(prefab);
+    expect(serializePrefab(deserializePrefab(text))).toBe(text);
+  });
+
+  it('is read through the migration, which fills what an older editor left out', () => {
+    const older = JSON.stringify({ ...treePrefab(), version: 1, components: undefined });
+
+    const read = deserializePrefab(older);
+
+    expect(read.version).toBe(treePrefab().version);
+    expect(componentsOf(read, read.root)).toEqual([]);
+  });
+
+  it('is refused in words when it is not JSON', () => {
+    expect(() => deserializePrefab('{ not json')).toThrow('Prefab file is not valid JSON');
+  });
+});
 
 describe('prefab expansion', () => {
   it('replaces an instance with the prefab contents, parented to it', () => {
