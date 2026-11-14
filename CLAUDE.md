@@ -47,6 +47,15 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   Un record indexé par des ids ne vit que dans une forme JSON (un fichier, un message, les données d'un
   composant) : on y cherche par id, et ses clés ne redeviennent des ids qu'à travers `idMapOf`. Le test
   du ratchet refuse une vérification d'id écrite ailleurs que dans `ids.ts`.
+- **Rien ne s'enregistre à l'import.** Un type de composant, un système, un behaviour ou un importer est
+  une définition exportée. Il n'entre dans un registre — un `Registry` de `@three-studio/core`, qui refuse
+  un id déjà pris — que par l'`activate…` de sa couche, et seule la racine de composition de chaque app
+  appelle les `activate…` : la fenêtre de l'éditeur (`apps/desktop/src/renderer/src/main.tsx`), le player
+  (`apps/web-template/src/main.ts`), le main Electron (`apps/desktop/src/main/index.ts`) ; les tests et
+  `tools/` construisent les leurs. Une fonction qui lit un registre le reçoit en paramètre, jamais d'un
+  module. Les classes d'un bundle de scripts appartiennent à ce bundle et passent au moteur en paramètre.
+  Une racine n'accepte aucune mise à jour à chaud : en dev, une édition sous ce qu'elle active recharge la
+  fenêtre. `test/architecture.test.ts` vérifie les racines.
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
 - `npm run typecheck && npm test` doit être au vert à chaque commit.
