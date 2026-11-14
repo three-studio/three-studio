@@ -2,7 +2,7 @@ import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
-import { idMapOf, isEntityId } from '../ids';
+import { idMapOf, isComponentId, isEntityId } from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -10,6 +10,7 @@ import {
   findComponent,
   isKnownComponentType,
   putComponent,
+  tableOf,
 } from './components';
 import { createEnvironment } from './defaults';
 import { createEntity } from './entity';
@@ -25,16 +26,22 @@ export class SceneFormatError extends Error {
 
 /**
  * A scene as its file writes it: the entity table is an object keyed by entity
- * id, where the document holds the same entities in a Map.
+ * id, where the document holds the same entities in a Map, and each component
+ * table an object by entity id holding an object by component id, where the
+ * document holds Maps of Maps.
  *
  * The conversion happens here and nowhere else, once, where a file is read, and
  * `stableJson` undoes it where one is written. Nothing outside this module sees
  * this shape, and the cast that claims it stays where it is until a decoder
  * checks the fields.
  */
-interface SceneJson extends Omit<SceneDoc, 'entities'> {
+interface SceneJson extends Omit<SceneDoc, 'entities' | 'components'> {
   entities: Record<string, EntityDoc>;
+  /** Absent from a file older than the tables. A type this build does not define has its table here too. */
+  components?: TablesJson;
 }
+
+type TablesJson = Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, ComponentDoc>>>>>>;
 
 /**
  * Indented so a scene file is reviewable in a diff, and key-sorted so there is
@@ -102,7 +109,11 @@ export function migrateScene(input: unknown): SceneDoc {
 
   const writtenAs = doc.version;
   const json = input as SceneJson;
-  const scene: SceneDoc = { ...json, entities: idMapOf(json.entities, isEntityId) };
+  const scene: SceneDoc = {
+    ...json,
+    entities: idMapOf(json.entities, isEntityId),
+    components: tablesFrom(json.components),
+  };
   repairHierarchy(scene);
   adoptComponentTables(scene);
   fillMissingFields(scene);
@@ -116,6 +127,34 @@ export function migrateScene(input: unknown): SceneDoc {
   // came later.
   scene.version = SCENE_FORMAT_VERSION;
   return scene;
+}
+
+/**
+ * The component tables of a document, from the objects a file writes.
+ *
+ * A table for every type this build knows, an empty one where the file has
+ * none: a file can carry some and not others — a type added since it was
+ * written, or one hand-edited out, or all of them for a document older than the
+ * tables. Each is read through the checks of the ids it is keyed by, at the two
+ * levels, and a key that fails one is dropped.
+ *
+ * What this build does not define is kept **exactly as found**, as the object it
+ * came in and not a Map: nothing here knows what is in it, and the next save has
+ * to write the author's data and not an invention over it. It goes into a new
+ * object by spread, which makes an own property of any key — a file may name a
+ * table `__proto__`, and an assignment would make it the prototype of the whole
+ * block instead.
+ */
+function tablesFrom(json: TablesJson | undefined): ComponentTables {
+  const tables = emptyComponentTables();
+  for (const type of COMPONENT_TYPES) {
+    const into = tableOf(tables, type);
+    for (const [entityId, held] of Object.entries(json?.[type] ?? {})) {
+      if (isEntityId(entityId)) into.set(entityId, idMapOf(held, isComponentId));
+    }
+  }
+  const unknown = Object.entries(json ?? {}).filter(([type]) => !isKnownComponentType(type));
+  return { ...Object.fromEntries(unknown), ...tables };
 }
 
 /**
@@ -150,7 +189,7 @@ const EYE_HEIGHT_FROM_FEET = 10;
  * which is the worse of the two.
  */
 function raiseEyeHeightToFeet(scene: SceneDoc): void {
-  for (const [entityId, held] of Object.entries(scene.components.playerController)) {
+  for (const [entityId, held] of scene.components.playerController) {
     const collider = findComponent(scene, entityId, 'collider');
     if (collider === undefined) continue;
 
@@ -164,7 +203,7 @@ function raiseEyeHeightToFeet(scene: SceneDoc): void {
     // rather than by the capsule it may have been — a finite number, where the
     // shape read as written would have made it `NaN`.
     const below = originAboveFeet(collider.shape);
-    for (const controller of Object.values(held)) controller.eyeHeight += below;
+    for (const controller of held.values()) controller.eyeHeight += below;
   }
 }
 
@@ -208,12 +247,8 @@ function fillMissingFields(scene: SceneDoc): void {
   }
 
   for (const type of COMPONENT_TYPES) {
-    // Indexed by a variable the mapped type is a union of eleven records, which
-    // `Object.values` widens to `unknown`. The table's construction is what says
-    // these are components.
-    const table = scene.components[type] as Record<string, Record<string, ComponentDoc>>;
-    for (const held of Object.values(table)) {
-      for (const [componentId, component] of Object.entries(held)) {
+    for (const held of tableOf(scene.components, type).values()) {
+      for (const [componentId, component] of held) {
         // Each type fills itself. Shallow is right for the flat ones; `mesh` owns
         // a material and a geometry that have to be merged a level deeper, and
         // that knowledge lives with `mesh` rather than as a special case here.
@@ -221,7 +256,7 @@ function fillMissingFields(scene: SceneDoc): void {
         // The key is the identity; a `fill` that handed back a fresh id would
         // orphan every override naming it.
         filled.id = componentId;
-        held[componentId] = filled as never;
+        held.set(componentId, filled);
       }
     }
   }
@@ -251,11 +286,10 @@ function fillMissingFields(scene: SceneDoc): void {
  * onto each other.
  */
 function adoptComponentTables(scene: SceneDoc): void {
-  const tables = (scene.components ?? emptyComponentTables()) as ComponentTables;
-  // A file could carry some tables and not others — a type added since it was
-  // written, or one hand-edited out.
-  for (const type of COMPONENT_TYPES) tables[type] ??= {};
-  scene.components = tables;
+  const unknown = scene.components as unknown as Record<
+    string,
+    Record<string, Record<string, ComponentDoc>>
+  >;
 
   for (const entity of scene.entities.values()) {
     const legacy = (entity as EntityDoc & { components?: ComponentDoc[] }).components;
@@ -273,14 +307,31 @@ function adoptComponentTables(scene: SceneDoc): void {
       // not even to add that id. Filling it against a type we do not have would
       // invent a shape, and the next save would write that invention over the
       // author's data. A field is deprecated, never lost.
-      const unknown = scene.components as unknown as Record<
-        string,
-        Record<string, Record<string, ComponentDoc>>
-      >;
-      const table = (unknown[component.type] ??= {});
-      (table[entity.id] ??= {})[id] = component;
+      const held = ownEntry(ownEntry(unknown, component.type, () => ({})), entity.id, () => ({}));
+      setOwn(held, id, component);
     }
   }
+}
+
+/**
+ * `parent[key]`, made with `make` first when `parent` has no such key of its own.
+ *
+ * A type, an entity id and a component id are keys a file chooses, and
+ * `__proto__` is one a file can write: read as `parent[key]` it is the prototype
+ * every object shares, and what is filed into the answer is filed into all of
+ * them.
+ */
+function ownEntry<V>(parent: Record<string, V>, key: string, make: () => V): V {
+  const held = Object.hasOwn(parent, key) ? parent[key] : undefined;
+  if (held !== undefined) return held;
+  const made = make();
+  setOwn(parent, key, made);
+  return made;
+}
+
+/** `parent[key] = value`, as a property of `parent`'s own whatever the key. */
+function setOwn<V>(parent: Record<string, V>, key: string, value: V): void {
+  Object.defineProperty(parent, key, { value, writable: true, enumerable: true, configurable: true });
 }
 
 /**
@@ -314,8 +365,8 @@ function componentIdAt(entityId: string, index: number): string {
  * exactly how the data would be lost.
  */
 function rekeyOverrides(scene: SceneDoc): void {
-  for (const held of Object.values(scene.components.prefabInstance)) {
-    for (const component of Object.values(held)) {
+  for (const held of scene.components.prefabInstance.values()) {
+    for (const component of held.values()) {
       for (const [path, override] of Object.entries(component.overrides)) {
         if (!override.components) continue;
 

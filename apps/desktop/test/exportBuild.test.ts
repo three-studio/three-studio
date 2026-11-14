@@ -40,6 +40,7 @@ import {
   serializeScene,
   type BuildManifest,
   type BuildProfile,
+  type ComponentDoc,
   type MeshComponent,
   type PhysicsSettings,
   type ProjectFile,
@@ -395,8 +396,8 @@ describe('web export', () => {
     );
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(await readFile(scenePath, 'utf8'));
-    for (const held of Object.values(scene.components.mesh)) {
-      for (const mesh of Object.values(held)) mesh.materialId = 'mat-shared';
+    for (const held of scene.components.mesh.values()) {
+      for (const mesh of held.values()) mesh.materialId = 'mat-shared';
     }
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
@@ -925,7 +926,7 @@ describe('models that come with other files', () => {
     putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
-      JSON.stringify(scene),
+      serializeScene(scene),
       'utf8',
     );
 
@@ -1351,11 +1352,26 @@ describe('an export that cannot finish', () => {
  */
 describe('what a scene needs beyond its slots', () => {
   /** Puts a component on the main scene's first entity. */
-  async function addToMainScene(projectPath: string, component: object): Promise<void> {
+  async function addToMainScene(projectPath: string, component: ComponentDoc): Promise<void> {
     const file = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(await readFile(file, 'utf8'));
-    putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component as never);
+    putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component);
     await writeFile(file, serializeScene(scene), 'utf8');
+  }
+
+  /**
+   * The same for a type no module defines, which has no place in a document: it
+   * is the file's own table, kept as found, and the file is where it is put.
+   */
+  async function addUnknownToMainScene(
+    projectPath: string,
+    component: Record<string, unknown> & { id: string; type: string },
+  ): Promise<void> {
+    const file = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const written = JSON.parse(await readFile(file, 'utf8'));
+    const entityId = assertDefined(Object.keys(written.entities)[0], 'the first entity');
+    written.components[component.type] = { [entityId]: { [component.id]: component } };
+    await writeFile(file, JSON.stringify(written), 'utf8');
   }
 
   async function setLoadingScene(projectPath: string, id: string): Promise<void> {
@@ -1420,7 +1436,7 @@ describe('what a scene needs beyond its slots', () => {
 
   it('says when a scene holds a component this editor cannot see into', async () => {
     const { projectPath, templateRoot } = await makeProject();
-    await addToMainScene(projectPath, { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' });
+    await addUnknownToMainScene(projectPath, { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' });
     const outputDir = join(projectPath, '..', 'out-plugin');
 
     const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);

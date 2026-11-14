@@ -7,6 +7,7 @@ import {
   createPrefabInstance,
   createRenderingSettings,
   emptyComponentTables,
+  findComponent,
   putComponent,
   type ProjectFile,
   type SceneEntry,
@@ -289,7 +290,7 @@ describe('the two prefab menus ask one question', () => {
     const { commandById } = await import('../src/commands/registry');
     const id = await instanceOfAPrefab();
     doc().mutate('Override', (draft) => {
-      const component = Object.values(draft.components.prefabInstance[id] ?? {})[0];
+      const component = findComponent(draft, id, 'prefabInstance');
       if (component) component.overrides = { local: { name: 'Renamed' } };
     });
 

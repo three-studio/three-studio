@@ -805,7 +805,7 @@ export class EditorViewport {
     // twice.
     // A table lookup: it used to walk every entity and every component of each,
     // once per sync.
-    const hasAuthoredLight = Object.keys(scene.components.light).length > 0;
+    const hasAuthoredLight = scene.components.light.size > 0;
     this.fallbackLighting.visible = !hasAuthoredLight;
     // And published, because the pair is editor-only: the same document is
     // black in Play and in a build. `Engine.create` says the other half of this

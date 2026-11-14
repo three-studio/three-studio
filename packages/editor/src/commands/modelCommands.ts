@@ -2,6 +2,7 @@ import {
   deleteComponent,
   entitiesFromNodes,
   findComponent,
+  findComponents,
   insertEntity,
   type ModelNode,
 } from '@three-studio/core';
@@ -97,9 +98,9 @@ export async function unpackModel(entityId: string): Promise<void> {
   }
 
   // Read after the waits, as the mutation below will find them.
-  const meshColliders = Object.values(
-    useDocumentStore.getState().scene.components.collider[entityId] ?? {},
-  ).filter((collider) => collider.shape.kind === 'mesh');
+  const meshColliders = findComponents(useDocumentStore.getState().scene, entityId, 'collider').filter(
+    (collider) => collider.shape.kind === 'mesh',
+  );
   const unpacked = entitiesFromNodes(nodes, component.assetId, host.name, meshColliders);
   const root = unpacked[0];
   if (!root) return;
@@ -115,7 +116,7 @@ export async function unpackModel(entityId: string): Promise<void> {
       // author put on the host — another collider, a script, a rigid body —
       // stays, which is what "unpack" means, and the pieces' Colliders ride
       // its body.
-      for (const held of Object.values(draft.components.model[entityId] ?? {})) {
+      for (const held of findComponents(draft, entityId, 'model')) {
         deleteComponent(draft, entityId, held.id);
       }
       for (const held of meshColliders) deleteComponent(draft, entityId, held.id);

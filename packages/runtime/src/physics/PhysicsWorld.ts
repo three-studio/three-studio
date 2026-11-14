@@ -4,6 +4,7 @@ import {
   createColliderShape,
   entityWorldMatrixPath,
   findComponent,
+  findComponents,
   jointEnds,
   linkedPhysicsMaterial,
   physicsBodies,
@@ -572,7 +573,6 @@ export class PhysicsWorld implements PhysicsApi {
     materials: Readonly<Record<string, PhysicsMaterialDef>> = {},
   ): void {
     const bodies = physicsBodies(scene);
-    const colliders = componentsOfType(scene, 'collider');
     this.scene = scene;
     this.materials = { ...materials };
 
@@ -594,7 +594,7 @@ export class PhysicsWorld implements PhysicsApi {
       const carriers = (bodies.get(entityId) ?? []).flatMap((carrierId): Carrier[] => {
         const carrier = binder.getObject(carrierId);
         return carrier
-          ? [{ entityId: carrierId, object: carrier, colliders: Object.values(colliders[carrierId] ?? {}) }]
+          ? [{ entityId: carrierId, object: carrier, colliders: findComponents(scene, carrierId, 'collider') }]
           : [];
       });
       const rigidbody = findComponent(scene, entityId, 'rigidbody') ?? null;
@@ -605,7 +605,7 @@ export class PhysicsWorld implements PhysicsApi {
     // no time, which moves nothing with joints built either. One that holds
     // nothing is kept holding nothing, for a tune to give it ends, and the
     // Engine says why.
-    for (const [entityId, held] of Object.entries(componentsOfType(scene, 'joint'))) {
+    for (const [entityId, held] of componentsOfType(scene, 'joint')) {
       const object = binder.getObject(entityId);
       if (!object) continue;
       worldPose(object, _worldPosition, _worldQuaternion, _worldScale);
@@ -616,7 +616,7 @@ export class PhysicsWorld implements PhysicsApi {
       };
       this.joints.set(
         entityId,
-        Object.values(held).map((joint) => new Joint(this.world, joint, placed, this.endsOf(entityId, joint))),
+        [...held.values()].map((joint) => new Joint(this.world, joint, placed, this.endsOf(entityId, joint))),
       );
     }
 

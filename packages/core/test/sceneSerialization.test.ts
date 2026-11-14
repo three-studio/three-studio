@@ -1,4 +1,5 @@
 import {
+  COMPONENT_TYPES,
   assertDefined,
   createComponent,
   createEmptyScene,
@@ -150,26 +151,33 @@ describe('a Map in a document', () => {
 /*
  * The file's shape is an object keyed by entity id, and the document's is a
  * Map, so that an edit does not copy and freeze ten thousand keys one by one.
- * The conversion happens once, where a file is read, and goes back where it is
- * written: what is read and written again has to be the same bytes, and what
- * this build does not know has to come through as it was.
+ * The same goes for the component tables, a Map of Maps in memory and an object
+ * of objects in the file. The conversion happens once, where a file is read,
+ * and goes back where it is written: what is read and written again has to be
+ * the same bytes, and what this build does not know has to come through as it
+ * was.
  */
 describe('a scene through a file', () => {
   const SPARKLE = { id: 'sparkle-1', type: 'plugin.sparkle', amount: 3, nested: { kept: [1, 2] } };
 
   /**
-   * A scene with nested entities, components of several types, a prefab
-   * instance, and the table of a type no module of this build defines, written
-   * as a file.
+   * A scene with nested entities, a component of every type this build knows,
+   * a prefab instance, and the table of a type no module of this build defines,
+   * written as a file.
    */
   function written(): { json: string; unknownOn: string } {
     const parent = createEntity('Parent', [createComponent('mesh'), createComponent('collider')]);
     const child = createEntity('Child', [createComponent('rigidbody')]);
     const crate = createEntity('Crate', [createPrefabInstance('prefab-1')]);
+    const everything = createEntity(
+      'Everything',
+      COMPONENT_TYPES.map((type) => createComponent(type)),
+    );
     const scene: SceneDoc = { ...createEmptyScene(), id: 'scene' };
     insertEntity(scene, parent);
     insertEntity(scene, child, parent.entity.id);
     insertEntity(scene, crate);
+    insertEntity(scene, everything);
     const file = JSON.parse(serializeScene(scene));
     file.components['plugin.sparkle'] = { [crate.entity.id]: { [SPARKLE.id]: SPARKLE } };
     return { json: stableJson(file), unknownOn: crate.entity.id };
@@ -188,9 +196,35 @@ describe('a scene through a file', () => {
 
     expect(scene.entities).toBeInstanceOf(Map);
     expect(scene.entities.size).toBe(Object.keys(JSON.parse(json).entities).length);
-    expect(scene.entities.size).toBe(3);
+    expect(scene.entities.size).toBe(4);
     const parent = assertDefined([...scene.entities.values()].find((entity) => entity.name === 'Parent'), 'Parent');
     expect(scene.entities.get(parent.id)).toBe(parent);
+  });
+
+  it('holds the table of every known type as a Map of Maps, each component under its own id', () => {
+    const scene = deserializeScene(written().json);
+
+    // The fixture carries every type, so no table is empty by accident.
+    expect(COMPONENT_TYPES.filter((type) => scene.components[type].size === 0)).toEqual([]);
+    for (const type of COMPONENT_TYPES) {
+      expect(scene.components[type], type).toBeInstanceOf(Map);
+      for (const held of scene.components[type].values()) {
+        expect(held, type).toBeInstanceOf(Map);
+        for (const [id, component] of held) expect(component.id, type).toBe(id);
+      }
+    }
+  });
+
+  it('reads a type the file has no table for as an empty Map', () => {
+    const file = JSON.parse(serializeScene(createEmptyScene()));
+    file.components = {};
+
+    const scene = deserializeScene(JSON.stringify(file));
+
+    for (const type of COMPONENT_TYPES) {
+      expect(scene.components[type], type).toBeInstanceOf(Map);
+      expect(scene.components[type].size, type).toBe(0);
+    }
   });
 
   it('keeps the table of an unknown type exactly as found', () => {
@@ -199,5 +233,25 @@ describe('a scene through a file', () => {
     const out = JSON.parse(serializeScene(deserializeScene(json)));
 
     expect(out.components['plugin.sparkle']).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
+  });
+
+  it('keeps it as the object it came in, which is no Map, because nothing here can read into it', () => {
+    const { json, unknownOn } = written();
+
+    const kept = Reflect.get(deserializeScene(json).components, 'plugin.sparkle');
+
+    expect(kept).not.toBeInstanceOf(Map);
+    expect(kept).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
+  });
+
+  it('is not reshaped by a table a file names like a prototype', () => {
+    const file = JSON.parse(serializeScene(createEmptyScene()));
+    // JSON.parse makes it an own key, which is what a hostile file would write.
+    file.components = JSON.parse('{"__proto__": {"mesh": {"x": {"y": {}}}}}');
+
+    const scene = deserializeScene(JSON.stringify(file));
+
+    expect(Object.getPrototypeOf(scene.components)).toBe(Object.prototype);
+    expect(scene.components.mesh.size).toBe(0);
   });
 });

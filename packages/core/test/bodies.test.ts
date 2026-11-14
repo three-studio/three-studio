@@ -96,7 +96,7 @@ describe('physicsBodies', () => {
 
     physicsBodies(watched);
 
-    const colliders = Object.keys(scene.components.collider);
+    const colliders = [...scene.components.collider.keys()];
     const above = new Set(colliders.flatMap((id) => entityWorldMatrixPath(scene, id)));
     expect(read.size).toBeGreaterThan(0);
     for (const key of read) expect(above).toContain(key);

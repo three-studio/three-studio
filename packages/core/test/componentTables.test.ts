@@ -1,5 +1,7 @@
 import {
+  COMPONENT_TYPES,
   SCENE_FORMAT_VERSION,
+  assertDefined,
   cloneSubtree,
   componentsOf,
   createColliderShape,
@@ -8,9 +10,11 @@ import {
   createMeshEntity,
   deleteComponent,
   deserializeScene,
+  emptyComponentTables,
   entitiesWith,
   findComponent,
   findComponentById,
+  findComponents,
   hasComponent,
   insertEntity,
   putComponent,
@@ -18,9 +22,12 @@ import {
   serializeScene,
   validateHierarchy,
   type ColliderComponent,
+  type LightComponent,
+  type MeshComponent,
   type SceneDoc,
 } from '@three-studio/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import { copyComponentTables } from '../src/scene/components';
 import { sceneWith } from './fixtures';
 
 /*
@@ -43,6 +50,91 @@ function lit(count: number): { scene: SceneDoc; ids: string[]; litId: string } {
   putComponent(scene, litId, createComponent('light'));
   return { scene, ids: cubes.map((cube) => cube.entity.id), litId };
 }
+
+describe('the tables themselves', () => {
+  it('are a Map of Maps for each type, of the component that type holds', () => {
+    // The three levels are type, entity, component id. A Map is copied and
+    // frozen by immer in one step, where a record of ten thousand keys is
+    // frozen key by key.
+    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<string, Map<string, MeshComponent>>>();
+    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<string, Map<string, LightComponent>>>();
+    expectTypeOf<SceneDoc['components']['collider']>().toEqualTypeOf<Map<string, Map<string, ColliderComponent>>>();
+  });
+
+  it('start empty, one for every type this build knows', () => {
+    const tables = emptyComponentTables();
+
+    // Written out type by type, which the compiler checks against the mapped
+    // type, and the list of types is written out beside it: this is what says
+    // the two name the same ones.
+    expect(Object.keys(tables).sort()).toEqual([...COMPONENT_TYPES].sort());
+    for (const type of COMPONENT_TYPES) {
+      expect(tables[type], type).toBeInstanceOf(Map);
+      expect(tables[type].size, type).toBe(0);
+    }
+  });
+
+  it('are copied one level deep, for every type', () => {
+    const { scene } = lit(2);
+
+    const copy = copyComponentTables(scene.components);
+
+    // What an expansion adds goes into the copy; the Maps and the components
+    // under each entity stay the very objects the scene holds.
+    expect(Object.keys(copy).sort()).toEqual([...COMPONENT_TYPES].sort());
+    for (const type of COMPONENT_TYPES) {
+      expect(copy[type], type).not.toBe(scene.components[type]);
+      expect(copy[type].size, type).toBe(scene.components[type].size);
+      for (const [entityId, held] of scene.components[type]) expect(copy[type].get(entityId), type).toBe(held);
+    }
+  });
+
+  it('hold an entity\'s components of a type in a Map keyed by their ids', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+    const mesh = assertDefined(findComponent(scene, cube.entity.id, 'mesh'), 'the cube\'s mesh');
+
+    const held = scene.components.mesh.get(cube.entity.id);
+
+    expect(held).toBeInstanceOf(Map);
+    expect(held?.get(mesh.id)).toBe(mesh);
+  });
+});
+
+describe('listing the components of one type on an entity', () => {
+  it('answers every one of them, in the order they were added', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+    const first = createComponent('collider');
+    const second = createComponent('collider');
+    putComponent(scene, cube.entity.id, first);
+    putComponent(scene, cube.entity.id, second);
+
+    expect(findComponents(scene, cube.entity.id, 'collider')).toEqual([first, second]);
+  });
+
+  it('answers none for a type the entity does not carry, and for an entity that is not there', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+
+    expect(findComponents(scene, cube.entity.id, 'light')).toEqual([]);
+    expect(findComponents(scene, 'nobody', 'mesh')).toEqual([]);
+  });
+
+  it('answers a copy of the list, so a caller may delete while it walks', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+    putComponent(scene, cube.entity.id, createComponent('collider'));
+    putComponent(scene, cube.entity.id, createComponent('collider'));
+
+    for (const collider of findComponents(scene, cube.entity.id, 'collider')) {
+      deleteComponent(scene, cube.entity.id, collider.id);
+    }
+
+    expect(findComponents(scene, cube.entity.id, 'collider')).toEqual([]);
+    expect(scene.components.collider.has(cube.entity.id)).toBe(false);
+  });
+});
 
 describe('asking which entities carry a type', () => {
   it('answers from the table rather than from the entities', () => {

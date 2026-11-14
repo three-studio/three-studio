@@ -1,6 +1,7 @@
 import {
   componentsOf,
   findComponentById,
+  findComponents,
   type ComponentDoc,
   type ComponentType,
   type EntityDoc,
@@ -220,7 +221,7 @@ function nthOfType(
   type: ComponentType,
   nth: number,
 ): ComponentDoc | undefined {
-  return Object.values(scene.components[type][entityId] ?? {})[nth] as ComponentDoc | undefined;
+  return findComponents(scene, entityId, type)[nth];
 }
 
 class SingleComponentTarget implements ComponentTarget {

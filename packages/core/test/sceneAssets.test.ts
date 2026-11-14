@@ -1,10 +1,12 @@
 import {
+  assertDefined,
   collectSceneAssets,
   createComponent,
   createEmptyScene,
+  deserializeScene,
   emptyComponentTables,
   setComponentsOf,
-  putComponent,
+  serializeScene,
   unknownComponentTypes,
   createEntity,
   createPrefabInstance,
@@ -164,13 +166,15 @@ describe('what a script was handed in the inspector', () => {
 describe('component types this editor does not know', () => {
   it('names them, so an export can say what it could not follow', () => {
     const scene = sceneWith([createEntity('Lamp', [])]);
-    putComponent(scene, [...scene.entities.keys()][0]!, {
-      id: 'c1',
-      type: 'plugin.flicker',
-      sprite: 'tex-flame',
-    } as never);
+    // A type no module here defines has no place in a document: it is the file's
+    // own table, kept as found, so the scene is read from a file that has one.
+    const file = JSON.parse(serializeScene(scene));
+    const lamp = assertDefined(Object.keys(file.entities)[0], 'the lamp');
+    file.components['plugin.flicker'] = {
+      [lamp]: { c1: { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' } },
+    };
 
-    expect(unknownComponentTypes(scene)).toEqual(['plugin.flicker']);
+    expect(unknownComponentTypes(deserializeScene(JSON.stringify(file)))).toEqual(['plugin.flicker']);
     expect(unknownComponentTypes(sceneWith([]))).toEqual([]);
   });
 });

@@ -198,10 +198,7 @@ describe('fill', () => {
   });
 
   it('is what the scene migration goes through', () => {
-    const entity = createEntity('Thing', [
-      { id: 'c1', type: 'light' } as unknown as ComponentDoc,
-      { id: 'c2', type: 'teleporter', target: 'x' } as unknown as ComponentDoc,
-    ]);
+    const entity = createEntity('Thing', [{ id: 'c1', type: 'light' } as unknown as ComponentDoc]);
     const scene: SceneDoc = {
       version: 1,
       id: 's1',
@@ -212,22 +209,19 @@ describe('fill', () => {
       environment: { background: '#000000' } as SceneDoc['environment'],
     };
     setComponentsOf(scene, entity.entity.id, entity.components);
+    // A type no module here defines has no place in a document: it is the
+    // file's own table, so that is where this one is put.
+    const file = JSON.parse(serializeScene(scene));
+    const stored = { id: 'c2', type: 'teleporter', target: 'x' };
+    file.components['teleporter'] = { [entity.entity.id]: { c2: stored } };
 
-    const loaded = deserializeScene(serializeScene(scene));
+    const loaded = deserializeScene(JSON.stringify(file));
     const [light] = componentsOf(loaded, entity.entity.id);
     expect(light).toMatchObject({ type: 'light', intensity: expect.any(Number) });
 
-    // Filed under a table of its own, since no type here claims it — and copied
+    // Kept under a table of its own, since no type here claims it — and copied
     // through byte for byte, which is the rule that matters.
-    const tables = loaded.components as unknown as Record<
-      string,
-      Record<string, Record<string, unknown>>
-    >;
-    expect(tables['teleporter']?.[entity.entity.id]?.['c2']).toEqual({
-      id: 'c2',
-      type: 'teleporter',
-      target: 'x',
-    });
+    expect(Reflect.get(loaded.components, 'teleporter')).toEqual({ [entity.entity.id]: { c2: stored } });
   });
 });
 

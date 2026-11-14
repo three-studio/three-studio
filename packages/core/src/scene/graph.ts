@@ -311,7 +311,7 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   // nothing lists them, but a save writes them out and every query counts them,
   // so the only way to notice is to ask.
   for (const type of COMPONENT_TYPES) {
-    for (const entityId of Object.keys(scene.components[type])) {
+    for (const entityId of scene.components[type].keys()) {
       if (!scene.entities.has(entityId)) {
         problems.push(`components.${type} holds "${entityId}", which is not in the entity table`);
       }

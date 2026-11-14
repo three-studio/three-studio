@@ -336,9 +336,11 @@ describe('the guards are reached, not merely written', () => {
   it('serves the entry scene exactly as the window wrote it, and refuses a snapshot from before documents were text', async () => {
     const root = await project();
     const entry = assertDefined((await discoverScenes(root))[0], 'the project’s scene');
-    // Compact, which no writer of ours produces: re-encoded, it would come out
-    // indented and key-sorted, and the bytes would say so.
-    const sceneJson = JSON.stringify(deserializeScene(await readFile(join(root, entry.path), 'utf8')));
+    // Compact, which no writer of ours produces for a file: re-encoded, it would
+    // come out indented and key-sorted, and the bytes would say so. Read and
+    // written again as JSON, not as a document, whose Maps `JSON.stringify` would
+    // write as `{}`.
+    const sceneJson = JSON.stringify(JSON.parse(await readFile(join(root, entry.path), 'utf8')));
     const snapshot = {
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: { id: entry.id, name: entry.name, sceneJson },

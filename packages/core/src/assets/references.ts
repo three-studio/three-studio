@@ -1,6 +1,6 @@
 import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
 import { materialAssets } from '../components/materialAssets';
-import { COMPONENT_TYPES, type ComponentHost } from '../scene/components';
+import { COMPONENT_TYPES, tableOf, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
 
@@ -122,12 +122,8 @@ export function findAssetUsage(
  */
 function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> {
   for (const type of COMPONENT_TYPES) {
-    // The mapped type gives a union of eleven record types when indexed by a
-    // variable, and `Object.values` of a union widens to `unknown`. Every value
-    // in there is a `ComponentDoc` by construction of the table.
-    const table = host.components[type] as Record<string, Record<string, ComponentDoc>>;
-    for (const [entityId, held] of Object.entries(table)) {
-      for (const component of Object.values(held)) yield [entityId, component];
+    for (const [entityId, held] of tableOf(host.components, type)) {
+      for (const component of held.values()) yield [entityId, component];
     }
   }
 }
@@ -140,10 +136,15 @@ function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> 
  * say which assets one names, and the walks above never visit them. An export
  * cannot ship what they need, and says so rather than shipping a scene that
  * works in the editor that has the plugin and nowhere else.
+ *
+ * The one place that reads a table with `Object.keys`, and rightly: the table of
+ * a type this build does not define is the JSON object it was found as, not a
+ * Map, which the type — written for the types that are defined — cannot say.
+ * Known types are skipped before that is asked.
  */
 export function unknownComponentTypes(host: ComponentHost): string[] {
   const known = new Set<string>(COMPONENT_TYPES);
-  return Object.entries(host.components as Record<string, Record<string, unknown>>)
+  return Object.entries(host.components)
     .filter(([type, table]) => !known.has(type) && Object.keys(table).length > 0)
     .map(([type]) => type)
     .sort();
@@ -300,9 +301,7 @@ export function collectSceneAssets(
  * what makes an Apply safe to press.
  */
 export function findPrefabInstances(assetId: string, scene: SceneDoc): string[] {
-  return Object.entries(scene.components.prefabInstance)
-    .filter(([, held]) =>
-      Object.values(held).some((component) => component.assetId === assetId),
-    )
+  return [...scene.components.prefabInstance]
+    .filter(([, held]) => [...held.values()].some((component) => component.assetId === assetId))
     .map(([entityId]) => entityId);
 }

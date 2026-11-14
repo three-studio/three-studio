@@ -154,18 +154,31 @@ export interface EntityDoc {
  * changed the identity of the array, so the binder rebuilt every non-mesh
  * component of the entity.
  *
- * Each level earns its place. **Type first** — `Object.keys(components.light)`
+ * Each level earns its place. **Type first** — `components.light.keys()`
  * is the query that motivated them. **Entity second** — deleting, cloning
  * or instancing an entity moves one key per type rather than one per component.
  * **Component id last** — the component's own identity, which is what a
  * prefab override names; keying by a slot index would be a position again, and
  * would reopen the override defect for any entity carrying two components of one type.
  *
- * One shape for all eleven types, singletons included. "One mesh per entity" is
+ * One shape for all fourteen types, singletons included. "One mesh per entity" is
  * a rule the commands keep, exactly as it was when the array kept none.
+ *
+ * **Maps, below the type.** An edit goes through the tables it changes, and
+ * immer copies and freezes each one: a record of ten thousand entities is
+ * frozen key by key, where a Map is one step. A file writes each as an object
+ * keyed by id — `stableJson` writes the Maps back as that, and `migrateScene`
+ * reads them out of it — so the file does not change. The tables of the types
+ * stay properties of a plain object, because a type this build does not define
+ * has a table of its own there, kept exactly as it was found: the JSON object it
+ * came in, which nothing here can read into.
+ *
+ * `Object.keys`, `Object.values`, `Object.entries` and `in` compile on a Map and
+ * read it as empty, which no type says. Reach a table through
+ * `scene/components.ts`, or iterate the Map itself.
  */
 export type ComponentTables = {
-  [K in ComponentType]: Record<string, Record<string, ComponentOfType<K>>>;
+  [K in ComponentType]: Map<string, Map<string, ComponentOfType<K>>>;
 };
 
 /**

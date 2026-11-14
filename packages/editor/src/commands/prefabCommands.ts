@@ -10,6 +10,7 @@ import {
   deleteComponent,
   dropComponentsOf,
   expandPrefabs,
+  findComponents,
   findPrefabInstances,
   insertEntity,
   instanceOwnerOf,
@@ -383,7 +384,7 @@ export function unpackPrefabInstance(entityId: string): void {
 
     // The instance component goes; everything else the author put on the host
     // stays, which is what "unpack" means.
-    for (const instance of Object.values(draft.components.prefabInstance[entityId] ?? {})) {
+    for (const instance of findComponents(draft, entityId, 'prefabInstance')) {
       deleteComponent(draft, entityId, instance.id);
     }
 

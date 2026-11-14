@@ -73,10 +73,10 @@ export class SelectionHelpers {
     for (const [type, helper] of this.helpers) {
       const table = componentsOfType(scene, type);
       for (const entityId of selection) {
-        const held = table[entityId];
+        const held = table.get(entityId);
         if (!held) continue;
 
-        for (const [componentId, component] of Object.entries(held)) {
+        for (const [componentId, component] of held) {
           const key = keyOf(entityId, componentId);
           live.add(key);
 

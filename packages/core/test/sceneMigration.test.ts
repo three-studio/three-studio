@@ -1,6 +1,7 @@
 import {
   PREFAB_FORMAT_VERSION,
   SCENE_FORMAT_VERSION,
+  assertDefined,
   createColliderShape,
   createComponent,
   createEntity,
@@ -409,6 +410,32 @@ describe('scene migration', () => {
     // The old fallback returned a player controller for anything unrecognised,
     // so this used to come back with a move speed and an eye height.
     expect(kept['moveSpeed']).toBeUndefined();
+  });
+
+  /*
+   * A type, an entity id and a component id are keys a file chooses, and
+   * `__proto__` is one a file can write. Filed by plain assignment it is not a
+   * table but the prototype every object shares, and what the migration writes
+   * into it is written into all of them — in the editor's process, from a
+   * project somebody else made.
+   */
+  it('files a component whose type is named like a prototype under a table of its own', () => {
+    const file = JSON.parse(serializeScene(createStarter()));
+    file.version = 3;
+    delete file.components;
+    const entityId = assertDefined(Object.keys(file.entities)[0], 'the first entity');
+    file.entities[entityId].components = [{ id: 'evil-1', type: '__proto__', polluted: true }];
+
+    try {
+      const migrated = deserializeScene(JSON.stringify(file));
+
+      expect(Reflect.get({}, entityId)).toBeUndefined();
+      expect(Object.getPrototypeOf(migrated.components)).toBe(Object.prototype);
+      expect(migrated.entities.size).toBe(1);
+    } finally {
+      // Not left behind for the tests after this one, if it did get through.
+      Reflect.deleteProperty(Object.prototype, entityId);
+    }
   });
 
   it('fills a model of format 6, which drew whole files and nothing else', () => {

@@ -5,10 +5,14 @@ import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
   componentsOf,
+  copyComponentTables,
   emptyComponentTables,
   entitiesWith,
   findComponent,
+  putComponent,
   renameEntityReferences,
+  setComponentsOf,
+  tableOf,
   type ComponentHost,
 } from './components';
 import { fillComponent } from '../components';
@@ -74,9 +78,9 @@ function componentsFor(host: ComponentHost, ids: readonly string[]): ComponentTa
   const tables = emptyComponentTables();
   const wanted = new Set(ids);
   for (const type of COMPONENT_TYPES) {
-    const table = tables[type] as Record<string, Record<string, ComponentDoc>>;
-    for (const [entityId, held] of Object.entries(host.components[type])) {
-      if (wanted.has(entityId)) table[entityId] = structuredClone(held) as Record<string, ComponentDoc>;
+    const into = tableOf(tables, type);
+    for (const [entityId, held] of tableOf(host.components, type)) {
+      if (wanted.has(entityId)) into.set(entityId, structuredClone(held));
     }
   }
   return tables;
@@ -169,9 +173,7 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
 export function prefabVariantOf(name: string, baseAssetId: string): PrefabDoc {
   const root = createEntity(name, [createPrefabInstance(baseAssetId)]);
   const components = emptyComponentTables();
-  components.prefabInstance[root.entity.id] = Object.fromEntries(
-    root.components.map((component) => [component.id, component as PrefabInstanceComponent]),
-  );
+  setComponentsOf({ components }, root.entity.id, root.components);
   return createPrefabDoc(name, [root.entity], components, root.entity.id);
 }
 
@@ -265,15 +267,12 @@ export function expandPrefabs(
   if (instances.length === 0) return { scene, sources: new Map() };
 
   const entities = new Map(scene.entities);
-  const components = {} as ComponentTables;
-  for (const type of COMPONENT_TYPES) components[type] = { ...scene.components[type] } as never;
+  const components = copyComponentTables(scene.components);
   const sources = new Map<string, InstanceSource>();
 
   const adopt = (produced: Produced): void => {
     for (const entity of produced.entities) entities.set(entity.id, entity);
-    for (const type of COMPONENT_TYPES) {
-      Object.assign(components[type], produced.components[type]);
-    }
+    mergeTables(components, produced.components);
   };
 
   for (const { entityId, component } of instances) {
@@ -326,6 +325,17 @@ interface Produced {
   components: ComponentTables;
 }
 
+/**
+ * What `from` holds, filed into `into`: an entity's entry replaces the one `into`
+ * has under the same id, as assigning the keys of an object did.
+ */
+function mergeTables(into: ComponentTables, from: ComponentTables): void {
+  for (const type of COMPONENT_TYPES) {
+    const table = tableOf(into, type);
+    for (const [entityId, held] of tableOf(from, type)) table.set(entityId, held);
+  }
+}
+
 interface InstanceSource {
   component: PrefabInstanceComponent;
   /** Every prefab doc the expansion read, so a change to a nested one is seen. */
@@ -351,8 +361,8 @@ function chainOf(
   const chain: (PrefabDoc | undefined)[] = [prefab];
   if (!prefab) return chain;
 
-  for (const held of Object.values(prefab.components.prefabInstance)) {
-    for (const component of Object.values(held)) {
+  for (const held of prefab.components.prefabInstance.values()) {
+    for (const component of held.values()) {
       chain.push(...chainOf(component.assetId, prefabs, seen));
     }
   }
@@ -444,10 +454,7 @@ function instantiate(
     );
 
     produced.entities.push(copy);
-    for (const item of held) {
-      const table = produced.components[item.type] as Record<string, Record<string, ComponentDoc>>;
-      (table[copy.id] ??= {})[item.id] = item;
-    }
+    for (const item of held) putComponent(produced, copy.id, item);
 
     // A prefab may place other prefabs. Expanding them here rather than in a
     // second pass keeps one instance's whole production in one block, which is
@@ -475,9 +482,7 @@ function instantiate(
       })),
     );
     produced.entities.push(...nested.entities);
-    for (const type of COMPONENT_TYPES) {
-      Object.assign(produced.components[type], nested.components[type]);
-    }
+    mergeTables(produced.components, nested.components);
   }
 
   return produced;

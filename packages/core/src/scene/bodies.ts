@@ -51,8 +51,7 @@ export function collidersOfBody(scene: SceneDoc, entityId: string): readonly str
  * holds.
  */
 export function bodyOf(scene: SceneDoc, entityId: string): string | null {
-  const rigidbodies = componentsOfType(scene, 'rigidbody');
-  return riddenBy(scene, entityId, { has: (id) => Object.hasOwn(rigidbodies, id) });
+  return riddenBy(scene, entityId, componentsOfType(scene, 'rigidbody'));
 }
 
 /** The bodies a joint holds together, by the entity each sits on, or why it holds none. `other: null` is the world. */

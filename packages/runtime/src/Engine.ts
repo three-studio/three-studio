@@ -4,6 +4,7 @@ import {
   createPhysicsSettings,
   entitiesWith,
   findComponent,
+  findComponents,
   hasComponent,
   jointEnds,
   layersTouch,
@@ -293,7 +294,7 @@ export class Engine {
     for (const [entityId, bodyId] of riding) {
       const entity = scene.entities.get(entityId);
       if (!entity) continue;
-      const meshes = Object.values(scene.components.collider[entityId] ?? {}).filter(
+      const meshes = findComponents(scene, entityId, 'collider').filter(
         (component) => component.shape.kind === 'mesh',
       );
       if (meshes.length === 0) continue;
@@ -358,14 +359,14 @@ export class Engine {
       // through. Unticking a pair while trying the matrix out is the quickest
       // way to a player that falls for ever, and nothing else says why.
       const solid = [...riding].flatMap(([entityId, body]) =>
-        Object.values(scene.components.collider[entityId] ?? {})
+        findComponents(scene, entityId, 'collider')
           .filter((collider) => !collider.isSensor)
           .map(({ layer }) => ({ body, layer })),
       );
       for (const entityId of players) {
         const entity = scene.entities.get(entityId);
         // The collider its character sweeps.
-        const own = Object.values(scene.components.collider[entityId] ?? {})[0];
+        const own = findComponent(scene, entityId, 'collider');
         if (!entity || !own) continue;
         const stands = solid.some(
           ({ body, layer }) => body !== entityId && layersTouch(settings.layers, own.layer, layer),
@@ -384,7 +385,7 @@ export class Engine {
     const layerIds = new Set(settings.layers.map((layer) => layer.id));
     for (const entityId of this.world ? riding.keys() : []) {
       const entity = scene.entities.get(entityId);
-      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      const colliders = findComponents(scene, entityId, 'collider');
       if (!entity || colliders.every((collider) => layerIds.has(collider.layer))) continue;
       warn(
         `"${entity.name}" has a Collider on a layer this project no longer has, so it collides as Default. Choose its Layer again.`,
@@ -397,7 +398,7 @@ export class Engine {
     // reason. `''` is a slot left empty, not a link.
     for (const entityId of this.world ? riding.keys() : []) {
       const entity = scene.entities.get(entityId);
-      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      const colliders = findComponents(scene, entityId, 'collider');
       const lost = colliders.some(
         ({ materialId }) => !!materialId && linkedPhysicsMaterial(materialId, physicsMaterials) === null,
       );
@@ -411,8 +412,8 @@ export class Engine {
     // the solver moves is built and does nothing: a door falls off its hinge,
     // or a gate on a Kinematic body never swings, and nothing else says why.
     // Read through the rule the build reads.
-    for (const [entityId, held] of this.world ? Object.entries(componentsOfType(scene, 'joint')) : []) {
-      for (const joint of Object.values(held)) {
+    for (const [entityId, held] of this.world ? componentsOfType(scene, 'joint') : []) {
+      for (const joint of held.values()) {
         const problem = jointProblem(scene, entityId, joint);
         if (problem) warn(problem);
       }
@@ -651,12 +652,12 @@ export class Engine {
       const factory = behaviourFactoryFor(type);
       if (!factory) continue;
 
-      for (const [entityId, held] of Object.entries(componentsOfType(scene, type))) {
+      for (const [entityId, held] of componentsOfType(scene, type)) {
         const entity = scene.entities.get(entityId);
         const object = this.binder.getObject(entityId);
         if (!entity || !object) continue;
 
-        for (const component of Object.values(held)) {
+        for (const component of held.values()) {
           const behaviour = factory({ entity, object, component }, this.context);
           if (!behaviour) continue;
 

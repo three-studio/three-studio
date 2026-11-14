@@ -317,6 +317,7 @@ export {
   entitiesWith,
   findComponent,
   findComponentById,
+  findComponents,
   hasComponent,
   isKnownComponentType,
   putComponent,

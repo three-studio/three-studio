@@ -4,6 +4,7 @@ import {
   createColliderShape,
   createComponent,
   createJoint,
+  createLightEntity,
   insertEntity,
   createEntity,
   createMeshEntity,
@@ -289,6 +290,52 @@ describe('prefab expansion', () => {
     expect(second.scene.entities.get(id)).toBe(first.scene.entities.get(id));
   });
 
+  it('hands back the same components when nothing changed, which the binder reads by identity too', () => {
+    const prefab = treePrefab();
+    const host = instanceOf(prefab);
+    const scene = sceneWith([host]);
+
+    const first = expandPrefabs(scene, library(prefab));
+    const second = expandPrefabs(scene, library(prefab), first);
+
+    const id = instancedId(host.entity.id, prefab.root);
+    const placed = first.scene.components.mesh.get(id);
+    expect(placed?.size).toBe(1);
+    expect(second.scene.components.mesh.get(id)).toBe(placed);
+  });
+
+  it('writes into no table the scene owns', () => {
+    const prefab = treePrefab();
+    const host = instanceOf(prefab);
+    const own = createMeshEntity('box');
+    const scene = sceneWith([host, own]);
+
+    const { scene: expanded } = expandPrefabs(scene, library(prefab));
+
+    // The expansion adds what the instance produced to a copy of each table. Added
+    // to the scene's own, it would reach the document the author edits, and the
+    // next save would write the placed copies out as if they had been drawn.
+    expect(expanded.components.mesh.size).toBe(3);
+    expect([...scene.components.mesh.keys()]).toEqual([own.entity.id]);
+    expect(expanded.components.mesh).not.toBe(scene.components.mesh);
+    // And what the scene holds is the very same inner table, not a copy.
+    expect(expanded.components.mesh.get(own.entity.id)).toBe(scene.components.mesh.get(own.entity.id));
+  });
+
+  it('puts the lights a prefab places in the expanded scene\'s tables, where the editor looks for one', () => {
+    const lamp = createLightEntity('point');
+    const prefab = prefabWith('Lamp', [lamp], lamp.entity.id);
+    const host = createEntity('Lamp', [createPrefabInstance('prefab-1')]);
+    const scene = sceneWith([host]);
+
+    const { scene: expanded } = expandPrefabs(scene, library(prefab));
+
+    // A level whose lights all come from instances has none in the document, and
+    // the editor's fallback pair is switched off by asking the expanded scene.
+    expect(scene.components.light.size).toBe(0);
+    expect(expanded.components.light.size).toBe(1);
+  });
+
   it('rebuilds an instance whose overrides changed', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab);
@@ -503,6 +550,22 @@ describe('creating a prefab from a scene', () => {
     expect(prefab.entities.get(trunk.entity.id)?.transform.position).toEqual([0, 0, 0]);
     expect(prefab.entities.get(trunk.entity.id)?.parent).toBeNull();
   });
+
+  it('carries the components of the entities it takes, and nobody else\'s', () => {
+    const trunk = createMeshEntity('cylinder');
+    const leaves = createMeshEntity('sphere');
+    leaves.entity.parent = trunk.entity.id;
+    trunk.entity.children = [leaves.entity.id];
+    const outsider = createMeshEntity('box');
+    const scene = sceneWith([trunk, leaves, outsider]);
+
+    const prefab = prefabFromEntities('Tree', scene, trunk.entity.id);
+
+    expect([...prefab.components.mesh.keys()].sort()).toEqual([trunk.entity.id, leaves.entity.id].sort());
+    // Copies, so editing the prefab does not edit the scene it was made from.
+    expect(prefab.components.mesh.get(trunk.entity.id)).not.toBe(scene.components.mesh.get(trunk.entity.id));
+    expect(prefab.components.mesh.get(trunk.entity.id)).toEqual(scene.components.mesh.get(trunk.entity.id));
+  });
 });
 
 /*
@@ -579,6 +642,18 @@ describe('editing a prefab as a scene', () => {
     expect(back.name).toBe(prefab.name);
     expect(back.root).toBe(prefab.root);
     expect([...back.entities.keys()].sort()).toEqual([...prefab.entities.keys()].sort());
+    expect([...back.components.mesh.keys()].sort()).toEqual([...prefab.components.mesh.keys()].sort());
+  });
+
+  it('shares no table with the prefab it was lifted from', () => {
+    const prefab = treePrefab();
+    const asScene = prefabToScene(prefab);
+
+    // Prefab Mode edits the scene; the asset on disk and in the library is what
+    // every instance expands from, and is replaced only when the session ends.
+    asScene.components.mesh.clear();
+
+    expect(prefab.components.mesh.size).toBe(2);
   });
 
   it('carries an entity added while editing', () => {
