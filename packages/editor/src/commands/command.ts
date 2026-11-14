@@ -70,19 +70,26 @@ export function contextForScene(sceneId: SceneId): EditorContext {
   return { ...currentContext(), sceneId };
 }
 
+/**
+ * A gesture, asked and run against the context its caller read.
+ *
+ * The context is required. A caller acting on the selection as it stands passes
+ * `currentContext()`: read where the gesture is made, by whoever holds what a
+ * context is read from, rather than looked up here for a caller that gave none.
+ */
 export interface Command {
   /** A function, because "Undo Move" names the gesture it would take back. */
-  label(ctx?: EditorContext): string;
+  label(ctx: EditorContext): string;
   /** Blender's `poll()`, Unreal's `CanEditChange`. */
-  can(ctx?: EditorContext): boolean;
-  run(ctx?: EditorContext): void;
+  can(ctx: EditorContext): boolean;
+  run(ctx: EditorContext): void;
   /**
    * Refused only because the game is running: a command that writes the scene,
    * and would act otherwise. A menu says `Stop to edit` beside its greyed row,
    * and `run` says it in the toast — where a command that would not act anyway
    * says nothing, playing or not.
    */
-  waitsForStop(ctx?: EditorContext): boolean;
+  waitsForStop(ctx: EditorContext): boolean;
 }
 
 /** What a gesture is declared as, before `run` is wrapped in its own guard. */
@@ -134,9 +141,9 @@ interface CommandSpec {
 export function defineCommand(spec: CommandSpec): Command {
   const locked = (): boolean => spec.writesScene === true && isSceneLocked();
   return {
-    label: (ctx) => spec.label(ctx ?? currentContext()),
-    can: (ctx) => !locked() && spec.can(ctx ?? currentContext()),
-    waitsForStop: (ctx) => locked() && spec.can(ctx ?? currentContext()),
+    label: (ctx) => spec.label(ctx),
+    can: (ctx) => !locked() && spec.can(ctx),
+    waitsForStop: (ctx) => locked() && spec.can(ctx),
     /**
      * Checked here as well as by the caller.
      *
@@ -150,13 +157,12 @@ export function defineCommand(spec: CommandSpec): Command {
      * otherwise do nothing with nothing to say why.
      */
     run: (ctx) => {
-      const context = ctx ?? currentContext();
-      if (!spec.can(context)) return;
+      if (!spec.can(ctx)) return;
       if (locked()) {
         refuseWhileLocked();
         return;
       }
-      void spec.run(context);
+      void spec.run(ctx);
     },
   };
 }

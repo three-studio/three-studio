@@ -31,6 +31,7 @@ import {
   setLaunchOptions,
   setLiveReload,
 } from '../src/commands/deviceCommands';
+import { currentContext } from '../src/commands/command';
 import { useConsoleStore } from '../src/state/consoleStore';
 import {
   appendDeviceLogs,
@@ -181,6 +182,8 @@ function device(overrides: Partial<DeviceInfo> = {}): DeviceInfo {
 const toasts = () => useToastStore.getState().toasts;
 const lastToast = () => toasts().at(-1)!;
 const lastEntry = () => useConsoleStore.getState().entries.at(-1)!;
+/** What a command is asked and run against: the selection as it stands, which no device gesture reads. */
+const context = () => currentContext();
 
 beforeEach(() => {
   useToastStore.getState().clear();
@@ -609,21 +612,21 @@ describe('turning live reload on and off', () => {
   it('is a command whose label says what it would do, once the server has been read', () => {
     const toggle = DEVICE_COMMANDS.toggleLiveReload;
 
-    expect(toggle.can()).toBe(false);
+    expect(toggle.can(context())).toBe(false);
 
     useDeviceStore.setState({ status: status({ liveReload: false }) });
-    expect(toggle.can()).toBe(true);
-    expect(toggle.label()).toBe('Turn On Live Reload on Devices');
+    expect(toggle.can(context())).toBe(true);
+    expect(toggle.label(context())).toBe('Turn On Live Reload on Devices');
 
     useDeviceStore.setState({ status: status({ liveReload: true }) });
-    expect(toggle.label()).toBe('Turn Off Live Reload on Devices');
+    expect(toggle.label(context())).toBe('Turn Off Live Reload on Devices');
   });
 
   it('runs as the command turns it the other way', async () => {
     const bridge = install({ saveSettings: async () => status({ liveReload: false }) });
     useDeviceStore.setState({ status: status({ liveReload: true }) });
 
-    await DEVICE_COMMANDS.toggleLiveReload.run();
+    await DEVICE_COMMANDS.toggleLiveReload.run(context());
 
     expect(bridge.calls).toEqual([{ method: 'saveSettings', args: [{ liveReload: false }] }]);
   });
@@ -723,15 +726,18 @@ describe('the launch options', () => {
     const stats = DEVICE_COMMANDS.toggleDeviceStats;
     const webgl = DEVICE_COMMANDS.toggleForceWebGL;
 
-    expect(stats.can()).toBe(false);
-    expect(webgl.can()).toBe(false);
+    expect(stats.can(context())).toBe(false);
+    expect(webgl.can(context())).toBe(false);
 
     useDeviceStore.setState({ status: status() });
-    expect([stats.can(), webgl.can()]).toEqual([true, true]);
-    expect([stats.label(), webgl.label()]).toEqual(['Show Stats on Devices', 'Force WebGL2 on Devices']);
+    expect([stats.can(context()), webgl.can(context())]).toEqual([true, true]);
+    expect([stats.label(context()), webgl.label(context())]).toEqual([
+      'Show Stats on Devices',
+      'Force WebGL2 on Devices',
+    ]);
 
     useDeviceStore.setState({ status: status({ launchOptions: { ...forcing, stats: true } }) });
-    expect([stats.label(), webgl.label()]).toEqual([
+    expect([stats.label(context()), webgl.label(context())]).toEqual([
       'Hide Stats on Devices',
       'Stop Forcing WebGL2 on Devices',
     ]);
@@ -741,8 +747,8 @@ describe('the launch options', () => {
     const bridge = install({ saveSettings: async () => status() });
     useDeviceStore.setState({ status: status({ launchOptions: { ...forcing, stats: true } }) });
 
-    await DEVICE_COMMANDS.toggleDeviceStats.run();
-    await DEVICE_COMMANDS.toggleForceWebGL.run();
+    await DEVICE_COMMANDS.toggleDeviceStats.run(context());
+    await DEVICE_COMMANDS.toggleForceWebGL.run(context());
 
     expect(bridge.calls.map((call) => call.args)).toEqual([
       [{ launchOptions: { stats: false } }],
@@ -997,12 +1003,12 @@ describe('Take Screenshots on Devices', () => {
   });
 
   it('is offered once a status has been read, while a device can give a frame', () => {
-    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(false);
+    expect(DEVICE_COMMANDS.captureDevices.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ devices: [devices[2]!] }) });
-    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(false);
+    expect(DEVICE_COMMANDS.captureDevices.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ devices }) });
-    expect(DEVICE_COMMANDS.captureDevices.can()).toBe(true);
-    expect(DEVICE_COMMANDS.captureDevices.label()).toBe('Take Screenshots on Devices');
+    expect(DEVICE_COMMANDS.captureDevices.can(context())).toBe(true);
+    expect(DEVICE_COMMANDS.captureDevices.label(context())).toBe('Take Screenshots on Devices');
   });
 });
 
@@ -1061,31 +1067,31 @@ describe('Take Back Port', () => {
 
 describe('what each gesture can do', () => {
   it('launches only with a project open', () => {
-    expect(DEVICE_COMMANDS.launchOnDevices.can()).toBe(true);
+    expect(DEVICE_COMMANDS.launchOnDevices.can(context())).toBe(true);
     useProjectStore.setState({ summary: null } as never);
-    expect(DEVICE_COMMANDS.launchOnDevices.can()).toBe(false);
+    expect(DEVICE_COMMANDS.launchOnDevices.can(context())).toBe(false);
   });
 
   it('stops only a server that runs, or is starting', () => {
-    expect(DEVICE_COMMANDS.stopDeviceServer.can()).toBe(false);
+    expect(DEVICE_COMMANDS.stopDeviceServer.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
-    expect(DEVICE_COMMANDS.stopDeviceServer.can()).toBe(false);
+    expect(DEVICE_COMMANDS.stopDeviceServer.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ state: 'starting', urls: [], selectedUrl: null }) });
-    expect(DEVICE_COMMANDS.stopDeviceServer.can()).toBe(true);
+    expect(DEVICE_COMMANDS.stopDeviceServer.can(context())).toBe(true);
     useDeviceStore.setState({ status: status() });
-    expect(DEVICE_COMMANDS.stopDeviceServer.can()).toBe(true);
+    expect(DEVICE_COMMANDS.stopDeviceServer.can(context())).toBe(true);
   });
 
   it('takes back only a port the server slid away from, and names it', () => {
     useDeviceStore.setState({ status: status() });
-    expect(DEVICE_COMMANDS.reclaimDevicePort.can()).toBe(false);
+    expect(DEVICE_COMMANDS.reclaimDevicePort.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ port: 7701 }) });
-    expect(DEVICE_COMMANDS.reclaimDevicePort.can()).toBe(true);
-    expect(DEVICE_COMMANDS.reclaimDevicePort.label()).toBe('Take Back Port 7700');
+    expect(DEVICE_COMMANDS.reclaimDevicePort.can(context())).toBe(true);
+    expect(DEVICE_COMMANDS.reclaimDevicePort.label(context())).toBe('Take Back Port 7700');
   });
 
   it('lets the port be chosen whether or not the server runs', () => {
-    expect(DEVICE_COMMANDS.deviceServerPort.can()).toBe(true);
+    expect(DEVICE_COMMANDS.deviceServerPort.can(context())).toBe(true);
   });
 });
 
@@ -1228,11 +1234,11 @@ describe('Copy Device Link', () => {
 
   it('cannot run while the server is stopped, nor while only this computer can reach it', () => {
     useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
-    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(false);
+    expect(DEVICE_COMMANDS.copyDeviceLink.can(context())).toBe(false);
     useDeviceStore.setState({ status: status(LOCAL_ONLY) });
-    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(false);
+    expect(DEVICE_COMMANDS.copyDeviceLink.can(context())).toBe(false);
     useDeviceStore.setState({ status: status() });
-    expect(DEVICE_COMMANDS.copyDeviceLink.can()).toBe(true);
+    expect(DEVICE_COMMANDS.copyDeviceLink.can(context())).toBe(true);
   });
 
   it('says so when the clipboard refuses', async () => {
@@ -1262,11 +1268,11 @@ describe('Open Device Page in Browser', () => {
   });
 
   it('can run while the server runs, network or not', () => {
-    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(false);
+    expect(DEVICE_COMMANDS.openDevicePage.can(context())).toBe(false);
     useDeviceStore.setState({ status: status({ state: 'stopped', urls: [], selectedUrl: null }) });
-    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(false);
+    expect(DEVICE_COMMANDS.openDevicePage.can(context())).toBe(false);
     useDeviceStore.setState({ status: status(LOCAL_ONLY) });
-    expect(DEVICE_COMMANDS.openDevicePage.can()).toBe(true);
+    expect(DEVICE_COMMANDS.openDevicePage.can(context())).toBe(true);
   });
 });
 
@@ -1348,7 +1354,7 @@ describe('New Device Link…', () => {
   });
 
   it('can always run', () => {
-    expect(DEVICE_COMMANDS.newDeviceLink.can()).toBe(true);
+    expect(DEVICE_COMMANDS.newDeviceLink.can(context())).toBe(true);
   });
 });
 

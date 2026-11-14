@@ -2,6 +2,7 @@ import { createEntity, type EntityTemplate } from '@three-studio/core';
 import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView, canAddInView } from '../commands/placeEntity';
+import type { EditorContext } from '../commands/registry';
 import { STOP_TO_EDIT } from '../state/sceneLock';
 import type { MenuEntry, MenuItem } from '../ui/Menu';
 import { commandEntry } from './commandEntry';
@@ -33,8 +34,11 @@ const offer = (entry: AddMenuEntry): MenuEntry =>
  * There used to be a `parentId` parameter here, threaded through every entry and
  * passed by nobody: the one caller took the default. The selection is read at
  * the moment the entry is picked instead, which is also the moment it is true.
+ *
+ * `context` is what Group is asked and run against: the selection as the bar
+ * read it for this render.
  */
-export function buildAddMenu(): MenuEntry[] {
+export function buildAddMenu(context: EditorContext): MenuEntry[] {
   const add = (factory: () => EntityTemplate) => () => addEntityInView(factory());
 
   return [
@@ -48,7 +52,7 @@ export function buildAddMenu(): MenuEntry[] {
     // Through the registry. This entry once asked
     // `selection.length === 0` while Cmd+G asked `can('group')`, so a locked
     // object was refused by the shortcut and grouped by the menu.
-    commandEntry('group'),
+    commandEntry('group', context),
     null,
     ...addMenuGroups().map((group) => ({
       label: group.label,

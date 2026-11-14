@@ -1,6 +1,6 @@
 import { ChevronDown, Smartphone } from 'lucide-react';
 import { useRef } from 'react';
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
 import { setDevicePopoverOpen, useDeviceStore } from '../state/deviceStore';
 import { useProjectStore } from '../state/projectStore';
 import { toolTone } from '../ui/ToolButton';
@@ -48,8 +48,8 @@ export function DeviceButton({ className = '' }: { className?: string }) {
         type="button"
         aria-label="Launch on Devices"
         {...tooltip(view.title)}
-        disabled={!launch.can()}
-        onClick={() => launch.run()}
+        disabled={!launch.can(currentContext())}
+        onClick={() => launch.run(currentContext())}
         className={`relative flex h-7 w-7 items-center justify-center rounded-l-sm transition-colors ${toolTone(false)} disabled:text-ink-dim disabled:hover:bg-transparent`}
       >
         <Smartphone size={15} strokeWidth={1.75} />

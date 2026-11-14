@@ -24,7 +24,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { addEntityInView, placeDroppedAsset } from '../src/commands/placeEntity';
-import { commandById } from '../src/commands/registry';
+import { commandById, currentContext } from '../src/commands/registry';
 import { reparentSelection } from '../src/commands/sceneCommands';
 import { useAssetStore } from '../src/state/assetStore';
 import { selectDirty, useDocumentStore } from '../src/state/documentStore';
@@ -853,9 +853,9 @@ describe('an edit tried during Play, then Stop', () => {
     watching();
 
     play();
-    commandById('delete').run();
-    commandById('duplicate').run();
-    commandById('undo').run();
+    commandById('delete').run(currentContext());
+    commandById('duplicate').run(currentContext());
+    commandById('undo').run(currentContext());
     doc().mutate('Probe', (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').name = 'Probed'));
     addEntityInView(createMeshEntity('box'));
     placeDroppedAsset(PREFAB_ID, [0, 0, 0]);
@@ -913,7 +913,7 @@ describe('Save during Play', () => {
     watching();
 
     play();
-    commandById('save').run();
+    commandById('save').run(currentContext());
     await until(() => written.length === 1 && !useProjectStore.getState().saving, 'the save');
 
     expect(written).toEqual([serializeScene(scene)]);

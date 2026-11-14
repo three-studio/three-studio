@@ -1,7 +1,7 @@
 import { createEmptyScene, createMeshEntity, fixedId, type AssetId, type PrefabDoc } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
-import { commandById } from '../src/commands/registry';
+import { commandById, currentContext } from '../src/commands/registry';
 import { addEntity } from '../src/commands/sceneCommands';
 import { useAssetStore } from '../src/state/assetStore';
 import { selectDirty, useDocumentStore } from '../src/state/documentStore';
@@ -112,7 +112,7 @@ describe('what is unsaved', () => {
     edit();
     await prefabMode().open(CRATE);
 
-    expect(commandById('save').can()).toBe(true);
+    expect(commandById('save').can(currentContext())).toBe(true);
   });
 });
 

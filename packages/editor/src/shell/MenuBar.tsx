@@ -74,11 +74,11 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
   useProjectStore((s) => s.summary !== null);
 
   /*
-   * The context of the Edit entries, built here once per render from the
-   * selection this bar already subscribes to — so the entries cannot go stale,
-   * and reading the registry adds no subscription of its own. Watching the
-   * document from here would re-render the bar once per frame of a gizmo drag,
-   * as it once did.
+   * The context of the Edit, Add and Scene entries, built here once per render
+   * from the selection this bar already subscribes to — so the entries cannot
+   * go stale, and reading the registry adds no subscription of its own.
+   * Watching the document from here would re-render the bar once per frame of a
+   * gizmo drag, as it once did.
    */
   const ctx = { selection: Selection.of(selection, expandedScene().scene) };
 
@@ -141,11 +141,11 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
       // Under Edit, where both Unity and Unreal put it.
       { label: 'Project Settings…', onSelect: () => setSettingsOpen(true) },
     ],
-    Add: buildAddMenu(),
+    Add: buildAddMenu(ctx),
     // Built in render, like the others, so its rows cannot go stale. After Add,
     // the way an object menu follows the insert menu on macOS — Keynote reads
     // File · Edit · Insert · Slide — so Add keeps the place people reach for.
-    Scene: buildSceneMenu({ scenes, sceneId, startScene }),
+    Scene: buildSceneMenu({ scenes, sceneId, startScene, context: ctx }),
     // Panels are closable, so the Window menu is the way back. A few come back
     // by themselves when something needs them — the Viewport at Play — and the
     // rest only from here.

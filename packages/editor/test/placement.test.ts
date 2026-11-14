@@ -21,6 +21,7 @@ import { close, prefabWith } from '../../core/test/fixtures';
 import { addEntityInView, placeDroppedAsset, placedAt } from '../src/commands/placeEntity';
 import { addEntity } from '../src/commands/sceneCommands';
 import { worldPosition } from '../src/commands/transformSpace';
+import { currentContext } from '../src/commands/registry';
 import { buildAddMenu } from '../src/shell/addMenu';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -163,7 +164,7 @@ describe('adding from the menu while the game runs', () => {
   it('greys every row that places, Group included, saying why', () => {
     // Something selected, so Group would act: greyed only for the game's sake.
     useEditorStore.getState().setSelection([addEntity(createMeshEntity('box'))]);
-    const menu = () => buildAddMenu();
+    const menu = () => buildAddMenu(currentContext());
     /** The rows that place something: the leaves, under their headings. */
     const placing = (entries: readonly MenuEntry[]): MenuItem[] =>
       entries.flatMap((entry) => (entry === null ? [] : entry.submenu ? placing(entry.submenu) : [entry]));

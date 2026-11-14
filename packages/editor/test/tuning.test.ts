@@ -26,7 +26,7 @@ import { Behaviour, Engine, clearScripts, registerScript } from '@three-studio/r
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
-import { commandById } from '../src/commands/registry';
+import { commandById, currentContext } from '../src/commands/registry';
 import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
 import { effectiveComponent, inspectorSignature, linkedMaterial } from '../src/inspector/buildInspector';
 import { MultiTarget } from '../src/inspector/target';
@@ -380,13 +380,13 @@ describe('keeping what was tuned', () => {
     expect(toasts()).toHaveLength(1);
     expect(toasts()[0]).toMatchObject({ kind: 'info', title: 'Keep the physics tuned during Play?' });
     expect(toasts()[0]!.actions?.map(({ label }) => label)).toEqual(['Keep']);
-    expect(commandById('keepTuning').can()).toBe(true);
+    expect(commandById('keepTuning').can(currentContext())).toBe(true);
 
     play();
     expect(toasts()).toEqual([]);
     await until(() => session?.playEngine != null, 'the next engine');
     stop();
-    expect(commandById('keepTuning').can()).toBe(false);
+    expect(commandById('keepTuning').can(currentContext())).toBe(false);
     expect(toasts()).toEqual([]);
   });
 
@@ -399,7 +399,7 @@ describe('keeping what was tuned', () => {
 
     useProjectStore.setState({ sceneId: BOSS.id });
 
-    expect(commandById('keepTuning').can()).toBe(false);
+    expect(commandById('keepTuning').can(currentContext())).toBe(false);
     expect(toasts()).toEqual([]);
   });
 
@@ -410,7 +410,7 @@ describe('keeping what was tuned', () => {
     stop();
 
     expect(toasts()).toEqual([]);
-    expect(commandById('keepTuning').can()).toBe(false);
+    expect(commandById('keepTuning').can(currentContext())).toBe(false);
   });
 });
 

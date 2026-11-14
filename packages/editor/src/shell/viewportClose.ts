@@ -1,4 +1,4 @@
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
 import { showPanel } from './dockApi';
 
@@ -58,7 +58,7 @@ export function watchViewportClose(dock: WatchedDock): () => void {
 
     // Its tab's close button or Window ▸ Viewport: closed.
     if (event.kind === 'remove') {
-      commandById('stop').run();
+      commandById('stop').run(currentContext());
       return;
     }
 

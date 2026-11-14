@@ -19,7 +19,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import { showAssetFile } from '../src/commands/assetCommands';
-import { commandById } from '../src/commands/registry';
+import { commandById, currentContext } from '../src/commands/registry';
 import { addEntity, deleteSelection, renameEntity } from '../src/commands/sceneCommands';
 import {
   backToTheScene,
@@ -769,7 +769,7 @@ describe('Revert Scene', () => {
    * file is read before anything is left, so a file that cannot be used leaves
    * Prefab Mode and the game where they were.
    */
-  const can = () => commandById('revertScene').can();
+  const can = () => commandById('revertScene').can(currentContext());
 
   async function revert(): Promise<void> {
     const done = revertCurrentScene();

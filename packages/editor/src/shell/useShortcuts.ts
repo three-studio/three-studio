@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { commandById, type CommandId } from '../commands/registry';
+import { commandById, currentContext, type CommandId, type EditorContext } from '../commands/registry';
 import { bindingOf, commandForBinding, isFunctionKey } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
@@ -78,14 +78,14 @@ function landedInGame(event: KeyboardEvent): boolean {
 }
 
 /**
- * Runs what a key's binding names. A toggle runs once a press, whatever the
- * key's repeats: F9 held would otherwise pause and resume at the repeat rate,
- * landing wherever the key happened to be let go. Step, held, steps at that
- * rate, which is what holding it is for.
+ * Runs what a key's binding names, against the context read at the press. A
+ * toggle runs once a press, whatever the key's repeats: F9 held would otherwise
+ * pause and resume at the repeat rate, landing wherever the key happened to be
+ * let go. Step, held, steps at that rate, which is what holding it is for.
  */
-function runBound(id: CommandId, event: KeyboardEvent): void {
+function runBound(id: CommandId, event: KeyboardEvent, ctx: EditorContext): void {
   if (event.repeat && id === 'togglePause') return;
-  commandById(id).run();
+  commandById(id).run(ctx);
 }
 
 /**
@@ -119,7 +119,7 @@ export function useShortcuts(): void {
       // tooltips' among them; only the page below never sees it.
       event.preventDefault();
       event.stopPropagation();
-      runBound(action, event);
+      runBound(action, event, currentContext());
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -153,6 +153,7 @@ export function useShortcuts(): void {
 
       if (action !== null) {
         const command = commandById(action);
+        const ctx = currentContext();
         // A modifier binding is the editor's whether or not the command will
         // act — Cmd+S must not open the browser's save dialog on a clean
         // document. A bare one is only swallowed when something will happen: a
@@ -160,12 +161,12 @@ export function useShortcuts(): void {
         // else. A command that waits for Stop counts as something happening:
         // its refusal is answered, in the toast `run` raises, so the key was
         // the editor's.
-        if (hasModifier(event) || command.can() || command.waitsForStop()) event.preventDefault();
+        if (hasModifier(event) || command.can(ctx) || command.waitsForStop(ctx)) event.preventDefault();
 
         // Resolved, not decided. Every guard this used to hold — and the two it
         // was missing, `undo` and `save` — is the command's own `can()`, which
         // the menu asks in the same words.
-        runBound(action, event);
+        runBound(action, event, ctx);
         return;
       }
       // A modifier chord this table does not name belongs to the browser, not

@@ -14,6 +14,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity } from '../src/commands/sceneCommands';
 import { showInFileManagerLabel } from '../src/platform';
+import { currentContext } from '../src/commands/registry';
 import { commandEntry } from '../src/shell/commandEntry';
 import { buildSceneMenu, type SceneMenuInput } from '../src/shell/sceneMenu';
 import { shortcutHint } from '../src/shell/shortcutBindings';
@@ -111,7 +112,7 @@ function open(
     sceneId,
     saving: false,
   });
-  return { scenes, sceneId, startScene };
+  return { scenes, sceneId, startScene, context: currentContext() };
 }
 
 /** Edits the document, so that it has something to save. */
@@ -226,7 +227,7 @@ describe('no guard of its own', () => {
     const menu = buildSceneMenu(STATES[state]!());
     // Every row that is not a submenu's heading runs a command.
     const rows = menu.filter((entry): entry is MenuItem => entry !== null && entry.submenu === undefined);
-    expect(rows.map(shown)).toEqual(BOUND.map((id) => shown(commandEntry(id))));
+    expect(rows.map(shown)).toEqual(BOUND.map((id) => shown(commandEntry(id, currentContext()))));
   });
 
   it('greys Revert Scene on a clean scene, and offers it once edited', () => {

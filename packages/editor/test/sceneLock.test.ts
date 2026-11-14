@@ -490,12 +490,12 @@ describe('the commands that write the scene', () => {
       'togglePause',
     ]);
     // The document during Play is the one Play started from, and it is unsaved.
-    expect(commandById('save').can()).toBe(true);
+    expect(commandById('save').can(currentContext())).toBe(true);
   });
 
   it('drop out of the palette during Play, which keeps Save and Stop, and offers Pause', () => {
     useEditorStore.getState().setSelection([first]);
-    const palette = () => commandIds().filter((id) => commandById(id).can());
+    const palette = () => commandIds().filter((id) => commandById(id).can(currentContext()));
     expect(palette()).toEqual(expect.arrayContaining(['undo', 'redo', 'duplicate', 'delete', 'save']));
     expect(palette()).not.toContain('togglePause');
 

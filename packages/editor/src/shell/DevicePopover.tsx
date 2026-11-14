@@ -18,7 +18,7 @@ import {
   setLaunchOptions,
   setLiveReload,
 } from '../commands/deviceCommands';
-import { commandById, type CommandId } from '../commands/registry';
+import { commandById, currentContext, type CommandId } from '../commands/registry';
 import { refreshDevices } from '../state/deviceStore';
 import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
@@ -178,8 +178,8 @@ function Action({
     <button
       type="button"
       {...tooltip(title)}
-      disabled={!command.can()}
-      onClick={() => command.run()}
+      disabled={!command.can(currentContext())}
+      onClick={() => command.run(currentContext())}
       className={`${BUTTON_TONES[tone]} ${className}`}
     >
       {Icon !== undefined && <Icon size={11} aria-hidden />}

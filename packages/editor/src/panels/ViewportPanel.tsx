@@ -3,7 +3,7 @@ import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-rea
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
 import { DROPPABLE_KINDS, placeDroppedAsset } from '../commands/placeEntity';
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
 import { shortcutHint } from '../shell/shortcutBindings';
 import { useAssetStore } from '../state/assetStore';
 import { useEditorStore } from '../state/editorStore';
@@ -262,7 +262,9 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
     const onChange = () => {
       const holding = document.fullscreenElement === stage;
       setHoldingScreen(holding);
-      if (!holding && useEditorStore.getState().playState !== 'stopped') commandById('stop').run();
+      if (!holding && useEditorStore.getState().playState !== 'stopped') {
+        commandById('stop').run(currentContext());
+      }
     };
     document.addEventListener('fullscreenchange', onChange);
 
