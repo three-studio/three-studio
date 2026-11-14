@@ -10,3 +10,5 @@ export { Root } from './Root';
 export { activateEditor } from './activate';
 export { createEditorRegistries } from './registries';
 export type { EditorRegistries } from './registries';
+/* What a component type's editor part registers, in the kernel or in a module. */
+export type { AddMenuEntry, AddMenuGroup, EntityMarker, EntityOverlay, HierarchyIcon } from './components/registry';

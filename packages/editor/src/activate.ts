@@ -20,8 +20,6 @@ import { menu as meshMenu } from './components/mesh/menu';
 import { overlay as meshOverlay } from './components/mesh/overlay';
 import { pane as modelPane } from './components/model/inspector';
 import { overlay as modelOverlay } from './components/model/overlay';
-import { menu as particleEmitterMenu } from './components/particleEmitter/menu';
-import { overlay as particleEmitterOverlay } from './components/particleEmitter/overlay';
 import { pane as playerControllerPane } from './components/playerController/inspector';
 import { overlay as playerControllerOverlay } from './components/playerController/overlay';
 import { pane as prefabInstancePane } from './components/prefabInstance/inspector';
@@ -72,7 +70,6 @@ const ADD_MENUS: readonly AddMenuGroup[] = [
   audioSourceMenu,
   audioListenerMenu,
   waterMenu,
-  particleEmitterMenu,
 ];
 
 /** What each type draws in the viewport. Every type answers: whether it draws geometry decides its marker. */
@@ -90,7 +87,6 @@ const OVERLAYS: readonly EntityOverlay[] = [
   prefabInstanceOverlay,
   playerControllerOverlay,
   waterOverlay,
-  particleEmitterOverlay,
 ];
 
 /** Registers the kernel's panes, Add menu groups, viewport overlays and Hierarchy icons. Disposing takes them out again. */

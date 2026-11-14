@@ -12,7 +12,6 @@ import { cameraSystem } from './components/camera';
 import { lightSystem } from './components/light';
 import { meshSystem } from './components/mesh';
 import { modelSystem } from './components/model';
-import { particleEmitterSystem } from './components/particleEmitter';
 import { waterSystem } from './components/water';
 import { playerControllerBehaviour } from './controllers/PlayerController';
 import { scriptBehaviour } from './scripting/ScriptHost';
@@ -45,7 +44,6 @@ const SYSTEMS: readonly SystemDefinition[] = [
   lightSystem,
   cameraSystem,
   waterSystem,
-  particleEmitterSystem,
 ];
 
 const BEHAVIOURS: readonly BehaviourDefinition[] = [

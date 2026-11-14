@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { IPC_EVENTS, activateCore, createCoreRegistries } from '@three-studio/core';
+import * as particlesCore from '@three-studio/particles/core';
 import { BrowserWindow, app, session } from 'electron';
 import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
@@ -64,6 +65,9 @@ void app.whenReady().then(() => {
   // process does with a component is decode it, and none of it runs a game.
   const registries = createCoreRegistries();
   activateCore(registries);
+  // The modules' core parts too: the main process decodes scenes, and reads
+  // which assets each component names for an export.
+  particlesCore.activate(registries);
 
   // A hidden window standing in for a phone, for the smoke harness. See
   // `followWithSmokeDevice`.

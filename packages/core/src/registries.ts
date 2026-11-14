@@ -20,7 +20,6 @@ import { jointComponent } from './components/joint';
 import { lightComponent } from './components/light';
 import { meshComponent } from './components/mesh';
 import { modelComponent } from './components/model';
-import { particleEmitterComponent } from './components/particleEmitter';
 import { playerControllerComponent } from './components/playerController';
 import { prefabInstanceComponent } from './components/prefabInstance';
 import type { ComponentDefinition } from './components/registry';
@@ -64,7 +63,6 @@ const COMPONENTS: readonly ComponentDefinition[] = [
   prefabInstanceComponent,
   playerControllerComponent,
   waterComponent,
-  particleEmitterComponent,
 ];
 
 /**

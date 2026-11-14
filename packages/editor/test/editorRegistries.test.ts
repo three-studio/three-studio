@@ -1,20 +1,21 @@
 import {
   assertDefined,
   createEntity,
+  createLight,
+  createLightEntity,
   createMeshEntity,
   deserializeScene,
-  particleEmitterComponent,
   serializeScene,
   stableJson,
   type ComponentDoc,
+  type Schema,
 } from '@three-studio/core';
-import { Boxes, Camera, Lightbulb, Sparkles, Volume2, Waves } from 'lucide-react';
+import { Boxes, Camera, Lightbulb, Volume2, Waves } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { activateEditor } from '../src/activate';
 import { inspectorSignature } from '../src/inspector/buildInspector';
-import { isSeparator } from '../src/inspector/fields';
-import { paneEntriesFor, paneFor, unknownTypesOn } from '../src/inspector/panes';
+import { derivePane, paneFor, unknownTypesOn } from '../src/inspector/panes';
 import { createEditorRegistries } from '../src/registries';
 import { addMenuGroups } from '../src/shell/addMenu';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -30,7 +31,7 @@ const registries = builtInRegistries();
  */
 
 describe('activating the editor', () => {
-  it('registers a pane for each type still written by hand, and none for a type written as a schema', () => {
+  it('registers a pane for each kernel type, all still written by hand', () => {
     expect(registries.panes.values().map((pane) => pane.id)).toEqual([
       'mesh',
       'model',
@@ -74,7 +75,6 @@ describe('a type\'s name', () => {
       mesh: 'Mesh',
       model: 'Model',
       water: 'Water',
-      particleEmitter: 'Particles',
       light: 'Light',
       camera: 'Camera',
       rigidbody: 'Rigid Body',
@@ -110,7 +110,6 @@ describe('the Add menu', () => {
       // Two types under one heading, the source above the listener.
       { label: 'Audio', entries: ['Audio Source', 'Audio Listener'] },
       { label: 'Environment', entries: ['Water'] },
-      { label: 'Effects', entries: ['Particles'] },
     ]);
   });
 });
@@ -118,8 +117,8 @@ describe('the Add menu', () => {
 describe('the viewport\'s markers and helpers', () => {
   const rules = markerRules(registries.overlays);
 
-  it('rank the marked types as they were: camera, light, the two audio types, particles', () => {
-    expect(rules.markedTypes).toEqual(['camera', 'light', 'audioSource', 'audioListener', 'particleEmitter']);
+  it('rank the marked types as they were: camera, light, then the two audio types', () => {
+    expect(rules.markedTypes).toEqual(['camera', 'light', 'audioSource', 'audioListener']);
   });
 
   it('give each type the marker it had', () => {
@@ -137,7 +136,6 @@ describe('the viewport\'s markers and helpers', () => {
       prefabInstance: null,
       playerController: null,
       water: null,
-      particleEmitter: { color: 0xffb86b, pixels: 9, priority: 5 },
     });
   });
 
@@ -149,15 +147,15 @@ describe('the viewport\'s markers and helpers', () => {
     ]);
 
     const cube = createMeshEntity('box');
-    const emitter = createEntity('Embers', [particleEmitterComponent.create()]);
+    const lamp = createLightEntity('point');
     const both = createMeshEntity('box');
-    both.components.push(particleEmitterComponent.create());
-    const scene = sceneWith([cube, emitter, both, createEntity('Empty')]);
+    both.components.push(createLight('point'));
+    const scene = sceneWith([cube, lamp, both, createEntity('Empty')]);
 
     expect(rules.markerStyleFor(scene, cube.entity.id)).toBeUndefined();
     expect(rules.markerStyleFor(scene, both.entity.id)).toBeUndefined();
-    expect(rules.markerStyleFor(scene, emitter.entity.id)).toEqual({ color: 0xffb86b, pixels: 9, priority: 5 });
-    expect(rules.drawsNothing(scene, emitter.entity.id)).toBe(true);
+    expect(rules.markerStyleFor(scene, lamp.entity.id)).toEqual({ color: 0xffd25e, pixels: 11, priority: 2 });
+    expect(rules.drawsNothing(scene, lamp.entity.id)).toBe(true);
   });
 
   it('give a helper to the five types that annotate, made anew for whoever mounts it', () => {
@@ -178,7 +176,7 @@ describe('the viewport\'s markers and helpers', () => {
 });
 
 describe('the Hierarchy\'s icons', () => {
-  it('rank the seven types that decide a row, each with the icon it had', () => {
+  it('rank the six kernel types that decide a row, each with the icon it had', () => {
     const ranked = [...registries.icons.values()].sort((a, b) => a.priority - b.priority);
 
     expect(ranked.map(({ id, icon }) => [id, icon])).toEqual([
@@ -188,66 +186,48 @@ describe('the Hierarchy\'s icons', () => {
       ['audioSource', Volume2],
       ['audioListener', Volume2],
       ['water', Waves],
-      ['particleEmitter', Sparkles],
     ]);
   });
 });
 
 describe('the pane of a type written as a schema', () => {
-  /** The hand-written pane, as it stood: its rows without their conditions, which are checked apart. */
-  const WRITTEN_BY_HAND = [
-    { path: ['shape'], label: 'Emit from', type: 'enum', options: [{ value: 'point', label: 'Point' }, { value: 'sphere', label: 'Sphere' }, { value: 'box', label: 'Box' }] },
-    { path: ['radius'], label: 'Radius', type: 'number', min: 0, max: 50, step: 0.05 },
-    { path: ['extents'], label: 'Box size', type: 'vec3', min: 0, step: 0.1 },
-    { kind: 'separator' },
-    { path: ['count'], label: 'Particles', type: 'number', min: 0, max: 5000, step: 1 },
-    { path: ['lifetime'], label: 'Lifetime (s)', type: 'number', min: 0.1, max: 30, step: 0.1 },
-    { kind: 'separator' },
-    { path: ['velocity'], label: 'Velocity', type: 'vec3', step: 0.1 },
-    { path: ['spread'], label: 'Spread', type: 'vec3', min: 0, step: 0.1 },
-    { path: ['gravity'], label: 'Gravity', type: 'number', min: -20, max: 20, step: 0.1 },
-    { kind: 'separator' },
-    { params: { view: 'asset', assetKind: 'texture' }, path: ['spriteId'], label: 'Sprite' },
-    { path: ['color'], label: 'Colour' },
-    { path: ['size'], label: 'Size', type: 'number', min: 0.001, max: 10, step: 0.01 },
-    { path: ['opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
-    { path: ['additive'], label: 'Additive' },
-  ];
+  const schema = {
+    kind: { type: 'enum', label: 'Kind', default: 'point', options: [{ value: 'point', label: 'Point' }, { value: 'spot', label: 'Spot' }] },
+    reach: { type: 'number', label: 'Reach', default: 1, min: 0, step: 0.5, shownWhen: { field: 'kind', equals: 'spot' } },
+    aim: { type: 'vec3', label: 'Aim', default: [0, 1, 0], separatorBefore: true },
+    image: { type: 'asset', label: 'Image', kind: 'texture' },
+    tint: { type: 'color', label: 'Tint', default: '#ffffff' },
+    on: { type: 'boolean', label: 'On', default: true },
+  } as const satisfies Schema;
 
-  const emitter = (shape: 'point' | 'sphere' | 'box'): ComponentDoc => ({ ...particleEmitterComponent.create(), shape });
+  it('is a row per field in their order, a rule where a field asks for one, and only the bounds a field gives', () => {
+    const pane = derivePane('mesh', schema);
 
-  it('is derived from its fields, row for row what was written by hand', () => {
-    const pane = assertDefined(paneFor(registries, 'particleEmitter'), 'the emitter\'s pane');
-
-    // Through JSON, as the reference was taken: it drops the functions, which
-    // are the conditions, and keeps every key a row declares.
-    expect(JSON.parse(JSON.stringify(pane.fields))).toEqual(WRITTEN_BY_HAND);
-    expect(registries.panes.get('particleEmitter')).toBeUndefined();
+    // Through JSON, which drops the functions: the conditions are checked below.
+    expect(pane.id).toBe('mesh');
+    expect(JSON.parse(JSON.stringify(pane.fields))).toEqual([
+      { path: ['kind'], label: 'Kind', type: 'enum', options: [{ value: 'point', label: 'Point' }, { value: 'spot', label: 'Spot' }] },
+      { path: ['reach'], label: 'Reach', type: 'number', min: 0, step: 0.5 },
+      { kind: 'separator' },
+      { path: ['aim'], label: 'Aim', type: 'vec3' },
+      { params: { view: 'asset', assetKind: 'texture' }, path: ['image'], label: 'Image' },
+      { path: ['tint'], label: 'Tint' },
+      { path: ['on'], label: 'On' },
+    ]);
   });
 
-  it('shows the radius for a sphere, the box size for a box, and every other row always', () => {
-    const shown = (shape: 'point' | 'sphere' | 'box'): string[] => {
-      const component = emitter(shape);
-      return paneEntriesFor(registries, component).entries.flatMap((entry) =>
-        isSeparator(entry) || 'kind' in entry || (entry.visibleWhen && !entry.visibleWhen(component)) ? [] : [entry.label],
-      );
-    };
-    const always = ['Particles', 'Lifetime (s)', 'Velocity', 'Spread', 'Gravity', 'Sprite', 'Colour', 'Size', 'Opacity', 'Additive'];
+  it('shows a conditional row only while the field it names holds the value', () => {
+    const [, reach] = derivePane('light', schema).fields;
+    // Asked of a light, which holds a `kind`: the pane reads any component by the key the condition names.
+    const shown = (component: ComponentDoc): boolean | undefined =>
+      reach !== undefined && 'path' in reach ? reach.visibleWhen?.(component) : undefined;
 
-    expect(shown('point')).toEqual(['Emit from', ...always]);
-    expect(shown('sphere')).toEqual(['Emit from', 'Radius', ...always]);
-    expect(shown('box')).toEqual(['Emit from', 'Box size', ...always]);
-  });
-
-  it('is derived once: asked again, it is the same pane', () => {
-    expect(paneFor(registries, 'particleEmitter')).toBe(paneFor(registries, 'particleEmitter'));
+    expect(shown(createLight('spot'))).toBe(true);
+    expect(shown(createLight('point'))).toBe(false);
   });
 
   it('is none for a type nobody registered', () => {
-    const empty = createEditorRegistries();
-
-    expect(paneFor(empty, 'particleEmitter')).toBeUndefined();
-    expect(paneEntriesFor(empty, emitter('box'))).toEqual({ key: 'particleEmitter', entries: [] });
+    expect(paneFor(createEditorRegistries(), 'mesh')).toBeUndefined();
   });
 });
 

@@ -26,7 +26,6 @@ import type { JointComponent } from '../components/joint/schema';
 import type { LightComponent } from '../components/light/schema';
 import type { MeshComponent } from '../components/mesh/schema';
 import type { ModelComponent } from '../components/model/schema';
-import type { ParticleEmitterComponent } from '../components/particleEmitter/schema';
 import type { PlayerControllerComponent } from '../components/playerController/schema';
 import type { PrefabInstanceComponent } from '../components/prefabInstance/schema';
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
@@ -86,7 +85,6 @@ export { JOINT_KIND_LABELS } from '../components/joint/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
-export type { ParticleEmitterComponent } from '../components/particleEmitter/schema';
 export type {
   PlayerControllerComponent,
   PlayerControllerMode,
@@ -135,7 +133,6 @@ export interface ComponentTypes {
   prefabInstance: PrefabInstanceComponent;
   playerController: PlayerControllerComponent;
   water: WaterComponent;
-  particleEmitter: ParticleEmitterComponent;
 }
 
 export type ComponentType = keyof ComponentTypes;

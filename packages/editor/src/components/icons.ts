@@ -1,4 +1,4 @@
-import { Boxes, Camera, Lightbulb, Sparkles, Volume2, Waves } from 'lucide-react';
+import { Boxes, Camera, Lightbulb, Volume2, Waves } from 'lucide-react';
 import type { HierarchyIcon } from './registry';
 
 /**
@@ -22,7 +22,4 @@ export const HIERARCHY_ICONS: readonly HierarchyIcon[] = [
   // would otherwise draw the same box as a mesh, and the one thing a hierarchy
   // row has to say is what the entity is.
   { id: 'water', icon: Waves, priority: 6 },
-  // Beside water, and for the same reason: an emitter draws nothing an author
-  // can click, so the row is the only place the tree can say what it is.
-  { id: 'particleEmitter', icon: Sparkles, priority: 7 },
 ];

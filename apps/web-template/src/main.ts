@@ -13,6 +13,8 @@ import {
   type CoreRegistries,
   type SceneDoc,
 } from '@three-studio/core';
+import * as particlesCore from '@three-studio/particles/core';
+import * as particlesRuntime from '@three-studio/particles/runtime';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
@@ -152,7 +154,9 @@ async function boot(): Promise<void> {
   // this same page, so it is that page's root too.
   const registries = createRuntimeRegistries();
   activateCore(registries);
+  particlesCore.activate(registries);
   activateRuntime(registries);
+  particlesRuntime.activate(registries);
 
   /*
    * The entry scene can only be asked for once the manifest has arrived, since

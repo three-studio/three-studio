@@ -1,4 +1,6 @@
-import type { EntityId, ParticleEmitterComponent } from '@three-studio/core';
+import type { EntityId } from '@three-studio/core';
+import type { ParticleEmitterComponent } from '@three-studio/particles/core';
+import { ComponentSystem, ENTITY_ID_KEY, type SystemContext, type SystemHandle } from '@three-studio/runtime';
 import { attribute, texture, time, uniform, vec2, vec3 } from 'three/tsl';
 import {
   AdditiveBlending,
@@ -11,15 +13,8 @@ import {
   SpriteNodeMaterial,
   Vector3,
   type BufferGeometry,
-  type Node,
   type Texture,
 } from 'three/webgpu';
-import {
-  ComponentSystem,
-  type SystemContext,
-  type SystemHandle,
-} from '../../systems/ComponentSystem';
-import { ENTITY_ID_KEY } from '../../systems/identity';
 import { defaultParticleSprite } from './particleSprite';
 
 /*
@@ -223,6 +218,9 @@ export class ParticleEmitterSystem extends ComponentSystem<
   }
 }
 
+/** Scratch: an emitter's colour on its way from `#rrggbb` to the shader's linear RGB. */
+const _colour = new Color();
+
 /** Everything the shader reads that is not per-particle. */
 function buildUniforms(map: Texture) {
   return {
@@ -230,7 +228,10 @@ function buildUniforms(map: Texture) {
     gravity: uniform(0),
     size: uniform(1),
     opacity: uniform(1),
-    colour: uniform(new Color(0xffffff)),
+    // A `Vector3` holding linear RGB, not a `Color`: the shader reads a
+    // `vec3` either way, and `@types/three` gives a colour node no arithmetic,
+    // so multiplying one took a claim about its type.
+    colour: uniform(new Vector3(1, 1, 1)),
     velocity: uniform(new Vector3()),
     spread: uniform(new Vector3()),
     /** What the baked origins, which span −1..1, are multiplied by. */
@@ -251,7 +252,10 @@ function writeUniforms(uniforms: EmitterUniforms, component: ParticleEmitterComp
   uniforms.gravity.value = component.gravity;
   uniforms.size.value = component.size;
   uniforms.opacity.value = component.opacity;
-  uniforms.colour.value.set(component.color);
+  // Through a `Color`, which is what turns `#rrggbb` into the linear values
+  // the shader works in.
+  _colour.set(component.color);
+  uniforms.colour.value.set(_colour.r, _colour.g, _colour.b);
   uniforms.velocity.value.fromArray(component.velocity);
   uniforms.spread.value.fromArray(component.spread);
   writeEmitScale(uniforms.emitScale.value, component);
@@ -300,11 +304,7 @@ function bindShader(material: SpriteNodeMaterial, u: EmitterUniforms): void {
   // `velocity` is read in the frame the author sees on the gizmo.
   material.positionNode = origin.mul(u.emitScale).add(drift.mul(age)).add(fall);
   material.scaleNode = vec2(u.size);
-  // `uniform(new Color())` is a colour node, and `ColorExtensions` in
-  // `@types/three` is empty — a colour there has no arithmetic, though the
-  // runtime treats it as the `vec3` it is. Same wall, and same answer, as
-  // `WaterSurface` and `systems/sky.ts`.
-  material.colorNode = (u.colour as unknown as Node<'vec3'>).mul(u.map.rgb);
+  material.colorNode = u.colour.mul(u.map.rgb);
   // Fades to nothing over the particle's life. Always, and not as an option: a
   // particle that vanishes at full opacity pops, and a stream of them flickers.
   material.opacityNode = u.opacity.mul(age.div(u.lifetime).oneMinus()).mul(u.map.a);

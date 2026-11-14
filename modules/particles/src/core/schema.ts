@@ -1,5 +1,4 @@
-import type { Infer, Schema } from '../../fieldSchema';
-import type { Component } from '../../scene/primitives';
+import type { Component, Infer, Schema } from '@three-studio/core';
 
 /**
  * A stream of billboarded particles, as its fields.

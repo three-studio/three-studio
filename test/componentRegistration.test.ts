@@ -69,7 +69,6 @@ describe('core knows about every component folder it has', () => {
       'prefabInstance',
       'playerController',
       'water',
-      'particleEmitter',
     ]);
   });
 

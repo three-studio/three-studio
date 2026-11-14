@@ -31,7 +31,9 @@ export type { EngineOptions } from './Engine';
 export { activateRuntime, createRuntimeRegistries } from './registries';
 export type { RuntimeRegistries } from './registries';
 export type { BehaviourDefinition } from './behaviour/Behaviour';
-export type { SystemDefinition } from './systems/ComponentSystem';
+/* What a component type's system is written with, in the kernel or in a module. */
+export { ComponentSystem, defineSystem } from './systems/ComponentSystem';
+export type { SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 export { SceneHost } from './SceneHost';
 export type { SceneHostOptions, SceneLoad, SceneSource } from './SceneHost';
 export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';

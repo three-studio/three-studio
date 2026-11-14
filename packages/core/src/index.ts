@@ -168,6 +168,8 @@ export type {
 /* A type's fields written once, and what reading a value from outside answers. */
 export { planFields } from './fieldSchema';
 export type { FieldPlan, Infer, Schema, SchemaField } from './fieldSchema';
+/* What a type written as a schema is typed as, in the kernel or in a module. */
+export type { Component } from './scene/primitives';
 export type { DecodePath, Decoded, Diagnostic } from './decoded';
 
 export {
@@ -224,7 +226,6 @@ export type {
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
-  ParticleEmitterComponent,
   PlayerControllerComponent,
   RigidBodyComponent,
   SceneDoc,
@@ -316,9 +317,6 @@ export { createPrefabInstance } from './components/prefabInstance/defaults';
 export { createRigidBody } from './components/rigidbody/defaults';
 export { createScript } from './components/script/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';
-export { createParticleEmitterEntity } from './components/particleEmitter/defaults';
-export { particleEmitterComponent } from './components/particleEmitter';
-export { particleEmitterSchema } from './components/particleEmitter/schema';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

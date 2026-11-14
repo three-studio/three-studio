@@ -5,23 +5,23 @@ import {
   deserializeScene,
   findComponent,
   fixedId,
-  particleEmitterComponent,
   serializeScene,
   type AssetId,
-  type ParticleEmitterComponent,
   type Vec3,
 } from '@three-studio/core';
+import { particleEmitterType, type ParticleEmitterComponent } from '@three-studio/particles/core';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { sceneWith } from './fixtures';
-import { builtInRegistries } from './registries';
+import { sceneWith } from '../../../packages/core/test/fixtures';
+import { registriesWithParticles } from './registries';
 
-const registries = builtInRegistries();
+const registries = registriesWithParticles();
 
 /*
- * The first type written as a schema: its fields are said once, and its
+ * The type is written as a schema: its fields are said once, and its
  * TypeScript type, its blank component, its decoder and the asset it names all
- * come from them. What is pinned here is that none of it moved: the values a
- * new emitter starts with, and a component a file already holds.
+ * come from them. What is pinned here is that none of it moved when it became
+ * one, and then a module: the values a new emitter starts with, and a
+ * component a file already holds.
  */
 
 /** An emitter as a scene file written before the schema holds it, no field at its default. */
@@ -46,11 +46,11 @@ function stored(): Record<string, unknown> {
 }
 
 const decode = (value: unknown) =>
-  assertDefined(particleEmitterComponent.decode, 'the emitter\'s decoder')(value, ['emitter']);
+  assertDefined(particleEmitterType.decode, 'the emitter\'s decoder')(value, ['emitter']);
 
 describe('a new particle emitter', () => {
   it('starts as it always has: a slow plume of warm embers', () => {
-    expect(particleEmitterComponent.create()).toEqual({
+    expect(particleEmitterType.create()).toEqual({
       id: expect.any(String),
       type: 'particleEmitter',
       count: 200,
@@ -70,13 +70,13 @@ describe('a new particle emitter', () => {
   });
 
   it('is its own: an id of its own, and vectors no other emitter holds', () => {
-    const first = particleEmitterComponent.create();
-    const second = particleEmitterComponent.create();
+    const first = particleEmitterType.create();
+    const second = particleEmitterType.create();
     first.extents[0] = 9;
 
     expect(second.id).not.toBe(first.id);
     expect(second.extents).toEqual([1, 1, 1]);
-    expect(particleEmitterComponent.create().extents).toEqual([1, 1, 1]);
+    expect(particleEmitterType.create().extents).toEqual([1, 1, 1]);
   });
 
   it('is typed by its fields', () => {
@@ -84,7 +84,7 @@ describe('a new particle emitter', () => {
     expectTypeOf<ParticleEmitterComponent['extents']>().toEqualTypeOf<Vec3>();
     expectTypeOf<ParticleEmitterComponent['spriteId']>().toEqualTypeOf<AssetId | null>();
     expectTypeOf<ParticleEmitterComponent['type']>().toEqualTypeOf<'particleEmitter'>();
-    expectTypeOf(particleEmitterComponent.create()).toEqualTypeOf<ParticleEmitterComponent>();
+    expectTypeOf(particleEmitterType.create()).toEqualTypeOf<ParticleEmitterComponent>();
   });
 });
 
@@ -127,17 +127,17 @@ describe('a stored particle emitter', () => {
   });
 
   it('names the sprite it draws, so that a build ships it and deleting it is not called safe', () => {
-    const emitter = { ...particleEmitterComponent.create(), spriteId: fixedId('asset', 'spark') };
+    const emitter = { ...particleEmitterType.create(), spriteId: fixedId('asset', 'spark') };
 
     expect(componentAssets(registries, emitter)).toEqual(['spark']);
-    expect(componentAssets(registries, particleEmitterComponent.create())).toEqual([null]);
+    expect(componentAssets(registries, particleEmitterType.create())).toEqual([null]);
   });
 });
 
 describe('a scene holding a particle emitter', () => {
   /** A scene file holding one emitter, as `edit` leaves the emitter's JSON. */
   function file(edit: (emitter: Record<string, unknown>) => void): string {
-    const host = createEntity('Embers', [particleEmitterComponent.create()]);
+    const host = createEntity('Embers', [particleEmitterType.create()]);
     const json = JSON.parse(serializeScene(registries, sceneWith([host])));
     for (const emitter of Object.values<Record<string, unknown>>(json.components.particleEmitter[host.entity.id])) {
       edit(emitter);
