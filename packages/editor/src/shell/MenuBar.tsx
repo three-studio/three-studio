@@ -143,7 +143,7 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
       // Under Edit, where both Unity and Unreal put it.
       { label: 'Project Settings…', onSelect: () => setSettingsOpen(true) },
     ],
-    Add: buildAddMenu(ctx),
+    Add: buildAddMenu(ctx, registries.addMenu),
     // Built in render, like the others, so its rows cannot go stale. After Add,
     // the way an object menu follows the insert menu on macOS — Keynote reads
     // File · Edit · Insert · Slide — so Add keeps the place people reach for.

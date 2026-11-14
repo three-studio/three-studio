@@ -6,7 +6,7 @@ import {
   type JointKind,
 } from '@three-studio/core';
 import { entityChoices } from '../../inspector/declaredFields';
-import { asDegrees, type ComponentSchema, type FieldSpec } from '../../inspector/fields';
+import { asDegrees, type ComponentPane, type FieldSpec } from '../../inspector/fields';
 import { useDocumentStore } from '../../state/documentStore';
 
 const AXIS: FieldSpec = { path: ['motion', 'axis'], label: 'Axis', type: 'vec3', step: 0.1 };
@@ -73,8 +73,8 @@ function motionFields(component: ComponentDoc): readonly FieldSpec[] {
   return component.type === 'joint' ? JOINT_MOTION_FIELDS[component.motion.kind] : [];
 }
 
-export const inspector: ComponentSchema = {
-  label: 'Joint',
+export const pane: ComponentPane = {
+  id: 'joint',
   live: true,
   geometryFields: motionFields,
   // The rows change with the kind, as a collider's do with its shape.

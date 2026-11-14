@@ -3,10 +3,10 @@ import {
   TOUCH_CONTROLS_LABELS,
   optionsFrom,
 } from '@three-studio/core';
-import { asDegrees, type ComponentSchema } from '../../inspector/fields';
+import { asDegrees, type ComponentPane } from '../../inspector/fields';
 
-export const inspector: ComponentSchema = {
-  label: 'Player Controller',
+export const pane: ComponentPane = {
+  id: 'playerController',
   fields: [
     {
       path: ['mode'],

@@ -21,6 +21,7 @@ const KINDS: readonly (GeometryKind | null)[] = [
 ];
 
 export const menu: AddMenuGroup = {
+  id: 'mesh',
   label: 'Mesh',
   order: 1,
   entries: KINDS.map(

@@ -16,7 +16,7 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import { fitColliderToMesh, setComponentNestedField } from '../../commands/sceneCommands';
-import { assetSlot, type ComponentSchema, type FieldSpec } from '../../inspector/fields';
+import { assetSlot, type ComponentPane, type FieldSpec } from '../../inspector/fields';
 import { useAssetStore } from '../../state/assetStore';
 import { askForText } from '../../state/dialogStore';
 import { expandedScene } from '../../state/expansion';
@@ -121,8 +121,8 @@ function shapeFields(component: ComponentDoc): readonly FieldSpec[] {
   return component.type === 'collider' ? COLLIDER_SHAPE_FIELDS[component.shape.kind] : [];
 }
 
-export const inspector: ComponentSchema = {
-  label: 'Collider',
+export const pane: ComponentPane = {
+  id: 'collider',
   live: true,
   geometryFields: shapeFields,
   // The rows change with the kind, as a mesh's do with its primitive.

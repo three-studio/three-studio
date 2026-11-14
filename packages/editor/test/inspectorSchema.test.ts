@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   COLLIDER_SHAPE_LABELS,
   JOINT_KIND_LABELS,
   PROJECT_FORMAT_VERSION,
@@ -17,9 +18,10 @@ import {
   fieldOptions,
   fixedId,
   type ComponentDoc,
+  type ComponentType,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
+import { paneEntriesFor, paneFor } from '../src/inspector/panes';
 import { useProjectStore } from '../src/state/projectStore';
 import { declaredControl } from '../src/inspector/declaredFields';
 import {
@@ -34,6 +36,8 @@ import { readPath } from '../src/inspector/target';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
+/** The pane of a type, which every kernel type has: written by hand, or derived from its schema. */
+const paneOf = (type: ComponentType) => assertDefined(paneFor(registries, type), `the pane of ${type}`);
 /** Every type the window knows, in the order it registered them. */
 const TYPES = registries.components.values().map((definition) => definition.id);
 
@@ -47,7 +51,7 @@ const TYPES = registries.components.values().map((definition) => definition.id);
  */
 
 function fields(type: 'audioSource'): FieldSpec[] {
-  return COMPONENT_PANES[type].fields.filter(
+  return paneOf(type).fields.filter(
     (entry): entry is FieldSpec => !isSeparator(entry) && !isAction(entry) && 'path' in entry,
   );
 }
@@ -116,11 +120,11 @@ function jointOfKind(kind: string): ComponentDoc {
 
 describe('the Joint pane', () => {
   it.each(JOINT_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(jointOfKind(kind)).key).toBe(`joint:${kind}`);
+    expect(paneEntriesFor(registries, jointOfKind(kind)).key).toBe(`joint:${kind}`);
   });
 
   it('shows the world as the choice for no Connected Body, and writes it back as none', () => {
-    const row = COMPONENT_PANES.joint.fields.find(
+    const row = paneOf('joint').fields.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'connectedEntity',
     );
     if (!row) throw new Error('no Connected Body row');
@@ -132,7 +136,7 @@ describe('the Joint pane', () => {
 
   it("shows a hinge's range with its Limits, and its speed with its Motor, in degrees", () => {
     const shown = (component: ComponentDoc) =>
-      paneEntriesFor(component)
+      paneEntriesFor(registries, component)
         .entries.filter((entry): entry is FieldSpec => 'path' in entry)
         .filter((entry) => entry.visibleWhen?.(component) ?? true)
         .map((entry) => entry.label);
@@ -158,7 +162,7 @@ describe('the Joint pane', () => {
       'Max Torque',
       'Enable Collision',
     ]);
-    const min = paneEntriesFor(both).entries.find(
+    const min = paneEntriesFor(registries, both).entries.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.label === 'Min',
     );
     expect(min?.toModel?.(-Math.PI / 2)).toBeCloseTo(-90, 9);
@@ -167,7 +171,7 @@ describe('the Joint pane', () => {
 
 describe('the Collider pane', () => {
   const shapeRow = (): FieldSpec => {
-    const row = COMPONENT_PANES.collider.fields.find(
+    const row = paneOf('collider').fields.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape',
     );
     if (!row) throw new Error('no Shape row');
@@ -184,7 +188,7 @@ describe('the Collider pane', () => {
   });
 
   it('shows a rotation in degrees and writes it back in radians', () => {
-    const row = paneEntriesFor(colliderOfKind('box')).entries.find(
+    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape.rotation',
     );
     if (!row) throw new Error('no Rotation row');
@@ -195,11 +199,11 @@ describe('the Collider pane', () => {
   });
 
   it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(colliderOfKind(kind)).key).toBe(`collider:${kind}`);
+    expect(paneEntriesFor(registries, colliderOfKind(kind)).key).toBe(`collider:${kind}`);
   });
 
   it("lists the project's layers by name in its Layer row", () => {
-    const row = COMPONENT_PANES.collider.fields.find(
+    const row = paneOf('collider').fields.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
     );
     if (!row) throw new Error('no Layer row');
@@ -240,7 +244,7 @@ describe('the Collider pane', () => {
  */
 describe('every row that reads a tuple says so', () => {
   const rowsOf = (component: ComponentDoc): FieldSpec[] =>
-    paneEntriesFor(component).entries.filter((entry): entry is FieldSpec => 'path' in entry);
+    paneEntriesFor(registries, component).entries.filter((entry): entry is FieldSpec => 'path' in entry);
 
   const axesOf = (spec: FieldSpec): number | null =>
     spec.type === 'vec2' ? 2 : spec.type === 'vec3' ? 3 : null;
@@ -322,7 +326,7 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
   });
 
   it.each(TYPES)('%s', (type) => {
-    for (const spec of paneEntriesFor(createComponent(registries, type)).entries) {
+    for (const spec of paneEntriesFor(registries, createComponent(registries, type)).entries) {
       if (!('path' in spec)) continue;
       const unknown = Object.keys(paramsOf(spec as FieldSpec<never>)).filter(
         (key) => !KNOWN.has(key),
@@ -390,7 +394,7 @@ describe('a declared control fits the value it is bound to', () => {
 
   it.each(TYPES)('%s', (type) => {
     const component = createComponent(registries, type);
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(type, spec, readPath(component, spec.path));
     }
@@ -398,7 +402,7 @@ describe('a declared control fits the value it is bound to', () => {
 
   it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
     const component = colliderOfKind(kind);
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(`collider:${kind}`, spec, readPath(component, spec.path));
     }
@@ -406,7 +410,7 @@ describe('a declared control fits the value it is bound to', () => {
 
   it.each(JOINT_KINDS)('a joint of kind %s', (kind) => {
     const component = jointOfKind(kind);
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(`joint:${kind}`, spec, readPath(component, spec.path));
     }

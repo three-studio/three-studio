@@ -13,7 +13,6 @@ export const particleEmitterComponent = defineComponent({
   id: 'particleEmitter',
   label: 'Particles',
   schema: particleEmitterSchema,
-  icon: 'sparkles',
   runtime: true,
   addable: true,
 });

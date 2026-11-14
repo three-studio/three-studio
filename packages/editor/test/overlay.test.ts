@@ -54,6 +54,8 @@ import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 import { builtInRegistries } from './registries';
 
+const registries = builtInRegistries();
+
 /*
  * A light, a camera and a bare group build an `Object3D` with no geometry, so
  * the raycaster never touches them: before this layer they were selectable from
@@ -77,12 +79,12 @@ function mount(scene: SceneDoc): {
   frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
-    registries: builtInRegistries(),
+    registries,
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });
-  const overlay = new ViewportOverlay(binder);
+  const overlay = new ViewportOverlay(binder, registries.overlays);
   const camera = new PerspectiveCamera(60, 1.5, 0.1, 1000);
   camera.position.set(0, 0, 10);
 

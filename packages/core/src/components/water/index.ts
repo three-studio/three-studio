@@ -23,7 +23,6 @@ export const waterComponent: ComponentDefinition<WaterComponent> = {
   // deleting it does not claim nothing uses it.
   assets: (component) => [component.normalMapId],
   entities: () => [],
-  icon: 'waves',
   placeable: () => true,
   runtime: true,
   addable: true,

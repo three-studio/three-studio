@@ -1,11 +1,11 @@
 import type { ComponentDoc } from '@three-studio/core';
 import { specFor } from '../../inspector/declaredFields';
-import type { ComponentSchema, FieldSpec } from '../../inspector/fields';
+import type { ComponentPane, FieldSpec } from '../../inspector/fields';
 import { useAssetStore } from '../../state/assetStore';
 import { useScriptStore } from '../../state/scriptStore';
 
-export const inspector: ComponentSchema = {
-  label: 'Script',
+export const pane: ComponentPane = {
+  id: 'script',
   extraFields,
   // A different script is a different set of rows, so the pane is rebuilt
   // rather than refreshed when the asset changes.

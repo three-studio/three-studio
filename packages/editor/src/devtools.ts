@@ -1,4 +1,5 @@
-import { studioTime, type RuntimeRegistries } from '@three-studio/runtime';
+import { studioTime } from '@three-studio/runtime';
+import type { EditorRegistries } from './registries';
 import type { DockviewApi } from 'dockview-react';
 import { audioPreview } from './audio/preview';
 import { dockApi } from './shell/dockApi';
@@ -40,7 +41,7 @@ declare global {
   interface Window {
     __studioStores?: StudioDevtools;
     /** The window's registries, which the store actions that decode or expand take. */
-    __studioRegistries?: RuntimeRegistries;
+    __studioRegistries?: EditorRegistries;
     __studioAudioPreview?: typeof audioPreview;
     __studioTime?: typeof studioTime;
     __studioLaunchSnapshot?: typeof launchSnapshot;
@@ -60,7 +61,7 @@ declare global {
  * GPU memory nor Play can be read there. A production window the harness does
  * not drive installs nothing.
  */
-export function installDevtools(registries: RuntimeRegistries): void {
+export function installDevtools(registries: EditorRegistries): void {
   if (!import.meta.env.DEV && !window.studio.smoke) return;
 
   // Beside the stores, because a page function driving them needs them: the

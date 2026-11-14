@@ -13,7 +13,7 @@ import {
   type WaterComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { paneEntriesFor } from '../src/components/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { SCENE_SCHEMA, sceneSignature } from '../src/inspector/schema';
 import { shapeOf } from '../src/inspector/signature';
 import { builtInRegistries } from './registries';
@@ -35,7 +35,7 @@ const TYPES = registries.components.values().map((definition) => definition.id);
 
 /** The shape a component's pane would take, as the panel computes it. */
 function shape(component: ComponentDoc): string {
-  const { key, entries } = paneEntriesFor(component);
+  const { key, entries } = paneEntriesFor(registries, component);
   return `${key}/${shapeOf(entries, component)}`;
 }
 
@@ -53,7 +53,7 @@ describe('every component type is measured, not defaulted', () => {
     // had a shape that could never change. Every type now answers with as many
     // bits as it has rows, which is the shape being read rather than guessed.
     for (const type of TYPES) {
-      const { entries } = paneEntriesFor(createComponent(registries, type));
+      const { entries } = paneEntriesFor(registries, createComponent(registries, type));
       expect(shapeOf(entries, createComponent(registries, type))).toHaveLength(entries.length);
     }
   });
@@ -62,7 +62,7 @@ describe('every component type is measured, not defaulted', () => {
     // A mesh's, a collider's and a joint's geometry slot and a script's
     // declared properties change the list itself, which no arrangement of bits
     // can express. Everything else does.
-    const keys = TYPES.map((type) => paneEntriesFor(createComponent(registries, type)).key);
+    const keys = TYPES.map((type) => paneEntriesFor(registries, createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
       'collider:box',
       'joint:hinge',
@@ -101,7 +101,7 @@ describe('a light', () => {
      * answer depends on the kind — and that is the whole difference between
      * restating a declaration and reading it.
      */
-    const tick = paneEntriesFor(light('rectArea')).entries.find(
+    const tick = paneEntriesFor(registries, light('rectArea')).entries.find(
       (entry) => 'path' in entry && entry.path[0] === 'castShadow',
     );
     expect(tick?.visibleWhen?.(light('rectArea'))).toBe(false);

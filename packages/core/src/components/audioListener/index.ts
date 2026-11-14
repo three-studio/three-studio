@@ -16,7 +16,6 @@ export const audioListenerComponent: ComponentDefinition<AudioListenerComponent>
   create: createAudioListener,
   assets: () => [],
   entities: () => [],
-  icon: 'volume',
   placeable: () => true,
   runtime: true,
   addable: true,

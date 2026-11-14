@@ -5,15 +5,15 @@ import {
   type ComponentDoc,
 } from '@three-studio/core';
 import { audioPreview } from '../../audio/preview';
-import { assetSlot, type ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentPane } from '../../inspector/fields';
 import { peekViewport } from '../../viewport/viewportHost';
 
 /** 3D falloff only matters once a source has some spatial blend. */
 const isPositional = (component: ComponentDoc) =>
   component.type === 'audioSource' && component.spatialBlend > 0;
 
-export const inspector: ComponentSchema = {
-  label: 'Audio Source',
+export const pane: ComponentPane = {
+  id: 'audioSource',
   fields: [
     // First, because everything below it is a way of shaping *this*. The
     // component has carried an `assetId` since the day it was added to the

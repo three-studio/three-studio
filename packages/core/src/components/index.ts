@@ -112,7 +112,7 @@ export function isPlaceable(registries: CoreRegistries, template: EntityTemplate
   return template.components.some((component) => componentIsPlaceable(registries, component));
 }
 
-export { defineComponent, type ComponentDefinition, type ComponentIcon } from './registry';
+export { defineComponent, type ComponentDefinition } from './registry';
 
 /**
  * Blank instance of a component type, used by "Add Component" in the inspector.

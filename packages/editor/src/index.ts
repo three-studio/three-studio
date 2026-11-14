@@ -6,3 +6,7 @@
  */
 export { App } from './App';
 export { Root } from './Root';
+/* What a window's composition root makes and fills, after core's and the runtime's. */
+export { activateEditor } from './activate';
+export { createEditorRegistries } from './registries';
+export type { EditorRegistries } from './registries';

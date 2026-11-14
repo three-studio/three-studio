@@ -1,13 +1,12 @@
 import {
   componentsOfType,
-  idMapOf,
-  isComponentTypeId,
   type ComponentId,
   type ComponentTypeId,
   type EntityId,
+  type Registry,
   type SceneDoc,
 } from '@three-studio/core';
-import { OVERLAYS } from '../../components/overlays';
+import type { EntityOverlay } from '../../components/registry';
 import type { SceneBinder } from '@three-studio/runtime';
 import { Group, type Object3D } from 'three/webgpu';
 import type { ComponentHelper, HelperHandle } from './ComponentHelper';
@@ -52,15 +51,17 @@ export class SelectionHelpers {
    * needed to widen the values — `mount` is a method, so TypeScript keeps its
    * parameter bivariant. See `ComponentHelper`.
    */
-  private readonly helpers = new Map<ComponentTypeId, ComponentHelper>(
-    [...idMapOf(OVERLAYS, isComponentTypeId)].flatMap(([type, overlay]) =>
-      overlay.helper === null ? [] : [[type, overlay.helper] as const],
-    ),
-  );
+  private readonly helpers: ReadonlyMap<ComponentTypeId, ComponentHelper>;
   private readonly mounted = new Map<Key, Mounted>();
 
-  constructor(private readonly binder: SceneBinder) {
+  constructor(
+    private readonly binder: SceneBinder,
+    overlays: Registry<ComponentTypeId, EntityOverlay>,
+  ) {
     this.root.name = 'SelectionHelpers';
+    this.helpers = new Map(
+      overlays.values().flatMap(({ id, helper }) => (helper === null ? [] : [[id, helper()] as const])),
+    );
   }
 
   /**

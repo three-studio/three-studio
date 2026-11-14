@@ -1,4 +1,3 @@
-import type { RuntimeRegistries } from '@three-studio/runtime';
 import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
@@ -8,6 +7,7 @@ import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindin
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
+import type { EditorRegistries } from './registries';
 import { RegistriesContext, useRegistries } from './registriesContext';
 import { useProjectStore } from './state/projectStore';
 import { watchUnsaved } from './state/unsaved';
@@ -24,7 +24,7 @@ captureConsole();
  * render, so neither shell is ever painted in the wrong window — which is what
  * asking for it over IPC would have cost.
  */
-export function Root({ registries }: { registries: RuntimeRegistries }) {
+export function Root({ registries }: { registries: EditorRegistries }) {
   // Once the registries are in hand, which is here: the devtools publish them
   // beside the stores, whose actions take them.
   useEffect(() => installDevtools(registries), [registries]);

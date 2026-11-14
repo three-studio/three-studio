@@ -10,7 +10,6 @@ import {
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
-import type { RuntimeRegistries } from '@three-studio/runtime';
 import type { FolderApi } from 'tweakpane';
 import {
   renameEntity,
@@ -36,9 +35,13 @@ import {
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { inPrefabMode } from '../state/prefabModeStore';
-import { COMPONENT_PANES, paneEntriesFor } from '../components/panes';
+import type { EditorRegistries } from '../registries';
+import { paneEntriesFor, paneFor, unknownTypesOn } from './panes';
 import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
+
+/** What stands in for the rows of a component whose type no module of this editor defines. */
+const UNKNOWN_TYPE_NOTICE = 'Not installed in this editor.\nKept with its entity, and saved as found.';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -74,7 +77,7 @@ export class InspectorBinding {
    *   from a field control to the import store was an import cycle.
    */
   constructor(
-    private readonly registries: RuntimeRegistries,
+    private readonly registries: EditorRegistries,
     container: HTMLElement,
     target: InspectorTarget,
     actions: AssetFieldActions,
@@ -134,6 +137,14 @@ export class InspectorBinding {
     const target = new SingleTarget(this.registries, entity.id);
     for (const component of target.components()) {
       this.buildComponent(entity.id, component, target);
+    }
+    // What the entity carries of a type no module here defines: named, so that
+    // the author knows it is there, and not editable, since nothing here can
+    // read it. It goes with the entity, and a save writes it back as found.
+    for (const type of unknownTypesOn(expandedScene(this.registries).scene, entity.id)) {
+      this.binder.pane
+        .addFolder({ title: type })
+        .addBinding({ value: UNKNOWN_TYPE_NOTICE }, 'value', { label: 'Module', readonly: true, multiline: true, rows: 3 });
     }
   }
 
@@ -277,8 +288,9 @@ export class InspectorBinding {
   ): void {
     const component = target.representative;
     const componentId = component.id;
-    const schema = COMPONENT_PANES[component.type];
-    const folder = this.binder.pane.addFolder({ title: schema.label });
+    const label = this.registries.components.get(component.type)?.label ?? component.type;
+    const live = paneFor(this.registries, component.type)?.live === true;
+    const folder = this.binder.pane.addFolder({ title: label });
 
     // Conditional fields read the material the mesh actually renders with, so
     // a linked material shows the shared values' fields, not the embedded ones'.
@@ -287,7 +299,7 @@ export class InspectorBinding {
     const effective = effectiveComponent(entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
-    for (const spec of paneEntriesFor(effective).entries) {
+    for (const spec of paneEntriesFor(this.registries, effective).entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
         continue;
@@ -306,11 +318,11 @@ export class InspectorBinding {
           );
         continue;
       }
-      this.bindField(folder, entityId, target, spec, owner, schema.live === true);
+      this.bindField(folder, entityId, target, spec, owner, live);
     }
 
     folder
-      .addButton({ title: `Remove ${schema.label}` })
+      .addButton({ title: `Remove ${label}` })
       .on('click', () => this.binder.edit(() => target.remove()));
   }
 
@@ -489,13 +501,15 @@ export function linkedMaterial(
  * a mesh linked to a shared material shows the shared values' rows, so the
  * predicates have to be asked about the material actually on screen.
  */
-export function inspectorSignature(registries: CoreRegistries, entityId: EntityId | undefined): string {
+export function inspectorSignature(registries: EditorRegistries, entityId: EntityId | undefined): string {
   const scene = expandedScene(registries).scene;
   if (entityId === undefined || !scene.entities.has(entityId)) return '';
   const parts = componentsOf(registries, scene, entityId).map((component) => {
     const effective = effectiveComponent(entityId, component);
-    const { key, entries } = paneEntriesFor(effective);
+    const { key, entries } = paneEntriesFor(registries, effective);
     return `${key}/${shapeOf(entries, effective)}`;
   });
+  // Each of them is a folder, so the pane is rebuilt when one comes or goes.
+  parts.push(...unknownTypesOn(scene, entityId).map((type) => `?${type}`));
   return `${entityId}|${parts.join(',')}`;
 }

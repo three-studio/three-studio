@@ -21,7 +21,6 @@ export const audioSourceComponent: ComponentDefinition<AudioSourceComponent> = {
   create: () => createAudioSource(),
   assets: (component) => [component.assetId],
   entities: () => [],
-  icon: 'volume',
   placeable: () => true,
   runtime: true,
   addable: true,

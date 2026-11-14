@@ -29,7 +29,6 @@ export const rigidbodyComponent: ComponentDefinition<RigidBodyComponent> = {
   },
   assets: () => [],
   entities: () => [],
-  icon: 'weight',
   placeable: () => true,
   runtime: true,
   addable: true,

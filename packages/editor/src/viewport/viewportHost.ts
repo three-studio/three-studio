@@ -1,4 +1,4 @@
-import type { RuntimeRegistries } from '@three-studio/runtime';
+import type { EditorRegistries } from '../registries';
 import type { EditorViewport } from './EditorViewport';
 import { EditorViewport as Viewport } from './EditorViewport';
 
@@ -17,7 +17,7 @@ let current: EditorViewport | null = null;
  * the one that creates it; there is one such object per window, so the first
  * caller's is everyone's.
  */
-export function acquireViewport(registries: RuntimeRegistries): Promise<EditorViewport> {
+export function acquireViewport(registries: EditorRegistries): Promise<EditorViewport> {
   pending ??= Viewport.create(registries).then((viewport) => {
     current = viewport;
     return viewport;

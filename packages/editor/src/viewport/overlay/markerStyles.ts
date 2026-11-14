@@ -1,13 +1,11 @@
 import {
   hasComponent,
-  idMapOf,
-  isComponentTypeId,
   type ComponentTypeId,
   type EntityId,
+  type Registry,
   type SceneDoc,
 } from '@three-studio/core';
-import { OVERLAYS } from '../../components/overlays';
-import type { EntityMarker } from '../../components/registry';
+import type { EntityMarker, EntityOverlay } from '../../components/registry';
 
 /*
  * Which entities get a marker in the viewport, and what it looks like.
@@ -21,57 +19,68 @@ import type { EntityMarker } from '../../components/registry';
 export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
 
 /**
- * The types that draw geometry of their own, so the check below stays three
- * lookups and not twelve.
+ * Which entity gets which marker, as the registered overlays say.
  *
- * An entity carrying one is already clickable, and a marker on top of it would
- * be an icon nobody needs and a click target fighting the mesh behind it. Every
- * type answers, in its own folder — a type left out of a list drew geometry
- * *and* got a marker on top of it, with nothing anywhere to say that was meant.
+ * Made once, by whoever draws the markers, from the overlays a root registered:
+ * the two lists below are sorted when it is made, so that asking about an
+ * entity stays a handful of table lookups.
  */
-const RENDERS: readonly ComponentTypeId[] = [...idMapOf(OVERLAYS, isComponentTypeId)]
-  .filter(([, overlay]) => overlay.drawsGeometry)
-  .map(([type]) => type);
-
-/**
- * The types worth marking, best first.
- *
- * The rank is a number on the marker rather than the key order of a table here,
- * because the marker is declared in the type's own folder. Still a separate
- * decision from `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason that
- * file gives: the order is about *this* display, not about the types.
- */
-const PRIORITY: readonly (readonly [ComponentTypeId, EntityMarker])[] = [...idMapOf(OVERLAYS, isComponentTypeId)]
-  .flatMap(([type, overlay]) => (overlay.marker === null ? [] : [[type, overlay.marker] as const]))
-  .sort(([, a], [, b]) => a.priority - b.priority);
-
-export const MARKED_TYPES: readonly ComponentTypeId[] = PRIORITY.map(([type]) => type);
-
-/** Whether the entity contributes no geometry of its own. */
-export function drawsNothing(scene: SceneDoc, entityId: EntityId): boolean {
-  return !RENDERS.some((type) => hasComponent(scene, entityId, type));
+export interface MarkerRules {
+  /** The types worth marking, best first: where a full pass looks for candidates. */
+  readonly markedTypes: readonly ComponentTypeId[];
+  /** Whether the entity contributes no geometry of its own. */
+  drawsNothing(scene: SceneDoc, entityId: EntityId): boolean;
+  /**
+   * The marker an entity should carry, or `undefined` when it needs none.
+   *
+   * An entity carrying nothing at all gets none. It used to get a grey one, and
+   * the entity that showed why it was wrong is the `Scene` node every new scene
+   * opens with: a marker there says "an entity is at the origin", which the
+   * hierarchy already says better. Treating that node as a
+   * special case is ruled out — it is "une entité ordinaire, ni protégée, ni spéciale" — so the
+   * rule has to hold for every bare entity, and it does: a group is scaffolding,
+   * and what hangs under it is what an author clicks.
+   *
+   * Every lookup is against a component table, never a walk of the entity
+   * table.
+   */
+  markerStyleFor(scene: SceneDoc, entityId: EntityId): MarkerStyle | undefined;
 }
 
-/**
- * The marker an entity should carry, or `undefined` when it needs none.
- *
- * An entity carrying nothing at all gets none. It used to get a grey one, and
- * the entity that showed why it was wrong is the `Scene` node every new scene
- * opens with: a marker there says "an entity is at the origin", which the
- * hierarchy already says better. Treating that node as a
- * special case is ruled out — it is "une entité ordinaire, ni protégée, ni spéciale" — so the
- * rule has to hold for every bare entity, and it does: a group is scaffolding,
- * and what hangs under it is what an author clicks.
- *
- * Every lookup below is against a component table, never a walk of the entity
- * table.
- */
-export function markerStyleFor(scene: SceneDoc, entityId: EntityId): MarkerStyle | undefined {
-  if (!scene.entities.has(entityId)) return undefined;
-  if (!drawsNothing(scene, entityId)) return undefined;
+export function markerRules(overlays: Registry<ComponentTypeId, EntityOverlay>): MarkerRules {
+  /*
+   * The types that draw geometry of their own, so the check stays three lookups
+   * and not one per type. An entity carrying one is already clickable, and a
+   * marker on top of it would be an icon nobody needs and a click target
+   * fighting the mesh behind it. Every type answers, in its own overlay — a
+   * type left out of a list drew geometry *and* got a marker on top of it, with
+   * nothing anywhere to say that was meant.
+   */
+  const renders = overlays
+    .values()
+    .filter((overlay) => overlay.drawsGeometry)
+    .map((overlay) => overlay.id);
+  /*
+   * The types worth marking, best first. The rank is a number on the marker,
+   * declared with the type's overlay. Still a separate decision from the
+   * Hierarchy's icons, and for the reason `EntityMarker` gives: the order is
+   * about *this* display, not about the types.
+   */
+  const ranked = overlays
+    .values()
+    .flatMap(({ id, marker }) => (marker === null ? [] : [{ id, marker }]))
+    .sort((a, b) => a.marker.priority - b.marker.priority);
 
-  for (const [type, marker] of PRIORITY) {
-    if (hasComponent(scene, entityId, type)) return marker;
-  }
-  return undefined;
+  const drawsNothing = (scene: SceneDoc, entityId: EntityId): boolean =>
+    !renders.some((type) => hasComponent(scene, entityId, type));
+
+  return {
+    markedTypes: ranked.map(({ id }) => id),
+    drawsNothing,
+    markerStyleFor: (scene, entityId) => {
+      if (!scene.entities.has(entityId)) return undefined;
+      if (!drawsNothing(scene, entityId)) return undefined;
+      return ranked.find(({ id }) => hasComponent(scene, entityId, id))?.marker;
+    },
+  };
 }

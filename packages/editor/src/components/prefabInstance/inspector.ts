@@ -1,6 +1,6 @@
 import { instanceInfo } from '../../commands/prefabCommands';
 import { commandById, contextFor, contextForAsset } from '../../commands/registry';
-import { assetSlot, type ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentPane } from '../../inspector/fields';
 import { usePrefabModeStore } from '../../state/prefabModeStore';
 
 /*
@@ -17,8 +17,8 @@ import { usePrefabModeStore } from '../../state/prefabModeStore';
  * about the outcome: `run` re-checks `can()`.
  */
 
-export const inspector: ComponentSchema = {
-  label: 'Prefab',
+export const pane: ComponentPane = {
+  id: 'prefabInstance',
   fields: [
     assetSlot(['assetId'], 'Prefab', 'prefab'),
     {

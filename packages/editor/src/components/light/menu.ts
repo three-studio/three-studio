@@ -19,6 +19,7 @@ const LABELS: Record<LightKind, string> = {
 };
 
 export const menu: AddMenuGroup = {
+  id: 'light',
   label: 'Light',
   order: 2,
   entries: (Object.keys(LABELS) as LightKind[]).map((kind) => ({

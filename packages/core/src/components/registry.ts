@@ -29,21 +29,6 @@ import type { ComponentDoc } from '../scene/schema';
  * work.
  */
 
-/** Icon names, resolved to components by whoever draws them. */
-export type ComponentIcon =
-  | 'box'
-  | 'boxes'
-  | 'camera'
-  | 'file-code'
-  | 'lightbulb'
-  | 'link'
-  | 'move'
-  | 'shapes'
-  | 'sparkles'
-  | 'volume'
-  | 'waves'
-  | 'weight';
-
 /**
  * What a component type answers about itself: what the core's activation
  * registers.
@@ -133,7 +118,6 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
    * inspector shipped in no build that did not ship the whole project.
    */
   assetCandidates?(component: C): readonly string[];
-  readonly icon: ComponentIcon;
   /**
    * Whether anything builds this type at runtime.
    *
@@ -201,20 +185,18 @@ export function defineComponent<const Id extends string, const S extends Schema>
   readonly id: Id & Component<Id, Infer<S>>['type'];
   readonly label: string;
   readonly schema: S;
-  readonly icon: ComponentIcon;
   readonly runtime: boolean;
   readonly addable: boolean;
   /** Left out, a component of the type is a place in the world, which all but two kinds of light are. */
   readonly placeable?: (component: Component<Id, Infer<S>>) => boolean;
 }): ComponentDefinition<Component<Id, Infer<S>>> {
-  const { id: type, label, schema, icon, runtime, addable } = description;
+  const { id: type, label, schema, runtime, addable } = description;
   const plan = planFields(schema);
 
   return {
     id: type,
     label,
     schema,
-    icon,
     runtime,
     addable,
     // A copy of the defaults each time: a vector is an array, and two

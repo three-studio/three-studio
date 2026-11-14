@@ -30,7 +30,6 @@ export const colliderComponent: ComponentDefinition<ColliderComponent> = {
   }),
   assets: (component) => [component.materialId],
   entities: () => [],
-  icon: 'box',
   placeable: () => true,
   runtime: true,
   addable: true,

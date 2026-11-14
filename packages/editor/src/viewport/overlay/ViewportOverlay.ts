@@ -1,6 +1,7 @@
-import type { EntityId, SceneDoc } from '@three-studio/core';
+import type { ComponentTypeId, EntityId, Registry, SceneDoc } from '@three-studio/core';
 import type { SceneBinder } from '@three-studio/runtime';
 import type { Group, PerspectiveCamera } from 'three/webgpu';
+import type { EntityOverlay } from '../../components/registry';
 import { EntityMarkers } from './EntityMarkers';
 import { SelectionHelpers } from './SelectionHelpers';
 
@@ -24,9 +25,10 @@ export class ViewportOverlay {
   private readonly entityMarkers: EntityMarkers;
   private readonly selectionHelpers: SelectionHelpers;
 
-  constructor(binder: SceneBinder) {
-    this.entityMarkers = new EntityMarkers(binder);
-    this.selectionHelpers = new SelectionHelpers(binder);
+  /** @param overlays What each registered type draws: its marker, and the helper it mounts while selected. */
+  constructor(binder: SceneBinder, overlays: Registry<ComponentTypeId, EntityOverlay>) {
+    this.entityMarkers = new EntityMarkers(binder, overlays);
+    this.selectionHelpers = new SelectionHelpers(binder, overlays);
   }
 
   /**

@@ -167,7 +167,7 @@ describe('adding from the menu while the game runs', () => {
   it('greys every row that places, Group included, saying why', () => {
     // Something selected, so Group would act: greyed only for the game's sake.
     useEditorStore.getState().setSelection([addEntity(createMeshEntity('box'))]);
-    const menu = () => buildAddMenu(currentContext(registries));
+    const menu = () => buildAddMenu(currentContext(registries), registries.addMenu);
     /** The rows that place something: the leaves, under their headings. */
     const placing = (entries: readonly MenuEntry[]): MenuItem[] =>
       entries.flatMap((entry) => (entry === null ? [] : entry.submenu ? placing(entry.submenu) : [entry]));

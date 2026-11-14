@@ -351,7 +351,7 @@ export {
   isPlaceable,
   typesWithoutRuntime,
 } from './components';
-export type { ComponentDefinition, ComponentIcon } from './components';
+export type { ComponentDefinition } from './components';
 /* What the core knows by registration, made and filled by each app's composition root. */
 export { activateCore, createCoreRegistries } from './registries';
 export type { CoreRegistries } from './registries';

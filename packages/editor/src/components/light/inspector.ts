@@ -1,5 +1,5 @@
 import type { ComponentDoc } from '@three-studio/core';
-import { asDegrees, assetSlot, type ComponentSchema } from '../../inspector/fields';
+import { asDegrees, assetSlot, type ComponentPane } from '../../inspector/fields';
 
 const isLightKind =
   (...kinds: readonly string[]) =>
@@ -34,8 +34,8 @@ const casts =
  * A projector is a spot that throws a picture, so it appears beside `spot` in
  * every predicate above rather than getting a group of its own.
  */
-export const inspector: ComponentSchema = {
-  label: 'Light',
+export const pane: ComponentPane = {
+  id: 'light',
   fields: [
     { path: ['color'], label: 'Colour' },
     { path: ['intensity'], label: 'Intensity', type: 'number', min: 0, max: 50, step: 0.1 },

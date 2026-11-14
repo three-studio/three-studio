@@ -15,6 +15,8 @@ import { Picker } from '../src/viewport/Picker';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 import { builtInRegistries } from './registries';
 
+const registries = builtInRegistries();
+
 /*
  * A click on a light has to select the light.
  *
@@ -44,12 +46,12 @@ function stage(
   pickable: (entityId: string) => boolean = () => true,
 ): { picker: Picker; overlay: ViewportOverlay; camera: PerspectiveCamera } {
   const binder = new SceneBinder({
-    registries: builtInRegistries(),
+    registries,
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });
-  const overlay = new ViewportOverlay(binder);
+  const overlay = new ViewportOverlay(binder, registries.overlays);
   const camera = new PerspectiveCamera(60, RECT.width / RECT.height, 0.1, 1000);
   camera.position.set(0, 0, 10);
   camera.updateMatrixWorld(true);

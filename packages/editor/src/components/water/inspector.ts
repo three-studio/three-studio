@@ -9,7 +9,7 @@ import {
 import {
   asDegrees,
   assetSlot,
-  type ComponentSchema,
+  type ComponentPane,
 } from '../../inspector/fields';
 import { useDocumentStore } from '../../state/documentStore';
 
@@ -17,8 +17,8 @@ import { useDocumentStore } from '../../state/documentStore';
 const isCustomSun = (component: ComponentDoc): boolean =>
   component.type === 'water' && component.sunSource === SUN_CUSTOM;
 
-export const inspector: ComponentSchema = {
-  label: 'Water',
+export const pane: ComponentPane = {
+  id: 'water',
   fields: [
     // Shape first, as on a mesh: it is what the object *is*. Written out
     // rather than taken from the `{ kind: 'geometry' }` slot, which switches

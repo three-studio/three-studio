@@ -12,7 +12,6 @@ export const modelComponent: ComponentDefinition<ModelComponent> = {
   // which is how an asset still in use gets reported as unused.
   assets: (component) => [component.assetId, component.materialId],
   entities: () => [],
-  icon: 'box',
   placeable: () => true,
   runtime: true,
   addable: false,

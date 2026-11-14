@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
  * the lists that have to name them: core's activation and the runtime's. This
  * checks the lists against the folders.
  *
- * **What it catches that nothing else does.** `tsc` refuses an icon outside
- * `ComponentIcon` or a factory missing from the package's front door, and a type
+ * **What it catches that nothing else does.** `tsc` refuses a definition that
+ * lacks an answer or a factory missing from the package's front door, and a type
  * registered twice throws. All of those start from a declaration and look for
  * the code. Nothing at all throws for a definition no activation lists: nothing
  * registers by being imported any more, so this test is where a forgotten line

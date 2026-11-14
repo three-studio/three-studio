@@ -1,8 +1,8 @@
 import { BODY_TYPE_LABELS, optionsFrom, type ComponentDoc } from '@three-studio/core';
-import type { ComponentSchema } from '../../inspector/fields';
+import type { ComponentPane } from '../../inspector/fields';
 
-export const inspector: ComponentSchema = {
-  label: 'Rigid Body',
+export const pane: ComponentPane = {
+  id: 'rigidbody',
   live: true,
   fields: [
     {

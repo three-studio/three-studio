@@ -58,7 +58,6 @@ export const lightComponent: ComponentDefinition<LightComponent> = {
   },
   assets: (component) => [component.mapId],
   entities: () => [],
-  icon: 'lightbulb',
   // The only `false` in the twelve, and the reason the question is asked of
   // the component rather than of the type: it is answered by the `kind`.
   placeable: (component) => !UNPLACED_LIGHTS.has(component.kind),

@@ -19,6 +19,7 @@ import {
   type AssetKind,
   type ComponentDoc,
   type ComponentId,
+  type ComponentTypeId,
   type EntityId,
   type FieldDef,
   type GeometryKind,
@@ -197,8 +198,13 @@ export function isSeparator(entry: PaneEntry): entry is SeparatorSpec {
   return !isField(entry) && entry.kind === 'separator';
 }
 
-export interface ComponentSchema {
-  label: string;
+/**
+ * A pane written by hand, for a type whose fields are not yet written as a
+ * schema: registered under the type's id, it stands in for the pane a schema
+ * would give. Its heading is the type's `label`, which the definition holds.
+ */
+export interface ComponentPane {
+  id: ComponentTypeId;
   fields: readonly PaneEntry[];
 
   /*

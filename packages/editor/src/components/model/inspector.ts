@@ -1,8 +1,8 @@
 import { commandById, contextFor } from '../../commands/registry';
-import { assetSlot, type ComponentSchema } from '../../inspector/fields';
+import { assetSlot, type ComponentPane } from '../../inspector/fields';
 
-export const inspector: ComponentSchema = {
-  label: 'Model',
+export const pane: ComponentPane = {
+  id: 'model',
   fields: [
     { path: ['castShadow'], label: 'Cast shadows' },
     { path: ['receiveShadow'], label: 'Receive shadows' },

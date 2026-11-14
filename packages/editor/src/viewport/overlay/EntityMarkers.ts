@@ -1,4 +1,4 @@
-import { entitiesWith, type EntityId, type SceneDoc } from '@three-studio/core';
+import { entitiesWith, type ComponentTypeId, type EntityId, type Registry, type SceneDoc } from '@three-studio/core';
 import { ENTITY_ID_KEY, isVisibleInHierarchy, type SceneBinder } from '@three-studio/runtime';
 import {
   Group,
@@ -8,7 +8,8 @@ import {
   Vector3,
   type PerspectiveCamera,
 } from 'three/webgpu';
-import { MARKED_TYPES, markerStyleFor, type MarkerStyle } from './markerStyles';
+import type { EntityOverlay } from '../../components/registry';
+import { markerRules, type MarkerRules, type MarkerStyle } from './markerStyles';
 import { screenScale } from './screenScale';
 
 const RENDER_ORDER = 998;
@@ -70,8 +71,14 @@ export class EntityMarkers {
   private selected: MeshBasicNodeMaterial | null = null;
   private readonly markers = new Map<EntityId, Marker>();
 
-  constructor(private readonly binder: SceneBinder) {
+  private readonly rules: MarkerRules;
+
+  constructor(
+    private readonly binder: SceneBinder,
+    overlays: Registry<ComponentTypeId, EntityOverlay>,
+  ) {
     this.root.name = 'EntityMarkers';
+    this.rules = markerRules(overlays);
   }
 
   /**
@@ -92,7 +99,7 @@ export class EntityMarkers {
     const ids = dirty ?? this.candidates(scene);
 
     for (const id of ids) {
-      const style = markerStyleFor(scene, id);
+      const style = this.rules.markerStyleFor(scene, id);
       const held = this.markers.get(id);
 
       if (style === undefined) {
@@ -178,7 +185,7 @@ export class EntityMarkers {
    */
   private candidates(scene: SceneDoc): ReadonlySet<EntityId> {
     const ids = new Set(this.markers.keys());
-    for (const type of MARKED_TYPES) {
+    for (const type of this.rules.markedTypes) {
       for (const id of entitiesWith(scene, type)) ids.add(id);
     }
     return ids;

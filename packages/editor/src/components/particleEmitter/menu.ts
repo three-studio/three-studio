@@ -8,6 +8,7 @@ import type { AddMenuGroup } from '../registry';
  * from under whatever muscle memory it had built by then.
  */
 export const menu: AddMenuGroup = {
+  id: 'particleEmitter',
   label: 'Effects',
   order: 6,
   entries: [{ label: 'Particles', create: () => createParticleEmitterEntity() }],

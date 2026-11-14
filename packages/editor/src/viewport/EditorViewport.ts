@@ -1,3 +1,4 @@
+import type { EditorRegistries } from '../registries';
 import {
   capabilitiesOf,
   componentsOfType,
@@ -9,7 +10,6 @@ import {
 import {
   studioTime,
   type Engine,
-  type RuntimeRegistries,
   type SceneBinder,
 } from '@three-studio/runtime';
 import {
@@ -130,7 +130,7 @@ export class EditorViewport {
   private lastFrameTime = 0;
   private disposed = false;
 
-  static async create(registries: RuntimeRegistries): Promise<EditorViewport> {
+  static async create(registries: EditorRegistries): Promise<EditorViewport> {
     /*
      * The project's own settings, so the viewport shows what a build will —
      * read once, here, and carried from here to everything this viewport
@@ -156,7 +156,7 @@ export class EditorViewport {
      * The window's registries: what the edit view draws each type with, and
      * what Play builds its game from. Public because `PlayHost` names it.
      */
-    readonly registries: RuntimeRegistries,
+    readonly registries: EditorRegistries,
   ) {
     this.view = view;
 

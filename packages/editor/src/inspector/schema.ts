@@ -30,7 +30,7 @@ export {
   textureSlot,
   type ActionSpec,
   type BoundSpec,
-  type ComponentSchema,
+  type ComponentPane,
   type FieldSpec,
   type GeometrySlotSpec,
   type PaneEntry,
@@ -93,7 +93,7 @@ export function sceneFieldPath(field: SceneField): readonly string[] {
 }
 
 /**
- * One folder of the scene pane. The same shape as a `ComponentSchema`, because
+ * One folder of the scene pane. The same shape as a `ComponentPane`, because
  * it is bound by the same code — only the subject differs.
  */
 export interface SceneSection {

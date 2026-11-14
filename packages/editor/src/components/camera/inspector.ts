@@ -1,8 +1,8 @@
 import { CAMERA_PROJECTION_LABELS, optionsFrom } from '@three-studio/core';
-import type { ComponentSchema } from '../../inspector/fields';
+import type { ComponentPane } from '../../inspector/fields';
 
-export const inspector: ComponentSchema = {
-  label: 'Camera',
+export const pane: ComponentPane = {
+  id: 'camera',
   fields: [
     {
       path: ['projection'],

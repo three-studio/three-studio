@@ -9,7 +9,6 @@ export const cameraComponent: ComponentDefinition<CameraComponent> = {
   create: () => createCamera(),
   assets: () => [],
   entities: () => [],
-  icon: 'camera',
   placeable: () => true,
   runtime: true,
   addable: true,

@@ -15,7 +15,6 @@ export const prefabInstanceComponent: ComponentDefinition<PrefabInstanceComponen
   create: () => createPrefabInstance(),
   assets: (component) => [component.assetId],
   entities: () => [],
-  icon: 'boxes',
   placeable: () => true,
   runtime: true,
   addable: false,

@@ -29,7 +29,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { commandById, currentContext } from '../src/commands/registry';
-import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { effectiveComponent, inspectorSignature, linkedMaterial } from '../src/inspector/buildInspector';
 import { MultiTarget } from '../src/inspector/target';
 import { useAssetStore } from '../src/state/assetStore';
@@ -213,7 +213,7 @@ describe('tuning during Play', () => {
     tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
 
     expect(inspectorSignature(registries, box.entity.id)).not.toBe(before);
-    const labels = paneEntriesFor(effectiveComponent(box.entity.id, collider)).entries.flatMap((entry) =>
+    const labels = paneEntriesFor(registries, effectiveComponent(box.entity.id, collider)).entries.flatMap((entry) =>
       'path' in entry ? [entry.label] : [],
     );
     expect(labels).toContain('Radius');
@@ -422,9 +422,10 @@ describe('keeping what was tuned', () => {
 
 describe('the panes that tune', () => {
   it('the Rigid Body, the Collider and the Joint declare `live`, and no other pane does', () => {
-    const live = Object.entries(COMPONENT_PANES)
-      .filter(([, pane]) => pane.live === true)
-      .map(([type]) => type)
+    const live = registries.panes
+      .values()
+      .filter((pane) => pane.live === true)
+      .map((pane) => pane.id)
       .sort();
     expect(live).toEqual(['collider', 'joint', 'rigidbody']);
   });

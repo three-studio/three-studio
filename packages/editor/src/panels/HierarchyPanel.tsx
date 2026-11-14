@@ -2,40 +2,25 @@ import {
   findBrokenReferences,
   findMissingEntities,
   hasComponent,
-  idMapOf,
-  isComponentTypeId,
   splitInstancedId,
-  type ComponentIcon,
-  type ComponentType,
-  type CoreRegistries,
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import {
   Box,
   Boxes,
-  Camera,
   ChevronDown,
   ChevronRight,
   Clapperboard,
   Eye,
   EyeOff,
-  FileCode,
-  Lightbulb,
-  Link,
-  Move,
   Search,
-  Shapes,
-  Sparkles,
   Trash2,
-  Volume2,
-  Waves,
-  Weight,
   type LucideIcon,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react';
 import { commandById, contextFor, contextForAsset, type CommandId } from '../commands/registry';
-import { COMPONENT_PANES } from '../components/panes';
+import type { HierarchyIcon } from '../components/registry';
 import {
   renameEntity,
   reparentSelection,
@@ -64,84 +49,23 @@ const DRAG_MIME = 'application/x-studio-entity';
 const INDENT_PX = 12;
 
 /**
- * The lucide component for each icon name a component definition can carry.
+ * The icon of an entity's row: that of the best-ranked type it carries among
+ * those that registered one, and the plain box when it carries none of them.
  *
- * The **name** comes from `@three-studio/core`, which cannot import lucide — it cannot
- * import anything. So the type says which icon it wants and this table is the one
- * place that turns that into something React can draw.
+ * @param ranked The registered icons, best first.
  */
-const COMPONENT_ICONS: Record<ComponentIcon, LucideIcon> = {
-  box: Box,
-  boxes: Boxes,
-  camera: Camera,
-  'file-code': FileCode,
-  lightbulb: Lightbulb,
-  link: Link,
-  move: Move,
-  shapes: Shapes,
-  sparkles: Sparkles,
-  volume: Volume2,
-  waves: Waves,
-  weight: Weight,
-};
-
-/**
- * Which component decides a row's icon when an entity has several, lowest first.
- *
- * Ordering is a decision about this tree, not about the types, so it stays here:
- * a prefab instance is what the row *is*, whatever else got added to it.
- *
- * Total rather than a list of the six that matter, because the six that matter
- * are not the interesting half: a type left out of a list is unranked *and*
- * unnoticed, and it draws a generic box with nothing anywhere to say that was a
- * decision. Every type now answers, and `FALLS_THROUGH` is the answer "this one
- * does not decide" — which is what a mesh, a model or a bare entity has always
- * drawn.
- */
-const FALLS_THROUGH = Number.POSITIVE_INFINITY;
-
-const ICON_PRIORITY: Record<ComponentType, number> = {
-  prefabInstance: 1,
-  light: 2,
-  camera: 3,
-  // After the three above and before the fall-through: an entity that is a
-  // sound and nothing else is very common — a dropped clip makes one — and a
-  // row of identical boxes is a hierarchy nobody can scan.
-  audioSource: 4,
-  audioListener: 5,
-  // Last of the named types and still ahead of the fall-through: a water
-  // surface would otherwise draw the same box as a mesh, and the one thing a
-  // hierarchy row has to say is what the entity is.
-  water: 6,
-  // Beside water, and for the same reason: an emitter draws nothing an
-  // author can click, so the row is the only place the tree can say what it is.
-  particleEmitter: 7,
-  mesh: FALLS_THROUGH,
-  model: FALLS_THROUGH,
-  collider: FALLS_THROUGH,
-  joint: FALLS_THROUGH,
-  rigidbody: FALLS_THROUGH,
-  script: FALLS_THROUGH,
-  playerController: FALLS_THROUGH,
-};
-
-/** The ranked types, best first. Derived, so the two cannot disagree. */
-const RANKED_TYPES = [...idMapOf(ICON_PRIORITY, isComponentTypeId)]
-  .filter(([, rank]) => rank !== FALLS_THROUGH)
-  .sort(([, a], [, b]) => a - b)
-  .map(([type]) => type);
-
-function entityIcon(registries: CoreRegistries, scene: SceneDoc, entityId: EntityId): LucideIcon {
-  for (const type of RANKED_TYPES) {
-    if (!hasComponent(scene, entityId, type)) continue;
-    const icon = registries.components.get(type)?.icon;
-    if (icon) return COMPONENT_ICONS[icon];
-  }
-  return Box;
+function entityIcon(ranked: readonly HierarchyIcon[], scene: SceneDoc, entityId: EntityId): LucideIcon {
+  return ranked.find(({ id }) => hasComponent(scene, entityId, id))?.icon ?? Box;
 }
 
 export function HierarchyPanel() {
   const registries = useRegistries();
+  // Ranked once for the window: its registries are filled before it draws and
+  // never change, and this is asked for every row of a list four thousand long.
+  const rankedIcons = useMemo(
+    () => [...registries.icons.values()].sort((a, b) => a.priority - b.priority),
+    [registries],
+  );
   /*
    * Structure, not the scene.
    *
@@ -217,7 +141,8 @@ export function HierarchyPanel() {
     const say = (entityId: EntityId, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
     for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
     for (const { entityId, type } of findMissingEntities(registries, scene)) {
-      say(entityId, `Its ${COMPONENT_PANES[type].label} names an entity this scene does not have`);
+      const label = registries.components.get(type)?.label ?? type;
+      say(entityId, `Its ${label} names an entity this scene does not have`);
     }
     return byEntity;
   }, [registries, structureRevision, componentRevision, prefabs, assetRevision]);
@@ -425,7 +350,7 @@ export function HierarchyPanel() {
         {above > 0 && <div style={{ height: above }} />}
 
         {visibleRows.map(({ entity, depth, hasChildren, instance }) => {
-          const Icon = entityIcon(registries, expanded, entity.id);
+          const Icon = entityIcon(rankedIcons, expanded, entity.id);
           const isSelected = selected.has(entity.id);
           // Reparenting an entity a prefab produced would have to move it in the
           // asset, which is not what dropping it here means. And nothing is

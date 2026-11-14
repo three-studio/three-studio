@@ -1,5 +1,5 @@
 import type { LightComponent } from '@three-studio/core';
-import type { EntityMarker } from '../registry';
+import type { EntityMarker, EntityOverlay } from '../registry';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
 import {
   DirectionalLight,
@@ -157,12 +157,14 @@ function rangeSphere(light: PointLight): HelperHandle {
 }
 
 /** A light draws no geometry of its own; what it lights is what is seen. */
-export const drawsGeometry = false;
+const drawsGeometry = false;
 
 /**
  * Warm, and second only to the camera: an entity that is a light and nothing
  * else is invisible without this, and there is no object behind it to click.
  */
-export const marker: EntityMarker = { color: 0xffd25e, pixels: 11, priority: 2 };
+const marker: EntityMarker = { color: 0xffd25e, pixels: 11, priority: 2 };
 
-export const helper = new LightShape();
+const helper = (): ComponentHelper => new LightShape();
+
+export const overlay: EntityOverlay = { id: 'light', drawsGeometry, marker, helper };

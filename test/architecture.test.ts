@@ -401,24 +401,25 @@ describe('import cycles', () => {
  * root activates reloads the window instead, which is what Vite does when no
  * module on the way accepts the update.
  */
-const ROOTS: ReadonlyMap<string, readonly ('Core' | 'Runtime')[]> = new Map([
-  ['apps/desktop/src/renderer/src/main.tsx', ['Core', 'Runtime']],
+const ROOTS: ReadonlyMap<string, readonly ('Core' | 'Runtime' | 'Editor')[]> = new Map([
+  ['apps/desktop/src/renderer/src/main.tsx', ['Core', 'Runtime', 'Editor']],
   ['apps/web-template/src/main.ts', ['Core', 'Runtime']],
   ['apps/desktop/src/main/index.ts', ['Core']],
 ]);
 
-/** Where else registries may be made: the two files that declare them, the tools, and the tests. */
+/** Where else registries may be made: the three files that declare them, the tools, and the tests. */
 function mayMakeRegistries(path: string): boolean {
   return (
     ROOTS.has(path) ||
     path === 'packages/core/src/registries.ts' ||
     path === 'packages/runtime/src/registries.ts' ||
+    path === 'packages/editor/src/registries.ts' ||
     path.startsWith('tools/') ||
     /(^|\/)test\//.test(path)
   );
 }
 
-const MAKES_REGISTRIES = /\bcreate(?:Core|Runtime)Registries\(/;
+const MAKES_REGISTRIES = /\bcreate(?:Core|Runtime|Editor)Registries\(/;
 
 /** What the rules of the roots find wrong in these files, a line each. */
 function rootProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
@@ -448,6 +449,13 @@ describe('the composition roots', () => {
     const root = 'const registries = createRuntimeRegistries();\nactivateCore(registries);\n';
     expect(rootProblems([['apps/web-template/src/main.ts', root]])).toEqual([
       'apps/web-template/src/main.ts: never calls activateRuntime',
+    ]);
+  });
+
+  it('reports an editor window that leaves the editor\'s own parts unactivated', () => {
+    const root = 'const registries = createEditorRegistries();\nactivateCore(registries);\nactivateRuntime(registries);\n';
+    expect(rootProblems([['apps/desktop/src/renderer/src/main.tsx', root]])).toEqual([
+      'apps/desktop/src/renderer/src/main.tsx: never calls activateEditor',
     ]);
   });
 

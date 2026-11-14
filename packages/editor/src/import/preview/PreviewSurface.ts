@@ -1,5 +1,5 @@
 import type { AssetKind, AssetSettings } from '@three-studio/core';
-import type { RuntimeRegistries } from '@three-studio/runtime';
+import type { EditorRegistries } from '../../registries';
 import type { AssetFacts } from './facts';
 
 /**
@@ -34,7 +34,7 @@ export interface PreviewSurface {
  * window's viewport and so the one that makes it.
  */
 export async function previewFor(
-  registries: RuntimeRegistries,
+  registries: EditorRegistries,
   kind: AssetKind | null,
 ): Promise<PreviewSurface | null> {
   switch (kind) {

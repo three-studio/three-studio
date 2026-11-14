@@ -9,7 +9,6 @@ export const playerControllerComponent: ComponentDefinition<PlayerControllerComp
   create: () => createPlayerController(),
   assets: () => [],
   entities: () => [],
-  icon: 'move',
   placeable: () => true,
   runtime: true,
   addable: true,

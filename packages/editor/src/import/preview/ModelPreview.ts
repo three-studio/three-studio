@@ -1,5 +1,6 @@
 import type { AssetSettings, ModelSettings } from '@three-studio/core';
-import { loadModelFromUrl, type RuntimeRegistries } from '@three-studio/runtime';
+import { loadModelFromUrl } from '@three-studio/runtime';
+import type { EditorRegistries } from '../../registries';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   Box3,
@@ -60,7 +61,7 @@ export class ModelPreview implements PreviewSurface {
   private disposed = false;
 
   /** `registries` makes the window's viewport, if the dock has not made it yet. */
-  constructor(private readonly registries: RuntimeRegistries) {}
+  constructor(private readonly registries: EditorRegistries) {}
 
   async open(container: HTMLElement, url: string): Promise<ModelFacts | null> {
     // The one viewport of this window, created if the dock has not asked for it
