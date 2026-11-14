@@ -214,7 +214,7 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
   const lines: string[] = [];
 
   for (const id of usage.entities.slice(0, 12)) {
-    lines.push(`Object · ${scene.entities[id]?.name ?? id}`);
+    lines.push(`Object · ${scene.entities.get(id)?.name ?? id}`);
   }
   for (const id of usage.materials.slice(0, 6)) {
     lines.push(`Material · ${store.byId(id)?.name ?? id}`);

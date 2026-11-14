@@ -71,7 +71,7 @@ async function mainCameraPose(projectPath: string): Promise<CameraPose> {
   const scene = deserializeScene((await openProject(projectPath)).sceneJson);
   for (const entityId of entitiesWith(scene, 'camera')) {
     const camera = findComponent(scene, entityId, 'camera');
-    const entity = scene.entities[entityId];
+    const entity = scene.entities.get(entityId);
     if (camera?.isMain === true && entity) {
       return { position: entity.transform.position, rotation: entity.transform.rotation, fov: camera.fov };
     }

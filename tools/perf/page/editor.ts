@@ -224,7 +224,7 @@ export function deleteEntity(entityId: string): Promise<Record<string, number>> 
     const pressed = performance.now();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', bubbles: true }));
     const check = (): void => {
-      if (stores.document.getState().scene.entities[entityId] === undefined) {
+      if (!stores.document.getState().scene.entities.has(entityId)) {
         resolve({ deletedMs: performance.now() - pressed });
       } else if (performance.now() - pressed > 10_000) {
         reject(new Error('Delete did not delete the entity'));
@@ -271,7 +271,7 @@ export function editAndSave(entityId: string): Promise<Record<string, number>> {
     }
     const scene = stores.document;
     scene.getState().mutate('Nudge', (draft) => {
-      const entity = draft.entities[entityId];
+      const entity = draft.entities.get(entityId);
       if (entity) entity.transform.position[1] += 0.01;
     });
     const pressed = performance.now();
@@ -300,7 +300,7 @@ export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string,
       reject(new Error('no stores or no viewport'));
       return;
     }
-    const before = new Set(Object.keys(stores.document.getState().scene.entities));
+    const before = new Set(stores.document.getState().scene.entities.keys());
     const key = (letter: string): KeyboardEvent =>
       new KeyboardEvent('keydown', { key: letter, code: `Key${letter.toUpperCase()}`, metaKey: true, bubbles: true });
     const until = (done: () => boolean, then: () => void, what: string, started: number): void => {
@@ -314,7 +314,7 @@ export function duplicateAndUndo(ids: readonly string[]): Promise<Record<string,
     stores.editor.getState().setSelection(ids);
     const duplicated = performance.now();
     window.dispatchEvent(key('d'));
-    const added = (): string[] => Object.keys(stores.document.getState().scene.entities).filter((id) => !before.has(id));
+    const added = (): string[] => [...stores.document.getState().scene.entities.keys()].filter((id) => !before.has(id));
     let made: string[] = [];
     until(
       () => {
@@ -361,7 +361,7 @@ export function dragDeltas(args: { entityId: string; warmup: number; frames: num
       stores.document.getState().mutate(
         'Move',
         (draft) => {
-          const entity = draft.entities[args.entityId];
+          const entity = draft.entities.get(args.entityId);
           if (entity) entity.transform.position[0] += 0.01;
         },
         { coalesceKey: 'perf-drag' },

@@ -68,7 +68,7 @@ export function InspectorPanel() {
   const watched = useDocumentStore((state) => {
     if (entityId === undefined) return undefined;
     const parts = splitInstancedId(entityId);
-    return state.scene.entities[parts === null ? entityId : parts.owner];
+    return state.scene.entities.get(parts === null ? entityId : parts.owner);
   });
   /*
    * And the components, which the entity above cannot speak for.
@@ -85,7 +85,7 @@ export function InspectorPanel() {
   // and have to be inspectable, and editing a prefab changes what fields exist
   // without touching the document.
   const prefabs = useAssetStore((s) => s.prefabs);
-  const entity = entityId === undefined ? undefined : expandedScene().scene.entities[entityId];
+  const entity = entityId === undefined ? undefined : expandedScene().scene.entities.get(entityId);
   const instance = entityId === undefined ? null : splitInstancedId(entityId);
 
   const containerRef = useRef<HTMLDivElement>(null);

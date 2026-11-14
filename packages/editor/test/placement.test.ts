@@ -1,5 +1,6 @@
 import {
   ASSET_MANIFEST_VERSION,
+  assertDefined,
   createCameraEntity,
   createEmptyScene,
   createEntity,
@@ -88,7 +89,7 @@ describe('adding from the menu', () => {
     const id = addEntityInView(createMeshEntity('box'))!;
 
     expect(doc().scene.rootOrder).toContain(id);
-    expect(doc().scene.entities[id]?.parent).toBeNull();
+    expect(doc().scene.entities.get(id)?.parent).toBeNull();
     close(worldPosition(doc().scene, id), [0, 0.5, 0]);
   });
 
@@ -105,15 +106,15 @@ describe('adding from the menu', () => {
 
     const id = addEntityInView(createMeshEntity('box'))!;
 
-    expect(doc().scene.entities[id]?.parent).toBeNull();
-    expect(doc().scene.entities[selected]?.children).toEqual([]);
+    expect(doc().scene.entities.get(id)?.parent).toBeNull();
+    expect(doc().scene.entities.get(selected)?.children).toEqual([]);
     expect(doc().scene.rootOrder).toContain(id);
   });
 
   it('leaves an ambient light at the origin', () => {
     const id = addEntityInView(createLightEntity('ambient'))!;
 
-    expect(doc().scene.entities[id]?.transform.position).toEqual([0, 0, 0]);
+    expect(doc().scene.entities.get(id)?.transform.position).toEqual([0, 0, 0]);
   });
 
   it('stays one undo step, selection included', () => {
@@ -125,7 +126,7 @@ describe('adding from the menu', () => {
 
     doc().undo();
 
-    expect(doc().scene.entities[id]).toBeUndefined();
+    expect(doc().scene.entities.get(id)).toBeUndefined();
     expect(useEditorStore.getState().selection).toEqual([selected]);
   });
 });
@@ -222,10 +223,10 @@ describe('a drop on the view', () => {
     const [id] = selection();
     expect(id).not.toBe(before);
     expect(findComponent(doc().scene, id!, 'prefabInstance')?.assetId).toBe('crate');
-    expect(doc().scene.entities[id!]!.transform.position).toEqual([1, 2, 3]);
+    expect(assertDefined(doc().scene.entities.get(id!), 'the placed instance').transform.position).toEqual([1, 2, 3]);
 
     doc().undo();
-    expect(doc().scene.entities[id!]).toBeUndefined();
+    expect(doc().scene.entities.get(id!)).toBeUndefined();
     expect(selection()).toEqual([before]);
 
     // The selection was set after the edit, outside its entry, so Redo brought
@@ -241,9 +242,9 @@ describe('a drop on the view', () => {
     const [model] = selection();
 
     expect(findComponent(doc().scene, sound!, 'audioSource')?.assetId).toBe('chime');
-    expect(doc().scene.entities[sound!]!.transform.position).toEqual([0, 1, 0]);
+    expect(assertDefined(doc().scene.entities.get(sound!), 'the sound').transform.position).toEqual([0, 1, 0]);
     expect(findComponent(doc().scene, model!, 'model')?.assetId).toBe('chair');
-    expect(doc().scene.entities[model!]!.transform.position).toEqual([4, 0, 0]);
+    expect(assertDefined(doc().scene.entities.get(model!), 'the model').transform.position).toEqual([4, 0, 0]);
   });
 
   it('places a model with the Collider its import settings ask for, in one undo step', () => {
@@ -254,7 +255,7 @@ describe('a drop on the view', () => {
     expect(findComponent(doc().scene, ruins!, 'collider')?.shape).toEqual({ kind: 'mesh', build: 'triangles' });
 
     doc().undo();
-    expect(doc().scene.entities[ruins!]).toBeUndefined();
+    expect(doc().scene.entities.get(ruins!)).toBeUndefined();
     expect(findComponent(doc().scene, ruins!, 'collider')).toBeUndefined();
   });
 

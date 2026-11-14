@@ -57,7 +57,7 @@ export const inspector: ComponentSchema = {
       optionsProvider: () => {
         const scene = useDocumentStore.getState().scene;
         const lights = entitiesWith(scene, 'light')
-          .map((id) => scene.entities[id])
+          .map((id) => scene.entities.get(id))
           .filter((entity) => entity !== undefined);
         return {
           'Sky (scene sun)': SUN_FROM_SKY,

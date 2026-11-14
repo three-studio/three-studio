@@ -18,6 +18,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createBuildProfiles,
   createComponent,
   createDefaultLayer,
@@ -34,6 +35,7 @@ import {
   deserializeScene,
   emptyComponentTables,
   insertEntity,
+  prefabsFromJson,
   putComponent,
   serializeScene,
   type BuildManifest,
@@ -440,6 +442,8 @@ describe('web export', () => {
     expect(Object.keys(build)).not.toEqual(Object.keys(build).sort());
     expect(Object.keys(build.prefabs)).toEqual([prefabId]);
     expect(build.prefabs[prefabId]).toMatchObject({ name: 'Crate', root: crate.entity.id });
+    // As the player reads it: the JSON of each prefab becomes a document.
+    expect(prefabsFromJson(build.prefabs)[prefabId]?.entities).toBeInstanceOf(Map);
   });
 
   it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
@@ -917,7 +921,7 @@ describe('models that come with other files', () => {
     const scene = deserializeScene(
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
-    const entityId = Object.keys(scene.entities)[0]!;
+    const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
@@ -981,7 +985,7 @@ describe('models that come with other files', () => {
     const scene = deserializeScene(
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
-    const entityId = Object.keys(scene.entities)[0]!;
+    const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
@@ -1006,7 +1010,7 @@ describe('models that come with other files', () => {
     const scene = deserializeScene(
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
-    const entityId = Object.keys(scene.entities)[0]!;
+    const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-gone' });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
@@ -1350,7 +1354,7 @@ describe('what a scene needs beyond its slots', () => {
   async function addToMainScene(projectPath: string, component: object): Promise<void> {
     const file = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(await readFile(file, 'utf8'));
-    putComponent(scene, Object.keys(scene.entities)[0]!, component as never);
+    putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component as never);
     await writeFile(file, serializeScene(scene), 'utf8');
   }
 

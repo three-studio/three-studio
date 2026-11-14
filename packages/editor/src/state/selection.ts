@@ -63,7 +63,7 @@ export class Selection {
     const value = new Selection(
       // Dropped rather than carried: an id naming nothing makes every filter
       // below lie, and the store prunes on mutation but not on a scene swap.
-      ids.filter((id) => scene.entities[id] !== undefined),
+      ids.filter((id) => scene.entities.has(id)),
       scene,
     );
     cache = { ids, scene, value };
@@ -99,7 +99,7 @@ export class Selection {
 
   entities(): readonly EntityDoc[] {
     return this.ids
-      .map((id) => this.scene.entities[id])
+      .map((id) => this.scene.entities.get(id))
       .filter((entity): entity is EntityDoc => entity !== undefined);
   }
 

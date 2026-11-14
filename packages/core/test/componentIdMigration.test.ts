@@ -6,8 +6,8 @@ import {
   findComponent,
   migratePrefab,
   putComponent,
+  serializeScene,
   type ComponentDoc,
-  type PrefabDoc,
   type PrefabInstanceComponent,
   type SceneDoc,
 } from '@three-studio/core';
@@ -109,7 +109,7 @@ describe('giving components an identity', () => {
   });
 
   it('stamps every component of a prefab, by the position it had', () => {
-    const prefab = migratePrefab(oldPrefab() as PrefabDoc);
+    const prefab = migratePrefab(oldPrefab());
 
     // The ids the scene's overrides will be remapped onto, computed on the other
     // side of the wall without either file knowing about the other.
@@ -142,12 +142,12 @@ describe('giving components an identity', () => {
 
   it('leaves an already-migrated document exactly as it is', () => {
     const once = deserializeScene(oldScene());
-    const twice = deserializeScene(JSON.stringify(once));
+    const twice = deserializeScene(serializeScene(once));
 
     // The remap runs on the boundary and must be idempotent: a scene saved and
     // reopened would otherwise have its keys rewritten a second time, against
     // indices that no longer mean anything.
-    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+    expect(serializeScene(twice)).toBe(serializeScene(once));
   });
 
   it('gives no id to a component type it has never heard of', () => {
@@ -190,7 +190,7 @@ describe('giving components an identity', () => {
 describe('a prefab that gains a component', () => {
   it('does not slide the overrides of its instances onto other components', () => {
     const scene = deserializeScene(oldScene());
-    const prefab = migratePrefab(oldPrefab() as PrefabDoc);
+    const prefab = migratePrefab(oldPrefab());
 
     // An author adds a light at the front of the trunk. Every override recorded
     // against the rigidbody and the collider used to move one place along: mass

@@ -39,7 +39,7 @@ export function reportBrokenReferences(): void {
     .map(({ entityId, assetId }) =>
       entityId === null
         ? `the environment → ${assetId}`
-        : `${scene.entities[entityId]?.name ?? entityId} → ${assetId}`,
+        : `${scene.entities.get(entityId)?.name ?? entityId} → ${assetId}`,
     )
     .join('; ');
   const rest = broken.length > SHOWN ? `, and ${broken.length - SHOWN} more` : '';

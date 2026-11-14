@@ -94,7 +94,7 @@ export class SingleTarget implements EntityTarget {
   constructor(private readonly entityId: string) {}
 
   private get entity(): EntityDoc | undefined {
-    return expandedScene().scene.entities[this.entityId];
+    return expandedScene().scene.entities.get(this.entityId);
   }
 
   components(): readonly ComponentTarget[] {
@@ -123,7 +123,7 @@ export class MultiTarget implements EntityTarget {
   private get entities(): EntityDoc[] {
     const scene = expandedScene().scene;
     return this.entityIds
-      .map((id) => scene.entities[id])
+      .map((id) => scene.entities.get(id))
       .filter((entity): entity is EntityDoc => entity !== undefined);
   }
 
@@ -180,10 +180,9 @@ class MultiComponentTarget implements ComponentTarget {
     const scene = expandedScene().scene;
     const out: { entityId: string; component: ComponentDoc }[] = [];
     for (const entityId of this.entityIds) {
-      const component =
-        scene.entities[entityId] === undefined
-          ? undefined
-          : nthOfType(scene, entityId, this.type, this.nth);
+      const component = scene.entities.has(entityId)
+        ? nthOfType(scene, entityId, this.type, this.nth)
+        : undefined;
       if (component) out.push({ entityId, component });
     }
     return out;

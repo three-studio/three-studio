@@ -1,4 +1,4 @@
-import { createEntity, expandPrefabs, type EntityTemplate } from '@three-studio/core';
+import { assertDefined, createEntity, expandPrefabs, type EntityTemplate } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { BETWEEN_ROWS_BAND, insertionAt, isBetweenRows, rangeSelection } from '../src/panels/hierarchyGestures';
@@ -87,7 +87,7 @@ describe('where a between-rows drop lands', () => {
     // A tear: the child points up, the parent lists nothing. `indexOf` answers
     // -1 here, and -1 handed to an insert counts from the far end — the drop
     // would land at the bottom of a list the user was reordering the top of.
-    scene.entities[made[0]!.entity.id]!.children = [];
+    assertDefined(scene.entities.get(made[0]!.entity.id), 'the parent').children = [];
 
     expect(insertionAt(scene, made[1]!.entity.id)?.index).toBe(0);
   });

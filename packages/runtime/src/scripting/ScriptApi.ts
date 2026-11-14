@@ -233,7 +233,7 @@ export abstract class Behaviour {
   protected resolve(entityId: string | null | undefined): EntityHandle | null {
     if (!entityId) return null;
     const ctx = internalContext.get(this);
-    const doc = ctx?.scene.entities[entityId];
+    const doc = ctx?.scene.entities.get(entityId);
     const object = ctx?.binder.getObject(entityId);
     if (!doc || !object) return null;
     return { id: entityId, name: doc.name, object };

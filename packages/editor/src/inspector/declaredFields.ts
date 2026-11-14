@@ -91,7 +91,7 @@ export function declaredControl(spec: Declared): {
  * could not be picked — and Duplicate keeps a copy's children's names.
  */
 export function entityChoices(scene: SceneDoc): Record<string, string> {
-  const entities = Object.values(scene.entities);
+  const entities = [...scene.entities.values()];
   const sharing = new Map<string, number>();
   for (const { name } of entities) sharing.set(name, (sharing.get(name) ?? 0) + 1);
 
@@ -111,7 +111,7 @@ function pathOf(scene: SceneDoc, entity: EntityDoc): string {
   const names = [entity.name];
   const seen = new Set([entity.id]);
   for (let above = entity.parent; above !== null && !seen.has(above); ) {
-    const parent = scene.entities[above];
+    const parent = scene.entities.get(above);
     if (!parent) break;
     names.unshift(parent.name);
     seen.add(above);

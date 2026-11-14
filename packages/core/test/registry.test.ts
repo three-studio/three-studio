@@ -206,7 +206,7 @@ describe('fill', () => {
       version: 1,
       id: 's1',
       name: 'Main',
-      entities: { [entity.entity.id]: entity.entity },
+      entities: new Map([[entity.entity.id, entity.entity]]),
       components: emptyComponentTables(),
       rootOrder: [entity.entity.id],
       environment: { background: '#000000' } as SceneDoc['environment'],

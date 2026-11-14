@@ -1,6 +1,7 @@
 import {
   ASSET_MANIFEST_VERSION,
   PROJECT_FORMAT_VERSION,
+  assertDefined,
   createBuildProfiles,
   createComponent,
   createEmptyScene,
@@ -778,15 +779,18 @@ describe('the scene the game plays', () => {
 
   it('is a copy a script can write, even of a document immer has frozen', async () => {
     opened();
-    const [id] = Object.keys(doc().scene.entities);
-    doc().mutate('Move', (draft) => void (draft.entities[id!]!.transform.position[0] = 5));
-    expect(Object.isFrozen(doc().scene.entities[id!])).toBe(true);
+    const id = assertDefined([...doc().scene.entities.keys()][0], 'the mover');
+    doc().mutate(
+      'Move',
+      (draft) => void (assertDefined(draft.entities.get(id), 'the mover').transform.position[0] = 5),
+    );
+    expect(Object.isFrozen(doc().scene.entities.get(id))).toBe(true);
 
     await playThreeFrames();
 
     expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
     expect(useViewportStore.getState().playWarnings.some((warning) => warning.includes('failed in'))).toBe(false);
-    expect(doc().scene.entities[id!]!.name).toBe('Mover');
+    expect(doc().scene.entities.get(id)?.name).toBe('Mover');
   });
 });
 
@@ -809,7 +813,10 @@ describe('an edit tried during Play, then Stop', () => {
     const a = createMeshEntity('box');
     const b = createMeshEntity('sphere');
     doc().replaceScene(sceneWith([a, b]));
-    doc().mutate('Move', (draft) => void (draft.entities[a.entity.id]!.transform.position[0] = 3));
+    doc().mutate(
+      'Move',
+      (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').transform.position[0] = 3),
+    );
     useEditorStore.getState().setSelection([a.entity.id]);
     useAssetStore.setState({
       manifest: {
@@ -840,7 +847,7 @@ describe('an edit tried during Play, then Stop', () => {
     commandById('delete').run();
     commandById('duplicate').run();
     commandById('undo').run();
-    doc().mutate('Probe', (draft) => void (draft.entities[a.entity.id]!.name = 'Probed'));
+    doc().mutate('Probe', (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').name = 'Probed'));
     addEntityInView(createMeshEntity('box'));
     placeDroppedAsset(PREFAB_ID, [0, 0, 0]);
     reparentSelection(Selection.of([b.entity.id], expandedScene().scene), a.entity.id);
@@ -858,9 +865,9 @@ describe('an edit tried during Play, then Stop', () => {
     expect(toasts()).toEqual([]);
 
     doc().undo();
-    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(0);
+    expect(doc().scene.entities.get(a.entity.id)?.transform.position[0]).toBe(0);
     doc().redo();
-    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(3);
+    expect(doc().scene.entities.get(a.entity.id)?.transform.position[0]).toBe(3);
   });
 });
 

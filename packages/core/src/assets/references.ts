@@ -220,7 +220,7 @@ export function findMissingEntities(scene: SceneDoc): { entityId: string; type: 
   const missing: { entityId: string; type: ComponentType }[] = [];
   for (const [entityId, component] of eachComponent(scene)) {
     const gone = componentEntities(component).some(
-      (id) => id !== null && id !== '' && !Object.hasOwn(scene.entities, id),
+      (id) => id !== null && id !== '' && !scene.entities.has(id),
     );
     if (gone) missing.push({ entityId, type: component.type });
   }

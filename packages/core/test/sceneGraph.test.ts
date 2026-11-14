@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   cloneSubtree,
   createEntity,
   createMeshEntity,
@@ -49,7 +50,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     // used to leave the cube with a parent that does not exist and in no
     // children list at all — gone from the tree, still drawn in the viewport.
     expect(reparentEntity(scene, cube.entity.id, 'someInstance/root')).toBe(false);
-    expect(scene.entities[cube.entity.id]?.parent).toBeNull();
+    expect(scene.entities.get(cube.entity.id)?.parent).toBeNull();
     expect(scene.rootOrder).toContain(cube.entity.id);
     expect(validateHierarchy(scene)).toEqual([]);
   });
@@ -69,8 +70,8 @@ describe('refusing an edit rather than corrupting the tree', () => {
     const scene = sceneWith([parent, child]);
 
     expect(reparentEntity(scene, parent.entity.id, child.entity.id)).toBe(false);
-    expect(scene.entities[parent.entity.id]?.parent).toBeNull();
-    expect(scene.entities[child.entity.id]?.parent).toBe(parent.entity.id);
+    expect(scene.entities.get(parent.entity.id)?.parent).toBeNull();
+    expect(scene.entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
   });
 
   it('refuses to make an entity its own parent', () => {
@@ -88,7 +89,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     // The point of checking before unlinking: a refusal found halfway through
     // would leave the entity in no list, which is the very state to avoid.
     reparentEntity(scene, child.entity.id, 'gone');
-    expect(scene.entities[parent.entity.id]?.children).toEqual([child.entity.id]);
+    expect(scene.entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
     expect(validateHierarchy(scene)).toEqual([]);
   });
 
@@ -107,7 +108,7 @@ describe('refusing an edit rather than corrupting the tree', () => {
     expect(insertEntity(scene, cube, 'gone')).toBe(false);
     // Half-inserted is worse than not inserted: an entity in the table and in no
     // list is exactly what nothing can reach.
-    expect(scene.entities[cube.entity.id]).toBeUndefined();
+    expect(scene.entities.get(cube.entity.id)).toBeUndefined();
     expect(validateHierarchy(scene)).toEqual([]);
   });
 });
@@ -134,9 +135,9 @@ describe('moving entities about', () => {
     const scene = sceneWith([parent, child, other]);
 
     expect(reparentEntity(scene, child.entity.id, other.entity.id)).toBe(true);
-    expect(scene.entities[child.entity.id]?.parent).toBe(other.entity.id);
-    expect(scene.entities[other.entity.id]?.children).toEqual([child.entity.id]);
-    expect(scene.entities[parent.entity.id]?.children).toEqual([]);
+    expect(scene.entities.get(child.entity.id)?.parent).toBe(other.entity.id);
+    expect(scene.entities.get(other.entity.id)?.children).toEqual([child.entity.id]);
+    expect(scene.entities.get(parent.entity.id)?.children).toEqual([]);
     expect(scene.rootOrder).not.toContain(child.entity.id);
     expect(validateHierarchy(scene)).toEqual([]);
   });
@@ -166,7 +167,7 @@ describe('removing a subtree', () => {
     expect(removed).toHaveLength(3);
     expect(removed[0]).toBe(parent.entity.id);
     expect(new Set(removed)).toEqual(new Set([parent.entity.id, child.entity.id, grandchild.entity.id]));
-    expect(Object.keys(scene.entities)).toEqual([]);
+    expect([...scene.entities.keys()]).toEqual([]);
     expect(scene.rootOrder).toEqual([]);
   });
 
@@ -175,7 +176,7 @@ describe('removing a subtree', () => {
     const scene = sceneWith([parent, child]);
 
     removeSubtree(scene, child.entity.id);
-    expect(scene.entities[parent.entity.id]?.children).toEqual([]);
+    expect(scene.entities.get(parent.entity.id)?.children).toEqual([]);
     expect(validateHierarchy(scene)).toEqual([]);
   });
 
@@ -192,7 +193,7 @@ describe('cloning a subtree', () => {
     const scene = sceneWith([parent, child]);
 
     const copyId = cloneSubtree(scene, parent.entity.id, null, 'Parent (1)');
-    const copy = copyId === null ? undefined : scene.entities[copyId];
+    const copy = copyId === null ? undefined : scene.entities.get(copyId);
 
     expect(copy?.name).toBe('Parent (1)');
     expect(copy?.children).toHaveLength(1);
@@ -205,11 +206,11 @@ describe('cloning a subtree', () => {
     const scene = sceneWith([parent, child]);
 
     const copyId = cloneSubtree(scene, parent.entity.id, null, 'Parent (1)');
-    const childCopyId = copyId === null ? undefined : scene.entities[copyId]?.children[0];
+    const childCopyId = copyId === null ? undefined : scene.entities.get(copyId)?.children[0];
 
     // What Unity and Blender do. Renaming every node was also how the copy paid
     // O(N) per cloned entity for a fresh name.
-    expect(childCopyId === undefined ? undefined : scene.entities[childCopyId]?.name).toBe('Child');
+    expect(childCopyId === undefined ? undefined : scene.entities.get(childCopyId)?.name).toBe('Child');
   });
 
   it('copies deeply, so editing the copy does not reach the original', () => {
@@ -217,10 +218,10 @@ describe('cloning a subtree', () => {
     const scene = sceneWith([cube]);
 
     const copyId = cloneSubtree(scene, cube.entity.id, null, 'Copy');
-    const copy = copyId === null ? undefined : scene.entities[copyId];
+    const copy = copyId === null ? undefined : scene.entities.get(copyId);
     if (copy) copy.transform.position[0] = 42;
 
-    expect(scene.entities[cube.entity.id]?.transform.position[0]).toBe(0);
+    expect(scene.entities.get(cube.entity.id)?.transform.position[0]).toBe(0);
   });
 });
 
@@ -251,7 +252,7 @@ describe('validating a document broken by hand', () => {
   it('names a parent that does not list its child back', () => {
     const { parent, child } = pair();
     const scene = sceneWith([parent, child]);
-    scene.entities[parent.entity.id]!.children = [];
+    assertDefined(scene.entities.get(parent.entity.id), 'the parent').children = [];
 
     expect(validateHierarchy(scene).join('\n')).toContain('which does not list it');
   });

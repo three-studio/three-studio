@@ -194,7 +194,7 @@ export class EditorViewport {
       (entityId) => {
         const scene = expandedScene().scene;
         return (
-          scene.entities[entityId] === undefined ||
+          !scene.entities.has(entityId) ||
           capabilitiesOf(scene, entityId).has('translate')
         );
       },

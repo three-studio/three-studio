@@ -54,7 +54,7 @@ describe('the context it is given is the one it acts on', () => {
     expect(row.disabled).toBe(false);
 
     row.onSelect?.();
-    expect(doc().scene.entities[id]?.visible).toBe(false);
+    expect(doc().scene.entities.get(id)?.visible).toBe(false);
 
     // Without a context the row reads the selection, which is empty.
     expect(commandEntry('toggleVisibility').disabled).toBe(true);

@@ -40,7 +40,7 @@ function lockedAndSelected(): string {
   const cube = createMeshEntity('box');
   const id = addEntity(cube);
   doc().mutate('Lock', (draft) => {
-    const entity = draft.entities[id];
+    const entity = draft.entities.get(id);
     if (entity) entity.locked = true;
   });
   useEditorStore.getState().setSelection([id]);
@@ -61,7 +61,7 @@ describe('one answer per gesture, whoever asks', () => {
     const before = doc().past.length;
     group.run();
     expect(doc().past.length).toBe(before);
-    expect(doc().scene.entities[id]?.parent).toBeNull();
+    expect(doc().scene.entities.get(id)?.parent).toBeNull();
   });
 
   it('groups an unlocked selection, so the refusal is about the lock', async () => {
@@ -74,8 +74,8 @@ describe('one answer per gesture, whoever asks', () => {
     expect(group.can()).toBe(true);
 
     group.run();
-    expect(doc().scene.entities[first]?.parent).not.toBeNull();
-    expect(doc().scene.entities[second]?.parent).toBe(doc().scene.entities[first]?.parent);
+    expect(doc().scene.entities.get(first)?.parent).not.toBeNull();
+    expect(doc().scene.entities.get(second)?.parent).toBe(doc().scene.entities.get(first)?.parent);
   });
 
   it('refuses to delete and duplicate a locked entity through the registry', async () => {
@@ -100,7 +100,7 @@ describe('the gesture underneath, which is why one caller must own the asking', 
     // let a miscomputed capability corrupt a document. So the asking has to
     // happen above, and the point of the registry is that it happens once.
     groupSelection(Selection.current());
-    expect(doc().scene.entities[id]?.parent).not.toBeNull();
+    expect(doc().scene.entities.get(id)?.parent).not.toBeNull();
   });
 });
 
@@ -258,7 +258,7 @@ describe('the two prefab menus ask one question', () => {
           version: 1,
           id: 'p1',
           name: 'Crate',
-          entities: {},
+          entities: new Map(),
           components: emptyComponentTables(),
           root: '',
         },
@@ -331,12 +331,12 @@ describe('hiding is a target and nothing else, which is what makes it a command'
     expect(commandById('toggleVisibility').label(ctx)).toBe('Hide');
 
     commandById('toggleVisibility').run(ctx);
-    expect(doc().scene.entities[id]?.visible).toBe(false);
+    expect(doc().scene.entities.get(id)?.visible).toBe(false);
     // The label follows the state, the way `undo` names what it would take back.
     expect(commandById('toggleVisibility').label(contextFor([id]))).toBe('Show');
 
     commandById('toggleVisibility').run(contextFor([id]));
-    expect(doc().scene.entities[id]?.visible).toBe(true);
+    expect(doc().scene.entities.get(id)?.visible).toBe(true);
   });
 
   it('refuses a selection of several, because the gesture is one row', async () => {

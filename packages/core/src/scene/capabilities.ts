@@ -90,7 +90,7 @@ const PRODUCED_DENIES: readonly EntityCapability[] = [
  *   you — expansion produces an ordinary `EntityDoc`.
  */
 export function capabilitiesOf(scene: SceneDoc, id: string): ReadonlySet<EntityCapability> {
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   // An id naming nothing can do nothing. Every caller used to ask this
   // separately, and one that forgot would have read `locked` off `undefined`.
   if (!entity) return new Set();

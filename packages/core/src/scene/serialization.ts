@@ -1,6 +1,8 @@
 import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
+import { isRecord } from '../conform';
+import { idMapOf, isEntityId } from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -19,6 +21,19 @@ export class SceneFormatError extends Error {
     super(message);
     this.name = 'SceneFormatError';
   }
+}
+
+/**
+ * A scene as its file writes it: the entity table is an object keyed by entity
+ * id, where the document holds the same entities in a Map.
+ *
+ * The conversion happens here and nowhere else, once, where a file is read, and
+ * `stableJson` undoes it where one is written. Nothing outside this module sees
+ * this shape, and the cast that claims it stays where it is until a decoder
+ * checks the fields.
+ */
+interface SceneJson extends Omit<SceneDoc, 'entities'> {
+  entities: Record<string, EntityDoc>;
 }
 
 /**
@@ -69,7 +84,7 @@ export function migrateScene(input: unknown): SceneDoc {
     throw new SceneFormatError('Scene file is not an object.');
   }
 
-  const doc = input as Partial<SceneDoc>;
+  const doc = input as Partial<SceneJson>;
   if (typeof doc.version !== 'number') {
     throw new SceneFormatError('Scene file has no format version.');
   }
@@ -78,12 +93,16 @@ export function migrateScene(input: unknown): SceneDoc {
       `Scene was written by a newer version of the editor (format ${doc.version}, this build reads up to ${SCENE_FORMAT_VERSION}).`,
     );
   }
-  if (typeof doc.entities !== 'object' || doc.entities === null || !Array.isArray(doc.rootOrder)) {
+  // Not a Map, which an object is to `isRecord` and `Object.entries` reads as
+  // empty: a document handed here by mistake would come out as a scene with no
+  // entities, and nothing in the types says it was not a file.
+  if (!isRecord(doc.entities) || doc.entities instanceof Map || !Array.isArray(doc.rootOrder)) {
     throw new SceneFormatError('Scene file is missing its entity table.');
   }
 
   const writtenAs = doc.version;
-  const scene = input as SceneDoc;
+  const json = input as SceneJson;
+  const scene: SceneDoc = { ...json, entities: idMapOf(json.entities, isEntityId) };
   repairHierarchy(scene);
   adoptComponentTables(scene);
   fillMissingFields(scene);
@@ -177,7 +196,7 @@ function fillMissingFields(scene: SceneDoc): void {
     sky: { ...blank.sky, ...scene.environment?.sky },
   };
 
-  for (const entity of Object.values(scene.entities)) {
+  for (const entity of scene.entities.values()) {
     const blank = createEntity(entity.name ?? 'Entity').entity;
     entity.transform = {
       ...blank.transform,
@@ -238,7 +257,7 @@ function adoptComponentTables(scene: SceneDoc): void {
   for (const type of COMPONENT_TYPES) tables[type] ??= {};
   scene.components = tables;
 
-  for (const entity of Object.values(scene.entities)) {
+  for (const entity of scene.entities.values()) {
     const legacy = (entity as EntityDoc & { components?: ComponentDoc[] }).components;
     delete (entity as EntityDoc & { components?: ComponentDoc[] }).components;
     if (!Array.isArray(legacy)) continue;
@@ -332,11 +351,11 @@ function rekeyOverrides(scene: SceneDoc): void {
  * landed.
  */
 function repairHierarchy(scene: SceneDoc): void {
-  const exists = (id: string) => Object.hasOwn(scene.entities, id);
+  const exists = (id: string) => scene.entities.has(id);
 
   scene.rootOrder = scene.rootOrder.filter(exists);
 
-  for (const entity of Object.values(scene.entities)) {
+  for (const entity of scene.entities.values()) {
     entity.children = entity.children.filter(exists);
     if (entity.parent !== null && !exists(entity.parent)) entity.parent = null;
   }
@@ -345,22 +364,21 @@ function repairHierarchy(scene: SceneDoc): void {
   // cannot see one: every edge of a cycle points at an entity that exists. The
   // re-homing pass below then puts it in `rootOrder`.
   for (const chain of cycles(scene)) {
-    const entity = scene.entities[chain[0] ?? ''];
+    const entity = scene.entities.get(chain[0] ?? '');
     if (!entity) continue;
-    const parent = scene.entities[entity.parent ?? ''];
+    const parent = scene.entities.get(entity.parent ?? '');
     if (parent) parent.children = parent.children.filter((child) => child !== entity.id);
     entity.parent = null;
   }
 
   // Re-home anything that lost its parent and is not already a root.
   const referenced = new Set<string>(scene.rootOrder);
-  for (const entity of Object.values(scene.entities)) {
+  for (const entity of scene.entities.values()) {
     for (const child of entity.children) referenced.add(child);
   }
-  for (const id of Object.keys(scene.entities)) {
+  for (const [id, entity] of scene.entities) {
     if (!referenced.has(id)) {
-      const entity = scene.entities[id];
-      if (entity) entity.parent = null;
+      entity.parent = null;
       scene.rootOrder.push(id);
     }
   }

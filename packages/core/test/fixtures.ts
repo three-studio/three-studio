@@ -33,7 +33,7 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
     // Fixed rather than generated: a test that prints a scene should print the
     // same thing twice.
     id: 'scene',
-    entities: Object.fromEntries(entities.map((entity) => [entity.id, entity])),
+    entities: new Map(entities.map((entity) => [entity.id, entity])),
     rootOrder: entities.filter((entity) => entity.parent === null).map((entity) => entity.id),
   };
   // The components go with them: they are stored beside the entity table now,

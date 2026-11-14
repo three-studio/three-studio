@@ -99,7 +99,7 @@ async function extractPhysicsMaterial(
   componentId: string,
   material: PhysicsMaterialDef,
 ): Promise<void> {
-  const suggested = expandedScene().scene.entities[entityId]?.name ?? 'Collider';
+  const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Collider';
   const name = await askForText({
     title: 'Save Physics Material as Asset',
     label: 'Name',

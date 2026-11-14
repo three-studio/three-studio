@@ -13,6 +13,7 @@ import {
   createRenderingSettings,
   findComponent,
   instancedId,
+  serializeScene,
   type AudioSourceComponent,
   type ColliderComponent,
   type EntityTemplate,
@@ -110,15 +111,15 @@ describe('document store', () => {
   it('adds an entity and undoes it', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
-    expect(scene().entities[cube.entity.id]?.name).toBe('Cube');
+    expect(scene().entities.get(cube.entity.id)?.name).toBe('Cube');
     expect(scene().rootOrder).toContain(cube.entity.id);
 
     doc().undo();
-    expect(scene().entities[cube.entity.id]).toBeUndefined();
+    expect(scene().entities.get(cube.entity.id)).toBeUndefined();
     expect(scene().rootOrder).not.toContain(cube.entity.id);
 
     doc().redo();
-    expect(scene().entities[cube.entity.id]?.name).toBe('Cube');
+    expect(scene().entities.get(cube.entity.id)?.name).toBe('Cube');
   });
 
   it('records a label per history entry', () => {
@@ -134,16 +135,16 @@ describe('document store', () => {
     addEntity(parent);
     addEntity(child, parent.entity.id);
 
-    expect(scene().entities[parent.entity.id]?.children).toEqual([child.entity.id]);
+    expect(scene().entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
 
     deleteSelection(sel([parent.entity.id]));
-    expect(scene().entities[parent.entity.id]).toBeUndefined();
+    expect(scene().entities.get(parent.entity.id)).toBeUndefined();
     // A deleted parent must take its descendants with it, not orphan them.
-    expect(scene().entities[child.entity.id]).toBeUndefined();
+    expect(scene().entities.get(child.entity.id)).toBeUndefined();
 
     doc().undo();
-    expect(scene().entities[child.entity.id]?.parent).toBe(parent.entity.id);
-    expect(scene().entities[parent.entity.id]?.children).toEqual([child.entity.id]);
+    expect(scene().entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
+    expect(scene().entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
   });
 
   it('reparents and unparents', () => {
@@ -153,11 +154,11 @@ describe('document store', () => {
     addEntity(b);
 
     reparentEntity(b.entity.id, a.entity.id);
-    expect(scene().entities[b.entity.id]?.parent).toBe(a.entity.id);
+    expect(scene().entities.get(b.entity.id)?.parent).toBe(a.entity.id);
     expect(scene().rootOrder).toEqual([a.entity.id]);
 
     reparentEntity(b.entity.id, null);
-    expect(scene().entities[b.entity.id]?.parent).toBeNull();
+    expect(scene().entities.get(b.entity.id)?.parent).toBeNull();
     expect(scene().rootOrder).toEqual([a.entity.id, b.entity.id]);
   });
 
@@ -171,8 +172,8 @@ describe('document store', () => {
 
     // The move is rejected outright: allowing it would detach the subtree from
     // the scene with no way to reach it again.
-    expect(scene().entities[parent.entity.id]?.parent).toBeNull();
-    expect(scene().entities[child.entity.id]?.parent).toBe(parent.entity.id);
+    expect(scene().entities.get(parent.entity.id)?.parent).toBeNull();
+    expect(scene().entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
   });
 
   it('collapses a coalesced drag into one undo step', () => {
@@ -185,11 +186,11 @@ describe('document store', () => {
     }
 
     expect(doc().past.length).toBe(historyAfterAdd + 1);
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([20, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([20, 0, 0]);
 
     // One undo must return to where the gesture started, not to step 19.
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
   });
 
   it('starts a new history entry when the coalesce key changes', () => {
@@ -223,7 +224,7 @@ describe('document store', () => {
     const roots = scene().rootOrder;
     expect(roots).toHaveLength(2);
     const copyId = roots.find((id) => id !== parent.entity.id);
-    const copy = copyId === undefined ? undefined : scene().entities[copyId];
+    const copy = copyId === undefined ? undefined : scene().entities.get(copyId);
 
     expect(copy?.name).toBe('Parent (1)');
     expect(copy?.children).toHaveLength(1);
@@ -237,7 +238,7 @@ describe('document store', () => {
 
     duplicateSelection(sel(cubes));
 
-    expect(scene().rootOrder.map((id) => scene().entities[id]?.name)).toEqual([
+    expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual([
       'Cube',
       'Cube',
       'Cube',
@@ -247,6 +248,28 @@ describe('document store', () => {
     ]);
   });
 
+  it('takes the Duplicate of several subtrees back exactly with its undo, and redoes it exactly', () => {
+    const parent = createEntity('Parent');
+    const child = createEntity('Child');
+    const lone = createMeshEntity('box');
+    addEntity(parent);
+    addEntity(child, parent.entity.id);
+    addEntity(lone);
+    const before = scene();
+
+    duplicateSelection(sel([parent.entity.id, lone.entity.id]));
+    const after = scene();
+    expect(serializeScene(after)).not.toBe(serializeScene(before));
+
+    doc().undo();
+    expect(scene()).toEqual(before);
+    expect(serializeScene(scene())).toBe(serializeScene(before));
+
+    doc().redo();
+    expect(scene()).toEqual(after);
+    expect(serializeScene(scene())).toBe(serializeScene(after));
+  });
+
   it('names the copy of a copy by the next name that is free', () => {
     const cube = addEntity(createMeshEntity('box'));
     duplicateSelection(sel([cube]));
@@ -254,7 +277,7 @@ describe('document store', () => {
 
     duplicateSelection(sel([first]));
 
-    expect(scene().rootOrder.map((id) => scene().entities[id]?.name)).toEqual(['Cube', 'Cube (1)', 'Cube (2)']);
+    expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual(['Cube', 'Cube (1)', 'Cube (2)']);
   });
 
   it('counts the name of an entity nested under another as taken', () => {
@@ -264,7 +287,7 @@ describe('document store', () => {
     duplicateSelection(sel([cube]));
 
     const copy = assertDefined(scene().rootOrder[1], 'the copy');
-    expect(scene().entities[copy]?.name).toBe('Cube (2)');
+    expect(scene().entities.get(copy)?.name).toBe('Cube (2)');
   });
 
   it('clears history when a new document replaces the current one', () => {
@@ -363,7 +386,7 @@ describe('what a transaction carries', () => {
     }
 
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
     expect(selection()).toEqual([cube.entity.id]);
   });
 });
@@ -431,7 +454,7 @@ describe('knowing whether the work is saved', () => {
     expect(changes.revision).toBe(seen);
 
     doc().undo();
-    expect(Object.keys(scene().entities)).toEqual([]);
+    expect([...scene().entities.keys()]).toEqual([]);
     expect(scene().id).toBe('c');
     expect(scene().name).toBe('Copy');
   });
@@ -456,11 +479,11 @@ describe('bounding a coalesced entry', () => {
     expect(entry?.patches.length).toBeLessThanOrEqual(4);
     expect(entry?.inverse.length).toBeLessThanOrEqual(4);
 
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([100, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([100, 0, 0]);
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
     doc().redo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([100, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([100, 0, 0]);
   });
 
   it('leaves a patch set that is not all replaces alone', () => {
@@ -475,7 +498,7 @@ describe('bounding a coalesced entry', () => {
       doc().mutate(
         'Insert',
         (draft) => {
-          draft.entities[extra.entity.id] = extra.entity;
+          draft.entities.set(extra.entity.id, extra.entity);
           draft.rootOrder.splice(0, 0, extra.entity.id);
         },
         { coalesceKey: 'insert' },
@@ -938,7 +961,7 @@ describe('references to the entities copied with them', () => {
   }
 
   const copyOf = (name: string) =>
-    Object.values(scene().entities).find((entity) => entity.name === name)?.id;
+    [...scene().entities.values()].find((entity) => entity.name === name)?.id;
 
   it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
     const { frame, door } = doorway();
@@ -952,7 +975,7 @@ describe('references to the entities copied with them', () => {
     expect(findComponent(scene(), door, 'joint')?.connectedEntity).toBe(frame);
 
     doc().undo();
-    expect(Object.keys(scene().entities).sort()).toEqual([door, frame].sort());
+    expect([...scene().entities.keys()].sort()).toEqual([door, frame].sort());
 
     duplicateSelection(sel([door]));
     expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(frame);
@@ -968,7 +991,7 @@ describe('references to the entities copied with them', () => {
     duplicateSelection(sel([turret]));
 
     const copy = copyOf('Turret (1)')!;
-    const copiedBrain = scene().entities[copy]!.children[0]!;
+    const copiedBrain = assertDefined(scene().entities.get(copy), 'the copied turret').children[0]!;
     expect(copiedBrain).not.toBe(brain);
     expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
   });

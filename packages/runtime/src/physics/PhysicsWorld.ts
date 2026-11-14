@@ -585,7 +585,7 @@ export class PhysicsWorld implements PhysicsApi {
       .sort((a, b) => a.depth - b.depth);
 
     for (const { entityId } of parentsFirst) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity) continue;
 
       const object = binder.getObject(entityId);

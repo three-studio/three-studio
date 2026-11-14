@@ -38,7 +38,7 @@ const CONFIRM_ABOVE = 200;
  */
 export async function unpackModel(entityId: string): Promise<void> {
   const document = useDocumentStore.getState();
-  const host = document.scene.entities[entityId];
+  const host = document.scene.entities.get(entityId);
   const component = findComponent(document.scene, entityId, 'model');
   if (!host || !component || component.assetId === '') return;
 
@@ -107,7 +107,7 @@ export async function unpackModel(entityId: string): Promise<void> {
   useDocumentStore.getState().mutate(
     'Unpack model',
     (draft) => {
-      if (!draft.entities[entityId]) return;
+      if (!draft.entities.has(entityId)) return;
 
       // The model component goes, and so do its mesh Colliders, which every
       // piece that draws now carries: a mesh Collider is built from its own

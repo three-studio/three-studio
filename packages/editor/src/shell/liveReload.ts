@@ -52,10 +52,21 @@ export function sameLaunchInputs(a: LaunchSnapshot, b: LaunchSnapshot): boolean 
  * Plain data compared by content, whatever the order of its keys — two paths
  * to the same state may build an object in two orders. Stops wherever two
  * references are equal.
+ *
+ * A Map is compared by its entries: it has no own keys, so read as an object
+ * every Map would equal every other, and a scene whose entities changed would
+ * be the one it was launched from.
  */
 function sameData(a: unknown, b: unknown): boolean {
   if (a === b || Object.is(a, b)) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (a instanceof Map || b instanceof Map) {
+    if (!(a instanceof Map) || !(b instanceof Map) || a.size !== b.size) return false;
+    for (const [key, value] of a) {
+      if (!b.has(key) || !sameData(value, b.get(key))) return false;
+    }
+    return true;
+  }
   if (Array.isArray(a) || Array.isArray(b)) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     return a.every((item, index) => sameData(item, b[index]));

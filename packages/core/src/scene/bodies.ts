@@ -71,7 +71,7 @@ export function jointEnds(scene: SceneDoc, entityId: string, joint: JointCompone
   const own = movesWith(scene, entityId);
   if (own === null) return { holds: false, why: 'noBody' };
   if (joint.connectedEntity === null) return { holds: true, own, other: null };
-  if (!Object.hasOwn(scene.entities, joint.connectedEntity)) return { holds: false, why: 'gone' };
+  if (!scene.entities.has(joint.connectedEntity)) return { holds: false, why: 'gone' };
   const other = movesWith(scene, joint.connectedEntity);
   if (other === null) return { holds: false, why: 'otherNoBody' };
   // A joint on a child naming its parent: one body, nothing to hold.
@@ -106,7 +106,7 @@ function riddenBy(
   while (current !== null && !seen.has(current)) {
     if (bodies.has(current)) return current;
     seen.add(current);
-    current = scene.entities[current]?.parent ?? null;
+    current = scene.entities.get(current)?.parent ?? null;
   }
   return null;
 }

@@ -41,7 +41,7 @@ export function buildRows(
 
   const walk = (ids: readonly string[], depth: number) => {
     for (const id of ids) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (!entity) continue;
 
       const children = childrenOf(entity);

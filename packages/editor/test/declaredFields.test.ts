@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -111,7 +112,7 @@ describe('a script property, whichever variant it is', () => {
     const crate = createMeshEntity('box');
     crate.entity.name = 'Crate';
     const scene = createEmptyScene();
-    scene.entities[crate.entity.id] = crate.entity;
+    scene.entities.set(crate.entity.id, crate.entity);
     useDocumentStore.setState({ scene });
 
     expect(control('target').optionsProvider?.()).toEqual({ None: '', Crate: crate.entity.id });
@@ -123,8 +124,8 @@ describe('a script property, whichever variant it is', () => {
     const add = (name: string, parent: string | null = null): string => {
       const { entity } = createEntity(name);
       entity.parent = parent;
-      scene.entities[entity.id] = entity;
-      if (parent) scene.entities[parent]!.children.push(entity.id);
+      scene.entities.set(entity.id, entity);
+      if (parent) assertDefined(scene.entities.get(parent), 'the parent').children.push(entity.id);
       return entity.id;
     };
     const cart = add('Cart');

@@ -210,10 +210,7 @@ describe('a marker as a click target', () => {
 
     const hidden: SceneDoc = {
       ...scene,
-      entities: {
-        ...scene.entities,
-        [light.entity.id]: { ...light.entity, visible: false },
-      },
+      entities: new Map(scene.entities).set(light.entity.id, { ...light.entity, visible: false }),
     };
     frame(hidden);
     expect(overlay.markers.children[0]?.visible).toBe(false);
@@ -898,11 +895,14 @@ describe('what a mesh collider is built as', () => {
     expect(Math.abs(reach() - (0.6 + t))).toBeLessThan(1e-3);
     const geometry = outline instanceof LineSegments ? outline.geometry : undefined;
 
-    const entity = scene.entities[ring.entity.id];
+    const entity = scene.entities.get(ring.entity.id);
     if (!entity) throw new Error('no entity');
     const scaled: SceneDoc = {
       ...scene,
-      entities: { ...scene.entities, [entity.id]: { ...entity, transform: { ...entity.transform, scale: [2, 2, 2] } } },
+      entities: new Map(scene.entities).set(entity.id, {
+        ...entity,
+        transform: { ...entity.transform, scale: [2, 2, 2] },
+      }),
     };
     frame(scaled, [ring.entity.id]);
     expect(Math.abs(reach() - 2 * (0.6 + t))).toBeLessThan(1e-3);
@@ -921,7 +921,7 @@ describe('teardown', () => {
   it('leaves both groups empty', () => {
     const scene = sceneWith([createLightEntity('spot'), createCameraEntity()]);
     const { overlay, frame } = mount(scene);
-    frame(scene, Object.keys(scene.entities));
+    frame(scene, [...scene.entities.keys()]);
     expect(overlay.markers.children.length).toBeGreaterThan(0);
     expect(annotations(overlay).length).toBeGreaterThan(0);
 

@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   createEntity,
   createMeshEntity,
   createModelEntity,
@@ -41,7 +42,7 @@ const play = () => useEditorStore.getState().play();
 const pause = () => useEditorStore.getState().togglePause();
 const stop = () => useEditorStore.getState().stop();
 const playState = () => useEditorStore.getState().playState;
-const x = (id: string) => doc().scene.entities[id]!.transform.position[0];
+const x = (id: string) => assertDefined(doc().scene.entities.get(id), 'the entity').transform.position[0];
 
 interface Spied {
   apply: Mock<() => void>;
@@ -111,12 +112,16 @@ beforeEach(() => {
   // Two edits, the second undone: Undo and Redo both have something to act on.
   undoable = spied();
   redoable = spied();
-  doc().mutate('Move first', (scene) => void (scene.entities[first]!.transform.position[0] = 1), {
-    external: undoable,
-  });
-  doc().mutate('Move second', (scene) => void (scene.entities[second]!.transform.position[0] = 2), {
-    external: redoable,
-  });
+  doc().mutate(
+    'Move first',
+    (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 1),
+    { external: undoable },
+  );
+  doc().mutate(
+    'Move second',
+    (scene) => void (assertDefined(scene.entities.get(second), 'the second entity').transform.position[0] = 2),
+    { external: redoable },
+  );
   doc().undo();
   vi.clearAllMocks();
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -179,12 +184,18 @@ describe('the document while the game runs', () => {
 
   it('takes the same edit once stopped', () => {
     play();
-    doc().mutate('Probe', (scene) => void (scene.entities[first]!.transform.position[0] = 7));
+    doc().mutate(
+      'Probe',
+      (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 7),
+    );
     expect(x(first)).toBe(1);
 
     stop();
     const revision = doc().revision;
-    doc().mutate('Probe', (scene) => void (scene.entities[first]!.transform.position[0] = 7));
+    doc().mutate(
+      'Probe',
+      (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 7),
+    );
 
     expect(x(first)).toBe(7);
     expect(doc().revision).toBe(revision + 1);

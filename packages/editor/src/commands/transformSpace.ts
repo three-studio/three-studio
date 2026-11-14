@@ -31,7 +31,7 @@ function localMatrix(transform: Transform): Matrix4 {
 export function worldMatrix(scene: SceneDoc, id: string | null): Matrix4 {
   if (id === null) return new Matrix4();
 
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   if (!entity) return new Matrix4();
 
   return worldMatrix(scene, entity.parent).multiply(localMatrix(entity.transform));
@@ -84,7 +84,7 @@ export function localTransformAfterDelta(
   delta: Matrix4,
 ): Transform {
   const world = delta.clone().multiply(worldMatrix(scene, id));
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   const local = worldMatrix(scene, entity?.parent ?? null).invert().multiply(world);
   return transformFromMatrix(local);
 }

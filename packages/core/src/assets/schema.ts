@@ -1,4 +1,3 @@
-import type { PrefabDoc } from '../scene/prefab';
 import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
@@ -162,8 +161,13 @@ export interface BuildManifest {
   /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
    * engine sees the scene.
+   *
+   * Each one is the JSON of its document, as a file holds it. A document keeps
+   * its entities in a Map, which a manifest cannot say, so a declaration of
+   * `PrefabDoc` here would claim a record to be one: the player reads each
+   * through `prefabsFromJson`.
    */
-  prefabs: Record<string, PrefabDoc>;
+  prefabs: Readonly<Record<string, unknown>>;
   /**
    * Images whose file name does not say how they store light.
    *

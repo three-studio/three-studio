@@ -1,5 +1,6 @@
 import {
   PROJECT_FORMAT_VERSION,
+  assertDefined,
   createBuildProfiles,
   createEmptyScene,
   createMeshEntity,
@@ -261,9 +262,9 @@ describe('back to the scene', () => {
     // was; stopped first, it put the scene into the prefab, and leaving then
     // saved the scene into the prefab's file.
     expect(log).toEqual([['savePrefab', CRATE], ['stop', 'a']]);
-    expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
+    expect(savedPrefabs[0]?.entities.get(crateRoot)?.name).toBe('Edited');
     expect(prefabMode().stack).toEqual([]);
-    expect(doc().scene.entities[wall]).toBeDefined();
+    expect(doc().scene.entities.get(wall)).toBeDefined();
   });
 
   it('leaves the game running when not asked to stop it', async () => {
@@ -287,8 +288,8 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
 
     expect(methods()).toEqual(['savePrefab', 'createScene']);
     const copy = deserializeScene(log[1]![2] as string);
-    expect(copy.entities[wall]).toBeDefined();
-    expect(copy.entities[crateRoot]).toBeUndefined();
+    expect(copy.entities.get(wall)).toBeDefined();
+    expect(copy.entities.get(crateRoot)).toBeUndefined();
     expect(prefabMode().stack).toEqual([]);
     expect(useProjectStore.getState().scenePath).toBe('scenes/Copy.scene.json');
   });
@@ -314,7 +315,7 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
       ['renameScene', 'a', 'Renamed'],
     ]);
     expect(prefabMode().stack).toEqual([]);
-    expect(doc().scene.entities[wall]).toBeDefined();
+    expect(doc().scene.entities.get(wall)).toBeDefined();
     expect(doc().scene.name).toBe('Renamed');
     expect(doc().undoLabel()).toBe('Rename scene');
     expect(savedPrefabs[0]?.name).toBe('Crate');
@@ -476,7 +477,7 @@ describe('Save As makes a scene of its own', () => {
     // As it stands, original id included: the main process is what replaces it.
     const handed = deserializeScene(contents as string);
     expect(handed.id).toBe('a');
-    expect(handed.entities[wall]?.name).toBe('Edited wall');
+    expect(handed.entities.get(wall)?.name).toBe('Edited wall');
 
     expect(doc().scene.id).toBe('c');
     expect(doc().scene.name).toBe('Copy');
@@ -499,7 +500,7 @@ describe('Save As makes a scene of its own', () => {
     const saved = deserializeScene(written[0]!);
     expect(saved.id).toBe('c');
     expect(saved.name).toBe('Copy');
-    expect(saved.entities[wall]?.name).toBe('Edited after Save As');
+    expect(saved.entities.get(wall)?.name).toBe('Edited after Save As');
   });
 
   it('leaves everything as it was when the main process refuses the name', async () => {
@@ -821,8 +822,8 @@ describe('Revert Scene', () => {
       ['readScene', MAIN.path],
       ['setDirty', false],
     ]);
-    expect(doc().scene.entities[wall]?.name).toBe('Wall');
-    expect(doc().scene.entities[added]).toBeUndefined();
+    expect(doc().scene.entities.get(wall)?.name).toBe('Wall');
+    expect(doc().scene.entities.get(added)).toBeUndefined();
     expect(doc().scene.id).toBe('a');
     expect(selectDirty(doc())).toBe(false);
     expect(doc().past).toEqual([]);
@@ -868,7 +869,7 @@ describe('Revert Scene', () => {
 
       expect(log).toEqual([]);
       expect(editor().playState).toBe('playing');
-      expect(doc().scene.entities[wall]?.name).toBe('Edited wall');
+      expect(doc().scene.entities.get(wall)?.name).toBe('Edited wall');
     });
   });
 
@@ -884,9 +885,9 @@ describe('Revert Scene', () => {
       ['readScene', MAIN.path],
       ['savePrefab', CRATE],
     ]);
-    expect(savedPrefabs[0]?.entities[crateRoot]?.name).toBe('Edited');
+    expect(savedPrefabs[0]?.entities.get(crateRoot)?.name).toBe('Edited');
     expect(prefabMode().stack).toEqual([]);
-    expect(doc().scene.entities[wall]?.name).toBe('Wall');
+    expect(doc().scene.entities.get(wall)?.name).toBe('Wall');
     expect(sceneUnsaved()).toBe(false);
   });
 
@@ -903,7 +904,7 @@ describe('Revert Scene', () => {
       ['stop', 'a'],
     ]);
     expect(editor().playState).toBe('stopped');
-    expect(doc().scene.entities[wall]?.name).toBe('Wall');
+    expect(doc().scene.entities.get(wall)?.name).toBe('Wall');
     expect(selectDirty(doc())).toBe(false);
   });
 
@@ -943,13 +944,13 @@ describe('Revert Scene', () => {
 
   it('loads the file as it is now, changed outside the editor', async () => {
     const outside = deserializeScene(file as string);
-    outside.entities[wall]!.name = 'Changed outside';
+    assertDefined(outside.entities.get(wall), 'the wall').name = 'Changed outside';
     file = serializeScene(outside);
     renameEntity(wall, 'Edited wall');
 
     await revert();
 
-    expect(doc().scene.entities[wall]?.name).toBe('Changed outside');
+    expect(doc().scene.entities.get(wall)?.name).toBe('Changed outside');
     expect(selectDirty(doc())).toBe(false);
   });
 
@@ -979,7 +980,7 @@ describe('Revert Scene', () => {
     try {
       await revert();
 
-      expect(doc().scene.entities[barrel]).toBeDefined();
+      expect(doc().scene.entities.get(barrel)).toBeDefined();
       expect(warn.mock.calls.map(([line]) => String(line).split(' to ')[0])).toEqual([
         '[scene] 1 reference',
       ]);

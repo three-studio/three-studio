@@ -64,7 +64,7 @@ const KINDS = ['box', 'sphere', 'cylinder'] as const;
  * an entry for a no-op breaks the count on which the round trip rests.
  */
 function step(pick: () => number): void {
-  const ids = Object.keys(doc().scene.entities);
+  const ids = [...doc().scene.entities.keys()];
   const any = () => ids[Math.floor(pick() * ids.length)];
   const choice = Math.floor(pick() * 8);
 

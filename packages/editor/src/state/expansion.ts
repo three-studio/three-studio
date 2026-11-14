@@ -62,7 +62,7 @@ export function expandedScene(): ExpandedScene {
 
 /** The entity as it is drawn — an instance's contents included. */
 export function expandedEntity(id: string) {
-  return expandedScene().scene.entities[id];
+  return expandedScene().scene.entities.get(id);
 }
 
 /**
@@ -76,9 +76,9 @@ export function expandedEntity(id: string) {
 export function expandedChildren(expanded: ExpandedScene): Map<string, string[]> {
   const extra = new Map<string, string[]>();
 
-  for (const entity of Object.values(expanded.scene.entities)) {
+  for (const entity of expanded.scene.entities.values()) {
     if (entity.parent === null) continue;
-    const parent = expanded.scene.entities[entity.parent];
+    const parent = expanded.scene.entities.get(entity.parent);
     if (!parent || parent.children.includes(entity.id)) continue;
 
     const siblings = extra.get(entity.parent);

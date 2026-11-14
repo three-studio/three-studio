@@ -279,7 +279,7 @@ export function HierarchyPanel() {
     // on every mutation, and this is the current value either way.
     const document = useDocumentStore.getState().scene;
     const isPrefabHost =
-      document.entities[entityId] !== undefined &&
+      document.entities.has(entityId) &&
       hasComponent(document, entityId, 'prefabInstance');
     const prefabInfo = isPrefabHost ? instanceInfo(entityId) : null;
 

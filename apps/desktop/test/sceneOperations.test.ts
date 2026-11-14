@@ -319,7 +319,7 @@ describe('what these operations write', () => {
 
     const document = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
     expect(document.rootOrder).toEqual([]);
-    expect(document.entities).toEqual({});
+    expect(document.entities.size).toBe(0);
     expect(document.name).toBe('Arena');
   });
 
@@ -336,7 +336,7 @@ describe('what these operations write', () => {
     expect(scene.id).not.toBe(main);
     expect(copy.id).toBe(scene.id);
     expect(copy.name).toBe('Main Copy');
-    expect(Object.keys(copy.entities)).toHaveLength(Object.keys(original.entities).length);
+    expect(copy.entities.size).toBe(original.entities.size);
   });
 
   /*
@@ -351,7 +351,7 @@ describe('what these operations write', () => {
         await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
       );
       const wall = createEntity('Wall');
-      document.entities[wall.entity.id] = wall.entity;
+      document.entities.set(wall.entity.id, wall.entity);
       document.rootOrder.push(wall.entity.id);
       return { document: serializeScene(document), wall: wall.entity.id };
     }
@@ -368,7 +368,7 @@ describe('what these operations write', () => {
       expect(copy.id).toBe(scene.id);
       expect(copy.id).not.toBe(main);
       expect(copy.name).toBe('Main Copy');
-      expect(copy.entities[wall]?.name).toBe('Wall');
+      expect(copy.entities.get(wall)?.name).toBe('Wall');
       expect(await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8')).toBe(before);
     });
 

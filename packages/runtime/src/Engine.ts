@@ -291,7 +291,7 @@ export class Engine {
     // That is fixed, but a model that fails to load reaches the same place,
     // and silently.
     for (const [entityId, bodyId] of riding) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity) continue;
       const meshes = Object.values(scene.components.collider[entityId] ?? {}).filter(
         (component) => component.shape.kind === 'mesh',
@@ -308,7 +308,7 @@ export class Engine {
       });
       if (hulled) {
         const body =
-          bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities[bodyId]?.name}"`;
+          bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities.get(bodyId)?.name}"`;
         warn(
           `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make ${body} Kinematic or Fixed.`,
         );
@@ -328,7 +328,7 @@ export class Engine {
     // list is a Rigid Body's, level geometry being a collider's own; a player
     // is said by what it lacks itself.
     for (const [entityId, carried] of bodies) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || carried.length > 0 || players.has(entityId)) continue;
       warn(
         `"${entity.name}" has a Rigid Body but no Collider, on it or on a child without a body of its own, so nothing can touch it. Add a Collider.`,
@@ -337,7 +337,7 @@ export class Engine {
     // Its own: a character sweeps its entity's collider, never one riding its
     // body from a child.
     for (const entityId of players) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || hasComponent(scene, entityId, 'collider')) continue;
       warn(
         `"${entity.name}" has a Player Controller but no Collider, so it flies instead of walking. Add a Collider.`,
@@ -363,7 +363,7 @@ export class Engine {
           .map(({ layer }) => ({ body, layer })),
       );
       for (const entityId of players) {
-        const entity = scene.entities[entityId];
+        const entity = scene.entities.get(entityId);
         // The collider its character sweeps.
         const own = Object.values(scene.components.collider[entityId] ?? {})[0];
         if (!entity || !own) continue;
@@ -383,7 +383,7 @@ export class Engine {
     // scene: the others are on disk.
     const layerIds = new Set(settings.layers.map((layer) => layer.id));
     for (const entityId of this.world ? riding.keys() : []) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       const colliders = Object.values(scene.components.collider[entityId] ?? {});
       if (!entity || colliders.every((collider) => layerIds.has(collider.layer))) continue;
       warn(
@@ -396,7 +396,7 @@ export class Engine {
     // no hierarchy, and a puck that grips where it was made to slide gives no
     // reason. `''` is a slot left empty, not a link.
     for (const entityId of this.world ? riding.keys() : []) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       const colliders = Object.values(scene.components.collider[entityId] ?? {});
       const lost = colliders.some(
         ({ materialId }) => !!materialId && linkedPhysicsMaterial(materialId, physicsMaterials) === null,
@@ -424,7 +424,7 @@ export class Engine {
     // said above. With physics off the line would be about the host, not the
     // scene.
     for (const entityId of this.world ? this.listeners.keys() : []) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || hasComponent(scene, entityId, 'collider') || hasComponent(scene, entityId, 'rigidbody')) {
         continue;
       }
@@ -652,7 +652,7 @@ export class Engine {
       if (!factory) continue;
 
       for (const [entityId, held] of Object.entries(componentsOfType(scene, type))) {
-        const entity = scene.entities[entityId];
+        const entity = scene.entities.get(entityId);
         const object = this.binder.getObject(entityId);
         if (!entity || !object) continue;
 
@@ -777,8 +777,8 @@ function unit(x: number, y: number, z: number): [number, number, number] {
 
 /** What keeps a joint from doing its work, said as `checkPhysicsSetup` says it, or `null`. */
 function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent): string | null {
-  const name = scene.entities[entityId]?.name;
-  const other = joint.connectedEntity === null ? undefined : scene.entities[joint.connectedEntity]?.name;
+  const name = scene.entities.get(entityId)?.name;
+  const other = joint.connectedEntity === null ? undefined : scene.entities.get(joint.connectedEntity)?.name;
   const ends = jointEnds(scene, entityId, joint);
   if (!ends.holds) {
     switch (ends.why) {
@@ -796,5 +796,5 @@ function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent):
   const dynamic = (bodyId: string | null) =>
     bodyId !== null && findComponent(scene, bodyId, 'rigidbody')?.bodyType === 'dynamic';
   if (dynamic(ends.own) || dynamic(ends.other)) return null;
-  return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities[ends.own]?.name}" or of what it is connected to Dynamic.`;
+  return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities.get(ends.own)?.name}" or of what it is connected to Dynamic.`;
 }

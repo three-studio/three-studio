@@ -60,7 +60,7 @@ export function drawsNothing(scene: SceneDoc, entityId: string): boolean {
  * table.
  */
 export function markerStyleFor(scene: SceneDoc, entityId: string): MarkerStyle | undefined {
-  if (scene.entities[entityId] === undefined) return undefined;
+  if (!scene.entities.has(entityId)) return undefined;
   if (!drawsNothing(scene, entityId)) return undefined;
 
   for (const type of PRIORITY) {

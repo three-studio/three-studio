@@ -7,10 +7,12 @@ import {
   createEnvironment,
   createMeshEntity,
   createSkySettings,
+  deserializePrefab,
   deserializeScene,
   emptyComponentTables,
   findComponent,
-  migratePrefab,
+  jsonOf,
+  serializePrefab,
   serializeScene,
   setComponentsOf,
   type ColliderComponent,
@@ -60,7 +62,7 @@ function createStarter(): SceneDoc {
     version: SCENE_FORMAT_VERSION,
     id: 'scene-1',
     name: 'Main',
-    entities: { [cube.entity.id]: cube.entity },
+    entities: new Map([[cube.entity.id, cube.entity]]),
     components,
     rootOrder: [cube.entity.id],
     // From the factory, not written out here. This is a starting point for
@@ -74,7 +76,7 @@ function createStarter(): SceneDoc {
 }
 
 function firstMesh(scene: SceneDoc): MeshComponent {
-  const entityId = Object.keys(scene.entities)[0]!;
+  const entityId = [...scene.entities.keys()][0]!;
   return findComponent(scene, entityId, 'mesh')!;
 }
 
@@ -126,7 +128,7 @@ describe('scene migration', () => {
     });
 
     const migrated = deserializeScene(json);
-    const entityId = Object.keys(migrated.entities)[0]!;
+    const entityId = [...migrated.entities.keys()][0]!;
     const body = findComponent(migrated, entityId, 'rigidbody')!;
     const player = findComponent(migrated, entityId, 'playerController')!;
 
@@ -148,7 +150,7 @@ describe('scene migration', () => {
     });
 
     const migrated = deserializeScene(json);
-    const entityId = Object.keys(migrated.entities)[0]!;
+    const entityId = [...migrated.entities.keys()][0]!;
     expect(findComponent(migrated, entityId, 'rigidbody')).toMatchObject({
       interpolate: true,
       lockPosition: [false, false, false],
@@ -192,7 +194,7 @@ describe('scene migration', () => {
     });
 
     const scene = deserializeScene(json);
-    const entityId = Object.keys(scene.entities)[0]!;
+    const entityId = [...scene.entities.keys()][0]!;
     const light = findComponent(scene, entityId, 'light')!;
 
     expect(light.shadow).toEqual({
@@ -247,7 +249,7 @@ describe('scene migration', () => {
     });
 
     const scene = deserializeScene(json);
-    const entity = Object.values(scene.entities)[0]!;
+    const entity = [...scene.entities.values()][0]!;
     expect(entity.visible).toBe(true);
     expect(entity.locked).toBe(false);
     expect(scene.environment.fogFar).toBe(400);
@@ -397,7 +399,7 @@ describe('scene migration', () => {
       string,
       Record<string, Record<string, Record<string, unknown>>>
     >;
-    const entityId = Object.keys(migrated.entities)[0]!;
+    const entityId = [...migrated.entities.keys()][0]!;
     const kept = tables['plugin:water']?.[entityId]?.['water-1'] ?? {};
 
     // A table of its own, rather than a shape invented for it: nothing here can
@@ -465,7 +467,7 @@ describe('scene migration', () => {
   });
 
   it('refuses a scene written by a newer editor rather than mangling it', () => {
-    const json = JSON.stringify({ ...createStarter(), version: SCENE_FORMAT_VERSION + 1 });
+    const json = jsonOf({ ...createStarter(), version: SCENE_FORMAT_VERSION + 1 });
     expect(() => deserializeScene(json)).toThrow(/newer version/);
   });
 });
@@ -508,17 +510,17 @@ function sceneAt(version: number, eyeHeight: number, extra: ComponentDoc[] = [])
     version,
     id: 'scene-1',
     name: 'Main',
-    entities: { [template.entity.id]: template.entity },
+    entities: new Map([[template.entity.id, template.entity]]),
     components: emptyComponentTables(),
     rootOrder: [template.entity.id],
     environment: createEnvironment(),
   };
   setComponentsOf(scene, template.entity.id, template.components);
-  return JSON.stringify(scene);
+  return jsonOf(scene);
 }
 
 function eyeHeightOf(scene: SceneDoc): number {
-  const entityId = Object.keys(scene.entities)[0]!;
+  const entityId = [...scene.entities.keys()][0]!;
   return findComponent(scene, entityId, 'playerController')!.eyeHeight;
 }
 
@@ -596,25 +598,25 @@ describe('eye height, measured from the feet', () => {
       version,
       id: 'prefab-1',
       name: 'Player',
-      entities: { [template.entity.id]: template.entity },
+      entities: new Map([[template.entity.id, template.entity]]),
       components,
       root: template.entity.id,
     };
   }
 
   function prefabEyeHeight(prefab: PrefabDoc): number {
-    const entityId = Object.keys(prefab.entities)[0]!;
+    const entityId = [...prefab.entities.keys()][0]!;
     return findComponent(prefab, entityId, 'playerController')!.eyeHeight;
   }
 
   it('raises a prefab written before the change, by its own age', () => {
-    const migrated = migratePrefab(prefabAt(6, 1.7));
+    const migrated = deserializePrefab(serializePrefab(prefabAt(6, 1.7)));
 
     expect(prefabEyeHeight(migrated)).toBeCloseTo(2.55, 6);
     expect(migrated.version).toBe(PREFAB_FORMAT_VERSION);
   });
 
   it('leaves a prefab that already counts from the feet alone', () => {
-    expect(prefabEyeHeight(migratePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7)))).toBeCloseTo(1.7, 6);
+    expect(prefabEyeHeight(deserializePrefab(serializePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7))))).toBeCloseTo(1.7, 6);
   });
 });

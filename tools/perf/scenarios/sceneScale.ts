@@ -73,7 +73,7 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
 
 /** The first `count` groups at the root — entities with children — in the scene's order. */
 export function groupsToSelect(scene: SceneDoc, count: number): string[] {
-  const groups = scene.rootOrder.filter((id) => (scene.entities[id]?.children.length ?? 0) > 0);
+  const groups = scene.rootOrder.filter((id) => (scene.entities.get(id)?.children.length ?? 0) > 0);
   if (groups.length < count) throw new Error(`the scene has ${groups.length} groups, not ${count}`);
   return groups.slice(0, count);
 }
@@ -84,7 +84,7 @@ export function subtreeSize(scene: SceneDoc, ids: readonly string[]): number {
   const pending = [...ids];
   for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
     total += 1;
-    pending.push(...(scene.entities[id]?.children ?? []));
+    pending.push(...(scene.entities.get(id)?.children ?? []));
   }
   return total;
 }
@@ -112,7 +112,7 @@ export function nodeTimings(
     serializeScene(scene);
     if (n >= warmups) encodes.push(performance.now() - started);
   }
-  return { decodeMs: median(decodes), encodeMs: median(encodes), entities: Object.keys(scene.entities).length };
+  return { decodeMs: median(decodes), encodeMs: median(encodes), entities: scene.entities.size };
 }
 
 interface Subject {
@@ -271,13 +271,13 @@ async function prepare(context: ScenarioContext, folder: string): Promise<Subjec
   const scene = deserializeScene(await readFile(scenePath, 'utf8'));
   const groups = groupsToSelect(scene, 100);
   const [first] = groups;
-  const dragged = first === undefined ? undefined : scene.entities[first]?.children[0];
+  const dragged = first === undefined ? undefined : scene.entities.get(first)?.children[0];
   if (dragged === undefined) throw new Error('the large scene has no prop in its first group');
   const subject: Subject = {
     project,
     scenePath,
     snapshot: join(folder, 'scene.snapshot.json'),
-    ids: Object.keys(scene.entities),
+    ids: [...scene.entities.keys()],
     groups,
     added: subtreeSize(scene, groups),
     dragged,

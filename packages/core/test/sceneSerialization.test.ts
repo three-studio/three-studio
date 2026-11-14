@@ -1,8 +1,11 @@
 import {
+  assertDefined,
   createComponent,
   createEmptyScene,
   createEntity,
+  createPrefabInstance,
   deserializeScene,
+  insertEntity,
   jsonOf,
   putComponent,
   serializeScene,
@@ -41,16 +44,16 @@ function bothWays(): [SceneDoc, SceneDoc] {
   const rootOrder = [alpha.id, beta.id];
 
   const first: SceneDoc = { ...createEmptyScene(), id: 'scene', rootOrder };
-  first.entities[alpha.id] = alpha;
-  first.entities[beta.id] = beta;
+  first.entities.set(alpha.id, alpha);
+  first.entities.set(beta.id, beta);
   putComponent(first, alpha.id, meshOnAlpha);
   putComponent(first, beta.id, meshOnBeta);
   putComponent(first, alpha.id, hullOne);
   putComponent(first, alpha.id, hullTwo);
 
   const second: SceneDoc = { ...createEmptyScene(), id: 'scene', rootOrder };
-  second.entities[beta.id] = beta;
-  second.entities[alpha.id] = alpha;
+  second.entities.set(beta.id, beta);
+  second.entities.set(alpha.id, alpha);
   putComponent(second, alpha.id, hullTwo);
   putComponent(second, alpha.id, hullOne);
   putComponent(second, beta.id, meshOnBeta);
@@ -64,7 +67,7 @@ describe('a scene serialises to one file however it was built', () => {
     const [first, second] = bothWays();
 
     // Not vacuous: this is the pair of files the two authors used to commit.
-    expect(JSON.stringify(second, null, 2)).not.toBe(JSON.stringify(first, null, 2));
+    expect(jsonOf(second, 2)).not.toBe(jsonOf(first, 2));
 
     expect(serializeScene(second)).toBe(serializeScene(first));
   });
@@ -94,15 +97,15 @@ describe('a scene serialises to one file however it was built', () => {
     const rootOrder = [parent.id, lone.id].sort().reverse();
 
     const scene: SceneDoc = { ...createEmptyScene(), rootOrder };
-    for (const entity of [parent, kidA, kidB, lone]) scene.entities[entity.id] = entity;
+    for (const entity of [parent, kidA, kidB, lone]) scene.entities.set(entity.id, entity);
 
-    const written = JSON.parse(serializeScene(scene)) as SceneDoc;
+    const written = JSON.parse(serializeScene(scene));
 
     // The hierarchy, twice over, and then a Vec3 — three numbers whose
     // positions are what say which is x.
     expect(written.rootOrder).toEqual(rootOrder);
-    expect(written.entities[parent.id]!.children).toEqual(parent.children);
-    expect(written.entities[parent.id]!.transform.position).toEqual([3, 1, 2]);
+    expect(written.entities[parent.id].children).toEqual(parent.children);
+    expect(written.entities[parent.id].transform.position).toEqual([3, 1, 2]);
   });
 });
 
@@ -141,5 +144,60 @@ describe('a Map in a document', () => {
 
     expect(jsonOf(plain)).toBe(JSON.stringify(plain));
     expect(jsonOf(plain, 2)).toBe(JSON.stringify(plain, null, 2));
+  });
+});
+
+/*
+ * The file's shape is an object keyed by entity id, and the document's is a
+ * Map, so that an edit does not copy and freeze ten thousand keys one by one.
+ * The conversion happens once, where a file is read, and goes back where it is
+ * written: what is read and written again has to be the same bytes, and what
+ * this build does not know has to come through as it was.
+ */
+describe('a scene through a file', () => {
+  const SPARKLE = { id: 'sparkle-1', type: 'plugin.sparkle', amount: 3, nested: { kept: [1, 2] } };
+
+  /**
+   * A scene with nested entities, components of several types, a prefab
+   * instance, and the table of a type no module of this build defines, written
+   * as a file.
+   */
+  function written(): { json: string; unknownOn: string } {
+    const parent = createEntity('Parent', [createComponent('mesh'), createComponent('collider')]);
+    const child = createEntity('Child', [createComponent('rigidbody')]);
+    const crate = createEntity('Crate', [createPrefabInstance('prefab-1')]);
+    const scene: SceneDoc = { ...createEmptyScene(), id: 'scene' };
+    insertEntity(scene, parent);
+    insertEntity(scene, child, parent.entity.id);
+    insertEntity(scene, crate);
+    const file = JSON.parse(serializeScene(scene));
+    file.components['plugin.sparkle'] = { [crate.entity.id]: { [SPARKLE.id]: SPARKLE } };
+    return { json: stableJson(file), unknownOn: crate.entity.id };
+  }
+
+  it('is written back byte for byte', () => {
+    const { json } = written();
+
+    expect(serializeScene(deserializeScene(json))).toBe(json);
+  });
+
+  it('holds its entities in a Map, every one of them', () => {
+    const { json } = written();
+
+    const scene = deserializeScene(json);
+
+    expect(scene.entities).toBeInstanceOf(Map);
+    expect(scene.entities.size).toBe(Object.keys(JSON.parse(json).entities).length);
+    expect(scene.entities.size).toBe(3);
+    const parent = assertDefined([...scene.entities.values()].find((entity) => entity.name === 'Parent'), 'Parent');
+    expect(scene.entities.get(parent.id)).toBe(parent);
+  });
+
+  it('keeps the table of an unknown type exactly as found', () => {
+    const { json, unknownOn } = written();
+
+    const out = JSON.parse(serializeScene(deserializeScene(json)));
+
+    expect(out.components['plugin.sparkle']).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
   });
 });

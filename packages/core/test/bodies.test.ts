@@ -10,6 +10,7 @@ import {
   instancedId,
   jointEnds,
   physicsBodies,
+  type EntityDoc,
   type EntityTemplate,
   type JointComponent,
 } from '@three-studio/core';
@@ -70,7 +71,7 @@ describe('physicsBodies', () => {
     // The copy names the entity that placed it as its parent, which does not
     // name it back: a walk down from the cart would miss it.
     const copy = instancedId(placed.entity.id, crate.entity.id);
-    expect(scene.entities[placed.entity.id]?.children).not.toContain(copy);
+    expect(scene.entities.get(placed.entity.id)?.children).not.toContain(copy);
     expect(physicsBodies(scene).get(cart.entity.id)).toEqual([copy]);
   });
 
@@ -78,15 +79,19 @@ describe('physicsBodies', () => {
     const parts = Object.values(tree());
     const props = Array.from({ length: 200 }, (_, i) => createEntity(`Prop ${i}`));
     const scene = sceneWith([...parts, ...props]);
-    const read = new Set<string | symbol>();
+    const read = new Set<string>();
     const watched = {
       ...scene,
-      entities: new Proxy(scene.entities, {
-        get(target, key, receiver) {
-          read.add(key);
-          return Reflect.get(target, key, receiver);
-        },
-      }),
+      entities: new (class extends Map<string, EntityDoc> {
+        override get(id: string) {
+          read.add(id);
+          return super.get(id);
+        }
+        override has(id: string) {
+          read.add(id);
+          return super.has(id);
+        }
+      })(scene.entities),
     };
 
     physicsBodies(watched);

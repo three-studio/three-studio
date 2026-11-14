@@ -357,11 +357,11 @@ export class SceneBinder {
     this.scene = scene;
     const full = dirty === undefined || dirty.has('*');
     const ids = full
-      ? new Set([...Object.keys(scene.entities), ...this.reconciler.all().keys()])
+      ? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()])
       : dirty;
 
     for (const id of ids) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (!entity) {
         this.removeEntity(id);
         continue;
@@ -372,14 +372,14 @@ export class SceneBinder {
     // Parenting is resolved after every entity exists, so an entity created
     // before its parent in the same batch still lands in the right place.
     for (const id of ids) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) this.attachToParent(entity);
     }
 
     // And whatever a removal detached along the way, whether or not this sync
     // was told those entities were dirty.
     for (const id of this.orphaned) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) this.attachToParent(entity);
     }
     this.orphaned.clear();
@@ -493,7 +493,7 @@ export class SceneBinder {
   collectCameras(scene: SceneDoc): { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
     const cameras: { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
     for (const [id, view] of this.reconciler.all()) {
-      if (!scene.entities[id]) continue;
+      if (!scene.entities.has(id)) continue;
       const component = findComponent(scene, id, 'camera');
       if (!component) continue;
       const camera = view.container.children.find(

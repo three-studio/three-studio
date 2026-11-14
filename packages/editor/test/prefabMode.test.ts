@@ -62,7 +62,7 @@ describe('a round trip through Prefab Mode', () => {
 
     // And it still works, rather than merely being the right length.
     doc().undo();
-    expect(doc().scene.entities[cube.entity.id]?.name).toBe('Cube');
+    expect(doc().scene.entities.get(cube.entity.id)?.name).toBe('Cube');
   });
 
   it('keeps unsaved work marked as unsaved', async () => {
@@ -103,10 +103,10 @@ describe('a round trip through Prefab Mode', () => {
     addEntity(cube);
 
     await usePrefabModeStore.getState().open(ASSET_ID);
-    expect(doc().scene.entities[cube.entity.id]).toBeUndefined();
+    expect(doc().scene.entities.get(cube.entity.id)).toBeUndefined();
 
     await usePrefabModeStore.getState().exit();
-    expect(doc().scene.entities[cube.entity.id]).toBeDefined();
+    expect(doc().scene.entities.get(cube.entity.id)).toBeDefined();
   });
 });
 
@@ -197,7 +197,7 @@ describe('Prefab Mode composed without being left', () => {
     const composed = composedPrefabMode()!;
 
     expect(composed.scene).toBe(scene);
-    expect(composed.prefabs[ASSET_ID]!.entities[inside.entity.id]).toBeDefined();
+    expect(composed.prefabs[ASSET_ID]!.entities.get(inside.entity.id)).toBeDefined();
     expect(usePrefabModeStore.getState().stack).toHaveLength(1);
     expect(doc().scene).toBe(document);
     expect(saved).toEqual([]);

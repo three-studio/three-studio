@@ -49,13 +49,13 @@ import {
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const UNSIGNED_SHORT = 5123;
 
-const entityCount = (scene: SceneDoc): number => Object.keys(scene.entities).length;
+const entityCount = (scene: SceneDoc): number => scene.entities.size;
 
 /** The asset references the scenes hold, against the ids the project's scan lists. */
 async function references(projectPath: string, scenes: readonly SceneDoc[]): Promise<{ resolved: number; unresolved: string[] }> {
   const known = new Set((await scanAssets(projectPath)).assets.map((asset) => asset.id));
   const named = scenes
-    .flatMap((scene) => Object.keys(scene.entities).flatMap((entityId) => componentsOf(scene, entityId)))
+    .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(scene, entityId)))
     .flatMap((component) => componentAssets(component))
     .filter((assetId): assetId is string => assetId !== null && assetId !== '');
   return {
@@ -118,7 +118,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
     const scene = await startScene(path);
     expect(entityCount(scene)).toBe(123);
     // The groups are what scenario 2 selects: ten entities each, children included.
-    expect(scene.rootOrder.filter((id) => scene.entities[id]?.children.length === 9)).toHaveLength(12);
+    expect(scene.rootOrder.filter((id) => scene.entities.get(id)?.children.length === 9)).toHaveLength(12);
   });
 
   it('assets', async () => {

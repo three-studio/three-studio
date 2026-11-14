@@ -122,7 +122,7 @@ describe('what Play runs, read in one place', () => {
     expect(inputs.entry.id).toBe(SCENE_ID);
     expect(inputs.entry.name).toBe('Level One');
     expect(inputs.entry.scene).toBe(scene);
-    expect(inputs.prefabs[PREFAB_ID]!.entities[inside.entity.id]).toBeDefined();
+    expect(inputs.prefabs[PREFAB_ID]!.entities.get(inside.entity.id)).toBeDefined();
     expect(saved).toEqual([]);
     expect(usePrefabModeStore.getState().stack).toHaveLength(1);
   });
@@ -249,7 +249,7 @@ describe('the scenes a running game reaches', () => {
     const byName = await source.read('Level One');
 
     for (const scene of [byId, byName]) {
-      expect(scene.entities[unsaved.entity.id]).toBeDefined();
+      expect(scene.entities.get(unsaved.entity.id)).toBeDefined();
       expect(scene).toEqual(entry.scene);
       expect(scene).not.toBe(entry.scene);
     }

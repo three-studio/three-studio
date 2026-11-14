@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -30,7 +31,7 @@ import { Selection } from '../src/state/selection';
 
 const doc = () => useDocumentStore.getState();
 const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
-const at = (id: string) => doc().scene.entities[id]?.transform.position ?? [];
+const at = (id: string) => doc().scene.entities.get(id)?.transform.position ?? [];
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -99,7 +100,7 @@ describe('moving several objects at once', () => {
   it('refuses the whole gesture when one member is locked', () => {
     const cubes = three();
     doc().mutate('Lock', (draft) => {
-      draft.entities[cubes[1]!.entity.id]!.locked = true;
+      assertDefined(draft.entities.get(cubes[1]!.entity.id), 'the second cube').locked = true;
     });
     const base = doc().past.length;
 
@@ -125,14 +126,14 @@ describe('reparenting several objects at once', () => {
     reparentSelection(sel(cubes.map((c) => c.entity.id)), parent.entity.id);
 
     expect(doc().past.length).toBe(base + 1);
-    expect(doc().scene.entities[parent.entity.id]?.children).toHaveLength(3);
+    expect(doc().scene.entities.get(parent.entity.id)?.children).toHaveLength(3);
     // Ten units to the left in local terms, so each stays exactly where it was.
     cubes.forEach((cube, i) => {
       close(at(cube.entity.id), [worldBefore[i]![0]! - 10, worldBefore[i]![1]!, worldBefore[i]![2]!]);
     });
 
     doc().undo();
-    expect(doc().scene.entities[parent.entity.id]?.children).toEqual([]);
+    expect(doc().scene.entities.get(parent.entity.id)?.children).toEqual([]);
     cubes.forEach((cube, i) => close(at(cube.entity.id), worldBefore[i]!));
   });
 
@@ -148,7 +149,7 @@ describe('reparenting several objects at once', () => {
   it('leaves a locked entity where it is', () => {
     const [a, b] = three();
     doc().mutate('Lock', (draft) => {
-      draft.entities[b!.entity.id]!.locked = true;
+      assertDefined(draft.entities.get(b!.entity.id), 'the second cube').locked = true;
     });
     const parent = createEntity('Parent');
     addEntity(parent);
@@ -157,7 +158,7 @@ describe('reparenting several objects at once', () => {
 
     // `roots()` keeps it, but `reparentEntity` refuses it — the capability is
     // checked where the edit happens, not only where the menu is greyed.
-    expect(doc().scene.entities[b!.entity.id]?.parent).toBeNull();
+    expect(doc().scene.entities.get(b!.entity.id)?.parent).toBeNull();
   });
 });
 
@@ -183,7 +184,7 @@ describe("a selection mixing the document and a prefab's contents", () => {
 
     reparentSelection(sel([`${host.entity.id}/inner`]), target.entity.id);
     // Nothing to do, and nothing thrown: the next expansion would undo it anyway.
-    expect(doc().scene.entities[target.entity.id]?.children).toEqual([]);
+    expect(doc().scene.entities.get(target.entity.id)?.children).toEqual([]);
   });
 });
 
@@ -245,7 +246,7 @@ describe("moving an entity a prefab produced", () => {
 
     // An override that reached back into the asset would move every other
     // placement of the same prefab.
-    close(prefab.entities[branch.entity.id]!.transform.position, [0, 2, 0]);
+    close(assertDefined(prefab.entities.get(branch.entity.id), 'the branch').transform.position, [0, 2, 0]);
   });
 });
 

@@ -22,7 +22,7 @@ async function extractMaterial(
   componentId: string,
   material: MaterialDef,
 ): Promise<void> {
-  const suggested = expandedScene().scene.entities[entityId]?.name ?? 'Material';
+  const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Material';
   const name = await askForText({
     title: 'Save Material as Asset',
     label: 'Name',

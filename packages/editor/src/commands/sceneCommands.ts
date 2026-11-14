@@ -140,7 +140,7 @@ export function renameEntity(id: string, name: string): void {
   const trimmed = name.trim();
   if (trimmed === '') return;
   mutate('Rename entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.name = trimmed;
     else editInstance(scene, id, (override) => void (override.name = trimmed));
   });
@@ -148,7 +148,7 @@ export function renameEntity(id: string, name: string): void {
 
 export function setEntityVisible(id: string, visible: boolean): void {
   mutate(visible ? 'Show entity' : 'Hide entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.visible = visible;
     else editInstance(scene, id, (override) => void (override.visible = visible));
   });
@@ -161,7 +161,7 @@ export function setEntityVisible(id: string, visible: boolean): void {
  */
 export function setEntityLocked(id: string, locked: boolean): void {
   mutate(locked ? 'Lock entity' : 'Unlock entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.locked = locked;
   });
 }
@@ -194,7 +194,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
     // the document does not hold — a hierarchy row a prefab produced, which is
     // the defect — leaves the entity exactly where it was rather than in no list at all.
     if (!reparentInScene(draft, id, parentId, index)) return;
-    const entity = draft.entities[id];
+    const entity = draft.entities.get(id);
     if (entity) entity.transform = transform;
   });
 }
@@ -216,7 +216,7 @@ export function groupSelection(selection: Selection): string | null {
   // no edge of its own to move.
   const roots = selection
     .roots()
-    .filter((id) => splitInstancedId(id) === null && scene.entities[id] !== undefined);
+    .filter((id) => splitInstancedId(id) === null && scene.entities.has(id));
   if (roots.length === 0) return null;
 
   // The group is born where its contents already are, so its own gizmo lands
@@ -231,7 +231,7 @@ export function groupSelection(selection: Selection): string | null {
 
   // Under the parent they share, if they share one — grouping siblings should
   // not lift them out of the branch they were in.
-  const parents = new Set(roots.map((id) => scene.entities[id]?.parent ?? null));
+  const parents = new Set(roots.map((id) => scene.entities.get(id)?.parent ?? null));
   const parentId = parents.size === 1 ? ([...parents][0] ?? null) : null;
 
   // Built from matrices rather than through `localTransformUnder`, because the
@@ -255,7 +255,7 @@ export function groupSelection(selection: Selection): string | null {
 
       for (const id of roots) {
         if (!reparentInScene(draft, id, group.entity.id)) continue;
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         const local = locals.get(id);
         if (entity && local) entity.transform = local;
       }
@@ -311,7 +311,7 @@ export function transformSelection(
     targets.length === 1 ? 'Transform' : `Transform ${targets.length} objects`,
     (draft) => {
       for (const [id, pose] of poses) {
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         if (entity) {
           entity.transform = pose;
           continue;
@@ -366,7 +366,7 @@ export function reparentSelection(
       const ordered = index === undefined ? targets : [...targets].reverse();
       for (const id of ordered) {
         if (!reparentInScene(draft, id, parentId, index)) continue;
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         const local = locals.get(id);
         if (entity && local) entity.transform = local;
       }
@@ -383,7 +383,7 @@ export function setTransform(
   mutate(
     'Transform',
     (scene) => {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) {
         if (patch.position) entity.transform.position = [...patch.position];
         if (patch.rotation) entity.transform.rotation = [...patch.rotation];
@@ -461,7 +461,7 @@ export function componentFits(type: ComponentType, present: ReadonlySet<Componen
 /** Adds a component along with anything it needs, as one undo step. */
 export function addComponentWithDependencies(id: string, type: ComponentType): void {
   const scene = useDocumentStore.getState().scene;
-  if (!scene.entities[id]) return;
+  if (!scene.entities.has(id)) return;
 
   const siblings = componentsOf(scene, id);
   const present = new Set(siblings.map((component) => component.type));
@@ -481,7 +481,7 @@ export function addComponentWithDependencies(id: string, type: ComponentType): v
   }
 
   mutate(`Add ${type}`, (draft) => {
-    if (!draft.entities[id]) return;
+    if (!draft.entities.has(id)) return;
 
     // Whether `createColliderFor` had anything to shape a collider from. With a
     // mesh or a model to measure, its guess is about the object the author can
@@ -638,7 +638,7 @@ export function fitColliderToMesh(id: string, componentId: string, binder: Scene
   const container = binder.containerFor(id);
   const vertices = container ? collectVertices(container, [1, 1, 1]) : null;
   if (!vertices) {
-    const name = scene.entities[id]?.name ?? id;
+    const name = scene.entities.get(id)?.name ?? id;
     notify({
       kind: 'warning',
       title: 'Nothing to fit to',
@@ -726,14 +726,14 @@ export function duplicateSelection(selection: Selection): void {
   // ask for them again through the immer draft, whose proxy makes each read of
   // an entity several times dearer than a plain object's: a hundred roots of a
   // 10 003-entity scene made a million of them, and most of what Duplicate cost.
-  const taken = new Set(Object.values(useDocumentStore.getState().scene.entities).map((entity) => entity.name));
+  const taken = new Set([...useDocumentStore.getState().scene.entities.values()].map((entity) => entity.name));
 
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
     (scene) => {
       const renamed = new Map<string, string>();
       for (const id of ids) {
-        const source = scene.entities[id];
+        const source = scene.entities.get(id);
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
         // keep theirs, which is what Unity and Blender do.

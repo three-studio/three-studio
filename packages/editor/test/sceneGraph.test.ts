@@ -29,7 +29,7 @@ describe('the reparent command', () => {
     // drop target: an `owner/local` id that names nothing in the document.
     reparentEntity(cube.entity.id, `${createId()}/root`);
 
-    expect(scene().entities[cube.entity.id]?.parent).toBeNull();
+    expect(scene().entities.get(cube.entity.id)?.parent).toBeNull();
     expect(scene().rootOrder).toContain(cube.entity.id);
     // A refused move is not an edit, so it must not cost an undo step either —
     // and it does not, because the recipe produces no patch.
@@ -43,14 +43,14 @@ describe('the reparent command', () => {
 
     const child = createMeshEntity('sphere');
     addEntity(child);
-    const before = scene().entities[child.entity.id]?.transform.position;
+    const before = scene().entities.get(child.entity.id)?.transform.position;
 
     reparentEntity(child.entity.id, parent.entity.id);
 
     // Both sit at y=0.5 from the factory, so the local transform under a parent
     // at the same height is what puts the child back where it was.
-    expect(scene().entities[child.entity.id]?.parent).toBe(parent.entity.id);
-    expect(scene().entities[child.entity.id]?.transform.position[1]).toBeCloseTo(
+    expect(scene().entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
+    expect(scene().entities.get(child.entity.id)?.transform.position[1]).toBeCloseTo(
       (before?.[1] ?? 0) - 0.5,
       5,
     );

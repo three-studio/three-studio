@@ -1,4 +1,5 @@
 import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
+import { isRecord } from '../conform';
 import { createId } from '../ids';
 import { stableJson } from '../json';
 import {
@@ -40,7 +41,7 @@ export interface PrefabDoc {
   id: string;
   name: string;
   /** Ids are local to the prefab, and stay stable so overrides keep pointing. */
-  entities: Record<string, EntityDoc>;
+  entities: Map<string, EntityDoc>;
   /** The same block a scene carries — see `ComponentTables`. */
   components: ComponentTables;
   root: string;
@@ -56,7 +57,7 @@ export function createPrefabDoc(
     version: PREFAB_FORMAT_VERSION,
     id: createId(),
     name,
-    entities: Object.fromEntries(entities.map((entity) => [entity.id, entity])),
+    entities: new Map(entities.map((entity) => [entity.id, entity])),
     components,
     root,
   };
@@ -91,7 +92,7 @@ function componentsFor(host: ComponentHost, ids: readonly string[]): ComponentTa
 export function prefabFromEntities(name: string, scene: SceneDoc, rootId: string): PrefabDoc {
   const ids = [rootId, ...collectDescendants(scene, rootId)];
   const entities = ids
-    .map((id) => scene.entities[id])
+    .map((id) => scene.entities.get(id))
     .filter((entity): entity is EntityDoc => entity !== undefined)
     .map((entity) => structuredClone(entity));
 
@@ -136,17 +137,21 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
   // puts it beside the root rather than under it, and keeping the scene's shape
   // would write an entity into the asset that nothing parents and nothing ever
   // draws. Adopted instead, which is what the hierarchy showed anyway.
-  const adopted = scene.rootOrder.slice(1).filter((id) => entities[id] !== undefined);
-  if (adopted.length > 0 && entities[root]) {
-    for (const id of adopted) entities[id]!.parent = root;
-    entities[root]!.children = [...entities[root]!.children, ...adopted];
+  const adopted = scene.rootOrder.slice(1).filter((id) => entities.has(id));
+  const rootEntity = entities.get(root);
+  if (adopted.length > 0 && rootEntity) {
+    for (const id of adopted) {
+      const entity = entities.get(id);
+      if (entity) entity.parent = root;
+    }
+    rootEntity.children = [...rootEntity.children, ...adopted];
   }
 
   return {
     ...original,
     version: PREFAB_FORMAT_VERSION,
     entities,
-    components: componentsFor(scene, Object.keys(entities)),
+    components: componentsFor(scene, [...entities.keys()]),
     root,
   };
 }
@@ -172,13 +177,13 @@ export function prefabVariantOf(name: string, baseAssetId: string): PrefabDoc {
 
 /** The prefab a variant is based on, or `null` for an ordinary prefab. */
 export function variantBaseOf(prefab: PrefabDoc): string | null {
-  const root = prefab.entities[prefab.root];
+  const root = prefab.entities.get(prefab.root);
   if (!root) return null;
 
   // A variant is a single root that is an instance. A prefab that merely
   // *contains* an instance somewhere is a composition, not a variant, and
   // treating the two alike would let "revert to base" wipe a hand-built scene.
-  const only = Object.keys(prefab.entities).length === 1;
+  const only = prefab.entities.size === 1;
   const instance = prefabInstanceOf(prefab, root.id);
   return only && instance ? instance.assetId : null;
 }
@@ -259,13 +264,13 @@ export function expandPrefabs(
   const instances = findInstances(scene);
   if (instances.length === 0) return { scene, sources: new Map() };
 
-  const entities: Record<string, EntityDoc> = { ...scene.entities };
+  const entities = new Map(scene.entities);
   const components = {} as ComponentTables;
   for (const type of COMPONENT_TYPES) components[type] = { ...scene.components[type] } as never;
   const sources = new Map<string, InstanceSource>();
 
   const adopt = (produced: Produced): void => {
-    for (const entity of produced.entities) entities[entity.id] = entity;
+    for (const entity of produced.entities) entities.set(entity.id, entity);
     for (const type of COMPONENT_TYPES) {
       Object.assign(components[type], produced.components[type]);
     }
@@ -375,7 +380,7 @@ function findInstances(
     // One per entity: a second would produce the same ids as the first and
     // silently overwrite half of it.
     const component = findComponent(scene, entityId, 'prefabInstance');
-    if (component && scene.entities[entityId]) found.push({ entityId, component });
+    if (component && scene.entities.has(entityId)) found.push({ entityId, component });
   }
   return found;
 }
@@ -411,7 +416,7 @@ function instantiate(
   // which in turn beats the base. Same order of authority as Unity's.
   const layers: OverrideLayer[] = [{ overrides: component.overrides, prefix: '' }, ...inherited];
 
-  for (const local of Object.values(prefab.entities)) {
+  for (const local of prefab.entities.values()) {
     const copy: EntityDoc = {
       ...structuredClone(local),
       id: instancedId(hostId, local.id),
@@ -435,7 +440,7 @@ function instantiate(
     // expanded scene answers to. Without this a prefab whose script targets its
     // own turret looked up an id that does not exist, once per instance.
     held = renameEntityReferences(held, (id) =>
-      prefab.entities[id] === undefined ? undefined : instancedId(hostId, id),
+      prefab.entities.has(id) ? instancedId(hostId, id) : undefined,
     );
 
     produced.entities.push(copy);
@@ -537,23 +542,27 @@ export function applyPrefabOverride(
  * Written `>= 7` rather than `< 7` so that a file whose `version` is missing or
  * is not a number — which the type says cannot happen and a hand-edited file
  * can — comes out as *old* and is migrated, instead of being waved through as
- * current. `readPrefabAssets` casts the parsed JSON and checks only the upper
- * bound, so this is the last place that can be wrong about a prefab's age, and
- * against `undefined` the safe answer is the comparison that does the work
- * rather than the one that skips it.
+ * current. `readPrefabAssets` checks only the upper bound, so this is the last
+ * place that can be wrong about a prefab's age, and against `undefined` the
+ * safe answer is the comparison that does the work rather than the one that
+ * skips it.
  */
-function sceneFormatOfPrefab(version: number): number {
-  return version >= 7 ? SCENE_FORMAT_VERSION : 9;
+function sceneFormatOfPrefab(version: unknown): number {
+  return typeof version === 'number' && version >= 7 ? SCENE_FORMAT_VERSION : 9;
 }
 
 /**
- * Fills in what a prefab written by an older editor lacks.
+ * Fills in what a prefab written by an older editor lacks, from the JSON a file
+ * holds: its entity table an object keyed by id, which the document keeps in a
+ * Map.
  *
  * It holds `EntityDoc`s, so it inherits every problem a scene has and the same
  * answer: one pass at the boundary, filling from each type's own factory. See
  * the format rules in the README.
  */
-export function migratePrefab(prefab: PrefabDoc): PrefabDoc {
+export function migratePrefab(input: unknown): PrefabDoc {
+  if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
+
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
   const asScene = migrateScene({
@@ -564,20 +573,23 @@ export function migratePrefab(prefab: PrefabDoc): PrefabDoc {
     // gated on the version: a prefab holding a player controller would have
     // kept an eye height at the old meaning, and placed its camera half a
     // collider too high with nothing anywhere saying why.
-    version: sceneFormatOfPrefab(prefab.version),
-    id: prefab.id,
-    name: prefab.name,
-    entities: prefab.entities,
-    components: prefab.components,
-    rootOrder: [prefab.root],
+    version: sceneFormatOfPrefab(input['version']),
+    id: input['id'],
+    name: input['name'],
+    entities: input['entities'],
+    components: input['components'],
+    rootOrder: [input['root']],
     environment: createEmptyScene().environment,
   });
+  const root = input['root'];
 
   return {
-    ...prefab,
     version: PREFAB_FORMAT_VERSION,
+    id: asScene.id,
+    name: asScene.name,
     entities: asScene.entities,
     components: asScene.components,
+    root: typeof root === 'string' ? root : '',
   };
 }
 
@@ -590,15 +602,9 @@ export function serializePrefab(prefab: PrefabDoc): string {
   return stableJson(prefab);
 }
 
-/**
- * A prefab file's text, read as a document of the current format.
- *
- * `JSON.parse` hands back `any`, typed here as the document it should be and
- * checked only as far as the migration reads it: no decoder checks a prefab's
- * fields yet.
- */
+/** A prefab file's text, read as a document of the current format. */
 export function deserializePrefab(json: string): PrefabDoc {
-  let parsed: PrefabDoc;
+  let parsed: unknown;
   try {
     parsed = JSON.parse(json);
   } catch (cause) {
@@ -607,4 +613,15 @@ export function deserializePrefab(json: string): PrefabDoc {
     );
   }
   return migratePrefab(parsed);
+}
+
+/**
+ * The prefabs a build manifest holds, read as documents.
+ *
+ * The manifest keeps each as the JSON a file holds, and a document keeps its
+ * entities in a Map, which JSON cannot say: the player reads every one through
+ * the migration, as the editor reads a file.
+ */
+export function prefabsFromJson(prefabs: Readonly<Record<string, unknown>>): Record<string, PrefabDoc> {
+  return Object.fromEntries(Object.entries(prefabs).map(([id, prefab]) => [id, migratePrefab(prefab)]));
 }

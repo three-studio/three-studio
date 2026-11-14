@@ -379,7 +379,7 @@ function currentEntity(entityId: string): EntityDoc | undefined {
   // The expanded scene, not the document. A prefab instance's contents are
   // drawn and selectable, but the document has never heard of their ids — read
   // from it alone and the panel goes blank for anything inside a prefab.
-  return expandedScene().scene.entities[entityId];
+  return expandedScene().scene.entities.get(entityId);
 }
 
 function currentComponent(entityId: string, componentId: string): ComponentDoc | undefined {
@@ -469,7 +469,7 @@ export function linkedMaterial(
  */
 export function inspectorSignature(entityId: string | undefined): string {
   const scene = expandedScene().scene;
-  if (entityId === undefined || scene.entities[entityId] === undefined) return '';
+  if (entityId === undefined || !scene.entities.has(entityId)) return '';
   const parts = componentsOf(scene, entityId).map((component) => {
     const effective = effectiveComponent(entityId, component);
     const { key, entries } = paneEntriesFor(effective);

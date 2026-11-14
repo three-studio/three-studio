@@ -110,7 +110,7 @@ export function createEmptyScene(name = 'Main'): SceneDoc {
     version: SCENE_FORMAT_VERSION,
     id: createId(),
     name,
-    entities: {},
+    entities: new Map(),
     components: emptyComponentTables(),
     rootOrder: [],
     environment: createEnvironment(),
@@ -140,7 +140,7 @@ export function createStarterScene(): SceneDoc {
   (camera.components[0] as CameraComponent).isMain = true;
 
   for (const template of [ground, sun, sky, camera]) {
-    scene.entities[template.entity.id] = template.entity;
+    scene.entities.set(template.entity.id, template.entity);
     setComponentsOf(scene, template.entity.id, template.components);
     scene.rootOrder.push(template.entity.id);
   }

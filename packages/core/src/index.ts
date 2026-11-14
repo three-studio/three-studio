@@ -373,6 +373,7 @@ export {
   prefabInstanceOf,
   prefabToScene,
   prefabVariantOf,
+  prefabsFromJson,
   sceneToPrefab,
   serializePrefab,
   splitInstancedId,

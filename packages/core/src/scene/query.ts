@@ -29,7 +29,7 @@ export function collectDescendants(scene: SceneDoc, id: string): string[] {
   const stack: string[] = [];
   // A loop rather than `push(...children)`: the spread passes one argument per
   // child, and a node with a very high degree overflows the argument limit.
-  for (const child of scene.entities[id]?.children ?? []) stack.push(child);
+  for (const child of scene.entities.get(id)?.children ?? []) stack.push(child);
 
   while (stack.length > 0) {
     const next = stack.pop();
@@ -37,7 +37,7 @@ export function collectDescendants(scene: SceneDoc, id: string): string[] {
     if (seen.has(next)) continue;
     seen.add(next);
     out.push(next);
-    for (const child of scene.entities[next]?.children ?? []) stack.push(child);
+    for (const child of scene.entities.get(next)?.children ?? []) stack.push(child);
   }
   return out;
 }
@@ -52,11 +52,11 @@ export function collectDescendants(scene: SceneDoc, id: string): string[] {
  */
 export function isAncestorOf(scene: SceneDoc, ancestorId: string, id: string): boolean {
   const seen = new Set<string>();
-  let current = scene.entities[id]?.parent ?? null;
+  let current = scene.entities.get(id)?.parent ?? null;
   while (current !== null && !seen.has(current)) {
     if (current === ancestorId) return true;
     seen.add(current);
-    current = scene.entities[current]?.parent ?? null;
+    current = scene.entities.get(current)?.parent ?? null;
   }
   return false;
 }
@@ -79,7 +79,7 @@ export function cycles(scene: SceneDoc): string[][] {
   /** Ids already known to reach a root, or to belong to a cycle reported below. */
   const settled = new Set<string>();
 
-  for (const start of Object.keys(scene.entities)) {
+  for (const start of scene.entities.keys()) {
     if (settled.has(start)) continue;
 
     const path: string[] = [];
@@ -93,7 +93,7 @@ export function cycles(scene: SceneDoc): string[][] {
       }
       path.push(current);
       onPath.add(current);
-      current = scene.entities[current]?.parent ?? null;
+      current = scene.entities.get(current)?.parent ?? null;
     }
 
     for (const id of path) settled.add(id);
@@ -110,7 +110,7 @@ export function entityWorldMatrixPath(scene: SceneDoc, id: string): string[] {
   while (current !== null && !seen.has(current)) {
     path.unshift(current);
     seen.add(current);
-    current = scene.entities[current]?.parent ?? null;
+    current = scene.entities.get(current)?.parent ?? null;
   }
   return path;
 }

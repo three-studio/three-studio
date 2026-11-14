@@ -29,7 +29,7 @@ function sceneWith(templates: EntityTemplate[]): SceneDoc {
     version: 1,
     id: 'scene',
     name: 'Main',
-    entities: Object.fromEntries(templates.map(({ entity }) => [entity.id, entity])),
+    entities: new Map(templates.map(({ entity }) => [entity.id, entity])),
     components: emptyComponentTables(),
     rootOrder: templates.map(({ entity }) => entity.id),
     // From the factory, not by hand: the environment is not what any of these
@@ -164,7 +164,7 @@ describe('what a script was handed in the inspector', () => {
 describe('component types this editor does not know', () => {
   it('names them, so an export can say what it could not follow', () => {
     const scene = sceneWith([createEntity('Lamp', [])]);
-    putComponent(scene, Object.keys(scene.entities)[0]!, {
+    putComponent(scene, [...scene.entities.keys()][0]!, {
       id: 'c1',
       type: 'plugin.flicker',
       sprite: 'tex-flame',

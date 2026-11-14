@@ -48,7 +48,7 @@ function isDocumentId(id: string): boolean {
 /** The list `parentId` holds its children in, or `undefined` if there is none. */
 function siblingsOf(scene: SceneDoc, parentId: string | null): string[] | undefined {
   if (parentId === null) return scene.rootOrder;
-  return scene.entities[parentId]?.children;
+  return scene.entities.get(parentId)?.children;
 }
 
 /**
@@ -59,10 +59,10 @@ function siblingsOf(scene: SceneDoc, parentId: string | null): string[] | undefi
  * then turned out to be illegal.
  */
 function canLink(scene: SceneDoc, id: string, parentId: string | null): boolean {
-  if (!isDocumentId(id) || scene.entities[id] === undefined) return false;
+  if (!isDocumentId(id) || !scene.entities.has(id)) return false;
   if (parentId === null) return true;
   if (parentId === id) return false;
-  if (!isDocumentId(parentId) || scene.entities[parentId] === undefined) return false;
+  if (!isDocumentId(parentId) || !scene.entities.has(parentId)) return false;
   // Dropping a node onto its own descendant would take the subtree out of the
   // scene with no way back to it.
   return !isAncestorOf(scene, id, parentId);
@@ -70,14 +70,14 @@ function canLink(scene: SceneDoc, id: string, parentId: string | null): boolean 
 
 /** Detaches `id` from whichever list holds it, leaving `parent` as it was. */
 export function unlinkEntity(scene: SceneDoc, id: string): boolean {
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   if (!entity) return false;
 
   if (entity.parent === null) {
     scene.rootOrder = scene.rootOrder.filter((child) => child !== id);
     return true;
   }
-  const parent = scene.entities[entity.parent];
+  const parent = scene.entities.get(entity.parent);
   if (!parent) return false;
   parent.children = parent.children.filter((child) => child !== id);
   return true;
@@ -101,7 +101,7 @@ export function linkEntity(
   const siblings = siblingsOf(scene, parentId);
   if (!siblings) return false;
 
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   if (!entity) return false;
   entity.parent = parentId;
 
@@ -124,18 +124,18 @@ export function insertEntity(
   index?: number,
 ): boolean {
   const { entity } = template;
-  if (!isDocumentId(entity.id) || scene.entities[entity.id] !== undefined) return false;
-  if (parentId !== null && (!isDocumentId(parentId) || scene.entities[parentId] === undefined)) {
+  if (!isDocumentId(entity.id) || scene.entities.has(entity.id)) return false;
+  if (parentId !== null && (!isDocumentId(parentId) || !scene.entities.has(parentId))) {
     return false;
   }
 
-  scene.entities[entity.id] = entity;
+  scene.entities.set(entity.id, entity);
   setComponentsOf(scene, entity.id, template.components);
   if (linkEntity(scene, entity.id, parentId, index)) return true;
 
   // Unreachable as long as the checks above and `canLink` agree, but leaving a
   // half-inserted entity behind is the failure this module exists to prevent.
-  delete scene.entities[entity.id];
+  scene.entities.delete(entity.id);
   dropComponentsOf(scene, entity.id);
   return false;
 }
@@ -169,14 +169,14 @@ export function reparentEntity(
  * at an entity that no longer exists.
  */
 export function removeSubtree(scene: SceneDoc, id: string): string[] {
-  if (!isDocumentId(id) || scene.entities[id] === undefined) return [];
+  if (!isDocumentId(id) || !scene.entities.has(id)) return [];
 
   const removed = [id, ...collectDescendants(scene, id)];
   // The root first, so its parent's `children` loses it before the entity goes;
   // descendants need no unlinking, since the lists holding them go too.
   unlinkEntity(scene, id);
   for (const victim of removed) {
-    delete scene.entities[victim];
+    scene.entities.delete(victim);
     // Components are keyed by entity id, not held by the entity, so deleting
     // one no longer takes them with it. Left behind they would be unreachable,
     // still serialised, and still counted by every query — invisible in exactly
@@ -204,7 +204,7 @@ export function cloneSubtree(
   name?: string,
   renamed?: Map<string, string>,
 ): string | null {
-  const source = scene.entities[sourceId];
+  const source = scene.entities.get(sourceId);
   if (!source || !isDocumentId(sourceId)) return null;
 
   const copy: EntityDoc = {
@@ -215,12 +215,12 @@ export function cloneSubtree(
     children: [],
   };
 
-  scene.entities[copy.id] = copy;
+  scene.entities.set(copy.id, copy);
   // Ids and all: a component id is unique within its entity, and an override
   // names one by it.
   copyComponentsOf(scene, sourceId, copy.id, deepCopy);
   if (!linkEntity(scene, copy.id, parentId)) {
-    delete scene.entities[copy.id];
+    scene.entities.delete(copy.id);
     dropComponentsOf(scene, copy.id);
     return null;
   }
@@ -240,6 +240,9 @@ export function cloneSubtree(
  * it is exact for an `EntityDoc` by construction: the document is defined as
  * what `serializeScene` writes to disk, so anything JSON loses here is
  * something a save loses too.
+ *
+ * It is given an entity or one component, and never a Map: JSON writes a Map as
+ * `{}`, and the copy would be an empty one with nothing to say so.
  */
 function deepCopy<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -267,18 +270,18 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   };
 
   for (const [index, id] of scene.rootOrder.entries()) {
-    if (scene.entities[id] === undefined) {
+    if (!scene.entities.has(id)) {
       problems.push(`rootOrder[${index}] is "${id}", which is not in the table`);
       continue;
     }
     claim(id, 'rootOrder');
   }
 
-  for (const [id, entity] of Object.entries(scene.entities)) {
+  for (const [id, entity] of scene.entities) {
     if (entity.id !== id) problems.push(`entities["${id}"] holds an entity whose id is "${entity.id}"`);
 
     for (const [index, childId] of entity.children.entries()) {
-      if (scene.entities[childId] === undefined) {
+      if (!scene.entities.has(childId)) {
         problems.push(`"${id}".children[${index}] is "${childId}", which is not in the table`);
         continue;
       }
@@ -287,7 +290,7 @@ export function validateHierarchy(scene: SceneDoc): string[] {
 
     if (entity.parent === null) continue;
 
-    const parent = scene.entities[entity.parent];
+    const parent = scene.entities.get(entity.parent);
     if (!parent) {
       problems.push(`"${id}".parent is "${entity.parent}", which is not in the table`);
     } else if (!parent.children.includes(id)) {
@@ -295,7 +298,7 @@ export function validateHierarchy(scene: SceneDoc): string[] {
     }
   }
 
-  for (const id of Object.keys(scene.entities)) {
+  for (const id of scene.entities.keys()) {
     const holders = claimedBy.get(id) ?? [];
     if (holders.length === 0) {
       problems.push(`"${id}" is in no children list and not in rootOrder — unreachable`);
@@ -309,7 +312,7 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   // so the only way to notice is to ask.
   for (const type of COMPONENT_TYPES) {
     for (const entityId of Object.keys(scene.components[type])) {
-      if (scene.entities[entityId] === undefined) {
+      if (!scene.entities.has(entityId)) {
         problems.push(`components.${type} holds "${entityId}", which is not in the entity table`);
       }
     }

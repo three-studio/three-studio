@@ -45,11 +45,11 @@ export function insertionAt(
   scene: SceneDoc,
   entityId: string,
 ): { parent: string | null; index: number } | null {
-  const entity = scene.entities[entityId];
+  const entity = scene.entities.get(entityId);
   if (!entity) return null;
 
   const siblings =
-    entity.parent === null ? scene.rootOrder : (scene.entities[entity.parent]?.children ?? []);
+    entity.parent === null ? scene.rootOrder : (scene.entities.get(entity.parent)?.children ?? []);
 
   // Clamped because `indexOf` answers -1 for an entity its own parent does not
   // list — the torn hierarchy the graph module now refuses to create. A drop at

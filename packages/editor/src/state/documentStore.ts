@@ -1,5 +1,5 @@
 import { createEmptyScene, splitInstancedId, validateHierarchy, type SceneDoc } from '@three-studio/core';
-import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
+import { applyPatches, enableMapSet, enablePatches, produceWithPatches, type Patch } from 'immer';
 import { create } from 'zustand';
 import { useEditorStore } from './editorStore';
 import { pushEdit, type ExternalEdit, type HistoryEntry, type HistoryStash } from './history';
@@ -54,12 +54,15 @@ export interface MutationOptions {
 export function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
   const kept = selection.filter((id) => {
     const parts = splitInstancedId(id);
-    return scene.entities[parts === null ? id : parts.owner] !== undefined;
+    return scene.entities.has(parts === null ? id : parts.owner);
   });
   // Same array when nothing went, so subscribers do not see a change.
   return kept.length === selection.length ? selection : kept;
 }
 
+// The document keeps its entities in Maps, which immer drafts, patches and
+// freezes only with this plugin: without it the first edit throws.
+enableMapSet();
 enablePatches();
 
 /**

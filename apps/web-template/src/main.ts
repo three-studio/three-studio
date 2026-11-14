@@ -7,6 +7,7 @@ import {
   SCRIPT_API_VERSION,
   deserializeScene,
   encodePath,
+  prefabsFromJson,
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
@@ -157,7 +158,7 @@ async function boot(): Promise<void> {
 
   await loadScripts(build.scripts);
 
-  const { rendering, physics, materials, physicsMaterials, prefabs } = build;
+  const { rendering, physics, materials, physicsMaterials } = build;
 
   const { renderer, backend } = await createRenderer({
     canvas,
@@ -184,7 +185,9 @@ async function boot(): Promise<void> {
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
     materials,
     physicsMaterials,
-    prefabs,
+    // The manifest holds each as the JSON of a file, and a document keeps its
+    // entities in a Map: read here, once, as the editor reads a file.
+    prefabs: prefabsFromJson(build.prefabs),
     loadingScene: build.loadingScene,
     rendering,
     physicsSettings: physics,

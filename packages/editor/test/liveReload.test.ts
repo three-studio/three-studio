@@ -63,8 +63,8 @@ function snapshot(): LaunchSnapshot {
 /** The same launch, its first entity moved along x. */
 function moved(from: LaunchSnapshot, x: number): LaunchSnapshot {
   const next = structuredClone(from);
-  const [id] = Object.keys(next.entry.scene.entities);
-  next.entry.scene.entities[id!]!.transform.position[0] = x;
+  const first = assertDefined([...next.entry.scene.entities.values()][0], 'the first entity');
+  first.transform.position[0] = x;
   return next;
 }
 
@@ -279,7 +279,7 @@ describe('the same launch', () => {
     const keysTurned = {
       ...a,
       rendering: reversed(a.rendering),
-      entry: { ...a.entry, scene: { ...a.entry.scene, entities: reversed(a.entry.scene.entities) } },
+      entry: { ...a.entry, scene: { ...a.entry.scene, entities: new Map([...a.entry.scene.entities].reverse()) } },
     };
 
     expect(sameLaunchInputs(a, a)).toBe(true);
@@ -366,7 +366,7 @@ async function settle(): Promise<void> {
 
 function moveCube(x: number): void {
   doc().mutate('Move Cube', (scene) => {
-    scene.entities[cube]!.transform.position[0] = x;
+    assertDefined(scene.entities.get(cube), 'the cube').transform.position[0] = x;
   });
 }
 
@@ -445,7 +445,7 @@ describe('watching the window', () => {
       await settle();
 
       expect(sent).toHaveLength(1);
-      expect(sentScene(0).entities[cube]!.transform.position[0]).toBe(4);
+      expect(sentScene(0).entities.get(cube)?.transform.position[0]).toBe(4);
       expect(useDeviceStore.getState().ownLaunch?.id).toBe('L2');
     });
 
@@ -457,7 +457,7 @@ describe('watching the window', () => {
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);
-      expect(sentScene(0).entities[cube]!.transform.position[0]).toBe(0);
+      expect(sentScene(0).entities.get(cube)?.transform.position[0]).toBe(0);
     });
 
     it('a material changed', () => {
@@ -550,7 +550,7 @@ describe('watching the window', () => {
     expect(sent).toHaveLength(1);
     expect(sentScene(0)).toEqual(scene);
     const prefab = deserializePrefab(assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'));
-    expect(prefab.entities[inside]).toBeDefined();
+    expect(prefab.entities.get(inside)).toBeDefined();
   });
 
   describe('holds while', () => {

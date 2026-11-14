@@ -73,13 +73,13 @@ describe('the expansion everything shares', () => {
     const before = expandedScene();
     const scene = useDocumentStore.getState().scene;
     // The one the expansion invented: the document has never heard of it.
-    const produced = Object.keys(before.scene.entities).find((id) => !(id in scene.entities));
+    const produced = [...before.scene.entities.keys()].find((id) => !scene.entities.has(id));
     expect(produced).toBeDefined();
 
     useDocumentStore.setState({ scene: { ...scene, name: 'Renamed' } });
 
     const after = expandedScene();
     expect(after).not.toBe(before);
-    expect(after.scene.entities[produced!]).toBe(before.scene.entities[produced!]);
+    expect(after.scene.entities.get(produced!)).toBe(before.scene.entities.get(produced!));
   });
 });

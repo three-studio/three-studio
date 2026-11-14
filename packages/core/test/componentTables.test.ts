@@ -150,7 +150,7 @@ describe('an entity that comes and goes', () => {
   it('is reported by the hierarchy check when one is orphaned anyway', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    delete scene.entities[cube.entity.id];
+    scene.entities.delete(cube.entity.id);
     scene.rootOrder = [];
 
     // The DEV assertion after every mutation. Nothing else would say a word.
@@ -204,7 +204,7 @@ describe('a document written before the tables existed', () => {
 
   it('moves every component into the tables, in the order it had', () => {
     const scene = deserializeScene(formatThree());
-    const entityId = Object.keys(scene.entities)[0]!;
+    const entityId = [...scene.entities.keys()][0]!;
 
     expect(componentsOf(scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
     // Told apart by id: a shape stored as a name reads as the factory's box now.
@@ -214,7 +214,7 @@ describe('a document written before the tables existed', () => {
 
   it('leaves nothing behind on the entity', () => {
     const scene = deserializeScene(formatThree());
-    const entity = Object.values(scene.entities)[0] as unknown as Record<string, unknown>;
+    const entity = [...scene.entities.values()][0] as unknown as Record<string, unknown>;
 
     // Kept, the stale array would be re-imported on the next load and would
     // quietly overwrite every edit made since. An editor that reads format 3
