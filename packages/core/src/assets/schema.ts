@@ -2,15 +2,9 @@ import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
 import type { AssetId, SceneId } from '../ids';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
-export type AssetKind =
-  | 'model'
-  | 'texture'
-  | 'material'
-  | 'physicsMaterial'
-  | 'prefab'
-  | 'shader'
-  | 'audio'
-  | 'script';
+import type { AssetKind } from './kind';
+
+export type { AssetKind } from './kind';
 
 export const MATERIAL_ASSET_VERSION = 1;
 

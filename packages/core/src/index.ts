@@ -164,6 +164,10 @@ export type {
   FieldOption,
   FieldRow,
 } from './fields';
+/* A type's fields written once, and what reading a value from outside answers. */
+export { planFields } from './fieldSchema';
+export type { FieldPlan, Infer, Schema, SchemaField } from './fieldSchema';
+export type { DecodePath, Decoded, Diagnostic } from './decoded';
 
 export {
   collectSceneAssets,

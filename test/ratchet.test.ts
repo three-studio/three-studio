@@ -377,7 +377,17 @@ interface AllowedSpot {
   readonly reason: string;
 }
 
-const ALLOWED: readonly AllowedSpot[] = [];
+const ALLOWED: readonly AllowedSpot[] = [
+  {
+    file: 'packages/core/src/fieldSchema.ts',
+    kind: 'as',
+    construct: 'out as Infer<S>',
+    reason:
+      'A decoder fills its result in a loop over the entries of a schema, each value checked against its field. '
+      + 'TypeScript cannot type that loop as the mapped type over the schema\'s keys, so the result is claimed '
+      + 'once, where every decoded value and every default leaves the schema kernel.',
+  },
+];
 
 interface Census {
   /** The files that are not at zero. */

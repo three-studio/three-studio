@@ -13,7 +13,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Numbers that can be written and read back. `NaN` serialises as `null`. */
-function isUsableNumber(value: unknown): value is number {
+export function isUsableNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
