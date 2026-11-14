@@ -57,8 +57,8 @@ export class AudioClipCache {
     private readonly context: AudioContextLike,
     private readonly resolver: AssetResolver,
     options: {
-      load?: ClipLoader;
-      budgetBytes?: number;
+      load?: ClipLoader | undefined;
+      budgetBytes?: number | undefined;
       onWarning?: (message: string) => void;
     } = {},
   ) {

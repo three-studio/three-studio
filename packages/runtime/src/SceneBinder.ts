@@ -91,7 +91,7 @@ export interface SceneBinderOptions {
    * every linked material has already fallen back to its embedded copy, which
    * is what play mode did until it was passed one.
    */
-  materials?: Readonly<Record<string, MaterialDef>>;
+  materials?: Readonly<Record<string, MaterialDef>> | undefined;
   /**
    * The device an analytic sky is captured on.
    *
@@ -100,7 +100,7 @@ export interface SceneBinderOptions {
    * of the constructor rather than an order to remember. See constraint 2 on
    * `bindScene`.
    */
-  renderer?: Renderer | null;
+  renderer?: Renderer | null | undefined;
   /**
    * Injected rather than reached for, so a test can drive the clock it hands
    * in. The default is the document's own — see `time/StudioTime`.

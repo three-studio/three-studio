@@ -65,13 +65,13 @@ export interface EngineOptions {
    * Omitting this makes every linked material fall back to the embedded one —
    * which is exactly what play mode was doing before it was passed.
    */
-  materials?: Readonly<Record<string, MaterialDef>>;
+  materials?: Readonly<Record<string, MaterialDef>> | undefined;
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
    * engine says so.
    */
-  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>;
+  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>> | undefined;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
@@ -91,14 +91,14 @@ export interface EngineOptions {
    * sound. Omitting it is a game with no audio, which is what a test wants and
    * what a browser without Web Audio gets.
    */
-  audioContext?: AudioContextLike;
+  audioContext?: AudioContextLike | undefined;
   /**
    * A decoded-clip cache to share with the engines that come after this one.
    *
    * `SceneHost` owns it, so a sound the last level used is still in hand when
    * the next one asks for it.
    */
-  audioCache?: AudioClipCache;
+  audioCache?: AudioClipCache | undefined;
   /**
    * The device an analytic sky is captured on.
    *

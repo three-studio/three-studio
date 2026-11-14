@@ -55,10 +55,10 @@ export interface DeviceServerOptions {
    */
   listenHost?: string;
   /** Every new status, in the order they happened. */
-  onChange?: (status: DeviceServerStatus) => void;
+  onChange?: ((status: DeviceServerStatus) => void) | undefined;
   /** A device's lines, as they arrive: for every editor window's Console. */
   onLog?: (logs: DeviceLogs) => void;
-  trace?: (line: string) => void;
+  trace?: ((line: string) => void) | undefined;
 }
 
 /**

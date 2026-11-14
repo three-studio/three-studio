@@ -6,9 +6,9 @@ import { tooltip } from './Tooltip';
 interface ToolButtonProps {
   icon: LucideIcon;
   label: string;
-  shortcut?: string;
+  shortcut?: string | undefined;
   /** The tooltip's second line: why the button is off, say. */
-  hint?: string;
+  hint?: string | undefined;
   active?: boolean;
   disabled?: boolean;
   /** Overrides the icon colour when active — used for the green Play button. */

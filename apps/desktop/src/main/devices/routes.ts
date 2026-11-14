@@ -76,7 +76,7 @@ export interface DeviceRoutes {
   isOwnHost: (host: string | undefined) => boolean;
   /** Called for every request, with the address it came from, before any check. */
   onRequest: (remoteAddress: string | undefined) => void;
-  trace?: (line: string) => void;
+  trace?: ((line: string) => void) | undefined;
 }
 
 export type DeviceRequestHandler = (request: IncomingMessage, response: ServerResponse) => void;

@@ -42,7 +42,7 @@ export interface HistoryEntry {
   selectionAfter: readonly string[];
   /** Non-null while the entry may absorb further edits from the same gesture. */
   coalesceKey: string | null;
-  external?: ExternalEdit;
+  external?: ExternalEdit | undefined;
 }
 
 /**
@@ -108,7 +108,7 @@ export interface NewEntry {
   selectionBefore: readonly string[];
   selectionAfter: readonly string[];
   coalesceKey: string | null;
-  external?: ExternalEdit;
+  external?: ExternalEdit | undefined;
 }
 
 /**

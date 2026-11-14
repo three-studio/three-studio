@@ -52,7 +52,7 @@ export interface TooltipAttributes {
  */
 export function tooltip(
   text: string | null | undefined,
-  { keys, hint }: { keys?: string; hint?: string } = {},
+  { keys, hint }: { keys?: string | undefined; hint?: string | undefined } = {},
 ): Partial<TooltipAttributes> {
   if (!text) return {};
   return {

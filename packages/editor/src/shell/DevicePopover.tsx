@@ -168,7 +168,7 @@ function Action({
 }: {
   id: CommandId;
   label: string;
-  title?: string;
+  title?: string | undefined;
   tone?: ButtonTone;
   icon?: LucideIcon;
   className?: string;

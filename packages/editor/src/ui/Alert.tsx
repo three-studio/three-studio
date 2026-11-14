@@ -31,14 +31,14 @@ export interface AlertProps {
   kind: AlertKind;
   title: string;
   /** One line under the title. Longer than that belongs in `details`. */
-  description?: string;
+  description?: string | undefined;
   /** Behind a "More details" disclosure: a stack, a list of skipped files. */
   details?: ReactNode;
   /** Open the disclosure straight away, for details that are the point. */
   detailsOpen?: boolean;
   actions?: readonly AlertAction[];
   /** `0..1` draws a determinate bar; `null` an indeterminate one. */
-  progress?: number | null;
+  progress?: number | null | undefined;
   onDismiss?: () => void;
 }
 

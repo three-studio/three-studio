@@ -201,7 +201,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/test/hierarchyGestures.test.ts', { nonNull: 28 }],
   ['packages/editor/test/history.test.ts', { nonNull: 1 }],
   ['packages/editor/test/importPlan.test.ts', { as: 1, nonNull: 8 }],
-  ['packages/editor/test/inspectorSchema.test.ts', { as: 4 }],
+  ['packages/editor/test/inspectorSchema.test.ts', { as: 3 }],
   ['packages/editor/test/layoutStorage.test.ts', { as: 7 }],
   ['packages/editor/test/linkedMaterial.test.ts', { as: 4, nonNull: 4, state: 1 }],
   ['packages/editor/test/liveReload.test.ts', { as: 4, nonNull: 15, state: 3 }],

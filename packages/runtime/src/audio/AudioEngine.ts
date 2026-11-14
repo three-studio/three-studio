@@ -20,8 +20,8 @@ export interface AudioEngineOptions {
   resolver: AssetResolver;
   /** Where this engine's root connects. Defaults to the context's destination. */
   destination?: AudioNodeLike;
-  maxVoices?: number;
-  budgetBytes?: number;
+  maxVoices?: number | undefined;
+  budgetBytes?: number | undefined;
   load?: ClipLoader;
   /**
    * A clip cache to share rather than build.
@@ -32,7 +32,7 @@ export interface AudioEngineOptions {
    * economy. An engine that was handed a cache does not clear it on dispose —
    * it does not own it.
    */
-  cache?: AudioClipCache;
+  cache?: AudioClipCache | undefined;
   onWarning?: (message: string) => void;
 }
 

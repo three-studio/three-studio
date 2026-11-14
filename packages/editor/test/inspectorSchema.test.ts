@@ -20,7 +20,14 @@ import { describe, expect, it } from 'vitest';
 import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
 import { useProjectStore } from '../src/state/projectStore';
 import { declaredControl } from '../src/inspector/declaredFields';
-import { SCENE_SCHEMA, sceneFieldPath, isAction, isSeparator, type FieldSpec } from '../src/inspector/schema';
+import {
+  SCENE_SCHEMA,
+  sceneFieldPath,
+  isAction,
+  isSeparator,
+  type BoundSpec,
+  type FieldSpec,
+} from '../src/inspector/schema';
 import { readPath } from '../src/inspector/target';
 
 /*
@@ -349,9 +356,9 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
  */
 describe('a declared control fits the value it is bound to', () => {
   /** Rows that answer for themselves: a converter, or a control of its own. */
-  const declaresItsOwn = (spec: FieldSpec) => spec.toModel !== undefined || spec.params !== undefined;
+  const declaresItsOwn = (spec: BoundSpec) => spec.toModel !== undefined || spec.params !== undefined;
 
-  function check(where: string, spec: FieldSpec, value: unknown): void {
+  function check(where: string, spec: BoundSpec, value: unknown): void {
     if (declaresItsOwn(spec)) return;
     const at = `${where}.${spec.path.join('.')}`;
 
@@ -402,7 +409,7 @@ describe('a declared control fits the value it is bound to', () => {
     const scene = createEmptyScene();
     for (const section of SCENE_SCHEMA) {
       for (const field of section.fields) {
-        const spec = { ...field, path: sceneFieldPath(field) } as FieldSpec;
+        const spec = { ...field, path: sceneFieldPath(field) };
         check(field.on, spec, readPath(scene, spec.path));
       }
     }

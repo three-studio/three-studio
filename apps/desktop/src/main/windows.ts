@@ -169,7 +169,7 @@ interface WindowOptions {
   role: WindowRole;
   projectPath?: string;
   /** Id of the scene the window opens on; see `sceneQuery`. */
-  sceneId?: string;
+  sceneId?: string | undefined;
   width: number;
   height: number;
   minWidth: number;

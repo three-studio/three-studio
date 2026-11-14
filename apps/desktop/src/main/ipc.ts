@@ -578,7 +578,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       const picked = await dialog.showOpenDialog({
         title: 'Build output folder',
         properties: ['openDirectory', 'createDirectory'],
-        defaultPath: startIn ?? undefined,
+        // Left out, not `undefined`, with nowhere to start in: Electron's type
+        // takes no `undefined` there, and reads a missing key as it always has.
+        ...(typeof startIn === 'string' ? { defaultPath: startIn } : {}),
         buttonLabel: 'Choose',
       });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
