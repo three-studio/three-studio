@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@three-studio/core": ["./packages/core/src/index.ts"],
+      "@three-studio/core/*": ["./packages/core/src/*"],
+      "@three-studio/runtime": ["./packages/runtime/src/index.ts"],
+      "@three-studio/runtime/*": ["./packages/runtime/src/*"],
+      "@three-studio/editor": ["./packages/editor/src/index.ts"],
+      "@three-studio/editor/*": ["./packages/editor/src/*"]
+    }
+  },
+  "include": ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx", "packages/*/test/**/*.ts"],
+  "exclude": ["node_modules", "**/out", "**/dist", "**/release"]
+}

@@ -1,9 +1,17 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { assertDefined } from '@three-studio/core';
+import { parse } from '@babel/parser';
+import { traverseFast } from '@babel/types';
+import { activateCore, assertDefined, createCoreRegistries, isRecord } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { WORKSPACE_PACKAGE_NAMES, workspaceAliases } from '../workspace-aliases';
+import {
+  KERNEL_TSCONFIG_PATHS,
+  MODULES,
+  MODULE_PARTS,
+  WORKSPACE_PACKAGE_NAMES,
+  workspaceAliases,
+} from '../workspace-aliases';
 
 /*
  * The layering, asserted rather than documented.
@@ -30,12 +38,14 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
  * rather than the day someone remembers this file. A tool has no `src/` and
  * `test/` split — the performance harness is code throughout — so its whole
  * folder is read. It falls in the app layer: it may import everything below.
+ * A module is read like a package, and each of its parts falls in its layer.
  */
 function scannedRoots(): string[] {
   const packages = WORKSPACE_PACKAGE_NAMES.map((name) => join(repoRoot, 'packages', name));
+  const modules = MODULES.map(({ id }) => join(repoRoot, 'modules', id));
   const apps = readdirSync(join(repoRoot, 'apps')).map((name) => join(repoRoot, 'apps', name));
   const tools = readdirSync(join(repoRoot, 'tools')).map((name) => join(repoRoot, 'tools', name));
-  return [...[...packages, ...apps].flatMap((base) => [join(base, 'src'), join(base, 'test')]), ...tools].filter(
+  return [...[...packages, ...modules, ...apps].flatMap((base) => [join(base, 'src'), join(base, 'test')]), ...tools].filter(
     (dir) => existsSync(dir) && statSync(dir).isDirectory(),
   );
 }
@@ -76,7 +86,11 @@ const STATIC_IMPORT = /^[ \t]*(?:import|export)\s+(?:[^'";]*?\bfrom\s*)?['"]([^'
 const DYNAMIC_IMPORT = /\bimport\s*\(\s*['"]([^'"]+)['"]/g;
 
 function specifiers(file: string): string[] {
-  const src = readFileSync(file, 'utf8');
+  return specifiersIn(readFileSync(file, 'utf8'));
+}
+
+/** Every specifier a source imports or re-exports, statically or not. */
+function specifiersIn(src: string): string[] {
   const found: string[] = [];
   for (const pattern of [STATIC_IMPORT, DYNAMIC_IMPORT]) {
     const re = new RegExp(pattern.source, pattern.flags);
@@ -184,7 +198,11 @@ function layerOf(file: string): Layer {
   for (const layer of LAYERS) {
     if (path.startsWith(`packages/${layer}/`)) return layer;
   }
-  return 'app';
+  // A module's part sits in the layer it is named after, so the one ordering
+  // holds a module's core off the runtime exactly as it holds the kernel's.
+  // Its tests, like any test, may reach everything.
+  const part = /^modules\/[^/]+\/src\/([^/]+)\//.exec(path)?.[1];
+  return LAYERS.find((layer) => layer === part) ?? 'app';
 }
 
 const depth = (layer: Layer): number => LAYERS.indexOf(layer);
@@ -386,6 +404,172 @@ describe('import cycles', () => {
   });
 });
 
+// ----------------------------------------------------------------- the modules
+
+/*
+ * A module is `modules/<id>/`: a `package.json` and one folder of `src/` per
+ * layer it has a part in. The rules below are what lets one be added or removed
+ * by adding or removing that folder, and a line in each root that activates it:
+ *
+ *  - a part reaches the kernel through its packages' entry points, at or below
+ *    its own layer, never a file inside one — an entry point is what the kernel
+ *    undertakes to keep, and a deep path is whatever happened to be there;
+ *  - a part reaches its own lower parts, and the parts of a module its
+ *    `package.json` declares, by their package paths; a relative import stays
+ *    inside the part;
+ *  - a third-party package is one its `package.json` declares;
+ *  - nothing outside the modules imports one, but the roots;
+ *  - and no file outside a module names it, or a component type it defines,
+ *    but the roots: a kernel that named one would need an edit the day the
+ *    module goes.
+ *
+ * Read from each module's own `package.json`, which is its manifest: its id
+ * from its name, the modules and the packages it depends on from its
+ * dependencies. There is no second list to keep in step.
+ */
+
+interface ModuleManifest {
+  readonly id: string;
+  /** The parts it has, as folders of its `src/`. */
+  readonly parts: readonly string[];
+  /** The ids of the modules its `package.json` declares. */
+  readonly modules: readonly string[];
+  /** The third-party packages its `package.json` declares. */
+  readonly packages: readonly string[];
+}
+
+const SCOPE = '@three-studio/';
+const KERNEL_PACKAGES: readonly string[] = WORKSPACE_PACKAGE_NAMES;
+const partDepth = (part: string): number => MODULE_PARTS.findIndex((known) => known === part);
+
+/** A module's manifest, decoded from its `package.json`; what the file gets wrong is reported instead. */
+function manifestOf(id: string, parts: readonly string[], json: unknown): ModuleManifest | string {
+  if (!isRecord(json)) return `modules/${id}/package.json: is not an object`;
+  if (json['name'] !== `${SCOPE}${id}`) return `modules/${id}/package.json: is not named ${SCOPE}${id}`;
+  const declared = [json['dependencies'], json['peerDependencies']].flatMap((block) =>
+    isRecord(block) ? Object.keys(block) : [],
+  );
+  return {
+    id,
+    parts,
+    modules: declared.filter((name) => name.startsWith(SCOPE)).map((name) => name.slice(SCOPE.length)),
+    packages: declared.filter((name) => !name.startsWith(SCOPE)),
+  };
+}
+
+/** The package a bare specifier names: `three/webgpu` is `three`, `@scope/name/deep` is `@scope/name`. */
+function packageOf(spec: string): string {
+  const segments = spec.split('/');
+  return (spec.startsWith('@') ? segments.slice(0, 2) : segments.slice(0, 1)).join('/');
+}
+
+/** What the import rules of the modules find wrong in these files, a line each. */
+function moduleImportProblems(
+  modules: readonly ModuleManifest[],
+  roots: ReadonlySet<string>,
+  sources: readonly (readonly [path: string, source: string])[],
+): string[] {
+  const problems: string[] = [];
+  const ids = new Set(modules.map((module) => module.id));
+
+  for (const [path, source] of sources) {
+    const [, ownerId, part] = /^modules\/([^/]+)\/src\/([^/]+)\//.exec(path) ?? [];
+    const owner = modules.find((module) => module.id === ownerId);
+    const inModule = path.startsWith('modules/');
+
+    for (const spec of specifiersIn(source)) {
+      const [, scoped, rest] = /^@three-studio\/([^/]+)(?:\/(.*))?$/.exec(spec) ?? [];
+      const namesModule = scoped !== undefined && ids.has(scoped);
+
+      // Outside the modules, only a root imports one.
+      if (!inModule) {
+        if (namesModule && !roots.has(path)) problems.push(`${path}: imports the module ${scoped}, and is no composition root`);
+        continue;
+      }
+      // A module's tests are tests: they may reach what they check.
+      if (owner === undefined || part === undefined) continue;
+
+      if (spec.startsWith('.')) {
+        const target = join(dirname(path), spec);
+        if (!target.startsWith(`modules/${owner.id}/src/${part}/`)) problems.push(`${path}: ${spec} leaves its part`);
+      } else if (scoped !== undefined && KERNEL_PACKAGES.includes(scoped)) {
+        if (rest !== undefined) problems.push(`${path}: ${spec} reaches past the entry point of ${SCOPE}${scoped}`);
+        else if (partDepth(scoped) > partDepth(part)) problems.push(`${path}: ${spec} is above its layer`);
+      } else if (namesModule) {
+        const lower = rest !== undefined && partDepth(rest) >= 0 && partDepth(rest) <= partDepth(part);
+        if (scoped === owner.id) {
+          if (rest === part || !lower) problems.push(`${path}: ${spec} is not one of its own lower parts`);
+        } else if (!owner.modules.includes(scoped ?? '')) {
+          problems.push(`${path}: ${spec} is a module its package.json does not declare`);
+        } else if (!lower) {
+          problems.push(`${path}: ${spec} is above its layer`);
+        }
+      } else if (!spec.startsWith('node:') && !owner.packages.includes(packageOf(spec))) {
+        problems.push(`${path}: ${spec} is a package its package.json does not declare`);
+      }
+    }
+  }
+  return problems;
+}
+
+/**
+ * The files that name what belongs to a module, a line each.
+ *
+ * `names` are the module ids and the ids of the component types they define.
+ * Read as syntax, not as text: an identifier or a string equal to one. A
+ * comment may say "particles", and a word that merely contains one is another
+ * word.
+ */
+function moduleNameProblems(
+  names: ReadonlySet<string>,
+  roots: ReadonlySet<string>,
+  sources: readonly (readonly [path: string, source: string])[],
+): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (path.startsWith('modules/') || roots.has(path)) continue;
+    const named = new Set<string>();
+    const ast = parse(source, { sourceType: 'module', plugins: path.endsWith('.tsx') ? ['typescript', 'jsx'] : ['typescript'] });
+    traverseFast(ast, (node) => {
+      if ((node.type === 'Identifier' || node.type === 'JSXIdentifier') && names.has(node.name)) named.add(node.name);
+      if (node.type === 'StringLiteral' && names.has(node.value)) named.add(node.value);
+      if (node.type === 'TemplateElement' && names.has(node.value.raw)) named.add(node.value.raw);
+    });
+    for (const name of [...named].sort()) problems.push(`${path}: names ${name}, which belongs to a module`);
+  }
+  return problems;
+}
+
+/** The modules on disk, each read from its `package.json`, with what a manifest gets wrong. */
+function modulesOnDisk(): { modules: ModuleManifest[]; problems: string[] } {
+  const modules: ModuleManifest[] = [];
+  const problems: string[] = [];
+  for (const { id, parts } of MODULES) {
+    const json: unknown = JSON.parse(readFileSync(join(repoRoot, 'modules', id, 'package.json'), 'utf8'));
+    const manifest = manifestOf(id, parts, json);
+    if (typeof manifest === 'string') problems.push(manifest);
+    else modules.push(manifest);
+  }
+  return { modules, problems };
+}
+
+/**
+ * The ids of the component types a module defines: what its core part
+ * registers, into registries the kernel has already filled. Asked of the module
+ * itself, so that no list here has to know them.
+ */
+async function typeIdsOf(module: ModuleManifest): Promise<string[]> {
+  if (!module.parts.includes('core')) return [];
+  const part: unknown = await import(join(repoRoot, 'modules', module.id, 'src/core/index.ts'));
+  const activate = isRecord(part) ? part['activate'] : undefined;
+  if (typeof activate !== 'function') return [];
+  const registries = createCoreRegistries();
+  activateCore(registries);
+  const kernel = new Set<string>(registries.components.values().map(({ id }) => id));
+  activate(registries);
+  return registries.components.values().map(({ id }) => id).filter((id) => !kernel.has(id));
+}
+
 // ------------------------------------------------------- the composition roots
 
 /*
@@ -421,8 +605,19 @@ function mayMakeRegistries(path: string): boolean {
 
 const MAKES_REGISTRIES = /\bcreate(?:Core|Runtime|Editor)Registries\(/;
 
-/** What the rules of the roots find wrong in these files, a line each. */
-function rootProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+/**
+ * What the rules of the roots find wrong in these files, a line each.
+ *
+ * A root activates every module too, part by part: each part of a layer the
+ * root builds, imported whole (`import * as sparksCore from …`) and activated
+ * after the kernel's own activation of that layer, since a module registers
+ * into what the kernel has filled. A module no root activates would be a folder
+ * that does nothing, with no error anywhere.
+ */
+function rootProblems(
+  sources: readonly (readonly [path: string, source: string])[],
+  modules: readonly ModuleManifest[] = [],
+): string[] {
   const problems: string[] = [];
   for (const [path, source] of sources) {
     if (!mayMakeRegistries(path) && MAKES_REGISTRIES.test(source)) {
@@ -432,6 +627,16 @@ function rootProblems(sources: readonly (readonly [path: string, source: string]
     if (layers === undefined) continue;
     for (const layer of layers) {
       if (!source.includes(`activate${layer}(`)) problems.push(`${path}: never calls activate${layer}`);
+      const part = layer.toLowerCase();
+      for (const module of modules.filter((candidate) => candidate.parts.includes(part))) {
+        const spec = `${SCOPE}${module.id}/${part}`;
+        const name = new RegExp(`import \\* as (\\w+) from '${spec}'`).exec(source)?.[1];
+        const activated = name === undefined ? -1 : source.indexOf(`${name}.activate(`);
+        if (activated === -1) problems.push(`${path}: never activates ${spec}`);
+        else if (activated < source.indexOf(`activate${layer}(`)) {
+          problems.push(`${path}: activates ${spec} before the kernel's own ${part}`);
+        }
+      }
     }
     if (source.includes('import.meta.hot')) problems.push(`${path}: reads import.meta.hot`);
   }
@@ -472,6 +677,145 @@ describe('the composition roots', () => {
     const scanned = files.map(show);
     for (const root of ROOTS.keys()) expect(scanned).toContain(root);
 
-    expect(rootProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
+    expect(rootProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]), modulesOnDisk().modules)).toEqual([]);
+  });
+
+  it('reports a root that leaves a module\'s part unactivated, or activates it before the kernel\'s', () => {
+    const sparks: ModuleManifest = { id: 'sparks', parts: ['core', 'runtime'], modules: [], packages: [] };
+    const root = (body: string): string[] => rootProblems([['apps/web-template/src/main.ts', body]], [sparks]);
+    const imports =
+      "import * as sparksCore from '@three-studio/sparks/core';\nimport * as sparksRuntime from '@three-studio/sparks/runtime';\n";
+
+    expect(root(`${imports}activateCore(r);\nsparksCore.activate(r);\nactivateRuntime(r);\nsparksRuntime.activate(r);\n`)).toEqual([]);
+    expect(root(`${imports}activateCore(r);\nsparksCore.activate(r);\nactivateRuntime(r);\n`)).toEqual([
+      'apps/web-template/src/main.ts: never activates @three-studio/sparks/runtime',
+    ]);
+    expect(root(`${imports}sparksCore.activate(r);\nactivateCore(r);\nactivateRuntime(r);\nsparksRuntime.activate(r);\n`)).toEqual([
+      "apps/web-template/src/main.ts: activates @three-studio/sparks/core before the kernel's own core",
+    ]);
+  });
+});
+
+describe('the modules', () => {
+  // Two made-up modules, so that each rule is shown to bite whatever the tree holds.
+  const sparks: ModuleManifest = { id: 'sparks', parts: ['core', 'runtime', 'editor'], modules: ['trails'], packages: ['three'] };
+  const trails: ModuleManifest = { id: 'trails', parts: ['core', 'runtime'], modules: [], packages: [] };
+  const roots: ReadonlySet<string> = new Set(['apps/player/src/main.ts']);
+  const found = (path: string, source: string): string[] => moduleImportProblems([sparks, trails], roots, [[path, source]]);
+
+  it('lets a part import the kernel by its entry points, its own lower parts, a declared module and a declared package', () => {
+    const part = [
+      "import { defineSystem } from '@three-studio/runtime';",
+      "import type { EntityId } from '@three-studio/core';",
+      "import { sparkType } from '@three-studio/sparks/core';",
+      "import { trailType } from '@three-studio/trails/core';",
+      "import { Mesh } from 'three/webgpu';",
+      "import { sprite } from './sprite';",
+    ].join('\n');
+
+    expect(found('modules/sparks/src/runtime/index.ts', part)).toEqual([]);
+  });
+
+  it('reports a part that reaches past a kernel entry point', () => {
+    expect(found('modules/sparks/src/core/index.ts', "import { planFields } from '@three-studio/core/fieldSchema';")).toEqual([
+      'modules/sparks/src/core/index.ts: @three-studio/core/fieldSchema reaches past the entry point of @three-studio/core',
+    ]);
+  });
+
+  it('reports a part that reaches above its layer: the kernel\'s, its own, another module\'s', () => {
+    expect(found('modules/sparks/src/core/index.ts', "import { Engine } from '@three-studio/runtime';")).toEqual([
+      'modules/sparks/src/core/index.ts: @three-studio/runtime is above its layer',
+    ]);
+    expect(found('modules/sparks/src/runtime/index.ts', "import { pane } from '@three-studio/sparks/editor';")).toEqual([
+      'modules/sparks/src/runtime/index.ts: @three-studio/sparks/editor is not one of its own lower parts',
+    ]);
+    expect(found('modules/sparks/src/core/index.ts', "import { trail } from '@three-studio/trails/runtime';")).toEqual([
+      'modules/sparks/src/core/index.ts: @three-studio/trails/runtime is above its layer',
+    ]);
+  });
+
+  it('reports a relative import that leaves its part', () => {
+    expect(found('modules/sparks/src/runtime/system.ts', "import { sparkType } from '../core/index';")).toEqual([
+      'modules/sparks/src/runtime/system.ts: ../core/index leaves its part',
+    ]);
+  });
+
+  it('reports a module, and a package, its package.json does not declare', () => {
+    expect(found('modules/trails/src/core/index.ts', "import { sparkType } from '@three-studio/sparks/core';")).toEqual([
+      'modules/trails/src/core/index.ts: @three-studio/sparks/core is a module its package.json does not declare',
+    ]);
+    expect(found('modules/trails/src/runtime/index.ts', "import { Mesh } from 'three/webgpu';")).toEqual([
+      'modules/trails/src/runtime/index.ts: three/webgpu is a package its package.json does not declare',
+    ]);
+  });
+
+  it('reports a file that imports a module and is no root, in the kernel or in an app', () => {
+    const importing = "import * as sparksCore from '@three-studio/sparks/core';";
+
+    expect(found('packages/runtime/src/Engine.ts', importing)).toEqual([
+      'packages/runtime/src/Engine.ts: imports the module sparks, and is no composition root',
+    ]);
+    expect(found('apps/player/src/loading.ts', importing)).toEqual([
+      'apps/player/src/loading.ts: imports the module sparks, and is no composition root',
+    ]);
+    expect(found('apps/player/src/main.ts', importing)).toEqual([]);
+  });
+
+  it('reports a manifest that is not named after its folder', () => {
+    expect(manifestOf('sparks', ['core'], { name: '@three-studio/sparkles' })).toBe(
+      'modules/sparks/package.json: is not named @three-studio/sparks',
+    );
+    expect(manifestOf('sparks', ['core'], { name: '@three-studio/sparks', dependencies: { '@three-studio/trails': '*' }, peerDependencies: { three: '^0.185.0' } })).toEqual({
+      id: 'sparks',
+      parts: ['core'],
+      modules: ['trails'],
+      packages: ['three'],
+    });
+  });
+
+  it('reports a file that names a module or one of its types, and is neither the module nor a root', () => {
+    const names: ReadonlySet<string> = new Set(['sparks', 'sparkEmitter']);
+    const named = (path: string, source: string): string[] => moduleNameProblems(names, roots, [[path, source]]);
+
+    expect(named('packages/editor/src/icons.ts', "const ICONS = { sparkEmitter: Sparkles };\nrank('sparks');")).toEqual([
+      'packages/editor/src/icons.ts: names sparkEmitter, which belongs to a module',
+      'packages/editor/src/icons.ts: names sparks, which belongs to a module',
+    ]);
+    // A comment may say it, and a longer word is another word.
+    expect(named('packages/runtime/src/Engine.ts', '// GPU culling, sparks and trails\nconst sparksPerFrame = 3;')).toEqual([]);
+    expect(named('modules/sparks/src/core/index.ts', "const id = 'sparkEmitter';")).toEqual([]);
+    expect(named('apps/player/src/main.ts', 'sparks.activate(registries);')).toEqual([]);
+  });
+
+  it('finds none in the tree: every module keeps to its parts, and nothing but the roots knows one', async () => {
+    const { modules, problems } = modulesOnDisk();
+    const roots: ReadonlySet<string> = new Set(ROOTS.keys());
+    const sources = files.map((file) => [show(file), readFileSync(file, 'utf8')] as const);
+    // The repository's own tests are read for names too: a rule that listed a
+    // module's type would be an edit the day the module goes.
+    const rootTests = sourceFiles(join(repoRoot, 'test')).map((file) => [show(file), readFileSync(file, 'utf8')] as const);
+    const names = new Set(modules.map((module) => module.id));
+    for (const module of modules) for (const id of await typeIdsOf(module)) names.add(id);
+
+    expect(problems).toEqual([]);
+    expect(moduleImportProblems(modules, roots, sources)).toEqual([]);
+    expect(moduleNameProblems(names, roots, [...sources, ...rootTests])).toEqual([]);
+  });
+});
+
+describe('the kernel alone', () => {
+  it('is what tsconfig.kernel.json compiles: every package, their paths, and no module', () => {
+    // `npm run typecheck` compiles this config after the whole repository's. A
+    // kernel file that reached a module would not resolve there — as long as
+    // the config holds the packages and nothing else, which is what is held here.
+    const config: unknown = JSON.parse(readFileSync(join(repoRoot, 'tsconfig.kernel.json'), 'utf8'));
+    const options = isRecord(config) ? config['compilerOptions'] : undefined;
+
+    expect(isRecord(options) ? options['paths'] : undefined).toEqual(KERNEL_TSCONFIG_PATHS);
+    expect(isRecord(config) ? config['include'] : undefined).toEqual([
+      'packages/*/src/**/*.ts',
+      'packages/*/src/**/*.tsx',
+      'packages/*/test/**/*.ts',
+    ]);
   });
 });

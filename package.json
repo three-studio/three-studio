@@ -18,6 +18,7 @@
   },
   "workspaces": [
     "packages/*",
+    "modules/*",
     "apps/*"
   ],
   "scripts": {
@@ -31,7 +32,8 @@
     "dist:mac": "npm run build:web && npm run dist:mac --workspace @three-studio/desktop",
     "dist:win": "npm run build:web && npm run dist:win --workspace @three-studio/desktop",
     "dist:linux": "npm run build:web && npm run dist:linux --workspace @three-studio/desktop",
-    "typecheck": "tsc --noEmit",
+    "//typecheck": "Twice: the whole repository, then the kernel alone — tsconfig.kernel.json holds the packages and no module's path — so that a kernel file that names a module's type does not compile, and removing a module can never need an edit under packages/.",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.kernel.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "//perf": "Builds first: the harness measures the production build, and an out/ left from an earlier tree would measure that tree. See tools/perf/README.md.",
