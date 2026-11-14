@@ -224,7 +224,6 @@ export type {
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
-  EmitterShape,
   ParticleEmitterComponent,
   PlayerControllerComponent,
   RigidBodyComponent,
@@ -259,7 +258,6 @@ export {
   COLLIDER_SHAPE_LABELS,
   COMBINE_RULE_LABELS,
   DISTANCE_MODEL_LABELS,
-  EMITTER_SHAPE_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
   JOINT_KIND_LABELS,
@@ -318,10 +316,9 @@ export { createPrefabInstance } from './components/prefabInstance/defaults';
 export { createRigidBody } from './components/rigidbody/defaults';
 export { createScript } from './components/script/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';
-export {
-  createParticleEmitter,
-  createParticleEmitterEntity,
-} from './components/particleEmitter/defaults';
+export { createParticleEmitterEntity } from './components/particleEmitter/defaults';
+export { particleEmitterComponent } from './components/particleEmitter';
+export { particleEmitterSchema } from './components/particleEmitter/schema';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

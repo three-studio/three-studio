@@ -44,3 +44,9 @@ export interface Transform {
 export interface ComponentBase {
   id: ComponentId;
 }
+
+/**
+ * A component of the type `Id`, holding the fields `Data` describes: what a
+ * type written as a schema is typed as, its fields inferred from the schema.
+ */
+export type Component<Id extends string, Data> = ComponentBase & { type: Id } & Data;

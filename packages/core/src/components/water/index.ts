@@ -1,5 +1,6 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createWater } from './defaults';
+import type { WaterComponent } from './schema';
 
 /**
  * A flat reflective water surface.
@@ -8,8 +9,9 @@ import { createWater } from './defaults';
  * a nested object, and a shallow spread would hand a scene saved before
  * `heightSegments` existed a plane with `undefined` in it.
  */
-export const waterComponent = defineComponent({
+export const waterComponent: ComponentDefinition<WaterComponent> = {
   id: 'water',
+  label: 'Water',
   create: () => createWater(),
   fill: (stored) => {
     const base = createWater();
@@ -25,4 +27,4 @@ export const waterComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

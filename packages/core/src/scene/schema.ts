@@ -86,11 +86,7 @@ export { JOINT_KIND_LABELS } from '../components/joint/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';
-export type {
-  EmitterShape,
-  ParticleEmitterComponent,
-} from '../components/particleEmitter/schema';
-export { EMITTER_SHAPE_LABELS } from '../components/particleEmitter/schema';
+export type { ParticleEmitterComponent } from '../components/particleEmitter/schema';
 export type {
   PlayerControllerComponent,
   PlayerControllerMode,

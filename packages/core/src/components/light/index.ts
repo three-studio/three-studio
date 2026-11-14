@@ -1,6 +1,6 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createLight } from './defaults';
-import type { LightKind } from './schema';
+import type { LightComponent, LightKind } from './schema';
 
 /*
  * Everything that makes a light a light: the type it is stored as, the
@@ -48,8 +48,9 @@ const UNPLACED_LIGHTS: ReadonlySet<LightKind> = new Set(['ambient', 'hemisphere'
  * with no `shadow` at all, and a shallow spread would leave three reading
  * `undefined` off every field of it.
  */
-export const lightComponent = defineComponent({
+export const lightComponent: ComponentDefinition<LightComponent> = {
   id: 'light',
+  label: 'Light',
   create: () => createLight('point'),
   fill: (stored) => {
     const base = createLight(stored.kind ?? 'point');
@@ -63,4 +64,4 @@ export const lightComponent = defineComponent({
   placeable: (component) => !UNPLACED_LIGHTS.has(component.kind),
   runtime: true,
   addable: true,
-});
+};

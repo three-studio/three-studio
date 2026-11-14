@@ -1,9 +1,11 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createModel } from './defaults';
+import type { ModelComponent } from './schema';
 
 /** An imported glTF, FBX or OBJ. */
-export const modelComponent = defineComponent({
+export const modelComponent: ComponentDefinition<ModelComponent> = {
   id: 'model',
+  label: 'Model',
   create: createModel,
   // The material as well as the file. Without it, reference counting and "what
   // does this scene use" both miss a material an imported model is drawing with,
@@ -14,4 +16,4 @@ export const modelComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: false,
-});
+};

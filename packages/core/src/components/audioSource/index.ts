@@ -1,5 +1,6 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createAudioSource } from './defaults';
+import type { AudioSourceComponent } from './schema';
 
 /**
  * A sound placed in the world.
@@ -14,8 +15,9 @@ import { createAudioSource } from './defaults';
  * one refuses a flag with no system behind it, the other refuses a system with
  * no flag.
  */
-export const audioSourceComponent = defineComponent({
+export const audioSourceComponent: ComponentDefinition<AudioSourceComponent> = {
   id: 'audioSource',
+  label: 'Audio Source',
   create: () => createAudioSource(),
   assets: (component) => [component.assetId],
   entities: () => [],
@@ -23,4 +25,4 @@ export const audioSourceComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

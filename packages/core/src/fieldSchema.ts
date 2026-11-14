@@ -1,6 +1,6 @@
 import type { AssetKind } from './assets/kind';
 import { isRecord, isUsableNumber } from './conform';
-import type { DecodePath, Decoded, Diagnostic } from './decoded';
+import { shown, type DecodePath, type Decoded, type Diagnostic } from './decoded';
 import { isAssetId, type AssetId } from './ids';
 import type { Hex, Vec3 } from './scene/primitives';
 
@@ -107,15 +107,6 @@ export interface FieldPlan<S extends Schema> {
 }
 
 const HEX = /^#[0-9a-f]{6}$/i;
-
-/**
- * A value as a message quotes it. `JSON.stringify` alone writes `NaN` as
- * `null` and `undefined` as nothing, the two values a refusal most needs to
- * show.
- */
-function shown(value: unknown): string {
-  return typeof value === 'number' || value === undefined ? String(value) : JSON.stringify(value);
-}
 
 /** What a field expects, when `value` is not it; `null` when it is. */
 function unmetBy(field: SchemaField, value: unknown): string | null {

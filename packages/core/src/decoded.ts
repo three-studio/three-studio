@@ -26,3 +26,22 @@ export interface Diagnostic {
 export type Decoded<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly diagnostics: readonly Diagnostic[] };
+
+/**
+ * A value as a message quotes it. `JSON.stringify` alone writes `NaN` as
+ * `null` and `undefined` as nothing, the two values a refusal most needs to
+ * show.
+ */
+export function shown(value: unknown): string {
+  return typeof value === 'number' || value === undefined ? String(value) : JSON.stringify(value);
+}
+
+/** How many faults a refusal spells out. A file broken ten thousand times says so in a line, not in ten thousand. */
+const SPELLED_OUT = 20;
+
+/** Faults as the lines of a refusal: `path: message`, the first few, then how many more. */
+export function describeDiagnostics(diagnostics: readonly Diagnostic[]): string {
+  const lines = diagnostics.slice(0, SPELLED_OUT).map((fault) => `${fault.path.join('.')}: ${fault.message}`);
+  if (diagnostics.length > SPELLED_OUT) lines.push(`and ${diagnostics.length - SPELLED_OUT} more`);
+  return lines.join('\n');
+}

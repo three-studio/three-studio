@@ -1,9 +1,11 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createScript } from './defaults';
+import type { ScriptComponent } from './schema';
 
 /** A user script and its declared properties. */
-export const scriptComponent = defineComponent({
+export const scriptComponent: ComponentDefinition<ScriptComponent> = {
   id: 'script',
+  label: 'Script',
   create: createScript,
   assets: (component) => [component.assetId],
   // Every string property, since only the script knows which hold assets.
@@ -15,4 +17,4 @@ export const scriptComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

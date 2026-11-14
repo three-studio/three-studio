@@ -1,8 +1,9 @@
 import { createGeometry } from '../../scene/geometry';
 import { createMaterial } from '../../scene/material';
 import { materialAssets } from '../materialAssets';
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createMeshComponent } from './defaults';
+import type { MeshComponent } from './schema';
 
 /**
  * A renderable primitive and the material it draws with.
@@ -12,8 +13,9 @@ import { createMeshComponent } from './defaults';
  * them merged a level deeper — leaving `undefined` where three expects a value is
  * what shipped twice before `fillMissingFields` was written.
  */
-export const meshComponent = defineComponent({
+export const meshComponent: ComponentDefinition<MeshComponent> = {
   id: 'mesh',
+  label: 'Mesh',
   create: () => createMeshComponent('box'),
   fill: (stored) => {
     const filled = { ...createMeshComponent('box'), ...stored };
@@ -28,4 +30,4 @@ export const meshComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

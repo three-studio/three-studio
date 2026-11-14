@@ -1,4 +1,8 @@
-import type { AssetId, EntityId } from '../ids';
+import { isRecord } from '../conform';
+import { shown, type DecodePath, type Decoded, type Diagnostic } from '../decoded';
+import { planFields, type Infer, type Schema } from '../fieldSchema';
+import { createComponentId, isComponentId, type AssetId, type EntityId } from '../ids';
+import type { Component } from '../scene/primitives';
 import type { ComponentDoc } from '../scene/schema';
 
 /*
@@ -55,11 +59,31 @@ export type ComponentIcon =
  * Parameterised by the component rather than by its type's name: through
  * `ComponentOfType<'mesh'>`, a conditional type, TypeScript can no longer tell
  * which way the parameter varies, and holds it fixed.
+ *
+ * Bounded by the shape every component has and not by `ComponentDoc`: a type
+ * written as a schema is typed from that schema, and nothing can show, for any
+ * schema, that the result is one of `ComponentDoc`'s members. The registry asks
+ * it instead, where the definition is registered: one whose type is in no
+ * `ComponentTypes` is not a `ComponentDefinition` there, and does not compile.
  */
-export interface ComponentDefinition<C extends ComponentDoc = ComponentDoc> {
+export interface ComponentDefinition<C extends Component<string, object> = ComponentDoc> {
   readonly id: C['type'];
+  /** What the type is called wherever the editor names it: a pane's heading, the Add Component menu, a message. */
+  readonly label: string;
   /** A blank one, for "Add Component" and for filling a stored one's gaps. */
   create(): C;
+  /**
+   * The type's fields, for a type written as a schema: what its pane is derived
+   * from. A type still written by hand has none, and a pane written by hand.
+   */
+  readonly schema?: Schema;
+  /**
+   * A stored component, checked field by field against the schema, for a type
+   * written as one. A scene holding a component it refuses does not open, and
+   * says which field of which component. A type still written by hand is read
+   * through `fill` and checked nowhere.
+   */
+  decode?(value: unknown, path: DecodePath): Decoded<C>;
   /**
    * A stored component with everything it lacks filled in — declared **only by
    * the types the default is wrong for**.
@@ -154,13 +178,71 @@ export interface ComponentDefinition<C extends ComponentDoc = ComponentDoc> {
 }
 
 /**
- * Declares a component type: its argument, with `C` inferred from what its
- * `create` makes, and its `id` held to that component's own `type`.
+ * Declares a component type from its fields.
  *
- * Each slice exports what this returns, and registers nothing by being
- * imported: the core's activation lists the kernel's definitions, in the order
- * the Add Component menu offers them.
+ * Everything the definition answers about the data comes from the schema: the
+ * blank component is its defaults under a new id, the decoder checks a stored
+ * one field by field, and the assets it names are its asset fields. The type's
+ * TypeScript type is `Component<Id, Infer<typeof schema>>`, which the type's
+ * own file adds to `ComponentTypes`.
+ *
+ * The plan is computed here, once, so a schema that contradicts itself fails
+ * where the type is defined, the first time anything imports it.
+ *
+ * What it returns is exported and registers nothing: an activation lists it.
  */
-export function defineComponent<C extends ComponentDoc>(definition: ComponentDefinition<C>): ComponentDefinition<C> {
-  return definition;
+export function defineComponent<const Id extends string, const S extends Schema>(description: {
+  /**
+   * The type's id, which is also what each of its components holds as `type`.
+   * Typed as both: a schema that declared a field named `type` would give that
+   * key two meanings, and no id satisfies the two at once, so it does not
+   * compile.
+   */
+  readonly id: Id & Component<Id, Infer<S>>['type'];
+  readonly label: string;
+  readonly schema: S;
+  readonly icon: ComponentIcon;
+  readonly runtime: boolean;
+  readonly addable: boolean;
+  /** Left out, a component of the type is a place in the world, which all but two kinds of light are. */
+  readonly placeable?: (component: Component<Id, Infer<S>>) => boolean;
+}): ComponentDefinition<Component<Id, Infer<S>>> {
+  const { id: type, label, schema, icon, runtime, addable } = description;
+  const plan = planFields(schema);
+
+  return {
+    id: type,
+    label,
+    schema,
+    icon,
+    runtime,
+    addable,
+    // A copy of the defaults each time: a vector is an array, and two
+    // components sharing one would be edited together.
+    create: () => ({ ...structuredClone(plan.defaults), id: createComponentId(), type }),
+    decode: (value, path) => {
+      if (!isRecord(value)) {
+        return { ok: false, diagnostics: [{ code: 'field.invalid', message: `expected a component, found ${shown(value)}`, path }] };
+      }
+      // What every component carries is checked here, and the rest is the
+      // schema's: `id` and `type` are no fields of it.
+      const { id, type: storedType, ...fields } = value;
+      const decoded = plan.decode(fields, path);
+      if (isComponentId(id) && storedType === type && decoded.ok) {
+        return { ok: true, value: { ...decoded.value, id, type } };
+      }
+      const diagnostics: Diagnostic[] = [];
+      if (!isComponentId(id)) {
+        diagnostics.push({ code: 'field.invalid', message: `expected a component id, found ${shown(id)}`, path: [...path, 'id'] });
+      }
+      if (storedType !== type) {
+        diagnostics.push({ code: 'field.invalid', message: `expected ${shown(type)}, found ${shown(storedType)}`, path: [...path, 'type'] });
+      }
+      if (!decoded.ok) diagnostics.push(...decoded.diagnostics);
+      return { ok: false, diagnostics };
+    },
+    assets: (component) => plan.assets(component),
+    entities: () => [],
+    placeable: description.placeable ?? (() => true),
+  };
 }

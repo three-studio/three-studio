@@ -1,6 +1,7 @@
 import { conform } from '../../conform';
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { conformJointMotion, createJoint } from './defaults';
+import type { JointComponent } from './schema';
 
 /**
  * Holds the body its entity moves with to the body of the entity it names, or
@@ -11,8 +12,9 @@ import { conformJointMotion, createJoint } from './defaults';
  * what it does not know is dropped; its motion against the factory of the kind
  * it names.
  */
-export const jointComponent = defineComponent({
+export const jointComponent: ComponentDefinition<JointComponent> = {
   id: 'joint',
+  label: 'Joint',
   create: () => createJoint(),
   fill: (stored) => ({ ...conform(stored, createJoint()), motion: conformJointMotion(stored.motion) }),
   assets: () => [],
@@ -21,4 +23,4 @@ export const jointComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

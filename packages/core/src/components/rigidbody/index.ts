@@ -1,7 +1,8 @@
 import { conform, oneOf } from '../../conform';
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createRigidBody } from './defaults';
 import { BODY_TYPE_LABELS } from './schema';
+import type { RigidBodyComponent } from './schema';
 
 /**
  * Physics motion for an entity, and for the colliders of its descendants that
@@ -13,8 +14,9 @@ import { BODY_TYPE_LABELS } from './schema';
  * mass is shared out among its colliders by volume, and one not above zero sank
  * the body through the floor: that reads as the factory's.
  */
-export const rigidbodyComponent = defineComponent({
+export const rigidbodyComponent: ComponentDefinition<RigidBodyComponent> = {
   id: 'rigidbody',
+  label: 'Rigid Body',
   create: () => createRigidBody(),
   fill: (stored) => {
     const model = createRigidBody();
@@ -31,4 +33,4 @@ export const rigidbodyComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

@@ -1,7 +1,8 @@
 import { conform } from '../../conform';
 import { conformPhysicsMaterial } from '../../scene/physicsMaterial';
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { conformColliderShape, createCollider } from './defaults';
+import type { ColliderComponent } from './schema';
 
 /**
  * The shape physics uses for an entity.
@@ -18,8 +19,9 @@ import { conformColliderShape, createCollider } from './defaults';
  * `friction` kept beside `material` would read as the collider's to anyone
  * opening the file, and its old `size` as a box's when it was half of one.
  */
-export const colliderComponent = defineComponent({
+export const colliderComponent: ComponentDefinition<ColliderComponent> = {
   id: 'collider',
+  label: 'Collider',
   create: () => createCollider(),
   fill: (stored) => ({
     ...conform(stored, createCollider()),
@@ -32,4 +34,4 @@ export const colliderComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

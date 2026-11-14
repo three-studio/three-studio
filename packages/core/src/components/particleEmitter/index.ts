@@ -1,23 +1,19 @@
 import { defineComponent } from '../registry';
-import { createParticleEmitter } from './defaults';
+import { particleEmitterSchema } from './schema';
 
 /**
  * A stream of billboarded particles.
  *
- * No `fill`: every field is a scalar, a string or a tuple, so the default
- * `{ ...create(), ...stored }` is already right. The three types that override
- * it own a nested object; a `Vec3` is a value, not a level to merge through —
- * the same reason `Transform` is spread whole.
+ * Written as a schema, the first type to be: its blank component, its decoder
+ * and the sprite it names — so the exporter ships it, the loading bar counts
+ * it, and deleting it does not claim nothing uses it — all come from
+ * `particleEmitterSchema`, and nothing here repeats a field.
  */
 export const particleEmitterComponent = defineComponent({
   id: 'particleEmitter',
-  create: () => createParticleEmitter(),
-  // Named so the exporter ships the sprite, the loading bar counts it, and
-  // deleting it does not claim nothing uses it.
-  assets: (component) => [component.spriteId],
-  entities: () => [],
+  label: 'Particles',
+  schema: particleEmitterSchema,
   icon: 'sparkles',
-  placeable: () => true,
   runtime: true,
   addable: true,
 });

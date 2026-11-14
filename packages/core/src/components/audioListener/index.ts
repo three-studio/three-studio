@@ -1,5 +1,6 @@
-import { defineComponent } from '../registry';
+import type { ComponentDefinition } from '../registry';
 import { createAudioListener } from './defaults';
+import type { AudioListenerComponent } from './schema';
 
 /**
  * The ear the mix is rendered for.
@@ -9,8 +10,9 @@ import { createAudioListener } from './defaults';
  * which is where the ear belongs far more often than not. A scene with several
  * gets a warning, because two ears is a bug that sounds like a mixing problem.
  */
-export const audioListenerComponent = defineComponent({
+export const audioListenerComponent: ComponentDefinition<AudioListenerComponent> = {
   id: 'audioListener',
+  label: 'Audio Listener',
   create: createAudioListener,
   assets: () => [],
   entities: () => [],
@@ -18,4 +20,4 @@ export const audioListenerComponent = defineComponent({
   placeable: () => true,
   runtime: true,
   addable: true,
-});
+};

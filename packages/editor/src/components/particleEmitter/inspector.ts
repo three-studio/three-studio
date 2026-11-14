@@ -1,4 +1,4 @@
-import { EMITTER_SHAPE_LABELS, optionsFrom, type ComponentDoc } from '@three-studio/core';
+import { particleEmitterSchema, type ComponentDoc } from '@three-studio/core';
 import { assetSlot, type ComponentSchema } from '../../inspector/fields';
 
 /**
@@ -23,7 +23,7 @@ export const inspector: ComponentSchema = {
       path: ['shape'],
       label: 'Emit from',
       type: 'enum',
-      options: optionsFrom(EMITTER_SHAPE_LABELS),
+      options: particleEmitterSchema.shape.options,
     },
     {
       path: ['radius'],

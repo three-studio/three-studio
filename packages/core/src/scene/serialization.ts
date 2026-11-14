@@ -2,6 +2,7 @@ import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { fillComponent } from '../components';
 import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
+import { describeDiagnostics, type Diagnostic } from '../decoded';
 import {
   idMapOf,
   isComponentId,
@@ -313,8 +314,10 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
     entity.children ??= [];
   }
 
-  for (const table of scene.components.values()) {
-    for (const held of table.values()) {
+  const refused: Diagnostic[] = [];
+  for (const [type, table] of scene.components) {
+    const definition = registries.components.get(type);
+    for (const [entityId, held] of table) {
       for (const [componentId, component] of held) {
         // Each type fills itself. Shallow is right for the flat ones; `mesh` owns
         // a material and a geometry that have to be merged a level deeper, and
@@ -323,9 +326,19 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
         // The key is the identity; a `fill` that handed back a fresh id would
         // orphan every override naming it.
         filled.id = componentId;
-        held.set(componentId, filled);
+        // A type written as a schema is then checked against it, field by
+        // field. After the fill, so that a file written before one of its
+        // fields existed still opens, as it does for every other type: what is
+        // refused is a field of the wrong kind, or one the type does not have.
+        const decoded = definition?.decode?.(filled, ['components', type, entityId, componentId]);
+        if (decoded === undefined) held.set(componentId, filled);
+        else if (decoded.ok) held.set(componentId, decoded.value);
+        else refused.push(...decoded.diagnostics);
       }
     }
+  }
+  if (refused.length > 0) {
+    throw new SceneFormatError(`Scene file holds components this build cannot read.\n${describeDiagnostics(refused)}`);
   }
 
   rekeyOverrides(scene);
