@@ -29,6 +29,16 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   exactement telles qu'elles ont été trouvées. **À partir de la 1.0.0, la règle additive revient :**
   ajoutez des champs, n'en supprimez jamais, et remplissez les champs manquants à partir de la factory
   propre au type, jamais à partir d'une seconde liste.
+- **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
+  fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
+  `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
+  un `new` (sauf une `WeakMap` ou un `WeakSet`, une table déclarée `ReadonlyMap` ou `ReadonlySet` et un
+  objet-valeur comme un `Vector3`), une collection créée vide (sauf un tableau déclaré `readonly`), un
+  store. Les comptes de `test/ratchetRecord.ts` ne font que baisser, et un nouveau fichier part de
+  zéro. Une donnée venue de l'extérieur se décode, elle ne s'affirme pas — même quand une bibliothèque
+  la rend en `any` : typer la variable n'est pas la décoder. Là où `!` supposait une valeur présente,
+  `assertDefined` (`@three-studio/core`) la vérifie. Une exception permanente va dans la liste blanche
+  du test, avec sa raison, et seulement dans le noyau.
 - **Une référence est un identifiant** — jamais un nom, jamais un chemin.
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
