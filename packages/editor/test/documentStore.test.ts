@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   componentsOf,
   createAudioSourceEntity,
   createColliderShape,
@@ -227,6 +228,43 @@ describe('document store', () => {
     expect(copy?.name).toBe('Parent (1)');
     expect(copy?.children).toHaveLength(1);
     expect(copy?.children[0]).not.toBe(child.entity.id);
+  });
+
+  it('names the copies of roots called alike one after another', () => {
+    const cubes = [createMeshEntity('box'), createMeshEntity('box'), createMeshEntity('box')].map((cube) =>
+      addEntity(cube),
+    );
+
+    duplicateSelection(sel(cubes));
+
+    expect(scene().rootOrder.map((id) => scene().entities[id]?.name)).toEqual([
+      'Cube',
+      'Cube',
+      'Cube',
+      'Cube (1)',
+      'Cube (2)',
+      'Cube (3)',
+    ]);
+  });
+
+  it('names the copy of a copy by the next name that is free', () => {
+    const cube = addEntity(createMeshEntity('box'));
+    duplicateSelection(sel([cube]));
+    const first = assertDefined(scene().rootOrder[1], 'the first copy');
+
+    duplicateSelection(sel([first]));
+
+    expect(scene().rootOrder.map((id) => scene().entities[id]?.name)).toEqual(['Cube', 'Cube (1)', 'Cube (2)']);
+  });
+
+  it('counts the name of an entity nested under another as taken', () => {
+    const cube = addEntity(createEntity('Cube'));
+    addEntity(createEntity('Cube (1)'), cube);
+
+    duplicateSelection(sel([cube]));
+
+    const copy = assertDefined(scene().rootOrder[1], 'the copy');
+    expect(scene().entities[copy]?.name).toBe('Cube (2)');
   });
 
   it('clears history when a new document replaces the current one', () => {

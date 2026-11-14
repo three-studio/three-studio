@@ -722,6 +722,11 @@ export function duplicateSelection(selection: Selection): void {
   const ids = selection.documentOnly();
   if (ids.length === 0) return;
   const created: string[] = [];
+  // The names in use, read once from the document itself. Every root used to
+  // ask for them again through the immer draft, whose proxy makes each read of
+  // an entity several times dearer than a plain object's: a hundred roots of a
+  // 10 003-entity scene made a million of them, and most of what Duplicate cost.
+  const taken = new Set(Object.values(useDocumentStore.getState().scene.entities).map((entity) => entity.name));
 
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
@@ -731,10 +736,14 @@ export function duplicateSelection(selection: Selection): void {
         const source = scene.entities[id];
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
-        // keep theirs, which is what Unity and Blender do. It was computed per
-        // cloned node before, each one O(N).
-        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name), renamed);
-        if (copyId) created.push(copyId);
+        // keep theirs, which is what Unity and Blender do.
+        const name = nextCopyName(taken, source.name);
+        const copyId = cloneSubtree(scene, id, source.parent, name, renamed);
+        if (copyId) {
+          created.push(copyId);
+          // Only a copy that exists takes its name: the next root must not skip a number.
+          taken.add(name);
+        }
       }
       // What the copies name among what was copied, the copy: a car and its
       // trailer duplicated together left the new trailer hitched to the old car.
@@ -751,9 +760,8 @@ export function duplicateSelection(selection: Selection): void {
 }
 
 /** `Cube` -> `Cube (1)` -> `Cube (2)`, matching what Unity and Blender do. */
-function nextCopyName(scene: SceneDoc, name: string): string {
+function nextCopyName(taken: ReadonlySet<string>, name: string): string {
   const base = name.replace(/ \(\d+\)$/, '');
-  const taken = new Set(Object.values(scene.entities).map((entity) => entity.name));
   for (let index = 1; index < 1000; index++) {
     const candidate = `${base} (${index})`;
     if (!taken.has(candidate)) return candidate;
