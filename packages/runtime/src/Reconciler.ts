@@ -2,12 +2,19 @@ import type {
   ComponentDoc,
   ComponentId,
   ComponentType,
+  ComponentTypeId,
   EntityDoc,
   EntityId,
+  Registry,
 } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
-import { buildSystems, type AnySystem } from './components';
-import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type {
+  AnySystem,
+  BatchableHandle,
+  SystemContext,
+  SystemDefinition,
+  SystemHandle,
+} from './systems/ComponentSystem';
 import { ENTITY_ID_KEY } from './systems/identity';
 
 /*
@@ -53,11 +60,20 @@ export class Reconciler {
    *
    * A `switch` returning `null` for nine of eleven used to stand here; a table
    * of five `new XSystem()` replaced it, and this replaces that. The names are
-   * gone: the types register themselves from `components/<type>/`, and the only
-   * thing this file still knows is that some types have a system and most do
-   * not.
+   * gone: each type's system is defined in `components/<type>/` and arrives
+   * through the registry, and the only thing this file still knows is that
+   * some types have a system and most do not.
    */
-  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = buildSystems();
+  private readonly systems: ReadonlyMap<ComponentType, AnySystem>;
+
+  /**
+   * Takes the systems registry rather than the runtime's registries whole,
+   * which name the behaviours: a behaviour's context holds the binder that owns
+   * this, so naming them here would close an import cycle through the binder.
+   */
+  constructor(systems: Registry<ComponentTypeId, SystemDefinition>) {
+    this.systems = new Map(systems.values().map((system) => [system.id, system.create()]));
+  }
 
   view(entityId: EntityId): EntityView | undefined {
     return this.views.get(entityId);

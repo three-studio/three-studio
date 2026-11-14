@@ -1,4 +1,4 @@
-import { registerSystem } from '../../systems/ComponentSystem';
+import { defineSystem } from '../../systems/ComponentSystem';
 import { WaterSystem } from './WaterSystem';
 
-registerSystem('water', () => new WaterSystem());
+export const waterSystem = defineSystem('water', () => new WaterSystem());

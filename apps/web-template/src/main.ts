@@ -13,6 +13,7 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
 import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
@@ -176,6 +177,11 @@ async function boot(): Promise<void> {
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
 
+  // The page's composition root: what the game is built from, made and filled
+  // once. The device page runs this same page, so it is that page's root too.
+  const registries = createRuntimeRegistries();
+  activateRuntime(registries);
+
   // Hosted rather than a single engine: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
@@ -184,6 +190,7 @@ async function boot(): Promise<void> {
       // manifest says where the file is.
       read: (named: string) => readScene(build, named),
     },
+    registries,
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
     // Records in the manifest, as a message is, and Maps here: a key read back
     // as an id is checked as one.

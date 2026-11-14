@@ -32,7 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
-import type { AssetId, ComponentId, EntityId, SceneId } from '../ids';
+import type { AssetId, ComponentId, EntityId, Id, SceneId } from '../ids';
 import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
@@ -128,6 +128,17 @@ export type ComponentDoc =
   | ParticleEmitterComponent;
 
 export type ComponentType = ComponentDoc['type'];
+
+/**
+ * A component type's id. A type this build defines is named by the literal the
+ * document already uses — `'mesh'` — which is an id as it stands. The branded
+ * half is an id this build does not define, read from outside it.
+ *
+ * Here rather than in `ids.ts` with the other kinds: that file would have to
+ * import the union from this one, which imports it, and the architecture test
+ * counts the cycle that would close.
+ */
+export type ComponentTypeId = ComponentType | Id<'componentType'>;
 
 /** Narrow a component union member by its `type` tag. */
 export type ComponentOfType<T extends ComponentType> = Extract<ComponentDoc, { type: T }>;

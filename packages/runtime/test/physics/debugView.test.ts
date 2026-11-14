@@ -4,6 +4,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { DebugLines } from '../../src/physics/PhysicsWorld';
+import { builtInRegistries } from '../registries';
 import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody, withJoint } from './rig';
 
 /*
@@ -68,6 +69,7 @@ describe('the debug view', () => {
   it('with physics off, there is nothing to draw', async () => {
     const engine = await Engine.create({
       scene: sceneWith(scene().entities),
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),

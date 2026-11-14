@@ -45,12 +45,23 @@ play a scene inside its own viewport while an exported build runs the same code 
 
 ```ts
 import { deserializeScene } from '@three-studio/core';
-import { SceneHost, createRenderer } from '@three-studio/runtime';
+import {
+  SceneHost,
+  activateRuntime,
+  createRenderer,
+  createRuntimeRegistries,
+} from '@three-studio/runtime';
 
 const canvas = document.querySelector('canvas')!;
 const { renderer } = await createRenderer({ canvas });
 
+// What a game is built from — the system that draws each component type, and
+// the behaviour of each type that acts — made and filled once, by the page.
+const registries = createRuntimeRegistries();
+activateRuntime(registries);
+
 const host = new SceneHost({
+  registries,
   domElement: canvas,
   renderer,
   source: { read: async (name) => deserializeScene(await (await fetch(`${name}.json`)).text()) },

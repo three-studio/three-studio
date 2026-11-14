@@ -2,11 +2,11 @@ import type { AudioListenerComponent, AudioSourceComponent, EntityId } from '@th
 import type { Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { PlayRequest, Vec3Tuple, VoiceHandle } from '../audio/playback';
-import {
-  registerBehaviour,
-  type Behaviour,
-  type BehaviourContext,
-  type BehaviourTarget,
+import type {
+  Behaviour,
+  BehaviourContext,
+  BehaviourDefinition,
+  BehaviourTarget,
 } from './Behaviour';
 
 /*
@@ -235,19 +235,25 @@ class AudioListenerBehaviour implements Behaviour {
   }
 }
 
-registerBehaviour('audioSource', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  if (target.component.type !== 'audioSource') return null;
-  // No audio engine at all — a host that never handed one over, or a browser
-  // with no Web Audio. The component is inert rather than broken, and the engine
-  // has already said so once.
-  if (ctx.audio === null) return null;
-  const behaviour = new AudioSourceBehaviour(target.component, target.object, ctx.audio);
-  remember(ctx.audio, target.entity.id, behaviour);
-  return behaviour;
-});
+export const audioSourceBehaviour: BehaviourDefinition = {
+  id: 'audioSource',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    if (target.component.type !== 'audioSource') return null;
+    // No audio engine at all — a host that never handed one over, or a browser
+    // with no Web Audio. The component is inert rather than broken, and the
+    // engine has already said so once.
+    if (ctx.audio === null) return null;
+    const behaviour = new AudioSourceBehaviour(target.component, target.object, ctx.audio);
+    remember(ctx.audio, target.entity.id, behaviour);
+    return behaviour;
+  },
+};
 
-registerBehaviour('audioListener', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  if (target.component.type !== 'audioListener') return null;
-  if (ctx.audio === null) return null;
-  return new AudioListenerBehaviour(target.component, target.object, ctx.audio);
-});
+export const audioListenerBehaviour: BehaviourDefinition = {
+  id: 'audioListener',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    if (target.component.type !== 'audioListener') return null;
+    if (ctx.audio === null) return null;
+    return new AudioListenerBehaviour(target.component, target.object, ctx.audio);
+  },
+};

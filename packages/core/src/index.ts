@@ -21,6 +21,10 @@ export {
   isSceneId,
 } from './ids';
 export type { AssetId, ComponentId, EntityId, Id, SceneId } from './ids';
+/* What every table of definitions is, and what each registration hands back. */
+export { Registry } from './Registry';
+export { combineDisposables } from './disposable';
+export type { Disposable } from './disposable';
 export type {
   Platform,
   ProjectApi,
@@ -196,6 +200,7 @@ export type {
   ComponentOfType,
   ComponentTables,
   ComponentType,
+  ComponentTypeId,
   EntityDoc,
   EnvironmentDef,
   GeometryDef,

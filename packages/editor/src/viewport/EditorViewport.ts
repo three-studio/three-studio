@@ -5,7 +5,12 @@ import {
   type ExpandedScene,
   type RenderingSettings,
 } from '@three-studio/core';
-import { studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
+import {
+  studioTime,
+  type Engine,
+  type RuntimeRegistries,
+  type SceneBinder,
+} from '@three-studio/runtime';
 import {
   PerspectiveCamera,
   Vector3,
@@ -124,7 +129,7 @@ export class EditorViewport {
   private lastFrameTime = 0;
   private disposed = false;
 
-  static async create(): Promise<EditorViewport> {
+  static async create(registries: RuntimeRegistries): Promise<EditorViewport> {
     /*
      * The project's own settings, so the viewport shows what a build will —
      * read once, here, and carried from here to everything this viewport
@@ -134,7 +139,7 @@ export class EditorViewport {
      */
     const rendering =
       useProjectStore.getState().project?.settings.rendering ?? createRenderingSettings();
-    return new EditorViewport(await ViewportRenderer.create(rendering), rendering);
+    return new EditorViewport(await ViewportRenderer.create(rendering), rendering, registries);
   }
 
   private constructor(
@@ -146,6 +151,11 @@ export class EditorViewport {
      * apart. Public because `PlayHost` names it.
      */
     readonly rendering: RenderingSettings,
+    /**
+     * The window's registries: what the edit view draws each type with, and
+     * what Play builds its game from. Public because `PlayHost` names it.
+     */
+    readonly registries: RuntimeRegistries,
   ) {
     this.view = view;
 
@@ -162,6 +172,7 @@ export class EditorViewport {
      */
     const projection = createEditorProjection({
       scene: expandedScene().scene,
+      systems: registries.systems,
       resolver: editorAssetResolver,
       rendering,
       // The one thing the binder cannot do without a device; see `EnvironmentBinder`.

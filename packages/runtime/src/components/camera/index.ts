@@ -1,4 +1,4 @@
-import { registerSystem } from '../../systems/ComponentSystem';
+import { defineSystem } from '../../systems/ComponentSystem';
 import { CameraSystem } from './CameraSystem';
 
-registerSystem('camera', () => new CameraSystem());
+export const cameraSystem = defineSystem('camera', () => new CameraSystem());

@@ -45,6 +45,7 @@ import {
 } from '../src/state/tuning';
 import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
+import { builtInRegistries } from './registries';
 
 /*
  * The Inspector tunes the running game during Play: a physics row's value goes
@@ -89,6 +90,7 @@ const host: PlayHost = {
   renderer: null as unknown as WebGPURenderer,
   gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
   rendering: createRenderingSettings(),
+  registries: builtInRegistries(),
   onPlayPressed: () => {},
   onPlayStopped: () => {},
 };

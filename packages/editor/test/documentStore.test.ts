@@ -44,6 +44,7 @@ import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
+import { builtInRegistries } from './registries';
 
 /** A selection over the scene as it is drawn, for commands that take one. */
 const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
@@ -1069,7 +1070,11 @@ describe('a selection after a scene swap', () => {
 describe('fitting a collider to its mesh', () => {
   /** A binder holding the meshes as the edit view draws them, synced to the document. */
   function drawnBinder(): SceneBinder {
-    const binder = new SceneBinder({ resolver: NULL_ASSET_RESOLVER, rendering: createRenderingSettings() });
+    const binder = new SceneBinder({
+      systems: builtInRegistries().systems,
+      resolver: NULL_ASSET_RESOLVER,
+      rendering: createRenderingSettings(),
+    });
     binder.sync(expandedScene().scene);
     return binder;
   }

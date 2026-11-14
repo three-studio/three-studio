@@ -2,12 +2,8 @@ import { createAudioSource, createEntity, fixedId } from '@three-studio/core';
 import { Group } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { AudioEngine } from '../../src/audio/AudioEngine';
-// Importing the module is what registers the behaviours — the failure mode
-// `registry.ts` warns about, met here for real: without this line
-// `behaviourFactoryFor('audioSource')` is `undefined` and every test below that
-// mounts one silently checks nothing.
-import '../../src/behaviour/audio';
-import { behaviourFactoryFor, type BehaviourContext } from '../../src/behaviour/Behaviour';
+import { audioSourceBehaviour } from '../../src/behaviour/audio';
+import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import { FakeContext } from './fakeContext';
 import { flush, rig } from './rig';
 
@@ -30,7 +26,7 @@ const WEIRD = fixedId('asset', 'weird');
 const source = (overrides = {}) => ({ ...createAudioSource(), assetId: STEP, ...overrides });
 
 function mount(audio: AudioEngine | null, overrides = {}) {
-  return behaviourFactoryFor('audioSource')?.(
+  return audioSourceBehaviour.create(
     { entity: createEntity('noise').entity, object: new Group(), component: source(overrides) },
     { audio, warn: () => {} } as unknown as BehaviourContext,
   );

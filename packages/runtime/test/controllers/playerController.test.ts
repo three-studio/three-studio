@@ -19,6 +19,7 @@ import { SceneBinder } from '../../src/SceneBinder';
 import { studioTime } from '../../src/time/StudioTime';
 import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import type { Input } from '../../src/input/Input';
+import { builtInRegistries } from '../registries';
 
 /*
  * The controller had no tests at all, and the two defects below were both
@@ -142,6 +143,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
 
   const scene: SceneDoc = sceneWith([ground, player]);
   const binder = new SceneBinder({
+    systems: builtInRegistries().systems,
     resolver: { url: () => null },
     rendering: { ...createRenderingSettings(), batching: false },
   });

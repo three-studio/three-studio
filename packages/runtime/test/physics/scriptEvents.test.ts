@@ -6,6 +6,7 @@ import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle, Collision } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 import {
   ground,
   nest,
@@ -177,6 +178,7 @@ describe('a script hearing its colliders', () => {
     // A host with no physics is about the host, not the scene: nothing to fix there.
     const engine = await Engine.create({
       scene: sceneWith([withScript(createEntity('Door'), Log)]),
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,

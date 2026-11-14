@@ -33,6 +33,7 @@ import { sceneWith } from '../../core/test/fixtures';
 import { ModelCache } from '../src/assets/ModelCache';
 import { SceneBinder } from '../src/SceneBinder';
 import type { AssetResolver } from '../src/assets/AssetResolver';
+import { builtInRegistries } from './registries';
 
 /*
  * The binder had no tests at all, which is why five of the twelve bugs found
@@ -47,6 +48,8 @@ import type { AssetResolver } from '../src/assets/AssetResolver';
 /** Disposed after each test, so a leak in one does not show up in the next. */
 const live: SceneBinder[] = [];
 
+const registries = builtInRegistries();
+
 /**
  * @param rendering Batching off by default, which is *not* what a project
  *   carries — `createRenderingSettings` says on. Every test outside the
@@ -58,7 +61,7 @@ function binderWith(
   resolver: AssetResolver = { url: () => null },
   rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
 ): SceneBinder {
-  const binder = new SceneBinder({ resolver, rendering });
+  const binder = new SceneBinder({ systems: registries.systems, resolver, rendering });
   live.push(binder);
   return binder;
 }

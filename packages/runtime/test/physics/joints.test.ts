@@ -11,11 +11,11 @@ import {
 } from '@three-studio/core';
 import { Euler, Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { registerBehaviour } from '../../src/behaviour/Behaviour';
+import { builtInRegistries } from '../registries';
 import {
   block,
   nest,
-  physicsRig,
+  physicsRigOn,
   standInForTheBrowser,
   takeTheBrowserBack,
   withBody,
@@ -35,10 +35,15 @@ afterAll(takeTheBrowserBack);
 const heard = new Map<string, string[]>();
 
 // An Ear on every Collider, as `events.test.ts` has: a plugin hears collisions
-// by being a behaviour on the entity.
-registerBehaviour('collider', ({ entity }) => ({
-  onCollisionEnter: ({ other }) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), other]),
-}));
+// by being a behaviour on the entity. In registries of this file's own.
+const registries = builtInRegistries();
+registries.behaviours.register({
+  id: 'collider',
+  create: ({ entity }) => ({
+    onCollisionEnter: ({ other }) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), other]),
+  }),
+});
+const physicsRig = physicsRigOn(registries);
 
 beforeEach(() => heard.clear());
 

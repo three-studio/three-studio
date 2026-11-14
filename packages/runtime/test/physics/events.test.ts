@@ -1,16 +1,16 @@
 import { createDefaultLayer, type EntityTemplate } from '@three-studio/core';
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { registerBehaviour } from '../../src/behaviour/Behaviour';
 import type { Collision, Vec3Like } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 import {
   block,
   colliderOf,
   ground,
   nest,
   onLayer,
-  physicsRig,
+  physicsRigOn,
   player,
   sensor,
   standInForTheBrowser,
@@ -41,16 +41,21 @@ interface Heard {
 /** What each entity's Ear heard, in order, by entity id. */
 const heard = new Map<string, Heard[]>();
 
-// Vitest runs each test file in modules of its own, so the Ear stays in this one.
-registerBehaviour('collider', ({ entity }) => {
-  const record = (entry: Heard) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), entry]);
-  return {
-    onCollisionEnter: (collision) => record({ hook: 'onCollisionEnter', other: collision.other, collision }),
-    onCollisionExit: (other) => record({ hook: 'onCollisionExit', other }),
-    onTriggerEnter: (other) => record({ hook: 'onTriggerEnter', other }),
-    onTriggerExit: (other) => record({ hook: 'onTriggerExit', other }),
-  };
+// Registries of this file's own, so the Ear reaches no other file's engines.
+const registries = builtInRegistries();
+registries.behaviours.register({
+  id: 'collider',
+  create: ({ entity }) => {
+    const record = (entry: Heard) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), entry]);
+    return {
+      onCollisionEnter: (collision) => record({ hook: 'onCollisionEnter', other: collision.other, collision }),
+      onCollisionExit: (other) => record({ hook: 'onCollisionExit', other }),
+      onTriggerEnter: (other) => record({ hook: 'onTriggerEnter', other }),
+      onTriggerExit: (other) => record({ hook: 'onTriggerExit', other }),
+    };
+  },
 });
+const physicsRig = physicsRigOn(registries);
 
 beforeEach(() => heard.clear());
 

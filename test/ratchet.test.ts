@@ -331,7 +331,14 @@ function moduleState(program: Program, textOf: (node: Node) => string): string[]
 const IDS_FILE = 'packages/core/src/ids.ts';
 
 /** The branded id types. The id types of a later kind join when their registry does. */
-const ID_TYPES: ReadonlySet<string> = new Set(['Id', 'EntityId', 'ComponentId', 'AssetId', 'SceneId']);
+const ID_TYPES: ReadonlySet<string> = new Set([
+  'Id',
+  'EntityId',
+  'ComponentId',
+  'AssetId',
+  'SceneId',
+  'ComponentTypeId',
+]);
 
 function namesAnIdType(type: Node): boolean {
   const names: string[] = [];
@@ -654,6 +661,11 @@ describe('an id check', () => {
     expect(checks("const isId: (key: string) => key is Id<'scene'> = f;")).toEqual([`${FILE}: key is Id<'scene'>`]);
     expect(checks('function f(value: unknown): value is readonly ComponentId[] { return true; }')).toEqual([
       `${FILE}: value is readonly ComponentId[]`,
+    ]);
+    // A component type's: the built-ins are literals, and an id from outside
+    // this build is the branded half, which only a check may claim.
+    expect(checks('function f(value: unknown): value is ComponentTypeId { return true; }')).toEqual([
+      `${FILE}: value is ComponentTypeId`,
     ]);
   });
 

@@ -17,7 +17,7 @@ import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/sche
  * had been pointing at since it was added.
  *
  * This follows a pattern the repo already had and applied in exactly one place:
- * `registerBehaviour(type, factory)` in `packages/runtime/src/behaviour`.
+ * a behaviour per type in `packages/runtime/src/behaviour`.
  *
  * **It describes a type; it does not live in the data.** `EntityDoc` stays plain
  * JSON, which is what makes the play-mode snapshot, the save and the web export

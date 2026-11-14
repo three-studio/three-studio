@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LAYER_ID,
+  Registry,
+  combineDisposables,
   componentAssets,
   componentDefinition,
   componentDefinitions,
@@ -27,6 +29,116 @@ import {
 // Not part of the public surface: the point of the first test is to check the
 // registry against the list the schema declares, which is a fact internal to core.
 import { COMPONENT_TYPES, componentsOf, emptyComponentTables, setComponentsOf } from '../src/scene/components';
+
+/*
+ * The one registry every table of definitions is: component types, systems,
+ * behaviours, importers. Here as a class, on entries of its own; what each
+ * layer registers is its own test's.
+ */
+describe('Registry', () => {
+  interface Widget {
+    readonly id: string;
+    readonly label: string;
+  }
+  const widget = (id: string, label = id): Widget => ({ id, label });
+
+  it('refuses a second entry under an id, naming the kind and the id, and keeps the first', () => {
+    const registry = new Registry<string, Widget>('widget');
+    const first = widget('a', 'first');
+    registry.register(first);
+
+    expect(() => registry.register(widget('a', 'second'))).toThrow('The widget "a" is already registered.');
+    expect(registry.get('a')).toBe(first);
+  });
+
+  it('answers the entry under an id, and nothing for an id it does not hold', () => {
+    const registry = new Registry<string, Widget>('widget');
+    const a = widget('a');
+    registry.register(a);
+
+    expect(registry.get('a')).toBe(a);
+    expect(registry.get('b')).toBeUndefined();
+  });
+
+  it('lists in registration order, the same array until something changes', () => {
+    const registry = new Registry<string, Widget>('widget');
+    const b = widget('b');
+    const a = widget('a');
+    registry.register(b);
+    const registration = registry.register(a);
+
+    const listed = registry.values();
+    expect(listed).toEqual([b, a]);
+    expect(registry.values()).toBe(listed);
+
+    registry.register(widget('c'));
+    const relisted = registry.values();
+    expect(relisted).not.toBe(listed);
+    expect(relisted.map(({ id }) => id)).toEqual(['b', 'a', 'c']);
+
+    registration.dispose();
+    expect(registry.values()).not.toBe(relisted);
+    expect(registry.values().map(({ id }) => id)).toEqual(['b', 'c']);
+  });
+
+  it('removes an entry when its registration is disposed, and a second disposal does nothing', () => {
+    const registry = new Registry<string, Widget>('widget');
+    registry.register(widget('b'));
+    const registration = registry.register(widget('a'));
+
+    registration.dispose();
+    expect(registry.get('a')).toBeUndefined();
+    const listed = registry.values();
+    registration.dispose();
+    expect(registry.values()).toBe(listed);
+    expect(listed.map(({ id }) => id)).toEqual(['b']);
+  });
+
+  it('registers an id again once its registration is disposed', () => {
+    const registry = new Registry<string, Widget>('widget');
+    registry.register(widget('a', 'first')).dispose();
+    const second = widget('a', 'second');
+
+    expect(() => registry.register(second)).not.toThrow();
+    expect(registry.get('a')).toBe(second);
+  });
+
+  it('leaves a later registration of the id in place when a stale registration is disposed', () => {
+    const registry = new Registry<string, Widget>('widget');
+    const first = widget('a');
+    const stale = registry.register(first);
+    stale.dispose();
+    // The same object again: what is removed is a registration, not whatever
+    // happens to sit under its entry's id.
+    registry.register(first);
+
+    stale.dispose();
+    expect(registry.get('a')).toBe(first);
+  });
+});
+
+describe('combineDisposables', () => {
+  it('disposes the last first, as a stack unwinds, and only once', () => {
+    const disposed: string[] = [];
+    const combined = combineDisposables(
+      ['a', 'b', 'c'].map((name) => ({ dispose: () => disposed.push(name) })),
+    );
+
+    combined.dispose();
+    combined.dispose();
+    expect(disposed).toEqual(['c', 'b', 'a']);
+  });
+
+  it('disposes the list it was given, not what was added to that array later', () => {
+    const disposed: string[] = [];
+    const list = [{ dispose: () => disposed.push('a') }];
+    const combined = combineDisposables(list);
+    list.push({ dispose: () => disposed.push('b') });
+
+    combined.dispose();
+    expect(disposed).toEqual(['a']);
+  });
+});
 
 describe('component registry', () => {
   /*
@@ -276,7 +388,7 @@ describe('createComponentForEntity', () => {
  * system it does not have, and `componentCoverage.test.ts` catches that.
  *
  * Audio was that gap, and it is closed: both types now build a voice
- * through `registerBehaviour`. The list is empty, and the test stays — it is
+ * through a behaviour of their own. The list is empty, and the test stays — it is
  * what will name the next type someone adds to the schema and forgets to give a
  * runtime, which is the failure this whole registry exists to make visible.
  */

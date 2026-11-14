@@ -32,18 +32,7 @@ import type { AssetResolver } from './assets/AssetResolver';
 import { AudioEngine } from './audio/AudioEngine';
 import type { AudioClipCache } from './audio/AudioClipCache';
 import type { AudioContextLike } from './audio/AudioContextLike';
-import {
-  behaviourFactoryFor,
-  typesWithBehaviour,
-  type Behaviour,
-  type BehaviourContext,
-} from './behaviour/Behaviour';
-// Importing a controller registers it. Adding a vehicle, an animator or an
-// audio source is one more import here plus its own `registerBehaviour` call —
-// the loop below never learns that any of them exist.
-import './behaviour/audio';
-import './controllers/PlayerController';
-import './scripting/ScriptHost';
+import type { Behaviour, BehaviourContext } from './behaviour/Behaviour';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
 import {
@@ -54,11 +43,19 @@ import {
   type PhysicsEvent,
 } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
+import type { RuntimeRegistries } from './registries';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
 
 export interface EngineOptions {
   scene: SceneDoc;
+  /**
+   * What the game is built from: the system that draws each type and the
+   * behaviour of each type that acts. Handed in by whoever hosts the engine, so
+   * a vehicle, an animator or an audio source is a registration and the loop
+   * below never learns that any of them exist.
+   */
+  registries: RuntimeRegistries;
   resolver: AssetResolver;
   /**
    * Shared materials by asset id.
@@ -224,6 +221,7 @@ export class Engine {
     // the device the host already has. The order of the rest is `bindScene`'s,
     // where it is written down.
     this.binder = bindScene(this.scene, options.scene, {
+      systems: options.registries.systems,
       resolver: options.resolver,
       rendering: options.rendering,
       materials: options.materials,
@@ -472,7 +470,7 @@ export class Engine {
     await engine.binder.whenLoaded();
     const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
     physics?.build(options.scene, engine.binder, physicsMaterials);
-    engine.buildBehaviours(options.scene);
+    engine.buildBehaviours(options.scene, options.registries);
     engine.pickCamera(options.scene);
     engine.checkPhysicsSetup(options.scene, physicsSettings, physicsMaterials);
     engine.checkAudioSetup(options.scene);
@@ -644,23 +642,20 @@ export class Engine {
    * The engine deliberately does not name any component type here. A new kind
    * of controller is a registration, not an edit to this loop.
    */
-  private buildBehaviours(scene: SceneDoc): void {
+  private buildBehaviours(scene: SceneDoc, registries: RuntimeRegistries): void {
     let cameraOwners = 0;
 
     // Driven by the registry and then by the tables of the types it names: a
     // scene of two thousand props with one player controller in it visits one
     // entity. It used to walk them all, and every component of each.
-    for (const type of typesWithBehaviour()) {
-      const factory = behaviourFactoryFor(type);
-      if (!factory) continue;
-
-      for (const [entityId, held] of componentsOfType(scene, type)) {
+    for (const definition of registries.behaviours.values()) {
+      for (const [entityId, held] of componentsOfType(scene, definition.id)) {
         const entity = scene.entities.get(entityId);
         const object = this.binder.getObject(entityId);
         if (!entity || !object) continue;
 
         for (const component of held.values()) {
-          const behaviour = factory({ entity, object, component }, this.context);
+          const behaviour = definition.create({ entity, object, component }, this.context);
           if (!behaviour) continue;
 
           this.behaviours.push(behaviour);

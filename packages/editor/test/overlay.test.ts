@@ -51,6 +51,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
+import { builtInRegistries } from './registries';
 
 /*
  * A light, a camera and a bare group build an `Object3D` with no geometry, so
@@ -75,6 +76,7 @@ function mount(scene: SceneDoc): {
   frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
+    systems: builtInRegistries().systems,
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),

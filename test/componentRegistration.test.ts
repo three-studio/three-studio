@@ -2,16 +2,18 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { COMPONENT_TYPES, assertDefined } from '@three-studio/core';
+import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 
 /*
- * A component type is three folders that register themselves, and three lists
- * that have to name them. This checks the lists against the folders.
+ * A component type is folders — one per package that has a part of it — and
+ * the lists that have to name them: core's imports and `COMPONENT_TYPES`, the
+ * runtime's activation. This checks the lists against the folders.
  *
- * **What it catches that nothing else does.** Both `index.ts` files already
- * throw at load when a type in `COMPONENT_TYPES` was never registered, and `tsc`
- * refuses an icon outside `ComponentIcon` or a factory missing from the package's
- * front door. All of those start from a declaration and look for the code.
+ * **What it catches that nothing else does.** Core's `index.ts` throws at load
+ * when a type in `COMPONENT_TYPES` was never registered, and `tsc` refuses an
+ * icon outside `ComponentIcon` or a factory missing from the package's front
+ * door. All of those start from a declaration and look for the code.
  *
  * This goes the other way: it starts from the **folders on disk** and looks for
  * the declarations. A folder nobody listed throws nothing and fails nothing — the
@@ -59,25 +61,23 @@ describe('core knows about every component folder it has', () => {
 });
 
 describe('the runtime knows about every component folder it has', () => {
-  it('imports each one', () => {
-    expect(registeringImports('runtime')).toEqual(typeFolders('runtime'));
+  it('activates a system for each one', () => {
+    // A folder whose system the activation leaves out throws nothing: the type
+    // is quietly unbuilt, and the entity shows nothing in the viewport, which
+    // reads as a broken asset rather than as a missing line.
+    const registries = createRuntimeRegistries();
+    activateRuntime(registries);
+    const activated = registries.systems.values().map(({ id }) => id);
+
+    expect([...activated].sort()).toEqual(typeFolders('runtime'));
   });
 
-  it('lists each one in `DRAWN_TYPES`, which is the imports written twice', () => {
-    // Read as text on purpose. `DRAWN_TYPES` is deliberately a second statement
-    // of the imports above it — the runtime has no `COMPONENT_TYPES` of its own
-    // to check against — and a second statement is only worth having while
-    // something compares the two.
-    const source = readFileSync(
-      join(repoRoot, 'packages/runtime/src/components/index.ts'),
-      'utf8',
-    );
-    const block = /const DRAWN_TYPES = \[([^\]]*)\]/.exec(source)?.[1] ?? '';
-    const listed = [...block.matchAll(/'([A-Za-z]+)'/g)]
-      .map((match) => assertDefined(match[1], 'the type of a `DRAWN_TYPES` entry'))
-      .sort();
+  it('leaves its registries empty once the activation is disposed', () => {
+    const registries = createRuntimeRegistries();
+    activateRuntime(registries).dispose();
 
-    expect(listed).toEqual(typeFolders('runtime'));
+    expect(registries.systems.values()).toEqual([]);
+    expect(registries.behaviours.values()).toEqual([]);
   });
 
   it('draws a subset of what core declares, never something core has never heard of', () => {

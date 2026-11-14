@@ -11,6 +11,7 @@ import { Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { SelectionOutline } from '../src/viewport/SelectionOutline';
+import { builtInRegistries } from './registries';
 
 /*
  * What is drawn around a selection, and what is only measured.
@@ -31,6 +32,7 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
   binder: SceneBinder;
 } {
   const binder = new SceneBinder({
+    systems: builtInRegistries().systems,
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),

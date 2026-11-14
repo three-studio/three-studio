@@ -9,6 +9,7 @@ import { useAssetStore } from '../state/assetStore';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
+import { useRegistries } from '../registriesContext';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
 import { assetKindMime, droppedAssetId } from '../assets/assetDrag';
@@ -44,16 +45,18 @@ const FULL_SCREEN_HINT_MS = 4000;
  * `Presentation`.
  */
 export function ViewportPanel(props: IDockviewPanelProps) {
+  const registries = useRegistries();
   // What the box cannot say: dockview parks an inactive tab at full size, so a
   // hidden panel goes on being drawn unless something tells the viewport. The
   // dock is the only thing that knows, and it publishes it here, for both of
   // the views this tab holds.
   useEffect(() => {
-    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setOnScreen(onScreen));
+    const push = (onScreen: boolean) =>
+      void acquireViewport(registries).then((v) => v.setOnScreen(onScreen));
     push(props.api.isVisible);
     const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
     return () => sub.dispose();
-  }, [props.api]);
+  }, [props.api, registries]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const editHostRef = useRef<HTMLDivElement>(null);
@@ -75,7 +78,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   useEffect(() => {
     let cancelled = false;
 
-    void acquireViewport()
+    void acquireViewport(registries)
       .then((viewport) => {
         if (cancelled || !editHostRef.current || !gameHostRef.current) return;
         viewport.attach({ edit: editHostRef.current, game: gameHostRef.current });
@@ -96,7 +99,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     // Play state is not in here: both canvases stay on the stage for as long as
     // the panel lives, and Play changes only which one is on top. Nothing is
     // moved, re-parented or resized at the press.
-  }, []);
+  }, [registries]);
 
   // The game has just come on top, and Play gives it the keyboard. A layout
   // effect, so that its host has been made visible: a hidden element takes no

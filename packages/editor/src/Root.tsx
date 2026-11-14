@@ -1,3 +1,4 @@
+import type { RuntimeRegistries } from '@three-studio/runtime';
 import { useEffect, useState } from 'react';
 import { App } from './App';
 import { installDevtools } from './devtools';
@@ -7,6 +8,7 @@ import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindin
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
+import { RegistriesContext } from './registriesContext';
 import { useProjectStore } from './state/projectStore';
 import { watchUnsaved } from './state/unsaved';
 
@@ -15,16 +17,20 @@ captureConsole();
 installDevtools();
 
 /**
- * Renders whichever window this is.
+ * Renders whichever window this is, with the registries its composition root
+ * made and activated.
  *
  * Two windows, not two views of one: a launcher that picks a project and an
  * editor that edits it. The role arrives through the preload before the first
  * render, so neither shell is ever painted in the wrong window — which is what
  * asking for it over IPC would have cost.
  */
-export function Root() {
-  if (window.studio.windowRole === 'launcher') return <LauncherApp />;
-  return <EditorWindow />;
+export function Root({ registries }: { registries: RuntimeRegistries }) {
+  return (
+    <RegistriesContext.Provider value={registries}>
+      {window.studio.windowRole === 'launcher' ? <LauncherApp /> : <EditorWindow />}
+    </RegistriesContext.Provider>
+  );
 }
 
 function EditorWindow() {

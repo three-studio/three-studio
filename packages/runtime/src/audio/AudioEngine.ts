@@ -41,7 +41,7 @@ export interface AudioEngineOptions {
  * Everything audible for one listener: the mixer, the clips, the voices.
  *
  * Owns things with a lifetime, so it is a class — the rule `ComponentSystem`
- * states and `registerBehaviour` is the exception to. One instance per root
+ * states and a behaviour's factory is the exception to. One instance per root
  * : the editor builds one for preview, `Engine` builds one for the game,
  * and neither can hear the other.
  */

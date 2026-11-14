@@ -8,7 +8,8 @@ import {
 import { Group, type Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
-import { behaviourFactoryFor, type BehaviourContext } from '../../src/behaviour/Behaviour';
+import { audioSourceBehaviour } from '../../src/behaviour/audio';
+import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import { audioApiFor } from '../../src/scripting/audioApi';
 import { flush, rig } from './rig';
 
@@ -39,7 +40,7 @@ function mountSource(
   const object = new Group();
   const entity = { ...createEntity('noise').entity, id: entityId };
   const component = { ...createAudioSource(), assetId: STEP, ...overrides };
-  behaviourFactoryFor('audioSource')?.({ entity, object, component }, context(engine));
+  audioSourceBehaviour.create({ entity, object, component }, context(engine));
   return object;
 }
 

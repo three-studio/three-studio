@@ -26,6 +26,7 @@ import type { ImportRow } from './plan';
 import { summarise } from './plan';
 import { describeFacts, formatBytes, formatUnits, hasPreview } from './preview/facts';
 import { previewFor, type PreviewSurface } from './preview/PreviewSurface';
+import { useRegistries } from '../registriesContext';
 import { ImportSettingsPane, type SettingsDraft } from './settingsPane';
 import { tooltip } from '../ui/Tooltip';
 
@@ -283,6 +284,7 @@ function SettingsColumn({ row }: { row: ImportRow }) {
  * trying to talk a WebGPU renderer into becoming an `<audio>` element.
  */
 function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
+  const registries = useRegistries();
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<PreviewSurface | null>(null);
   const [failed, setFailed] = useState(false);
@@ -293,7 +295,7 @@ function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
 
     let cancelled = false;
     void (async () => {
-      const surface = await previewFor(row.file.kind);
+      const surface = await previewFor(registries, row.file.kind);
       if (surface === null) return;
       if (cancelled) {
         surface.dispose();
@@ -318,7 +320,7 @@ function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
       surfaceRef.current?.dispose();
       surfaceRef.current = null;
     };
-  }, [sessionId, row.file.id, row.file.kind]);
+  }, [registries, sessionId, row.file.id, row.file.kind]);
 
   // Settings change far more often than the file does, so this is a separate
   // effect: reloading a 40 MB FBX on every drag of the scale field is not a

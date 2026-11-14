@@ -11,7 +11,7 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
-import { Engine, SceneHost, type SceneSource } from '@three-studio/runtime';
+import { Engine, SceneHost, type RuntimeRegistries, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
@@ -42,6 +42,8 @@ export interface PlayHost {
   readonly gameView: Presentation;
   /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
+  /** The window's registries, which the game is built from as the edit view is. */
+  readonly registries: RuntimeRegistries;
   /**
    * Play was pressed. Called before anything is awaited: the start takes as
    * long as the compile and the load, and the view is not the editor's for any
@@ -318,6 +320,7 @@ export class PlaySession {
       const source = playSceneSource(inputs.entry, (path) => window.studio.project.readScene(path));
       const host = new SceneHost({
         source,
+        registries: this.host.registries,
         loadingScene: inputs.loadingScene,
         resolver: editorAssetResolver,
         physicsSettings: inputs.physics,

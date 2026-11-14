@@ -1,5 +1,5 @@
 import type { AssetSettings, ModelSettings } from '@three-studio/core';
-import { loadModelFromUrl } from '@three-studio/runtime';
+import { loadModelFromUrl, type RuntimeRegistries } from '@three-studio/runtime';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   Box3,
@@ -59,12 +59,15 @@ export class ModelPreview implements PreviewSurface {
   private model: Object3D | null = null;
   private disposed = false;
 
+  /** `registries` makes the window's viewport, if the dock has not made it yet. */
+  constructor(private readonly registries: RuntimeRegistries) {}
+
   async open(container: HTMLElement, url: string): Promise<ModelFacts | null> {
     // The one viewport of this window, created if the dock has not asked for it
     // yet. Nothing here needs it to be showing anything: a viewport with no
     // panel measures a zero box for the edit view and the game's canvas, and
     // sizes its surface to whatever else is asking, which is this.
-    const viewport = await acquireViewport();
+    const viewport = await acquireViewport(this.registries);
     if (this.disposed) return null;
     this.viewport = viewport;
 

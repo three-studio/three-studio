@@ -16,17 +16,17 @@ import {
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { registerBehaviour } from '../../src/behaviour/Behaviour';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { JointHandle } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 import {
   block,
   colliderOf,
   componentOf,
   ground,
-  physicsRig,
+  physicsRigOn,
   player,
   standInForTheBrowser,
   takeTheBrowserBack,
@@ -52,16 +52,23 @@ type Hook = 'onCollisionEnter' | 'onCollisionExit' | 'onTriggerEnter' | 'onTrigg
 /** What each entity's collider heard, in order, by entity id. */
 const heard = new Map<string, [Hook, string][]>();
 
-// An Ear on every Collider, as `events.test.ts` has.
-registerBehaviour('collider', ({ entity }) => {
-  const record = (hook: Hook, other: string) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), [hook, other]]);
-  return {
-    onCollisionEnter: ({ other }) => record('onCollisionEnter', other),
-    onCollisionExit: (other) => record('onCollisionExit', other),
-    onTriggerEnter: (other) => record('onTriggerEnter', other),
-    onTriggerExit: (other) => record('onTriggerExit', other),
-  };
+// An Ear on every Collider, as `events.test.ts` has, in registries of this
+// file's own.
+const registries = builtInRegistries();
+registries.behaviours.register({
+  id: 'collider',
+  create: ({ entity }) => {
+    const record = (hook: Hook, other: string) =>
+      heard.set(entity.id, [...(heard.get(entity.id) ?? []), [hook, other]]);
+    return {
+      onCollisionEnter: ({ other }) => record('onCollisionEnter', other),
+      onCollisionExit: (other) => record('onCollisionExit', other),
+      onTriggerEnter: (other) => record('onTriggerEnter', other),
+      onTriggerExit: (other) => record('onTriggerExit', other),
+    };
+  },
 });
+const physicsRig = physicsRigOn(registries);
 
 beforeEach(() => heard.clear());
 
@@ -503,6 +510,7 @@ describe('a tune the world cannot take', () => {
 
     const off = await Engine.create({
       scene: sceneWith([ground(), ball]),
+      registries,
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),

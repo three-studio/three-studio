@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vites
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import { builtInRegistries } from '../registries';
 import {
   block,
   ground,
@@ -104,6 +105,7 @@ describe('the physics set-up, with layers', () => {
     const lost = onLayer(withBody('sphere', [0, 2, 0]), 'gone');
     const engine = await Engine.create({
       scene: sceneWith([onLayer(player([0, 1, 0]), 'player'), ground(), lost]),
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       physicsSettings: { ...createPhysicsSettings(), layers: APART },
@@ -168,6 +170,7 @@ describe('the physics set-up, with joints', () => {
 
     const engine = await Engine.create({
       scene: sceneWith([withJoint(createEntity('Hinge'))]),
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,

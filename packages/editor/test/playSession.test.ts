@@ -38,6 +38,7 @@ import { useToastStore } from '../src/state/toastStore';
 import { useViewportStore } from '../src/state/viewportStore';
 import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
+import { builtInRegistries } from './registries';
 
 /*
  * What pressing Play does, and what Stop undoes — above all when the game never
@@ -97,6 +98,7 @@ function stubHost(): StubHost {
     renderer: null as unknown as WebGPURenderer,
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
     rendering: createRenderingSettings(),
+    registries: builtInRegistries(),
     onPlayPressed: () => calls.push('pressed'),
     onPlayStopped: () => calls.push('stopped'),
   };

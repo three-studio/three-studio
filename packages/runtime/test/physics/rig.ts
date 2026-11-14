@@ -30,7 +30,9 @@ export { nest } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
+import type { RuntimeRegistries } from '../../src/registries';
 import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 
 /*
  * A scene document running in the real `Engine`, with real Rapier, under Node.
@@ -75,7 +77,26 @@ export interface PhysicsRig {
  * These entities in a running engine, disposed when the test finishes, with the
  * project's physics materials by asset id.
  */
-export async function physicsRig(
+export type PhysicsRigMaker = (
+  entities: readonly EntityTemplate[],
+  settings?: Partial<PhysicsSettings>,
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
+) => Promise<PhysicsRig>;
+
+/** A rig whose engine runs on the kernel's systems and behaviours, as a root activates them. */
+export const physicsRig: PhysicsRigMaker = physicsRigOn(builtInRegistries());
+
+/**
+ * Rigs whose engines run on these registries: a test file that registers a
+ * behaviour of its own builds its own registries, so what it adds reaches no
+ * other file.
+ */
+export function physicsRigOn(registries: RuntimeRegistries): PhysicsRigMaker {
+  return (entities, settings, physicsMaterials) => runningRig(registries, entities, settings, physicsMaterials);
+}
+
+async function runningRig(
+  registries: RuntimeRegistries,
   entities: readonly EntityTemplate[],
   settings?: Partial<PhysicsSettings>,
   physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
@@ -84,6 +105,7 @@ export async function physicsRig(
   const canvas = new EventTarget();
   const engine = await Engine.create({
     scene: sceneWith(entities),
+    registries,
     resolver: NULL_ASSET_RESOLVER,
     // Batching off: a batched mesh is drawn by the batch, and the object a test
     // reads would be one the screen never shows.

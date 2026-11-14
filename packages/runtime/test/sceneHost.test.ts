@@ -12,6 +12,7 @@ import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import type { SceneApi } from '../src/behaviour/Behaviour';
 import { SceneHost } from '../src/SceneHost';
 import { Behaviour, clearScripts, registerScript } from '../src/scripting/ScriptHost';
+import { builtInRegistries } from './registries';
 
 /*
  * Where a script is, as it asks `scenes.current`.
@@ -65,6 +66,7 @@ function hostOf(scenes: Record<string, SceneDoc>): SceneHost {
         return structuredClone(scene);
       },
     },
+    registries: builtInRegistries(),
     resolver: NULL_ASSET_RESOLVER,
     rendering: createRenderingSettings(),
     domElement: eventTarget as unknown as HTMLElement,

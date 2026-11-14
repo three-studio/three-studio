@@ -7,9 +7,11 @@ import {
   type AssetId,
   type ComponentDoc,
   type ComponentId,
+  type ComponentTypeId,
   type EntityDoc,
   type EntityId,
   type MaterialDef,
+  type Registry,
   type RenderingSettings,
   type SceneDoc,
   type Vec3,
@@ -28,7 +30,7 @@ import { EnvironmentBinder } from './EnvironmentBinder';
 import { ModelCache } from './assets/ModelCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
-import type { Sun, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type { Sun, SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY, resolveEntityId } from './systems/identity';
 import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/material';
 import { MeshBatcher } from './MeshBatcher';
@@ -78,6 +80,15 @@ const _z = new Vector3();
  * without rebuilding its geometry.
  */
 export interface SceneBinderOptions {
+  /**
+   * The system that draws each type, from the runtime's registries; each binder
+   * builds its own from them.
+   *
+   * The one registry, rather than the runtime's registries whole: those name
+   * the behaviours, whose context holds a binder, and the binder naming them
+   * back would close an import cycle.
+   */
+  systems: Registry<ComponentTypeId, SystemDefinition>;
   resolver: AssetResolver;
   /**
    * The project's rendering settings, whole.
@@ -147,7 +158,7 @@ export class SceneBinder {
   /** Parent this into the editor viewport scene or the runtime scene. */
   readonly root = new Group();
 
-  private readonly reconciler = new Reconciler();
+  private readonly reconciler: Reconciler;
   private readonly arena = new ResourceArena();
   private readonly models: ModelCache;
   /** Shared materials by asset id; see `setMaterialLibrary`. */
@@ -178,12 +189,7 @@ export class SceneBinder {
    * and the outline and the gizmo work off the entity's container, which a
    * batched mesh still hangs from.
    */
-  private readonly batcher = new MeshBatcher(
-    this.root,
-    this.reconciler,
-    this.arena,
-    this.shadowCasters,
-  );
+  private readonly batcher: MeshBatcher;
 
   /**
    * Read-only, and set once from the settings handed in.
@@ -221,6 +227,8 @@ export class SceneBinder {
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
+    this.reconciler = new Reconciler(options.systems);
+    this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
     this.models = new ModelCache(options.resolver);
     this.shadowMapSize = options.rendering.shadowMapSize;
     this.batcher.enabled = options.rendering.batching;

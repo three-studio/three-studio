@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { digestProjection, type ProjectionDigest } from '../../runtime/test/sceneDigest';
 import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorProjection';
+import { builtInRegistries } from './registries';
 
 /*
  * The edit view and Play project the same document, and this is what says so.
@@ -74,6 +75,9 @@ const BRASS = fixedId('asset', 'material-brass');
 
 const materials: ReadonlyMap<AssetId, MaterialDef> = new Map([[BRASS, createMaterial('#b58a3c')]]);
 
+/** One window's registries, as both modes are handed them. */
+const registries = builtInRegistries();
+
 /**
  * A scene holding one of everything the two modes could disagree about.
  *
@@ -124,6 +128,7 @@ async function editView(
 ): Promise<ProjectionDigest> {
   const projection = createEditorProjection({
     scene,
+    systems: registries.systems,
     resolver: NULL_ASSET_RESOLVER,
     rendering,
     materials,
@@ -143,6 +148,7 @@ async function editView(
 async function play(scene: SceneDoc, rendering: RenderingSettings): Promise<ProjectionDigest> {
   const engine = await Engine.create({
     scene,
+    registries,
     resolver: NULL_ASSET_RESOLVER,
     rendering,
     materials,

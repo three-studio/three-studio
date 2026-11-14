@@ -32,6 +32,7 @@ import {
   type PlayHost,
 } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
+import { builtInRegistries } from './registries';
 
 /*
  * What Play runs and what a device launch sends are one reading of the editor's
@@ -136,6 +137,7 @@ describe('what a launch sends while the editor plays', () => {
       renderer: {} as WebGPURenderer,
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
       rendering,
+      registries: builtInRegistries(),
       onPlayPressed: () => {},
       onPlayStopped: () => {},
     };

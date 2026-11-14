@@ -20,7 +20,7 @@
   "engines": {
     "node": ">=22.12.0"
   },
-  "//sideEffects": "Deliberately absent. Both the component registry (core/src/components/index.ts) and the behaviour registry (runtime/src/Engine.ts) are populated by bare `import './x'` statements, and declaring the package side-effect-free tells every bundler it may drop exactly those — a scene then loads with components no one registered.",
+  "//sideEffects": "Deliberately absent. The component registry (core/src/components/index.ts) is populated by bare `import './x'` statements, and declaring the package side-effect-free tells every bundler it may drop exactly those — a scene then loads with components no one registered.",
   "files": ["dist"],
   "main": "./dist/index.js",
   "module": "./dist/index.js",

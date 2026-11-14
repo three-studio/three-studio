@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vites
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import { builtInRegistries } from '../registries';
 import {
   colliderOf,
   ground,
@@ -117,6 +118,7 @@ describe('a collider linked to a physics material', () => {
     // With physics off the line would be about the host, not the scene.
     const off = await Engine.create({
       scene: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),

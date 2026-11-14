@@ -6,11 +6,11 @@ import {
   type PlayerControllerComponent,
 } from '@three-studio/core';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
-import {
-  registerBehaviour,
-  type Behaviour,
-  type BehaviourContext,
-  type BehaviourTarget,
+import type {
+  Behaviour,
+  BehaviourContext,
+  BehaviourDefinition,
+  BehaviourTarget,
 } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
 import type { CharacterController, PhysicsApi } from '../physics/PhysicsApi';
@@ -382,16 +382,19 @@ export class PlayerController implements Behaviour {
   }
 }
 
-registerBehaviour('playerController', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  if (target.component.type !== 'playerController') return null;
-  return new PlayerController(
-    target.component,
-    target.object,
-    ctx.physics,
-    target.entity.id,
-    // The entity's first collider, the one its character sweeps — so an entity
-    // carrying two cannot have the camera measuring from one and the character
-    // sweeping the other.
-    findComponent(ctx.scene, target.entity.id, 'collider'),
-  );
-});
+export const playerControllerBehaviour: BehaviourDefinition = {
+  id: 'playerController',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    if (target.component.type !== 'playerController') return null;
+    return new PlayerController(
+      target.component,
+      target.object,
+      ctx.physics,
+      target.entity.id,
+      // The entity's first collider, the one its character sweeps — so an
+      // entity carrying two cannot have the camera measuring from one and the
+      // character sweeping the other.
+      findComponent(ctx.scene, target.entity.id, 'collider'),
+    );
+  },
+};

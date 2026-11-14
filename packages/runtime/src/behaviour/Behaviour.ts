@@ -139,37 +139,22 @@ export interface BehaviourTarget {
   readonly component: ComponentDoc;
 }
 
-export type BehaviourFactory = (
-  target: BehaviourTarget,
-  ctx: BehaviourContext,
-) => Behaviour | null;
-
-const factories = new Map<ComponentType, BehaviourFactory>();
-
 /**
- * Registers the runtime behaviour for a component type.
+ * The runtime behaviour of a component type: what the runtime's activation
+ * registers.
  *
  * This is the seam that makes features into blocks: a vehicle controller, an
  * animator, an audio source and a user script are all "a component type plus a
  * factory", and none of them requires the engine loop to know they exist.
  */
-export function registerBehaviour(type: ComponentType, factory: BehaviourFactory): void {
-  factories.set(type, factory);
-}
-
-export function behaviourFactoryFor(type: ComponentType): BehaviourFactory | undefined {
-  return factories.get(type);
-}
-
-/**
- * Every type that has a behaviour, so the engine can start from the component
- * tables rather than from the entity table.
- *
- * Two or three types out of eleven have one, and a scene has two thousand
- * entities: asking the registry which types matter and then reading those
- * tables visits the components that exist instead of every entity that might
- * have one.
- */
-export function typesWithBehaviour(): readonly ComponentType[] {
-  return [...factories.keys()];
+export interface BehaviourDefinition {
+  readonly id: ComponentType;
+  /**
+   * The behaviour for one component of the type, or `null` for one that
+   * declines — an audio source with no audio engine to play through.
+   *
+   * Handed every component the engine finds under `id`, and nothing else, so it
+   * narrows `target.component` by its `type` and owes no cast.
+   */
+  create(target: BehaviourTarget, ctx: BehaviourContext): Behaviour | null;
 }

@@ -27,6 +27,11 @@ export const RUNTIME_VERSION = ENGINE_VERSION;
 /* The engine loop and the scene it drives. */
 export { Engine, isPerspective } from './Engine';
 export type { EngineOptions } from './Engine';
+/* What a game is built from, made and filled by each app's composition root. */
+export { activateRuntime, createRuntimeRegistries } from './registries';
+export type { RuntimeRegistries } from './registries';
+export type { BehaviourDefinition } from './behaviour/Behaviour';
+export type { SystemDefinition } from './systems/ComponentSystem';
 export { SceneHost } from './SceneHost';
 export type { SceneHostOptions, SceneLoad, SceneSource } from './SceneHost';
 export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';
