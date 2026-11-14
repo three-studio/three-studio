@@ -39,7 +39,14 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   la rend en `any` : typer la variable n'est pas la décoder. Là où `!` supposait une valeur présente,
   `assertDefined` (`@three-studio/core`) la vérifie. Une exception permanente va dans la liste blanche
   du test, avec sa raison, et seulement dans le noyau.
-- **Une référence est un identifiant** — jamais un nom, jamais un chemin.
+- **Une référence est un identifiant** — jamais un nom, jamais un chemin. Les ids d'entité, de
+  composant, d'asset et de scène ont leur propre type (`EntityId`, `ComponentId`, `AssetId`, `SceneId`)
+  et ne naissent que dans `packages/core/src/ids.ts` : une fabrique (`createEntityId()`…), une
+  vérification là où la valeur entre (`isEntityId(valeur)`…), ou `fixedId('entity', 'cube')` pour une
+  constante écrite en dur. En mémoire, une collection dont on relit les clés comme des ids est une `Map`.
+  Un record indexé par des ids ne vit que dans une forme JSON (un fichier, un message, les données d'un
+  composant) : on y cherche par id, et ses clés ne redeviennent des ids qu'à travers `idMapOf`. Le test
+  du ratchet refuse une vérification d'id écrite ailleurs que dans `ids.ts`.
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
 - `npm run typecheck && npm test` doit être au vert à chaque commit.
