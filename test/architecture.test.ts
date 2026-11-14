@@ -385,3 +385,85 @@ describe('import cycles', () => {
     expect(cycles()).toEqual(KNOWN_CYCLES);
   });
 });
+
+// ------------------------------------------------------- the composition roots
+
+/*
+ * Where an app's registries are made and filled, and the only places: the
+ * editor's window, which is the launcher's too; the player, which the device
+ * page runs as well; and the desktop main process. Each with the layers it
+ * builds, whose activations it has to call. Named once, here.
+ *
+ * A library function that made registries of its own would hold an app context
+ * no root activated and no test can hand in — the module state the registries
+ * replaced, under another name. And a root that took a hot update would
+ * register a second time into registries that refuse it: an edit to anything a
+ * root activates reloads the window instead, which is what Vite does when no
+ * module on the way accepts the update.
+ */
+const ROOTS: ReadonlyMap<string, readonly ('Core' | 'Runtime')[]> = new Map([
+  ['apps/desktop/src/renderer/src/main.tsx', ['Core', 'Runtime']],
+  ['apps/web-template/src/main.ts', ['Core', 'Runtime']],
+  ['apps/desktop/src/main/index.ts', ['Core']],
+]);
+
+/** Where else registries may be made: the two files that declare them, the tools, and the tests. */
+function mayMakeRegistries(path: string): boolean {
+  return (
+    ROOTS.has(path) ||
+    path === 'packages/core/src/registries.ts' ||
+    path === 'packages/runtime/src/registries.ts' ||
+    path.startsWith('tools/') ||
+    /(^|\/)test\//.test(path)
+  );
+}
+
+const MAKES_REGISTRIES = /\bcreate(?:Core|Runtime)Registries\(/;
+
+/** What the rules of the roots find wrong in these files, a line each. */
+function rootProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (!mayMakeRegistries(path) && MAKES_REGISTRIES.test(source)) {
+      problems.push(`${path}: makes registries, and is no composition root`);
+    }
+    const layers = ROOTS.get(path);
+    if (layers === undefined) continue;
+    for (const layer of layers) {
+      if (!source.includes(`activate${layer}(`)) problems.push(`${path}: never calls activate${layer}`);
+    }
+    if (source.includes('import.meta.hot')) problems.push(`${path}: reads import.meta.hot`);
+  }
+  return problems;
+}
+
+describe('the composition roots', () => {
+  it('reports a library file that makes registries', () => {
+    expect(rootProblems([['packages/editor/src/panel.ts', 'const own = createRuntimeRegistries();']])).toEqual([
+      'packages/editor/src/panel.ts: makes registries, and is no composition root',
+    ]);
+  });
+
+  it('reports a root that leaves a layer it builds unactivated', () => {
+    const root = 'const registries = createRuntimeRegistries();\nactivateCore(registries);\n';
+    expect(rootProblems([['apps/web-template/src/main.ts', root]])).toEqual([
+      'apps/web-template/src/main.ts: never calls activateRuntime',
+    ]);
+  });
+
+  it('reports a root that reads import.meta.hot', () => {
+    const root = 'activateCore(registries);\nimport.meta.hot?.accept();\n';
+    expect(rootProblems([['apps/desktop/src/main/index.ts', root]])).toEqual([
+      'apps/desktop/src/main/index.ts: reads import.meta.hot',
+    ]);
+  });
+
+  it('finds none in the tree: only the roots, the tools and the tests make registries', () => {
+    // A root that moved would match nothing and pass every rule: it is looked
+    // for first.
+    const scanned = files.map(show);
+    for (const root of ROOTS.keys()) expect(scanned).toContain(root);
+
+    expect(rootProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
+  });
+});
