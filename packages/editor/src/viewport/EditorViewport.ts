@@ -172,7 +172,7 @@ export class EditorViewport {
      */
     const projection = createEditorProjection({
       scene: expandedScene(registries).scene,
-      systems: registries.systems,
+      registries,
       resolver: editorAssetResolver,
       rendering,
       // The one thing the binder cannot do without a device; see `EnvironmentBinder`.

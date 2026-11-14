@@ -1,4 +1,4 @@
-import type { StagedFile } from '@three-studio/core';
+import { fixedId, type StagedFile } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import {
   applySettingsToKin,
@@ -21,7 +21,7 @@ const model = (id: string, fileName = `${id}.fbx`): StagedFile => ({
   fileName,
   sourcePath: `/tmp/${fileName}`,
   sizeBytes: 10,
-  importerId: 'model.fbx',
+  importerId: fixedId('importer', 'model.fbx'),
   kind: 'model',
   formatLabel: 'FBX',
   settings: {
@@ -45,7 +45,7 @@ const texture = (id: string, encoding: 'sdr' | 'ultrahdr' = 'sdr'): StagedFile =
   fileName: `${id}.png`,
   sourcePath: `/tmp/${id}.png`,
   sizeBytes: 10,
-  importerId: 'texture',
+  importerId: fixedId('importer', 'texture'),
   kind: 'texture',
   formatLabel: 'Texture',
   settings: {
@@ -82,7 +82,7 @@ const clip = (id: string, seconds: number): StagedFile => ({
   fileName: `${id}.wav`,
   sourcePath: `/tmp/${id}.wav`,
   sizeBytes: 10,
-  importerId: 'audio',
+  importerId: fixedId('importer', 'audio'),
   kind: 'audio',
   formatLabel: 'Audio',
   settings: { kind: 'audio', loadMode: 'decode', gain: 1, forceMono: false, seconds },

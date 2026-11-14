@@ -9,23 +9,17 @@ import {
   type Texture,
 } from 'three/webgpu';
 import {
-  ASSET_KIND_INFO,
+  assetKindInfo,
   type AssetId,
   type AssetSettings,
+  type CoreRegistries,
   type TextureEncoding,
 } from '@three-studio/core';
 import type { AssetResolver } from './AssetResolver';
 import { applyModelSettings, applyTextureSettings } from './importSettings';
-import { MODEL_EXTENSIONS, extensionOf, loadModelFromUrl } from './loadModel';
+import { extensionOf, loadModelFromUrl } from './loadModel';
 import { describeNodes, resolveNode, type ModelShape } from './modelNodes';
 
-/**
- * Read from the URL, because that is all the cache is given about an asset.
- *
- * Same rule as `MODEL_EXTENSIONS`: the importers are what say a file is a
- * texture, and a second list here could only ever disagree with them.
- */
-const TEXTURE_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.texture.extensions);
 /** Formats whose extension already says they store light rather than pixels. */
 const HDR_EXTENSIONS: ReadonlySet<string> = new Set(['hdr', 'exr']);
 
@@ -93,8 +87,27 @@ export class ModelCache {
   private readonly awaitingImage = new Map<AssetId, Texture[]>();
   /** Resolves when a texture's pixels have landed, so `preload` can wait. */
   private readonly textureSettled = new Map<AssetId, Promise<void>>();
+  /**
+   * What `preload` opens as a model, and what as a texture. Read from the URL,
+   * because that is all the cache is given about an asset.
+   *
+   * The importers' lists rather than lists of its own: a model importer exists
+   * because `loadModelFromUrl` can open the format, and the importers are what
+   * say a file is a texture, so writing either out again here was a second
+   * list that could only ever disagree with them. Read once, from the registries
+   * the cache is made with.
+   */
+  private readonly modelExtensions: ReadonlySet<string>;
+  private readonly textureExtensions: ReadonlySet<string>;
 
-  constructor(private resolver: AssetResolver) {}
+  constructor(
+    registries: CoreRegistries,
+    private resolver: AssetResolver,
+  ) {
+    const kinds = assetKindInfo(registries);
+    this.modelExtensions = new Set(kinds.get('model')?.extensions);
+    this.textureExtensions = new Set(kinds.get('texture')?.extensions);
+  }
 
   setResolver(resolver: AssetResolver): void {
     this.resolver = resolver;
@@ -359,11 +372,11 @@ export class ModelCache {
     const extension = extensionOf(url);
 
     try {
-      if (MODEL_EXTENSIONS.has(extension)) {
+      if (this.modelExtensions.has(extension)) {
         await this.loadModel(assetId);
         return;
       }
-      if (TEXTURE_EXTENSIONS.has(extension)) {
+      if (this.textureExtensions.has(extension)) {
         // Goes through `instanceTexture` so the master and its waiting-clone
         // bookkeeping are the ones the binder will find; the clone is thrown
         // away, and it shares the image so that costs nothing.

@@ -192,7 +192,7 @@ describe('adding from the menu while the game runs', () => {
 
 /** A model's import settings with *Generate colliders* ticked. */
 function generatingColliders(): AssetSettings {
-  const settings = defaultSettings('model');
+  const settings = defaultSettings(registries, 'model');
   if (settings.kind !== 'model') throw new Error('not a model’s settings');
   return { ...settings, generateColliders: true };
 }
@@ -214,7 +214,7 @@ describe('a drop on the view', () => {
     modifiedAt: 0,
     importedAt: 0,
     hash: '',
-    settings: defaultSettings(kind),
+    settings: defaultSettings(registries, kind),
     importedPath: null,
   });
 

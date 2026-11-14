@@ -77,7 +77,7 @@ function mount(scene: SceneDoc): {
   frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
-    systems: builtInRegistries().systems,
+    registries: builtInRegistries(),
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),

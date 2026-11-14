@@ -24,7 +24,7 @@ const registries = builtInRegistries();
 /** A project with two scenes, `main` and `Boss`. */
 async function project(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-writes-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   await createScene(registries, root, 'Boss');
   return root;
 }

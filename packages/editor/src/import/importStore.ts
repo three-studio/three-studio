@@ -293,8 +293,8 @@ function firstConfigurable(rows: readonly ImportRow[]): string | undefined {
 }
 
 /** The declared fields for a row, or `[]` when nothing imports it. */
-export function fieldsFor(row: ImportRow) {
-  const importer = importerForFile(row.file.fileName);
+export function fieldsFor(registries: CoreRegistries, row: ImportRow) {
+  const importer = importerForFile(registries, row.file.fileName);
   if (importer === undefined || row.settings === null) return [];
   return importer.fields(row.settings);
 }

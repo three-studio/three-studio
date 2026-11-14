@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { importerForFile } from '@three-studio/core';
+import { importerForFile, type CoreRegistries } from '@three-studio/core';
 
 /**
  * How deep a dropped folder is followed, and how many files come out of it.
@@ -26,7 +26,10 @@ export interface ExpandedSources {
  * "bring in the models" — listing its `.DS_Store` as a failure would be an
  * answer to a question nobody asked.
  */
-export async function expandSources(paths: readonly string[]): Promise<ExpandedSources> {
+export async function expandSources(
+  registries: CoreRegistries,
+  paths: readonly string[],
+): Promise<ExpandedSources> {
   const found: string[] = [];
   let truncated = false;
 
@@ -53,7 +56,7 @@ export async function expandSources(paths: readonly string[]): Promise<ExpandedS
         await walk(child, depth + 1);
         continue;
       }
-      if (importerForFile(entry.name)) found.push(child);
+      if (importerForFile(registries, entry.name)) found.push(child);
     }
   };
 

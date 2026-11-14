@@ -846,7 +846,7 @@ describe('an edit tried during Play, then Stop', () => {
             modifiedAt: 0,
             importedAt: 0,
             hash: '',
-            settings: defaultSettings('prefab'),
+            settings: defaultSettings(registries, 'prefab'),
             importedPath: null,
           },
         ],

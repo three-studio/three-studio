@@ -5,6 +5,7 @@ import {
   importerForFile,
   type AssetEntry,
   type AssetImportResult,
+  type CoreRegistries,
   type ImportConflict,
   type ImportPlanItem,
   type ImportSessionState,
@@ -39,6 +40,8 @@ export class ImportSession {
   private readonly sources = new Map<string, StagedSource>();
 
   private constructor(
+    /** What a dropped file is, and which importer reads it: the process's registries. */
+    private readonly registries: CoreRegistries,
     readonly projectPath: string,
     readonly folder: string,
   ) {}
@@ -51,19 +54,20 @@ export class ImportSession {
    * looking at, not in a message after the fact.
    */
   static async open(
+    registries: CoreRegistries,
     projectPath: string,
     paths: readonly string[],
     folder: string,
   ): Promise<ImportSession> {
-    const session = new ImportSession(projectPath, folder);
-    const { paths: expanded } = await expandSources(paths);
+    const session = new ImportSession(registries, projectPath, folder);
+    const { paths: expanded } = await expandSources(registries, paths);
 
-    const existing = await scanAssets(projectPath);
+    const existing = await scanAssets(registries, projectPath);
     const byHash = new Map(existing.assets.map((asset) => [asset.hash, asset]));
     const byName = new Map(existing.assets.map((asset) => [basename(asset.path), asset]));
 
     for (const sourcePath of expanded) {
-      const staged = await stageOne(sourcePath, byHash, byName);
+      const staged = await stageOne(registries, sourcePath, byHash, byName);
       session.sources.set(staged.id, staged);
     }
     return session;
@@ -105,7 +109,7 @@ export class ImportSession {
 
   /** Runs the import the author confirmed. The first thing to touch the disk. */
   async commit(plan: readonly ImportPlanItem[]): Promise<AssetImportResult> {
-    const pipeline = new ImportPipeline(this.projectPath);
+    const pipeline = new ImportPipeline(this.registries, this.projectPath);
     const imported: AssetEntry[] = [];
     const unsupported: string[] = [];
 
@@ -125,12 +129,13 @@ export class ImportSession {
 }
 
 async function stageOne(
+  registries: CoreRegistries,
   sourcePath: string,
   byHash: Map<string, AssetEntry>,
   byName: Map<string, AssetEntry>,
 ): Promise<StagedSource> {
   const fileName = basename(sourcePath);
-  const importer = importerForFile(fileName);
+  const importer = importerForFile(registries, fileName);
   const info = await stat(sourcePath).catch(() => null);
 
   const base = {
@@ -162,9 +167,9 @@ async function stageOne(
     // Off the source rather than off the copy, which does not exist yet — the
     // two are byte-identical, and this is what puts an Ultra HDR sky's encoding
     // in front of the author before the import rather than after it.
-    settings: await settingsFor(sourcePath, importer.kind),
+    settings: await settingsFor(registries, sourcePath, importer.kind),
     conflict: conflictFor(hash, fileName, byHash, byName),
-    companions: [...(await companionsOf(sourcePath))],
+    companions: [...(await companionsOf(registries, sourcePath))],
     hash,
   };
 }
@@ -196,11 +201,12 @@ class ImportSessionStore {
   private readonly open = new Map<string, ImportSession>();
 
   async start(
+    registries: CoreRegistries,
     projectPath: string,
     paths: readonly string[],
     folder: string,
   ): Promise<ImportSessionState> {
-    const session = await ImportSession.open(projectPath, paths, folder);
+    const session = await ImportSession.open(registries, projectPath, paths, folder);
     this.open.set(session.id, session);
     return session.state();
   }

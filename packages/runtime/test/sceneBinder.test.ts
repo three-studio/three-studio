@@ -62,7 +62,7 @@ function binderWith(
   resolver: AssetResolver = { url: () => null },
   rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
 ): SceneBinder {
-  const binder = new SceneBinder({ systems: registries.systems, resolver, rendering });
+  const binder = new SceneBinder({ registries, resolver, rendering });
   live.push(binder);
   return binder;
 }

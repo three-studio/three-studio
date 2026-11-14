@@ -2,13 +2,13 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join, relative, sep } from 'node:path';
 import {
   ASSETS_DIR,
-  ASSET_KIND_INFO,
   CACHE_DIR,
   ENGINE_VERSION,
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
+  assetKindInfo,
   conformPhysicsSettings,
   createBuildProfiles,
   createPhysicsSettings,
@@ -22,6 +22,7 @@ import {
   safeFileName,
   sceneName,
   serializeScene,
+  type CoreRegistries,
   type OpenProject,
   type ProjectContents,
   type ProjectFile,
@@ -44,7 +45,11 @@ export class ProjectError extends Error {
   }
 }
 
-export async function createProject(name: string, directory: string): Promise<OpenProject> {
+export async function createProject(
+  registries: CoreRegistries,
+  name: string,
+  directory: string,
+): Promise<OpenProject> {
   const trimmed = name.trim();
   if (trimmed === '') throw new ProjectError('Project name cannot be empty.');
 
@@ -60,7 +65,7 @@ export async function createProject(name: string, directory: string): Promise<Op
   // importer and no folder, so the one place an author would look for them was
   // the one place they were not — and a new importer would have landed the same
   // way. A `Set` because nothing stops two kinds sharing a directory.
-  for (const directory of new Set(Object.values(ASSET_KIND_INFO).map((it) => it.directory))) {
+  for (const directory of new Set([...assetKindInfo(registries).values()].map((it) => it.directory))) {
     await mkdir(join(projectPath, ASSETS_DIR, directory), { recursive: true });
   }
 

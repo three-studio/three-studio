@@ -128,7 +128,7 @@ async function editView(
 ): Promise<ProjectionDigest> {
   const projection = createEditorProjection({
     scene,
-    systems: registries.systems,
+    registries,
     resolver: NULL_ASSET_RESOLVER,
     rendering,
     materials,

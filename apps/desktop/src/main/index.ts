@@ -80,6 +80,7 @@ void app.whenReady().then(() => {
   // One per process, and idle until something asks it to serve: it listens on
   // every interface, so it must never be listening without someone knowing.
   const devices = new DeviceServer({
+    registries,
     settingsFile: join(app.getPath('userData'), 'devices.json'),
     certificateFile: join(app.getPath('userData'), 'device-certificate.json'),
     // Where the exporter looks for the player: packaged, the app's resources;

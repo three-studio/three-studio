@@ -2,6 +2,9 @@ import { defaultSettings, fixedId, type AssetEntry, type AssetId, type AssetKind
 import { describe, expect, it } from 'vitest';
 import { assetKindMime } from '../src/assets/assetDrag';
 import { filterAndSortAssets } from '../src/state/assetStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A kind is matched against what a browser and a person type, and both lower
@@ -23,7 +26,7 @@ function asset(id: AssetId, kind: AssetKind, path: string): AssetEntry {
     modifiedAt: 1,
     importedAt: 1,
     hash: 'h',
-    settings: defaultSettings(kind, path),
+    settings: defaultSettings(registries, kind, path),
     importedPath: null,
   };
 }

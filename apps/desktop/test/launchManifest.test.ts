@@ -24,6 +24,9 @@ import {
   launchScenePath,
   type LaunchContents,
 } from '../src/main/devices/launchManifest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The `build.json` a device runs: what is on screen, from the editor's memory,
@@ -48,7 +51,7 @@ function asset(
     modifiedAt: 1,
     importedAt: 1,
     hash: 'h',
-    settings: defaultSettings(kind, path),
+    settings: defaultSettings(registries, kind, path),
     importedPath,
   };
 }

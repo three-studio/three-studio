@@ -153,6 +153,7 @@ beforeAll(async () => {
   });
   await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   devices = new DeviceServer({
+    registries,
     settingsFile: devicesFile.path,
     certificateFile: join(stub.userData, 'device-certificate.json'),
     templateRoots: [templateRoot],
@@ -184,7 +185,7 @@ beforeEach(() => {
 /** A project with one scene, open, as every handler below assumes. */
 async function project(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-ipc-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   adoptProject(root);
   return root;
 }

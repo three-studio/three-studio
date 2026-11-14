@@ -3,7 +3,6 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { ASSET_KIND_INFO } from '@three-studio/core';
 import {
   FileLoader,
   Group,
@@ -13,16 +12,6 @@ import {
   type AnimationClip,
   type Object3D,
 } from 'three/webgpu';
-
-/**
- * What `loadModelFromUrl` knows how to open. Read from the URL.
- *
- * The importers' list rather than one of its own: a model importer exists
- * because a loader below can open the format, so writing the four out again
- * here was a second list that could only ever be wrong. The `default` case
- * below is what happens if one ever is.
- */
-export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.model.extensions);
 
 /** The extension of a URL, lowercased, with any query or fragment dropped. */
 export function extensionOf(url: string): string {

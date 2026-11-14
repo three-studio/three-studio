@@ -1075,7 +1075,7 @@ describe('fitting a collider to its mesh', () => {
   /** A binder holding the meshes as the edit view draws them, synced to the document. */
   function drawnBinder(): SceneBinder {
     const binder = new SceneBinder({
-      systems: builtInRegistries().systems,
+      registries: builtInRegistries(),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
     });

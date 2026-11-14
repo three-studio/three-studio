@@ -19,6 +19,7 @@ import {
 import { defaultSettings } from './assets/import';
 import type { AssetKind, AssetSettings } from './assets/schema';
 import { conform, conformPatch, isRecord, oneOf } from './conform';
+import type { CoreRegistries } from './registries';
 
 /*
  * What the renderer sends, made safe before it reaches the disk.
@@ -121,11 +122,12 @@ export function conformMaterial(value: unknown): MaterialDef {
  * is defended here the day it exists, without this being told.
  */
 export function conformAssetSettings(
+  registries: CoreRegistries,
   value: unknown,
   kind: AssetKind,
   fileName: string,
 ): AssetSettings {
-  const model = defaultSettings(kind, fileName);
+  const model = defaultSettings(registries, kind, fileName);
   // The discriminant is the caller's, never the payload's, and `conform` alone
   // would let it through: `'model'` is a string exactly as `'texture'` is. A
   // `.png` whose sidecar said `model` would be built as a mesh on the next

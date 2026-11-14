@@ -120,6 +120,7 @@ function server(
   certificateFile = certificateFileOf(file),
 ): DeviceServer {
   const made = new DeviceServer({
+    registries,
     settingsFile: file,
     certificateFile,
     templateRoots: [templateRoot],
@@ -253,7 +254,7 @@ async function launchOn(
 
 async function project(script?: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-server-project-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   if (script !== undefined) {
     await mkdir(join(root, ASSETS_DIR, 'scripts'), { recursive: true });
     await writeFile(join(root, ASSETS_DIR, 'scripts', 'Spin.ts'), script, 'utf8');
@@ -1071,6 +1072,7 @@ describe('a device’s lines', () => {
     const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
     const handed: DeviceLogs[] = [];
     const devices = new DeviceServer({
+      registries,
       settingsFile: file,
       certificateFile: certificateFileOf(file),
       templateRoots: [await template()],

@@ -57,7 +57,7 @@ const entityCount = (scene: SceneDoc): number => scene.entities.size;
 
 /** The asset references the scenes hold, against the ids the project's scan lists. */
 async function references(projectPath: string, scenes: readonly SceneDoc[]): Promise<{ resolved: number; unresolved: string[] }> {
-  const known = new Set((await scanAssets(projectPath)).assets.map((asset) => asset.id));
+  const known = new Set((await scanAssets(registries, projectPath)).assets.map((asset) => asset.id));
   const named = scenes
     .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(scene, entityId)))
     .flatMap((component) => componentAssets(registries, component))
@@ -128,7 +128,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
   it('assets', async () => {
     const path = await writeAssetsProject(parent, { textures: 30, folders: 3 });
     await startScene(path);
-    const manifest = await scanAssets(path);
+    const manifest = await scanAssets(registries, path);
     expect(manifest.assets.filter((asset) => asset.kind === 'texture')).toHaveLength(30);
     expect(manifest.folders).toEqual(expect.arrayContaining(['textures/pack-00', 'textures/pack-01', 'textures/pack-02']));
   });
@@ -145,12 +145,12 @@ describe('each recipe at a reduced size, opened by the app', () => {
       expect(entityCount(scene)).toBe(3);
       expect((await references(path, [scene])).resolved).toBe(1);
 
-      const model = (await scanAssets(path)).assets.find((asset) => asset.kind === 'model');
+      const model = (await scanAssets(registries, path)).assets.find((asset) => asset.kind === 'model');
       if (!model) throw new Error('the model is not in the manifest');
       expect(model.sizeBytes).toBeGreaterThan(2 * 1024 * 1024);
       expect(model.importedPath).toBeNull();
 
-      const meta = await readAssetMeta(join(path, model.path));
+      const meta = await readAssetMeta(registries, join(path, model.path));
       expect(meta?.settings).toMatchObject({ kind: 'model', compressGeometry: false });
       expect(await readdir(join(path, CACHE_DIR, 'imported', model.id))).toEqual([
         expect.stringMatching(/\.glb\.none$/),
@@ -174,7 +174,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
     const scene = await startScene(path);
     expect((await references(path, [scene])).resolved).toBe(1);
 
-    const model = (await scanAssets(path)).assets.find((asset) => asset.kind === 'model');
+    const model = (await scanAssets(registries, path)).assets.find((asset) => asset.kind === 'model');
     if (!model) throw new Error('the model is not in the manifest');
     const glb = readGlb(await readFile(join(path, model.path)));
     if (!glb) throw new Error('readGlb could not read the model back');
@@ -212,7 +212,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
     // Heavy the field and its model.
     expect(counts).toEqual({ A: 16, B: 13, Loading: 3, Heavy: 25 });
 
-    const manifest = await scanAssets(path);
+    const manifest = await scanAssets(registries, path);
     expect(manifest.assets.filter((asset) => asset.kind === 'script')).toHaveLength(2 + recipe.ballast);
     expect(ballastPaths(recipe).every((ballast) => manifest.assets.some((asset) => asset.path === ballast))).toBe(true);
     // A Director in A and in B, the ballast in A, the Spinner in Loading, the

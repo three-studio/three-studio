@@ -221,7 +221,7 @@ export class Engine {
     // the device the host already has. The order of the rest is `bindScene`'s,
     // where it is written down.
     this.binder = bindScene(this.scene, options.scene, {
-      systems: options.registries.systems,
+      registries: options.registries,
       resolver: options.resolver,
       rendering: options.rendering,
       materials: options.materials,

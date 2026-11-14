@@ -10,6 +10,9 @@ import {
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAssetStore } from '../src/state/assetStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A delete is the one asset change this window makes without reading the
@@ -32,7 +35,7 @@ function asset(id: AssetId, kind: AssetKind, path: string): AssetEntry {
     modifiedAt: 1,
     importedAt: 1,
     hash: 'h',
-    settings: defaultSettings(kind, path),
+    settings: defaultSettings(registries, kind, path),
     importedPath: null,
   };
 }

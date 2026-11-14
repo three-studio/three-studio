@@ -44,7 +44,7 @@ function stage(
   pickable: (entityId: string) => boolean = () => true,
 ): { picker: Picker; overlay: ViewportOverlay; camera: PerspectiveCamera } {
   const binder = new SceneBinder({
-    systems: builtInRegistries().systems,
+    registries: builtInRegistries(),
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),

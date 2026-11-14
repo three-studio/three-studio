@@ -6,7 +6,7 @@
  *   project.json            this file
  *   .gitignore              keeps `.studio/` out of the author's repository
  *   scenes/main.scene.json  SceneDoc documents
- *   assets/                 one folder per directory in `ASSET_KIND_INFO`
+ *   assets/                 one folder per directory in `assetKindInfo`
  *   .studio/                caches and build output — safe to delete
  * ```
  *

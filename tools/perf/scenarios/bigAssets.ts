@@ -241,7 +241,7 @@ async function prepareRecipe(context: ScenarioContext, recipe: Recipe, folder: s
   const project = await recipe.write(folder);
   const entityId = await modelEntityOf(project);
   await measureEditor(context, recipe, project, entityId, `S1-${recipe.name}-warmup`);
-  const model = (await scanAssets(project)).assets.find((asset) => asset.kind === 'model');
+  const model = (await scanAssets(builtInRegistries(), project)).assets.find((asset) => asset.kind === 'model');
   const { build } = (await readProject(project)).settings;
   const profile = build.profiles[build.active];
   if (!profile) throw new Error(`the ${recipe.name} project has no active build profile`);

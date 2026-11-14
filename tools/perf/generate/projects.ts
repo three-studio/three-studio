@@ -2,8 +2,9 @@ import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
   ASSETS_DIR,
-  ASSET_KIND_INFO,
   CACHE_DIR,
+  assertDefined,
+  assetKindInfo,
   createBoxGeometry,
   createCameraEntity,
   createEmptyScene,
@@ -16,6 +17,7 @@ import {
   insertEntity,
   serializeScene,
   type AssetId,
+  type AssetKind,
   type AssetManifest,
   type ComponentDoc,
   type ComponentOfType,
@@ -44,6 +46,14 @@ import { encodePng } from './png';
  *
  * Deterministic in everything measured. Only the ids are random.
  */
+
+/** What every project here is written, scanned and read through, as the desktop main's are. */
+const registries = builtInRegistries();
+
+/** Where the importers file a kind under `assets/`. */
+function directoryOf(kind: AssetKind): string {
+  return assertDefined(assetKindInfo(registries).get(kind), `the ${kind} kind`).directory;
+}
 
 /** The template's one component of a type. The factories hand back the union. */
 function componentOf<T extends ComponentDoc['type']>(template: EntityTemplate, type: T): ComponentOfType<T> {
@@ -252,7 +262,7 @@ export function largeScene(recipe: LargeRecipe = LARGE): SceneDoc {
 
 /** A new project, its folder's path, and the scene it opens on. */
 async function newProject(name: string, parent: string): Promise<{ path: string; scenePath: string; sceneId: SceneId }> {
-  const opened = await createProject(name, parent);
+  const opened = await createProject(registries, name, parent);
   return { path: opened.summary.path, scenePath: opened.scenePath, sceneId: opened.sceneId };
 }
 
@@ -309,7 +319,7 @@ export function assetTextures(recipe: AssetsRecipe = ASSETS): { path: string; co
   return Array.from({ length: recipe.textures }, (_, i) => ({
     path: [
       ASSETS_DIR,
-      ASSET_KIND_INFO.texture.directory,
+      directoryOf('texture'),
       `pack-${String(i % recipe.folders).padStart(2, '0')}`,
       `tex-${String(i).padStart(digits, '0')}.png`,
     ].join('/'),
@@ -337,7 +347,7 @@ export async function writeAssetsProject(parent: string, recipe: AssetsRecipe = 
     await writeFile(file, png);
     await utimes(file, ASSET_TIME_SECONDS, ASSET_TIME_SECONDS);
   }
-  await scanAssets(project.path);
+  await scanAssets(registries, project.path);
   return project.path;
 }
 
@@ -374,7 +384,7 @@ async function saveModelScene(
 }
 
 function modelPathIn(name: string): string {
-  return [ASSETS_DIR, ASSET_KIND_INFO.model.directory, name].join('/');
+  return [ASSETS_DIR, directoryOf('model'), name].join('/');
 }
 
 /**
@@ -393,13 +403,13 @@ export async function writeGeometryProject(parent: string, recipe: GeometryRecip
   const modelPath = modelPathIn('geometry.glb');
   await writeFile(join(project.path, modelPath), writeGlb(geometryGlb(recipe)));
 
-  const settings = assetAt(await scanAssets(project.path), modelPath).settings;
+  const settings = assetAt(await scanAssets(registries, project.path), modelPath).settings;
   if (settings.kind !== 'model') throw new Error(`${modelPath} was not scanned as a model`);
-  await updateAssetSettings(project.path, modelPath, { ...settings, compressGeometry: false });
+  await updateAssetSettings(registries, project.path, modelPath, { ...settings, compressGeometry: false });
   await rm(join(project.path, CACHE_DIR, 'imported'), { recursive: true, force: true });
 
   // The grids span 50 × 2.2 m by 30 × 2.2 m.
-  await saveModelScene(project, await scanAssets(project.path), modelPath, { x: 60, z: 40 });
+  await saveModelScene(project, await scanAssets(registries, project.path), modelPath, { x: 60, z: 40 });
   return project.path;
 }
 
@@ -417,7 +427,7 @@ export async function writeTexturesProject(parent: string, recipe: TexturesRecip
   await writeFile(join(project.path, modelPath), writeGlb(texturesGlb(recipe)));
   // The quads stand in a row 20 m long, facing +z: Play's camera stands back
   // just far enough to show the whole row, so the images are drawn large.
-  await saveModelScene(project, await scanAssets(project.path), modelPath, { x: 12, z: 6 }, [0, 1, 18]);
+  await saveModelScene(project, await scanAssets(registries, project.path), modelPath, { x: 12, z: 6 }, [0, 1, 18]);
   return project.path;
 }
 
@@ -517,7 +527,7 @@ function ballastSource(index: number): string {
 /** The ballast scripts' paths in the project, in order. */
 export function ballastPaths(recipe: ScriptedRecipe = SCRIPTED): string[] {
   return Array.from({ length: recipe.ballast }, (_, index) =>
-    [ASSETS_DIR, ASSET_KIND_INFO.script.directory, `Ballast${String(index).padStart(2, '0')}.ts`].join('/'),
+    [ASSETS_DIR, directoryOf('script'), `Ballast${String(index).padStart(2, '0')}.ts`].join('/'),
   );
 }
 
@@ -528,7 +538,7 @@ function scriptOn(assetId: AssetId): ComponentDoc {
 /** Writes the `scripted` recipe's project into `parent`, and answers its path. */
 export async function writeScriptedProject(parent: string, recipe: ScriptedRecipe = SCRIPTED): Promise<string> {
   const project = await newProject('Scripted', parent);
-  const scriptsDir = [ASSETS_DIR, ASSET_KIND_INFO.script.directory].join('/');
+  const scriptsDir = [ASSETS_DIR, directoryOf('script')].join('/');
   const sources = new Map<string, string>([
     [`${scriptsDir}/Director.ts`, DIRECTOR],
     [`${scriptsDir}/Spinner.ts`, SPINNER],
@@ -537,7 +547,7 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   for (const [path, source] of sources) await writeFile(join(project.path, path), source, 'utf8');
   const heavyModel = modelPathIn('heavy.glb');
   await writeFile(join(project.path, heavyModel), writeGlb(texturesGlb(recipe.heavyImages)));
-  const manifest = await scanAssets(project.path);
+  const manifest = await scanAssets(registries, project.path);
   const script = (path: string): AssetId => assetAt(manifest, path).id;
 
   const field: RenderRecipe = { props: recipe.props, columns: 10 };
@@ -563,7 +573,6 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   cube.geometry = { ...createBoxGeometry(), width: 4, height: 4, depth: 4 };
   place(loading, createEntity('Cube', [cube, scriptOn(script(`${scriptsDir}/Spinner.ts`))]));
 
-  const registries = builtInRegistries();
   const start = (await createScene(registries, project.path, 'A', serializeScene(a))).scene.id;
   await createScene(registries, project.path, 'B', serializeScene(directed()));
   await createScene(registries, project.path, 'Loading', serializeScene(loading));

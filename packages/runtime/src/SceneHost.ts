@@ -101,7 +101,7 @@ export class SceneHost implements SceneApi {
   private readonly clips: AudioClipCache | null;
 
   constructor(private readonly options: SceneHostOptions) {
-    this.preloader = new ModelCache(options.resolver ?? NULL_ASSET_RESOLVER);
+    this.preloader = new ModelCache(options.registries, options.resolver ?? NULL_ASSET_RESOLVER);
     this.clips =
       options.audioContext === undefined
         ? null

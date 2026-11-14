@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildScripts } from '../../../apps/desktop/src/main/scripts';
 import { readProject } from '../../../apps/desktop/src/main/project';
 import { ballastPaths, writeScriptedProject, type ScriptedRecipe } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import { editBallast } from '../scenarios/playAndScenes';
+
+const registries = builtInRegistries();
 
 /*
  * The scripted project's scripts are code a person could have written: they
@@ -32,7 +35,7 @@ describe('the scripted project', () => {
   });
 
   it('builds every script without an error, and sets no loading scene', async () => {
-    const built = await buildScripts(project, 'play');
+    const built = await buildScripts(registries, project, 'play');
     expect(built.errors).toEqual([]);
     expect(built.scriptCount).toBe(2 + recipe.ballast);
     expect((await readProject(project)).settings.loadingScene).toBeNull();
@@ -41,12 +44,12 @@ describe('the scripted project', () => {
   it('changes the bundle at each ballast edit', async () => {
     const [ballast] = ballastPaths(recipe);
     if (ballast === undefined) throw new Error('no ballast script');
-    const before = (await buildScripts(project, 'play')).code;
+    const before = (await buildScripts(registries, project, 'play')).code;
     await editBallast(join(project, ballast), 1);
     expect(await readFile(join(project, ballast), 'utf8')).toContain('const REVISION = 1;');
-    const after = (await buildScripts(project, 'play')).code;
+    const after = (await buildScripts(registries, project, 'play')).code;
     expect(after).not.toBe(before);
     await editBallast(join(project, ballast), 2);
-    expect((await buildScripts(project, 'play')).code).not.toBe(after);
+    expect((await buildScripts(registries, project, 'play')).code).not.toBe(after);
   });
 });

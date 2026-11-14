@@ -15,6 +15,7 @@ import {
   isSceneId,
   jsonOf,
   type AssetEntry,
+  type CoreRegistries,
   type DeviceLaunchOptions,
   type DeviceTransport,
 } from '@three-studio/core';
@@ -54,6 +55,8 @@ import { WAITING_PAGE } from './waitingPage';
 
 /** What the handler answers from, read on every request. */
 export interface DeviceRoutes {
+  /** What a model's side files are read through: the process's registries. */
+  registries: CoreRegistries;
   /**
    * The first segment of every URL answered. Read on every request rather than
    * once, so that a new link refuses the old one at once — on a connection a
@@ -255,7 +258,7 @@ export function createDeviceHandler(routes: DeviceRoutes): DeviceRequestHandler 
     if (list === undefined) {
       // A model that cannot be read names nothing, rather than failing every
       // request for its side files.
-      list = companionsOf(resolveInside(launch.projectPath, entry.path)).catch(() => []);
+      list = companionsOf(routes.registries, resolveInside(launch.projectPath, entry.path)).catch(() => []);
       lists.set(entry.id, list);
     }
     return list;

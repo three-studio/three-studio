@@ -3,6 +3,7 @@ import {
   type AssetEntry,
   type AssetId,
   type BuildManifest,
+  type CoreRegistries,
   type ReceivedLaunch,
   type SceneEntry,
 } from '@three-studio/core';
@@ -60,16 +61,17 @@ export interface Launch {
  * exporter's words.
  */
 export async function prepareLaunch(
+  registries: CoreRegistries,
   projectPath: string,
   received: ReceivedLaunch,
 ): Promise<Launch> {
   const { snapshot, entryJson } = received;
-  const compiled = await buildScripts(projectPath);
+  const compiled = await buildScripts(registries, projectPath);
   if (compiled.errors.length > 0) {
     throw new Error(`Scripts did not compile:\n${compiled.errors.join('\n')}`);
   }
   const scripts = compiled.scriptCount > 0 ? compiled.code : null;
-  const { assets } = await scanAssets(projectPath);
+  const { assets } = await scanAssets(registries, projectPath);
   const scenes = await discoverScenes(projectPath);
   // The project's name, not a build profile's title: a launch runs no profile.
   const { name: title } = await readProject(projectPath);

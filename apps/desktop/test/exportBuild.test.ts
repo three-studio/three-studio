@@ -287,10 +287,10 @@ describe('asset and material migration', () => {
       'utf8',
     );
 
-    const meta = await readAssetMeta(texture);
+    const meta = await readAssetMeta(registries, texture);
     expect(meta?.settings).toBeDefined();
 
-    const materials = await readMaterialAssets(projectPath);
+    const materials = await readMaterialAssets(registries, projectPath);
     // Kept what the file had, filled what it did not.
     expect(materials.get(matOld)?.color).toBe('#ff0000');
     expect(materials.get(matOld)?.tiling).toEqual([1, 1]);
@@ -318,10 +318,10 @@ describe('asset and material migration', () => {
     });
     await write('Future', future, { version: 2, material: { friction: 0.05 } });
 
-    expect(await readPhysicsMaterialAssets(projectPath)).toEqual(
+    expect(await readPhysicsMaterialAssets(registries, projectPath)).toEqual(
       new Map([[ice, { ...createPhysicsMaterial(), friction: 0.05 }]]),
     );
-    const materials = await readMaterialAssets(projectPath);
+    const materials = await readMaterialAssets(registries, projectPath);
     expect(materials.has(ice)).toBe(false);
     expect(materials.has(future)).toBe(false);
   });
@@ -453,7 +453,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject();
     const crate = createMeshEntity('box');
     const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
-    const prefabId = await createPrefabAsset(projectPath, 'Crate', prefab);
+    const prefabId = await createPrefabAsset(registries, projectPath, 'Crate', prefab);
     // Only what a shipped scene places is shipped.
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
@@ -627,7 +627,7 @@ describe('web export', () => {
     await exportBuild(registries, projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
-    const manifest = await scanAssets(projectPath);
+    const manifest = await scanAssets(registries, projectPath);
     const gain = manifest.assets.find((asset) => asset.path.endsWith('gain.jpg'))!;
     expect(build.textureEncodings[gain.id]).toBe('ultrahdr');
 
@@ -1516,7 +1516,7 @@ describe('what a published script bundle carries', () => {
     expect(code).not.toContain(basename(join(projectPath, '..')));
 
     // Play keeps its map: a breakpoint there lands in the author's own file.
-    expect((await buildScripts(projectPath)).code).toContain('sourceMappingURL');
+    expect((await buildScripts(registries, projectPath)).code).toContain('sourceMappingURL');
   });
 });
 

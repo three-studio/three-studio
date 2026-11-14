@@ -5,7 +5,10 @@ import { emptyAssetChange, emptyManifest } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { writeAssetsProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import { ipcBytes, jsonBytes } from '../scenarios/assets';
+
+const registries = builtInRegistries();
 
 /*
  * What a mutation carries over IPC, counted as its JSON: the manifest the
@@ -36,7 +39,7 @@ describe('the mutations measured in Node, with the main process’s own code', (
 
   it('answers each one’s bytes and leaves the project as it found it', async () => {
     const project = await writeAssetsProject(parent, { textures: 30, folders: 3 });
-    const before = await scanAssets(project);
+    const before = await scanAssets(registries, project);
     const bytes = await ipcBytes(project, {
       asset: 'assets/textures/pack-00/tex-00.png',
       to: 'textures/pack-01',
@@ -48,7 +51,7 @@ describe('the mutations measured in Node, with the main process’s own code', (
     // move holds one, beside the same empty lists.
     expect(bytes.renameFolder).toBeGreaterThan(bytes.move * 5);
     expect(bytes.refresh).toBeGreaterThan(bytes.list);
-    const after = await scanAssets(project);
+    const after = await scanAssets(registries, project);
     expect(after.assets.map((asset) => [asset.id, asset.path]).sort()).toEqual(
       before.assets.map((asset) => [asset.id, asset.path]).sort(),
     );

@@ -13,6 +13,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import { readAssetMeta, scanAssets, updateAssetSettings } from '../src/main/assetScan';
 import { writeScriptTypings } from '../src/main/scripts';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The contracts that are not files in a project but still cross a version
@@ -89,7 +92,7 @@ async function scanOne(file: string, bytes: Buffer): Promise<AssetEntry> {
   const project = await mkdtemp(join(tmpdir(), 'studio-sidecar-'));
   await mkdir(join(project, ASSETS_DIR, 'textures'), { recursive: true });
   await writeFile(join(project, ASSETS_DIR, 'textures', file), bytes);
-  const manifest = await scanAssets(project);
+  const manifest = await scanAssets(registries, project);
   return manifest.assets[0]!;
 }
 
@@ -125,7 +128,11 @@ describe('the asset sidecar', () => {
       await writeFile(join(textures, `t${i}.png`), 'x', 'utf8');
     }
 
-    const scans = await Promise.all([scanAssets(project), scanAssets(project), scanAssets(project)]);
+    const scans = await Promise.all([
+      scanAssets(registries, project),
+      scanAssets(registries, project),
+      scanAssets(registries, project),
+    ]);
     const ids = scans.map((manifest) =>
       manifest.assets.map((asset) => `${asset.name}:${asset.id}`).sort().join(','),
     );
@@ -158,8 +165,8 @@ describe('the asset sidecar', () => {
         'utf8',
       );
 
-      expect(await readAssetMeta(file)).toBeNull();
-      const asset = (await scanAssets(project)).assets[0];
+      expect(await readAssetMeta(registries, file)).toBeNull();
+      const asset = (await scanAssets(registries, project)).assets[0];
       expect(isAssetId(asset?.id)).toBe(true);
     }
   });
@@ -169,17 +176,17 @@ describe('the asset sidecar', () => {
     const textures = join(project, ASSETS_DIR, 'textures');
     await mkdir(textures, { recursive: true });
     await writeFile(join(textures, 'brick.png'), 'pixels', 'utf8');
-    const path = (await scanAssets(project)).assets[0]!.path;
+    const path = (await scanAssets(registries, project)).assets[0]!.path;
 
     // `AssetSettings` on the IPC handler is an annotation, and annotations are
     // gone by the time this runs: what arrives is whatever the renderer sent.
-    await updateAssetSettings(project, path, {
+    await updateAssetSettings(registries, project, path, {
       kind: 'model',
       anisotropy: 'lots',
       evil: 'rm -rf',
     } as never);
 
-    const asset = (await scanAssets(project)).assets[0]!;
+    const asset = (await scanAssets(registries, project)).assets[0]!;
     // The kind is the sidecar's and not the payload's — a `.png` filed as a
     // model would be built as a mesh on the next load — and a field of the
     // wrong type reads as the one a fresh import would have had.
@@ -208,7 +215,7 @@ describe('the asset sidecar', () => {
       'utf8',
     );
 
-    const asset = (await scanAssets(project)).assets[0]!;
+    const asset = (await scanAssets(registries, project)).assets[0]!;
     // The id above all: it is what every scene in the project references.
     expect(asset.id).toBe('tex-sky');
     expect(asset.settings).toMatchObject({
@@ -249,7 +256,7 @@ describe('the asset sidecar', () => {
       'utf8',
     );
 
-    const asset = (await scanAssets(project)).assets[0]!;
+    const asset = (await scanAssets(registries, project)).assets[0]!;
     expect(asset.id).toBe('mdl-tree');
     expect(asset.settings).toMatchObject({
       // The author's, untouched.
@@ -278,7 +285,7 @@ describe('the asset sidecar', () => {
     await mkdir(models, { recursive: true });
     await writeFile(join(models, 'rock.obj'), 'o rock\n', 'utf8');
 
-    const asset = (await scanAssets(project)).assets[0]!;
+    const asset = (await scanAssets(registries, project)).assets[0]!;
     expect(asset.settings).toMatchObject({ kind: 'model', format: 'obj', computeNormals: true });
   });
 });

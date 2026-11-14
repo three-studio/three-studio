@@ -145,7 +145,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
 
   const scene: SceneDoc = sceneWith([ground, player]);
   const binder = new SceneBinder({
-    systems: builtInRegistries().systems,
+    registries: builtInRegistries(),
     resolver: { url: () => null },
     rendering: { ...createRenderingSettings(), batching: false },
   });

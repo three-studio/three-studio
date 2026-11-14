@@ -50,7 +50,7 @@ export { StudioTime, studioTime } from './time/StudioTime';
 /* Assets: resolving ids to URLs, loading models, applying import settings. */
 export { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 export type { AssetResolver } from './assets/AssetResolver';
-export { MODEL_EXTENSIONS, extensionOf, loadModelFromUrl } from './assets/loadModel';
+export { extensionOf, loadModelFromUrl } from './assets/loadModel';
 export type { LoadedModel } from './assets/loadModel';
 export { applyModelSettings, applyTextureSettings } from './assets/importSettings';
 export { describeNodes, resolveNode } from './assets/modelNodes';

@@ -1,5 +1,6 @@
 import { ASSET_META_SUFFIX, type AssetKind, type AssetSettings } from '../schema';
 import type { FieldRow } from '../../fields';
+import type { ImporterId } from '../../ids';
 
 /**
  * Reads a file sitting next to the one being imported, relative to it.
@@ -28,7 +29,7 @@ export type TextReader = (relativePath: string) => Promise<string | null>;
  */
 export abstract class AssetImporter<S extends AssetSettings = AssetSettings> {
   /** Stable across versions: it keys the layers that cannot live in `core`. */
-  abstract readonly id: string;
+  abstract readonly id: ImporterId;
   abstract readonly kind: AssetKind;
   /** Lowercase, no leading dot. */
   abstract readonly extensions: readonly string[];
@@ -51,8 +52,8 @@ export abstract class AssetImporter<S extends AssetSettings = AssetSettings> {
   /**
    * Whether this importer takes the file.
    *
-   * Order decides ties, and the registry's order is explicit — see
-   * `ImporterRegistry`.
+   * Order decides ties, and the order the importers are registered in is
+   * explicit — see the core's activation list, in `registries.ts`.
    */
   claims(fileName: string): boolean {
     const lower = fileName.toLowerCase();

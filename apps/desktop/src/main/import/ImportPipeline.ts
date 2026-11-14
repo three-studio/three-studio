@@ -11,6 +11,7 @@ import {
   importerForFile,
   type AssetEntry,
   type AssetMeta,
+  type CoreRegistries,
   type ImportPlanItem,
 } from '@three-studio/core';
 import { AssetError, toPosix, uniqueFileName, uniqueFolderName } from '../assetFiles';
@@ -40,10 +41,13 @@ const STAGING_SUFFIX = '.importing';
  * point the session holds paths and settings and the project is untouched.
  */
 export class ImportPipeline {
-  constructor(private readonly projectPath: string) {}
+  constructor(
+    private readonly registries: CoreRegistries,
+    private readonly projectPath: string,
+  ) {}
 
   async run(source: StagedSource, item: ImportPlanItem): Promise<AssetEntry> {
-    const importer = importerForFile(source.fileName);
+    const importer = importerForFile(this.registries, source.fileName);
     if (importer === undefined) {
       throw new AssetError(`Nothing imports ${source.fileName}.`);
     }
@@ -60,7 +64,7 @@ export class ImportPipeline {
         ? base
         : posix.join(
             base,
-            await uniqueFolderName(this.projectPath, base, assetDisplayName(item.fileName)),
+            await uniqueFolderName(this.projectPath, base, assetDisplayName(this.registries, item.fileName)),
           );
     await mkdir(resolveInside(this.projectPath, directory), { recursive: true });
 
@@ -88,7 +92,7 @@ export class ImportPipeline {
       // claimed the *source* — the same one chosen above — so the kind in the
       // sidecar is the file's rather than the plan's: a `.fbx` whose plan said
       // `texture` was written as one, and every later read believed it.
-      settings: conformAssetSettings(item.settings, importer.kind, source.fileName),
+      settings: conformAssetSettings(this.registries, item.settings, importer.kind, source.fileName),
     };
 
     try {
@@ -111,7 +115,7 @@ export class ImportPipeline {
     const info = await stat(destination);
     return {
       id: meta.id,
-      name: assetDisplayName(unique),
+      name: assetDisplayName(this.registries, unique),
       kind: importer.kind,
       path: relativePath,
       folder: toPosix(

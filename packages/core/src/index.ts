@@ -20,7 +20,7 @@ export {
   isEntityId,
   isSceneId,
 } from './ids';
-export type { AssetId, ComponentId, EntityId, Id, SceneId } from './ids';
+export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId } from './ids';
 /* What every table of definitions is, and what each registration hands back. */
 export { Registry } from './Registry';
 export { combineDisposables } from './disposable';
@@ -116,22 +116,23 @@ export type {
 export { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath, importedAssetPath } from './assets/url';
 
 export {
-  ASSET_KIND_INFO,
   AssetImporter,
   FIT_TO_METRE,
   IMPORT_HOST,
   IMPORT_SCHEME,
-  ImporterRegistry,
   ModelImporter,
   assetDisplayName,
   assetKindForFile,
+  assetKindInfo,
   defaultSettings,
   importerForFile,
+  importerForKind,
   importPreviewUrl,
+  importSuffixes,
   parseImportPreviewUrl,
-  importers,
 } from './assets/import';
 export type {
+  AssetKindInfo,
   ImportConflict,
   ImportPlanItem,
   ImportPreviewRequest,

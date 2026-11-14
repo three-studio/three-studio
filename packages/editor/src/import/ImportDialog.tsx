@@ -262,7 +262,8 @@ function Empty() {
 
 /** The right column: the importer's own fields, laid out like the inspector. */
 function SettingsColumn({ row }: { row: ImportRow }) {
-  const fields = useMemo(() => fieldsFor(row), [row.file.id, row.settings === null]);
+  const registries = useRegistries();
+  const fields = useMemo(() => fieldsFor(registries, row), [registries, row.file.id, row.settings === null]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-1.5">

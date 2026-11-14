@@ -5,6 +5,7 @@ import {
   SCRIPT_API_VERSION,
   isRecord,
   type AssetEntry,
+  type CoreRegistries,
   type ScriptBuildResult,
 } from '@three-studio/core';
 // Type-only, so nothing of the runtime — three included — reaches the main
@@ -108,10 +109,11 @@ export type ScriptBuildPurpose = 'play' | 'export';
  * text, as esbuild's does.
  */
 export async function buildScripts(
+  registries: CoreRegistries,
   projectPath: string,
   purpose: ScriptBuildPurpose = 'play',
 ): Promise<ScriptBuildResult> {
-  const manifest = await scanAssets(projectPath);
+  const manifest = await scanAssets(registries, projectPath);
   const scripts = manifest.assets.filter((asset) => asset.kind === 'script');
 
   if (scripts.length === 0) {

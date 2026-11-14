@@ -5,6 +5,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildScripts, esbuildBinaryPath } from '../src/main/scripts';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Play compiles what is on disk, whatever was edited since the last build. A
@@ -29,18 +32,18 @@ async function projectWithScript(source: string): Promise<{ project: string; scr
 describe('a build after an edit made on disk', () => {
   it('compiles an edited script whose size changed', async () => {
     const { project, script } = await projectWithScript(scriptLogging('', "'VERSION_ONE'"));
-    expect((await buildScripts(project)).code).toContain('VERSION_ONE');
+    expect((await buildScripts(registries, project)).code).toContain('VERSION_ONE');
 
     await writeFile(script, scriptLogging('', "'VERSION_TWO_LONGER'"));
-    expect((await buildScripts(project)).code).toContain('VERSION_TWO_LONGER');
+    expect((await buildScripts(registries, project)).code).toContain('VERSION_TWO_LONGER');
   });
 
   it('compiles an edited script whose size stayed the same', async () => {
     const { project, script } = await projectWithScript(scriptLogging('', "'VERSION_ONE'"));
-    expect((await buildScripts(project)).code).toContain('VERSION_ONE');
+    expect((await buildScripts(registries, project)).code).toContain('VERSION_ONE');
 
     await writeFile(script, scriptLogging('', "'VERSION_TWO'"));
-    expect((await buildScripts(project)).code).toContain('VERSION_TWO');
+    expect((await buildScripts(registries, project)).code).toContain('VERSION_TWO');
   });
 
   it('compiles an edited JSON data asset that the script imports', async () => {
@@ -50,10 +53,10 @@ describe('a build after an edit made on disk', () => {
     await mkdir(join(project, 'assets/data'), { recursive: true });
     const data = join(project, 'assets/data/tuning.json');
     await writeFile(data, JSON.stringify({ tag: 'DATA_ONE' }));
-    expect((await buildScripts(project)).code).toContain('DATA_ONE');
+    expect((await buildScripts(registries, project)).code).toContain('DATA_ONE');
 
     await writeFile(data, JSON.stringify({ tag: 'DATA_TWO' }));
-    expect((await buildScripts(project)).code).toContain('DATA_TWO');
+    expect((await buildScripts(registries, project)).code).toContain('DATA_TWO');
   });
 
   it('compiles an edited helper outside assets/ that the script imports', async () => {
@@ -63,10 +66,10 @@ describe('a build after an edit made on disk', () => {
     await mkdir(join(project, 'src'), { recursive: true });
     const helper = join(project, 'src/helper.ts');
     await writeFile(helper, `export const tag = 'HELPER_ONE';\n`);
-    expect((await buildScripts(project)).code).toContain('HELPER_ONE');
+    expect((await buildScripts(registries, project)).code).toContain('HELPER_ONE');
 
     await writeFile(helper, `export const tag = 'HELPER_TWO';\n`);
-    expect((await buildScripts(project)).code).toContain('HELPER_TWO');
+    expect((await buildScripts(registries, project)).code).toContain('HELPER_TWO');
   });
 });
 
@@ -77,8 +80,8 @@ describe('a build of an unchanged project', () => {
     // out of memory. Without a cache, that rests on esbuild's output being the
     // same for the same input.
     const { project } = await projectWithScript(scriptLogging('', "'SAME'"));
-    const first = await buildScripts(project);
-    const second = await buildScripts(project);
+    const first = await buildScripts(registries, project);
+    const second = await buildScripts(registries, project);
 
     expect(first.errors).toEqual([]);
     expect(second.code).toBe(first.code);

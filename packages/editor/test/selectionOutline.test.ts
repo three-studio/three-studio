@@ -32,7 +32,7 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
   binder: SceneBinder;
 } {
   const binder = new SceneBinder({
-    systems: builtInRegistries().systems,
+    registries: builtInRegistries(),
     resolver: NULL_ASSET_RESOLVER,
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),

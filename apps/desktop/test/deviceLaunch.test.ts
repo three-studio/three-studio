@@ -40,7 +40,7 @@ const TEX_BRICK = fixedId('asset', 'tex-brick');
 /** A project with a texture and, unless asked otherwise, a script. */
 async function project(script: string | null = SCRIPT): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-launch-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   const texture = join(root, ASSETS_DIR, 'textures', 'brick.png');
   await writeFile(texture, 'x', 'utf8');
   await writeFile(
@@ -94,7 +94,7 @@ describe('a launch', () => {
     const root = await project();
     const shown = await snapshot(root);
 
-    const launch = await prepareLaunch(root, shown);
+    const launch = await prepareLaunch(registries, root, shown);
 
     expect(launch.entryId).toBe(shown.snapshot.entry.id);
     expect(launch.sceneName).toBe(shown.snapshot.entry.name);
@@ -108,12 +108,12 @@ describe('a launch', () => {
     const root = await project();
     const shown = await snapshot(root);
 
-    const launch = await prepareLaunch(root, shown);
+    const launch = await prepareLaunch(registries, root, shown);
 
     const expected = launchManifest({
       snapshot: shown.snapshot,
       scenes: await discoverScenes(root),
-      assets: (await scanAssets(root)).assets,
+      assets: (await scanAssets(registries, root)).assets,
       title: 'Races',
       scripts: launch.scripts,
     });
@@ -125,9 +125,9 @@ describe('a launch', () => {
   it('finds every asset but the scripts by id', async () => {
     const root = await project();
 
-    const launch = await prepareLaunch(root, await snapshot(root));
+    const launch = await prepareLaunch(registries, root, await snapshot(root));
 
-    const scanned = (await scanAssets(root)).assets;
+    const scanned = (await scanAssets(registries, root)).assets;
     const script = scanned.find((asset) => asset.kind === 'script');
     expect(script).toBeDefined();
     expect(launch.assets.get(TEX_BRICK)?.path).toBe(`${ASSETS_DIR}/textures/brick.png`);
@@ -141,8 +141,8 @@ describe('a launch', () => {
     const withScript = await project();
     const without = await project(null);
 
-    const launch = await prepareLaunch(withScript, await snapshot(withScript));
-    const bare = await prepareLaunch(without, await snapshot(without));
+    const launch = await prepareLaunch(registries, withScript, await snapshot(withScript));
+    const bare = await prepareLaunch(registries, without, await snapshot(without));
 
     expect(launch.scripts).toContain('registerScript');
     expect(launch.manifest.scripts).toBe('scripts.mjs');
@@ -153,7 +153,7 @@ describe('a launch', () => {
   it('is refused when a script does not compile, in the compiler’s words', async () => {
     const root = await project('export default class Broken {\n');
 
-    await expect(prepareLaunch(root, await snapshot(root))).rejects.toThrow(
+    await expect(prepareLaunch(registries, root, await snapshot(root))).rejects.toThrow(
       /^Scripts did not compile:\n.*Spin\.ts.*\n?/s,
     );
   });
@@ -163,7 +163,7 @@ describe('a launch', () => {
     const [entry] = await discoverScenes(root);
     const before = await readFile(join(root, entry!.path));
 
-    await prepareLaunch(root, await snapshot(root));
+    await prepareLaunch(registries, root, await snapshot(root));
 
     expect((await readFile(join(root, entry!.path))).equals(before)).toBe(true);
   });

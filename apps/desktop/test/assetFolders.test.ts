@@ -10,6 +10,9 @@ import {
   renameAssetFolder,
 } from '../src/main/assetMutations';
 import { scanAssets } from '../src/main/assetScan';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Folders are the one part of `assets/` the author edits directly, and the two
@@ -73,7 +76,7 @@ describe('renameAssetFolder', () => {
     const root = await project();
     await writeAsset(root, 'models', 'tree.glb');
     await writeAsset(root, 'models/props', 'crate.glb');
-    const before = await scanAssets(root);
+    const before = await scanAssets(registries, root);
 
     const change = await renameAssetFolder(root, 'models', 'meshes');
     expect(change.addedFolders[0]).toBe('meshes');
@@ -91,7 +94,7 @@ describe('renameAssetFolder', () => {
     ]);
     expect([...change.removedFolders].sort()).toEqual(['models', 'models/props']);
 
-    const after = await scanAssets(root);
+    const after = await scanAssets(registries, root);
     // The whole point: an id lives in the sidecar beside its file, so moving
     // the directory moves the identity. Anything else and every scene
     // referencing these assets would come back empty.
@@ -190,9 +193,9 @@ describe('deleting an asset', () => {
   it('takes the folders it emptied with it', async () => {
     const root = await project();
     await writeAsset(root, 'models/props', 'crate.glb');
-    const [asset] = (await scanAssets(root)).assets;
+    const [asset] = (await scanAssets(registries, root)).assets;
 
-    await removeAsset(root, asset!.path);
+    await removeAsset(registries, root, asset!.path);
 
     // `pruneEmptyFolders` used to call `rm` without `recursive`, which throws
     // `EISDIR` on a directory — straight into its own catch, so it silently
@@ -206,9 +209,9 @@ describe('deleting an asset', () => {
     const root = await project();
     await writeAsset(root, 'models', 'crate.glb');
     await writeAsset(root, 'models', 'tree.glb');
-    const crate = (await scanAssets(root)).assets.find((asset) => asset.name === 'crate');
+    const crate = (await scanAssets(registries, root)).assets.find((asset) => asset.name === 'crate');
 
-    await removeAsset(root, crate!.path);
+    await removeAsset(registries, root, crate!.path);
 
     expect(await exists(join(root, ASSETS_DIR, 'models'))).toBe(true);
   });

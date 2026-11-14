@@ -608,7 +608,7 @@ export function isTslMaterial(fileName: string): boolean {
  * for one is not a wrong image but a broken one — and a broken tile reads as a
  * failed import rather than as a file the editor simply cannot draw small.
  *
- * An allow list rather than a deny list: a format added to `ASSET_KIND_INFO`
+ * An allow list rather than a deny list: a format an importer claims
  * because some loader handles it is not thereby something an `<img>` handles,
  * and the failure of guessing the other way round is silent.
  *

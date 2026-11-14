@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import {
   createDeviceToken,
   deviceLabel,
+  type CoreRegistries,
   type DeviceInfo,
   type DeviceLaunchOptions,
   type DeviceLogs,
@@ -41,6 +42,11 @@ import {
 import { createDeviceListener } from './transport';
 
 export interface DeviceServerOptions {
+  /**
+   * The process's: what a launch scans the project through, and a model's side
+   * files are read through.
+   */
+  registries: CoreRegistries;
   /** `devices.json`, in the app's data directory. */
   settingsFile: string;
   /** `device-certificate.json`, beside it: the certificate HTTPS is served under, and its key. */
@@ -233,7 +239,7 @@ export class DeviceServer {
   async launch(projectPath: string, received: ReceivedLaunch): Promise<DeviceServerStatus | null> {
     const ticket = (this.ticket += 1);
     this.overtakenBy = 'launch';
-    const prepared = await prepareLaunch(projectPath, received);
+    const prepared = await prepareLaunch(this.options.registries, projectPath, received);
     if (ticket !== this.ticket) return this.dropped();
     await this.start();
     if (ticket !== this.ticket) return this.dropped();
@@ -379,6 +385,7 @@ export class DeviceServer {
         trace: this.options.trace,
       });
       const handler = createDeviceHandler({
+        registries: this.options.registries,
         token: () => this.listening?.settings.token ?? settings.token,
         templateDir,
         clientDir,

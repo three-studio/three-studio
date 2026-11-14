@@ -14,6 +14,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { assembleManifest, type ManifestContents, type ShippedAsset } from '../src/main/build/manifest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The assembly is what an export and a device launch have in common: two
@@ -25,7 +28,7 @@ function asset(
   id: AssetId,
   kind: AssetKind,
   path: string,
-  settings: AssetSettings = defaultSettings(kind, path),
+  settings: AssetSettings = defaultSettings(registries, kind, path),
 ): AssetEntry {
   const file = path.slice(path.lastIndexOf('/') + 1);
   return {
@@ -102,8 +105,8 @@ describe('assembling build.json', () => {
   });
 
   it('describes each shipped asset at the path it was given', () => {
-    const texture = defaultSettings('texture', 'brick.png');
-    const gain = { ...defaultSettings('texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;
+    const texture = defaultSettings(registries, 'texture', 'brick.png');
+    const gain = { ...defaultSettings(registries, 'texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;
     const shipped: ShippedAsset[] = [
       {
         entry: asset(fixedId('asset', 'brick'), 'texture', 'assets/textures/brick.png', texture),

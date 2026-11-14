@@ -183,7 +183,7 @@ async function writeAsset(path: string, id: string, kind: string, contents: stri
 
 beforeAll(async () => {
   const parent = await mkdtemp(join(tmpdir(), 'studio-routes-'));
-  root = (await createProject('Races', parent)).summary.path;
+  root = (await createProject(registries, 'Races', parent)).summary.path;
   // The project's one scene, before the others below join it.
   const [main] = await discoverScenes(root);
 
@@ -246,7 +246,11 @@ beforeAll(async () => {
     physics: settings.physics,
     loadingScene: null,
   };
-  const prepared = await prepareLaunch(root, conformLaunchSnapshot(registries, encodeLaunchSnapshot(snapshot)));
+  const prepared = await prepareLaunch(
+    registries,
+    root,
+    conformLaunchSnapshot(registries, encodeLaunchSnapshot(snapshot)),
+  );
 
   // A scaled copy, given by hand: what a device should download in place of
   // the source, under the source's name.
@@ -258,7 +262,7 @@ beforeAll(async () => {
   launch = { ...prepared, assets };
   modelId = [...assets.values()].find((asset) => asset.path.endsWith('Tri.gltf'))!.id;
   objId = [...assets.values()].find((asset) => asset.path.endsWith('Crate.obj'))!.id;
-  scriptId = (await scanAssets(root)).assets.find((asset) => asset.kind === 'script')!.id;
+  scriptId = (await scanAssets(registries, root)).assets.find((asset) => asset.kind === 'script')!.id;
 
   templateDir = join(parent, 'web-template');
   await mkdir(join(templateDir, 'player'), { recursive: true });
@@ -278,6 +282,7 @@ beforeAll(async () => {
   });
   server = createServer(
     createDeviceHandler({
+      registries,
       token: () => TOKEN,
       templateDir,
       clientDir,

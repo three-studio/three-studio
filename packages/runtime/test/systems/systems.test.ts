@@ -24,6 +24,9 @@ import { ModelSystem } from '../../src/components/model/ModelSystem';
 import { ResourceArena } from '../../src/systems/ResourceArena';
 import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
+import { builtInRegistries } from '../registries';
+
+const registries = builtInRegistries();
 
 /*
  * One class per component type that draws something, testable on its own —
@@ -51,7 +54,7 @@ function context(materials: ReadonlyMap<AssetId, ReturnType<typeof createMateria
   const ctx: SystemContext = {
     arena,
     materials,
-    models: new ModelCache({ url: () => null }),
+    models: new ModelCache(registries, { url: () => null }),
     time,
     shadowMapSize: 1024,
     // No scene here, so nothing to resolve: a water component falls back to the
@@ -722,7 +725,7 @@ describe('the water system', () => {
     const ctx: SystemContext = {
       arena,
       materials: new Map(),
-      models: new ModelCache({ url: () => null }),
+      models: new ModelCache(registries, { url: () => null }),
       time: new StudioTime(),
       shadowMapSize: 1024,
       sunOf: (source) => (source === 'sky' ? sun : null),

@@ -1,8 +1,8 @@
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
-  ASSET_KIND_INFO,
   PROJECT_FILE_NAME,
+  assetKindInfo,
   type AssetId,
   type AssetImportResult,
   type AssetManifest,
@@ -301,7 +301,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     create: async (_event, input: { name: string; directory: string }): Promise<OpenProject> => {
-      return adopt(await createProject(input.name, input.directory));
+      return adopt(await createProject(deps.registries, input.name, input.directory));
     },
 
     open: async (event, projectPath: string, sceneId?: SceneId | null): Promise<OpenProject> => {
@@ -432,10 +432,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
   },
   assets: {
-    list: (): Promise<AssetManifest> => scanAssets(requireProject()),
+    list: (): Promise<AssetManifest> => scanAssets(deps.registries, requireProject()),
 
     openImport: (_event, sourcePaths: readonly string[], folder?: string): Promise<ImportSessionState> => {
-      return importSessions.start(requireProject(), sourcePaths, folder ?? '');
+      return importSessions.start(deps.registries, requireProject(), sourcePaths, folder ?? '');
     },
 
     browseAndOpenImport: async (event, folder?: string): Promise<ImportSessionState> => {
@@ -446,7 +446,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         // Folders too: dropping one onto the panel already works, and a picker
         // that refused what a drop accepts would be the odd one out.
         properties: ['openFile', 'multiSelections', 'openDirectory'],
-        filters: Object.entries(ASSET_KIND_INFO).map(([kind, info]) => ({
+        filters: [...assetKindInfo(deps.registries)].map(([kind, info]) => ({
           name: `${kind[0]?.toUpperCase()}${kind.slice(1)}s`,
           extensions: [...info.extensions],
         })),
@@ -458,7 +458,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       if (result.canceled || result.filePaths.length === 0) {
         return { sessionId: '', files: [], folder: folder ?? '' };
       }
-      return importSessions.start(projectPath, result.filePaths, folder ?? '');
+      return importSessions.start(deps.registries, projectPath, result.filePaths, folder ?? '');
     },
 
     commitImport: (
@@ -474,11 +474,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     remove: (_event, assetPath: string): Promise<AssetChange> => {
-      return removeAsset(requireProject(), assetPath);
+      return removeAsset(deps.registries, requireProject(), assetPath);
     },
 
     move: (_event, assetPath: string, targetFolder: string): Promise<AssetChange> => {
-      return moveAsset(requireProject(), assetPath, targetFolder);
+      return moveAsset(deps.registries, requireProject(), assetPath, targetFolder);
     },
 
     createFolder: (_event, folder: string): Promise<AssetChange> => {
@@ -495,14 +495,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     updateSettings: (_event, assetPath: string, settings: AssetSettings): Promise<void> => {
       // Conformed inside, where the sidecar's kind is known; see there.
-      return updateAssetSettings(requireProject(), assetPath, settings);
+      return updateAssetSettings(deps.registries, requireProject(), assetPath, settings);
     },
 
     readMaterials: async (): Promise<Record<string, MaterialDef>> =>
-      Object.fromEntries(await readMaterialAssets(requireProject())),
+      Object.fromEntries(await readMaterialAssets(deps.registries, requireProject())),
 
     createMaterial: (_event, name: string, material: MaterialDef): Promise<AssetId> => {
-      return createMaterialAsset(requireProject(), name, conformMaterial(material));
+      return createMaterialAsset(deps.registries, requireProject(), name, conformMaterial(material));
     },
 
     readPrefabs: async (): Promise<Record<string, string>> => {
@@ -521,6 +521,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // The id is handed to it as well, which is where a script that calls the
       // bridge with an `assetId` that is none is refused.
       return createPrefabAsset(
+        deps.registries,
         requireProject(),
         name,
         deserializePrefab(deps.registries, prefabJson, assetId),
@@ -529,21 +530,26 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
-      return saveMaterialAsset(requireProject(), assetPath, conformMaterial(material));
+      return saveMaterialAsset(deps.registries, requireProject(), assetPath, conformMaterial(material));
     },
 
     savePrefab: (_event, assetPath: string, prefabJson: string): Promise<void> => {
-      return savePrefabAsset(requireProject(), assetPath, deserializePrefab(deps.registries, prefabJson));
+      return savePrefabAsset(
+        deps.registries,
+        requireProject(),
+        assetPath,
+        deserializePrefab(deps.registries, prefabJson),
+      );
     },
 
     readPhysicsMaterials: async (): Promise<Record<string, PhysicsMaterialDef>> =>
-      Object.fromEntries(await readPhysicsMaterialAssets(requireProject())),
+      Object.fromEntries(await readPhysicsMaterialAssets(deps.registries, requireProject())),
 
     createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<AssetId> =>
-      createPhysicsMaterialAsset(requireProject(), name, conformPhysicsMaterial(material)),
+      createPhysicsMaterialAsset(deps.registries, requireProject(), name, conformPhysicsMaterial(material)),
 
     savePhysicsMaterial: (_event, path: string, material: PhysicsMaterialDef): Promise<void> =>
-      savePhysicsMaterialAsset(requireProject(), path, conformPhysicsMaterial(material)),
+      savePhysicsMaterialAsset(deps.registries, requireProject(), path, conformPhysicsMaterial(material)),
 
     revealInFileManager: async (_event, assetPath: string): Promise<void> => {
       // `showItemInFolder` takes an absolute path, so the guard still applies.
@@ -560,7 +566,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
   },
   scripts: {
-    build: (): Promise<ScriptBuildResult> => buildScripts(requireProject()),
+    build: (): Promise<ScriptBuildResult> => buildScripts(deps.registries, requireProject()),
 
     create: (_event, name: string): Promise<string> => {
       return createScript(requireProject(), name);

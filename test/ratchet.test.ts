@@ -338,6 +338,7 @@ const ID_TYPES: ReadonlySet<string> = new Set([
   'AssetId',
   'SceneId',
   'ComponentTypeId',
+  'ImporterId',
 ]);
 
 function namesAnIdType(type: Node): boolean {
@@ -666,6 +667,10 @@ describe('an id check', () => {
     // this build is the branded half, which only a check may claim.
     expect(checks('function f(value: unknown): value is ComponentTypeId { return true; }')).toEqual([
       `${FILE}: value is ComponentTypeId`,
+    ]);
+    // An importer's, which only a check may claim once one is read from outside.
+    expect(checks('function f(value: unknown): value is ImporterId { return true; }')).toEqual([
+      `${FILE}: value is ImporterId`,
     ]);
   });
 

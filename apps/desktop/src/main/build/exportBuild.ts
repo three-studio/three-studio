@@ -154,7 +154,7 @@ export async function exportBuild(
       ...planned,
       // Off the plan rather than counted along the way: the sizes are already
       // there, and a second tally is a second thing to keep in step.
-      size: sizeOf(plan.files()),
+      size: sizeOf(registries, plan.files()),
     };
   } finally {
     release();
@@ -235,15 +235,15 @@ async function planExport(
   }
 
   report(0.15, 'Scanning assets');
-  const manifest = await scanAssets(projectPath);
+  const manifest = await scanAssets(registries, projectPath);
   // Off that manifest rather than each scanning for itself. Three concurrent
   // walks of `assets/` was already two too many, and since a scan writes the
   // sidecars it finds missing or out of date, they also raced: a reader
   // catching a half-written one adopts the asset under a fresh id, and the
   // export ships a scene pointing at an id no longer on disk.
   const [materials, physicsMaterials, prefabs] = await Promise.all([
-    readMaterialAssets(projectPath, manifest),
-    readPhysicsMaterialAssets(projectPath, manifest),
+    readMaterialAssets(registries, projectPath, manifest),
+    readPhysicsMaterialAssets(registries, projectPath, manifest),
     readPrefabAssets(registries, projectPath, manifest),
   ]);
   const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
@@ -287,7 +287,7 @@ async function planExport(
     // Scripts ship compiled, not as source: the build has no TypeScript in it.
     if (entry.kind !== 'script') shippable.push(entry);
   }
-  const assets = await planAssets(plan, projectPath, shippable, (done, total) =>
+  const assets = await planAssets(registries, plan, projectPath, shippable, (done, total) =>
     report(0.25 + 0.4 * (done / Math.max(total, 1)), 'Reading assets'),
   );
   warnings.push(...assets.warnings);
@@ -312,7 +312,7 @@ async function planExport(
   const shippedScenes = planScenes(plan, scenes);
 
   report(0.7, 'Compiling scripts');
-  const scripts = await planScripts(plan, projectPath);
+  const scripts = await planScripts(registries, plan, projectPath);
 
   /*
    * One file, and the only one the player reads before it knows anything.

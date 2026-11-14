@@ -2,11 +2,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import {
   ASSETS_DIR,
-  ASSET_KIND_INFO,
   ASSET_META_VERSION,
   MATERIAL_ASSET_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
   PREFAB_FORMAT_VERSION,
+  assertDefined,
+  assetKindInfo,
   conformPhysicsMaterial,
   createAssetId,
   createMaterial,
@@ -40,6 +41,11 @@ import { readAssetMeta, scanAssets, writeAssetMeta } from './assetScan';
  */
 
 const PREFAB_EXTENSION = '.prefab.json';
+
+/** Where a kind's files go under `assets/`: its importers' directory, which every kind written here has. */
+function directoryOf(registries: CoreRegistries, kind: 'prefab' | 'material' | 'physicsMaterial'): string {
+  return posix.join(ASSETS_DIR, assertDefined(assetKindInfo(registries).get(kind), `the ${kind} kind`).directory);
+}
 
 /** What tells one `{ version, material }` kind from the other. */
 interface MaterialLibrary<T> {
@@ -96,7 +102,7 @@ export async function readPrefabAssets(
   projectPath: string,
   scanned?: AssetManifest,
 ): Promise<Map<AssetId, PrefabDoc>> {
-  const manifest = scanned ?? (await scanAssets(projectPath));
+  const manifest = scanned ?? (await scanAssets(registries, projectPath));
   const prefabs = new Map<AssetId, PrefabDoc>();
 
   await Promise.all(
@@ -124,6 +130,7 @@ export async function readPrefabAssets(
 
 /** Writes a new prefab asset and its sidecar; returns the new asset id. */
 export async function createPrefabAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   prefab: PrefabDoc,
@@ -134,7 +141,7 @@ export async function createPrefabAsset(
    */
   assetId?: AssetId,
 ): Promise<AssetId> {
-  const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO.prefab.directory);
+  const directory = directoryOf(registries, 'prefab');
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
   const safe = safeFileName(name) || 'Prefab';
@@ -156,7 +163,7 @@ export async function createPrefabAsset(
     kind: 'prefab',
     importedAt: Date.now(),
     hash: await hashFile(file),
-    settings: defaultSettings('prefab', fileName),
+    settings: defaultSettings(registries, 'prefab', fileName),
   };
   await writeAssetMeta(file, meta);
   return meta.id;
@@ -170,11 +177,12 @@ export async function createPrefabAsset(
  * scene with a hundred of them would do a hundred round trips.
  */
 async function readLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   scanned: AssetManifest | undefined,
 ): Promise<Map<AssetId, T>> {
-  const manifest = scanned ?? (await scanAssets(projectPath));
+  const manifest = scanned ?? (await scanAssets(registries, projectPath));
   const documents = new Map<AssetId, T>();
 
   await Promise.all(
@@ -203,12 +211,13 @@ async function readLibrary<T>(
 
 /** Writes a new document of a library's kind and its sidecar; returns the new asset id. */
 async function createInLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   name: string,
   material: T,
 ): Promise<AssetId> {
-  const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO[library.kind].directory);
+  const directory = directoryOf(registries, library.kind);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
   const safe = safeFileName(name) || library.name;
@@ -229,7 +238,7 @@ async function createInLibrary<T>(
     kind: library.kind,
     importedAt: Date.now(),
     hash: await hashFile(file),
-    settings: defaultSettings(library.kind, fileName),
+    settings: defaultSettings(registries, library.kind, fileName),
   };
   await writeAssetMeta(file, meta);
   return meta.id;
@@ -237,6 +246,7 @@ async function createInLibrary<T>(
 
 /** Overwrites an existing document of a library's kind in place, keeping its id. */
 async function saveInLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   assetPath: string,
@@ -251,7 +261,7 @@ async function saveInLibrary<T>(
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.
-  const meta = await readAssetMeta(file);
+  const meta = await readAssetMeta(registries, file);
   if (meta) await writeAssetMeta(file, { ...meta, hash: await hashFile(file) });
 }
 
@@ -261,26 +271,29 @@ async function saveInLibrary<T>(
  * @param scanned See `readPrefabAssets`.
  */
 export function readMaterialAssets(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
 ): Promise<Map<AssetId, MaterialDef>> {
-  return readLibrary(MATERIALS, projectPath, scanned);
+  return readLibrary(registries, MATERIALS, projectPath, scanned);
 }
 
 export function createMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   material: MaterialDef,
 ): Promise<AssetId> {
-  return createInLibrary(MATERIALS, projectPath, name, material);
+  return createInLibrary(registries, MATERIALS, projectPath, name, material);
 }
 
 export function saveMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   material: MaterialDef,
 ): Promise<void> {
-  return saveInLibrary(MATERIALS, projectPath, assetPath, material);
+  return saveInLibrary(registries, MATERIALS, projectPath, assetPath, material);
 }
 
 /**
@@ -290,26 +303,29 @@ export function saveMaterialAsset(
  * @param scanned See `readPrefabAssets`.
  */
 export function readPhysicsMaterialAssets(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
 ): Promise<Map<AssetId, PhysicsMaterialDef>> {
-  return readLibrary(PHYSICS_MATERIALS, projectPath, scanned);
+  return readLibrary(registries, PHYSICS_MATERIALS, projectPath, scanned);
 }
 
 export function createPhysicsMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   material: PhysicsMaterialDef,
 ): Promise<AssetId> {
-  return createInLibrary(PHYSICS_MATERIALS, projectPath, name, material);
+  return createInLibrary(registries, PHYSICS_MATERIALS, projectPath, name, material);
 }
 
 export function savePhysicsMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   material: PhysicsMaterialDef,
 ): Promise<void> {
-  return saveInLibrary(PHYSICS_MATERIALS, projectPath, assetPath, material);
+  return saveInLibrary(registries, PHYSICS_MATERIALS, projectPath, assetPath, material);
 }
 
 /**
@@ -320,6 +336,7 @@ export function savePhysicsMaterialAsset(
  * the edit did not go into.
  */
 export async function savePrefabAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   prefab: PrefabDoc,
@@ -333,7 +350,7 @@ export async function savePrefabAsset(
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.
-  const meta = await readAssetMeta(file);
+  const meta = await readAssetMeta(registries, file);
   if (meta) await writeAssetMeta(file, { ...meta, hash: await hashFile(file) });
 }
 

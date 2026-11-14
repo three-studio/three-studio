@@ -56,7 +56,7 @@ async function projectWith(assets: number, scenes: number): Promise<string> {
 
 /** Ids by asset name, which is what every scene in the project references. */
 async function assetIds(root: string): Promise<Record<string, string>> {
-  const manifest = await scanAssets(root);
+  const manifest = await scanAssets(registries, root);
   return Object.fromEntries(manifest.assets.map((asset) => [asset.name, asset.id]));
 }
 
@@ -68,8 +68,8 @@ describe('an index that is never a source of truth', () => {
   it('gives the same answer warm as it did cold', async () => {
     const root = await projectWith(4, 3);
 
-    const first = await scanAssets(root);
-    const second = await scanAssets(root);
+    const first = await scanAssets(registries, root);
+    const second = await scanAssets(registries, root);
     expect(second).toEqual(first);
 
     const scenes = await discoverScenes(root);
@@ -118,7 +118,7 @@ describe('an index that is never a source of truth', () => {
    */
   it('throws away values another build computed', async () => {
     const root = await projectWith(2, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
     const past = fixedId('asset', 'an-id-from-the-past');
 
     const path = indexFile(root, 'assets.index.json');
@@ -131,16 +131,16 @@ describe('an index that is never a source of truth', () => {
     for (const entry of Object.values(stale.entries)) entry.v = { ...entry.v, id: past };
     await writeFile(path, JSON.stringify(stale), 'utf8');
 
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets.map((asset) => asset.id)).not.toContain(past);
   });
 
   it('drops a file that is gone rather than remembering it for ever', async () => {
     const root = await projectWith(3, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
     await rm(join(root, ASSETS_DIR, 'textures', 't1.png'), { force: true });
 
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets.map((asset) => asset.name).sort()).toEqual(['t0', 't2']);
     const written = JSON.parse(await readFile(indexFile(root, 'assets.index.json'), 'utf8')) as {
       entries: Record<string, unknown>;
@@ -168,7 +168,7 @@ describe('what the index declines to answer for', () => {
       'utf8',
     );
 
-    await scanAssets(root);
+    await scanAssets(registries, root);
     const meta = JSON.parse(await readFile(`${file}${ASSET_META_SUFFIX}`, 'utf8')) as AssetMeta;
     expect(meta.version).toBe(ASSET_META_VERSION);
     // Upgraded, not replaced: the id is what scenes reference.
@@ -177,7 +177,7 @@ describe('what the index declines to answer for', () => {
 
   it('re-reads a sidecar something else edited', async () => {
     const root = await projectWith(1, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
     const file = join(root, ASSETS_DIR, 'textures', 't0.png');
 
     const meta = JSON.parse(await readFile(`${file}${ASSET_META_SUFFIX}`, 'utf8')) as AssetMeta;
@@ -187,7 +187,7 @@ describe('what the index declines to answer for', () => {
       'utf8',
     );
 
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets[0]?.settings).toMatchObject({ srgb: false });
   });
 
@@ -285,14 +285,22 @@ describe('scanning concurrently with an index', () => {
   it('agrees with itself, warm or cold', async () => {
     const root = await projectWith(12, 0);
 
-    const cold = await Promise.all([scanAssets(root), scanAssets(root), scanAssets(root)]);
+    const cold = await Promise.all([
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+    ]);
     const signature = (manifest: { assets: { name: string; id: string }[] }) =>
       manifest.assets.map((asset) => `${asset.name}:${asset.id}`).sort().join(',');
 
     expect(signature(cold[1])).toBe(signature(cold[0]));
     expect(signature(cold[2])).toBe(signature(cold[0]));
 
-    const warm = await Promise.all([scanAssets(root), scanAssets(root), scanAssets(root)]);
+    const warm = await Promise.all([
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+    ]);
     expect(signature(warm[0])).toBe(signature(cold[0]));
     expect(signature(warm[2])).toBe(signature(cold[0]));
   });

@@ -2,6 +2,7 @@ import type { ObjModelSettings } from '../../schema';
 import type { TextReader } from '../AssetImporter';
 import { CompanionSet, relativeDirname, relativeJoin } from '../companions';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 import { ModelImporter } from './ModelImporter';
 
 /** `map_Kd`, `bump`, `disp`, `decal`, `norm`, `refl` — every map an `.mtl` names. */
@@ -17,7 +18,7 @@ const OBJ_LIBRARY = /^\s*mtllib\s+(.+)$/gm;
  * gives a model that imports and renders white.
  */
 export class ObjImporter extends ModelImporter<ObjModelSettings> {
-  readonly id = 'model.obj';
+  readonly id = fixedId('importer', 'model.obj');
   readonly extensions = ['obj'];
   override get label(): string {
     return 'OBJ';

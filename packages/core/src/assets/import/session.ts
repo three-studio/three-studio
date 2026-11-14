@@ -1,4 +1,5 @@
 import type { AssetKind, AssetSettings } from '../schema';
+import type { ImporterId } from '../../ids';
 
 /**
  * What is already in the project that this file would collide with.
@@ -28,8 +29,8 @@ export interface StagedFile {
   /** Absolute source path. Shown to the author; never accepted back as a key. */
   sourcePath: string;
   sizeBytes: number;
-  /** `null` when nothing in the registry claims the extension. */
-  importerId: string | null;
+  /** `null` when no registered importer claims the extension. */
+  importerId: ImporterId | null;
   kind: AssetKind | null;
   /** The importer's name, for the format column. */
   formatLabel: string;

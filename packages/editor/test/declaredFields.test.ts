@@ -19,6 +19,9 @@ import { declaredControl, entityChoices, specFor, type KeyedField } from '../src
 import { GEOMETRY_FIELDS, MATERIAL_FIELDS, type FieldSpec } from '../src/inspector/fields';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The one adapter, exercised by both producers.
@@ -185,7 +188,7 @@ describe('a script property, whichever variant it is', () => {
 
 describe('an importer declares in the same words', () => {
   it('binds a real importer row through the same adapter', () => {
-    const texture = importerForFile('brick.png')!;
+    const texture = importerForFile(registries, 'brick.png')!;
     const settings = texture.defaultSettings('brick.png') as TextureSettings;
     const group = texture.fields(settings)[0]!;
     if (group.type !== 'group') throw new Error('expected a group');

@@ -1,6 +1,7 @@
 import type { AssetKind, TextureEncoding, TextureSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 
 /** Formats whose extension already says they store light rather than pixels. */
 const HDR_EXTENSIONS: ReadonlySet<string> = new Set(['hdr', 'exr']);
@@ -13,7 +14,7 @@ const HDR_EXTENSIONS: ReadonlySet<string> = new Set(['hdr', 'exr']);
  * it needs a transcoder the bundle does not carry yet.
  */
 export class TextureImporter extends AssetImporter<TextureSettings> {
-  readonly id = 'texture';
+  readonly id = fixedId('importer', 'texture');
   readonly kind: AssetKind = 'texture';
   readonly directory = 'textures';
   readonly extensions = ['png', 'jpg', 'jpeg', 'webp', 'ktx2', 'hdr', 'exr'];

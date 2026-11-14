@@ -28,6 +28,12 @@ export type EntityId = Id<'entity'>;
 export type ComponentId = Id<'component'>;
 export type AssetId = Id<'asset'>;
 export type SceneId = Id<'scene'>;
+/**
+ * An importer's: the format it reads, stable across versions, which the layers
+ * that cannot live in `core` key their half of the format by. The built-ins name
+ * themselves with `fixedId('importer', …)`; nothing reads one from outside yet.
+ */
+export type ImporterId = Id<'importer'>;
 
 /**
  * Short, collision-resistant text. Uses `crypto.getRandomValues`, available in

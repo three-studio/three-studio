@@ -8,6 +8,7 @@ import {
   type ComponentDoc,
   type ComponentId,
   type ComponentTypeId,
+  type CoreRegistries,
   type EntityDoc,
   type EntityId,
   type MaterialDef,
@@ -81,14 +82,16 @@ const _z = new Vector3();
  */
 export interface SceneBinderOptions {
   /**
-   * The system that draws each type, from the runtime's registries; each binder
-   * builds its own from them.
+   * What the binder reads of the registries: the system that draws each type,
+   * from which each binder builds its own, and the importers, which say what a
+   * file of a model or a texture is called.
    *
-   * The one registry, rather than the runtime's registries whole: those name
-   * the behaviours, whose context holds a binder, and the binder naming them
-   * back would close an import cycle.
+   * The core's registries and the systems, rather than the runtime's registries
+   * by name: those name the behaviours, whose context holds a binder, and the
+   * binder naming them back would close an import cycle. A window's or a page's
+   * runtime registries are this, whole.
    */
-  systems: Registry<ComponentTypeId, SystemDefinition>;
+  registries: CoreRegistries & { readonly systems: Registry<ComponentTypeId, SystemDefinition> };
   resolver: AssetResolver;
   /**
    * The project's rendering settings, whole.
@@ -227,9 +230,9 @@ export class SceneBinder {
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
-    this.reconciler = new Reconciler(options.systems);
+    this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
-    this.models = new ModelCache(options.resolver);
+    this.models = new ModelCache(options.registries, options.resolver);
     this.shadowMapSize = options.rendering.shadowMapSize;
     this.batcher.enabled = options.rendering.batching;
     // Given the arena rather than one of its own: what it lets go of has to

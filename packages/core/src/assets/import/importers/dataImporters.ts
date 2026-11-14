@@ -7,6 +7,7 @@ import type {
 } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 
 /**
  * The formats the editor writes itself, plus the two source kinds.
@@ -27,7 +28,7 @@ import { field, type FieldRow } from '../../../fields';
  * the ambiguous rest.
  */
 export class PrefabImporter extends AssetImporter<PrefabSettings> {
-  readonly id = 'prefab';
+  readonly id = fixedId('importer', 'prefab');
   readonly kind: AssetKind = 'prefab';
   readonly directory = 'prefabs';
   readonly extensions = [];
@@ -40,7 +41,7 @@ export class PrefabImporter extends AssetImporter<PrefabSettings> {
 
 /** Registered before materials too, which take every `.json` left over (see `PrefabImporter`). */
 export class PhysicsMaterialImporter extends AssetImporter<PhysicsMaterialSettings> {
-  readonly id = 'physicsMaterial';
+  readonly id = fixedId('importer', 'physicsMaterial');
   readonly kind: AssetKind = 'physicsMaterial';
   readonly directory = 'physics-materials';
   readonly extensions = [];
@@ -57,7 +58,7 @@ export class PhysicsMaterialImporter extends AssetImporter<PhysicsMaterialSettin
 }
 
 export class MaterialImporter extends AssetImporter<MaterialSettings> {
-  readonly id = 'material';
+  readonly id = fixedId('importer', 'material');
   readonly kind: AssetKind = 'material';
   readonly directory = 'materials';
   readonly extensions = ['json'];
@@ -69,7 +70,7 @@ export class MaterialImporter extends AssetImporter<MaterialSettings> {
 }
 
 export class ScriptImporter extends AssetImporter<ScriptSettings> {
-  readonly id = 'script';
+  readonly id = fixedId('importer', 'script');
   readonly kind: AssetKind = 'script';
   readonly directory = 'scripts';
   readonly extensions = ['ts', 'js'];
@@ -80,7 +81,7 @@ export class ScriptImporter extends AssetImporter<ScriptSettings> {
 }
 
 export class ShaderImporter extends AssetImporter<ShaderSettings> {
-  readonly id = 'shader';
+  readonly id = fixedId('importer', 'shader');
   readonly kind: AssetKind = 'shader';
   readonly directory = 'shaders';
   readonly extensions = ['wgsl'];

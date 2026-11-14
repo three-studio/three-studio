@@ -85,19 +85,20 @@ export async function ipcBytes(
   project: string,
   subject: Subject,
 ): Promise<{ list: number; move: number; renameFolder: number; refresh: number }> {
-  const manifest = await scanAssets(project);
-  const moved = await moveAsset(project, subject.asset, subject.to);
+  const registries = builtInRegistries();
+  const manifest = await scanAssets(registries, project);
+  const moved = await moveAsset(registries, project, subject.asset, subject.to);
   const landed = moved.moved[0]?.to;
   if (landed === undefined) throw new Error(`moving ${subject.asset} moved nothing`);
-  await moveAsset(project, landed, folderOf(subject.asset));
+  await moveAsset(registries, project, landed, folderOf(subject.asset));
   const renamed = await renameAssetFolder(project, subject.folder, `${basename(subject.folder)}-renamed`);
   const newName = renamed.addedFolders[0];
   if (newName === undefined) throw new Error(`renaming ${subject.folder} renamed nothing`);
   await renameAssetFolder(project, newName, basename(subject.folder));
   const libraries = [
-    await readMaterialAssets(project, manifest),
-    await readPhysicsMaterialAssets(project, manifest),
-    await readPrefabAssets(builtInRegistries(), project, manifest),
+    await readMaterialAssets(registries, project, manifest),
+    await readPhysicsMaterialAssets(registries, project, manifest),
+    await readPrefabAssets(registries, project, manifest),
   ];
   return {
     list: jsonBytes(manifest),
@@ -109,12 +110,14 @@ export async function ipcBytes(
 
 /** The scan warm, and with its index removed, the medians. */
 async function scanTimings(project: string): Promise<{ warm: number; cold: number }> {
+  // Made before the clock starts: a root makes them once, and the scan is what is timed.
+  const registries = builtInRegistries();
   const timed = async (): Promise<number> => {
     const started = performance.now();
-    await scanAssets(project);
+    await scanAssets(registries, project);
     return performance.now() - started;
   };
-  for (let n = 0; n < SCAN_WARMUPS; n += 1) await scanAssets(project);
+  for (let n = 0; n < SCAN_WARMUPS; n += 1) await scanAssets(registries, project);
   const warm: number[] = [];
   for (let n = 0; n < SCANS; n += 1) warm.push(await timed());
   const cold: number[] = [];

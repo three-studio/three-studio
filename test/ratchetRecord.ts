@@ -80,7 +80,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['apps/web-template/test/deviceStats.test.ts', { as: 4, nonNull: 12 }],
   ['packages/core/src/assets/import/AssetImporter.ts', { nonNull: 1 }],
   ['packages/core/src/assets/import/importers/GltfImporter.ts', { as: 1 }],
-  ['packages/core/src/assets/import/index.ts', { as: 1, state: 1 }],
   ['packages/core/src/components/audioSource/schema.ts', { as: 1 }],
   ['packages/core/src/conform.ts', { as: 7 }],
   ['packages/core/src/guards.ts', { as: 6, nonNull: 1 }],
