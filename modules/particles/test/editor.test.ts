@@ -42,12 +42,14 @@ describe('the pane of a type written as a schema', () => {
   const emitter = (shape: 'point' | 'sphere' | 'box'): ComponentDoc => ({ ...particleEmitterType.create(), shape });
 
   it('is derived from its fields, row for row what was written by hand', () => {
-    const pane = assertDefined(paneFor(registries, 'particleEmitter'), 'the emitter\'s pane');
+    const pane = paneEntriesFor(registries, emitter('sphere'));
 
     // Through JSON, as the reference was taken: it drops the functions, which
     // are the conditions, and keeps every key a row declares.
-    expect(JSON.parse(JSON.stringify(pane.fields))).toEqual(WRITTEN_BY_HAND);
+    expect(JSON.parse(JSON.stringify(pane.entries))).toEqual(WRITTEN_BY_HAND);
+    expect(pane.key).toBe('particleEmitter');
     expect(registries.panes.get('particleEmitter')).toBeUndefined();
+    expect(paneFor(registries, 'particleEmitter')).toBeUndefined();
   });
 
   it('shows the radius for a sphere, the box size for a box, and every other row always', () => {
@@ -64,8 +66,8 @@ describe('the pane of a type written as a schema', () => {
     expect(shown('box')).toEqual(['Emit from', 'Box size', ...always]);
   });
 
-  it('is derived once: asked again, it is the same pane', () => {
-    expect(paneFor(registries, 'particleEmitter')).toBe(paneFor(registries, 'particleEmitter'));
+  it('is derived once: asked again, whatever the shape, it is the same pane', () => {
+    expect(paneEntriesFor(registries, emitter('box'))).toBe(paneEntriesFor(registries, emitter('point')));
   });
 });
 

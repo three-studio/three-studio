@@ -1,7 +1,7 @@
 import { Registry, type ComponentTypeId } from '@three-studio/core';
 import { createRuntimeRegistries, type RuntimeRegistries } from '@three-studio/runtime';
 import type { AddMenuGroup, EntityOverlay, HierarchyIcon } from './components/registry';
-import type { ComponentPane } from './inspector/fields';
+import type { ComponentPane, PaneExtension } from './inspector/fields';
 
 /**
  * What the editor knows by registration, on top of what the runtime does: what
@@ -19,8 +19,11 @@ import type { ComponentPane } from './inspector/fields';
  * with all three. The activation that lists the parts is `activate.ts`.
  */
 export interface EditorRegistries extends RuntimeRegistries {
-  /** The panes written by hand. A type written as a schema needs none: its pane is derived. */
-  readonly panes: Registry<ComponentTypeId, ComponentPane>;
+  /**
+   * What a type adds to the pane derived from its schema; or, for a type not
+   * yet written as one, its whole pane, written by hand.
+   */
+  readonly panes: Registry<ComponentTypeId, ComponentPane | PaneExtension>;
   readonly addMenu: Registry<ComponentTypeId, AddMenuGroup>;
   readonly overlays: Registry<ComponentTypeId, EntityOverlay>;
   readonly icons: Registry<ComponentTypeId, HierarchyIcon>;

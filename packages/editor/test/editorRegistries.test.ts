@@ -15,7 +15,8 @@ import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { activateEditor } from '../src/activate';
 import { inspectorSignature } from '../src/inspector/buildInspector';
-import { derivePane, paneFor, unknownTypesOn } from '../src/inspector/panes';
+import { derivedPane } from '../src/inspector/derivePane';
+import { paneFor, unknownTypesOn } from '../src/inspector/panes';
 import { createEditorRegistries } from '../src/registries';
 import { addMenuGroups } from '../src/shell/addMenu';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -201,11 +202,11 @@ describe('the pane of a type written as a schema', () => {
   } as const satisfies Schema;
 
   it('is a row per field in their order, a rule where a field asks for one, and only the bounds a field gives', () => {
-    const pane = derivePane('mesh', schema);
+    const pane = derivedPane('light', schema, undefined, createLight('point'));
 
     // Through JSON, which drops the functions: the conditions are checked below.
-    expect(pane.id).toBe('mesh');
-    expect(JSON.parse(JSON.stringify(pane.fields))).toEqual([
+    expect(pane.key).toBe('light');
+    expect(JSON.parse(JSON.stringify(pane.entries))).toEqual([
       { path: ['kind'], label: 'Kind', type: 'enum', options: [{ value: 'point', label: 'Point' }, { value: 'spot', label: 'Spot' }] },
       { path: ['reach'], label: 'Reach', type: 'number', min: 0, step: 0.5 },
       { kind: 'separator' },
@@ -217,7 +218,7 @@ describe('the pane of a type written as a schema', () => {
   });
 
   it('shows a conditional row only while the field it names holds the value', () => {
-    const [, reach] = derivePane('light', schema).fields;
+    const [, reach] = derivedPane('light', schema, undefined, createLight('point')).entries;
     // Asked of a light, which holds a `kind`: the pane reads any component by the key the condition names.
     const shown = (component: ComponentDoc): boolean | undefined =>
       reach !== undefined && 'path' in reach ? reach.visibleWhen?.(component) : undefined;

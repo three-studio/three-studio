@@ -15,10 +15,13 @@
 import {
   MATERIAL_SIDE_LABELS,
   TEXTURE_WRAP_LABELS,
+  isComponentOfType,
   optionsFrom,
   type AssetKind,
   type ComponentDoc,
   type ComponentId,
+  type ComponentOfType,
+  type ComponentType,
   type ComponentTypeId,
   type EntityId,
   type FieldDef,
@@ -171,7 +174,10 @@ export interface SeparatorSpec {
   visibleWhen?: never;
 }
 
-export type PaneEntry = FieldSpec | ActionSpec | GeometrySlotSpec | SeparatorSpec;
+/** A row of a pane as the Inspector builds it: every slot expanded. */
+export type PaneRow = FieldSpec | ActionSpec | SeparatorSpec;
+
+export type PaneEntry = PaneRow | GeometrySlotSpec;
 
 /**
  * Whether an entry is a field, by the one property only a field has.
@@ -234,6 +240,75 @@ export interface ComponentPane {
    * by the components the world builds — `rigidbody`, `collider` and `joint`.
    */
   live?: true;
+}
+
+/**
+ * What a type written as a schema adds to the pane derived from it: what the
+ * schema cannot say. A handful of buttons, a choice the project or the scene
+ * supplies, one value shown as two rows, a script's declared properties.
+ *
+ * An extension and not a pane of its own: every row a schema can say is
+ * derived, and a type that wanted one button more would otherwise copy its
+ * whole pane to add it — the second list a schema exists to remove.
+ *
+ * Erased to `ComponentDoc` so that one registry holds every type's; a type's
+ * editor part writes one with `extendPane`, typed by its own component.
+ */
+export interface PaneExtension {
+  readonly id: ComponentTypeId;
+  /**
+   * Rows in place of a field's own row — a leaf's, a union's selector — keyed
+   * by the field. The rows the field holds follow: a union's variant, an
+   * object's fields. Handed the row derivation gave, or `null` where it gives
+   * none. Asked once per pane key: rows that depend on more than the variants
+   * the component holds say what with `paneKey`.
+   */
+  readonly drawers?: { readonly [key: string]: Drawer<ComponentDoc> | undefined };
+  /** Entries after a field's last row — an object's or a union's included — keyed by the field. */
+  readonly after?: { readonly [key: string]: readonly PaneRow[] | undefined };
+  /** What else makes the rows another list, beyond the variants the component holds. */
+  readonly paneKey?: (component: ComponentDoc) => string;
+  /** Its rows tune the running game during Play; see `ComponentPane.live`. */
+  readonly live?: true;
+}
+
+/** Rows in place of a field's own; see `PaneExtension.drawers`. */
+type Drawer<C> = (row: FieldSpec | null, component: C) => readonly PaneRow[];
+
+/** A type's own fields: what an extension's drawers and entries are keyed by. */
+type FieldKey<C> = Exclude<keyof C & string, 'id' | 'type'>;
+
+/**
+ * A type's pane extension, written against its own component, so that a
+ * misspelt field does not compile and a drawer reads the type's fields with no
+ * cast. Each callback is asked of the type's own components alone.
+ */
+export function extendPane<T extends ComponentType>(
+  id: T,
+  extension: {
+    readonly drawers?: { readonly [K in FieldKey<ComponentOfType<T>>]?: Drawer<ComponentOfType<T>> };
+    readonly after?: { readonly [K in FieldKey<ComponentOfType<T>>]?: readonly PaneRow[] };
+    readonly paneKey?: (component: ComponentOfType<T>) => string;
+    readonly live?: true;
+  },
+): PaneExtension {
+  const { drawers, after, paneKey, live } = extension;
+  const drawn: Record<string, Drawer<ComponentDoc>> = {};
+  // Read through an index signature, which the mapped type of the type's keys
+  // is assignable to: a loop over its own keys cannot be typed by them.
+  const typed: { readonly [key: string]: Drawer<ComponentOfType<T>> | undefined } = drawers ?? {};
+  for (const [key, draw] of Object.entries(typed)) {
+    if (draw !== undefined) drawn[key] = (row, component) => (isComponentOfType(component, id) ? draw(row, component) : []);
+  }
+  return {
+    id,
+    ...(drawers === undefined ? {} : { drawers: drawn }),
+    ...(after === undefined ? {} : { after }),
+    ...(paneKey === undefined
+      ? {}
+      : { paneKey: (component: ComponentDoc) => (isComponentOfType(component, id) ? paneKey(component) : '') }),
+    ...(live === undefined ? {} : { live }),
+  };
 }
 
 const RAD_TO_DEG = 180 / Math.PI;

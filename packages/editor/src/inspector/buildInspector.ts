@@ -36,7 +36,7 @@ import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { inPrefabMode } from '../state/prefabModeStore';
 import type { EditorRegistries } from '../registries';
-import { paneEntriesFor, paneFor, unknownTypesOn } from './panes';
+import { paneEntriesFor, unknownTypesOn } from './panes';
 import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
 
@@ -293,7 +293,6 @@ export class InspectorBinding {
     const component = target.representative;
     const componentId = component.id;
     const label = this.registries.components.get(component.type)?.label ?? component.type;
-    const live = paneFor(this.registries, component.type)?.live === true;
     const folder = this.binder.pane.addFolder({ title: label });
 
     // Conditional fields read the material the mesh actually renders with, so
@@ -303,7 +302,8 @@ export class InspectorBinding {
     const effective = effectiveComponent(entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
-    for (const spec of paneEntriesFor(this.registries, effective).entries) {
+    const { entries, live } = paneEntriesFor(this.registries, effective);
+    for (const spec of entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
         continue;

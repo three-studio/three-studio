@@ -448,6 +448,19 @@ function declaredVariant(variants: Variants, kind: string): Record<string, unkno
   return { kind, ...(variant === undefined ? {} : declared(variant.fields)) };
 }
 
+/** A union field of a schema. */
+type UnionField = Extract<SchemaField, { readonly type: 'union' }>;
+
+/**
+ * A union field's variant at its defaults, under its `kind`: what choosing it
+ * in the Inspector's selector writes, as one value, for any schema. A new value
+ * each time. Typed code that knows its schema asks `FieldPlan.createVariant`,
+ * which says the same through the decoder.
+ */
+export function variantDefaults(field: UnionField, kind: string): Record<string, unknown> {
+  return structuredClone(declaredVariant(field.variants, kind));
+}
+
 // -------------------------------------------------------------- conditions
 
 /** Whether a value satisfies a condition: what a row's visibility asks of the field it reads. */
