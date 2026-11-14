@@ -1,4 +1,4 @@
-import { createComponent, createEntity, type ScriptComponent } from '@three-studio/core';
+import { createComponent, createEntity, fixedId, type ScriptComponent } from '@three-studio/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Behaviour, clearScripts, registerScript } from '../../src/scripting/ScriptHost';
 import { physicsRig, standInForTheBrowser, takeTheBrowserBack } from './rig';
@@ -10,7 +10,7 @@ import { physicsRig, standInForTheBrowser, takeTheBrowserBack } from './rig';
  * other press ran no tick, and at 120 Hz every press ran two.
  */
 
-const TICKER = 'script-ticker';
+const TICKER = fixedId('asset', 'script-ticker');
 let ticks = 0;
 
 class Ticker extends Behaviour {

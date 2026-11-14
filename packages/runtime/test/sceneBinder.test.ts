@@ -5,6 +5,8 @@ import {
   createMaterial,
   createMeshEntity,
   createRenderingSettings,
+  fixedId,
+  type AssetId,
   type LightComponent,
   type MaterialDef,
   type MeshComponent,
@@ -73,7 +75,7 @@ function meshOf(binder: SceneBinder, entityId: string): Mesh {
 }
 
 /** A cube rendering a material asset rather than its own embedded one. */
-function meshLinkedTo(materialId: string) {
+function meshLinkedTo(materialId: AssetId) {
   const entity = createMeshEntity('box');
   (entity.components[0] as MeshComponent).materialId = materialId;
   return entity;
@@ -127,6 +129,8 @@ describe('binding a scene', () => {
   });
 });
 
+const MAT_1 = fixedId('asset', 'mat-1');
+
 /*
  * The worst of the twelve. Three meshes named the same material asset, and
  * one texture change gave each of them its own copy, each replacement freeing
@@ -134,21 +138,21 @@ describe('binding a scene', () => {
  * not in the shape of the bug.
  */
 describe('a material asset shared by several meshes', () => {
-  const withColorMap = (): MaterialDef => ({ ...createMaterial(), colorMap: 'tex-1' });
+  const withColorMap = (): MaterialDef => ({ ...createMaterial(), colorMap: fixedId('asset', 'tex-1') });
 
   it('stays one material when a texture slot changes', () => {
-    const meshes = [meshLinkedTo('mat-1'), meshLinkedTo('mat-1'), meshLinkedTo('mat-1')];
+    const meshes = [meshLinkedTo(MAT_1), meshLinkedTo(MAT_1), meshLinkedTo(MAT_1)];
     const scene = sceneWith(meshes);
     const binder = binderWith();
 
-    binder.setMaterialLibrary({ 'mat-1': createMaterial() });
+    binder.setMaterialLibrary(new Map([[MAT_1, createMaterial()]]));
     binder.sync(scene);
     expect(binder.poolSizes.materials).toBe(1);
 
     // Assigning a texture is what no patch can absorb: a node material with a
     // new texture slot is a new shader pipeline, so the pool has to replace its
     // entry — once, not once per mesh.
-    binder.setMaterialLibrary({ 'mat-1': withColorMap() });
+    binder.setMaterialLibrary(new Map([[MAT_1, withColorMap()]]));
     binder.sync(scene);
 
     const rendered = meshes.map((entity) => meshOf(binder, entity.entity.id).material as Material);
@@ -167,7 +171,7 @@ describe('a material asset shared by several meshes', () => {
  */
 describe('a model that arrives late', () => {
   it('is thrown away when its entity went while it was loading', async () => {
-    const entity = createEntity('Crate', [{ ...createComponent('model'), assetId: 'crate' }]);
+    const entity = createEntity('Crate', [{ ...createComponent('model'), assetId: fixedId('asset', 'crate') }]);
     const model = new Group();
 
     let land = (): void => {};
@@ -486,11 +490,12 @@ describe('batching a scene that casts shadows', () => {
  */
 describe('what a batch has to notice', () => {
   it('follows a shared material that was replaced under it', () => {
-    const linked = [0, 1, 2, 3].map(() => meshLinkedTo('rock'));
+    const ROCK = fixedId('asset', 'rock');
+    const linked = [0, 1, 2, 3].map(() => meshLinkedTo(ROCK));
     const binder = batching();
     const flat = createMaterial('#ffffff');
 
-    binder.setMaterialLibrary({ rock: flat });
+    binder.setMaterialLibrary(new Map([[ROCK, flat]]));
     binder.sync(sceneWith(linked));
     expect(batchOf(binder).material).toBe(meshOf(binder, linked[0]!.entity.id).material);
 
@@ -499,8 +504,8 @@ describe('what a batch has to notice', () => {
     // The asset id does not change, so neither does `batchKey` — and the meshes
     // survive every patch, so the group looks identical. Nothing in the regroup
     // could see this but the material itself.
-    const textured: MaterialDef = { ...flat, colorMap: 'gravel' };
-    const invalidated = binder.setMaterialLibrary({ rock: textured });
+    const textured: MaterialDef = { ...flat, colorMap: fixedId('asset', 'gravel') };
+    const invalidated = binder.setMaterialLibrary(new Map([[ROCK, textured]]));
     binder.sync(sceneWith(linked), invalidated);
 
     // The old material is in the retire queue by now, and `beginFrame` will free
@@ -761,6 +766,9 @@ describe('what a batch has to notice', () => {
   });
 });
 
+const SKY_1 = fixedId('asset', 'sky-1');
+const SKY_2 = fixedId('asset', 'sky-2');
+
 /*
  * The sky, and the one rule that makes it appear at all.
  *
@@ -776,7 +784,7 @@ describe('what a batch has to notice', () => {
  * rule below; the two caches are three's and cannot be asserted from here.
  */
 describe('an equirectangular image that is still decoding', () => {
-  function skyScene(assetId: string) {
+  function skyScene(assetId: AssetId) {
     const scene = sceneWith([]);
     scene.environment.backgroundMode = 'texture';
     scene.environment.backgroundTexture = assetId;
@@ -792,7 +800,7 @@ describe('an equirectangular image that is still decoding', () => {
 
     const binder = binderWith({ url: () => 'studio-asset://project/sky.hdr' });
     const target = new Scene();
-    const scene = skyScene('sky-1');
+    const scene = skyScene(SKY_1);
 
     binder.syncEnvironment(target, scene);
     // Not the texture: handing it over now is what poisons three's caches with
@@ -810,25 +818,25 @@ describe('an equirectangular image that is still decoding', () => {
     const first = new Texture();
     const second = new Texture();
     vi.spyOn(ModelCache.prototype, 'instanceTexture').mockImplementation((assetId) =>
-      assetId === 'sky-1' ? first : second,
+      assetId === SKY_1 ? first : second,
     );
     const ready = vi
       .spyOn(ModelCache.prototype, 'textureReady')
-      .mockImplementation((assetId) => assetId === 'sky-1');
+      .mockImplementation((assetId) => assetId === SKY_1);
     vi.spyOn(ModelCache.prototype, 'whenTextureReady').mockResolvedValue(undefined);
 
     const binder = binderWith({ url: () => 'studio-asset://project/sky.hdr' });
     const target = new Scene();
-    binder.syncEnvironment(target, skyScene('sky-1'));
+    binder.syncEnvironment(target, skyScene(SKY_1));
     expect(target.background).toBe(first);
 
     // Switching to an image that has not arrived must not flash the clear
     // colour — the sky that is up stays up until there is one to replace it.
-    binder.syncEnvironment(target, skyScene('sky-2'));
+    binder.syncEnvironment(target, skyScene(SKY_2));
     expect(target.background).toBe(first);
 
     ready.mockReturnValue(true);
-    binder.syncEnvironment(target, skyScene('sky-2'));
+    binder.syncEnvironment(target, skyScene(SKY_2));
     expect(target.background).toBe(second);
   });
 });

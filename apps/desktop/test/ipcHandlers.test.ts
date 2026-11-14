@@ -10,6 +10,7 @@ import {
   LAYOUT_PREFERENCES_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
   assertDefined,
+  createAssetId,
   createEmptyScene,
   createMaterial,
   createMeshEntity,
@@ -20,6 +21,7 @@ import {
   deserializePrefab,
   deserializeScene,
   emptyComponentTables,
+  isAssetId,
   jsonOf,
   serializePrefab,
   serializeScene,
@@ -398,6 +400,56 @@ describe('the guards are reached, not merely written', () => {
       'not valid JSON',
     );
     await expect(readFile(join(root, 'assets', 'prefabs', 'Crate.prefab.json'), 'utf8')).rejects.toThrow();
+  });
+
+  /*
+   * A prefab is an asset, and an asset's id is the one its sidecar holds. The
+   * file used to say another: `createPrefabDoc` made one id for the document
+   * and the sidecar a second, and nothing but the sidecar's was ever read.
+   */
+  it('writes a prefab under the id of its sidecar, which is the id it was made with', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefab));
+
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    expect(id).toBe(prefab.id);
+    expect(JSON.parse(await readFile(file, 'utf8')).id).toBe(id);
+    expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(id);
+  });
+
+  it('writes a prefab again under the id it was given, for the redo of an undone creation', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+    const given = createAssetId();
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefab), given);
+
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    expect(id).toBe(given);
+    expect(JSON.parse(await readFile(file, 'utf8')).id).toBe(given);
+    expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(given);
+  });
+
+  it('reads each prefab under the id of its sidecar, whatever its own file says', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+    const id = await invoke<unknown>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefab));
+    if (!isAssetId(id)) throw new Error('createPrefab answered with no asset id');
+    // A file edited by hand, or written by the build before this one.
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    const edited = { ...JSON.parse(await readFile(file, 'utf8')), id: 'a-name-from-the-past' };
+    await writeFile(file, JSON.stringify(edited), 'utf8');
+
+    const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
+
+    expect(Object.keys(read)).toEqual([id]);
+    expect(deserializePrefab(assertDefined(read[id], 'the prefab read'), id).id).toBe(id);
+    expect(JSON.parse(assertDefined(read[id], 'the prefab read')).id).toBe(id);
   });
 
   it('never lets a settings patch choose the token or the version', async () => {

@@ -12,6 +12,7 @@ import {
   deserializePrefab,
   expandPrefabs,
   findComponent,
+  fixedId,
   jsonOf,
   migratePrefab,
   putComponent,
@@ -26,6 +27,7 @@ import {
   splitInstancedId,
   stableJson,
   variantBaseOf,
+  type AssetId,
   type PrefabDoc,
   type PrefabInstanceComponent,
 } from '@three-studio/core';
@@ -38,6 +40,14 @@ import { prefabWith, sceneWith } from './fixtures';
  * derived, and everything downstream — the binder, the physics world, the
  * behaviour registry — must still be handed a plain scene.
  */
+
+const PREFAB_1 = fixedId('asset', 'prefab-1');
+const PREFAB_2 = fixedId('asset', 'prefab-2');
+const PREFAB_LOOP = fixedId('asset', 'prefab-loop');
+const SCRIPT_1 = fixedId('asset', 'script-1');
+const TREE = fixedId('asset', 'tree');
+const LAMP = fixedId('asset', 'lamp');
+const ROOM = fixedId('asset', 'room');
 
 /** A trunk with one branch, so parenting inside the prefab is exercised. */
 function treePrefab(): PrefabDoc {
@@ -54,19 +64,19 @@ function treePrefab(): PrefabDoc {
 /**
  * An entity that places a prefab.
  *
- * `_prefab` is never read: the instance names `'prefab-1'`, the id `library`
+ * `_prefab` is never read: the instance names `PREFAB_1`, the id `library`
  * serves whichever prefab it is given under. It stays so that each call says
  * which prefab it places.
  */
 function instanceOf(_prefab: PrefabDoc, at: [number, number, number] = [0, 0, 0]) {
   const host = createEntity('Tree', [
-    createPrefabInstance('prefab-1'),
+    createPrefabInstance(PREFAB_1),
   ]);
   host.entity.transform.position = at;
   return host;
 }
 
-const library = (prefab: PrefabDoc) => ({ get: (id: string) => (id === 'prefab-1' ? prefab : undefined) });
+const library = (prefab: PrefabDoc) => ({ get: (id: AssetId) => (id === PREFAB_1 ? prefab : undefined) });
 
 /*
  * A prefab file is the document as text, written as a scene is: key-sorted, so
@@ -96,6 +106,21 @@ describe('a prefab as text', () => {
     expect(() => deserializePrefab('{ not json')).toThrow('Prefab file is not valid JSON');
   });
 
+  it('is read under the id it is given, whatever its own file says', () => {
+    const text = serializePrefab(treePrefab());
+
+    // A prefab is an asset, and the place that read it knows the asset's id: its
+    // sidecar's, or its key in a library.
+    expect(deserializePrefab(text, TREE).id).toBe(TREE);
+  });
+
+  it('is refused when it has no id of its own and none is given', () => {
+    const text = jsonOf({ ...treePrefab(), id: '' });
+
+    expect(() => deserializePrefab(text)).toThrow('no id of its own');
+    expect(deserializePrefab(text, TREE).id).toBe(TREE);
+  });
+
   it('holds its entities in a Map once read', () => {
     const read = deserializePrefab(serializePrefab(treePrefab()));
 
@@ -104,14 +129,15 @@ describe('a prefab as text', () => {
   });
 
   it('is read out of the JSON a manifest holds, each one, as the player reads them', () => {
-    const tree = treePrefab();
+    // Filed under its own id, as a manifest files each one.
+    const tree = { ...treePrefab(), id: TREE };
     // As `build.json` is written, and fetched.
-    const fetched = JSON.parse(jsonOf({ tree }));
+    const fetched = JSON.parse(jsonOf({ [TREE]: tree }));
 
     const read = prefabsFromJson(fetched);
 
-    expect(read['tree']?.entities).toBeInstanceOf(Map);
-    expect(read['tree']).toEqual(tree);
+    expect(read.get(TREE)?.entities).toBeInstanceOf(Map);
+    expect(read.get(TREE)).toEqual(tree);
   });
 
   it('refuses a document that already holds a Map, which no file does', () => {
@@ -325,7 +351,7 @@ describe('prefab expansion', () => {
   it('puts the lights a prefab places in the expanded scene\'s tables, where the editor looks for one', () => {
     const lamp = createLightEntity('point');
     const prefab = prefabWith('Lamp', [lamp], lamp.entity.id);
-    const host = createEntity('Lamp', [createPrefabInstance('prefab-1')]);
+    const host = createEntity('Lamp', [createPrefabInstance(PREFAB_1)]);
     const scene = sceneWith([host]);
 
     const { scene: expanded } = expandPrefabs(scene, library(prefab));
@@ -361,7 +387,7 @@ describe('nested prefabs', () => {
     const floor = createMeshEntity('plane');
     floor.entity.name = 'Floor';
     const planted = createEntity('Planted tree', [
-      createPrefabInstance('prefab-1'),
+      createPrefabInstance(PREFAB_1),
     ]);
     planted.entity.parent = floor.entity.id;
     planted.entity.transform.position = [1, 0, 1];
@@ -370,12 +396,12 @@ describe('nested prefabs', () => {
   }
 
   const twoPrefabs = (tree: PrefabDoc, room: PrefabDoc) => ({
-    get: (id: string) => (id === 'prefab-1' ? tree : id === 'prefab-2' ? room : undefined),
+    get: (id: AssetId) => (id === PREFAB_1 ? tree : id === PREFAB_2 ? room : undefined),
   });
 
   function roomInstance() {
     return createEntity('Room', [
-      createPrefabInstance('prefab-2'),
+      createPrefabInstance(PREFAB_2),
     ]);
   }
 
@@ -400,11 +426,11 @@ describe('nested prefabs', () => {
   });
 
   it('stops rather than hangs when a prefab contains itself', () => {
-    const loop = createEntity('Root', [createPrefabInstance('prefab-loop')]);
+    const loop = createEntity('Root', [createPrefabInstance(PREFAB_LOOP)]);
     const selfish = prefabWith('Selfish', [loop], loop.entity.id);
 
     const host = createEntity('Loop', [
-      createPrefabInstance('prefab-loop'),
+      createPrefabInstance(PREFAB_LOOP),
     ]);
 
     // Reachable by hand-editing a file, or by a rename that makes two assets
@@ -449,7 +475,7 @@ describe('nested prefabs', () => {
   it('expands one instance per entity, so ids cannot collide', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab);
-    host.components.push(createPrefabInstance('prefab-1'));
+    host.components.push(createPrefabInstance(PREFAB_1));
 
     // Two instances on one entity would build the same ids twice and quietly
     // keep half of each.
@@ -463,14 +489,14 @@ describe('references inside a prefab', () => {
     const turret = createMeshEntity('box');
     turret.entity.name = 'Turret';
     const brain = createEntity('Brain', [
-      { ...createComponent('script'), assetId: 'script-1', props: { target: turret.entity.id, speed: 3 } },
+      { ...createComponent('script'), assetId: SCRIPT_1, props: { target: turret.entity.id, speed: 3 } },
     ]);
     turret.entity.children = [brain.entity.id];
     brain.entity.parent = turret.entity.id;
     const prefab = prefabWith('Tank', [turret, brain], turret.entity.id);
 
     const host = createEntity('Tank', [
-      createPrefabInstance('prefab-1'),
+      createPrefabInstance(PREFAB_1),
     ]);
     const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
 
@@ -491,7 +517,7 @@ describe('references inside a prefab', () => {
     door.entity.parent = frame.entity.id;
     const prefab = prefabWith('Doorway', [frame, door], frame.entity.id);
 
-    const host = createEntity('Doorway', [createPrefabInstance('prefab-1')]);
+    const host = createEntity('Doorway', [createPrefabInstance(PREFAB_1)]);
     const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
 
     const joint = findComponent(scene, instancedId(host.entity.id, door.entity.id), 'joint');
@@ -576,22 +602,22 @@ describe('creating a prefab from a scene', () => {
 describe('prefab variants', () => {
   it('is one entity holding an instance of the base', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Autumn Tree', 'prefab-1');
+    const variant = prefabVariantOf('Autumn Tree', PREFAB_1);
 
     expect(variant.entities.size).toBe(1);
-    expect(variantBaseOf(variant)).toBe('prefab-1');
+    expect(variantBaseOf(variant)).toBe(PREFAB_1);
     // An ordinary prefab is not one, and must not be offered "revert to base".
     expect(variantBaseOf(base)).toBeNull();
   });
 
   it('draws the base, and follows a change to it', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Autumn Tree', 'prefab-1');
+    const variant = prefabVariantOf('Autumn Tree', PREFAB_1);
     const host = createEntity('Tree', [
-      createPrefabInstance('prefab-2'),
+      createPrefabInstance(PREFAB_2),
     ]);
     const library = {
-      get: (id: string) => (id === 'prefab-1' ? base : id === 'prefab-2' ? variant : undefined),
+      get: (id: AssetId) => (id === PREFAB_1 ? base : id === PREFAB_2 ? variant : undefined),
     };
 
     const names = () =>
@@ -607,17 +633,17 @@ describe('prefab variants', () => {
 
   it('keeps its own overrides while following everything else', () => {
     const base = treePrefab();
-    const variant = prefabVariantOf('Short Tree', 'prefab-1');
+    const variant = prefabVariantOf('Short Tree', PREFAB_1);
     // The override a variant carries lives on its root's instance component —
     // set in Prefab Mode, because a scene cannot reach two prefabs deep.
     const rootInstance = componentsOf(variant, variant.root)[0] as PrefabInstanceComponent;
     rootInstance.overrides = { [base.root]: { transform: { scale: [1, 0.4, 1] } } };
 
     const host = createEntity('Tree', [
-      createPrefabInstance('prefab-2'),
+      createPrefabInstance(PREFAB_2),
     ]);
     const { scene } = expandPrefabs(sceneWith([host]), {
-      get: (id: string) => (id === 'prefab-1' ? base : id === 'prefab-2' ? variant : undefined),
+      get: (id: AssetId) => (id === PREFAB_1 ? base : id === PREFAB_2 ? variant : undefined),
     });
 
     const trunk = [...scene.entities.values()].find((entity) => entity.name === 'Trunk')!;
@@ -685,7 +711,7 @@ describe('overriding through nesting', () => {
   }
 
   /** A room whose only child is an instance of the lamp. */
-  function roomPrefab(lampAssetId: string): PrefabDoc {
+  function roomPrefab(lampAssetId: AssetId): PrefabDoc {
     const floor = createMeshEntity('plane');
     floor.entity.name = 'Floor';
     const placed = createEntity('Placed lamp', [
@@ -698,12 +724,12 @@ describe('overriding through nesting', () => {
 
   function setup() {
     const lamp = lampPrefab();
-    const room = roomPrefab('lamp');
+    const room = roomPrefab(LAMP);
     const host = createEntity('Room', [
-      createPrefabInstance('room'),
+      createPrefabInstance(ROOM),
     ]);
     const library = {
-      get: (id: string) => (id === 'lamp' ? lamp : id === 'room' ? room : undefined),
+      get: (id: AssetId) => (id === LAMP ? lamp : id === ROOM ? room : undefined),
     };
     const placed = [...room.entities.values()].find((e) => e.name === 'Placed lamp')!;
     return { lamp, room, host, library, placed };
@@ -731,7 +757,7 @@ describe('overriding through nesting', () => {
     void room;
 
     // The room says the lamp it places is dim; this room says it is off.
-    const roomDoc = library.get('room')!;
+    const roomDoc = library.get(ROOM)!;
     const placement = componentsOf(roomDoc, placed.id)[0] as PrefabInstanceComponent;
     placement.overrides = { [lamp.root]: { name: 'Dim lamp', visible: true } };
 
@@ -754,7 +780,7 @@ describe('overriding through nesting', () => {
       [`${placed.id}/${lamp.root}`]: { name: 'Broken lamp' },
     };
     const other = createEntity('Room', [
-      createPrefabInstance('room'),
+      createPrefabInstance(ROOM),
     ]);
 
     const { scene } = expandPrefabs(sceneWith([host, other]), library);

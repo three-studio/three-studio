@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, createComponent, createLightEntity, createMaterial, createMeshComponent, createWater, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { SUN_CUSTOM, createComponent, createLightEntity, createMaterial, createMeshComponent, createWater, fixedId, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -36,7 +36,7 @@ import { StudioTime } from '../../src/time/StudioTime';
  * its own. Now each system has to answer out loud, and a test can ask.
  */
 
-function context(materials: Record<string, ReturnType<typeof createMaterial>> = {}): {
+function context(materials: ReadonlyMap<AssetId, ReturnType<typeof createMaterial>> = new Map()): {
   ctx: SystemContext;
   arena: ResourceArena;
   time: StudioTime;
@@ -62,6 +62,8 @@ function context(materials: Record<string, ReturnType<typeof createMaterial>> = 
   };
   return { ctx, arena, time, invalidated: () => invalidated };
 }
+
+const MAT_1 = fixedId('asset', 'mat-1');
 
 describe('the mesh system', () => {
   it('keeps the geometry, the material and the mesh across an edit that touches none', () => {
@@ -126,7 +128,7 @@ describe('the mesh system', () => {
 
     const next: MeshComponent = {
       ...component,
-      material: { ...component.material, normalMap: 'tex-1' },
+      material: { ...component.material, normalMap: fixedId('asset', 'tex-1') },
     };
     const second = system.patch(first, component, next, ctx);
 
@@ -134,9 +136,9 @@ describe('the mesh system', () => {
   });
 
   it('shares one material between every mesh naming the same asset', () => {
-    const { ctx, arena } = context({ 'mat-1': createMaterial('#00ff00') });
+    const { ctx, arena } = context(new Map([[MAT_1, createMaterial('#00ff00')]]));
     const system = new MeshSystem();
-    const component: MeshComponent = { ...createMeshComponent('box'), materialId: 'mat-1' };
+    const component: MeshComponent = { ...createMeshComponent('box'), materialId: MAT_1 };
 
     const one = system.mount('a', component, ctx);
     const two = system.mount('b', { ...component, id: 'other' }, ctx);
@@ -151,7 +153,7 @@ describe('the mesh system', () => {
   });
 
   it('hands its private material over when the mesh is linked to an asset', () => {
-    const { ctx, arena } = context({ 'mat-1': createMaterial('#00ff00') });
+    const { ctx, arena } = context(new Map([[MAT_1, createMaterial('#00ff00')]]));
     const system = new MeshSystem();
     const component = createMeshComponent('box');
     const first = system.mount('cube', component, ctx);
@@ -159,7 +161,7 @@ describe('the mesh system', () => {
     let disposed = 0;
     first.material.dispose = () => void (disposed += 1);
 
-    const linked: MeshComponent = { ...component, materialId: 'mat-1' };
+    const linked: MeshComponent = { ...component, materialId: MAT_1 };
     system.patch(first, component, linked, ctx);
     arena.flush();
 
@@ -361,7 +363,7 @@ describe('the light system', () => {
     (ctx as { models: unknown }).models = { instanceTexture: () => new Texture() };
 
     const system = new LightSystem();
-    const component = { ...light('projector'), mapId: 'gobo-a' };
+    const component = { ...light('projector'), mapId: fixedId('asset', 'gobo-a') };
     const handle = system.mount('projector', component, ctx);
 
     const first = (handle.light as ProjectorLight).map;
@@ -371,7 +373,7 @@ describe('the light system', () => {
     let disposed = 0;
     if (first) first.dispose = () => void (disposed += 1);
 
-    const patched = system.patch(handle, component, { ...component, mapId: 'gobo-b' }, ctx);
+    const patched = system.patch(handle, component, { ...component, mapId: fixedId('asset', 'gobo-b') }, ctx);
 
     // Not a remount: a light's shadow map costs far more than a texture, and
     // changing which picture it throws should not cost one.
@@ -472,9 +474,12 @@ function stubCache(knows = true): { models: ModelCache; asked: string[] } {
   return { models: models as unknown as ModelCache, asked };
 }
 
+const CHAIR = fixedId('asset', 'chair');
+const SHARED = fixedId('asset', 'shared');
+
 const modelComponent = (partial: Partial<ModelComponent> = {}): ModelComponent => ({
   ...createComponent('model'),
-  assetId: 'chair',
+  assetId: CHAIR,
   ...partial,
 });
 
@@ -569,13 +574,13 @@ describe('the model system', () => {
 
   it('takes exactly one pooled reference for a material, and gives it back', async () => {
     const material = createMaterial();
-    const { ctx, arena } = context({ shared: material });
+    const { ctx, arena } = context(new Map([[SHARED, material]]));
     const { models } = stubCache();
     const system = new ModelSystem();
     const ctxWith = { ...ctx, models };
     // A single node, so the object the handle holds is the mesh itself.
     const plain = modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' });
-    const linked = { ...plain, materialId: 'shared' };
+    const linked = { ...plain, materialId: SHARED };
 
     const handle = system.mount('chair', linked, ctxWith);
     await system.whenLoaded();
@@ -585,7 +590,7 @@ describe('the model system', () => {
     // clearing the field puts it back rather than leaving the last override on.
     const drawn = handle.objects[0] as Mesh;
     const override = drawn.material;
-    expect(handle.materialKey).toBe('shared');
+    expect(handle.materialKey).toBe(SHARED);
 
     const back = system.patch(handle, linked, plain, ctxWith);
     expect(back).not.toBe('remount');
@@ -594,12 +599,12 @@ describe('the model system', () => {
   });
 
   it('gives its material back on unmount, whatever else it frees', async () => {
-    const { ctx, arena } = context({ shared: createMaterial() });
+    const { ctx, arena } = context(new Map([[SHARED, createMaterial()]]));
     const { models } = stubCache();
     const system = new ModelSystem();
     const ctxWith = { ...ctx, models };
 
-    const handle = system.mount('chair', modelComponent({ materialId: 'shared' }), ctxWith);
+    const handle = system.mount('chair', modelComponent({ materialId: SHARED }), ctxWith);
     await system.whenLoaded();
     system.unmount(handle, ctxWith);
 
@@ -701,7 +706,7 @@ describe('the water system', () => {
     const sun = { direction: [0, 1, 0] as [number, number, number], color: '#ff0000' };
     const ctx: SystemContext = {
       arena,
-      materials: {},
+      materials: new Map(),
       models: new ModelCache({ url: () => null }),
       time: new StudioTime(),
       shadowMapSize: 1024,

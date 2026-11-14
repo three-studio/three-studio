@@ -1,4 +1,4 @@
-import type { AssetEntry, AssetKind } from '@three-studio/core';
+import { isAssetId, type AssetEntry, type AssetId, type AssetKind } from '@three-studio/core';
 
 /** Carries the asset id; read on drop by the viewport and by inspector fields. */
 export const ASSET_DRAG_MIME = 'application/x-studio-asset';
@@ -28,4 +28,19 @@ export function setAssetDragPayload(dataTransfer: DataTransfer, asset: AssetEntr
   dataTransfer.setData(ASSET_PATH_MIME, asset.path);
   dataTransfer.setData(assetKindMime(asset.kind), asset.id);
   dataTransfer.effectAllowed = 'copyMove';
+}
+
+/**
+ * The asset a drop carries, or `null` when what it carries is no asset's id.
+ *
+ * What a drop holds is text the browser hands over, and a drag can come from
+ * anywhere: another window, another application, a page that set the same type
+ * on purpose. So it is checked as the id it has to be, here, by the one reader
+ * the viewport and the inspector's fields share.
+ */
+export function droppedAssetId(
+  dataTransfer: Pick<DataTransfer, 'getData'> | null | undefined,
+): AssetId | null {
+  const text = dataTransfer?.getData(ASSET_DRAG_MIME);
+  return isAssetId(text) ? text : null;
 }

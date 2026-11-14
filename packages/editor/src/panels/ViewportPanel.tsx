@@ -11,7 +11,7 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
-import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
+import { assetKindMime, droppedAssetId } from '../assets/assetDrag';
 import { EditToolbar } from './EditToolbar';
 import { PlayBar } from './PlayBar';
 import { tooltip } from '../ui/Tooltip';
@@ -123,9 +123,9 @@ export function ViewportPanel(props: IDockviewPanelProps) {
    * What it becomes, and whether the game lets it in, is `placeDroppedAsset`'s.
    */
   const onDrop = (event: DragEvent) => {
-    const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME);
+    const assetId = droppedAssetId(event.dataTransfer);
     setDropping(false);
-    if (!assetId) return;
+    if (assetId === null) return;
     event.preventDefault();
 
     const viewport = peekViewport();
@@ -431,8 +431,9 @@ function PrefabModeBar() {
   if (stack.length === 0) return null;
 
   const deepest = stack.at(-1)!;
-  const base = prefabs[deepest.assetId] ? variantBaseOf(prefabs[deepest.assetId]!) : null;
-  const baseName = base ? (prefabs[base]?.name ?? 'a missing prefab') : null;
+  const deepestPrefab = prefabs.get(deepest.assetId);
+  const base = deepestPrefab ? variantBaseOf(deepestPrefab) : null;
+  const baseName = base ? (prefabs.get(base)?.name ?? 'a missing prefab') : null;
 
   return (
     <div className="absolute inset-x-0 top-0 z-10 flex h-7 items-center gap-1 border-b border-prefab/40 bg-prefab/15 px-2 backdrop-blur-sm">

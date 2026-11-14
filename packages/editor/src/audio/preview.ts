@@ -1,4 +1,4 @@
-import type { AudioSourceComponent } from '@three-studio/core';
+import type { AssetId, AudioSourceComponent } from '@three-studio/core';
 import {
   AudioEngine,
   type AssetResolver,
@@ -97,13 +97,17 @@ export class AudioPreview {
   }
 
   /** The asset currently being auditioned, so a UI can light the right row. */
-  get assetId(): string | null {
+  get assetId(): AssetId | null {
     const state = this.voice?.state;
-    return state === 'playing' || state === 'paused' ? (this.voice?.assetId ?? null) : null;
+    const assetId = this.voice?.assetId;
+    // `''` is the voice of a refused sound, which is never playing.
+    return (state === 'playing' || state === 'paused') && assetId !== undefined && assetId !== ''
+      ? assetId
+      : null;
   }
 
   /** A clip on its own, flat, at full volume — the Project panel's audition. */
-  playClip(assetId: string): void {
+  playClip(assetId: AssetId): void {
     this.source = null;
     this.play({ assetId, volume: 1 });
   }

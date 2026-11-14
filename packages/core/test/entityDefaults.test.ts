@@ -7,6 +7,7 @@ import {
   createGeometry,
   createLightEntity,
   createMeshEntity,
+  fixedId,
   isPlaceable,
   restingOffsetY,
   type GeometryKind,
@@ -64,9 +65,10 @@ describe('what holds a primitive off its support', () => {
 
 describe('an entity made of a sound', () => {
   it('carries the clip it was made from, and wears its name', () => {
-    const template = createAudioSourceEntity('clip-7', 'footstep');
+    const clip = fixedId('asset', 'clip-7');
+    const template = createAudioSourceEntity(clip, 'footstep');
     expect(template.entity.name).toBe('footstep');
-    expect(template.components[0]).toMatchObject({ type: 'audioSource', assetId: 'clip-7' });
+    expect(template.components[0]).toMatchObject({ type: 'audioSource', assetId: clip });
   });
 
   it('is a plain Audio Source when nothing was dropped on it', () => {

@@ -4,6 +4,7 @@ import {
   SUN_FROM_SKY,
   createComponent,
   createEnvironment,
+  fixedId,
   type ComponentDoc,
   type LightComponent,
   type LightKind,
@@ -113,7 +114,7 @@ describe('a model', () => {
      * moved no row and still threw the pane away and rebuilt it. Now it
      * refreshes, which is what keeps focus and drag state.
      */
-    const linked: ComponentDoc = { ...createComponent('model'), materialId: 'mat-1' };
+    const linked: ComponentDoc = { ...createComponent('model'), materialId: fixedId('asset', 'mat-1') };
     expect(shape(linked)).toBe(shape(createComponent('model')));
   });
 });

@@ -10,6 +10,7 @@ import {
   layersTouch,
   linkedPhysicsMaterial,
   physicsBodies,
+  type AssetId,
   type JointComponent,
   type MaterialDef,
   type PhysicsMaterialDef,
@@ -66,13 +67,13 @@ export interface EngineOptions {
    * Omitting this makes every linked material fall back to the embedded one —
    * which is exactly what play mode was doing before it was passed.
    */
-  materials?: Readonly<Record<string, MaterialDef>> | undefined;
+  materials?: ReadonlyMap<AssetId, MaterialDef> | undefined;
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
    * engine says so.
    */
-  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>> | undefined;
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
@@ -272,7 +273,7 @@ export class Engine {
   private checkPhysicsSetup(
     scene: SceneDoc,
     settings: PhysicsSettings,
-    physicsMaterials: Readonly<Record<string, PhysicsMaterialDef>>,
+    physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>,
   ): void {
     // Over the bodies the world builds, so the two cannot disagree: a body
     // whose colliders are on its children was warned about as having none.
@@ -468,7 +469,7 @@ export class Engine {
     //   physics   a behaviour looks its rigid body up when it is constructed,
     //             so a controller built earlier would find none and fly.
     await engine.binder.whenLoaded();
-    const physicsMaterials = options.physicsMaterials ?? {};
+    const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
     physics?.build(options.scene, engine.binder, physicsMaterials);
     engine.buildBehaviours(options.scene);
     engine.pickCamera(options.scene);
@@ -522,7 +523,7 @@ export class Engine {
   }
 
   /** The same for a physics material asset: every collider that links it takes its values. */
-  tunePhysicsMaterial(assetId: string, material: PhysicsMaterialDef): void {
+  tunePhysicsMaterial(assetId: AssetId, material: PhysicsMaterialDef): void {
     this.world?.tunePhysicsMaterial(assetId, material);
   }
 

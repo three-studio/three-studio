@@ -1,3 +1,4 @@
+import type { AssetId } from '../ids';
 import type { Hex, Vec2 } from './primitives';
 
 /*
@@ -46,9 +47,9 @@ export interface MaterialDef {
    * are not the values the artist painted.
    */
   /** Base colour. sRGB. */
-  colorMap: string | null;
+  colorMap: AssetId | null;
   /** Tangent-space normals. Linear. */
-  normalMap: string | null;
+  normalMap: AssetId | null;
   normalScale: number;
   /**
    * Height in the red channel, converted to a normal perturbation. Linear.
@@ -58,19 +59,19 @@ export interface MaterialDef {
    * height map rather than a baked tangent-space normal — and it is also what
    * a displacement map usually looks like, so the same file often serves both.
    */
-  bumpMap: string | null;
+  bumpMap: AssetId | null;
   bumpScale: number;
   /** Read from the green channel, as in glTF. Linear. */
-  roughnessMap: string | null;
+  roughnessMap: AssetId | null;
   /** Read from the blue channel, as in glTF. Linear. */
-  metalnessMap: string | null;
+  metalnessMap: AssetId | null;
   /** sRGB. */
-  emissiveMap: string | null;
+  emissiveMap: AssetId | null;
   /** Ambient occlusion, read from red. Linear. */
-  aoMap: string | null;
+  aoMap: AssetId | null;
   aoIntensity: number;
   /** Opacity from the red channel; needs `transparent`. Linear. */
-  alphaMap: string | null;
+  alphaMap: AssetId | null;
   /**
    * Real geometry displacement: each vertex moves along its normal by the red
    * channel. Linear.
@@ -80,7 +81,7 @@ export interface MaterialDef {
    * fakes the lighting of detail without moving anything and costs nothing;
    * displacement changes the silhouette and the shadow.
    */
-  displacementMap: string | null;
+  displacementMap: AssetId | null;
   displacementScale: number;
   /** Shifts the whole surface, so a mid-grey map can push in as well as out. */
   displacementBias: number;

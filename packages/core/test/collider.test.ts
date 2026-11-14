@@ -8,6 +8,7 @@ import {
   createPhysicsMaterial,
   fillComponent,
   fitColliderShape,
+  fixedId,
   linkedPhysicsMaterial,
   originAboveFeet,
   type BodyType,
@@ -372,7 +373,7 @@ describe('createColliderFor', () => {
   });
 
   it('gives a model a mesh collider built from its triangles', () => {
-    const model = createModelEntity('asset-1', 'Tree');
+    const model = createModelEntity(fixedId('asset', 'asset-1'), 'Tree');
     expect(createComponentForEntity('collider', model.components).shape).toEqual({
       kind: 'mesh',
       build: 'triangles',
@@ -381,24 +382,28 @@ describe('createColliderFor', () => {
 });
 
 describe('a collider’s physics material', () => {
-  it('a stored collider keeps the physics material it names, and reads anything else as none', () => {
-    const stored = (fields: object) => {
-      const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
-      return fillComponent(component) as ColliderComponent;
-    };
+  const ICE = fixedId('asset', 'ice');
+  const stored = (fields: object) => {
+    const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
+    return fillComponent(component) as ColliderComponent;
+  };
 
-    expect(stored({ materialId: 'ice' }).materialId).toBe('ice');
+  it('a stored collider keeps the physics material it names, and reads anything else as none', () => {
+    expect(stored({ materialId: ICE }).materialId).toBe(ICE);
     expect(stored({ materialId: 7 }).materialId).toBeNull();
     expect(stored({}).materialId).toBeNull();
   });
 
   it('a link finds only an asset its library holds as its own', () => {
     const ice = { ...createPhysicsMaterial(), friction: 0 };
+    const library = new Map([[ICE, ice]]);
 
-    expect(linkedPhysicsMaterial('ice', { ice })).toBe(ice);
-    // An id is read off a file, and `constructor` is what every object answers to.
-    for (const id of [null, '', 'gone', 'constructor']) {
-      expect(linkedPhysicsMaterial(id, { ice })).toBeNull();
+    expect(linkedPhysicsMaterial(ICE, library)).toBe(ice);
+    expect(linkedPhysicsMaterial(null, library)).toBeNull();
+    // An id is read off a file, which holds any text there: `''` and `constructor`
+    // — what every object answers to — are read as it reads a stored collider.
+    for (const text of ['', 'gone', 'constructor']) {
+      expect(linkedPhysicsMaterial(stored({ materialId: text }).materialId, library)).toBeNull();
     }
   });
 });

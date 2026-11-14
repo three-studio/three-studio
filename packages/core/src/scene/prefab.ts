@@ -1,6 +1,6 @@
 import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
 import { isRecord } from '../conform';
-import { createId } from '../ids';
+import { createAssetId, idMapOf, isAssetId, type AssetId } from '../ids';
 import { stableJson } from '../json';
 import {
   COMPONENT_TYPES,
@@ -42,7 +42,11 @@ import type {
  */
 export interface PrefabDoc {
   version: number;
-  id: string;
+  /**
+   * The prefab's asset id: what an instance's `assetId` names, and what its
+   * sidecar holds. A prefab is an asset, so it has the one id and not two.
+   */
+  id: AssetId;
   name: string;
   /** Ids are local to the prefab, and stay stable so overrides keep pointing. */
   entities: Map<string, EntityDoc>;
@@ -59,7 +63,7 @@ export function createPrefabDoc(
 ): PrefabDoc {
   return {
     version: PREFAB_FORMAT_VERSION,
-    id: createId(),
+    id: createAssetId(),
     name,
     entities: new Map(entities.map((entity) => [entity.id, entity])),
     components,
@@ -174,7 +178,7 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
  * the root: edit the base and every variant follows, override on the variant
  * and only it differs.
  */
-export function prefabVariantOf(name: string, baseAssetId: string): PrefabDoc {
+export function prefabVariantOf(name: string, baseAssetId: AssetId): PrefabDoc {
   const root = createEntity(name, [createPrefabInstance(baseAssetId)]);
   const components = emptyComponentTables();
   setComponentsOf({ components }, root.entity.id, root.components);
@@ -182,16 +186,17 @@ export function prefabVariantOf(name: string, baseAssetId: string): PrefabDoc {
 }
 
 /** The prefab a variant is based on, or `null` for an ordinary prefab. */
-export function variantBaseOf(prefab: PrefabDoc): string | null {
+export function variantBaseOf(prefab: PrefabDoc): AssetId | null {
   const root = prefab.entities.get(prefab.root);
   if (!root) return null;
 
   // A variant is a single root that is an instance. A prefab that merely
   // *contains* an instance somewhere is a composition, not a variant, and
   // treating the two alike would let "revert to base" wipe a hand-built scene.
+  // An instance that names no prefab (`''`) has no base either.
   const only = prefab.entities.size === 1;
   const instance = prefabInstanceOf(prefab, root.id);
-  return only && instance ? instance.assetId : null;
+  return only && instance && instance.assetId !== '' ? instance.assetId : null;
 }
 
 /** The id an instance's copy of a prefab entity gets in the expanded scene. */
@@ -245,7 +250,15 @@ export function prefabInstanceOf(
 }
 
 export interface PrefabLibrary {
-  get(assetId: string): PrefabDoc | undefined;
+  get(assetId: AssetId): PrefabDoc | undefined;
+}
+
+/**
+ * The prefab an instance names, or `undefined` for one that names none (`''`) or
+ * one the library does not have: both leave the instance an empty entity.
+ */
+function prefabNamed(prefabs: PrefabLibrary, assetId: AssetId | ''): PrefabDoc | undefined {
+  return assetId === '' ? undefined : prefabs.get(assetId);
 }
 
 /**
@@ -354,14 +367,14 @@ interface InstanceSource {
  * the reuse check run on every sync.
  */
 function chainOf(
-  assetId: string,
+  assetId: AssetId | '',
   prefabs: PrefabLibrary,
   seen = new Set<string>(),
 ): (PrefabDoc | undefined)[] {
   if (seen.has(assetId)) return [];
   seen.add(assetId);
 
-  const prefab = prefabs.get(assetId);
+  const prefab = prefabNamed(prefabs, assetId);
   const chain: (PrefabDoc | undefined)[] = [prefab];
   if (!prefab) return chain;
 
@@ -468,7 +481,7 @@ function instantiate(
     );
     if (!inner) continue;
 
-    const innerPrefab = prefabs.get(inner.assetId);
+    const innerPrefab = prefabNamed(prefabs, inner.assetId);
     // A prefab that contains itself, however deep, has no finite expansion.
     if (!innerPrefab || ancestry.includes(inner.assetId)) continue;
 
@@ -568,9 +581,18 @@ function sceneFormatOfPrefab(version: unknown): number {
  * It holds `EntityDoc`s, so it inherits every problem a scene has and the same
  * answer: one pass at the boundary, filling from each type's own factory. See
  * the format rules in the README.
+ *
+ * @param assetId The id the place that read it knows: its sidecar's, or its key
+ *   in a library. A file's own `id` field is what an older build wrote and what
+ *   a hand edit may have changed, and the asset's is the one every instance
+ *   names, so it wins; the file takes it on its next save. Without one, the
+ *   file's own is read, which is the document a window sends before there is a
+ *   sidecar to ask.
  */
-export function migratePrefab(input: unknown): PrefabDoc {
+export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
   if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
+  const id = assetId ?? input['id'];
+  if (!isAssetId(id)) throw new SceneFormatError('Prefab file has no id of its own.');
 
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
@@ -583,7 +605,7 @@ export function migratePrefab(input: unknown): PrefabDoc {
     // kept an eye height at the old meaning, and placed its camera half a
     // collider too high with nothing anywhere saying why.
     version: sceneFormatOfPrefab(input['version']),
-    id: input['id'],
+    id,
     name: input['name'],
     entities: input['entities'],
     components: input['components'],
@@ -594,7 +616,7 @@ export function migratePrefab(input: unknown): PrefabDoc {
 
   return {
     version: PREFAB_FORMAT_VERSION,
-    id: asScene.id,
+    id,
     name: asScene.name,
     entities: asScene.entities,
     components: asScene.components,
@@ -611,8 +633,8 @@ export function serializePrefab(prefab: PrefabDoc): string {
   return stableJson(prefab);
 }
 
-/** A prefab file's text, read as a document of the current format. */
-export function deserializePrefab(json: string): PrefabDoc {
+/** A prefab file's text, read as a document of the current format. See `migratePrefab` for the id. */
+export function deserializePrefab(json: string, assetId?: AssetId): PrefabDoc {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -621,16 +643,19 @@ export function deserializePrefab(json: string): PrefabDoc {
       `Prefab file is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
-  return migratePrefab(parsed);
+  return migratePrefab(parsed, assetId);
 }
 
 /**
  * The prefabs a build manifest holds, read as documents.
  *
- * The manifest keeps each as the JSON a file holds, and a document keeps its
- * entities in a Map, which JSON cannot say: the player reads every one through
- * the migration, as the editor reads a file.
+ * The manifest keeps each as the JSON a file holds, keyed by asset id, and a
+ * document keeps its entities in a Map, which JSON cannot say: the player reads
+ * every one through the migration, as the editor reads a file, under the id the
+ * manifest names it by. A key that is not an id names no prefab.
  */
-export function prefabsFromJson(prefabs: Readonly<Record<string, unknown>>): Record<string, PrefabDoc> {
-  return Object.fromEntries(Object.entries(prefabs).map(([id, prefab]) => [id, migratePrefab(prefab)]));
+export function prefabsFromJson(prefabs: Readonly<Record<string, unknown>>): Map<AssetId, PrefabDoc> {
+  const read = new Map<AssetId, PrefabDoc>();
+  for (const [id, prefab] of idMapOf(prefabs, isAssetId)) read.set(id, migratePrefab(prefab, id));
+  return read;
 }

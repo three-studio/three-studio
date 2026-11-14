@@ -2,6 +2,7 @@ import {
   createColliderShape,
   createComponent,
   entitiesFromNodes,
+  fixedId,
   type ModelNode,
   type Transform,
 } from '@three-studio/core';
@@ -20,6 +21,8 @@ const identity = (): Transform => ({
   rotation: [0, 0, 0],
   scale: [1, 1, 1],
 });
+
+const CHAIR = fixedId('asset', 'chair-asset');
 
 const node = (partial: Partial<ModelNode> & Pick<ModelNode, 'path' | 'parentPath'>): ModelNode => ({
   name: '',
@@ -53,13 +56,13 @@ function chairNodes(): ModelNode[] {
 
 describe('entitiesFromNodes', () => {
   it('gives every drawing node a model naming its own path', () => {
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
     const seat = unpacked.find((item) => item.template.entity.name === 'Seat');
     expect(seat?.template.components).toEqual([
       expect.objectContaining({
         type: 'model',
-        assetId: 'chair-asset',
+        assetId: CHAIR,
         nodePath: '0.0.0',
         nodeName: 'Seat',
         materialId: null,
@@ -68,7 +71,7 @@ describe('entitiesFromNodes', () => {
   });
 
   it('carries the node transform on the entity, not on the component', () => {
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
     // Which is what makes the piece movable, and why `ModelCache.loadNode`
     // resets the clone's own transform: applied at both ends it would be
@@ -78,7 +81,7 @@ describe('entitiesFromNodes', () => {
   });
 
   it('keeps the root, because it carries the import scale', () => {
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
     const root = unpacked[0];
     expect(root?.parentId).toBeNull();
@@ -93,7 +96,7 @@ describe('entitiesFromNodes', () => {
     nodes.pop();
     // `Scene` now draws nothing, sits at the origin and holds one node, so it
     // exists only to hold it. Three nodes, two entities.
-    const unpacked = entitiesFromNodes(nodes, 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(nodes, CHAIR, 'Chair');
 
     expect(unpacked.map((item) => item.template.entity.name)).toEqual(['Chair', 'Seat']);
     expect(unpacked[1]?.parentId).toBe(unpacked[0]?.template.entity.id);
@@ -104,7 +107,7 @@ describe('entitiesFromNodes', () => {
   it('keeps an empty node that groups several, which is a structure', () => {
     // The same node, now with two children. Folding it is exact — it is at the
     // origin — and would flatten a grouping the author put there and recognises.
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
     expect(unpacked.map((item) => item.template.entity.name)).toEqual([
       'Chair',
@@ -124,7 +127,7 @@ describe('entitiesFromNodes', () => {
       name: 'Pivot',
       transform: { ...identity(), position: [1, 0, 0] },
     });
-    const unpacked = entitiesFromNodes(nodes, 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(nodes, CHAIR, 'Chair');
 
     expect(unpacked.map((item) => item.template.entity.name)).toEqual([
       'Chair',
@@ -138,7 +141,7 @@ describe('entitiesFromNodes', () => {
     // The contract the caller relies on: `insertEntity` refuses a parent the
     // document does not hold yet, so one pass in this order is the whole
     // insertion.
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair');
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
     const seen = new Set<string>();
     for (const { template, parentId } of unpacked) {
@@ -149,7 +152,7 @@ describe('entitiesFromNodes', () => {
 
   it('hands the host’s mesh Colliders to every piece that draws, each under an id of its own', () => {
     const collider = { ...createComponent('collider'), shape: createColliderShape('mesh') };
-    const unpacked = entitiesFromNodes(chairNodes(), 'chair-asset', 'Chair', [collider]);
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair', [collider]);
 
     const collidersOf = (name: string) =>
       unpacked
@@ -168,7 +171,7 @@ describe('entitiesFromNodes', () => {
   it('names an unnamed root after the entity it replaces', () => {
     const nodes = chairNodes();
     nodes[0] = node({ path: '0', parentPath: null });
-    const unpacked = entitiesFromNodes(nodes, 'chair-asset', 'Old Chair');
+    const unpacked = entitiesFromNodes(nodes, CHAIR, 'Old Chair');
 
     expect(unpacked[0]?.template.entity.name).toBe('Old Chair');
   });

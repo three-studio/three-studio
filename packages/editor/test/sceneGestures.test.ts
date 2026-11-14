@@ -182,7 +182,7 @@ async function cancel(): Promise<void> {
   useDialogStore.getState().cancel();
 }
 
-const CRATE = 'prefab-crate';
+const CRATE = fixedId('asset', 'prefab-crate');
 let crateRoot = '';
 /** An entity of the scene's own, which no prefab holds. */
 let wall = '';
@@ -224,7 +224,7 @@ beforeEach(async () => {
   const root = named('Crate');
   crateRoot = root.entity.id;
   useAssetStore.setState({
-    prefabs: { [CRATE]: prefabWith('Crate', [root], crateRoot) },
+    prefabs: new Map([[CRATE, { ...prefabWith('Crate', [root], crateRoot), id: CRATE }]]),
     savePrefab: async (assetId, prefab) => {
       log.push(['savePrefab', assetId]);
       savedPrefabs.push(prefab);
@@ -978,7 +978,7 @@ describe('Revert Scene', () => {
   it('says again what the file points at and cannot find', async () => {
     // An entity the session removed, whose model has gone since: the file still
     // holds it, and the revert brings it back.
-    const barrel = addEntity(createModelEntity('gone-model', 'Barrel'));
+    const barrel = addEntity(createModelEntity(fixedId('asset', 'gone-model'), 'Barrel'));
     doc().markClean();
     file = serializeScene(doc().scene);
     deleteSelection(Selection.of([barrel], doc().scene));

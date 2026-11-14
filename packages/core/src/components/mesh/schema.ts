@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import { type GeometryDef } from '../../scene/geometry';
 import { type MaterialDef } from '../../scene/material';
 import type { ComponentBase } from '../../scene/primitives';
@@ -19,7 +20,7 @@ export interface MeshComponent extends ComponentBase {
    * Asset id of a shared material. When set it wins over `material`, and the
    * embedded value is left untouched so detaching can fall back to it.
    */
-  materialId: string | null;
+  materialId: AssetId | null;
   castShadow: boolean;
   receiveShadow: boolean;
 }

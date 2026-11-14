@@ -1,4 +1,5 @@
 import { conform, oneOf } from '../conform';
+import type { AssetId } from '../ids';
 
 /*
  * How a surface grips and bounces. Beside `material.ts` and shared for the same
@@ -50,12 +51,11 @@ export function conformPhysicsMaterial(value: unknown): PhysicsMaterialDef {
 
 /**
  * The physics material asset `materialId` names, or `null` when `library` holds
- * none under it. Own keys only: an id is read off a file, and
- * `library['constructor']` would answer with `Object`.
+ * none under it.
  */
 export function linkedPhysicsMaterial(
-  materialId: string | null,
-  library: Readonly<Record<string, PhysicsMaterialDef>>,
+  materialId: AssetId | null,
+  library: ReadonlyMap<AssetId, PhysicsMaterialDef>,
 ): PhysicsMaterialDef | null {
-  return materialId !== null && Object.hasOwn(library, materialId) ? library[materialId]! : null;
+  return materialId === null ? null : library.get(materialId) ?? null;
 }

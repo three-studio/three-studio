@@ -1,4 +1,4 @@
-import type { ModelComponent } from '@three-studio/core';
+import type { AssetId, ModelComponent } from '@three-studio/core';
 import { Mesh, type Material, type Object3D } from 'three/webgpu';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
@@ -7,7 +7,7 @@ import { SharedMaterial } from '../../systems/ResourceArena';
 import { createMissingModel } from './missingModel';
 
 export interface ModelHandle extends SystemHandle {
-  assetId: string;
+  assetId: AssetId | '';
   /** Which node of the file; `''` is the whole thing. See `ModelComponent`. */
   nodePath: string;
   nodeName: string;
@@ -20,7 +20,7 @@ export interface ModelHandle extends SystemHandle {
    * holding the object instead would leave the count one short for every model
    * that ever named a material.
    */
-  materialKey: string | null;
+  materialKey: AssetId | null;
   /**
    * What each mesh drew before an override was written onto it.
    *
@@ -60,7 +60,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   /** In-flight loads, so `whenLoaded()` can wait for a settled scene. */
   private readonly pending = new Set<Promise<void>>();
 
-  override materialAsset(handle: ModelHandle): string | null {
+  override materialAsset(handle: ModelHandle): AssetId | null {
     return handle.materialKey;
   }
 
@@ -155,7 +155,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     handle.materialKey = component.materialId;
     if (component.materialId === null) return;
 
-    const definition = ctx.materials[component.materialId];
+    const definition = ctx.materials.get(component.materialId);
     if (definition === undefined) {
       // An id naming a material the project no longer holds. Left on the file's
       // own material rather than blanked, and the key given back so the count
@@ -213,7 +213,8 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   }
 
   private load(entityId: string, handle: ModelHandle, ctx: SystemContext): void {
-    if (handle.assetId === '') return;
+    const { assetId } = handle;
+    if (assetId === '') return;
 
     // Asked before loading, because it is not a failure. A scene that names a
     // deleted asset is ordinary — the delete dialog says the reference will be
@@ -221,7 +222,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     // reported as a stack trace against an entity that then drew nothing.
     // Nothing is the one thing that cannot be fixed: it is invisible and it
     // cannot be clicked. See `missingModel.ts`.
-    if (!ctx.models.knows(handle.assetId)) {
+    if (!ctx.models.knows(assetId)) {
       const placeholder = createMissingModel();
       // Deferred, and that is not a stylistic choice. `mount` has not returned
       // this handle yet, so the reconciler does not know it is the one mounted
@@ -244,11 +245,11 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       return;
     }
 
-    const pending = this.fetch(handle, ctx)
+    const pending = this.fetch(handle, assetId, ctx)
       .then((object) => {
         if (object === null) {
           console.warn(
-            `[scene] ${handle.assetId} has no node "${handle.nodePath}"${
+            `[scene] ${assetId} has no node "${handle.nodePath}"${
               handle.nodeName === '' ? '' : ` (${handle.nodeName})`
             }; nothing drawn.`,
           );
@@ -258,7 +259,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
         this.place(entityId, handle, ctx, object);
       })
       .catch((error: unknown) => {
-        console.error(`[scene] failed to load model ${handle.assetId}:`, error);
+        console.error(`[scene] failed to load model ${assetId}:`, error);
       })
       .finally(() => {
         this.pending.delete(pending);
@@ -291,8 +292,8 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   }
 
   /** The whole file, or the single node this handle names. */
-  private fetch(handle: ModelHandle, ctx: SystemContext): Promise<Object3D | null> {
-    if (handle.nodePath === '') return ctx.models.loadModel(handle.assetId);
-    return ctx.models.loadNode(handle.assetId, handle.nodePath, handle.nodeName);
+  private fetch(handle: ModelHandle, assetId: AssetId, ctx: SystemContext): Promise<Object3D | null> {
+    if (handle.nodePath === '') return ctx.models.loadModel(assetId);
+    return ctx.models.loadNode(assetId, handle.nodePath, handle.nodeName);
   }
 }

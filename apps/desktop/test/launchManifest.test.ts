@@ -11,6 +11,7 @@ import {
   emptyComponentTables,
   fixedId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
   type LaunchSnapshot,
   type SceneEntry,
@@ -31,7 +32,7 @@ import {
  */
 
 function asset(
-  id: string,
+  id: AssetId,
   kind: AssetKind,
   path: string,
   importedPath: string | null = null,
@@ -62,17 +63,19 @@ function scene(
 }
 
 const IMPORTED_BRICK = 'assets/textures/.imported/brick.png';
+const BRICK = fixedId('asset', 'brick');
 const ENTRY = fixedId('scene', 'entry');
 const ALPHA = fixedId('scene', 'alpha');
 const BETA = fixedId('scene', 'beta');
 
 function snapshot(): LaunchSnapshot {
+  const crate = createPrefabDoc('Crate', [], emptyComponentTables(), '');
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: ENTRY, name: 'Level', scene: createStarterScene() },
-    materials: { stone: createMaterial() },
-    physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } },
-    prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
+    materials: new Map([[fixedId('asset', 'stone'), createMaterial()]]),
+    physicsMaterials: new Map([[fixedId('asset', 'ice'), { ...createPhysicsMaterial(), friction: 0 }]]),
+    prefabs: new Map([[crate.id, crate]]),
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: { ...createPhysicsSettings(), gravity: [0, -3, 0] },
     loadingScene: fixedId('scene', 'loading'),
@@ -147,9 +150,9 @@ describe('what else a launch says', () => {
     expect(build.rendering).toEqual(launched.rendering);
     expect(build.physics).toEqual(launched.physics);
     expect(build.loadingScene).toBe('loading');
-    expect(build.materials).toEqual(launched.materials);
-    expect(build.physicsMaterials).toEqual(launched.physicsMaterials);
-    expect(build.prefabs).toEqual(launched.prefabs);
+    expect(build.materials).toEqual(Object.fromEntries(launched.materials));
+    expect(build.physicsMaterials).toEqual(Object.fromEntries(launched.physicsMaterials));
+    expect(build.prefabs).toEqual(Object.fromEntries(launched.prefabs));
   });
 
   it('lists every asset but the scripts, under its id and its source’s file name', () => {
@@ -158,9 +161,9 @@ describe('what else a launch says', () => {
         assets: [
           // Served from its scaled copy, named after its source: the source's
           // extension is what picks the loader.
-          asset('brick', 'texture', 'assets/textures/brick.png', IMPORTED_BRICK),
-          asset('tree', 'model', 'assets/models/forest/tree.gltf'),
-          asset('spin', 'script', 'assets/scripts/Spin.ts'),
+          asset(BRICK, 'texture', 'assets/textures/brick.png', IMPORTED_BRICK),
+          asset(fixedId('asset', 'tree'), 'model', 'assets/models/forest/tree.gltf'),
+          asset(fixedId('asset', 'spin'), 'script', 'assets/scripts/Spin.ts'),
         ],
       }),
     );
@@ -188,8 +191,8 @@ describe('what else a launch says', () => {
 describe('where a launch serves an asset', () => {
   it('is its id, then its source’s file name, whichever file is served', () => {
     const source = 'assets/textures/brick.png';
-    expect(launchAssetPath(asset('brick', 'texture', source))).toBe('assets/brick/brick.png');
-    expect(launchAssetPath(asset('brick', 'texture', source, IMPORTED_BRICK))).toBe(
+    expect(launchAssetPath(asset(BRICK, 'texture', source))).toBe('assets/brick/brick.png');
+    expect(launchAssetPath(asset(BRICK, 'texture', source, IMPORTED_BRICK))).toBe(
       'assets/brick/brick.png',
     );
   });

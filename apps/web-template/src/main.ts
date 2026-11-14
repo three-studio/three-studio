@@ -7,6 +7,8 @@ import {
   SCRIPT_API_VERSION,
   deserializeScene,
   encodePath,
+  idMapOf,
+  isAssetId,
   prefabsFromJson,
   type SceneDoc,
 } from '@three-studio/core';
@@ -183,8 +185,10 @@ async function boot(): Promise<void> {
       read: (named: string) => readScene(build, named),
     },
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
-    materials,
-    physicsMaterials,
+    // Records in the manifest, as a message is, and Maps here: a key read back
+    // as an id is checked as one.
+    materials: idMapOf(materials, isAssetId),
+    physicsMaterials: idMapOf(physicsMaterials, isAssetId),
     // The manifest holds each as the JSON of a file, and a document keeps its
     // entities in a Map: read here, once, as the editor reads a file.
     prefabs: prefabsFromJson(build.prefabs),

@@ -4,6 +4,7 @@ import {
   isUsed,
   totalUses,
   type AssetEntry,
+  type AssetId,
 } from '@three-studio/core';
 import { defineCommand } from './command';
 import { ipcErrorMessage } from './ipcError';
@@ -220,7 +221,7 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
     lines.push(`Material · ${store.byId(id)?.name ?? id}`);
   }
   for (const id of usage.prefabs.slice(0, 6)) {
-    lines.push(`Prefab · ${store.prefabs[id]?.name ?? id}`);
+    lines.push(`Prefab · ${store.prefabs.get(id)?.name ?? id}`);
   }
   // Never truncated, because there is only ever one of it — and because it is
   // the use nothing in the viewport points at: an entity that loses a texture
@@ -259,7 +260,7 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
  */
 
 /** The asset this context names, or `undefined` if it names none or it is gone. */
-function target(assetId: string | undefined) {
+function target(assetId: AssetId | undefined) {
   return assetId === undefined ? undefined : useAssetStore.getState().byId(assetId);
 }
 

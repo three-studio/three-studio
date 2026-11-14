@@ -8,10 +8,12 @@ import {
   assetKindForFile,
   assetDisplayName,
   conformAssetSettings,
+  createAssetId,
   createId,
   defaultSettings,
   emptyManifest,
   importerForFile,
+  isAssetId,
   type TextReader,
   type AssetManifest,
   type AssetMeta,
@@ -145,7 +147,7 @@ export async function readAssetMeta(assetFile: string): Promise<AssetMeta | null
   try {
     const raw = await readFile(`${assetFile}${ASSET_META_SUFFIX}`, 'utf8');
     const parsed = JSON.parse(raw) as AssetMeta;
-    if (typeof parsed.id !== 'string' || parsed.id === '') return null;
+    if (!isAssetId(parsed.id)) return null;
     if (parsed.version > ASSET_META_VERSION) return null;
     // Filled the same way scenes and materials are: a sidecar written before a
     // kind gained a setting would otherwise hand `undefined` to whatever reads
@@ -306,7 +308,7 @@ async function readOrCreateMeta(assetFile: string, kind: AssetMeta['kind']): Pro
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: existing?.id ?? createId(),
+    id: existing?.id ?? createAssetId(),
     kind,
     importedAt: existing?.importedAt ?? Date.now(),
     hash: existing?.hash ?? (await hashFile(assetFile)),

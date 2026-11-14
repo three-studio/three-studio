@@ -624,7 +624,7 @@ describe('eye height, measured from the feet', () => {
     setComponentsOf({ components }, template.entity.id, template.components);
     return {
       version,
-      id: 'prefab-1',
+      id: fixedId('asset', 'prefab-1'),
       name: 'Player',
       entities: new Map([[template.entity.id, template.entity]]),
       components,

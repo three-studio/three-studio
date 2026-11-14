@@ -16,6 +16,7 @@ import {
   deserializePrefab,
   deserializeScene,
   fixedId,
+  type AssetId,
   type DeviceServerStatus,
   type LaunchSnapshot,
   type LaunchSnapshotJson,
@@ -48,13 +49,16 @@ import { launchSnapshot } from '../src/viewport/PlaySession';
  * shows what was launched.
  */
 
+const STONE = fixedId('asset', 'stone');
+const ICE = fixedId('asset', 'ice');
+
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: fixedId('scene', 'scene-1'), name: 'Level 1', scene: createStarterScene() },
-    materials: { stone: createMaterial('#808080') },
-    physicsMaterials: { ice: createPhysicsMaterial() },
-    prefabs: {},
+    materials: new Map([[STONE, createMaterial('#808080')]]),
+    physicsMaterials: new Map([[ICE, createPhysicsMaterial()]]),
+    prefabs: new Map(),
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
     loadingScene: null,
@@ -290,8 +294,11 @@ describe('the same launch', () => {
 
   it('is not a moved entity, a new material, a changed physics material, another gravity, or the scene renamed', () => {
     const a = snapshot();
-    const withMaterial = { ...a, materials: { ...a.materials, sand: createMaterial('#c2b280') } };
-    const slipperier = { ...a, physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } };
+    const withMaterial = {
+      ...a,
+      materials: new Map(a.materials).set(fixedId('asset', 'sand'), createMaterial('#c2b280')),
+    };
+    const slipperier = { ...a, physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) };
     const lighter = { ...a, physics: { ...a.physics, gravity: [0, -1.62, 0] as [number, number, number] } };
     const renamed = { ...a, entry: { ...a.entry, name: 'Level 2' } };
 
@@ -312,8 +319,8 @@ describe('the same launch', () => {
  */
 
 const SCENE_ID = fixedId('scene', 'window-scene');
-const PREFAB_ID = 'prefab-under-test';
-const MATERIAL_ID = 'material-under-test';
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
+const MATERIAL_ID = fixedId('asset', 'material-under-test');
 
 const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,
@@ -414,12 +421,13 @@ describe('watching the window', () => {
     const root = createMeshEntity('box');
     root.entity.name = 'Crate';
     useAssetStore.setState({
-      materials: { [MATERIAL_ID]: createMaterial() },
-      physicsMaterials: { ice: createPhysicsMaterial() },
-      prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
+      materials: new Map([[MATERIAL_ID, createMaterial()]]),
+      physicsMaterials: new Map([[ICE, createPhysicsMaterial()]]),
+      // Filed under its own id, as the main process reads a prefab.
+      prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
       // As the store's own does once the file is written: the table takes it.
-      savePrefab: async (assetId: string, prefab: PrefabDoc) => {
-        useAssetStore.setState((state) => ({ prefabs: { ...state.prefabs, [assetId]: prefab } }));
+      savePrefab: async (assetId: AssetId, prefab: PrefabDoc) => {
+        useAssetStore.setState((state) => ({ prefabs: new Map(state.prefabs).set(assetId, prefab) }));
       },
     });
     doc().replaceScene(createEmptyScene());
@@ -465,7 +473,7 @@ describe('watching the window', () => {
       watch();
 
       useAssetStore.setState((state) => ({
-        materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
+        materials: new Map(state.materials).set(MATERIAL_ID, createMaterial('#ff0000')),
       }));
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
@@ -475,7 +483,7 @@ describe('watching the window', () => {
     it('a physics material changed', () => {
       watch();
 
-      useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
+      useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);
@@ -621,7 +629,7 @@ describe('watching the window', () => {
       // A material, since the scene is locked during Play and the asset tables
       // are not.
       useAssetStore.setState((state) => ({
-        materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
+        materials: new Map(state.materials).set(MATERIAL_ID, createMaterial('#ff0000')),
       }));
       vi.advanceTimersByTime(3_000);
       expect(sent).toEqual([]);

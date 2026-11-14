@@ -1,4 +1,4 @@
-import type { GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
+import type { AssetId, GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
 import { Mesh, type BufferGeometry, type Material, type Texture } from 'three/webgpu';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import {
@@ -25,7 +25,7 @@ export interface MeshHandle extends BatchableHandle {
   geometry: BufferGeometry;
   materialDef: MaterialDef;
   /** The asset id when the material is shared; `null` when this handle owns it. */
-  materialKey: string | null;
+  materialKey: AssetId | null;
   material: Material;
   textures: Texture[];
   /**
@@ -53,7 +53,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     return handle;
   }
 
-  override materialAsset(handle: MeshHandle): string | null {
+  override materialAsset(handle: MeshHandle): AssetId | null {
     return handle.materialKey;
   }
 
@@ -98,7 +98,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
   /** The definition a mesh renders with: the shared asset if it has one. */
   private definitionFor(component: MeshComponent, ctx: SystemContext): MaterialDef {
     if (component.materialId === null) return component.material;
-    return ctx.materials[component.materialId] ?? component.material;
+    return ctx.materials.get(component.materialId) ?? component.material;
   }
 
   private build(
@@ -163,7 +163,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     materialDef: MaterialDef,
     previous: MeshHandle | undefined,
     ctx: SystemContext,
-  ): { material: Material; textures: Texture[]; materialKey: string | null } {
+  ): { material: Material; textures: Texture[]; materialKey: AssetId | null } {
     const key = component.materialId;
 
     /**

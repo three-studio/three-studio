@@ -53,6 +53,7 @@ import type { Presentation } from '../src/viewport/Presentation';
  */
 
 const SCENE_ID = fixedId('scene', 'window-scene');
+const ICE = fixedId('asset', 'ice');
 const BOSS = { id: fixedId('scene', 'boss-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
 
 const project: ProjectFile = {
@@ -146,7 +147,7 @@ beforeEach(() => {
     sceneId: SCENE_ID,
     scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
   });
-  useAssetStore.setState({ physicsMaterials: {}, prefabs: {} });
+  useAssetStore.setState({ physicsMaterials: new Map(), prefabs: new Map() });
   // Compiled, with nothing to import: the classes are registered here.
   useScriptStore.setState({ build: async () => true });
   useToastStore.getState().clear();
@@ -234,18 +235,18 @@ describe('tuning during Play', () => {
   it('a linked physics material’s rows tune the asset in the running game, and its file is not written', async () => {
     const ice = { ...createPhysicsMaterial(), friction: 0.05 };
     const save = vi.fn(async () => {});
-    useAssetStore.setState({ physicsMaterials: { ice }, savePhysicsMaterial: save });
+    useAssetStore.setState({ physicsMaterials: new Map([[ICE, ice]]), savePhysicsMaterial: save });
     const box = cube();
     const collider = componentOf(box, 'collider');
-    collider.materialId = 'ice';
+    collider.materialId = ICE;
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     const engine = await playing();
     const tune = vi.spyOn(engine, 'tunePhysicsMaterial');
 
-    expect(linkedMaterial(effectiveComponent(box.entity.id, collider), ['material', 'friction'])?.assetId).toBe('ice');
-    tunePhysicsMaterialField('ice', 'friction', 0);
+    expect(linkedMaterial(effectiveComponent(box.entity.id, collider), ['material', 'friction'])?.assetId).toBe(ICE);
+    tunePhysicsMaterialField(ICE, 'friction', 0);
 
-    expect(tune).toHaveBeenCalledWith('ice', { ...ice, friction: 0 });
+    expect(tune).toHaveBeenCalledWith(ICE, { ...ice, friction: 0 });
     expect(save).not.toHaveBeenCalled();
     expect((effectiveComponent(box.entity.id, collider) as ColliderComponent).material.friction).toBe(0);
   });
@@ -275,8 +276,9 @@ describe('tuning during Play', () => {
         void this.scenes?.go(to === 'self' ? (this.scenes.current ?? '') : to);
       }
     }
-    registerScript('script-director', Director);
-    const director: ScriptComponent = { ...createComponent('script'), assetId: 'script-director' };
+    const DIRECTOR = fixedId('asset', 'script-director');
+    registerScript(DIRECTOR, Director);
+    const director: ScriptComponent = { ...createComponent('script'), assetId: DIRECTOR };
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box, createEntity('Director', [director])]));
     const first = await playing();
@@ -316,14 +318,16 @@ describe('keeping what was tuned', () => {
     const save = vi.fn(async () => {});
     const inside = createMeshEntity('sphere');
     inside.components.push({ ...createComponent('collider'), shape: createColliderShape('sphere') });
+    const BALL = fixedId('asset', 'ball');
     useAssetStore.setState({
-      physicsMaterials: { ice },
-      prefabs: { ball: prefabWith('Ball', [inside], inside.entity.id) },
+      physicsMaterials: new Map([[ICE, ice]]),
+      // Filed under its own id, as the main process reads a prefab.
+      prefabs: new Map([[BALL, { ...prefabWith('Ball', [inside], inside.entity.id), id: BALL }]]),
       savePhysicsMaterial: save,
     });
     const box = cube();
-    componentOf(box, 'collider').materialId = 'ice';
-    const instance = createEntity('Ball', [createPrefabInstance('ball')]);
+    componentOf(box, 'collider').materialId = ICE;
+    const instance = createEntity('Ball', [createPrefabInstance(BALL)]);
     instance.entity.transform.position = [3, 0, 0];
     useDocumentStore.getState().replaceScene(sceneWith([box, instance]));
     const produced = instancedId(instance.entity.id, inside.entity.id);
@@ -334,7 +338,7 @@ describe('keeping what was tuned', () => {
     // A kind, then a measure of it: one field, written whole.
     tuneComponentField(produced, ball.id, ['shape'], createColliderShape('capsule'));
     tuneComponentField(produced, ball.id, ['shape', 'radius'], 0.8);
-    tunePhysicsMaterialField('ice', 'friction', 0);
+    tunePhysicsMaterialField(ICE, 'friction', 0);
     stop();
     keepTuning();
 
@@ -348,19 +352,19 @@ describe('keeping what was tuned', () => {
     expect(mass()).toBe(5);
     expect(override()).toBeDefined();
     expect(shape()).toEqual({ ...createColliderShape('capsule'), radius: 0.8 });
-    expect(save).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0 });
+    expect(save).toHaveBeenLastCalledWith(ICE, { ...ice, friction: 0 });
     expect(doc().undoLabel()).toBe('Keep tuned physics');
 
     doc().undo();
     expect(mass()).toBe(1);
     expect(override()).toBeUndefined();
     expect(shape()).toEqual(createColliderShape('sphere'));
-    expect(save).toHaveBeenLastCalledWith('ice', ice);
+    expect(save).toHaveBeenLastCalledWith(ICE, ice);
 
     doc().redo();
     expect(mass()).toBe(5);
     expect(shape()).toEqual({ ...createColliderShape('capsule'), radius: 0.8 });
-    expect(save).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0 });
+    expect(save).toHaveBeenLastCalledWith(ICE, { ...ice, friction: 0 });
   });
 
   it('Keep is offered at Stop, and in the Edit menu until the next Play', async () => {

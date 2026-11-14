@@ -6,6 +6,7 @@ import {
   createPrefabInstance,
   fixedId,
   instancedId,
+  type AssetId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -51,7 +52,7 @@ interface Spied {
 }
 const spied = (): Spied => ({ apply: vi.fn(), revert: vi.fn() });
 
-const PREFAB_ID = 'crate-prefab';
+const PREFAB_ID = fixedId('asset', 'crate-prefab');
 const real = (({ savePrefab, saveMaterial, createPrefab, createMaterial }) => ({
   savePrefab,
   saveMaterial,
@@ -74,8 +75,8 @@ let redoable: Spied;
 let recorded: {
   savePrefab: Mock<() => Promise<void>>;
   saveMaterial: Mock<() => Promise<void>>;
-  createPrefab: Mock<() => Promise<string>>;
-  createMaterial: Mock<() => Promise<string>>;
+  createPrefab: Mock<() => Promise<AssetId>>;
+  createMaterial: Mock<() => Promise<AssetId>>;
 };
 let consoleError: MockInstance<typeof console.error>;
 
@@ -90,11 +91,12 @@ beforeEach(() => {
   recorded = {
     savePrefab: vi.fn(async () => {}),
     saveMaterial: vi.fn(async () => {}),
-    createPrefab: vi.fn(async () => 'new-prefab'),
-    createMaterial: vi.fn(async () => 'new-material'),
+    createPrefab: vi.fn(async () => fixedId('asset', 'new-prefab')),
+    createMaterial: vi.fn(async () => fixedId('asset', 'new-material')),
   };
   useAssetStore.setState({
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [inside], inside.entity.id) },
+    // Filed under its own id, as the main process reads a prefab.
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [inside], inside.entity.id), id: PREFAB_ID }]]),
     ...recorded,
   });
 
@@ -103,7 +105,7 @@ beforeEach(() => {
   const instance = createEntity('Crate', [
     { ...createPrefabInstance(PREFAB_ID), overrides: { [inside.entity.id]: { name: 'Renamed' } } },
   ]);
-  const model = createModelEntity('chair-model', 'Chair');
+  const model = createModelEntity(fixedId('asset', 'chair-model'), 'Chair');
   first = a.entity.id;
   second = b.entity.id;
   crate = instance.entity.id;

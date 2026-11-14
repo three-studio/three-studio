@@ -42,8 +42,8 @@ import type { Presentation } from '../src/viewport/Presentation';
 const doc = () => useDocumentStore.getState();
 
 const SCENE_ID = fixedId('scene', 'window-scene');
-const PREFAB_ID = 'prefab-under-test';
-const MATERIAL_ID = 'material-under-test';
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
+const MATERIAL_ID = fixedId('asset', 'material-under-test');
 
 const rendering = { ...createRenderingSettings(), exposure: 1.5 };
 const physics = { ...createPhysicsSettings(), gravity: [0, -3, 0] as [number, number, number] };
@@ -80,9 +80,10 @@ beforeEach(async () => {
   const root = createMeshEntity('box');
   root.entity.name = 'Crate';
   useAssetStore.setState({
-    materials: { [MATERIAL_ID]: createMaterial() },
-    physicsMaterials: { ice: createPhysicsMaterial() },
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
+    materials: new Map([[MATERIAL_ID, createMaterial()]]),
+    physicsMaterials: new Map([[fixedId('asset', 'ice'), createPhysicsMaterial()]]),
+    // Filed under its own id, as the main process reads a prefab.
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
     savePrefab: async (assetId, prefab) => {
       saved.push([assetId, prefab]);
     },
@@ -123,7 +124,7 @@ describe('what Play runs, read in one place', () => {
     expect(inputs.entry.id).toBe(SCENE_ID);
     expect(inputs.entry.name).toBe('Level One');
     expect(inputs.entry.scene).toBe(scene);
-    expect(inputs.prefabs[PREFAB_ID]!.entities.get(inside.entity.id)).toBeDefined();
+    expect(inputs.prefabs.get(PREFAB_ID)?.entities.get(inside.entity.id)).toBeDefined();
     expect(saved).toEqual([]);
     expect(usePrefabModeStore.getState().stack).toHaveLength(1);
   });
@@ -168,17 +169,17 @@ describe('what a launch sends while the editor plays', () => {
     // What Play still lets change is the asset tables. A material written now
     // is in what Play would run, and not in what a launch sends, which keeps
     // the table from the press.
-    const LATER = 'material-written-during-play';
+    const LATER = fixedId('asset', 'material-written-during-play');
     useAssetStore.setState((state) => ({
-      materials: { ...state.materials, [LATER]: createMaterial('#ff0000') },
+      materials: new Map(state.materials).set(LATER, createMaterial('#ff0000')),
     }));
-    expect(readPlayInputs().materials[LATER]).toBeDefined();
-    expect(launchSnapshot().materials[LATER]).toBeUndefined();
+    expect(readPlayInputs().materials.get(LATER)).toBeDefined();
+    expect(launchSnapshot().materials.get(LATER)).toBeUndefined();
     expect(launchSnapshot().materials).toBe(atPress.materials);
     expect(launchSnapshot().entry.scene).toBe(atPress.entry.scene);
 
     useEditorStore.getState().stop();
-    expect(launchSnapshot().materials[LATER]).toBeDefined();
+    expect(launchSnapshot().materials.get(LATER)).toBeDefined();
     expect(launchSnapshot().entry.scene).toBe(doc().scene);
 
     finishBuild(false);

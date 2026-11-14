@@ -1,6 +1,6 @@
 import type { ColliderComponent } from '../components/collider/schema';
 import { createModel } from '../components/model/defaults';
-import { createId } from '../ids';
+import { createId, type AssetId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
 import type { Transform } from './schema';
 
@@ -105,7 +105,7 @@ function isPassThrough(node: ModelNode, childCount: number): boolean {
  */
 export function entitiesFromNodes(
   nodes: readonly ModelNode[],
-  assetId: string,
+  assetId: AssetId,
   rootName: string,
   colliders: readonly ColliderComponent[] = [],
 ): readonly UnpackedEntity[] {

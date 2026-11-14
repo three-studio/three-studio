@@ -1,4 +1,4 @@
-import { assetUrl, hasImagePreview, type AssetEntry } from '@three-studio/core';
+import { assetUrl, hasImagePreview, type AssetEntry, type AssetId } from '@three-studio/core';
 import {
   FolderOpen,
   Folder,
@@ -103,7 +103,7 @@ export const FolderTile = memo(function FolderTile({ path }: { path: string }) {
  * for good when there are none: a file this browser cannot decode is not a
  * broken tile.
  */
-function ClipWaveform({ assetId, Icon }: { assetId: string; Icon: LucideIcon }) {
+function ClipWaveform({ assetId, Icon }: { assetId: AssetId; Icon: LucideIcon }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const peaks = useRef<Float32Array | null>(null);
   const [drawn, setDrawn] = useState(false);

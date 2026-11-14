@@ -6,6 +6,7 @@ import {
   componentAssets,
   componentsOf,
   deserializeScene,
+  isAssetId,
   type SceneDoc,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -57,7 +58,7 @@ async function references(projectPath: string, scenes: readonly SceneDoc[]): Pro
   const named = scenes
     .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(scene, entityId)))
     .flatMap((component) => componentAssets(component))
-    .filter((assetId): assetId is string => assetId !== null && assetId !== '');
+    .filter(isAssetId);
   return {
     resolved: named.filter((assetId) => known.has(assetId)).length,
     unresolved: named.filter((assetId) => !known.has(assetId)),

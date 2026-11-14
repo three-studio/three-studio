@@ -1,4 +1,5 @@
 import type {
+  AssetId,
   AssetImportResult,
   AssetManifest,
   DeviceLogs,
@@ -118,11 +119,11 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.updateSettings, assetPath, settings),
     readMaterials: (): Promise<Record<string, MaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readMaterials),
-    createMaterial: (name, material): Promise<string> =>
+    createMaterial: (name, material): Promise<AssetId> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createMaterial, name, material),
     readPrefabs: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPrefabs),
-    createPrefab: (name, prefabJson, assetId): Promise<string> =>
+    createPrefab: (name, prefabJson, assetId): Promise<AssetId> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefabJson, assetId),
     saveMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
@@ -130,7 +131,7 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefabJson),
     readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPhysicsMaterials),
-    createPhysicsMaterial: (name, material): Promise<string> =>
+    createPhysicsMaterial: (name, material): Promise<AssetId> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createPhysicsMaterial, name, material),
     savePhysicsMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.savePhysicsMaterial, assetPath, material),

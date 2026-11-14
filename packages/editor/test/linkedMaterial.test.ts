@@ -2,9 +2,11 @@ import {
   createComponent,
   createEntity,
   createMaterial,
-  createMeshEntity,
+  createMeshComponent,
   createPhysicsMaterial,
   findComponent,
+  fixedId,
+  type AssetId,
   type ColliderComponent,
   type MeshComponent,
 } from '@three-studio/core';
@@ -26,6 +28,10 @@ import { useDocumentStore } from '../src/state/documentStore';
 const doc = () => useDocumentStore.getState();
 const ice = { ...createPhysicsMaterial(), friction: 0.05 };
 const stone = createMaterial('#777777');
+const ICE = fixedId('asset', 'ice');
+const STONE = fixedId('asset', 'stone');
+const GONE = fixedId('asset', 'gone');
+const NEW_PHYSICS_MATERIAL = fixedId('asset', 'new-physics-material');
 
 const real = (({ saveMaterial, savePhysicsMaterial, createPhysicsMaterial }) => ({
   saveMaterial,
@@ -37,16 +43,20 @@ const real = (({ saveMaterial, savePhysicsMaterial, createPhysicsMaterial }) => 
 let saves: {
   saveMaterial: Mock<() => Promise<void>>;
   savePhysicsMaterial: Mock<() => Promise<void>>;
-  createPhysicsMaterial: Mock<() => Promise<string>>;
+  createPhysicsMaterial: Mock<() => Promise<AssetId>>;
 };
 
 beforeEach(() => {
   saves = {
     saveMaterial: vi.fn(async () => {}),
     savePhysicsMaterial: vi.fn(async () => {}),
-    createPhysicsMaterial: vi.fn(async () => 'new-physics-material'),
+    createPhysicsMaterial: vi.fn(async () => NEW_PHYSICS_MATERIAL),
   };
-  useAssetStore.setState({ materials: { stone }, physicsMaterials: { ice }, ...saves });
+  useAssetStore.setState({
+    materials: new Map([[STONE, stone]]),
+    physicsMaterials: new Map([[ICE, ice]]),
+    ...saves,
+  });
   useDialogStore.getState().cancel();
 });
 
@@ -55,7 +65,7 @@ afterEach(() => {
 });
 
 /** A Cube whose Collider grips by its own 0.7, linking `materialId`. */
-function cubeLinking(materialId: string | null): string {
+function cubeLinking(materialId: AssetId | null): string {
   const cube = createEntity('Cube', [{ ...createComponent('collider'), materialId }]);
   doc().replaceScene(sceneWith([cube]));
   return cube.entity.id;
@@ -66,45 +76,44 @@ const colliderOf = (entityId: string): ColliderComponent =>
 
 describe('a linked physics material', () => {
   it('a collider linked to a physics material shows its values, and an edit goes to the asset in one undo step', () => {
-    const cube = cubeLinking('ice');
+    const cube = cubeLinking(ICE);
 
     expect((effectiveComponent(cube, colliderOf(cube)) as ColliderComponent).material).toEqual(ice);
     const linked = linkedMaterial(colliderOf(cube), ['material', 'friction']);
-    expect(linked?.assetId).toBe('ice');
+    expect(linked?.assetId).toBe(ICE);
 
     linked!.edit('Friction', 'friction', 0.1);
-    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0.1 });
+    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith(ICE, { ...ice, friction: 0.1 });
     expect(colliderOf(cube).material.friction).toBe(0.7);
     expect(doc().undoLabel()).toBe('Edit physics material Friction');
 
     doc().undo();
-    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith('ice', ice);
+    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith(ICE, ice);
     doc().redo();
-    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith('ice', { ...ice, friction: 0.1 });
+    expect(saves.savePhysicsMaterial).toHaveBeenLastCalledWith(ICE, { ...ice, friction: 0.1 });
   });
 
   it('a link the project cannot answer edits the collider’s own values', () => {
-    const cube = cubeLinking('gone');
+    const cube = cubeLinking(GONE);
 
     expect(linkedMaterial(colliderOf(cube), ['material', 'friction'])).toBeNull();
     expect((effectiveComponent(cube, colliderOf(cube)) as ColliderComponent).material.friction).toBe(0.7);
   });
 
   it('a mesh’s linked material keeps its edit going to its asset', () => {
-    const mesh = createMeshEntity('box');
-    (mesh.components[0] as MeshComponent).materialId = 'stone';
+    const mesh = createEntity('Cube', [{ ...createMeshComponent('box'), materialId: STONE }]);
     doc().replaceScene(sceneWith([mesh]));
     const component = () => findComponent(doc().scene, mesh.entity.id, 'mesh')!;
 
     expect((effectiveComponent(mesh.entity.id, component()) as MeshComponent).material).toEqual(stone);
     const linked = linkedMaterial(component(), ['material', 'roughness']);
-    expect(linked?.assetId).toBe('stone');
+    expect(linked?.assetId).toBe(STONE);
 
     linked!.edit('Roughness', 'roughness', 0.2);
-    expect(saves.saveMaterial).toHaveBeenLastCalledWith('stone', { ...stone, roughness: 0.2 });
+    expect(saves.saveMaterial).toHaveBeenLastCalledWith(STONE, { ...stone, roughness: 0.2 });
     expect(doc().undoLabel()).toBe('Edit material Roughness');
     doc().undo();
-    expect(saves.saveMaterial).toHaveBeenLastCalledWith('stone', stone);
+    expect(saves.saveMaterial).toHaveBeenLastCalledWith(STONE, stone);
   });
 });
 
@@ -126,11 +135,16 @@ describe('the collider’s two actions', () => {
     await vi.waitFor(() => expect(useDialogStore.getState().prompt).not.toBeNull());
     expect(useDialogStore.getState().prompt?.defaultValue).toBe('Cube Physics Material');
     useDialogStore.getState().submit('Ice');
-    await vi.waitFor(() => expect(colliderOf(cube).materialId).toBe('new-physics-material'));
+    await vi.waitFor(() => expect(colliderOf(cube).materialId).toBe(NEW_PHYSICS_MATERIAL));
     expect(saves.createPhysicsMaterial).toHaveBeenCalledWith('Ice', own);
 
     // The table as a refresh leaves it, the asset holding Ice's values.
-    useAssetStore.setState({ physicsMaterials: { ice, 'new-physics-material': ice } });
+    useAssetStore.setState({
+      physicsMaterials: new Map([
+        [ICE, ice],
+        [NEW_PHYSICS_MATERIAL, ice],
+      ]),
+    });
     run(cube, 'Make Unique');
 
     expect(colliderOf(cube).material).toEqual(ice);

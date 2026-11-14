@@ -228,15 +228,18 @@ describe('fill', () => {
 
 describe('assets', () => {
   it('names the material and every texture slot of a mesh', () => {
+    const colour = fixedId('asset', 'tex-colour');
+    const normal = fixedId('asset', 'tex-normal');
+    const material = fixedId('asset', 'mat-1');
     const mesh = createMeshComponent('box');
-    mesh.material.colorMap = 'tex-colour';
-    mesh.material.normalMap = 'tex-normal';
-    mesh.materialId = 'mat-1';
+    mesh.material.colorMap = colour;
+    mesh.material.normalMap = normal;
+    mesh.materialId = material;
 
     const named = componentAssets(mesh);
-    expect(named).toContain('mat-1');
-    expect(named).toContain('tex-colour');
-    expect(named).toContain('tex-normal');
+    expect(named).toContain(material);
+    expect(named).toContain(colour);
+    expect(named).toContain(normal);
   });
 
   it('names nothing for a type that points at no asset', () => {

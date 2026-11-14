@@ -1,4 +1,4 @@
-import type { ScriptComponent } from '@three-studio/core';
+import { isAssetId, type AssetId, type ScriptComponent } from '@three-studio/core';
 import {
   registerBehaviour,
   type Behaviour as RuntimeBehaviour,
@@ -21,7 +21,7 @@ export interface ScriptClass {
   properties?: ScriptProperties;
 }
 
-const registry = new Map<string, ScriptClass>();
+const registry = new Map<AssetId, ScriptClass>();
 
 /**
  * Registers a compiled script under its asset id.
@@ -29,13 +29,17 @@ const registry = new Map<string, ScriptClass>();
  * The compiled bundle calls this once per script at import time, so the runtime
  * never has to know how scripts were built — the editor bundles them with
  * esbuild, and an exported web build ships the same bundle.
+ *
+ * A bundle is generated text, and nothing typechecks the id it passes: one that
+ * is not an id registers nothing, where `''` would have sat in the table under a
+ * key no component can name.
  */
 export function registerScript(assetId: string, scriptClass: ScriptClass): void {
-  registry.set(assetId, scriptClass);
+  if (isAssetId(assetId)) registry.set(assetId, scriptClass);
 }
 
 export function scriptClassFor(assetId: string): ScriptClass | undefined {
-  return registry.get(assetId);
+  return isAssetId(assetId) ? registry.get(assetId) : undefined;
 }
 
 export function clearScripts(): void {

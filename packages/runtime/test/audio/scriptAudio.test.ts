@@ -1,4 +1,4 @@
-import { createAudioSource, createEntity, type AudioSourceComponent } from '@three-studio/core';
+import { createAudioSource, createEntity, fixedId, type AudioSourceComponent } from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
@@ -16,6 +16,8 @@ import { flush, rig } from './rig';
  * copies of one clip and `stop()` stops the wrong one.
  */
 
+const STEP = fixedId('asset', 'step');
+
 function context(audio: AudioEngine | null): BehaviourContext {
   return { audio, warn: () => {} } as unknown as BehaviourContext;
 }
@@ -28,7 +30,7 @@ function mountSource(
 ): Object3D {
   const object = new Group();
   const entity = { ...createEntity('noise').entity, id: entityId };
-  const component = { ...createAudioSource(), assetId: 'step', ...overrides };
+  const component = { ...createAudioSource(), assetId: STEP, ...overrides };
   behaviourFactoryFor('audioSource')?.({ entity, object, component }, context(engine));
   return object;
 }
@@ -102,6 +104,17 @@ describe('this.audio', () => {
     const voice = api.playClip('step', { volume: 0.5, bus: 'ui' });
     await flush();
     expect(voice?.state).toBe('playing');
+  });
+
+  it('plays nothing for an id that is not one', async () => {
+    const { engine } = rig({ step: { duration: 10 } });
+    const api = audioApiFor(engine, 'me');
+
+    // What a script passes is whatever it made of a value: `''` is no clip, and
+    // asked of the engine it would be a voice that can only fail.
+    expect(api.playClip('')).toBeNull();
+    await flush();
+    expect(engine.voices).toHaveLength(0);
   });
 
   it('reaches the buses, which is what a settings screen needs', () => {

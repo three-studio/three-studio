@@ -1,3 +1,4 @@
+import type { AssetId } from '../ids';
 import type { MaterialDef } from '../scene/schema';
 
 /**
@@ -7,7 +8,7 @@ import type { MaterialDef } from '../scene/schema';
  * collector share one list. Two copies of "the texture slots" is how a new slot
  * gets left out of the exported bundle and the model arrives untextured.
  */
-export function materialAssets(material: MaterialDef): readonly (string | null)[] {
+export function materialAssets(material: MaterialDef): readonly (AssetId | null)[] {
   return [
     material.colorMap,
     material.normalMap,

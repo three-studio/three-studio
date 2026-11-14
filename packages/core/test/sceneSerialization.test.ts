@@ -169,7 +169,7 @@ describe('a scene through a file', () => {
   function written(): { json: string; unknownOn: string } {
     const parent = createEntity('Parent', [createComponent('mesh'), createComponent('collider')]);
     const child = createEntity('Child', [createComponent('rigidbody')]);
-    const crate = createEntity('Crate', [createPrefabInstance('prefab-1')]);
+    const crate = createEntity('Crate', [createPrefabInstance(fixedId('asset', 'prefab-1'))]);
     const everything = createEntity(
       'Everything',
       COMPONENT_TYPES.map((type) => createComponent(type)),

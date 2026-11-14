@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createId, type AssetId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import type { AudioSourceComponent } from './schema';
 
@@ -43,7 +43,7 @@ export function createAudioSource(): AudioSourceComponent {
  * hand every single time. The same reason a dropped model is named after its
  * file.
  */
-export function createAudioSourceEntity(assetId = '', name = 'Audio Source'): EntityTemplate {
+export function createAudioSourceEntity(assetId: AssetId | '' = '', name = 'Audio Source'): EntityTemplate {
   const component = createAudioSource();
   component.assetId = assetId;
   return createEntity(name, [component]);

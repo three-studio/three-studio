@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { GeometryDef } from '../../scene/geometry';
 import type { MaterialSide } from '../../scene/material';
 import type { ComponentBase, Hex, Vec3 } from '../../scene/primitives';
@@ -34,7 +35,7 @@ export interface WaterComponent extends ComponentBase {
   /** Plane only — see the note above. */
   geometry: Extract<GeometryDef, { kind: 'plane' }>;
   /** The normal map the ripples are read from. A built-in one is used until set. */
-  normalMapId: string | null;
+  normalMapId: AssetId | null;
   waterColor: Hex;
   sunSource: WaterSunSource;
   /** Used when `sunSource` is `'custom'`. Points from the surface at the sun. */

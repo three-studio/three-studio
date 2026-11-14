@@ -15,6 +15,7 @@ import {
   createWaterEntity,
   insertEntity,
   serializeScene,
+  type AssetId,
   type AssetManifest,
   type ComponentDoc,
   type ComponentOfType,
@@ -518,7 +519,7 @@ export function ballastPaths(recipe: ScriptedRecipe = SCRIPTED): string[] {
   );
 }
 
-function scriptOn(assetId: string): ComponentDoc {
+function scriptOn(assetId: AssetId): ComponentDoc {
   return { ...createComponent('script'), assetId };
 }
 
@@ -535,7 +536,7 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   const heavyModel = modelPathIn('heavy.glb');
   await writeFile(join(project.path, heavyModel), writeGlb(texturesGlb(recipe.heavyImages)));
   const manifest = await scanAssets(project.path);
-  const script = (path: string): string => assetAt(manifest, path).id;
+  const script = (path: string): AssetId => assetAt(manifest, path).id;
 
   const field: RenderRecipe = { props: recipe.props, columns: 10 };
   const half = halfField(field);

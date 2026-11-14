@@ -1,6 +1,7 @@
 import {
   collectSceneAssets,
   expandPrefabs,
+  type AssetId,
   type MaterialDef,
   type PrefabDoc,
   type SceneDoc,
@@ -35,8 +36,8 @@ export interface SceneSource {
 /** What everything a scene needs, other than the document itself. */
 export interface SceneHostOptions extends Omit<EngineOptions, 'scene'> {
   source: SceneSource;
-  materials?: Readonly<Record<string, MaterialDef>>;
-  prefabs?: Readonly<Record<string, PrefabDoc>>;
+  materials?: ReadonlyMap<AssetId, MaterialDef>;
+  prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
   /**
    * Shown while another scene loads, by id. `null` swaps straight over.
    *
@@ -185,7 +186,7 @@ export class SceneHost implements SceneApi {
     // forget, and the symptom is a level that loads with its props missing.
     const engine = await Engine.create({
       ...this.options,
-      scene: expandPrefabs(scene, { get: (id) => this.options.prefabs?.[id] }).scene,
+      scene: expandPrefabs(scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
       scenes: this.sceneApiFor(path),
       // Handed over rather than built per engine, so the clips outlive the
       // scene that first asked for them.
@@ -234,8 +235,12 @@ export class SceneHost implements SceneApi {
     return this.options.source.read(path);
   }
 
-  assetsOf(scene: SceneDoc): string[] {
-    return collectSceneAssets(scene, this.options.materials ?? {}, this.options.prefabs ?? {});
+  assetsOf(scene: SceneDoc): AssetId[] {
+    return collectSceneAssets(
+      scene,
+      this.options.materials ?? new Map<AssetId, MaterialDef>(),
+      this.options.prefabs ?? new Map<AssetId, PrefabDoc>(),
+    );
   }
 
   /**
@@ -245,7 +250,7 @@ export class SceneHost implements SceneApi {
    * to have everything in hand *before* the new engine exists, and the old
    * one's cache goes away with it.
    */
-  async preloadAsset(assetId: string): Promise<void> {
+  async preloadAsset(assetId: AssetId): Promise<void> {
     // A sound goes to the clip cache and nowhere near the model one, which
     // would silently do nothing with it: `ModelCache.preload` switches on the
     // extension and an unknown one simply returns.

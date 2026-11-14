@@ -12,6 +12,7 @@ import {
   createMeshEntity,
   createRenderingSettings,
   findComponent,
+  fixedId,
   jointFrame,
   putComponent,
   type AudioSourceComponent,
@@ -457,7 +458,7 @@ describe('helpers on the selection', () => {
 
 describe('what a positional sound covers', () => {
   const audio = (edit: (component: AudioSourceComponent) => void = () => {}): EntityTemplate => {
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(fixedId('asset', 'clip'));
     const component = template.components[0] as AudioSourceComponent;
     edit(component);
     return template;

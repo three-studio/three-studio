@@ -30,13 +30,20 @@ import { describe, expect, it } from 'vitest';
  * bridge. Play keeps its documents in memory and encodes nothing.
  */
 
+const STONE = fixedId('asset', 'stone');
+const ICE = fixedId('asset', 'ice');
+const CRATE = fixedId('asset', 'crate');
+const TREE = fixedId('asset', 'tree');
+const BROKEN = fixedId('asset', 'broken');
+
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: fixedId('scene', 'scene-1'), name: 'Level', scene: createStarterScene() },
-    materials: { stone: createMaterial('#777777') },
-    physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' } },
-    prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
+    materials: new Map([[STONE, createMaterial('#777777')]]),
+    physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' }]]),
+    // Under the id it is filed by, as a prefab read from a library always is.
+    prefabs: new Map([[CRATE, { ...createPrefabDoc('Crate', [], emptyComponentTables(), ''), id: CRATE }]]),
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: {
       ...createPhysicsSettings(),
@@ -81,8 +88,8 @@ describe('a launch snapshot, as it is sent', () => {
     expect(wire.version).toBe(LAUNCH_SNAPSHOT_VERSION);
     expect(wire.entry).toEqual({ id: 'scene-1', name: 'Level', sceneJson: expect.any(String) });
     expect(JSON.parse(wire.entry.sceneJson)).toEqual(JSON.parse(serializeScene(original.entry.scene)));
-    expect(wire.prefabs).toEqual({ crate: expect.any(String) });
-    expect(wire.materials).toEqual(original.materials);
+    expect(wire.prefabs).toEqual({ [CRATE]: expect.any(String) });
+    expect(wire.materials).toEqual(Object.fromEntries(original.materials));
     expect(wire.loadingScene).toBe('loading');
   });
 });
@@ -120,7 +127,7 @@ describe('a launch snapshot, where it arrives', () => {
     };
 
     const { materials } = conformLaunchSnapshot(wire).snapshot;
-    const material = assertDefined(materials['stone'], 'the stone material');
+    const material = assertDefined(materials.get(STONE), 'the stone material');
 
     expect(material.side).toBe(createMaterial().side);
     expect(material).not.toHaveProperty('trap');
@@ -133,8 +140,8 @@ describe('a launch snapshot, where it arrives', () => {
     }).snapshot;
 
     // The rule read as Average, the missing friction the factory's.
-    expect(physicsMaterials['ice']).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
-    expect(physicsMaterials['broken']).toEqual(createPhysicsMaterial());
+    expect(physicsMaterials.get(ICE)).toEqual({ ...createPhysicsMaterial(), restitution: 0.5 });
+    expect(physicsMaterials.get(BROKEN)).toEqual(createPhysicsMaterial());
   });
 
   it('falls back on the factories’ settings, and on no loading scene', () => {
@@ -160,13 +167,15 @@ describe('a launch snapshot, where it arrives', () => {
       prefabs: { tree: JSON.stringify(oldPrefab()), broken: { not: 'text' } },
     }).snapshot;
 
-    const tree = assertDefined(prefabs['tree'], 'the tree prefab');
+    const tree = assertDefined(prefabs.get(TREE), 'the tree prefab');
     expect(tree.version).toBe(PREFAB_FORMAT_VERSION);
+    // Under the id it arrived by, whatever the file said of its own.
+    expect(tree.id).toBe(TREE);
     expect(componentsOf(tree, 'trunk').map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
     ]);
-    expect(prefabs).not.toHaveProperty('broken');
+    expect(prefabs.has(BROKEN)).toBe(false);
   });
 
   it('refuses a prefab whose text is not JSON, as it refuses a scene', () => {

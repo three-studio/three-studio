@@ -13,8 +13,9 @@ import {
   createPrefabInstance,
   createMaterial,
   createMeshEntity,
+  findComponent,
   sceneName,
-  type MeshComponent,
+  type AssetId,
   type EntityTemplate,
   type SceneDoc,
 } from '@three-studio/core';
@@ -26,6 +27,21 @@ import { prefabWith } from './fixtures';
  * wait is entirely its assets, so this list is the difference between a bar
  * that means something and one that jumps from nothing to done.
  */
+
+const MAT = fixedId('asset', 'mat-1');
+const MODEL = fixedId('asset', 'model-1');
+const TEX_INLINE = fixedId('asset', 'tex-inline');
+const TEX_SHARED = fixedId('asset', 'tex-shared');
+const MODEL_LAMP = fixedId('asset', 'model-lamp');
+const PREFAB_LAMP = fixedId('asset', 'prefab-lamp');
+const PREFAB_ROOM = fixedId('asset', 'prefab-room');
+const PREFAB_LOOP = fixedId('asset', 'prefab-loop');
+const TEX_SKY = fixedId('asset', 'tex-sky');
+const TEX_IBL = fixedId('asset', 'tex-ibl');
+const SCRIPT_DOOR = fixedId('asset', 'script-door');
+const TEX_DOOR = fixedId('asset', 'tex-door');
+const MAT_DOOR = fixedId('asset', 'mat-door');
+const TEX_WOOD = fixedId('asset', 'tex-wood');
 
 function sceneWith(templates: EntityTemplate[]): SceneDoc {
   const scene: SceneDoc = {
@@ -48,61 +64,65 @@ function sceneWith(templates: EntityTemplate[]): SceneDoc {
 describe('what a scene needs before it can be shown', () => {
   it('collects models, textures and a linked material’s own maps', () => {
     const mesh = createMeshEntity('box');
-    const component = mesh.components[0] as MeshComponent;
-    component.material.colorMap = 'tex-inline';
-    component.materialId = 'mat-1';
-
-    const model = createEntity('Tree', [{ ...createComponent('model'), assetId: 'model-1' }]);
+    const model = createEntity('Tree', [{ ...createComponent('model'), assetId: MODEL }]);
+    const scene = sceneWith([mesh, model]);
+    const component = assertDefined(findComponent(scene, mesh.entity.id, 'mesh'), 'the box mesh');
+    component.material.colorMap = TEX_INLINE;
+    component.materialId = MAT;
 
     const ids = collectSceneAssets(
-      sceneWith([mesh, model]),
-      { 'mat-1': { ...createMaterial(), normalMap: 'tex-shared' } },
-      {},
+      scene,
+      new Map([[MAT, { ...createMaterial(), normalMap: TEX_SHARED }]]),
+      new Map(),
     );
 
     // The shared material's normal map is named by nothing in the scene; miss
     // it and the level pops in a frame late, textureless.
-    expect(ids.sort()).toEqual(['mat-1', 'model-1', 'tex-inline', 'tex-shared'].sort());
+    expect(ids.sort()).toEqual([MAT, MODEL, TEX_INLINE, TEX_SHARED].sort());
   });
 
   it('follows a prefab into its contents, and through a nested one', () => {
-    const inner = createEntity('Lamp', [{ ...createComponent('model'), assetId: 'model-lamp' }]);
+    const inner = createEntity('Lamp', [{ ...createComponent('model'), assetId: MODEL_LAMP }]);
     const lamp = prefabWith('Lamp', [inner], inner.entity.id);
 
     const roomRoot = createEntity('Room', [
-      createPrefabInstance('prefab-lamp'),
+      createPrefabInstance(PREFAB_LAMP),
     ]);
     const room = prefabWith('Room', [roomRoot], roomRoot.entity.id);
 
     const host = createEntity('Room', [
-      createPrefabInstance('prefab-room'),
+      createPrefabInstance(PREFAB_ROOM),
     ]);
 
-    const ids = collectSceneAssets(sceneWith([host]), {}, {
-      'prefab-lamp': lamp,
-      'prefab-room': room,
-    });
+    const ids = collectSceneAssets(
+      sceneWith([host]),
+      new Map(),
+      new Map([
+        [PREFAB_LAMP, lamp],
+        [PREFAB_ROOM, room],
+      ]),
+    );
 
     // One id in the scene, a model two prefabs down: the instance is what the
     // author placed, and the wait is the lamp.
-    expect(ids).toContain('model-lamp');
+    expect(ids).toContain(MODEL_LAMP);
   });
 
   it('collects the sky and the light it casts, which belong to no entity', () => {
     const scene = sceneWith([createMeshEntity('box')]);
     scene.environment.backgroundMode = 'texture';
-    scene.environment.backgroundTexture = 'tex-sky';
-    scene.environment.environmentTexture = 'tex-ibl';
+    scene.environment.backgroundTexture = TEX_SKY;
+    scene.environment.environmentTexture = TEX_IBL;
 
-    const ids = collectSceneAssets(scene, {}, {});
+    const ids = collectSceneAssets(scene, new Map(), new Map());
 
     // The walk this used to be went over the component tables only, and the
     // environment is a property of the scene. So the heaviest file in the
     // project — an equirectangular HDR is megabytes where a prop is kilobytes —
     // was the one asset the exporter did not ship and the loading bar did not
     // count, and the build came up with no sky and every surface unlit.
-    expect(ids).toContain('tex-sky');
-    expect(ids).toContain('tex-ibl');
+    expect(ids).toContain(TEX_SKY);
+    expect(ids).toContain(TEX_IBL);
   });
 
   it('leaves out a background texture the scene is not showing', () => {
@@ -112,19 +132,19 @@ describe('what a scene needs before it can be shown', () => {
     // the mode in a built game is a supported thing to do, and an id that
     // resolves to nothing is the failure this whole test file is about.
     scene.environment.backgroundMode = 'color';
-    scene.environment.backgroundTexture = 'tex-sky';
+    scene.environment.backgroundTexture = TEX_SKY;
 
-    expect(collectSceneAssets(scene, {}, {})).toContain('tex-sky');
+    expect(collectSceneAssets(scene, new Map(), new Map())).toContain(TEX_SKY);
   });
 
   it('terminates on a prefab that contains itself', () => {
     const root = createEntity('Loop', [
-      createPrefabInstance('prefab-loop'),
+      createPrefabInstance(PREFAB_LOOP),
     ]);
     const loop = prefabWith('Loop', [root], root.entity.id);
 
     expect(() =>
-      collectSceneAssets(sceneWith([root]), {}, { 'prefab-loop': loop }),
+      collectSceneAssets(sceneWith([root]), new Map(), new Map([[PREFAB_LOOP, loop]])),
     ).not.toThrow();
   });
 });
@@ -137,29 +157,29 @@ describe('what a script was handed in the inspector', () => {
   const scripted = (props: Record<string, string | number>) =>
     sceneWith([
       createEntity('Door', [
-        { ...createComponent('script'), assetId: 'script-door', props },
+        { ...createComponent('script'), assetId: SCRIPT_DOOR, props },
       ]),
     ]);
 
   it('counts a property that names a project asset, and leaves a sentence alone', () => {
     const scene = scripted({ texture: 'tex-door', greeting: 'Hello', speed: 3 });
-    const known = new Set(['script-door', 'tex-door']);
+    const known: ReadonlySet<AssetId> = new Set([SCRIPT_DOOR, TEX_DOOR]);
 
-    expect(collectSceneAssets(scene, {}, {}, known).sort()).toEqual(['script-door', 'tex-door']);
+    expect(collectSceneAssets(scene, new Map(), new Map(), known).sort()).toEqual([SCRIPT_DOOR, TEX_DOOR]);
     // Without the project's ids nothing tells the two strings apart, so only
     // the slots that say they hold an asset are read — as a loading bar asks.
-    expect(collectSceneAssets(scene, {}, {})).toEqual(['script-door']);
+    expect(collectSceneAssets(scene, new Map(), new Map())).toEqual([SCRIPT_DOOR]);
   });
 
   it('follows a material a script was handed to the maps it uses', () => {
     const scene = scripted({ skin: 'mat-door' });
-    const known = new Set(['script-door', 'mat-door', 'tex-wood']);
-    const materials = { 'mat-door': { ...createMaterial(), colorMap: 'tex-wood' } };
+    const known: ReadonlySet<AssetId> = new Set([SCRIPT_DOOR, MAT_DOOR, TEX_WOOD]);
+    const materials = new Map([[MAT_DOOR, { ...createMaterial(), colorMap: TEX_WOOD }]]);
 
-    expect(collectSceneAssets(scene, materials, {}, known).sort()).toEqual([
-      'mat-door',
-      'script-door',
-      'tex-wood',
+    expect(collectSceneAssets(scene, materials, new Map(), known).sort()).toEqual([
+      MAT_DOOR,
+      SCRIPT_DOOR,
+      TEX_WOOD,
     ]);
   });
 });

@@ -13,7 +13,7 @@ import type {
   DeviceSettingsPatch,
   LaunchSnapshotJson,
 } from './devices/schema';
-import type { SceneId } from './ids';
+import type { AssetId, SceneId } from './ids';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
@@ -288,11 +288,12 @@ export interface AssetApi {
    *
    * Read in one go rather than per reference: the binder builds a mesh
    * synchronously, so a material it has to await would render untextured for a
-   * frame. They are a few hundred bytes each.
+   * frame. They are a few hundred bytes each. A record, as a message is; the
+   * window reads it into a Map with `idMapOf`.
    */
   readMaterials: () => Promise<Record<string, MaterialDef>>;
   /** Writes a new material asset and returns its id. */
-  createMaterial: (name: string, material: MaterialDef) => Promise<string>;
+  createMaterial: (name: string, material: MaterialDef) => Promise<AssetId>;
   /**
    * Every prefab in the project, by asset id, each as the JSON of its document.
    * Read in one go, like materials. Text because a document holds Maps, which
@@ -300,14 +301,18 @@ export interface AssetApi {
    * `deserializePrefab`.
    */
   readPrefabs: () => Promise<Record<string, string>>;
-  /** Writes a new prefab asset from its document's JSON and returns its id. */
-  createPrefab: (name: string, prefabJson: string, assetId?: string) => Promise<string>;
+  /**
+   * Writes a new prefab asset from its document's JSON and returns its id: the
+   * one the document carries, or `assetId` when one is given, which is how the
+   * redo of an undone creation gets the id back that the entity already names.
+   */
+  createPrefab: (name: string, prefabJson: string, assetId?: AssetId) => Promise<AssetId>;
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   /** Every physics material in the project, by asset id. Read in one go, like materials. */
   readPhysicsMaterials: () => Promise<Record<string, PhysicsMaterialDef>>;
   /** Writes a new physics material asset and returns its id. */
-  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<AssetId>;
   /** Overwrites an existing physics material asset, by project-relative path. */
   savePhysicsMaterial: (assetPath: string, material: PhysicsMaterialDef) => Promise<void>;
   /** Overwrites an existing prefab asset, by project-relative path, with its document's JSON. */

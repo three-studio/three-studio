@@ -1,4 +1,4 @@
-import type { AssetSettings } from '@three-studio/core';
+import { fixedId, type AssetSettings } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import type { AssetResolver } from '../../src/assets/AssetResolver';
 import { AudioClipCache } from '../../src/audio/AudioClipCache';
@@ -12,6 +12,14 @@ import { clipBytes, FakeContext } from './fakeContext';
  * Eight samples is 32 bytes per channel here, which is what lets a budget test
  * use small round numbers instead of allocating megabytes.
  */
+
+const STEP = fixedId('asset', 'step');
+const MUSIC = fixedId('asset', 'music');
+const TALK = fixedId('asset', 'talk');
+const WEIRD = fixedId('asset', 'weird');
+const GONE = fixedId('asset', 'gone');
+const CLIP_A = fixedId('asset', 'a');
+const CLIP_B = fixedId('asset', 'b');
 
 interface Spec {
   channels?: number;
@@ -68,8 +76,8 @@ function cache(
 describe('AudioClipCache', () => {
   it('decodes a clip once however many times it is asked for', async () => {
     const { cache: clips, loads } = cache({ step: {} });
-    const a = clips.acquire('step');
-    const b = clips.acquire('step');
+    const a = clips.acquire(STEP);
+    const b = clips.acquire(STEP);
     await Promise.all([a.clip, b.clip]);
 
     expect(loads).toEqual(['step']);
@@ -78,11 +86,11 @@ describe('AudioClipCache', () => {
 
   it('keeps a clip nothing is holding, because the next play is two seconds away', async () => {
     const { cache: clips, loads } = cache({ step: {} });
-    const held = clips.acquire('step');
+    const held = clips.acquire(STEP);
     await held.clip;
     held.release();
 
-    const again = clips.acquire('step');
+    const again = clips.acquire(STEP);
     await again.clip;
     expect(loads).toEqual(['step']);
   });
@@ -91,60 +99,60 @@ describe('AudioClipCache', () => {
     // Eight mono samples is 32 bytes; two of them do not fit in forty.
     const { cache: clips, loads } = cache({ a: {}, b: {} }, { budgetBytes: 40 });
 
-    const first = clips.acquire('a');
+    const first = clips.acquire(CLIP_A);
     await first.clip;
     first.release();
 
-    const second = clips.acquire('b');
+    const second = clips.acquire(CLIP_B);
     await second.clip;
     second.release();
 
     expect(clips.bytes).toBeLessThanOrEqual(40);
-    expect(clips.peek('a')).toBeNull();
-    expect(clips.peek('b')).not.toBeNull();
+    expect(clips.peek(CLIP_A)).toBeNull();
+    expect(clips.peek(CLIP_B)).not.toBeNull();
 
     // And it is a real eviction, not a hidden hit: asking again re-reads.
-    const third = clips.acquire('a');
+    const third = clips.acquire(CLIP_A);
     await third.clip;
     expect(loads).toEqual(['a', 'b', 'a']);
   });
 
   it('never evicts a clip something is still holding', async () => {
     const { cache: clips } = cache({ a: {}, b: {} }, { budgetBytes: 40 });
-    const held = clips.acquire('a');
+    const held = clips.acquire(CLIP_A);
     await held.clip;
 
-    const other = clips.acquire('b');
+    const other = clips.acquire(CLIP_B);
     await other.clip;
     other.release();
 
-    expect(clips.peek('a')).not.toBeNull();
+    expect(clips.peek(CLIP_A)).not.toBeNull();
   });
 
   it('downmixes to mono when the asset was imported that way', async () => {
     const { cache: clips } = cache({ music: { channels: 2, forceMono: true } });
-    const buffer = await clips.acquire('music').clip;
+    const buffer = await clips.acquire(MUSIC).clip;
 
     expect(buffer?.numberOfChannels).toBe(1);
   });
 
   it('leaves the channels alone otherwise', async () => {
     const { cache: clips } = cache({ music: { channels: 2 } });
-    const buffer = await clips.acquire('music').clip;
+    const buffer = await clips.acquire(MUSIC).clip;
 
     expect(buffer?.numberOfChannels).toBe(2);
   });
 
   it('answers null and warns once for an asset the project does not have', async () => {
     const { cache: clips, warnings } = cache({});
-    expect(await clips.acquire('gone').clip).toBeNull();
+    expect(await clips.acquire(GONE).clip).toBeNull();
     expect(warnings).toHaveLength(1);
   });
 
   it('does not retry a file the browser cannot decode', async () => {
     const { cache: clips, loads } = cache({ weird: {} }, { failDecode: true });
-    expect(await clips.acquire('weird').clip).toBeNull();
-    expect(await clips.acquire('weird').clip).toBeNull();
+    expect(await clips.acquire(WEIRD).clip).toBeNull();
+    expect(await clips.acquire(WEIRD).clip).toBeNull();
 
     // The entry stays, poisoned. The browser will not learn this format before
     // the page reloads, and asking again would fetch the bytes for nothing.
@@ -158,7 +166,7 @@ describe('AudioClipCache', () => {
     // the whole reason someone chose it: minutes of audio resident rather than
     // streamed. Two documents already claimed this warning existed; it did not.
     const { cache: clips, warnings } = cache({ talk: { loadMode: 'stream' } });
-    await clips.acquire('talk').clip;
+    await clips.acquire(TALK).clip;
 
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('set to stream');
@@ -167,7 +175,7 @@ describe('AudioClipCache', () => {
 
   it('says nothing about an asset that asked to be decoded, which is most of them', async () => {
     const { cache: clips, warnings } = cache({ step: {} });
-    await clips.acquire('step').clip;
+    await clips.acquire(STEP).clip;
 
     expect(warnings).toEqual([]);
   });
@@ -177,18 +185,18 @@ describe('AudioClipCache', () => {
     // warning per play would fill the panel with the same line during exactly
     // the moment the panel needs to be readable.
     const { cache: clips, warnings } = cache({ talk: { loadMode: 'stream' } });
-    await clips.acquire('talk').clip;
-    await clips.acquire('talk').clip;
-    await clips.acquire('talk').clip;
+    await clips.acquire(TALK).clip;
+    await clips.acquire(TALK).clip;
+    await clips.acquire(TALK).clip;
 
     expect(warnings).toHaveLength(1);
   });
 
   it('forgets a clip on demand, for a file replaced under the same id', async () => {
     const { cache: clips, loads } = cache({ step: {} });
-    await clips.acquire('step').clip;
-    clips.invalidate('step');
-    await clips.acquire('step').clip;
+    await clips.acquire(STEP).clip;
+    clips.invalidate(STEP);
+    await clips.acquire(STEP).clip;
 
     expect(loads).toEqual(['step', 'step']);
   });

@@ -47,7 +47,7 @@ import type { Presentation } from '../src/viewport/Presentation';
  */
 
 const SCENE_ID = fixedId('scene', 'window-scene');
-const PREFAB_ID = 'prefab-under-test';
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
 
 const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,
@@ -148,8 +148,8 @@ beforeEach(() => {
   });
   const root = createMeshEntity('box');
   useAssetStore.setState({
-    physicsMaterials: {},
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
+    physicsMaterials: new Map(),
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
     savePrefab: async () => {},
   });
   useViewportStore.setState({ rendererError: null, playWarnings: [] });
@@ -339,7 +339,7 @@ function takeTheBrowserBack(): void {
 
 // The window answers the one scene a script reads from its file.
 const BOSS = { id: fixedId('scene', 'boss-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
-const GO_TO_BOSS = 'script-go-to-boss';
+const GO_TO_BOSS = fixedId('asset', 'script-go-to-boss');
 
 /** A body nothing can touch: its own problem, which the first scene does not have. */
 function bossScene() {
@@ -442,11 +442,12 @@ describe('the problems over the game', () => {
   });
 
   it('plays a collider with the physics material it links, and does not call it missing', async () => {
+    const ICE = fixedId('asset', 'ice');
     const cube = createMeshEntity('box');
     cube.entity.name = 'Cube';
-    cube.components.push({ ...createComponent('collider'), materialId: 'ice' });
+    cube.components.push({ ...createComponent('collider'), materialId: ICE });
     useDocumentStore.getState().replaceScene(sceneWith([cube]));
-    useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
+    useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
     watching();
 
     play();
@@ -714,7 +715,7 @@ describe('the scene the game plays', () => {
    * that disabled the script once immer had frozen it, where the same script
    * works in the exported player.
    */
-  const MOVER = 'script-mover';
+  const MOVER = fixedId('asset', 'script-mover');
   /** What the script saw itself do. */
   const record = { started: false, name: '', frames: 0, offset: [] as number[] };
 

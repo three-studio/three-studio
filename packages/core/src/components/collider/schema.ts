@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { PhysicsMaterialDef } from '../../scene/physicsMaterial';
 import type { ComponentBase, Vec3 } from '../../scene/primitives';
 
@@ -112,7 +113,7 @@ export interface ColliderComponent extends ComponentBase {
    * untouched, so unlinking falls back to it. One the project does not have
    * leaves the collider on its own values, and Play says so.
    */
-  materialId: string | null;
+  materialId: AssetId | null;
   /**
    * A zone rather than matter: it touches nothing, and weighs nothing. What
    * moves through it is reported, through `onTriggerEnter` and `onTriggerExit`,

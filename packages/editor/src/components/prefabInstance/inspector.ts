@@ -29,7 +29,7 @@ export const inspector: ComponentSchema = {
       // prefabs deep.
       run: ({ entityId }) => {
         const info = instanceInfo(entityId);
-        if (info && !info.missing) void usePrefabModeStore.getState().open(info.assetId);
+        if (info && !info.missing && info.assetId !== '') void usePrefabModeStore.getState().open(info.assetId);
       },
     },
     {
@@ -42,7 +42,7 @@ export const inspector: ComponentSchema = {
       title: 'Show in Project',
       run: ({ entityId }) => {
         const info = instanceInfo(entityId);
-        if (info) commandById('revealAsset').run(contextForAsset(info.assetId));
+        if (info && info.assetId !== '') commandById('revealAsset').run(contextForAsset(info.assetId));
       },
     },
     {

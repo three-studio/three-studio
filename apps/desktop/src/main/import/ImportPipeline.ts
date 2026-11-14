@@ -6,6 +6,7 @@ import {
   ASSET_META_VERSION,
   assetDisplayName,
   conformAssetSettings,
+  createAssetId,
   createId,
   importerForFile,
   type AssetEntry,
@@ -78,7 +79,7 @@ export class ImportPipeline {
 
     const meta: AssetMeta = {
       version: ASSET_META_VERSION,
-      id: createId(),
+      id: createAssetId(),
       kind: importer.kind,
       importedAt: Date.now(),
       hash: source.hash,

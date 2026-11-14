@@ -2,10 +2,13 @@ import {
   BUILD_FORMAT_VERSION,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabDoc,
   createRenderingSettings,
   defaultSettings,
+  emptyComponentTables,
   fixedId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
   type AssetSettings,
 } from '@three-studio/core';
@@ -19,7 +22,7 @@ import { assembleManifest, type ManifestContents, type ShippedAsset } from '../s
  */
 
 function asset(
-  id: string,
+  id: AssetId,
   kind: AssetKind,
   path: string,
   settings: AssetSettings = defaultSettings(kind, path),
@@ -48,9 +51,9 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
     scenes: [{ id: fixedId('scene', 'main'), name: 'Main', path: 'scenes/main.json' }],
     loadingScene: null,
     assets: [],
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
+    materials: new Map(),
+    physicsMaterials: new Map(),
+    prefabs: new Map(),
     scripts: null,
     ...overrides,
   };
@@ -61,24 +64,37 @@ describe('assembling build.json', () => {
     // The tables used to follow the order the scan met the files in, which is
     // the order the volume lists a folder in: the same project exported on two
     // machines showed a diff in a build that had not changed.
-    const a = { entry: asset('tex-a', 'texture', 'assets/textures/a.png'), path: 'textures/a.1.png' };
-    const b = { entry: asset('tex-b', 'texture', 'assets/textures/b.png'), path: 'textures/b.2.png' };
+    const a = { entry: asset(fixedId('asset', 'tex-a'), 'texture', 'assets/textures/a.png'), path: 'textures/a.1.png' };
+    const b = { entry: asset(fixedId('asset', 'tex-b'), 'texture', 'assets/textures/b.png'), path: 'textures/b.2.png' };
     const material = (color: string) => ({ color }) as never;
+    // Each library in one order, and in the other: a Map keeps the order it was filled in.
+    const materials = [
+      [fixedId('asset', 'mat-a'), material('#a')],
+      [fixedId('asset', 'mat-b'), material('#b')],
+    ] as const;
+    const physicsMaterials = [
+      [fixedId('asset', 'pm-a'), createPhysicsMaterial()],
+      [fixedId('asset', 'pm-b'), createPhysicsMaterial()],
+    ] as const;
+    const prefabs = [
+      [fixedId('asset', 'pre-a'), createPrefabDoc('A', [], emptyComponentTables(), '')],
+      [fixedId('asset', 'pre-b'), createPrefabDoc('B', [], emptyComponentTables(), '')],
+    ] as const;
 
     const one = assembleManifest(
       contents({
         assets: [a, b],
-        materials: { 'mat-a': material('#a'), 'mat-b': material('#b') },
-        physicsMaterials: { 'pm-a': createPhysicsMaterial(), 'pm-b': createPhysicsMaterial() },
-        prefabs: { 'pre-a': {} as never, 'pre-b': {} as never },
+        materials: new Map(materials),
+        physicsMaterials: new Map(physicsMaterials),
+        prefabs: new Map(prefabs),
       }),
     );
     const other = assembleManifest(
       contents({
         assets: [b, a],
-        materials: { 'mat-b': material('#b'), 'mat-a': material('#a') },
-        physicsMaterials: { 'pm-b': createPhysicsMaterial(), 'pm-a': createPhysicsMaterial() },
-        prefabs: { 'pre-b': {} as never, 'pre-a': {} as never },
+        materials: new Map([...materials].reverse()),
+        physicsMaterials: new Map([...physicsMaterials].reverse()),
+        prefabs: new Map([...prefabs].reverse()),
       }),
     );
     expect(JSON.stringify(other)).toBe(JSON.stringify(one));
@@ -89,9 +105,15 @@ describe('assembling build.json', () => {
     const texture = defaultSettings('texture', 'brick.png');
     const gain = { ...defaultSettings('texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;
     const shipped: ShippedAsset[] = [
-      { entry: asset('brick', 'texture', 'assets/textures/brick.png', texture), path: 'textures/brick.1.png' },
-      { entry: asset('gain', 'texture', 'assets/textures/gain.jpg', gain), path: 'textures/gain.2.jpg' },
-      { entry: asset('beep', 'audio', 'assets/audio/beep.wav'), path: 'audio/beep.3.wav' },
+      {
+        entry: asset(fixedId('asset', 'brick'), 'texture', 'assets/textures/brick.png', texture),
+        path: 'textures/brick.1.png',
+      },
+      {
+        entry: asset(fixedId('asset', 'gain'), 'texture', 'assets/textures/gain.jpg', gain),
+        path: 'textures/gain.2.jpg',
+      },
+      { entry: asset(fixedId('asset', 'beep'), 'audio', 'assets/audio/beep.wav'), path: 'audio/beep.3.wav' },
     ];
 
     const build = assembleManifest(contents({ assets: shipped }));

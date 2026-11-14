@@ -1,4 +1,4 @@
-import { createEmptyScene, createMeshEntity, type PrefabDoc } from '@three-studio/core';
+import { createEmptyScene, createMeshEntity, fixedId, type AssetId, type PrefabDoc } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import { addEntity, renameEntity } from '../src/commands/sceneCommands';
@@ -26,12 +26,14 @@ import { sceneUnsaved, windowUnsaved } from '../src/state/unsaved';
 const doc = () => useDocumentStore.getState();
 const dirty = () => selectDirty(useDocumentStore.getState());
 
-const ASSET_ID = 'prefab-under-test';
+const ASSET_ID = fixedId('asset', 'prefab-under-test');
 
+// A prefab carries the id it is filed under, as the main process reads it.
 function givenAPrefab(): void {
   const root = createMeshEntity('box');
   root.entity.name = 'Crate';
-  useAssetStore.setState({ prefabs: { [ASSET_ID]: prefabWith('Crate', [root], root.entity.id) } });
+  const prefab = { ...prefabWith('Crate', [root], root.entity.id), id: ASSET_ID };
+  useAssetStore.setState({ prefabs: new Map([[ASSET_ID, prefab]]) });
 }
 
 beforeEach(async () => {
@@ -152,8 +154,8 @@ describe('Prefab Mode composed without being left', () => {
    * `savePrefab` is a recorder here, so "nothing saved" is something the test
    * can see rather than something the missing bridge hides.
    */
-  const OUTER_ID = 'prefab-outer';
-  const saved: [string, PrefabDoc][] = [];
+  const OUTER_ID = fixedId('asset', 'prefab-outer');
+  const saved: [AssetId, PrefabDoc][] = [];
   const realSavePrefab = useAssetStore.getState().savePrefab;
 
   beforeEach(() => {
@@ -173,10 +175,10 @@ describe('Prefab Mode composed without being left', () => {
     const root = createMeshEntity('box');
     root.entity.name = 'Room';
     useAssetStore.setState({
-      prefabs: {
-        ...useAssetStore.getState().prefabs,
-        [OUTER_ID]: prefabWith('Room', [root], root.entity.id),
-      },
+      prefabs: new Map(useAssetStore.getState().prefabs).set(OUTER_ID, {
+        ...prefabWith('Room', [root], root.entity.id),
+        id: OUTER_ID,
+      }),
     });
   }
 
@@ -197,7 +199,7 @@ describe('Prefab Mode composed without being left', () => {
     const composed = composedPrefabMode()!;
 
     expect(composed.scene).toBe(scene);
-    expect(composed.prefabs[ASSET_ID]!.entities.get(inside.entity.id)).toBeDefined();
+    expect(composed.prefabs.get(ASSET_ID)?.entities.get(inside.entity.id)).toBeDefined();
     expect(usePrefabModeStore.getState().stack).toHaveLength(1);
     expect(doc().scene).toBe(document);
     expect(saved).toEqual([]);
@@ -220,7 +222,7 @@ describe('Prefab Mode composed without being left', () => {
 
     // Innermost first, as leaving goes; each one the same as composed.
     expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
-    for (const [id, prefab] of saved) expect(composed.prefabs[id]).toEqual(prefab);
+    for (const [id, prefab] of saved) expect(composed.prefabs.get(id)).toEqual(prefab);
   });
 
   describe('every open prefab saved, and left open', () => {
@@ -249,7 +251,7 @@ describe('Prefab Mode composed without being left', () => {
       await usePrefabModeStore.getState().saveAll();
 
       expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
-      for (const [id, prefab] of saved) expect(prefab).toEqual(composed.prefabs[id]);
+      for (const [id, prefab] of saved) expect(prefab).toEqual(composed.prefabs.get(id));
       expect(usePrefabModeStore.getState().stack).toHaveLength(2);
       expect(doc().scene).toBe(document);
       expect(doc().past).toBe(past);

@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { ComponentBase, Hex, Vec3 } from '../../scene/primitives';
 
 /**
@@ -65,7 +66,7 @@ export interface ParticleEmitterComponent extends ComponentBase {
   /** Opacity at birth. A particle always fades to nothing as it dies. */
   opacity: number;
   /** The sprite each particle draws. A soft disc is used until one is set. */
-  spriteId: string | null;
+  spriteId: AssetId | null;
   /** Whether particles add to what is behind them, as sparks and fire do. */
   additive: boolean;
 }

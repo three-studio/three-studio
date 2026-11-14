@@ -1,4 +1,10 @@
-import { expandPrefabs, type ExpandedScene, type PrefabDoc, type SceneDoc } from '@three-studio/core';
+import {
+  expandPrefabs,
+  type AssetId,
+  type ExpandedScene,
+  type PrefabDoc,
+  type SceneDoc,
+} from '@three-studio/core';
 import { useAssetStore } from './assetStore';
 import { useDocumentStore } from './documentStore';
 
@@ -19,7 +25,7 @@ import { useDocumentStore } from './documentStore';
  * than a pair of callbacks does.
  */
 let expanded: ExpandedScene | undefined;
-let from: { scene: SceneDoc; prefabs: Record<string, PrefabDoc> } | null = null;
+let from: { scene: SceneDoc; prefabs: ReadonlyMap<AssetId, PrefabDoc> } | null = null;
 
 /**
  * The expansion, recomputed only when one of its two inputs moved.
@@ -56,7 +62,7 @@ export function expandedScene(): ExpandedScene {
     return expanded as ExpandedScene;
   }
   from = { scene, prefabs };
-  expanded = expandPrefabs(scene, { get: (id) => prefabs[id] }, expanded);
+  expanded = expandPrefabs(scene, prefabs, expanded);
   return expanded;
 }
 

@@ -3,6 +3,7 @@ import {
   createComponentForEntity,
   createModelEntity,
   isPlaceable,
+  type AssetId,
   type AssetKind,
   type EntityTemplate,
   type Transform,
@@ -105,7 +106,7 @@ export const DROPPABLE_KINDS: readonly AssetKind[] = ['prefab', 'model', 'audio'
  * While the game runs a placeable drop is refused, in the toast, where the view
  * used to place it — the drop came through the dock during Play as well.
  */
-export function placeDroppedAsset(assetId: string, point: Vec3): void {
+export function placeDroppedAsset(assetId: AssetId, point: Vec3): void {
   const asset = useAssetStore.getState().byId(assetId);
   if (!asset || !DROPPABLE_KINDS.includes(asset.kind)) return;
   if (isSceneLocked()) {

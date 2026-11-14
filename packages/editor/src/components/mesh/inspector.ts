@@ -82,7 +82,7 @@ export const inspector: ComponentSchema = {
         // Copy the shared values in before unlinking, so the object keeps the
         // look it had. Detaching to whatever was embedded before would look
         // like the material was lost.
-        const shared = useAssetStore.getState().materials[component.materialId];
+        const shared = useAssetStore.getState().materials.get(component.materialId);
         if (shared) setComponentNestedField(entityId, componentId, ['material'], { ...shared });
         setComponentNestedField(entityId, componentId, ['materialId'], null);
       },

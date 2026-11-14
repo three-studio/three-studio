@@ -1,3 +1,4 @@
+import type { AssetId } from '../ids';
 import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/schema';
 
 /*
@@ -66,8 +67,12 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * not know is dropped.
    */
   fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
-  /** Asset ids this component points at. Empty for most types. */
-  assets: (component: ComponentOfType<T>) => readonly (string | null)[];
+  /**
+   * Asset ids this component points at. Empty for most types. `''` and `null`
+   * are the slots that name none, which the four that say it with `''` hand
+   * over as they hold it.
+   */
+  assets: (component: ComponentOfType<T>) => readonly (AssetId | '' | null)[];
   /**
    * Entity ids this component points at — a joint its Connected Body. Empty
    * for most types. Asked of every type, as `assets` is, so that a new type
@@ -185,7 +190,7 @@ export function addableTypes(): readonly ComponentType[] {
 }
 
 /** Asset ids a component points at, whatever its type. */
-export function componentAssets(component: ComponentDoc): readonly (string | null)[] {
+export function componentAssets(component: ComponentDoc): readonly (AssetId | '' | null)[] {
   const definition = componentDefinition(component.type);
   // A type from a plugin, or from a later version of the editor. It names assets
   // this build cannot see, and guessing would be worse than saying none.

@@ -1,3 +1,4 @@
+import type { AssetId } from '@three-studio/core';
 import type { AssetResolver } from '../assets/AssetResolver';
 import type { AudioBufferLike, AudioContextLike } from './AudioContextLike';
 
@@ -47,7 +48,7 @@ interface Entry {
  * downmix cannot be folded into a scalar.
  */
 export class AudioClipCache {
-  private readonly entries = new Map<string, Entry>();
+  private readonly entries = new Map<AssetId, Entry>();
   private readonly budgetBytes: number;
   private readonly load: ClipLoader;
   private readonly onWarning: (message: string) => void;
@@ -74,7 +75,7 @@ export class AudioClipCache {
    * that is still decoding must not be evictable, and a caller that has asked
    * for a clip is holding it whether or not it has arrived.
    */
-  acquire(assetId: string): { clip: Promise<AudioBufferLike | null>; release: () => void } {
+  acquire(assetId: AssetId): { clip: Promise<AudioBufferLike | null>; release: () => void } {
     const existing = this.entries.get(assetId);
     if (existing) {
       existing.refs += 1;
@@ -103,7 +104,7 @@ export class AudioClipCache {
   }
 
   /** The clip if it is already decoded, without taking a reference or starting anything. */
-  peek(assetId: string): AudioBufferLike | null {
+  peek(assetId: AssetId): AudioBufferLike | null {
     return this.entries.get(assetId)?.buffer ?? null;
   }
 
@@ -115,7 +116,7 @@ export class AudioClipCache {
    * the buffer they hold: they finish with the old sound, which is far better
    * than a gap.
    */
-  invalidate(assetId: string): void {
+  invalidate(assetId: AssetId): void {
     this.entries.delete(assetId);
   }
 
@@ -133,7 +134,7 @@ export class AudioClipCache {
     return this.entries.size;
   }
 
-  private release(assetId: string): void {
+  private release(assetId: AssetId): void {
     const entry = this.entries.get(assetId);
     if (!entry) return;
     entry.refs = Math.max(0, entry.refs - 1);
@@ -154,7 +155,7 @@ export class AudioClipCache {
     }
   }
 
-  private async fetchAndDecode(assetId: string): Promise<AudioBufferLike | null> {
+  private async fetchAndDecode(assetId: AssetId): Promise<AudioBufferLike | null> {
     const url = this.resolver.url(assetId);
     if (url === null) {
       this.onWarning(`No audio asset ${assetId} in this project; the sound will not play.`);

@@ -7,10 +7,11 @@ import {
   ASSET_META_VERSION,
   CACHE_DIR,
   SCRIPT_API_VERSION,
+  isAssetId,
   type AssetEntry,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { scanAssets, updateAssetSettings } from '../src/main/assetScan';
+import { readAssetMeta, scanAssets, updateAssetSettings } from '../src/main/assetScan';
 import { writeScriptTypings } from '../src/main/scripts';
 
 /*
@@ -130,6 +131,37 @@ describe('the asset sidecar', () => {
     );
     expect(ids[1]).toBe(ids[0]);
     expect(ids[2]).toBe(ids[0]);
+  });
+
+  /*
+   * What a scene references is the id inside the sidecar, so a sidecar whose id
+   * is not one is not an identity at all: the file is adopted again under a new
+   * one, and what the old sidecar said is not kept.
+   */
+  it('does not read a sidecar whose id is not an id, and gives the file a new one', async () => {
+    for (const id of ['', 7, null]) {
+      const project = await mkdtemp(join(tmpdir(), 'studio-sidecar-'));
+      const textures = join(project, ASSETS_DIR, 'textures');
+      await mkdir(textures, { recursive: true });
+      const file = join(textures, 'brick.png');
+      await writeFile(file, 'pixels', 'utf8');
+      await writeFile(
+        `${file}${ASSET_META_SUFFIX}`,
+        JSON.stringify({
+          version: ASSET_META_VERSION,
+          id,
+          kind: 'texture',
+          importedAt: 1,
+          hash: 'h',
+          settings: { kind: 'texture' },
+        }),
+        'utf8',
+      );
+
+      expect(await readAssetMeta(file)).toBeNull();
+      const asset = (await scanAssets(project)).assets[0];
+      expect(isAssetId(asset?.id)).toBe(true);
+    }
   });
 
   it('refuses settings the renderer made up rather than writing them', async () => {

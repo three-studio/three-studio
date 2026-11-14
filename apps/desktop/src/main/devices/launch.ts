@@ -1,6 +1,7 @@
 import {
   createId,
   type AssetEntry,
+  type AssetId,
   type BuildManifest,
   type ReceivedLaunch,
   type SceneEntry,
@@ -38,7 +39,7 @@ export interface Launch {
   /** The compiled bundle, or `null` when the project has no scripts. */
   readonly scripts: string | null;
   /** Every asset a device may ask for, by id. Scripts are not among them: they ship compiled. */
-  readonly assets: ReadonlyMap<string, AssetEntry>;
+  readonly assets: ReadonlyMap<AssetId, AssetEntry>;
   /** The project's scenes, for every one but the entry, which is read from disk when asked for. */
   readonly scenes: readonly SceneEntry[];
 }

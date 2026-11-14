@@ -1,4 +1,4 @@
-import { createEmptyScene, createMeshEntity, type PrefabDoc } from '@three-studio/core';
+import { createEmptyScene, createMeshEntity, fixedId, type AssetId, type PrefabDoc } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
 import { commandById } from '../src/commands/registry';
@@ -25,13 +25,14 @@ import { sceneUnsaved, watchUnsaved, windowUnsaved } from '../src/state/unsaved'
 const doc = () => useDocumentStore.getState();
 const prefabMode = () => usePrefabModeStore.getState();
 
-const CRATE = 'prefab-crate';
-const ROOM = 'prefab-room';
+const CRATE = fixedId('asset', 'prefab-crate');
+const ROOM = fixedId('asset', 'prefab-room');
 
-function prefabNamed(name: string): PrefabDoc {
+/** A prefab carries the id it is filed under, as the main process reads it. */
+function prefabNamed(name: string, id: AssetId): PrefabDoc {
   const root = createMeshEntity('box');
   root.entity.name = name;
-  return prefabWith(name, [root], root.entity.id);
+  return { ...prefabWith(name, [root], root.entity.id), id };
 }
 
 /** An edit to whatever the document holds, the way a person makes one. */
@@ -44,7 +45,12 @@ beforeEach(async () => {
   usePrefabModeStore.setState({ stack: [] });
   doc().replaceScene(createEmptyScene());
   useEditorStore.getState().clearSelection();
-  useAssetStore.setState({ prefabs: { [CRATE]: prefabNamed('Crate'), [ROOM]: prefabNamed('Room') } });
+  useAssetStore.setState({
+    prefabs: new Map([
+      [CRATE, prefabNamed('Crate', CRATE)],
+      [ROOM, prefabNamed('Room', ROOM)],
+    ]),
+  });
 });
 
 describe('what is unsaved', () => {

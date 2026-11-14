@@ -5,6 +5,7 @@ import {
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   type CollisionLayer,
   type EntityTemplate,
   type JointLimits,
@@ -117,6 +118,7 @@ function pendulum(): EntityTemplate {
 /** The template's joint, as a behaviour reaches it. */
 const jointOf = (rig: PhysicsRig, template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id) ?? null;
 
+const GRIP = fixedId('asset', 'grip');
 const grip: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' };
 const ice: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' };
 
@@ -285,12 +287,12 @@ describe('a collider tuned while running', () => {
 
   it('a physics material tuned while running changes every collider that links it', async () => {
     const boxes = [boxOnSlope(1.5), boxOnSlope(-1.5)];
-    for (const box of boxes) colliderOf(box).materialId = 'grip';
-    const rig = await physicsRig([slope(), ...boxes], undefined, { grip });
+    for (const box of boxes) colliderOf(box).materialId = GRIP;
+    const rig = await physicsRig([slope(), ...boxes], undefined, new Map([[GRIP, grip]]));
     rig.run(2);
     const rested = boxes.map((box) => rig.solved(box.entity.id).position);
 
-    rig.engine.tunePhysicsMaterial('grip', ice);
+    rig.engine.tunePhysicsMaterial(GRIP, ice);
     rig.run(1);
 
     boxes.forEach((box, i) => {
@@ -509,7 +511,7 @@ describe('a tune the world cannot take', () => {
     });
     onTestFinished(() => off.dispose());
     off.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
-    off.tunePhysicsMaterial('grip', ice);
+    off.tunePhysicsMaterial(GRIP, ice);
     expect(off.physicsDebug()).toBeNull();
   });
 });

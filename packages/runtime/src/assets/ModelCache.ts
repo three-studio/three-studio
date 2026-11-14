@@ -8,7 +8,12 @@ import {
   type Object3D,
   type Texture,
 } from 'three/webgpu';
-import { ASSET_KIND_INFO, type AssetSettings, type TextureEncoding } from '@three-studio/core';
+import {
+  ASSET_KIND_INFO,
+  type AssetId,
+  type AssetSettings,
+  type TextureEncoding,
+} from '@three-studio/core';
 import type { AssetResolver } from './AssetResolver';
 import { applyModelSettings, applyTextureSettings } from './importSettings';
 import { MODEL_EXTENSIONS, extensionOf, loadModelFromUrl } from './loadModel';
@@ -81,13 +86,13 @@ export class ModelCache {
    */
   private readonly manager = new LoadingManager();
   private readonly textureLoader = new TextureLoader(this.manager);
-  private readonly models = new Map<string, Promise<Object3D>>();
+  private readonly models = new Map<AssetId, Promise<Object3D>>();
   /** One master per image; never rendered, only cloned from. */
-  private readonly textures = new Map<string, TextureEntry>();
+  private readonly textures = new Map<AssetId, TextureEntry>();
   /** Clones handed out before their image finished decoding. */
-  private readonly awaitingImage = new Map<string, Texture[]>();
+  private readonly awaitingImage = new Map<AssetId, Texture[]>();
   /** Resolves when a texture's pixels have landed, so `preload` can wait. */
-  private readonly textureSettled = new Map<string, Promise<void>>();
+  private readonly textureSettled = new Map<AssetId, Promise<void>>();
 
   constructor(private resolver: AssetResolver) {}
 
@@ -104,7 +109,7 @@ export class ModelCache {
    * asking before loading rather than finding out by catching. `ModelSystem`
    * asks, and draws a placeholder instead of nothing.
    */
-  knows(assetId: string): boolean {
+  knows(assetId: AssetId | ''): boolean {
     return assetId !== '' && this.resolver.url(assetId) !== null;
   }
 
@@ -112,7 +117,7 @@ export class ModelCache {
    * Resolves to a fresh clone, because two entities pointing at the same model
    * must be independently transformable. Geometry and materials stay shared.
    */
-  async loadModel(assetId: string): Promise<Object3D> {
+  async loadModel(assetId: AssetId): Promise<Object3D> {
     return (await this.master(assetId)).clone(true);
   }
 
@@ -136,7 +141,7 @@ export class ModelCache {
    * @returns `null` for a node neither the path nor the name finds; see
    *   `resolveNode`.
    */
-  async loadNode(assetId: string, path: string, name = ''): Promise<Object3D | null> {
+  async loadNode(assetId: AssetId, path: string, name = ''): Promise<Object3D | null> {
     const node = resolveNode(await this.master(assetId), path, name);
     if (node === null) return null;
 
@@ -154,7 +159,7 @@ export class ModelCache {
    * object every clone in the project shares. `describeNodes` reads it and hands
    * back a description instead.
    */
-  async modelShape(assetId: string): Promise<ModelShape> {
+  async modelShape(assetId: AssetId): Promise<ModelShape> {
     return describeNodes(await this.master(assetId));
   }
 
@@ -165,7 +170,7 @@ export class ModelCache {
    * file, and doing it per clone would repeat the work once per placement of the
    * same prop.
    */
-  private async master(assetId: string): Promise<Object3D> {
+  private async master(assetId: AssetId): Promise<Object3D> {
     const cached = this.models.get(assetId);
     if (cached) return cached;
 
@@ -203,7 +208,7 @@ export class ModelCache {
    * the texture it created. A clone taken before then would never be told the
    * image arrived, and would render blank forever.
    */
-  instanceTexture(assetId: string): Texture | null {
+  instanceTexture(assetId: AssetId): Texture | null {
     const url = this.resolver.url(assetId);
     if (url === null) return null;
 
@@ -270,13 +275,13 @@ export class ModelCache {
    * `null` from a resolver that has no sidecars to read, and every consumer
    * falls back to the format's own defaults rather than to nothing.
    */
-  private settingsOf(assetId: string): AssetSettings | null {
+  private settingsOf(assetId: AssetId): AssetSettings | null {
     return this.resolver.settings?.(assetId) ?? null;
   }
 
   /** Applies a model's import settings, or leaves it as the file had it. */
   private dressModel(
-    assetId: string,
+    assetId: AssetId,
     loaded: Object3D,
     animations: readonly AnimationClip[],
   ): Object3D {
@@ -293,7 +298,7 @@ export class ModelCache {
    * its metadata says otherwise, which is settled at import — and from the
    * extension when it does not, which covers every other format.
    */
-  private encodingOf(assetId: string): TextureEncoding {
+  private encodingOf(assetId: AssetId): TextureEncoding {
     const declared = this.resolver.encoding?.(assetId) ?? null;
     if (declared !== null) return declared;
 
@@ -311,7 +316,7 @@ export class ModelCache {
    * the binder needs the answer at build time. Getting it wrong on a background
    * is a sky that is visibly too dark or too bright, in either direction.
    */
-  isLinearTexture(assetId: string): boolean {
+  isLinearTexture(assetId: AssetId): boolean {
     return this.encodingOf(assetId) !== 'sdr';
   }
 
@@ -325,7 +330,7 @@ export class ModelCache {
    * long as a ten-megabyte Radiance file takes to parse. Callers that would
    * rather keep showing the old one ask this first.
    */
-  textureReady(assetId: string): boolean {
+  textureReady(assetId: AssetId): boolean {
     return this.textures.get(assetId)?.ready === true;
   }
 
@@ -335,7 +340,7 @@ export class ModelCache {
    * Resolves immediately for an asset nothing has asked for yet: this reports
    * on a load, it does not start one. Call `instanceTexture` first.
    */
-  async whenTextureReady(assetId: string): Promise<void> {
+  async whenTextureReady(assetId: AssetId): Promise<void> {
     if (this.textureReady(assetId)) return;
     await this.textureSettled.get(assetId);
   }
@@ -347,7 +352,7 @@ export class ModelCache {
    * scene with one broken texture still has to open, and the failure belongs in
    * the console rather than in a bar that never fills.
    */
-  async preload(assetId: string): Promise<void> {
+  async preload(assetId: AssetId): Promise<void> {
     const url = this.resolver.url(assetId);
     if (url === null) return;
 

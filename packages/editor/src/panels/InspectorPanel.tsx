@@ -1,4 +1,4 @@
-import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
+import { addableTypes, componentsOf, splitInstancedId, type AssetId } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
@@ -33,7 +33,7 @@ import { tooltip } from '../ui/Tooltip';
  */
 const ASSET_FIELD_ACTIONS: AssetFieldActions = {
   importAssets: async () => (await browseAndImport())?.imported ?? [],
-  reveal: (assetId: string) => commandById('revealAsset').run(contextForAsset(assetId)),
+  reveal: (assetId: AssetId) => commandById('revealAsset').run(contextForAsset(assetId)),
 };
 
 export function InspectorPanel() {

@@ -1,5 +1,6 @@
 import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
 import { materialAssets } from '../components/materialAssets';
+import { isAssetId, type AssetId } from '../ids';
 import { COMPONENT_TYPES, tableOf, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
@@ -13,7 +14,7 @@ import type { PrefabDoc } from '../scene/prefab';
  * invisible to them, so an exported build shipped without it, the loading bar
  * did not count it, and deleting it announced that nothing used it.
  */
-export function environmentAssets(environment: EnvironmentDef): readonly (string | null)[] {
+export function environmentAssets(environment: EnvironmentDef): readonly (AssetId | null)[] {
   return [environment.backgroundTexture, environment.environmentTexture];
 }
 
@@ -30,9 +31,9 @@ export interface AssetUsage {
   /** Entities in the scene, by id. */
   entities: string[];
   /** Material assets whose texture slots name it. */
-  materials: string[];
+  materials: AssetId[];
   /** Prefab assets whose contents name it. */
-  prefabs: string[];
+  prefabs: AssetId[];
   /**
    * The scene's own environment names it, as the background or as the light
    * that comes off it. Not a list: there is one environment, and it is not
@@ -67,7 +68,7 @@ export function totalUses(usage: AssetUsage): number {
  * the exporter ships: a slot named in one and not the other is either a texture
  * that does not arrive or a delete that claims nothing uses it.
  */
-function componentNames(component: ComponentDoc): readonly (string | null)[] {
+function componentNames(component: ComponentDoc): readonly (AssetId | '' | null)[] {
   return componentAssets(component);
 }
 
@@ -80,13 +81,12 @@ function componentNames(component: ComponentDoc): readonly (string | null)[] {
  * alternative, reading every scene on every delete, is a round trip per file.
  */
 export function findAssetUsage(
-  assetId: string,
+  assetId: AssetId,
   scene: SceneDoc,
-  materials: Readonly<Record<string, MaterialDef>>,
-  prefabs: Readonly<Record<string, PrefabDoc>>,
+  materials: ReadonlyMap<AssetId, MaterialDef>,
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>,
 ): AssetUsage {
   const usage: AssetUsage = { entities: [], materials: [], prefabs: [], environment: false };
-  if (assetId === '') return usage;
 
   const named = new Set<string>();
   for (const [entityId, component] of eachComponent(scene)) {
@@ -96,11 +96,11 @@ export function findAssetUsage(
 
   usage.environment = environmentAssets(scene.environment).includes(assetId);
 
-  for (const [id, material] of Object.entries(materials)) {
+  for (const [id, material] of materials) {
     if (materialAssets(material).includes(assetId)) usage.materials.push(id);
   }
 
-  for (const [id, prefab] of Object.entries(prefabs)) {
+  for (const [id, prefab] of prefabs) {
     for (const [, component] of eachComponent(prefab)) {
       if (componentNames(component).includes(assetId)) {
         usage.prefabs.push(id);
@@ -154,7 +154,7 @@ export function unknownComponentTypes(host: ComponentHost): string[] {
 export interface BrokenReference {
   /** The entity whose component names it; `null` for the scene's environment. */
   entityId: string | null;
-  assetId: string;
+  assetId: AssetId;
 }
 
 /**
@@ -178,12 +178,12 @@ export interface BrokenReference {
  */
 export function findBrokenReferences(
   scene: SceneDoc,
-  known: ReadonlySet<string>,
+  known: ReadonlySet<AssetId>,
 ): BrokenReference[] {
   const broken: BrokenReference[] = [];
   const seen = new Set<string>();
 
-  const note = (entityId: string | null, assetId: string | null): void => {
+  const note = (entityId: string | null, assetId: AssetId | '' | null): void => {
     // `''` is a slot the author has not filled, which is not the same thing as
     // one pointing at something gone: an empty Texture field is how a material
     // says it has no normal map.
@@ -240,30 +240,36 @@ export function findMissingEntities(scene: SceneDoc): { entityId: string; type: 
  */
 export function collectSceneAssets(
   scene: SceneDoc,
-  materials: Readonly<Record<string, MaterialDef>>,
-  prefabs: Readonly<Record<string, PrefabDoc>>,
+  materials: ReadonlyMap<AssetId, MaterialDef>,
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>,
   /**
    * Every asset id the project holds. Given, the strings a component may hold
    * an asset in — a script's properties — count where one of these answers to
    * them; see `ComponentDefinition.assetCandidates`. Left out, as a loading bar
    * does, only the slots that say they hold an asset are read.
    */
-  knownAssets?: ReadonlySet<string>,
-): string[] {
-  const ids = new Set<string>();
-  const seenPrefabs = new Set<string>();
+  knownAssets?: ReadonlySet<AssetId>,
+): AssetId[] {
+  const ids = new Set<AssetId>();
+  const seenPrefabs = new Set<AssetId>();
 
   const addComponent = (component: ComponentDoc): void => {
+    // A candidate is any string a script holds, so it is checked as the id it
+    // would have to be before the project is asked whether it answers to it.
     const candidates =
       knownAssets === undefined
         ? []
-        : componentAssetCandidates(component).filter((id) => knownAssets.has(id));
+        : componentAssetCandidates(component).flatMap((text) =>
+            isAssetId(text) && knownAssets.has(text) ? [text] : [],
+          );
     for (const id of [...componentNames(component), ...candidates]) {
       if (id === null || id === '') continue;
       ids.add(id);
 
       // A linked material's own textures: nothing else in the scene names them.
-      const material = materials[id];
+      // `''` is skipped though the type says `null`: `conform` lets any string
+      // through a field whose model is `null`, so a file can hold one.
+      const material = materials.get(id);
       if (material) {
         for (const texture of materialAssets(material)) {
           if (texture !== null && texture !== '') ids.add(texture);
@@ -272,7 +278,7 @@ export function collectSceneAssets(
 
       // A prefab that places other prefabs is followed too; `seenPrefabs`
       // stops one that contains itself from looping forever.
-      const prefab = prefabs[id];
+      const prefab = prefabs.get(id);
       if (prefab && !seenPrefabs.has(id)) {
         seenPrefabs.add(id);
         for (const [, inner] of eachComponent(prefab)) addComponent(inner);
@@ -300,7 +306,7 @@ export function collectSceneAssets(
  * "can I delete this" but "how many objects does editing this touch", which is
  * what makes an Apply safe to press.
  */
-export function findPrefabInstances(assetId: string, scene: SceneDoc): string[] {
+export function findPrefabInstances(assetId: AssetId | '', scene: SceneDoc): string[] {
   return [...scene.components.prefabInstance]
     .filter(([, held]) => [...held.values()].some((component) => component.assetId === assetId))
     .map(([entityId]) => entityId);

@@ -3,6 +3,7 @@ import {
   createEntity,
   createMeshEntity,
   createPrefabInstance,
+  fixedId,
   instancedId,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -99,7 +100,7 @@ describe('an entity a prefab produced', () => {
 
 describe('an entity placing a prefab', () => {
   it('can be unpacked, but not made into a prefab', () => {
-    const host = createEntity('Tree', [createPrefabInstance('prefab-1')]);
+    const host = createEntity('Tree', [createPrefabInstance(fixedId('asset', 'prefab-1'))]);
     const can = capabilitiesOf(sceneWith([host]), host.entity.id);
 
     expect(can.has('unpackPrefab')).toBe(true);

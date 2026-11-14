@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { ComponentBase, Hex } from '../../scene/primitives';
 
 export type LightKind =
@@ -50,7 +51,7 @@ export interface LightComponent extends ComponentBase {
   width: number;
   height: number;
   /** Projector only: the texture it throws. */
-  mapId: string | null;
+  mapId: AssetId | null;
   /** Projector only. `0` means take the aspect from the texture. */
   aspect: number;
   castShadow: boolean;

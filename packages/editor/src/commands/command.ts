@@ -1,4 +1,4 @@
-import type { SceneId } from '@three-studio/core';
+import type { AssetId, SceneId } from '@three-studio/core';
 import { expandedScene } from '../state/expansion';
 import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
@@ -35,7 +35,7 @@ export interface EditorContext {
    *
    * Absent for every gesture that acts on the selection, which is most of them.
    */
-  readonly assetId?: string;
+  readonly assetId?: AssetId;
   /**
    * The scene a gesture was aimed at — the Scene menu lists one entry per scene,
    * and each is the same gesture pointed somewhere else.
@@ -61,7 +61,7 @@ export function contextFor(ids: readonly string[]): EditorContext {
 }
 
 /** The context for a gesture aimed at one asset — a tile, a row, an Inspector slot. */
-export function contextForAsset(assetId: string): EditorContext {
+export function contextForAsset(assetId: AssetId): EditorContext {
   return { ...currentContext(), assetId };
 }
 

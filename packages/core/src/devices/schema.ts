@@ -1,6 +1,6 @@
 import { conform, conformPatch, isRecord } from '../conform';
 import { conformMaterial } from '../guards';
-import { createId, isSceneId, type SceneId } from '../ids';
+import { createId, idMapOf, isAssetId, isSceneId, type AssetId, type SceneId } from '../ids';
 import { jsonOf } from '../json';
 import {
   conformPhysicsSettings,
@@ -45,10 +45,10 @@ export interface LaunchSnapshot {
    */
   entry: { id: SceneId; name: string; scene: SceneDoc };
   /** The asset store's, with Prefab Mode's unsaved edits composed in. */
-  materials: Record<string, MaterialDef>;
+  materials: ReadonlyMap<AssetId, MaterialDef>;
   /** The asset store's, by asset id: what a collider linking one is built with. */
-  physicsMaterials: Record<string, PhysicsMaterialDef>;
-  prefabs: Record<string, PrefabDoc>;
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
   /** The project's current settings, as held in memory. */
   rendering: RenderingSettings;
   physics: PhysicsSettings;
@@ -62,7 +62,8 @@ export interface LaunchSnapshot {
  * A document holds Maps, and Electron's table of what its context bridge can
  * carry lists no Map. The window encodes a snapshot as it sends it, with
  * `jsonOf`, and the main process reads it back; Play, which never leaves the
- * window, keeps its documents as they are and encodes nothing.
+ * window, keeps its documents as they are and encodes nothing. The libraries
+ * cross as records keyed by asset id, which the main reads back into Maps.
  */
 export interface LaunchSnapshotJson {
   version: typeof LAUNCH_SNAPSHOT_VERSION;
@@ -89,7 +90,7 @@ export interface ReceivedLaunch {
 
 export function encodeLaunchSnapshot(snapshot: LaunchSnapshot): LaunchSnapshotJson {
   const prefabs: Record<string, string> = {};
-  for (const [id, prefab] of Object.entries(snapshot.prefabs)) prefabs[id] = jsonOf(prefab);
+  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefab);
   return {
     version: snapshot.version,
     entry: {
@@ -97,8 +98,8 @@ export function encodeLaunchSnapshot(snapshot: LaunchSnapshot): LaunchSnapshotJs
       name: snapshot.entry.name,
       sceneJson: jsonOf(snapshot.entry.scene),
     },
-    materials: snapshot.materials,
-    physicsMaterials: snapshot.physicsMaterials,
+    materials: Object.fromEntries(snapshot.materials),
+    physicsMaterials: Object.fromEntries(snapshot.physicsMaterials),
     prefabs,
     rendering: snapshot.rendering,
     physics: snapshot.physics,
@@ -106,9 +107,12 @@ export function encodeLaunchSnapshot(snapshot: LaunchSnapshot): LaunchSnapshotJs
   };
 }
 
-/** The entries of a record that arrived from elsewhere: none when it is not one. */
-function entriesOf(value: unknown): [string, unknown][] {
-  return isRecord(value) ? Object.entries(value) : [];
+/**
+ * A library that arrived from elsewhere, read by asset id: empty when it is not
+ * a record, and without the keys that are no id.
+ */
+function libraryOf(value: unknown): Map<AssetId, unknown> {
+  return idMapOf(isRecord(value) ? value : {}, isAssetId);
 }
 
 /**
@@ -143,17 +147,17 @@ export function conformLaunchSnapshot(value: unknown): ReceivedLaunch {
     throw new Error('A launch snapshot carries its entry scene as text.');
   }
 
-  const materials: Record<string, MaterialDef> = {};
-  for (const [key, material] of entriesOf(value['materials'])) {
-    materials[key] = conformMaterial(material);
+  const materials = new Map<AssetId, MaterialDef>();
+  for (const [assetId, material] of libraryOf(value['materials'])) {
+    materials.set(assetId, conformMaterial(material));
   }
-  const physicsMaterials: Record<string, PhysicsMaterialDef> = {};
-  for (const [key, material] of entriesOf(value['physicsMaterials'])) {
-    physicsMaterials[key] = conformPhysicsMaterial(material);
+  const physicsMaterials = new Map<AssetId, PhysicsMaterialDef>();
+  for (const [assetId, material] of libraryOf(value['physicsMaterials'])) {
+    physicsMaterials.set(assetId, conformPhysicsMaterial(material));
   }
-  const prefabs: Record<string, PrefabDoc> = {};
-  for (const [key, text] of entriesOf(value['prefabs'])) {
-    if (typeof text === 'string') prefabs[key] = deserializePrefab(text);
+  const prefabs = new Map<AssetId, PrefabDoc>();
+  for (const [assetId, text] of libraryOf(value['prefabs'])) {
+    if (typeof text === 'string') prefabs.set(assetId, deserializePrefab(text, assetId));
   }
   const loadingScene = value['loadingScene'];
 

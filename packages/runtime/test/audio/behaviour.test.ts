@@ -1,4 +1,10 @@
-import { createAudioSource, createComponent, createEntity, type AudioSourceComponent } from '@three-studio/core';
+import {
+  createAudioSource,
+  createComponent,
+  createEntity,
+  fixedId,
+  type AudioSourceComponent,
+} from '@three-studio/core';
 import { Group, Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { playRequestFor } from '../../src/behaviour/audio';
@@ -15,8 +21,10 @@ import { flush, rig } from './rig';
  * would call.
  */
 
+const STEP = fixedId('asset', 'step');
+
 function source(overrides: Partial<AudioSourceComponent> = {}): AudioSourceComponent {
-  return { ...createAudioSource(), assetId: 'step', ...overrides };
+  return { ...createAudioSource(), assetId: STEP, ...overrides };
 }
 
 function at(x: number, y: number, z: number): Object3D {

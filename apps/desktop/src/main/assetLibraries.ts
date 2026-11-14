@@ -8,7 +8,7 @@ import {
   PHYSICS_MATERIAL_ASSET_VERSION,
   PREFAB_FORMAT_VERSION,
   conformPhysicsMaterial,
-  createId,
+  createAssetId,
   createMaterial,
   defaultSettings,
   deserializePrefab,
@@ -16,6 +16,7 @@ import {
   safeFileName,
   serializePrefab,
   stableJson,
+  type AssetId,
   type AssetManifest,
   type AssetMeta,
   type MaterialDef,
@@ -79,6 +80,9 @@ const PHYSICS_MATERIALS: MaterialLibrary<PhysicsMaterialDef> = {
  * Read in one pass for the same reason materials are: the binder expands an
  * instance synchronously, and a prefab fetched per reference would leave a
  * hole in the scene for a frame.
+ *
+ * Each is read under its sidecar's id, whatever its own file says: a prefab is
+ * an asset, and the sidecar is where an asset's id lives.
  */
 /**
  * @param scanned A manifest the caller already has. A scan walks the tree and
@@ -89,9 +93,9 @@ const PHYSICS_MATERIALS: MaterialLibrary<PhysicsMaterialDef> = {
 export async function readPrefabAssets(
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, PrefabDoc>> {
+): Promise<Map<AssetId, PrefabDoc>> {
   const manifest = scanned ?? (await scanAssets(projectPath));
-  const prefabs: Record<string, PrefabDoc> = {};
+  const prefabs = new Map<AssetId, PrefabDoc>();
 
   await Promise.all(
     manifest.assets
@@ -105,7 +109,7 @@ export async function readPrefabAssets(
           if (!isRecord(parsed)) return;
           const version = parsed['version'];
           if (typeof version === 'number' && version > PREFAB_FORMAT_VERSION) return;
-          prefabs[asset.id] = deserializePrefab(text);
+          prefabs.set(asset.id, deserializePrefab(text, asset.id));
         } catch {
           // One unreadable prefab must not cost the others; the instances that
           // point at it render empty and say so.
@@ -122,12 +126,12 @@ export async function createPrefabAsset(
   name: string,
   prefab: PrefabDoc,
   /**
-   * Reuses an id instead of minting one, for redoing a creation that undo took
-   * back. A fresh id would leave the entity — restored by the undo patches —
-   * pointing at a prefab that no longer answers to that name.
+   * Reuses an id instead of taking the prefab's own, for redoing a creation that
+   * undo took back. A fresh id would leave the entity — restored by the undo
+   * patches — pointing at a prefab that no longer answers to that name.
    */
-  assetId?: string,
-): Promise<string> {
+  assetId?: AssetId,
+): Promise<AssetId> {
   const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO.prefab.directory);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
@@ -139,11 +143,14 @@ export async function createPrefabAsset(
     PREFAB_EXTENSION,
   );
   const file = resolveInside(projectPath, posix.join(directory, fileName));
-  await writeFile(file, serializePrefab(prefab), 'utf8');
+  // The sidecar and the file say the same id, which they did not: the document
+  // was minted one and the sidecar another, and only the sidecar's was ever read.
+  const id = assetId ?? prefab.id;
+  await writeFile(file, serializePrefab({ ...prefab, id }), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: assetId ?? createId(),
+    id,
     kind: 'prefab',
     importedAt: Date.now(),
     hash: await hashFile(file),
@@ -164,9 +171,9 @@ async function readLibrary<T>(
   library: MaterialLibrary<T>,
   projectPath: string,
   scanned: AssetManifest | undefined,
-): Promise<Record<string, T>> {
+): Promise<Map<AssetId, T>> {
   const manifest = scanned ?? (await scanAssets(projectPath));
-  const documents: Record<string, T> = {};
+  const documents = new Map<AssetId, T>();
 
   await Promise.all(
     manifest.assets
@@ -181,7 +188,7 @@ async function readLibrary<T>(
           // silently drop, so it is left out rather than half-applied.
           const version = file['version'];
           if (typeof version === 'number' && version > library.version) return;
-          documents[asset.id] = library.read(file['material']);
+          documents.set(asset.id, library.read(file['material']));
         } catch {
           // A corrupt file must not stop the others from loading; what links
           // to it falls back to its embedded value.
@@ -198,7 +205,7 @@ async function createInLibrary<T>(
   projectPath: string,
   name: string,
   material: T,
-): Promise<string> {
+): Promise<AssetId> {
   const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO[library.kind].directory);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
@@ -216,7 +223,7 @@ async function createInLibrary<T>(
   // here rather than left to the next scan to invent.
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: createId(),
+    id: createAssetId(),
     kind: library.kind,
     importedAt: Date.now(),
     hash: await hashFile(file),
@@ -254,7 +261,7 @@ async function saveInLibrary<T>(
 export function readMaterialAssets(
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, MaterialDef>> {
+): Promise<Map<AssetId, MaterialDef>> {
   return readLibrary(MATERIALS, projectPath, scanned);
 }
 
@@ -262,7 +269,7 @@ export function createMaterialAsset(
   projectPath: string,
   name: string,
   material: MaterialDef,
-): Promise<string> {
+): Promise<AssetId> {
   return createInLibrary(MATERIALS, projectPath, name, material);
 }
 
@@ -283,7 +290,7 @@ export function saveMaterialAsset(
 export function readPhysicsMaterialAssets(
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, PhysicsMaterialDef>> {
+): Promise<Map<AssetId, PhysicsMaterialDef>> {
   return readLibrary(PHYSICS_MATERIALS, projectPath, scanned);
 }
 
@@ -291,7 +298,7 @@ export function createPhysicsMaterialAsset(
   projectPath: string,
   name: string,
   material: PhysicsMaterialDef,
-): Promise<string> {
+): Promise<AssetId> {
   return createInLibrary(PHYSICS_MATERIALS, projectPath, name, material);
 }
 

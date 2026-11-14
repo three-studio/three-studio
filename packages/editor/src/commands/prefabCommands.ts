@@ -20,6 +20,7 @@ import {
   renameEntityReferences,
   setComponentsOf,
   splitInstancedId,
+  type AssetId,
   type EntityDoc,
   type PrefabDoc,
 } from '@three-studio/core';
@@ -108,11 +109,11 @@ export async function createPrefabFromEntity(entityId: string): Promise<void> {
  * the top of the scene.
  */
 export function instantiatePrefab(
-  assetId: string,
+  assetId: AssetId,
   position: [number, number, number] = [0, 0, 0],
   parentId: string | null = null,
 ): void {
-  const prefab = useAssetStore.getState().prefabs[assetId];
+  const prefab = useAssetStore.getState().prefabs.get(assetId);
   const template = createEntity(prefab?.name ?? 'Prefab', [createPrefabInstance(assetId)]);
   template.entity.transform.position = position;
 
@@ -139,8 +140,8 @@ export function instantiatePrefab(
  * and overridden there, which is where an override on a nested instance can be
  * reached at all.
  */
-export async function createPrefabVariant(baseAssetId: string): Promise<string | null> {
-  const base = useAssetStore.getState().prefabs[baseAssetId];
+export async function createPrefabVariant(baseAssetId: AssetId): Promise<AssetId | null> {
+  const base = useAssetStore.getState().prefabs.get(baseAssetId);
   if (!base) {
     notify({ kind: 'warning', title: 'That prefab is not in the project' });
     return null;
@@ -207,8 +208,9 @@ export async function applyInstanceOverrides(entityId: string): Promise<void> {
   const component = scene.entities.has(entityId) ? prefabInstanceOf(scene, entityId) : undefined;
   if (!component) return;
 
-  const prefab = useAssetStore.getState().prefabs[component.assetId];
-  if (!prefab) {
+  const { assetId } = component;
+  const prefab = assetId === '' ? undefined : useAssetStore.getState().prefabs.get(assetId);
+  if (assetId === '' || !prefab) {
     notify({
       kind: 'warning',
       title: 'Nothing to apply to',
@@ -252,7 +254,7 @@ export async function applyInstanceOverrides(entityId: string): Promise<void> {
   }
 
   const write = (doc: PrefabDoc) => {
-    void useAssetStore.getState().savePrefab(component.assetId, doc);
+    void useAssetStore.getState().savePrefab(assetId, doc);
   };
   write(after);
 
@@ -270,7 +272,7 @@ export async function applyInstanceOverrides(entityId: string): Promise<void> {
     { external: { apply: () => write(after), revert: () => write(before) } },
   );
 
-  const instances = findPrefabInstances(component.assetId, scene).length;
+  const instances = findPrefabInstances(assetId, scene).length;
   notify({
     kind: 'success',
     title: `Applied to "${prefab.name}"`,
@@ -298,16 +300,17 @@ export function revertInstanceOverrides(entityId: string): void {
  */
 export function instanceInfo(
   entityId: string,
-): { assetId: string; name: string; siblings: string[]; missing: boolean } | null {
+): { assetId: AssetId | ''; name: string; siblings: string[]; missing: boolean } | null {
   const scene = useDocumentStore.getState().scene;
   const component = scene.entities.has(entityId) ? prefabInstanceOf(scene, entityId) : undefined;
   if (!component) return null;
 
-  const prefab = useAssetStore.getState().prefabs[component.assetId];
+  const { assetId } = component;
+  const prefab = assetId === '' ? undefined : useAssetStore.getState().prefabs.get(assetId);
   return {
-    assetId: component.assetId,
+    assetId,
     name: prefab?.name ?? 'Missing prefab',
-    siblings: findPrefabInstances(component.assetId, scene),
+    siblings: findPrefabInstances(assetId, scene),
     missing: prefab === undefined,
   };
 }
@@ -349,7 +352,8 @@ export function unpackPrefabInstance(entityId: string): void {
   const component = host === undefined ? undefined : prefabInstanceOf(document.scene, entityId);
   if (!host || !component) return;
 
-  const prefab = useAssetStore.getState().prefabs[component.assetId];
+  const prefab =
+    component.assetId === '' ? undefined : useAssetStore.getState().prefabs.get(component.assetId);
   if (!prefab) {
     notify({
       kind: 'warning',
@@ -364,7 +368,7 @@ export function unpackPrefabInstance(entityId: string): void {
   // of the thing that decides what an instance looks like.
   const { scene: expanded } = expandPrefabs(
     { ...document.scene, entities: new Map([[entityId, host]]), rootOrder: [entityId] },
-    { get: (id) => useAssetStore.getState().prefabs[id] },
+    useAssetStore.getState().prefabs,
   );
   const owned = [...expanded.entities.values()].filter(
     (entity) => instanceOwnerOf(entity.id) === entityId,
@@ -484,7 +488,7 @@ export const PREFAB_COMMANDS = {
     can: (ctx) => instance(ctx)?.missing === false,
     run: async (ctx) => {
       const info = instance(ctx);
-      if (info && !info.missing) await createPrefabVariant(info.assetId);
+      if (info && !info.missing && info.assetId !== '') await createPrefabVariant(info.assetId);
     },
   }),
 

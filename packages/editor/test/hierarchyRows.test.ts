@@ -1,8 +1,9 @@
 import {
   createEntity,
   createMeshEntity,
-    createPrefabInstance,
+  createPrefabInstance,
   expandPrefabs,
+  fixedId,
   instancedId,
   type EntityTemplate,
 } from '@three-studio/core';
@@ -19,6 +20,7 @@ import { buildRows } from '../src/panels/hierarchyRows';
  */
 
 const NONE: ReadonlySet<string> = new Set();
+const TREE = fixedId('asset', 'tree');
 
 /** An expansion of a scene holding no prefabs, which is most scenes. */
 const plain = (templates: EntityTemplate[]) =>
@@ -72,11 +74,11 @@ describe('rows a prefab produced', () => {
   it("shows an instance's contents under the entity that placed it", () => {
     const trunk = createMeshEntity('cylinder');
     trunk.entity.name = 'Trunk';
-    const prefab = prefabWith('Tree', [trunk], trunk.entity.id);
-    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    const prefab = { ...prefabWith('Tree', [trunk], trunk.entity.id), id: TREE };
+    const host = createEntity('Tree', [createPrefabInstance(TREE)]);
 
     const expanded = expandPrefabs(sceneWith([host]), {
-      get: (id) => (id === 'tree' ? prefab : undefined),
+      get: (id) => (id === TREE ? prefab : undefined),
     });
     const rows = buildRows(expanded, NONE, '');
 

@@ -1,4 +1,4 @@
-import { createId } from '../../ids';
+import { createId, type AssetId } from '../../ids';
 import type { PrefabInstanceComponent } from './schema';
 
 /**
@@ -7,6 +7,6 @@ import type { PrefabInstanceComponent } from './schema';
  * Its own factory because the literal was written out at nine call sites, and
  * every one of them had to be found again the day components gained an id.
  */
-export function createPrefabInstance(assetId = ''): PrefabInstanceComponent {
+export function createPrefabInstance(assetId: AssetId | '' = ''): PrefabInstanceComponent {
   return { id: createId(), type: 'prefabInstance', assetId, overrides: {} };
 }

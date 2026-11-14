@@ -3,6 +3,8 @@ import {
   createMaterial,
   createMeshEntity,
   createRenderingSettings,
+  fixedId,
+  type AssetId,
   type LightComponent,
   type MaterialDef,
   type MeshComponent,
@@ -68,9 +70,9 @@ afterAll(() => {
 });
 
 /** Asset id of the shared material the fifth cube is linked to. */
-const BRASS = 'material-brass';
+const BRASS = fixedId('asset', 'material-brass');
 
-const materials: Record<string, MaterialDef> = { [BRASS]: createMaterial('#b58a3c') };
+const materials: ReadonlyMap<AssetId, MaterialDef> = new Map([[BRASS, createMaterial('#b58a3c')]]);
 
 /**
  * A scene holding one of everything the two modes could disagree about.

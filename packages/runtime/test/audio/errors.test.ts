@@ -1,4 +1,4 @@
-import { createAudioSource, createEntity } from '@three-studio/core';
+import { createAudioSource, createEntity, fixedId } from '@three-studio/core';
 import { Group } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { AudioEngine } from '../../src/audio/AudioEngine';
@@ -23,7 +23,11 @@ import { flush, rig } from './rig';
  * corrupt" should find the answer in one place.
  */
 
-const source = (overrides = {}) => ({ ...createAudioSource(), assetId: 'step', ...overrides });
+const STEP = fixedId('asset', 'step');
+const GONE = fixedId('asset', 'gone');
+const WEIRD = fixedId('asset', 'weird');
+
+const source = (overrides = {}) => ({ ...createAudioSource(), assetId: STEP, ...overrides });
 
 function mount(audio: AudioEngine | null, overrides = {}) {
   return behaviourFactoryFor('audioSource')?.(
@@ -35,7 +39,7 @@ function mount(audio: AudioEngine | null, overrides = {}) {
 describe('nothing here may bring anything down', () => {
   it('a missing asset: one warning, a failed handle, no voice', async () => {
     const { engine, warnings } = rig();
-    const voice = engine.play({ assetId: 'gone' });
+    const voice = engine.play({ assetId: GONE });
     await flush();
     // A voice was built before anyone knew the file was missing, so it is
     // retired on the next tick like any other finished one.
@@ -50,9 +54,9 @@ describe('nothing here may bring anything down', () => {
     const { context, engine, warnings } = rig({ weird: {} });
     context.decodeFails = true;
 
-    engine.play({ assetId: 'weird' });
+    engine.play({ assetId: WEIRD });
     await flush();
-    engine.play({ assetId: 'weird' });
+    engine.play({ assetId: WEIRD });
     await flush();
 
     // Poisoned after the first attempt. The browser will not learn this format
@@ -70,7 +74,7 @@ describe('nothing here may bring anything down', () => {
     const { context, engine } = rig({ step: { duration: 5 } });
     context.state = 'suspended';
 
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
     // Playing as far as the graph is concerned; silent until the context runs.
     expect(voice.state).toBe('playing');
@@ -93,15 +97,15 @@ describe('nothing here may bring anything down', () => {
 
   it('an asset replaced mid-play: the voice finishes on what it holds', async () => {
     const { engine, loads } = rig({ step: { duration: 60 } });
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
 
-    engine.invalidate('step');
+    engine.invalidate(STEP);
     // A gap would be worse than an old sound: the voice keeps the buffer it
     // already has, and only the *next* play reads the file again.
     expect(voice.state).toBe('playing');
 
-    engine.play({ assetId: 'step' });
+    engine.play({ assetId: STEP });
     await flush();
     expect(loads).toEqual(['step', 'step']);
   });
@@ -119,7 +123,7 @@ describe('nothing here may bring anything down', () => {
 
   it('the runtime stops: disposing twice is as safe as once', async () => {
     const { engine } = rig({ step: { duration: 60 } });
-    engine.play({ assetId: 'step' });
+    engine.play({ assetId: STEP });
     await flush();
 
     expect(() => {
@@ -129,7 +133,7 @@ describe('nothing here may bring anything down', () => {
       engine.stopAll();
       engine.setListener([0, 0, 0], [0, 0, -1], [0, 1, 0]);
     }).not.toThrow();
-    expect(engine.play({ assetId: 'step' }).state).toBe('failed');
+    expect(engine.play({ assetId: STEP }).state).toBe('failed');
   });
 
   it('no voices left: a failed handle, and deliberately no warning', async () => {
@@ -137,10 +141,10 @@ describe('nothing here may bring anything down', () => {
     // would fill the panel during exactly the moment — a firefight — when the
     // panel needs to be readable.
     const { engine, warnings } = rig({ step: { duration: 60 } }, { maxVoices: 1 });
-    engine.play({ assetId: 'step', priority: 0 });
+    engine.play({ assetId: STEP, priority: 0 });
     await flush();
 
-    expect(engine.play({ assetId: 'step', priority: 200 }).state).toBe('failed');
+    expect(engine.play({ assetId: STEP, priority: 200 }).state).toBe('failed');
     expect(warnings).toEqual([]);
   });
 
@@ -150,12 +154,12 @@ describe('nothing here may bring anything down', () => {
     // those keep their slot the ceiling closes for good, and it closes *silently*
     // — the pool refuses, which is not a fault, so nothing is reported.
     const { engine } = rig({ step: { duration: 10 } }, { maxVoices: 2 });
-    for (let i = 0; i < 5; i++) engine.play({ assetId: 'step', priority: 0 }).stop(0);
+    for (let i = 0; i < 5; i++) engine.play({ assetId: STEP, priority: 0 }).stop(0);
     await flush();
     engine.update();
 
     expect(engine.voices).toHaveLength(0);
-    expect(engine.play({ assetId: 'step', priority: 128 }).state).not.toBe('failed');
+    expect(engine.play({ assetId: STEP, priority: 128 }).state).not.toBe('failed');
   });
 
   it('a voice still fading when the engine goes hands its clip back', async () => {
@@ -168,7 +172,7 @@ describe('nothing here may bring anything down', () => {
       { budgetBytes: 0, shareCache: true },
     );
 
-    engine.play({ assetId: 'step' });
+    engine.play({ assetId: STEP });
     await flush();
     expect(cache.size).toBe(1);
 
@@ -182,7 +186,7 @@ describe('nothing here may bring anything down', () => {
 
   it('a handle outlives its sound: every method is a no-op', async () => {
     const { context, engine } = rig({ step: { duration: 1 } });
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
 
     context.advance(2);

@@ -1,5 +1,5 @@
 import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
-import type { SceneId } from '../ids';
+import type { AssetId, SceneId } from '../ids';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
@@ -453,7 +453,7 @@ export type AssetSettings =
  */
 export interface AssetMeta {
   version: number;
-  id: string;
+  id: AssetId;
   kind: AssetKind;
   importedAt: number;
   /** SHA-256 of the file at import, for duplicate detection. */
@@ -463,7 +463,7 @@ export interface AssetMeta {
 
 /** An asset as the editor sees it: its sidecar plus facts about the file. */
 export interface AssetEntry {
-  id: string;
+  id: AssetId;
   /** File name without extension. */
   name: string;
   kind: AssetKind;

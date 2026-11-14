@@ -1,4 +1,4 @@
-import type { MaterialDef } from '@three-studio/core';
+import type { AssetId, MaterialDef } from '@three-studio/core';
 import {
   BackSide,
   Color,
@@ -118,7 +118,7 @@ export function buildMaterial(
   const textures: Texture[] = [];
 
   /** Each slot gets its own texture instance, which this material then owns. */
-  const slot = (assetId: string | null, key: keyof MaterialDef): Texture | null => {
+  const slot = (assetId: AssetId | null, key: keyof MaterialDef): Texture | null => {
     if (assetId === null) return null;
     const texture = models.instanceTexture(assetId);
     if (texture === null) return null;

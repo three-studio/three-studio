@@ -1,4 +1,9 @@
-import { createAudioSourceEntity, createEmptyScene, type AudioSourceComponent } from '@three-studio/core';
+import {
+  createAudioSourceEntity,
+  createEmptyScene,
+  fixedId,
+  type AudioSourceComponent,
+} from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AudioPreview } from '../src/audio/preview';
@@ -28,7 +33,7 @@ import {
  * So both are parameters now, and the loop is driven a frame at a time below.
  */
 
-const CLIP = 'clip-1';
+const CLIP = fixedId('asset', 'clip-1');
 const DURATION = 4;
 
 /**

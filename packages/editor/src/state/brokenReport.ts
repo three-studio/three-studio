@@ -1,9 +1,9 @@
-import { findBrokenReferences } from '@three-studio/core';
+import { findBrokenReferences, type AssetId } from '@three-studio/core';
 import { useAssetStore } from './assetStore';
 import { expandedScene } from './expansion';
 
 /** Every asset id the project holds — materials and prefabs included. */
-export function knownAssetIds(): ReadonlySet<string> {
+export function knownAssetIds(): ReadonlySet<AssetId> {
   return new Set(useAssetStore.getState().manifest.assets.map((asset) => asset.id));
 }
 

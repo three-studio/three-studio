@@ -3,6 +3,7 @@ import {
   componentsOf,
   findComponent,
   skySunDirection,
+  type AssetId,
   type ComponentDoc,
   type EntityDoc,
   type MaterialDef,
@@ -91,7 +92,7 @@ export interface SceneBinderOptions {
    * every linked material has already fallen back to its embedded copy, which
    * is what play mode did until it was passed one.
    */
-  materials?: Readonly<Record<string, MaterialDef>> | undefined;
+  materials?: ReadonlyMap<AssetId, MaterialDef> | undefined;
   /**
    * The device an analytic sky is captured on.
    *
@@ -147,7 +148,7 @@ export class SceneBinder {
   private readonly arena = new ResourceArena();
   private readonly models: ModelCache;
   /** Shared materials by asset id; see `setMaterialLibrary`. */
-  private materials: Readonly<Record<string, MaterialDef>> = {};
+  private materials: ReadonlyMap<AssetId, MaterialDef> = new Map();
   /**
    * Per-light shadow map resolution, from the project settings. Square and a
    * power of two; 4096 costs four times the memory of 2048.
@@ -283,7 +284,7 @@ export class SceneBinder {
    *   sync exactly those. Handing back `undefined` — "reconcile everything" —
    *   was costing a full pass over the scene per material tint.
    */
-  setMaterialLibrary(materials: Readonly<Record<string, MaterialDef>>): ReadonlySet<string> {
+  setMaterialLibrary(materials: ReadonlyMap<AssetId, MaterialDef>): ReadonlySet<string> {
     const previous = this.materials;
     this.materials = materials;
 
@@ -303,14 +304,14 @@ export class SceneBinder {
      * One pass, one decision per asset. It also turns N pipeline compilations
      * into one, which was the entire point of pooling them.
      */
-    for (const [assetId, definition] of Object.entries(materials)) {
+    for (const [assetId, definition] of materials) {
       const shared = this.arena.peekMaterial(assetId);
       // Not in the pool yet — nothing is using it, and the first mesh that does
       // will build it. `setMaterialLibrary` also runs at startup, when the pool
       // is empty and there is nothing to patch.
       if (!shared) continue;
 
-      const before = previous[assetId];
+      const before = previous.get(assetId);
       if (before === definition) continue;
 
       if (before !== undefined && sameTextureSlots(before, definition)) {
@@ -485,7 +486,7 @@ export class SceneBinder {
    * unpacked model whose pieces are the wrong pieces, which reads as a corrupt
    * file rather than as a mismatch.
    */
-  modelShape(assetId: string): Promise<ModelShape> {
+  modelShape(assetId: AssetId): Promise<ModelShape> {
     return this.models.modelShape(assetId);
   }
 

@@ -2,6 +2,7 @@ import {
   conformPhysicsMaterial,
   findComponentById,
   linkedPhysicsMaterial,
+  type AssetId,
   type ComponentDoc,
   type PhysicsMaterialDef,
 } from '@three-studio/core';
@@ -40,12 +41,12 @@ interface TuningState {
    */
   readonly values: readonly Tuned[];
   /** Physics material assets tuned during Play, their values as tuned, by asset id. */
-  readonly materials: Readonly<Record<string, PhysicsMaterialDef>>;
+  readonly materials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
   /** Moves with every tune, for the Inspector, whose rows read what was tuned. */
   readonly revision: number;
 }
 
-export const useTuningStore = create<TuningState>()(() => ({ values: [], materials: {}, revision: 0 }));
+export const useTuningStore = create<TuningState>()(() => ({ values: [], materials: new Map(), revision: 0 }));
 
 /**
  * The engine running the window's scene, which a tune reaches; `null` while the
@@ -64,7 +65,7 @@ const offer = toastSlot();
  */
 export function dropTuning(): void {
   offer.dismiss();
-  useTuningStore.setState((state) => ({ values: [], materials: {}, revision: state.revision + 1 }));
+  useTuningStore.setState((state) => ({ values: [], materials: new Map(), revision: state.revision + 1 }));
 }
 
 /**
@@ -77,7 +78,7 @@ export function offerTuning(): void {
   if (!hasTuning()) return;
   const { values, materials } = useTuningStore.getState();
   const entities = new Set(values.map(({ entityId }) => entityId)).size;
-  const assets = Object.keys(materials).length;
+  const assets = materials.size;
   const on = [
     entities > 0 ? `${entities} ${entities === 1 ? 'entity' : 'entities'}` : null,
     assets > 0 ? `${assets} physics ${assets === 1 ? 'material' : 'materials'}` : null,
@@ -94,7 +95,7 @@ export function offerTuning(): void {
 /** Whether something tuned waits to be kept. */
 export function hasTuning(): boolean {
   const { values, materials } = useTuningStore.getState();
-  return values.length > 0 || Object.keys(materials).length > 0;
+  return values.length > 0 || materials.size > 0;
 }
 
 /**
@@ -124,7 +125,7 @@ export function keepTuning(): void {
   }
 
   const stored = useAssetStore.getState().physicsMaterials;
-  const files = Object.entries(materials).flatMap(([assetId, after]) => {
+  const files = [...materials].flatMap(([assetId, after]) => {
     const before = linkedPhysicsMaterial(assetId, stored);
     return before ? [{ assetId, before, after }] : [];
   });
@@ -154,7 +155,7 @@ export function tuningEngine(next: Engine | null): void {
   if (!next) return;
   const { values, materials } = useTuningStore.getState();
   // The assets first: a collider tuned after them is built with them.
-  for (const [assetId, material] of Object.entries(materials)) next.tunePhysicsMaterial(assetId, material);
+  for (const [assetId, material] of materials) next.tunePhysicsMaterial(assetId, material);
   const handed = new Set<string>();
   for (const { entityId, componentId } of values) {
     const key = JSON.stringify([entityId, componentId]);
@@ -188,12 +189,12 @@ export function tuneComponentField(
  * game the asset with it: every collider linking it takes it, as every one
  * takes an edit of its file when stopped. The file is not written.
  */
-export function tunePhysicsMaterialField(assetId: string, key: string, value: unknown): void {
+export function tunePhysicsMaterialField(assetId: AssetId, key: string, value: unknown): void {
   const base = tunedPhysicsMaterial(assetId);
   if (!base) return;
   const material = conformPhysicsMaterial({ ...base, [key]: value });
   useTuningStore.setState((state) => ({
-    materials: { ...state.materials, [assetId]: material },
+    materials: new Map(state.materials).set(assetId, material),
     revision: state.revision + 1,
   }));
   engine?.tunePhysicsMaterial(assetId, material);
@@ -226,7 +227,7 @@ function withTuned<C extends ComponentDoc>(entityId: string, component: C): C {
  * The same for a physics material asset: its values as tuned during Play, or as
  * the project holds them; `null` for an id the project lacks.
  */
-export function tunedPhysicsMaterial(assetId: string): PhysicsMaterialDef | null {
+export function tunedPhysicsMaterial(assetId: AssetId): PhysicsMaterialDef | null {
   const tuned = isSceneLocked() ? linkedPhysicsMaterial(assetId, useTuningStore.getState().materials) : null;
   return tuned ?? linkedPhysicsMaterial(assetId, useAssetStore.getState().physicsMaterials);
 }

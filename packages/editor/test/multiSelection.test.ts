@@ -5,6 +5,7 @@ import {
   createMeshEntity,
   createPrefabInstance,
   createTransform,
+  fixedId,
   instancedId,
 } from '@three-studio/core';
 import { Matrix4 } from 'three/webgpu';
@@ -30,6 +31,7 @@ import { Selection } from '../src/state/selection';
  */
 
 const doc = () => useDocumentStore.getState();
+const TREE = fixedId('asset', 'tree');
 const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
 const at = (id: string) => doc().scene.entities.get(id)?.transform.position ?? [];
 
@@ -38,7 +40,7 @@ beforeEach(() => {
   useEditorStore.getState().clearSelection();
   // The expansion is memoised on the prefab table as well as the scene, so a
   // file that leaves one behind hands it to the next test.
-  useAssetStore.setState({ prefabs: {} });
+  useAssetStore.setState({ prefabs: new Map() });
 });
 
 function three() {
@@ -211,14 +213,15 @@ describe("moving an entity a prefab produced", () => {
     trunk.entity.children = [branch.entity.id];
     branch.entity.parent = trunk.entity.id;
 
-    return { branch, prefab: prefabWith('Tree', [trunk, branch], trunk.entity.id) };
+    // A prefab carries the id it is filed under, as the main process reads it.
+    return { branch, prefab: { ...prefabWith('Tree', [trunk, branch], trunk.entity.id), id: TREE } };
   }
 
   it('moves it by the delta rather than to it', () => {
     const { branch, prefab } = tree();
-    useAssetStore.setState({ prefabs: { tree: prefab } });
+    useAssetStore.setState({ prefabs: new Map([[TREE, prefab]]) });
 
-    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    const host = createEntity('Tree', [createPrefabInstance(TREE)]);
     host.entity.transform = { ...createTransform(), position: [10, 0, 0] };
     addEntity(host);
 
@@ -234,9 +237,9 @@ describe("moving an entity a prefab produced", () => {
 
   it('records the move as an override on the instance, not on the asset', () => {
     const { branch, prefab } = tree();
-    useAssetStore.setState({ prefabs: { tree: prefab } });
+    useAssetStore.setState({ prefabs: new Map([[TREE, prefab]]) });
 
-    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    const host = createEntity('Tree', [createPrefabInstance(TREE)]);
     addEntity(host);
 
     transformSelection(

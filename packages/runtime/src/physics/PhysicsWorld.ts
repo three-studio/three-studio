@@ -9,6 +9,7 @@ import {
   linkedPhysicsMaterial,
   physicsBodies,
   type BodyType,
+  type AssetId,
   type BuiltShape,
   type ColliderComponent,
   type ColliderShape,
@@ -505,7 +506,7 @@ export class PhysicsWorld implements PhysicsApi {
    */
   private readonly triggers = new Set<string>();
   /** The project's physics materials by asset id: the build's, and each one tuned since. */
-  private materials: Record<string, PhysicsMaterialDef> = {};
+  private materials = new Map<AssetId, PhysicsMaterialDef>();
   /** What touched when the world was built, for the first tick to hand out before its own. */
   private atBuild: PhysicsEvent[] = [];
   /** What a joint with no Connected Body is held to; made by the first one. */
@@ -570,11 +571,11 @@ export class PhysicsWorld implements PhysicsApi {
   build(
     scene: SceneDoc,
     binder: SceneBinder,
-    materials: Readonly<Record<string, PhysicsMaterialDef>> = {},
+    materials: ReadonlyMap<AssetId, PhysicsMaterialDef> = new Map(),
   ): void {
     const bodies = physicsBodies(scene);
     this.scene = scene;
-    this.materials = { ...materials };
+    this.materials = new Map(materials);
 
     // Parents first, because `writeBack` writes the bodies in the order they
     // were added. A child written before its parent was placed against the pose
@@ -749,8 +750,8 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /** A physics material's values, taken at once by every collider that links it. */
-  tunePhysicsMaterial(assetId: string, material: PhysicsMaterialDef): void {
-    this.materials[assetId] = material;
+  tunePhysicsMaterial(assetId: AssetId, material: PhysicsMaterialDef): void {
+    this.materials.set(assetId, material);
     for (const built of this.owners.values()) {
       const body = this.bodies.get(built.owner.body);
       if (body && built.component.materialId === assetId) this.tuneCollider(built, built.component, body, false);

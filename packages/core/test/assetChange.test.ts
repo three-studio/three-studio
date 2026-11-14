@@ -1,9 +1,11 @@
 import {
   applyAssetChange,
+  createAssetId,
   emptyAssetChange,
   emptyManifest,
   type AssetChange,
   type AssetEntry,
+  type AssetId,
   type AssetManifest,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -18,7 +20,7 @@ import { describe, expect, it } from 'vitest';
  * manifest looks like afterwards.
  */
 
-function asset(path: string, id = path): AssetEntry {
+function asset(path: string, id: AssetId = createAssetId()): AssetEntry {
   const inside = path.slice('assets/'.length);
   const cut = inside.lastIndexOf('/');
   return {
@@ -54,7 +56,7 @@ describe('an asset that moved', () => {
     const moved = after.assets[0]!;
     // The sidecar travels with the file, so the id is the one thing that must
     // not change — every scene reference is made of it.
-    expect(moved.id).toBe('assets/textures/a.png');
+    expect(moved.id).toBe(before.assets[0]?.id);
     expect(moved.path).toBe('assets/sprites/a.png');
     expect(moved.folder).toBe('sprites');
   });
@@ -78,11 +80,7 @@ describe('an asset that moved', () => {
       change({ moved: [{ from: 'assets/a.png', to: 'assets/sub/a.png' }] }),
     );
 
-    expect(after.assets.map((entry) => entry.id)).toEqual([
-      'assets/a.png',
-      'assets/b.png',
-      'assets/c.png',
-    ]);
+    expect(after.assets.map((entry) => entry.id)).toEqual(before.assets.map((entry) => entry.id));
   });
 
   it('ignores a move naming an asset the manifest does not hold', () => {

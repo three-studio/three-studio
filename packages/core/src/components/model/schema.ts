@@ -1,9 +1,11 @@
+import type { AssetId } from '../../ids';
 import type { ComponentBase } from '../../scene/primitives';
 
 /** An imported glTF. References an asset id so instancing stays possible later. */
 export interface ModelComponent extends ComponentBase {
   type: 'model';
-  assetId: string;
+  /** `''` is a model component with no file chosen yet. */
+  assetId: AssetId | '';
   /*
    * `nodePath`, `nodeName` and `materialId` are three flat fields rather than
    * one `node: { … }` object, and that is a decision rather than a shape that
@@ -38,7 +40,7 @@ export interface ModelComponent extends ComponentBase {
    * node, so setting it there is "this part's material" — the one thing an
    * imported model had no way at all to express.
    */
-  materialId: string | null;
+  materialId: AssetId | null;
   castShadow: boolean;
   receiveShadow: boolean;
 }

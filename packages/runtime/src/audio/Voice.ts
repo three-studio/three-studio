@@ -1,4 +1,4 @@
-import type { AudioBus } from '@three-studio/core';
+import type { AssetId, AudioBus } from '@three-studio/core';
 import type { AudioClipCache } from './AudioClipCache';
 import type {
   AudioBufferLike,
@@ -42,7 +42,7 @@ import type { PlayRequest, SpatialRequest, VoiceEvent, VoiceHandle, VoiceState }
  */
 export class Voice implements VoiceHandle {
   readonly id: number;
-  readonly assetId: string;
+  readonly assetId: AssetId;
 
   private stateValue: VoiceState = 'pending';
   private priorityValue: number;
@@ -82,7 +82,8 @@ export class Voice implements VoiceHandle {
     private readonly context: AudioContextLike,
     private readonly mixer: AudioMixer,
     cache: AudioClipCache,
-    request: PlayRequest,
+    /** A request that names a clip: the engine answers an empty slot before it gets here. */
+    request: PlayRequest & { readonly assetId: AssetId },
     /** The asset's imported gain, folded in here rather than baked into samples. */
     private readonly assetGain: number,
   ) {

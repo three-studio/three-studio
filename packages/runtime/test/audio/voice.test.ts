@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import type { FakeGain } from './fakeContext';
 import { flush, rig } from './rig';
@@ -13,6 +14,7 @@ import { flush, rig } from './rig';
 
 const VOICE_GAIN = 6;
 const DRY_GAIN = 7;
+const STEP = fixedId('asset', 'step');
 
 function gain(context: { gains: FakeGain[] }, index: number): number {
   return (context.gains[index] as FakeGain).gain.target;
@@ -21,7 +23,7 @@ function gain(context: { gains: FakeGain[] }, index: number): number {
 describe('Voice', () => {
   it('multiplies the asked-for volume by the gain the asset was imported at', async () => {
     const { context, engine } = rig({ step: { duration: 1, gain: 0.5 } });
-    engine.play({ assetId: 'step', volume: 0.4 });
+    engine.play({ assetId: STEP, volume: 0.4 });
     await flush();
 
     expect(gain(context, VOICE_GAIN)).toBeCloseTo(0.2);
@@ -29,7 +31,7 @@ describe('Voice', () => {
 
   it('builds no panner at all for a flat sound', async () => {
     const { context, engine } = rig();
-    engine.play({ assetId: 'step' });
+    engine.play({ assetId: STEP });
     await flush();
 
     expect(context.panners).toHaveLength(0);
@@ -38,7 +40,7 @@ describe('Voice', () => {
 
   it('builds the panner on the first blend that needs one', async () => {
     const { context, engine } = rig();
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
     expect(context.panners).toHaveLength(0);
 
@@ -66,7 +68,7 @@ describe('Voice', () => {
   it('crossfades the two branches linearly, so the amplitude stays flat', async () => {
     const { context, engine } = rig();
     engine.play({
-      assetId: 'step',
+      assetId: STEP,
       spatial: {
         blend: 0.25,
         distanceModel: 'inverse',
@@ -93,8 +95,8 @@ describe('Voice', () => {
 
   it('ends when the buffer runs out, and never while looping', async () => {
     const { context, engine } = rig({ step: { duration: 2 } });
-    const once = engine.play({ assetId: 'step' });
-    const forever = engine.play({ assetId: 'step', loop: true });
+    const once = engine.play({ assetId: STEP });
+    const forever = engine.play({ assetId: STEP, loop: true });
     await flush();
 
     context.advance(1);
@@ -110,7 +112,7 @@ describe('Voice', () => {
 
   it('ends sooner at a higher rate, because the buffer is consumed faster', async () => {
     const { context, engine } = rig({ step: { duration: 2 } });
-    const voice = engine.play({ assetId: 'step', pitch: 2 });
+    const voice = engine.play({ assetId: STEP, pitch: 2 });
     await flush();
 
     context.advance(1.1);
@@ -120,7 +122,7 @@ describe('Voice', () => {
 
   it('reports how far in it is, and keeps that across a pause', async () => {
     const { context, engine } = rig({ step: { duration: 4 } });
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
 
     context.advance(1.5);
@@ -141,7 +143,7 @@ describe('Voice', () => {
 
   it('stays alive for the length of its fade out, then ends', async () => {
     const { context, engine } = rig({ step: { duration: 10 } });
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     await flush();
 
     voice.stop(0.5);
@@ -156,7 +158,7 @@ describe('Voice', () => {
 
   it('never starts when it is stopped while the clip is still decoding', async () => {
     const { context, engine } = rig();
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     voice.stop();
     await flush();
 
@@ -172,7 +174,7 @@ describe('Voice', () => {
 
   it('keeps a fade-in that a volume nobody changed would otherwise wipe', async () => {
     const { context, engine } = rig({ step: { duration: 10 } });
-    const voice = engine.play({ assetId: 'step', volume: 0.8, fadeIn: 2 });
+    const voice = engine.play({ assetId: STEP, volume: 0.8, fadeIn: 2 });
     await flush();
     const gain = context.gains[VOICE_GAIN] as FakeGain;
     expect(gain.gain.lastRamp).toEqual({ value: 0.8, time: 2 });
@@ -189,7 +191,7 @@ describe('Voice', () => {
 
   it('lets an explicit volume change win over a fade that is still running', async () => {
     const { context, engine } = rig({ step: { duration: 10 } });
-    const voice = engine.play({ assetId: 'step', volume: 0.8, fadeIn: 2 });
+    const voice = engine.play({ assetId: STEP, volume: 0.8, fadeIn: 2 });
     await flush();
 
     context.advance(0.016);
@@ -202,7 +204,7 @@ describe('Voice', () => {
 
   it('does not cut a delayed sound short when the pitch has not moved', async () => {
     const { context, engine } = rig({ step: { duration: 3 } });
-    const voice = engine.play({ assetId: 'step', delay: 2, pitch: 1 });
+    const voice = engine.play({ assetId: STEP, delay: 2, pitch: 1 });
     await flush();
 
     // Audible from t=2 to t=5. A frame of the preview lands during the delay and
@@ -222,7 +224,7 @@ describe('Voice', () => {
 
   it('starts at an offset and after a delay when it is asked to', async () => {
     const { context, engine } = rig({ step: { duration: 10 } });
-    engine.play({ assetId: 'step', startOffset: 3, delay: 0.25 });
+    engine.play({ assetId: STEP, startOffset: 3, delay: 0.25 });
     await flush();
 
     expect(context.sources[0]?.started).toEqual({ when: 0.25, offset: 3 });
@@ -231,7 +233,7 @@ describe('Voice', () => {
   it('tells its listeners it started, and tells them once it is over', async () => {
     const { context, engine } = rig({ step: { duration: 1 } });
     const seen: string[] = [];
-    const voice = engine.play({ assetId: 'step' });
+    const voice = engine.play({ assetId: STEP });
     voice.on('started', () => seen.push('started'));
     voice.on('ended', () => seen.push('ended'));
     await flush();

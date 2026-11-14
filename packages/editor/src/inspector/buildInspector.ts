@@ -2,6 +2,7 @@ import {
   componentsOf,
   findComponentById,
   linkedPhysicsMaterial,
+  type AssetId,
   type ComponentDoc,
   type EntityDoc,
   type SceneDoc,
@@ -400,7 +401,7 @@ export function effectiveComponent(entityId: string, component: ComponentDoc): C
   const { materials } = useAssetStore.getState();
   const tuned = tunedComponent(entityId, component);
   if (tuned.type === 'mesh' && tuned.materialId !== null) {
-    const shared = materials[tuned.materialId];
+    const shared = materials.get(tuned.materialId);
     return shared ? { ...tuned, material: shared } : tuned;
   }
   if (tuned.type === 'collider' && tuned.materialId !== null) {
@@ -412,7 +413,7 @@ export function effectiveComponent(entityId: string, component: ComponentDoc): C
 
 /** A field whose edits go to a shared asset rather than to the document. */
 export interface LinkedMaterial {
-  assetId: string;
+  assetId: AssetId;
   /** Writes one of the asset's values, as one undo step named after the field. */
   edit(label: string, key: string, value: unknown): void;
 }
@@ -426,7 +427,7 @@ export function linkedMaterial(
   const { materials, physicsMaterials } = useAssetStore.getState();
   if (component?.type === 'mesh' && component.materialId !== null) {
     const assetId = component.materialId;
-    const shared = materials[assetId];
+    const shared = materials.get(assetId);
     if (!shared) return null;
     return {
       assetId,

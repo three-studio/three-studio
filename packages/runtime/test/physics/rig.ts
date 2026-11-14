@@ -1,4 +1,5 @@
 import {
+  createAssetId,
   createColliderShape,
   createComponent,
   createComponentForEntity,
@@ -6,6 +7,7 @@ import {
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  type AssetId,
   type BodyType,
   type ColliderComponent,
   type ComponentOfType,
@@ -75,7 +77,7 @@ export interface PhysicsRig {
 export async function physicsRig(
   entities: readonly EntityTemplate[],
   settings?: Partial<PhysicsSettings>,
-  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>,
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
@@ -239,13 +241,14 @@ export function player(
 /**
  * The template, running `type` as its script.
  *
- * Registered under its class name until the test finishes, as a project's
- * compiled bundle registers each script under its asset id.
+ * Registered under an asset id of its own until the test finishes, as a
+ * project's compiled bundle registers each script under its asset id.
  */
 export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
-  registerScript(type.name, type);
+  const assetId = createAssetId();
+  registerScript(assetId, type);
   onTestFinished(clearScripts);
-  template.components.push({ ...createComponent('script'), assetId: type.name });
+  template.components.push({ ...createComponent('script'), assetId });
   return template;
 }
 

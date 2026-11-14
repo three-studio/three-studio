@@ -35,6 +35,9 @@ const MAIN = fixedId('scene', 'a');
 const BOSS = fixedId('scene', 'b');
 const LEVEL2 = fixedId('scene', 'c');
 const GONE = fixedId('scene', 'gone');
+const NO_SUCH_ASSET = fixedId('asset', 'gone');
+const TEXTURE = fixedId('asset', 'tex1');
+const PREFAB = fixedId('asset', 'p1');
 
 const doc = () => useDocumentStore.getState();
 
@@ -219,7 +222,7 @@ describe('a gesture aimed at an asset', () => {
     // asset in mind at all.
     for (const id of ['revealAsset', 'deleteAsset'] as const) {
       expect(commandById(id).can(), `${id}, no target`).toBe(false);
-      expect(commandById(id).can(contextForAsset('gone')), `${id}, missing`).toBe(false);
+      expect(commandById(id).can(contextForAsset(NO_SUCH_ASSET)), `${id}, missing`).toBe(false);
     }
   });
 
@@ -228,7 +231,7 @@ describe('a gesture aimed at an asset', () => {
     const { useAssetStore } = await import('../src/state/assetStore');
 
     const asset = {
-      id: 'tex1',
+      id: TEXTURE,
       name: 'brick',
       kind: 'texture',
       path: 'assets/textures/brick.png',
@@ -243,7 +246,7 @@ describe('a gesture aimed at an asset', () => {
       manifest: { version: 1, assets: [asset], folders: ['textures'] },
     } as never);
 
-    const ctx = contextForAsset('tex1');
+    const ctx = contextForAsset(TEXTURE);
     expect(commandById('deleteAsset').can(ctx)).toBe(true);
     // The label names what it would act on, the way `undo` names what it would
     // take back — which is what a command palette shows.
@@ -258,20 +261,23 @@ describe('the two prefab menus ask one question', () => {
     const { useAssetStore } = await import('../src/state/assetStore');
     const id = addEntity(createMeshEntity('box'));
     doc().mutate('Instance', (draft) => {
-      putComponent(draft, id, createPrefabInstance('p1'));
+      putComponent(draft, id, createPrefabInstance(PREFAB));
     });
     useAssetStore.setState({
-      prefabs: {
-        p1: {
-          version: 1,
-          id: 'p1',
-          name: 'Crate',
-          entities: new Map(),
-          components: emptyComponentTables(),
-          root: '',
-        },
-      },
-    } as never);
+      prefabs: new Map([
+        [
+          PREFAB,
+          {
+            version: 1,
+            id: PREFAB,
+            name: 'Crate',
+            entities: new Map(),
+            components: emptyComponentTables(),
+            root: '',
+          },
+        ],
+      ]),
+    });
     useEditorStore.getState().setSelection([id]);
     return id;
   }

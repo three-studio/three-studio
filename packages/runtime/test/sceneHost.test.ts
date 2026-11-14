@@ -2,6 +2,7 @@ import {
   createComponent,
   createEntity,
   createRenderingSettings,
+  fixedId,
   type SceneDoc,
   type ScriptComponent,
 } from '@three-studio/core';
@@ -34,7 +35,7 @@ afterAll(() => {
   Reflect.deleteProperty(globalThis, 'document');
 });
 
-const WHERE = 'script-where';
+const WHERE = fixedId('asset', 'script-where');
 
 const seen: [phase: string, current: string | null][] = [];
 const held: SceneApi[] = [];

@@ -11,6 +11,7 @@ import {
   findScene,
   isDeviceId,
   isRequestId,
+  isAssetId,
   isSceneId,
   jsonOf,
   type AssetEntry,
@@ -420,7 +421,9 @@ async function answer(
     return;
   }
   if (part === 'assets' && within.length > 1) {
-    const [assetId = '', ...named] = within;
+    const [assetId, ...named] = within;
+    // A name out of a URL: it is an asset's id, or it is nothing this serves.
+    if (!isAssetId(assetId)) return notFound();
     const entry = launch.assets.get(assetId);
     if (entry === undefined) return notFound();
     const wanted = named.join('/');

@@ -11,6 +11,7 @@ import {
   createEmptyScene,
   createSceneId,
   deserializeScene,
+  fixedId,
   serializeScene,
   type AssetMeta,
 } from '@three-studio/core';
@@ -115,6 +116,7 @@ describe('an index that is never a source of truth', () => {
   it('throws away values another build computed', async () => {
     const root = await projectWith(2, 0);
     await scanAssets(root);
+    const past = fixedId('asset', 'an-id-from-the-past');
 
     const path = indexFile(root, 'assets.index.json');
     const stale = JSON.parse(await readFile(path, 'utf8')) as {
@@ -123,11 +125,11 @@ describe('an index that is never a source of truth', () => {
     };
     stale.builtBy = 'some-older-build:meta1';
     // Poisoned, so that serving from it would be visible rather than plausible.
-    for (const entry of Object.values(stale.entries)) entry.v = { ...entry.v, id: 'an-id-from-the-past' };
+    for (const entry of Object.values(stale.entries)) entry.v = { ...entry.v, id: past };
     await writeFile(path, JSON.stringify(stale), 'utf8');
 
     const manifest = await scanAssets(root);
-    expect(manifest.assets.map((asset) => asset.id)).not.toContain('an-id-from-the-past');
+    expect(manifest.assets.map((asset) => asset.id)).not.toContain(past);
   });
 
   it('drops a file that is gone rather than remembering it for ever', async () => {

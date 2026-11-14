@@ -5,8 +5,10 @@ import {
   createMeshEntity,
   emptyManifest,
   field,
+  fixedId,
   importerForFile,
   type AssetEntry,
+  type AssetId,
   type FieldDef,
   type TextureSettings,
 } from '@three-studio/core';
@@ -38,6 +40,9 @@ const EVERY_VARIANT: ScriptProperties = {
   target: { type: 'entity', label: 'Follow' },
   clip: { type: 'asset', kind: 'audio' },
 };
+
+const STEP = fixedId('asset', 'a1');
+const BRICK = fixedId('asset', 't1');
 
 const bind = (key: string, def: FieldDef = EVERY_VARIANT[key]!) =>
   specFor({ ...def, key } as KeyedField, ['props', key]);
@@ -148,7 +153,7 @@ describe('a script property, whichever variant it is', () => {
   });
 
   it('lists only the assets of the kind the script asked for', () => {
-    const asset = (id: string, name: string, kind: AssetEntry['kind']): AssetEntry => ({
+    const asset = (id: AssetId, name: string, kind: AssetEntry['kind']): AssetEntry => ({
       id,
       name,
       kind,
@@ -164,15 +169,15 @@ describe('a script property, whichever variant it is', () => {
     useAssetStore.setState({
       manifest: {
         ...emptyManifest(),
-        assets: [asset('a1', 'Step', 'audio'), asset('t1', 'Brick', 'texture')],
+        assets: [asset(STEP, 'Step', 'audio'), asset(BRICK, 'Brick', 'texture')],
       },
     });
 
-    expect(control('clip').optionsProvider?.()).toEqual({ None: '', Step: 'a1' });
+    expect(control('clip').optionsProvider?.()).toEqual({ None: '', Step: STEP });
     expect(control('clip', { type: 'asset' }).optionsProvider?.()).toEqual({
       None: '',
-      Step: 'a1',
-      Brick: 't1',
+      Step: STEP,
+      Brick: BRICK,
     });
   });
 });

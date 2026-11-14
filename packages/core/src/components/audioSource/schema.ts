@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { ComponentBase } from '../../scene/primitives';
 
 /**
@@ -41,7 +42,8 @@ export const DISTANCE_MODEL_LABELS: Record<DistanceModel, string> = {
 
 export interface AudioSourceComponent extends ComponentBase {
   type: 'audioSource';
-  assetId: string;
+  /** `''` is a source with no clip chosen. */
+  assetId: AssetId | '';
   /**
    * `0` is fully 2D (music, UI), `1` fully positional. Unity's model — a single
    * dial is far easier to reason about than two separate node paths, and it

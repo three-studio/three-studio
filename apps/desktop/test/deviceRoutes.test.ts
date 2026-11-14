@@ -8,12 +8,14 @@ import {
   CACHE_DIR,
   LAUNCH_SNAPSHOT_VERSION,
   SCENES_DIR,
+  assertDefined,
   conformLaunchSnapshot,
   createDeviceLaunchOptions,
   createEmptyScene,
   createMeshEntity,
   deserializeScene,
   encodeLaunchSnapshot,
+  fixedId,
   insertEntity,
   serializeScene,
   type BuildManifest,
@@ -41,6 +43,7 @@ const TOKEN = 'abcdefghijKLMNOPQRST01';
 const PLAYER_MODULE = '<script type="module" src="./player/player.js"></script>';
 const TEMPLATE_HTML = `<!doctype html><html><head>${PLAYER_MODULE}</head><body>player</body></html>`;
 const CLIENT_JS = '/* the device client */';
+const TEX_BRICK = fixedId('asset', 'tex-brick');
 
 let server: Server;
 let port = 0;
@@ -181,7 +184,7 @@ beforeAll(async () => {
   // The project's one scene, before the others below join it.
   const [main] = await discoverScenes(root);
 
-  await writeAsset(`${ASSETS_DIR}/textures/brick.png`, 'tex-brick', 'texture', 'source bytes');
+  await writeAsset(`${ASSETS_DIR}/textures/brick.png`, TEX_BRICK, 'texture', 'source bytes');
 
   // A glTF naming its buffer and an image one folder down, with a space in it,
   // and a file beside it that it does not name.
@@ -233,9 +236,9 @@ beforeAll(async () => {
   const snapshot: LaunchSnapshot = {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: main!.id, name: main!.name, scene },
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
+    materials: new Map(),
+    physicsMaterials: new Map(),
+    prefabs: new Map(),
     rendering: settings.rendering,
     physics: settings.physics,
     loadingScene: null,
@@ -248,7 +251,7 @@ beforeAll(async () => {
   await mkdir(join(root, CACHE_DIR, 'imported', 'tex-brick'), { recursive: true });
   await writeFile(join(root, copy), 'scaled bytes', 'utf8');
   const assets = new Map(prepared.assets);
-  assets.set('tex-brick', { ...assets.get('tex-brick')!, importedPath: copy });
+  assets.set(TEX_BRICK, { ...assertDefined(assets.get(TEX_BRICK), 'the brick texture'), importedPath: copy });
   launch = { ...prepared, assets };
   modelId = [...assets.values()].find((asset) => asset.path.endsWith('Tri.gltf'))!.id;
   objId = [...assets.values()].find((asset) => asset.path.endsWith('Crate.obj'))!.id;

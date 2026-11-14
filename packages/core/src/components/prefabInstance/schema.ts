@@ -1,3 +1,4 @@
+import type { AssetId } from '../../ids';
 import type { ComponentBase, Transform } from '../../scene/primitives';
 
 /**
@@ -13,7 +14,8 @@ import type { ComponentBase, Transform } from '../../scene/primitives';
  */
 export interface PrefabInstanceComponent extends ComponentBase {
   type: 'prefabInstance';
-  assetId: string;
+  /** `''` is an instance of nothing: no prefab chosen. */
+  assetId: AssetId | '';
   /**
    * Per-entity changes, keyed by the id the entity has *inside* the prefab.
    *

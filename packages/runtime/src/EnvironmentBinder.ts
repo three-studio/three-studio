@@ -1,4 +1,4 @@
-import type { EnvironmentDef } from '@three-studio/core';
+import type { AssetId, EnvironmentDef } from '@three-studio/core';
 import {
   Color,
   EquirectangularReflectionMapping,
@@ -62,9 +62,9 @@ export class EnvironmentBinder {
   ) {}
 
   /** Equirectangular images by asset id, shared between the two slots. */
-  private readonly maps = new Map<string, EnvironmentMap>();
+  private readonly maps = new Map<AssetId, EnvironmentMap>();
   /** What each slot is showing right now, by asset id. */
-  private readonly slots = new Map<EnvironmentSlot, string>();
+  private readonly slots = new Map<EnvironmentSlot, AssetId>();
   /**
    * What each slot is waiting to show.
    *
@@ -72,7 +72,7 @@ export class EnvironmentBinder {
    * during that wait has to win: the arrival checks this before swapping
    * anything, and drops what it loaded if nothing wants it any more.
    */
-  private readonly pending = new Map<EnvironmentSlot, string>();
+  private readonly pending = new Map<EnvironmentSlot, AssetId>();
   /**
    * The scene the environment was last applied to.
    *
@@ -260,7 +260,7 @@ export class EnvironmentBinder {
    * why the slot is only released once the replacement is up: switching images
    * must not flash the clear colour.
    */
-  private equirectangular(slot: EnvironmentSlot, assetId: string | null): Texture | null {
+  private equirectangular(slot: EnvironmentSlot, assetId: AssetId | null): Texture | null {
     const shown = this.slots.get(slot) ?? null;
     if (shown === assetId) {
       this.pending.delete(slot);
@@ -290,7 +290,7 @@ export class EnvironmentBinder {
   }
 
   /** What a slot is showing, or `null` for an empty slot. */
-  private textureOf(assetId: string | null): Texture | null {
+  private textureOf(assetId: AssetId | null): Texture | null {
     if (assetId === null) return null;
     return this.maps.get(assetId)?.texture ?? null;
   }
@@ -302,7 +302,7 @@ export class EnvironmentBinder {
    * texture assigned without it is drawn as a rectangle across the screen,
    * which looks like a broken background rather than like a sky.
    */
-  private load(assetId: string): EnvironmentMap | null {
+  private load(assetId: AssetId): EnvironmentMap | null {
     const texture = this.models.instanceTexture(assetId);
     if (texture === null) return null;
 
@@ -321,7 +321,7 @@ export class EnvironmentBinder {
   /** Moves a slot onto an image, letting go of whatever it was showing. */
   private claim(
     slot: EnvironmentSlot,
-    assetId: string,
+    assetId: AssetId,
     map: EnvironmentMap,
   ): void {
     this.releaseSlot(slot);
@@ -330,7 +330,7 @@ export class EnvironmentBinder {
   }
 
   /** Swaps a slot onto its pending image once that image has decoded. */
-  private defer(slot: EnvironmentSlot, assetId: string): void {
+  private defer(slot: EnvironmentSlot, assetId: AssetId): void {
     if (this.pending.get(slot) === assetId) return;
     this.pending.set(slot, assetId);
 
@@ -371,7 +371,7 @@ export class EnvironmentBinder {
   }
 
   /** Frees an image no slot is showing and none is still waiting for. */
-  private dropUnclaimed(assetId: string): void {
+  private dropUnclaimed(assetId: AssetId): void {
     const map = this.maps.get(assetId);
     if (!map || map.users > 0) return;
     for (const pending of this.pending.values()) {

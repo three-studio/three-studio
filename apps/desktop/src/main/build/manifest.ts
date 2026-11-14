@@ -1,6 +1,7 @@
 import {
   BUILD_FORMAT_VERSION,
   type AssetEntry,
+  type AssetId,
   type AssetSettings,
   type BuildManifest,
   type BuildScene,
@@ -34,9 +35,9 @@ export interface ManifestContents {
   scenes: readonly BuildScene[];
   loadingScene: SceneId | null;
   assets: readonly ShippedAsset[];
-  materials: Record<string, MaterialDef>;
-  physicsMaterials: Record<string, PhysicsMaterialDef>;
-  prefabs: Record<string, PrefabDoc>;
+  materials: ReadonlyMap<AssetId, MaterialDef>;
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
   /** The bundle's path relative to `build.json`, or `null` when there are no scripts. */
   scripts: string | null;
 }
@@ -115,11 +116,11 @@ function byKey(a: string, b: string): number {
 }
 
 /**
- * A record with its keys in code-unit order.
+ * A library as the record a manifest holds, with its keys in code-unit order.
  *
  * Through `Object.fromEntries`, which defines each key as its own: a material
  * whose id were `__proto__` would otherwise be taken as the object's prototype.
  */
-function sortedRecord<T>(record: Readonly<Record<string, T>>): Record<string, T> {
-  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byKey(a, b)));
+function sortedRecord<T>(library: ReadonlyMap<AssetId, T>): Record<string, T> {
+  return Object.fromEntries([...library].sort(([a], [b]) => byKey(a, b)));
 }

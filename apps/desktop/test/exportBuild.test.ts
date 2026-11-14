@@ -61,6 +61,10 @@ import { exportBuild, requireBuildProfile } from '../src/main/build/exportBuild'
  * build that loads and shows nothing.
  */
 
+const TEX_USED = fixedId('asset', 'tex-used');
+const TEX_SKY = fixedId('asset', 'tex-sky');
+const CLIP_BEEP = fixedId('asset', 'clip-beep');
+
 async function writeAsset(
   root: string,
   path: string,
@@ -103,13 +107,13 @@ async function makeProject(
   const projectPath = join(root, 'project');
   await mkdir(join(projectPath, SCENES_DIR), { recursive: true });
 
-  await writeAsset(projectPath, `${ASSETS_DIR}/textures/used.png`, 'tex-used', 'texture');
+  await writeAsset(projectPath, `${ASSETS_DIR}/textures/used.png`, TEX_USED, 'texture');
   await writeAsset(projectPath, `${ASSETS_DIR}/textures/spare.png`, 'tex-spare', 'texture');
-  await writeAsset(projectPath, `${ASSETS_DIR}/textures/sky.hdr`, 'tex-sky', 'texture');
+  await writeAsset(projectPath, `${ASSETS_DIR}/textures/sky.hdr`, TEX_SKY, 'texture');
   // A clip, with the facts the import dialog reads off it. Nothing about audio
   // is special in the copy loop, and this is what proves it: the exporter has
   // one kind-specific branch and it is for scripts.
-  await writeAsset(projectPath, `${ASSETS_DIR}/audio/beep.wav`, 'clip-beep', 'audio', {
+  await writeAsset(projectPath, `${ASSETS_DIR}/audio/beep.wav`, CLIP_BEEP, 'audio', {
     loadMode: 'decode',
     gain: 0.5,
     forceMono: true,
@@ -118,13 +122,13 @@ async function makeProject(
 
   const scene = createStarterScene();
   const cube = createMeshEntity('box');
-  (cube.components[0] as MeshComponent).material = { ...createMaterial(), colorMap: 'tex-used' };
+  (cube.components[0] as MeshComponent).material = { ...createMaterial(), colorMap: TEX_USED };
   insertEntity(scene, cube);
   // One image in both slots, which is the usual way a scene is lit.
   scene.environment.backgroundMode = 'texture';
-  scene.environment.backgroundTexture = 'tex-sky';
-  scene.environment.environmentTexture = 'tex-sky';
-  insertEntity(scene, createAudioSourceEntity('clip-beep', 'Beep'));
+  scene.environment.backgroundTexture = TEX_SKY;
+  scene.environment.environmentTexture = TEX_SKY;
+  insertEntity(scene, createAudioSourceEntity(CLIP_BEEP, 'Beep'));
   await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
   const project: ProjectFile = {
@@ -254,7 +258,7 @@ describe('asset and material migration', () => {
     const texture = join(projectPath, ASSETS_DIR, 'textures', 'used.png');
     await writeFile(
       `${texture}.meta.json`,
-      JSON.stringify({ version: 1, id: 'tex-used', kind: 'texture', importedAt: 1, hash: 'h' }),
+      JSON.stringify({ version: 1, id: TEX_USED, kind: 'texture', importedAt: 1, hash: 'h' }),
       'utf8',
     );
     await mkdir(join(projectPath, ASSETS_DIR, 'materials'), { recursive: true });
@@ -264,9 +268,10 @@ describe('asset and material migration', () => {
       JSON.stringify({ version: 1, material: { color: '#ff0000', roughness: 0.5 } }),
       'utf8',
     );
+    const matOld = fixedId('asset', 'mat-old');
     await writeFile(
       `${material}.meta.json`,
-      JSON.stringify({ version: 1, id: 'mat-old', kind: 'material', importedAt: 1, hash: 'h' }),
+      JSON.stringify({ version: 1, id: matOld, kind: 'material', importedAt: 1, hash: 'h' }),
       'utf8',
     );
 
@@ -275,9 +280,9 @@ describe('asset and material migration', () => {
 
     const materials = await readMaterialAssets(projectPath);
     // Kept what the file had, filled what it did not.
-    expect(materials['mat-old']?.color).toBe('#ff0000');
-    expect(materials['mat-old']?.tiling).toEqual([1, 1]);
-    expect(materials['mat-old']?.displacementScale).toBeCloseTo(0.1);
+    expect(materials.get(matOld)?.color).toBe('#ff0000');
+    expect(materials.get(matOld)?.tiling).toEqual([1, 1]);
+    expect(materials.get(matOld)?.displacementScale).toBeCloseTo(0.1);
   });
 
   it('reads a physics material against its factory, and leaves out one a newer build wrote', async () => {
@@ -293,18 +298,20 @@ describe('asset and material migration', () => {
         'utf8',
       );
     };
-    await write('Ice', 'pm-ice', {
+    const ice = fixedId('asset', 'pm-ice');
+    const future = fixedId('asset', 'pm-future');
+    await write('Ice', ice, {
       version: 1,
       material: { friction: 0.05, frictionCombine: 'sum' },
     });
-    await write('Future', 'pm-future', { version: 2, material: { friction: 0.05 } });
+    await write('Future', future, { version: 2, material: { friction: 0.05 } });
 
-    expect(await readPhysicsMaterialAssets(projectPath)).toEqual({
-      'pm-ice': { ...createPhysicsMaterial(), friction: 0.05 },
-    });
+    expect(await readPhysicsMaterialAssets(projectPath)).toEqual(
+      new Map([[ice, { ...createPhysicsMaterial(), friction: 0.05 }]]),
+    );
     const materials = await readMaterialAssets(projectPath);
-    expect(materials).not.toHaveProperty('pm-ice');
-    expect(materials).not.toHaveProperty('pm-future');
+    expect(materials.has(ice)).toBe(false);
+    expect(materials.has(future)).toBe(false);
   });
 });
 
@@ -399,7 +406,7 @@ describe('web export', () => {
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(await readFile(scenePath, 'utf8'));
     for (const held of scene.components.mesh.values()) {
-      for (const mesh of held.values()) mesh.materialId = 'mat-shared';
+      for (const mesh of held.values()) mesh.materialId = fixedId('asset', 'mat-shared');
     }
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
@@ -446,7 +453,7 @@ describe('web export', () => {
     expect(Object.keys(build.prefabs)).toEqual([prefabId]);
     expect(build.prefabs[prefabId]).toMatchObject({ name: 'Crate', root: crate.entity.id });
     // As the player reads it: the JSON of each prefab becomes a document.
-    expect(prefabsFromJson(build.prefabs)[prefabId]?.entities).toBeInstanceOf(Map);
+    expect(prefabsFromJson(build.prefabs).get(prefabId)?.entities).toBeInstanceOf(Map);
   });
 
   it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
@@ -468,7 +475,10 @@ describe('web export', () => {
     }
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(await readFile(scenePath, 'utf8'));
-    insertEntity(scene, createEntity('Cube', [{ ...createComponent('collider'), materialId: 'pm-ice' }]));
+    insertEntity(
+      scene,
+      createEntity('Cube', [{ ...createComponent('collider'), materialId: fixedId('asset', 'pm-ice') }]),
+    );
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-physics-materials');
@@ -928,7 +938,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
+    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-tri') });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
       serializeScene(scene),
@@ -992,7 +1002,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-tri' });
+    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-tri') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out', 'reaching');
@@ -1017,7 +1027,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: 'model-gone' });
+    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-gone') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-missing');
@@ -1396,7 +1406,7 @@ describe('what a scene needs beyond its slots', () => {
     );
     await addToMainScene(projectPath, {
       ...createComponent('script'),
-      assetId: 'script-door',
+      assetId: fixedId('asset', 'script-door'),
       // The spare texture is named by nothing else in the project.
       props: { texture: 'tex-spare', greeting: 'Hello' },
     });

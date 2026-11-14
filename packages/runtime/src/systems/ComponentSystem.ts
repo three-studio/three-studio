@@ -1,4 +1,5 @@
 import type {
+  AssetId,
   ComponentDoc,
   ComponentOfType,
   ComponentType,
@@ -65,7 +66,7 @@ export interface BatchableHandle extends SystemHandle {
 export interface SystemContext {
   readonly arena: ResourceArena;
   /** Shared material definitions, by asset id. */
-  readonly materials: Readonly<Record<string, MaterialDef>>;
+  readonly materials: ReadonlyMap<AssetId, MaterialDef>;
   readonly models: ModelCache;
   /**
    * The one clock. A system that animates reads `time.elapsed` here rather than
@@ -168,7 +169,7 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
    * file shipped with. Asking only meshes left an edit to a shared material
    * reaching every cube in the scene and none of the imported models using it.
    */
-  materialAsset?(handle: H): string | null;
+  materialAsset?(handle: H): AssetId | null;
 
   /** Resolves once everything this system has in flight has landed or failed. */
   whenLoaded?(): Promise<void>;

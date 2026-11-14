@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import {
   ASSET_KIND_INFO,
   PROJECT_FILE_NAME,
+  type AssetId,
   type AssetImportResult,
   type AssetManifest,
   type AssetSettings,
@@ -494,25 +495,29 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return updateAssetSettings(requireProject(), assetPath, settings);
     },
 
-    readMaterials: (): Promise<Record<string, MaterialDef>> => readMaterialAssets(requireProject()),
+    readMaterials: async (): Promise<Record<string, MaterialDef>> =>
+      Object.fromEntries(await readMaterialAssets(requireProject())),
 
-    createMaterial: (_event, name: string, material: MaterialDef): Promise<string> => {
+    createMaterial: (_event, name: string, material: MaterialDef): Promise<AssetId> => {
       return createMaterialAsset(requireProject(), name, conformMaterial(material));
     },
 
     readPrefabs: async (): Promise<Record<string, string>> => {
       const prefabs = await readPrefabAssets(requireProject());
-      return Object.fromEntries(Object.entries(prefabs).map(([id, prefab]) => [id, jsonOf(prefab)]));
+      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefab)]));
     },
 
-    createPrefab: (_event, name: string, prefabJson: string, assetId?: string): Promise<string> => {
+    createPrefab: (_event, name: string, prefabJson: string, assetId?: AssetId): Promise<AssetId> => {
       // `deserializePrefab` rather than `conform`, and the difference is who
       // wrote the data. A prefab has been read off the disk, possibly written
       // by a build that knew a component type this one does not, and the
       // migration is the one repair that keeps such a type instead of
       // inventing a shape for it. Conforming it would drop the author's work
       // on the round trip.
-      return createPrefabAsset(requireProject(), name, deserializePrefab(prefabJson), assetId);
+      //
+      // The id is handed to it as well, which is where a script that calls the
+      // bridge with an `assetId` that is none is refused.
+      return createPrefabAsset(requireProject(), name, deserializePrefab(prefabJson, assetId), assetId);
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
@@ -523,10 +528,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return savePrefabAsset(requireProject(), assetPath, deserializePrefab(prefabJson));
     },
 
-    readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
-      readPhysicsMaterialAssets(requireProject()),
+    readPhysicsMaterials: async (): Promise<Record<string, PhysicsMaterialDef>> =>
+      Object.fromEntries(await readPhysicsMaterialAssets(requireProject())),
 
-    createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<string> =>
+    createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<AssetId> =>
       createPhysicsMaterialAsset(requireProject(), name, conformPhysicsMaterial(material)),
 
     savePhysicsMaterial: (_event, path: string, material: PhysicsMaterialDef): Promise<void> =>

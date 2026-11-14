@@ -7,6 +7,7 @@ import {
   createPrefabInstance,
   entityWorldMatrixPath,
   expandPrefabs,
+  fixedId,
   instancedId,
   jointEnds,
   physicsBodies,
@@ -24,6 +25,7 @@ import { nest, prefabWith, sceneWith } from './fixtures';
 
 const withRigidBody = (name: string) => createEntity(name, [createComponent('rigidbody')]);
 const withCollider = (name: string) => createEntity(name, [createComponent('collider')]);
+const PREFAB = fixedId('asset', 'prefab-1');
 
 /**
  * A, a body, carrying B and B's child C; under A, D with a body and a collider
@@ -61,12 +63,10 @@ describe('physicsBodies', () => {
     const crate = withCollider('Crate');
     const prefab = prefabWith('Crate', [crate], crate.entity.id);
     const cart = withRigidBody('Cart');
-    const placed = createEntity('Placed', [createPrefabInstance('prefab-1')]);
+    const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), {
-      get: (id) => (id === 'prefab-1' ? prefab : undefined),
-    });
+    const { scene } = expandPrefabs(sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     // The copy names the entity that placed it as its parent, which does not
     // name it back: a walk down from the cart would miss it.
@@ -121,12 +121,10 @@ describe('bodyOf', () => {
     const crate = withCollider('Crate');
     const prefab = prefabWith('Crate', [crate], crate.entity.id);
     const cart = withRigidBody('Cart');
-    const placed = createEntity('Placed', [createPrefabInstance('prefab-1')]);
+    const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), {
-      get: (id) => (id === 'prefab-1' ? prefab : undefined),
-    });
+    const { scene } = expandPrefabs(sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     expect(bodyOf(scene, instancedId(placed.entity.id, crate.entity.id))).toBe(cart.entity.id);
   });

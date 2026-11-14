@@ -50,6 +50,7 @@ const doc = () => useDocumentStore.getState();
 const scene = () => useDocumentStore.getState().scene;
 const dirty = () => selectDirty(useDocumentStore.getState());
 const selection = () => useEditorStore.getState().selection;
+const CLIP = fixedId('asset', 'clip');
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -75,7 +76,7 @@ describe('what the document refuses to take', () => {
     // so the disposed slider took one more reading from an element no longer in
     // the layout — width zero — and mapped the pointer with a division of zero
     // by zero.
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(CLIP);
     const component = template.components[0] as AudioSourceComponent;
     const entityId = addEntity(template);
 
@@ -91,7 +92,7 @@ describe('what the document refuses to take', () => {
   it('leaves every ordinary number alone, including zero and the negatives', () => {
     // The guard must be about *finiteness* and nothing else. A refusal that also
     // caught 0 would make half the fields in the inspector unusable.
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(CLIP);
     const component = template.components[0] as AudioSourceComponent;
     const entityId = addEntity(template);
 
@@ -774,7 +775,7 @@ describe('revision counters', () => {
 
 describe('components that cannot sit together', () => {
   it('refuses a mesh on an entity already drawing a model', () => {
-    const model = createModelEntity('asset', 'Chair');
+    const model = createModelEntity(fixedId('asset', 'chair'), 'Chair');
     addEntity(model);
 
     addComponentWithDependencies(model.entity.id, 'mesh');
@@ -858,7 +859,7 @@ describe('the companions a player controller brings', () => {
  * a body whose colliders are on its children has one already: it rides them.
  */
 describe('the companions a rigid body brings', () => {
-  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+  afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** An empty entity "Cart", in the document, with these under it. */
   function cartOver(...children: ReturnType<typeof createEntity>[]): string {
@@ -901,8 +902,11 @@ describe('the companions a rigid body brings', () => {
 
   it('sees the colliders inside a prefab placed under it', () => {
     const crate = withCollider();
-    useAssetStore.setState({ prefabs: { crate: prefabWith('Crate', [crate], crate.entity.id) } });
-    const cart = cartOver(createEntity('Crate', [createPrefabInstance('crate')]));
+    const CRATE = fixedId('asset', 'crate');
+    useAssetStore.setState({
+      prefabs: new Map([[CRATE, { ...prefabWith('Crate', [crate], crate.entity.id), id: CRATE }]]),
+    });
+    const cart = cartOver(createEntity('Crate', [createPrefabInstance(CRATE)]));
 
     addComponentWithDependencies(cart, 'rigidbody');
 
@@ -950,7 +954,7 @@ describe('the companions a joint brings', () => {
  * prefab expansion already does.
  */
 describe('references to the entities copied with them', () => {
-  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+  afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** A Frame, and a Door jointed to it. */
   function doorway(): { frame: string; door: string } {
@@ -984,8 +988,9 @@ describe('references to the entities copied with them', () => {
 
   it("a script's entity property follows the copy too", () => {
     const turret = addEntity(createEntity('Turret'));
+    const AIM = fixedId('asset', 'aim');
     const brain = addEntity(
-      createEntity('Brain', [{ ...createComponent('script'), assetId: 'aim', props: { target: turret } }]),
+      createEntity('Brain', [{ ...createComponent('script'), assetId: AIM, props: { target: turret } }]),
       turret,
     );
 
@@ -1005,8 +1010,13 @@ describe('references to the entities copied with them', () => {
     ]);
     frame.entity.children = [door.entity.id];
     door.entity.parent = frame.entity.id;
-    useAssetStore.setState({ prefabs: { doorway: prefabWith('Doorway', [frame, door], frame.entity.id) } });
-    const host = addEntity(createEntity('Doorway', [createPrefabInstance('doorway')]));
+    const DOORWAY = fixedId('asset', 'doorway');
+    useAssetStore.setState({
+      prefabs: new Map([
+        [DOORWAY, { ...prefabWith('Doorway', [frame, door], frame.entity.id), id: DOORWAY }],
+      ]),
+    });
+    const host = addEntity(createEntity('Doorway', [createPrefabInstance(DOORWAY)]));
 
     unpackPrefabInstance(host);
 

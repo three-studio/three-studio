@@ -1,3 +1,4 @@
+import type { AssetId } from '@three-studio/core';
 import type { AssetResolver } from '../assets/AssetResolver';
 import { AudioClipCache, type ClipLoader } from './AudioClipCache';
 import { isStopped, type AudioContextLike, type AudioNodeLike } from './AudioContextLike';
@@ -88,33 +89,34 @@ export class AudioEngine {
    */
   play(request: PlayRequest): VoiceHandle {
     const id = this.nextId++;
-    if (this.disposed) return failedVoice(id, request.assetId);
+    const { assetId } = request;
+    if (this.disposed) return failedVoice(id, assetId);
 
-    if (request.assetId === '') {
+    if (assetId === '') {
       // Not a warning. A source with no clip yet is the normal state of one that
       // was just added, and warning per frame about an empty field is noise.
-      return failedVoice(id, request.assetId);
+      return failedVoice(id, assetId);
     }
 
     // Asked before anything is allocated: a refused sound must cost nothing at
     // all, which is the whole reason the pool answers a question instead of
     // being handed a voice to reject.
-    if (!this.pool.admit(request.priority ?? 128)) return failedVoice(id, request.assetId);
+    if (!this.pool.admit(request.priority ?? 128)) return failedVoice(id, assetId);
 
     const voice = new Voice(
       id,
       this.context,
       this.mixer,
       this.cache,
-      request,
-      this.assetGain(request.assetId),
+      { ...request, assetId },
+      this.assetGain(assetId),
     );
     this.pool.add(voice);
     return voice;
   }
 
   /** Decodes a clip ahead of the first play, and keeps it. */
-  async preload(assetId: string): Promise<void> {
+  async preload(assetId: AssetId | ''): Promise<void> {
     if (this.disposed || assetId === '') return;
     const held = this.cache.acquire(assetId);
     await held.clip;
@@ -124,7 +126,7 @@ export class AudioEngine {
   }
 
   /** Forgets a decoded clip, for a file replaced under an id that did not change. */
-  invalidate(assetId: string): void {
+  invalidate(assetId: AssetId): void {
     this.cache.invalidate(assetId);
   }
 
@@ -232,7 +234,7 @@ export class AudioEngine {
     this.mixer.dispose();
   }
 
-  private assetGain(assetId: string): number {
+  private assetGain(assetId: AssetId): number {
     const settings = this.resolver.settings?.(assetId);
     return settings?.kind === 'audio' ? settings.gain : 1;
   }

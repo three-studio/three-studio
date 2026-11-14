@@ -8,7 +8,9 @@ import {
   createMeshEntity,
   defaultSettings,
   findComponent,
+  fixedId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
   type AssetSettings,
 } from '@three-studio/core';
@@ -182,8 +184,14 @@ function generatingColliders(): AssetSettings {
   return { ...settings, generateColliders: true };
 }
 
+const CRATE = fixedId('asset', 'crate');
+const CHIME = fixedId('asset', 'chime');
+const CHAIR = fixedId('asset', 'chair');
+const RUINS = fixedId('asset', 'ruins');
+const BRICK = fixedId('asset', 'brick');
+
 describe('a drop on the view', () => {
-  const entry = (id: string, kind: AssetKind, name: string): AssetEntry => ({
+  const entry = (id: AssetId, kind: AssetKind, name: string): AssetEntry => ({
     id,
     name,
     kind,
@@ -203,26 +211,26 @@ describe('a drop on the view', () => {
       manifest: {
         version: ASSET_MANIFEST_VERSION,
         assets: [
-          entry('crate', 'prefab', 'Crate'),
-          entry('chime', 'audio', 'Chime'),
-          entry('chair', 'model', 'Chair'),
-          { ...entry('ruins', 'model', 'Ruins'), settings: generatingColliders() },
-          entry('brick', 'texture', 'Brick'),
+          entry(CRATE, 'prefab', 'Crate'),
+          entry(CHIME, 'audio', 'Chime'),
+          entry(CHAIR, 'model', 'Chair'),
+          { ...entry(RUINS, 'model', 'Ruins'), settings: generatingColliders() },
+          entry(BRICK, 'texture', 'Brick'),
         ],
         folders: [],
       },
-      prefabs: { crate: prefabWith('Crate', [inside], inside.entity.id) },
+      prefabs: new Map([[CRATE, { ...prefabWith('Crate', [inside], inside.entity.id), id: CRATE }]]),
     });
   });
 
   it('places a prefab as an instance where it was let go, selected inside its undo step', () => {
     const before = addEntity(createEntity('Before'));
 
-    placeDroppedAsset('crate', [1, 2, 3]);
+    placeDroppedAsset(CRATE, [1, 2, 3]);
 
     const [id] = selection();
     expect(id).not.toBe(before);
-    expect(findComponent(doc().scene, id!, 'prefabInstance')?.assetId).toBe('crate');
+    expect(findComponent(doc().scene, id!, 'prefabInstance')?.assetId).toBe(CRATE);
     expect(assertDefined(doc().scene.entities.get(id!), 'the placed instance').transform.position).toEqual([1, 2, 3]);
 
     doc().undo();
@@ -236,19 +244,19 @@ describe('a drop on the view', () => {
   });
 
   it('places a sound as an audio source, and a model as a model', () => {
-    placeDroppedAsset('chime', [0, 1, 0]);
+    placeDroppedAsset(CHIME, [0, 1, 0]);
     const [sound] = selection();
-    placeDroppedAsset('chair', [4, 0, 0]);
+    placeDroppedAsset(CHAIR, [4, 0, 0]);
     const [model] = selection();
 
-    expect(findComponent(doc().scene, sound!, 'audioSource')?.assetId).toBe('chime');
+    expect(findComponent(doc().scene, sound!, 'audioSource')?.assetId).toBe(CHIME);
     expect(assertDefined(doc().scene.entities.get(sound!), 'the sound').transform.position).toEqual([0, 1, 0]);
-    expect(findComponent(doc().scene, model!, 'model')?.assetId).toBe('chair');
+    expect(findComponent(doc().scene, model!, 'model')?.assetId).toBe(CHAIR);
     expect(assertDefined(doc().scene.entities.get(model!), 'the model').transform.position).toEqual([4, 0, 0]);
   });
 
   it('places a model with the Collider its import settings ask for, in one undo step', () => {
-    placeDroppedAsset('ruins', [0, 0, 0]);
+    placeDroppedAsset(RUINS, [0, 0, 0]);
     const [ruins] = selection();
 
     // The one Add Component gives a model: a mesh built from its triangles.
@@ -260,10 +268,10 @@ describe('a drop on the view', () => {
   });
 
   it('places a model with none when its settings do not ask', () => {
-    placeDroppedAsset('chair', [0, 0, 0]);
+    placeDroppedAsset(CHAIR, [0, 0, 0]);
     const [chair] = selection();
 
-    expect(findComponent(doc().scene, chair!, 'model')?.assetId).toBe('chair');
+    expect(findComponent(doc().scene, chair!, 'model')?.assetId).toBe(CHAIR);
     expect(findComponent(doc().scene, chair!, 'collider')).toBeUndefined();
   });
 
@@ -272,7 +280,7 @@ describe('a drop on the view', () => {
     // could never load anything, and said nothing about why.
     const revision = doc().revision;
 
-    placeDroppedAsset('brick', [0, 0, 0]);
+    placeDroppedAsset(BRICK, [0, 0, 0]);
 
     expect(doc().scene.rootOrder).toEqual([]);
     expect(doc().revision).toBe(revision);
@@ -283,8 +291,8 @@ describe('a drop on the view', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     play();
 
-    placeDroppedAsset('crate', [1, 2, 3]);
-    placeDroppedAsset('chair', [1, 2, 3]);
+    placeDroppedAsset(CRATE, [1, 2, 3]);
+    placeDroppedAsset(CHAIR, [1, 2, 3]);
 
     expect(doc().scene.rootOrder).toEqual([]);
     expect(toasts()).toHaveLength(1);

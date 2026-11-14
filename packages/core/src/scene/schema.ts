@@ -32,7 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
-import type { SceneId } from '../ids';
+import type { AssetId, SceneId } from '../ids';
 import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
@@ -277,7 +277,7 @@ export interface EnvironmentDef {
   backgroundMode: BackgroundMode;
   background: Hex;
   /** Asset id of an equirectangular image — HDR, EXR or PNG. */
-  backgroundTexture: string | null;
+  backgroundTexture: AssetId | null;
   /**
    * How much of the background's own detail is thrown away, 0 to 1.
    *
@@ -300,7 +300,7 @@ export interface EnvironmentDef {
    * resolution anyway, so only the background ever needs it.
    */
   environmentMode: EnvironmentMode;
-  environmentTexture: string | null;
+  environmentTexture: AssetId | null;
   environmentIntensity: number;
 
   /**

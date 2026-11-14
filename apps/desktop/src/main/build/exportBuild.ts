@@ -9,6 +9,7 @@ import {
   jsonOf,
   normalizeBasePath,
   type AssetEntry,
+  type AssetId,
   type BuildProfile,
   type BuildProfiles,
   type ExportProgress,
@@ -294,7 +295,7 @@ async function planExport(
   const shippedPrefabs = pick(prefabs, referenced);
   for (const [label, host] of [
     ...scenes.map(({ entry, scene }) => [`Scene "${entry.name}"`, scene] as const),
-    ...Object.entries(shippedPrefabs).map(([id, prefab]) => [`Prefab ${id}`, prefab] as const),
+    ...[...shippedPrefabs].map(([id, prefab]) => [`Prefab ${id}`, prefab] as const),
   ]) {
     const unknown = unknownComponentTypes(host);
     if (unknown.length > 0) {
@@ -359,8 +360,8 @@ async function planExport(
   };
 }
 
-function union(lists: readonly (readonly string[])[]): Set<string> {
-  const all = new Set<string>();
+function union(lists: readonly (readonly AssetId[])[]): Set<AssetId> {
+  const all = new Set<AssetId>();
   for (const list of lists) for (const id of list) all.add(id);
   return all;
 }
@@ -370,13 +371,14 @@ function describe(cause: unknown): string {
 }
 
 /**
- * The entries of `source` named in `ids`.
- *
- * Own keys only, and defined rather than assigned: an id is read off a sidecar,
- * and one spelled `__proto__` would otherwise become the object's prototype.
+ * The entries of `source` named in `ids`: a library is read by id, and an id the
+ * library does not hold is not one of them.
  */
-function pick<T>(source: Readonly<Record<string, T>>, ids: readonly string[]): Record<string, T> {
-  return Object.fromEntries(
-    ids.filter((id) => Object.hasOwn(source, id)).map((id) => [id, source[id]!]),
-  );
+function pick<T>(source: ReadonlyMap<AssetId, T>, ids: readonly AssetId[]): Map<AssetId, T> {
+  const picked = new Map<AssetId, T>();
+  for (const id of ids) {
+    const held = source.get(id);
+    if (held !== undefined) picked.set(id, held);
+  }
+  return picked;
 }

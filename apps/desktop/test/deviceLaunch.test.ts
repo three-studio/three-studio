@@ -8,6 +8,7 @@ import {
   createMeshEntity,
   deserializeScene,
   encodeLaunchSnapshot,
+  fixedId,
   insertEntity,
   type ReceivedLaunch,
 } from '@three-studio/core';
@@ -31,6 +32,8 @@ export default class Spin extends Behaviour {
 }
 `;
 
+const TEX_BRICK = fixedId('asset', 'tex-brick');
+
 /** A project with a texture and, unless asked otherwise, a script. */
 async function project(script: string | null = SCRIPT): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-launch-'));
@@ -41,7 +44,7 @@ async function project(script: string | null = SCRIPT): Promise<string> {
     `${texture}.meta.json`,
     JSON.stringify({
       version: 1,
-      id: 'tex-brick',
+      id: TEX_BRICK,
       kind: 'texture',
       importedAt: 1,
       hash: 'h',
@@ -72,9 +75,9 @@ async function snapshot(root: string): Promise<ReceivedLaunch> {
     encodeLaunchSnapshot({
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: { id: entry!.id, name: entry!.name, scene },
-      materials: {},
-      physicsMaterials: {},
-      prefabs: {},
+      materials: new Map(),
+      physicsMaterials: new Map(),
+      prefabs: new Map(),
       rendering: settings.rendering,
       physics: settings.physics,
       loadingScene: settings.loadingScene,
@@ -123,7 +126,7 @@ describe('a launch', () => {
     const scanned = (await scanAssets(root)).assets;
     const script = scanned.find((asset) => asset.kind === 'script');
     expect(script).toBeDefined();
-    expect(launch.assets.get('tex-brick')?.path).toBe(`${ASSETS_DIR}/textures/brick.png`);
+    expect(launch.assets.get(TEX_BRICK)?.path).toBe(`${ASSETS_DIR}/textures/brick.png`);
     expect(launch.assets.has(script!.id)).toBe(false);
     expect([...launch.assets.keys()].sort()).toEqual(
       scanned.filter((asset) => asset.kind !== 'script').map((asset) => asset.id).sort(),

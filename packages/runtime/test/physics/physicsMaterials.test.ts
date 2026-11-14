@@ -2,6 +2,8 @@ import {
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
+  type AssetId,
   type CombineRule,
   type EntityTemplate,
   type PhysicsMaterialDef,
@@ -29,15 +31,21 @@ import {
 beforeAll(standInForTheBrowser);
 afterAll(takeTheBrowserBack);
 
-const LIBRARY: Record<string, PhysicsMaterialDef> = {
-  grip: { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' },
-  ice: { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' },
-  rubber: { ...createPhysicsMaterial(), restitution: 1, restitutionCombine: 'max' },
-  dead: { ...createPhysicsMaterial(), restitution: 0, restitutionCombine: 'min' },
-};
+const GRIP = fixedId('asset', 'grip');
+const ICE = fixedId('asset', 'ice');
+const RUBBER = fixedId('asset', 'rubber');
+const DEAD = fixedId('asset', 'dead');
+const GONE = fixedId('asset', 'gone');
+
+const LIBRARY: ReadonlyMap<AssetId, PhysicsMaterialDef> = new Map([
+  [GRIP, { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' }],
+  [ICE, { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' }],
+  [RUBBER, { ...createPhysicsMaterial(), restitution: 1, restitutionCombine: 'max' }],
+  [DEAD, { ...createPhysicsMaterial(), restitution: 0, restitutionCombine: 'min' }],
+]);
 
 /** A box on the slope, of its own friction 1 by this rule, linking this asset. */
-function boxOnSlope(frictionCombine: CombineRule, z: number, materialId: string): EntityTemplate {
+function boxOnSlope(frictionCombine: CombineRule, z: number, materialId: AssetId): EntityTemplate {
   const box = withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
   const collider = colliderOf(box);
   collider.material = { ...collider.material, friction: 1, frictionCombine };
@@ -55,8 +63,8 @@ function slope(): EntityTemplate {
 describe('a collider linked to a physics material', () => {
   it('a box grips or slides by the physics material it links, whatever its own values say', async () => {
     // Alone, Minimum slides and Maximum holds.
-    const held = boxOnSlope('min', 1.5, 'grip');
-    const slid = boxOnSlope('max', -1.5, 'ice');
+    const held = boxOnSlope('min', 1.5, GRIP);
+    const slid = boxOnSlope('max', -1.5, ICE);
     const rig = await physicsRig([slope(), held, slid], undefined, LIBRARY);
 
     rig.run(0.5);
@@ -71,7 +79,7 @@ describe('a collider linked to a physics material', () => {
   });
 
   it('a ball bounces by the physics material it links', async () => {
-    const peakAfterLanding = async (restitutionCombine: CombineRule, materialId: string) => {
+    const peakAfterLanding = async (restitutionCombine: CombineRule, materialId: AssetId) => {
       const ball = withBody('sphere', [0, 2.5, 0]);
       const collider = colliderOf(ball);
       collider.material = { ...collider.material, restitution: 1, restitutionCombine };
@@ -88,12 +96,12 @@ describe('a collider linked to a physics material', () => {
     };
 
     // Alone, Minimum gives back nothing and Maximum all of it.
-    expect(await peakAfterLanding('min', 'rubber')).toBeGreaterThan(2);
-    expect(await peakAfterLanding('max', 'dead')).toBeLessThan(0.6);
+    expect(await peakAfterLanding('min', RUBBER)).toBeGreaterThan(2);
+    expect(await peakAfterLanding('max', DEAD)).toBeLessThan(0.6);
   });
 
   it('a collider whose physics material is not in the project uses its own values, and says so once', async () => {
-    const puck = boxOnSlope('max', 0, 'gone');
+    const puck = boxOnSlope('max', 0, GONE);
     puck.entity.name = 'Puck';
     const rig = await physicsRig([slope(), puck], undefined, LIBRARY);
 
@@ -108,7 +116,7 @@ describe('a collider linked to a physics material', () => {
 
     // With physics off the line would be about the host, not the scene.
     const off = await Engine.create({
-      scene: sceneWith([slope(), boxOnSlope('max', 0, 'gone')]),
+      scene: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
