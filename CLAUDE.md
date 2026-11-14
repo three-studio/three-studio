@@ -56,6 +56,21 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   module. Les classes d'un bundle de scripts appartiennent à ce bundle et passent au moteur en paramètre.
   Une racine n'accepte aucune mise à jour à chaud : en dev, une édition sous ce qu'elle active recharge la
   fenêtre. `test/architecture.test.ts` vérifie les racines.
+- **Un module est un dossier, et le noyau ne le nomme pas.** `modules/<id>/` contient un `package.json`
+  (`@three-studio/<id>`, son manifeste : ses modules et ses paquets tiers y sont déclarés) et une partie
+  par couche où il a quelque chose, `src/core`, `src/runtime`, `src/editor`, chacune avec un `index.ts`
+  qui exporte son `activate` et s'importe par `@three-studio/<id>/<partie>`. Une partie n'atteint le noyau
+  que par les points d'entrée de ses paquets (`@three-studio/core`, jamais un chemin profond), à sa couche
+  ou en dessous ; ses propres parties plus basses et celles d'un module déclaré par leur chemin de paquet ;
+  un import relatif ne sort pas de sa partie. Un type de composant s'ajoute au document depuis le module
+  (`declare module '@three-studio/core' { interface ComponentTypes { … } }`) et se décrit par un schéma
+  (`defineComponent`), d'où viennent son type, sa fabrique, son décodeur, ses références et sa pane. Aucun
+  fichier hors du module ne l'importe ni ne nomme son id ou celui de ses types, sauf les racines de
+  composition, qui activent chaque partie de leurs couches après celle du noyau. Ajouter ou retirer un
+  module, c'est son dossier et ces lignes-là : `npm run typecheck` compile aussi le noyau seul
+  (`tsconfig.kernel.json`), et un composant dont le module manque reste dans la scène tel qu'il a été
+  trouvé. `test/architecture.test.ts` vérifie ces règles, et aucune assertion de type n'est admise dans un
+  module.
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
 - `npm run typecheck && npm test` doit être au vert à chaque commit.
