@@ -6,6 +6,15 @@
  * warnings — and is written once, here.
  */
 import { isRecord } from '../conform';
+import {
+  checks,
+  invalid,
+  listOf,
+  RecordReader,
+  type DecodePath,
+  type Decoded,
+  type Diagnostic,
+} from '../decoded';
 
 /** The layer every collider starts on, and the one a collider naming a removed layer collides as. */
 export const DEFAULT_LAYER_ID = 'default';
@@ -100,8 +109,59 @@ function layerOf(layers: readonly CollisionLayer[], id: string): CollisionLayer 
 }
 
 /**
- * A table that arrived from elsewhere — a project file, a settings patch, a
- * launch — read entry by entry.
+ * Why a table breaks the rules every table `conformLayers` makes keeps, or
+ * `null`: Default first, at most sixteen, each id once and never empty, and
+ * each layer ignoring only layers of the table.
+ */
+function layerTableProblem(layers: readonly CollisionLayer[]): string | null {
+  const [first] = layers;
+  if (first?.id !== DEFAULT_LAYER_ID) return `expected "${DEFAULT_LAYER_ID}" first, found ${first === undefined ? 'no layer' : `"${first.id}"`}`;
+  if (layers.length > MAX_COLLISION_LAYERS) return `expected at most ${MAX_COLLISION_LAYERS} layers, found ${layers.length}`;
+  const ids = new Set<string>();
+  for (const layer of layers) {
+    if (layer.id === '') return 'a layer\'s id is empty';
+    if (ids.has(layer.id)) return `"${layer.id}" is the id of two layers`;
+    ids.add(layer.id);
+  }
+  for (const layer of layers) {
+    const stranger = layer.ignores.find((other) => !ids.has(other));
+    if (stranger !== undefined) return `"${layer.id}" ignores "${stranger}", which is no layer of the table`;
+  }
+  return null;
+}
+
+function decodeLayer(value: unknown, path: DecodePath): Decoded<CollisionLayer> {
+  const layer = new RecordReader(value, path);
+  return layer.done({
+    id: layer.read('id', checks.string),
+    name: layer.read('name', checks.string),
+    ignores: layer.read('ignores', listOf(checks.string)),
+  });
+}
+
+/**
+ * The table of a project file, decoded: each layer field by field, then the
+ * table held to the rules `conformLayers` makes it keep — so a table the
+ * editor wrote always reads, and one a hand broke is refused, where
+ * `conformLayers` would have mended it into a table nobody chose.
+ */
+export function decodeLayers(value: unknown, path: DecodePath): Decoded<CollisionLayer[]> {
+  if (!Array.isArray(value)) return { ok: false, diagnostics: [invalid(path, 'a list of layers', value)] };
+  const layers: CollisionLayer[] = [];
+  const diagnostics: Diagnostic[] = [];
+  value.forEach((entry: unknown, index) => {
+    const layer = decodeLayer(entry, [...path, index]);
+    if (layer.ok) layers.push(layer.value);
+    else diagnostics.push(...layer.diagnostics);
+  });
+  if (diagnostics.length > 0) return { ok: false, diagnostics };
+  const problem = layerTableProblem(layers);
+  return problem === null ? { ok: true, value: layers } : { ok: false, diagnostics: [{ code: 'layers.invalid', message: problem, path }] };
+}
+
+/**
+ * A table that arrived from elsewhere — a settings patch, a launch — read
+ * entry by entry.
  *
  * Not through `conform`, which takes an array as a tuple of the model's
  * length: a table of three sent where the model held one came back as Default

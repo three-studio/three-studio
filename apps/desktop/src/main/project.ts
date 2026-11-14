@@ -9,16 +9,15 @@ import {
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
   assetKindInfo,
-  conformPhysicsSettings,
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  decodeProjectFile,
   findScene,
+  formatDiagnostics,
   isRecord,
   isSceneId,
-  normalizeBuildProfiles,
-  resolveScene,
   safeFileName,
   sceneName,
   serializeScene,
@@ -358,15 +357,26 @@ export function updateProject(
   return result;
 }
 
-/** The project file, carried forward and with anything a newer format added filled in. */
+/**
+ * The project file, decoded. Refused with its diagnostics — the file, then each
+ * field and its fault — when it is of another format or malformed.
+ */
 export async function readProject(projectPath: string): Promise<ProjectFile> {
   return readProjectFile(projectPath);
 }
 
+/**
+ * Reads `project.json` and decodes it, and does nothing else: nothing is filled
+ * in, converted or written back. Every door to a project comes through here
+ * first — opening it, saving or reading a scene, changing its settings — so an
+ * older project is refused before any scene of it is read, and refused the same
+ * way whichever door it was.
+ */
 async function readProjectFile(projectPath: string): Promise<ProjectFile> {
+  const file = join(projectPath, PROJECT_FILE_NAME);
   let raw: string;
   try {
-    raw = await readFile(join(projectPath, PROJECT_FILE_NAME), 'utf8');
+    raw = await readFile(file, 'utf8');
   } catch {
     throw new ProjectError(`No ${PROJECT_FILE_NAME} found in "${projectPath}".`);
   }
@@ -378,111 +388,9 @@ async function readProjectFile(projectPath: string): Promise<ProjectFile> {
     throw new ProjectError(`${PROJECT_FILE_NAME} is not valid JSON.`);
   }
 
-  const project = parsed as Partial<ProjectFile>;
-  // The version is the whole of the check. `scenes` was required here too, and
-  // requiring it is exactly what made a project whose list had gone refuse to
-  // open: the list is the `scenes/` directory now, and an empty one is a
-  // project with no scenes rather than a file that is malformed.
-  if (typeof project.version !== 'number') {
-    throw new ProjectError(`${PROJECT_FILE_NAME} is missing required fields.`);
-  }
-  // The one refusal left, and the only one a version number can justify: a
-  // format written after this build was made says nothing about what its
-  // fields mean, so reading it would be guessing. Everything older is carried
-  // forward below.
-  if (project.version > PROJECT_FORMAT_VERSION) {
-    throw new ProjectError(
-      `This project was created by a newer version of the editor (format ${project.version}; this build reads ${PROJECT_FORMAT_VERSION}). Update Three Studio to open it.`,
-    );
-  }
-
-  // Filled from each section's own factory rather than demanded, which is what
-  // makes adding a setting a change to one function instead of a migration.
-  // See the format rules in `README.md`.
-  const settings = (project.settings ?? {}) as Partial<ProjectFile['settings']>;
-  settings.rendering = { ...createRenderingSettings(), ...settings.rendering };
-  // Read against its factory rather than spread over it: physics data keeps no
-  // field it does not know, and the layer table is a list read entry by entry,
-  // so a hand-broken one reaches neither the editor nor a running game.
-  settings.physics = conformPhysicsSettings(settings.physics);
-  // Not `??=`: a profile written before a build option existed is missing that
-  // one field, not the whole section, and only the profiles themselves know
-  // which. `normalizeBuildProfiles` fills each from the factory.
-  settings.build = normalizeBuildProfiles(settings.build, project.name ?? 'Project');
-  settings.loadingScene ??= null;
-  (parsed as ProjectFile).settings = settings as ProjectFile['settings'];
-
-  // The list this file used to carry. Dropped from the object, not from the
-  // file: reading a project must not rewrite it, so the key leaves `project.json`
-  // the next time something writes for a reason of its own. Until then it is a
-  // stale copy of the directory that nothing reads — which is what it always
-  // was, and why it is going.
-  delete (parsed as { scenes?: unknown }).scenes;
-
-  // Migrated after the fill, so a step only has to translate the meanings it
-  // recognises instead of also defending against a section that did not exist
-  // when the file was written. The walk is inside the branch because only an
-  // old file should pay for it: `saveScene` and `readSceneFile` come through
-  // here on every save, and a current project must not read a directory to be
-  // told it is already current. An old one walks twice on open — once here,
-  // once in `openProject` — which `scenes.index.json` makes a warm `stat` each.
-  // Gated on the format it translates rather than on the current one: format 3
-  // changed no reference, and a format 2 project would walk its scenes on every
-  // read until something wrote it, to translate references that are ids already.
-  if (project.version < 2) {
-    adoptSceneIds(parsed as ProjectFile, await discoverScenes(projectPath));
-  }
-  // Stamped, so the object says which format it now conforms to. Nothing is
-  // written back: reading a project must not dirty it in version control, and
-  // the upgraded form reaches the file the next time something writes it for a
-  // reason of its own — the same route the `scenes` key above takes out.
-  (parsed as ProjectFile).version = PROJECT_FORMAT_VERSION;
-
-  return parsed as ProjectFile;
-}
-
-/**
- * Format 1 → 2: every scene reference becomes the id of the scene it named.
- *
- * Format 1 addressed the start scene by path and the loading scene by name,
- * and this build reads both as ids. That is why the old file was refused
- * outright — "create it again" — rather than misread: opened as it stands, a
- * format 1 project starts on no scene, shows no loading scene, and exports a
- * build missing every level, with nothing tying any of it to the upgrade.
- * Refusing was the safe half of the answer; this is the other half.
- *
- * The registry that file carried in `scenes` is not consulted. It was a copy
- * of `scenes/` that could already be stale on the day it was written — the
- * reason it is gone — so the disk answers instead, and a scene added or
- * removed in the Finder since migrates as correctly as one that never moved.
- */
-function adoptSceneIds(project: ProjectFile, scenes: readonly SceneEntry[]): void {
-  const { settings } = project;
-  project.startScene = sceneIdFor(scenes, project.startScene);
-  if (settings.loadingScene !== null) {
-    settings.loadingScene = sceneIdFor(scenes, settings.loadingScene);
-  }
-  for (const profile of Object.values(settings.build.profiles)) {
-    profile.scenes = profile.scenes.map((reference) => sceneIdFor(scenes, reference));
-  }
-}
-
-/**
- * The id of the scene an old reference named, or the reference left untouched.
- *
- * Path first, because that is what `startScene` held and a path is the one
- * form that cannot be confused with another scene's; then `resolveScene`,
- * which takes an id ahead of a name, so a reference that already carries one
- * survives being read a second time.
- *
- * A reference that resolves to nothing is returned exactly as it was found.
- * The file it names can have been deleted in the Finder, and `openProject`
- * falls back to the first scene; throwing here would put back the failure this
- * whole function exists to remove.
- */
-function sceneIdFor(scenes: readonly SceneEntry[], reference: SceneId): SceneId {
-  const entry = scenes.find((scene) => scene.path === reference) ?? resolveScene(scenes, reference);
-  return entry?.id ?? reference;
+  const decoded = decodeProjectFile(parsed);
+  if (!decoded.ok) throw new ProjectError(formatDiagnostics(file, decoded.diagnostics));
+  return decoded.value;
 }
 
 async function finalize(

@@ -56,9 +56,9 @@ export {
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
+  decodeProjectFile,
   findScene,
   normalizeBasePath,
-  normalizeBuildProfiles,
   resolveScene,
   sceneName,
 } from './project/schema';
@@ -170,7 +170,7 @@ export { conditionHolds, planFields } from './fieldSchema';
 export type { FieldPlan, Infer, Schema, SchemaField, ShownWhen } from './fieldSchema';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
-export { checks, formatDiagnostics, nullable, oneOf, RecordReader, unwrap, versionRefusal } from './decoded';
+export { checks, formatDiagnostics, listOf, nullable, oneOf, RecordReader, unwrap, versionRefusal } from './decoded';
 export type { Check, DecodePath, Decoded, Diagnostic, DiagnosticCode, LeafChecks } from './decoded';
 
 export {

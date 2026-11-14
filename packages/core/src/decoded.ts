@@ -1,5 +1,15 @@
 import { isRecord, isUsableNumber } from './conform';
-import { fixedId, isAssetId, isComponentId, isEntityId, type AssetId, type ComponentId, type EntityId } from './ids';
+import {
+  fixedId,
+  isAssetId,
+  isComponentId,
+  isEntityId,
+  isSceneId,
+  type AssetId,
+  type ComponentId,
+  type EntityId,
+  type SceneId,
+} from './ids';
 import type { Hex, Vec2, Vec3 } from './scene/primitives';
 
 /*
@@ -28,9 +38,16 @@ export type DecodePath = readonly (string | number)[];
  *
  * - `format.version`: a file of another format, refused before anything else in it is read;
  * - `field.missing`, `field.invalid`, `field.unexpected`: a field absent, of the wrong kind, or none at all;
- * - `variant.unknown`: a union's `kind` that names none of its variants.
+ * - `variant.unknown`: a union's `kind` that names none of its variants;
+ * - `layers.invalid`: a collision layer table no editor writes.
  */
-export type DiagnosticCode = 'format.version' | 'field.missing' | 'field.invalid' | 'field.unexpected' | 'variant.unknown';
+export type DiagnosticCode =
+  | 'format.version'
+  | 'field.missing'
+  | 'field.invalid'
+  | 'field.unexpected'
+  | 'variant.unknown'
+  | 'layers.invalid';
 
 /** One fault in what was read. */
 export interface Diagnostic {
@@ -125,6 +142,7 @@ export interface LeafChecks {
   readonly entityId: Check<EntityId>;
   readonly componentId: Check<ComponentId>;
   readonly assetId: Check<AssetId>;
+  readonly sceneId: Check<SceneId>;
 }
 
 /**
@@ -145,6 +163,7 @@ export const checks: LeafChecks = {
   entityId: { expected: 'an entity id', is: isEntityId, standIn: fixedId('entity', '(refused)') },
   componentId: { expected: 'a component id', is: isComponentId, standIn: fixedId('component', '(refused)') },
   assetId: { expected: 'an asset id', is: isAssetId, standIn: fixedId('asset', '(refused)') },
+  sceneId: { expected: 'a scene id', is: isSceneId, standIn: fixedId('scene', '(refused)') },
 };
 
 /** A check that also takes `null`: an asset slot or an entity field with nothing chosen. */
@@ -153,6 +172,18 @@ export function nullable<T>(check: Check<T>): Check<T | null> {
     expected: `${check.expected} or null`,
     is: (value): value is T | null => value === null || check.is(value),
     standIn: null,
+  };
+}
+
+/**
+ * A check that takes a list whose every item `check` takes: a profile's
+ * scenes, an entity's children. A list refused is refused whole, where it sits.
+ */
+export function listOf<T>(check: Check<T>): Check<T[]> {
+  return {
+    expected: `a list, each item ${check.expected}`,
+    is: (value): value is T[] => Array.isArray(value) && value.every((item) => check.is(item)),
+    standIn: [],
   };
 }
 

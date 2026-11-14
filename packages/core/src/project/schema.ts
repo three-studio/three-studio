@@ -16,11 +16,12 @@
  * layout is the one place a reader goes for the truth, so what it can name it
  * points at instead.
  */
-import { assertDefined } from '../assert';
 import { conform, isRecord } from '../conform';
+import { PROJECT_FORMAT_VERSION } from '../constants';
+import { checks, listOf, nullable, oneOf, RecordReader, versionRefusal, type Decoded } from '../decoded';
 import { isSceneId, type SceneId } from '../ids';
 import type { Vec3 } from '../scene/schema';
-import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers';
+import { conformLayers, createDefaultLayer, decodeLayers, type CollisionLayer } from './layers';
 
 /**
  * One scene of a project, as it was found on disk.
@@ -250,9 +251,9 @@ export function createPhysicsSettings(): PhysicsSettings {
 }
 
 /**
- * Physics settings that arrived from elsewhere — a project file, a settings
- * patch, a launch — read against a model: the factory, or for a patch the
- * project's current settings, so a table the patch leaves out keeps its value.
+ * Physics settings that arrived from elsewhere — a settings patch, a launch —
+ * read against a model: the factory, or for a patch the project's current
+ * settings, so a table the patch leaves out keeps its value.
  *
  * `conform` reads gravity and the step; the layer table is read entry by entry
  * (`conformLayers`), since `conform` takes an array as a tuple.
@@ -337,30 +338,6 @@ export function createBuildProfiles(projectName: string): BuildProfiles {
 }
 
 /**
- * Fills profiles read off disk with the fields that did not exist when they
- * were written.
- *
- * The same shape as the settings sections above: through the type's own
- * factory, so adding a build option stays a change to `createBuildProfiles`
- * rather than a migration. A profile from before `basePath` gets `''`, which is
- * exactly the behaviour it was exported against.
- */
-export function normalizeBuildProfiles(
-  build: BuildProfiles | undefined,
-  projectName: string,
-): BuildProfiles {
-  const fresh = createBuildProfiles(projectName);
-  if (!build) return fresh;
-  const defaults = assertDefined(fresh.profiles[DEFAULT_BUILD_PROFILE_ID], 'the default build profile');
-  return {
-    active: build.active,
-    profiles: Object.fromEntries(
-      Object.entries(build.profiles).map(([id, profile]) => [id, { ...defaults, ...profile }]),
-    ),
-  };
-}
-
-/**
  * What `<base href>` will carry, or `''` when the page should get no tag.
  *
  * The trailing slash is not cosmetic: `/games/demo` resolves `assets/x.png` to
@@ -430,3 +407,82 @@ export const SCENES_DIR = 'scenes';
 export const SCENE_FILE_SUFFIX = '.scene.json';
 export const ASSETS_DIR = 'assets';
 export const CACHE_DIR = '.studio';
+
+/**
+ * `project.json`, decoded: every field the interfaces above name, of the kind
+ * they name, and nothing else.
+ *
+ * The version first, and alone: a project of another format is refused in one
+ * line, before anything else in it is read, so that an older project reads as
+ * older and not as broken in thirty places. Nothing is filled in and nothing
+ * converted — a setting added since the file was written is a field it lacks,
+ * and the format's version moved with it.
+ *
+ * Written by hand rather than as a schema: the settings are sections each with
+ * a page of their own in Project Settings, and the profiles a record keyed by
+ * id, which no field kind describes. Each section is read into a literal of its
+ * interface, so a setting added to an interface and not read here does not
+ * compile.
+ */
+export function decodeProjectFile(value: unknown): Decoded<ProjectFile> {
+  if (isRecord(value) && value['version'] !== PROJECT_FORMAT_VERSION) {
+    return versionRefusal(value['version'], PROJECT_FORMAT_VERSION);
+  }
+  const file = new RecordReader(value);
+  return file.done({
+    version: file.read('version', checks.number),
+    name: file.read('name', checks.string),
+    engineVersion: file.read('engineVersion', checks.string),
+    startScene: file.read('startScene', checks.sceneId),
+    settings: readSettings(file.record('settings')),
+  });
+}
+
+function readSettings(settings: RecordReader): ProjectSettings {
+  return {
+    loadingScene: settings.read('loadingScene', nullable(checks.sceneId)),
+    rendering: readRendering(settings.record('rendering')),
+    physics: readPhysics(settings.record('physics')),
+    build: readBuildProfiles(settings.record('build')),
+  };
+}
+
+function readRendering(rendering: RecordReader): RenderingSettings {
+  return {
+    forceWebGL: rendering.read('forceWebGL', checks.boolean),
+    antialias: rendering.read('antialias', checks.boolean),
+    maxPixelRatio: rendering.read('maxPixelRatio', checks.number),
+    shadows: rendering.read('shadows', checks.boolean),
+    shadowMapSize: rendering.read('shadowMapSize', checks.number),
+    exposure: rendering.read('exposure', checks.number),
+    batching: rendering.read('batching', checks.boolean),
+  };
+}
+
+function readPhysics(physics: RecordReader): PhysicsSettings {
+  return {
+    gravity: physics.read('gravity', checks.vec3),
+    fixedTimestep: physics.read('fixedTimestep', checks.number),
+    maxSubsteps: physics.read('maxSubsteps', checks.number),
+    layers: physics.decode('layers', decodeLayers) ?? [],
+  };
+}
+
+function readBuildProfiles(build: RecordReader): BuildProfiles {
+  const active = build.read('active', checks.string);
+  const profiles = build.record('profiles');
+  const read: Record<string, BuildProfile> = {};
+  for (const id of profiles.keys()) {
+    const profile = profiles.record(id);
+    read[id] = {
+      name: profile.read('name', checks.string),
+      target: profile.read('target', oneOf(['web'])),
+      scenes: profile.read('scenes', listOf(checks.sceneId)),
+      outputDir: profile.read('outputDir', nullable(checks.string)),
+      includeAllAssets: profile.read('includeAllAssets', checks.boolean),
+      title: profile.read('title', checks.string),
+      basePath: profile.read('basePath', checks.string),
+    };
+  }
+  return { active, profiles: read };
+}
