@@ -7,7 +7,20 @@ export {
   SCENE_FORMAT_VERSION,
   SCRIPT_API_VERSION,
 } from './constants';
-export { createId } from './ids';
+export {
+  createAssetId,
+  createComponentId,
+  createEntityId,
+  createId,
+  createSceneId,
+  fixedId,
+  idMapOf,
+  isAssetId,
+  isComponentId,
+  isEntityId,
+  isSceneId,
+} from './ids';
+export type { AssetId, ComponentId, EntityId, Id, SceneId } from './ids';
 export type {
   Platform,
   ProjectApi,

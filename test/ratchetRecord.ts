@@ -91,7 +91,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/core/src/conform.ts', { as: 7 }],
   ['packages/core/src/devices/schema.ts', { as: 3 }],
   ['packages/core/src/guards.ts', { as: 6, nonNull: 1 }],
-  ['packages/core/src/ids.ts', { nonNull: 1 }],
   ['packages/core/src/json.ts', { as: 1 }],
   ['packages/core/src/logFormat.ts', { as: 2, nonNull: 1 }],
   ['packages/core/src/project/schema.ts', { nonNull: 1 }],

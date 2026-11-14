@@ -131,8 +131,7 @@ function isDirective(comment: Comment): boolean {
 }
 
 /** Every spot of a file: its assertions as the source has them, then its directives, then its state. */
-function spotsIn(file: string, source: string): Spot[] {
-  const ast = parsed(file, source);
+function spotsIn(ast: File, source: string): Spot[] {
   const spots: Spot[] = [];
   const textOf = (node: Node): string => collapsed(source.slice(node.start ?? 0, node.end ?? 0));
 
@@ -315,6 +314,43 @@ function moduleState(program: Program, textOf: (node: Node) => string): string[]
   return bindings;
 }
 
+// ---------------------------------------------------------------- id producers
+
+/*
+ * An id's kind cannot be seen at run time, so what makes `string` into an
+ * `EntityId` is a check somebody wrote, and a second check would soon disagree
+ * with the first about what an id looks like. The checks are type predicates,
+ * and they live in one file; code that takes a value from outside calls them.
+ * A cast is the other way to make an id, and the ratchet already counts it.
+ *
+ * What the syntax cannot see: a predicate over a type that holds an id
+ * (`x is LaunchSnapshot`). It has to call the checks, and review reads for that.
+ */
+
+/** The one file where an id is made or checked. */
+const IDS_FILE = 'packages/core/src/ids.ts';
+
+/** The branded id types. The id types of a later kind join when their registry does. */
+const ID_TYPES: ReadonlySet<string> = new Set(['Id', 'EntityId', 'ComponentId', 'AssetId', 'SceneId']);
+
+function namesAnIdType(type: Node): boolean {
+  const names: string[] = [];
+  traverseFast(type, (node) => {
+    if (node.type === 'TSTypeReference' && node.typeName.type === 'Identifier') names.push(node.typeName.name);
+  });
+  return names.some((name) => ID_TYPES.has(name));
+}
+
+/** The type predicates and `asserts` signatures of a file that name an id type, each by its text. */
+function idChecksIn(ast: File, source: string): string[] {
+  const checks: string[] = [];
+  traverseFast(ast, (node) => {
+    if (node.type !== 'TSTypePredicate' || !node.typeAnnotation || !namesAnIdType(node.typeAnnotation)) return;
+    checks.push(collapsed(source.slice(node.start ?? 0, node.end ?? 0)));
+  });
+  return checks;
+}
+
 // -------------------------------------------------------------- the allow-list
 
 /**
@@ -340,15 +376,20 @@ interface Census {
   readonly counts: ReadonlyMap<string, Counts>;
   /** The allow-list's entries that excused nothing. */
   readonly unused: readonly AllowedSpot[];
+  /** The id checks written outside `ids.ts`, each with its file. */
+  readonly idChecks: readonly string[];
 }
 
-/** Counts every file's spots, less those the allow-list excuses. */
+/** Counts every file's spots, less those the allow-list excuses, and finds its id checks. */
 function census(sources: Iterable<readonly [file: string, source: string]>, allowed: readonly AllowedSpot[]): Census {
   const counts = new Map<string, Counts>();
   const used = new Set<AllowedSpot>();
+  const idChecks: string[] = [];
   for (const [file, source] of sources) {
+    const ast = parsed(file, source);
+    if (file !== IDS_FILE) idChecks.push(...idChecksIn(ast, source).map((check) => `${file}: ${check}`));
     const tally: { [K in Kind]?: number } = {};
-    for (const spot of spotsIn(file, source)) {
+    for (const spot of spotsIn(ast, source)) {
       const excuse = allowed.find(
         (entry) => entry.file === file && entry.kind === spot.kind && entry.construct === spot.text,
       );
@@ -357,7 +398,7 @@ function census(sources: Iterable<readonly [file: string, source: string]>, allo
     }
     if (Object.keys(tally).length > 0) counts.set(file, tally);
   }
-  return { counts, unused: allowed.filter((entry) => !used.has(entry)) };
+  return { counts, unused: allowed.filter((entry) => !used.has(entry)), idChecks };
 }
 
 /** What is wrong with the allow-list itself, one line per entry. */
@@ -564,7 +605,7 @@ describe('the allow-list', () => {
       'f(e);',
     ].join('\n');
 
-    expect(spotsIn(FILE, source)).toEqual([
+    expect(spotsIn(parsed(FILE, source), source)).toEqual([
       { kind: 'as', text: 'b as T' },
       { kind: 'nonNull', text: 'd!: string' },
       { kind: 'nonNull', text: 'list[0]!' },
@@ -597,6 +638,36 @@ describe('the allow-list', () => {
     expect(allowListDefects(allowed, found.unused)).toEqual([
       `${file}: a spot in a module is a defect, never an exception`,
     ]);
+  });
+});
+
+describe('an id check', () => {
+  const checks = (source: string, file = FILE): readonly string[] => census([[file, source]], []).idChecks;
+
+  it('is a type predicate or an `asserts` signature that names an id type', () => {
+    expect(checks('function isEntity(value: unknown): value is EntityId { return true; }')).toEqual([
+      `${FILE}: value is EntityId`,
+    ]);
+    expect(checks('function assertAsset(value: unknown): asserts value is AssetId {}')).toEqual([
+      `${FILE}: asserts value is AssetId`,
+    ]);
+    expect(checks("const isId: (key: string) => key is Id<'scene'> = f;")).toEqual([`${FILE}: key is Id<'scene'>`]);
+    expect(checks('function f(value: unknown): value is readonly ComponentId[] { return true; }')).toEqual([
+      `${FILE}: value is readonly ComponentId[]`,
+    ]);
+  });
+
+  it('is not a predicate over another type, nor an `asserts` that names none', () => {
+    expect(checks('function f(value: unknown): value is SceneEntry { return true; }')).toEqual([]);
+    expect(checks('function f(value: unknown): asserts value {}')).toEqual([]);
+    expect(checks('function f(value: unknown): EntityId { return g(value); }')).toEqual([]);
+  });
+
+  it('is allowed in ids.ts alone, where the form of an id is decided', () => {
+    const check = 'export function isEntityId(value: unknown): value is EntityId { return true; }';
+
+    expect(checks(check, 'packages/core/src/ids.ts')).toEqual([]);
+    expect(checks(check, 'packages/runtime/src/ids.ts')).toEqual(['packages/runtime/src/ids.ts: value is EntityId']);
   });
 });
 
@@ -669,5 +740,9 @@ describe('the repository', () => {
 
   it('allow-lists only spots of the kernel that are still there', () => {
     expect(allowListDefects(ALLOWED, found.unused)).toEqual([]);
+  });
+
+  it('checks an id nowhere but in ids.ts', () => {
+    expect(found.idChecks).toEqual([]);
   });
 });
