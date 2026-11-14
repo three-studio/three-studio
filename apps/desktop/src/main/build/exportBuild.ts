@@ -309,7 +309,7 @@ async function planExport(
     }
   }
 
-  const shippedScenes = planScenes(plan, scenes);
+  const shippedScenes = planScenes(registries, plan, scenes);
 
   report(0.7, 'Compiling scripts');
   const scripts = await planScripts(registries, plan, projectPath);

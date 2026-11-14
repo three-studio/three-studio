@@ -68,7 +68,8 @@ interface ProjectState {
    */
   retarget: (contents: ProjectContents, scene: SceneEntry) => void;
   close: () => void;
-  save: () => Promise<void>;
+  /** Given the window's registries: the file lists a table for every type they hold. */
+  save: (registries: CoreRegistries) => Promise<void>;
   setError: (error: string | null) => void;
 }
 
@@ -124,7 +125,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ summary: null, project: null, scenes: [], sceneId: null, scenePath: null, error: null });
   },
 
-  save: async () => {
+  save: async (registries) => {
     const { summary, scenePath } = get();
     if (!summary || scenePath === null) return;
 
@@ -140,7 +141,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       await window.studio.project.saveScene({
         projectPath: summary.path,
         scenePath,
-        contents: serializeScene(useDocumentStore.getState().scene),
+        contents: serializeScene(registries, useDocumentStore.getState().scene),
       });
       useDocumentStore.getState().markClean();
     } catch (cause) {

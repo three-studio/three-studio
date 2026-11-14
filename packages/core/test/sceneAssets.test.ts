@@ -5,7 +5,6 @@ import {
   createModel,
   createScript,
   deserializeScene,
-  emptyComponentTables,
   fixedId,
   setComponentsOf,
   serializeScene,
@@ -53,7 +52,8 @@ function sceneWith(templates: EntityTemplate[]): SceneDoc {
     id: fixedId('scene', 'scene'),
     name: 'Main',
     entities: new Map(templates.map(({ entity }) => [entity.id, entity])),
-    components: emptyComponentTables(),
+    components: new Map(),
+    unknownComponents: new Map(),
     rootOrder: templates.map(({ entity }) => entity.id),
     // From the factory, not by hand: the environment is not what any of these
     // exercise, and a literal here needs an edit every time it gains a field.
@@ -195,7 +195,7 @@ describe('component types this editor does not know', () => {
     const scene = sceneWith([createEntity('Lamp', [])]);
     // A type no module here defines has no place in a document: it is the file's
     // own table, kept as found, so the scene is read from a file that has one.
-    const file = JSON.parse(serializeScene(scene));
+    const file = JSON.parse(serializeScene(registries, scene));
     const lamp = assertDefined(Object.keys(file.entities)[0], 'the lamp');
     file.components['plugin.flicker'] = {
       [lamp]: { c1: { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' } },

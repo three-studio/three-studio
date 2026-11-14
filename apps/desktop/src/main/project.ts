@@ -74,7 +74,7 @@ export async function createProject(
   // file. The entry below is what `discoverScenes` would read back; it is built
   // here so the first window does not have to walk a directory it just wrote.
   const starter = createStarterScene();
-  const sceneJson = serializeScene(starter);
+  const sceneJson = serializeScene(registries, starter);
   const entry: SceneEntry = {
     id: starter.id,
     name: sceneName(DEFAULT_SCENE_PATH),

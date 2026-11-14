@@ -221,10 +221,10 @@ beforeAll(async () => {
   // A second scene, and one whose id holds slashes: an id is any text that is
   // not empty, and the route has to carry one in a URL a segment at a time.
   const other = createEmptyScene();
-  otherSceneJson = `${serializeScene(other)}\n`;
+  otherSceneJson = `${serializeScene(registries, other)}\n`;
   await writeFile(join(root, SCENES_DIR, 'Other.scene.json'), otherSceneJson, 'utf8');
   await mkdir(join(root, SCENES_DIR, 'levels'), { recursive: true });
-  const slashed = JSON.parse(serializeScene(createEmptyScene())) as Record<string, unknown>;
+  const slashed = JSON.parse(serializeScene(registries, createEmptyScene())) as Record<string, unknown>;
   slashed['id'] = 'levels/Two';
   await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(slashed), 'utf8');
 

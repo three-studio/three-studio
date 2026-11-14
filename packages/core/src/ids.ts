@@ -105,6 +105,16 @@ export function isSceneId(value: unknown): value is SceneId {
 }
 
 /**
+ * A component type's id read from outside: the key of a table in a file. The
+ * types this build defines are named by their literals and need no check; this
+ * is what lets a key be asked of the registry, and kept when the registry does
+ * not know it.
+ */
+export function isComponentTypeId(value: unknown): value is Id<'componentType'> {
+  return isIdOf<'componentType'>(value);
+}
+
+/**
  * An id written as a constant: `fixedId('entity', 'cube')`.
  *
  * It takes a literal and nothing else. The parameter is `never` for a `string`,

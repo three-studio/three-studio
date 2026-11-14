@@ -6,6 +6,7 @@ import {
   createColliderShape,
   createEmptyScene,
   createEntity,
+  createLight,
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
@@ -16,6 +17,7 @@ import {
   findComponent,
   fixedId,
   instancedId,
+  putComponent,
   serializeScene,
   type AudioSourceComponent,
   type ColliderComponent,
@@ -113,7 +115,7 @@ describe('what the document refuses to take', () => {
 });
 
 function read(entityId: EntityId, componentId: string): AudioSourceComponent {
-  const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+  const found = componentsOf(registries, scene(), entityId).find((c) => c.id === componentId);
   if (found?.type !== 'audioSource') throw new Error('no audio source');
   return found;
 }
@@ -230,7 +232,7 @@ describe('document store', () => {
     addEntity(parent);
     addEntity(child, parent.entity.id);
 
-    duplicateSelection(sel([parent.entity.id]));
+    duplicateSelection(registries, sel([parent.entity.id]));
 
     const roots = scene().rootOrder;
     expect(roots).toHaveLength(2);
@@ -247,7 +249,7 @@ describe('document store', () => {
       addEntity(cube),
     );
 
-    duplicateSelection(sel(cubes));
+    duplicateSelection(registries, sel(cubes));
 
     expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual([
       'Cube',
@@ -268,25 +270,25 @@ describe('document store', () => {
     addEntity(lone);
     const before = scene();
 
-    duplicateSelection(sel([parent.entity.id, lone.entity.id]));
+    duplicateSelection(registries, sel([parent.entity.id, lone.entity.id]));
     const after = scene();
-    expect(serializeScene(after)).not.toBe(serializeScene(before));
+    expect(serializeScene(registries, after)).not.toBe(serializeScene(registries, before));
 
     doc().undo();
     expect(scene()).toEqual(before);
-    expect(serializeScene(scene())).toBe(serializeScene(before));
+    expect(serializeScene(registries, scene())).toBe(serializeScene(registries, before));
 
     doc().redo();
     expect(scene()).toEqual(after);
-    expect(serializeScene(scene())).toBe(serializeScene(after));
+    expect(serializeScene(registries, scene())).toBe(serializeScene(registries, after));
   });
 
   it('names the copy of a copy by the next name that is free', () => {
     const cube = addEntity(createMeshEntity('box'));
-    duplicateSelection(sel([cube]));
+    duplicateSelection(registries, sel([cube]));
     const first = assertDefined(scene().rootOrder[1], 'the first copy');
 
-    duplicateSelection(sel([first]));
+    duplicateSelection(registries, sel([first]));
 
     expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual(['Cube', 'Cube (1)', 'Cube (2)']);
   });
@@ -295,7 +297,7 @@ describe('document store', () => {
     const cube = addEntity(createEntity('Cube'));
     addEntity(createEntity('Cube (1)'), cube);
 
-    duplicateSelection(sel([cube]));
+    duplicateSelection(registries, sel([cube]));
 
     const copy = assertDefined(scene().rootOrder[1], 'the copy');
     expect(scene().entities.get(copy)?.name).toBe('Cube (2)');
@@ -351,7 +353,7 @@ describe('what a transaction carries', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
 
-    duplicateSelection(sel([cube.entity.id]));
+    duplicateSelection(registries, sel([cube.entity.id]));
     const copies = selection();
     expect(copies).toHaveLength(1);
     expect(copies[0]).not.toBe(cube.entity.id);
@@ -536,6 +538,20 @@ describe('bounding a coalesced entry', () => {
  * remounts, was impossible by construction.
  */
 describe('asking what changed since', () => {
+  it('names the entity that gets a type\'s first component, and does not answer with everything', () => {
+    const cube = createMeshEntity('box');
+    const other = createMeshEntity('sphere');
+    addEntity(cube);
+    addEntity(other);
+    const seen = doc().changesSince(0).revision;
+
+    // No light in the document yet, so this adds the lights' table itself. Read
+    // as a replaced table it was a full reconcile of the scene for one light.
+    doc().mutate('Add light', (draft) => putComponent(draft, cube.entity.id, createLight('point')));
+
+    expect(doc().changesSince(seen).entities).toEqual(new Set([cube.entity.id]));
+  });
+
   it('gives two consumers their own delta, independently', () => {
     const a = createMeshEntity('box');
     const b = createMeshEntity('sphere');
@@ -715,7 +731,7 @@ describe('revision counters', () => {
 
   const meshComponentId = (entityId: EntityId) =>
     assertDefined(
-      componentsOf(scene(), entityId).find((component) => component.type === 'mesh'),
+      componentsOf(registries, scene(), entityId).find((component) => component.type === 'mesh'),
       'its mesh',
     ).id;
 
@@ -795,7 +811,7 @@ describe('components that cannot sit together', () => {
     // Both draw, both hang from the same container, and both get drawn — so
     // "Add Component ▸ Mesh" on an import used to put a grey 1×1×1 box through
     // it, which reads as the model having been duplicated.
-    expect(componentsOf(scene(), model.entity.id).map((c) => c.type)).toEqual(['model']);
+    expect(componentsOf(registries, scene(), model.entity.id).map((c) => c.type)).toEqual(['model']);
   });
 
   it('refuses a model on an entity already drawing a mesh', () => {
@@ -805,7 +821,7 @@ describe('components that cannot sit together', () => {
     // The table is read both ways round, so neither order has to be written out.
     addComponentWithDependencies(registries, cube.entity.id, 'model');
 
-    expect(componentsOf(scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
+    expect(componentsOf(registries, scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
   });
 });
 
@@ -891,7 +907,7 @@ describe('the companions a rigid body brings', () => {
 
     addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
 
   it('still brings one to an entity with nothing to collide with', () => {
@@ -899,7 +915,7 @@ describe('the companions a rigid body brings', () => {
 
     addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
 
   it('counts no child that has a body of its own', () => {
@@ -909,7 +925,7 @@ describe('the companions a rigid body brings', () => {
 
     addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
 
   it('sees the colliders inside a prefab placed under it', () => {
@@ -922,7 +938,7 @@ describe('the companions a rigid body brings', () => {
 
     addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
 });
 
@@ -937,7 +953,7 @@ describe('the companions a joint brings', () => {
 
     addComponentWithDependencies(registries, cube, 'joint');
 
-    expect(componentsOf(scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
+    expect(componentsOf(registries, scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
     expect(findComponent(scene(), cube, 'rigidbody')?.bodyType).toBe('dynamic');
   });
 
@@ -948,7 +964,7 @@ describe('the companions a joint brings', () => {
 
     addComponentWithDependencies(registries, hinge, 'joint');
 
-    expect(componentsOf(scene(), hinge).map((c) => c.type)).toEqual(['joint']);
+    expect(componentsOf(registries, scene(), hinge).map((c) => c.type)).toEqual(['joint']);
   });
 
   it('brings none to an entity that has a Rigid Body', () => {
@@ -956,7 +972,7 @@ describe('the companions a joint brings', () => {
 
     addComponentWithDependencies(registries, cart, 'joint');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
   });
 });
 
@@ -986,7 +1002,7 @@ describe('references to the entities copied with them', () => {
   it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
     const { frame, door } = doorway();
 
-    duplicateSelection(sel([door, frame]));
+    duplicateSelection(registries, sel([door, frame]));
 
     const copiedFrame = copyOf('Frame (1)');
     expect(copiedFrame).toBeDefined();
@@ -997,7 +1013,7 @@ describe('references to the entities copied with them', () => {
     doc().undo();
     expect([...scene().entities.keys()].sort()).toEqual([door, frame].sort());
 
-    duplicateSelection(sel([door]));
+    duplicateSelection(registries, sel([door]));
     expect(findComponent(scene(), copyOf('Door (1)'), 'joint')?.connectedEntity).toBe(frame);
   });
 
@@ -1009,7 +1025,7 @@ describe('references to the entities copied with them', () => {
       turret,
     );
 
-    duplicateSelection(sel([turret]));
+    duplicateSelection(registries, sel([turret]));
 
     const copy = copyOf('Turret (1)');
     const copiedTurret = assertDefined(scene().entities.get(copy), 'the copied turret');
@@ -1100,7 +1116,7 @@ describe('fitting a collider to its mesh', () => {
   }
 
   const colliderOf = (entityId: EntityId, componentId: ComponentId): ColliderComponent => {
-    const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+    const found = componentsOf(registries, scene(), entityId).find((c) => c.id === componentId);
     if (found?.type !== 'collider') throw new Error('no collider');
     return found;
   };

@@ -1,5 +1,4 @@
 import {
-  COMPONENT_TYPES,
   SUN_CUSTOM,
   SUN_FROM_SKY,
   createComponent,
@@ -20,6 +19,8 @@ import { shapeOf } from '../src/inspector/signature';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
+/** Every type the window knows, in the order it registered them. */
+const TYPES = registries.components.values().map((definition) => definition.id);
 
 /*
  * What decides whether the Inspector is rebuilt or merely refreshed.
@@ -51,7 +52,7 @@ describe('every component type is measured, not defaulted', () => {
     // The `default:` arm returned the bare type name, so a type it did not know
     // had a shape that could never change. Every type now answers with as many
     // bits as it has rows, which is the shape being read rather than guessed.
-    for (const type of COMPONENT_TYPES) {
+    for (const type of TYPES) {
       const { entries } = paneEntriesFor(createComponent(registries, type));
       expect(shapeOf(entries, createComponent(registries, type))).toHaveLength(entries.length);
     }
@@ -61,7 +62,7 @@ describe('every component type is measured, not defaulted', () => {
     // A mesh's, a collider's and a joint's geometry slot and a script's
     // declared properties change the list itself, which no arrangement of bits
     // can express. Everything else does.
-    const keys = COMPONENT_TYPES.map((type) => paneEntriesFor(createComponent(registries, type)).key);
+    const keys = TYPES.map((type) => paneEntriesFor(createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
       'collider:box',
       'joint:hinge',

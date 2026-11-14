@@ -1,7 +1,8 @@
 import {
-  COMPONENT_TYPES,
   hasComponent,
-  type ComponentType,
+  idMapOf,
+  isComponentTypeId,
+  type ComponentTypeId,
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
@@ -28,9 +29,9 @@ export type MarkerStyle = Pick<EntityMarker, 'color' | 'pixels'>;
  * type answers, in its own folder — a type left out of a list drew geometry
  * *and* got a marker on top of it, with nothing anywhere to say that was meant.
  */
-const RENDERS: readonly ComponentType[] = COMPONENT_TYPES.filter(
-  (type) => OVERLAYS[type].drawsGeometry,
-);
+const RENDERS: readonly ComponentTypeId[] = [...idMapOf(OVERLAYS, isComponentTypeId)]
+  .filter(([, overlay]) => overlay.drawsGeometry)
+  .map(([type]) => type);
 
 /**
  * The types worth marking, best first.
@@ -40,11 +41,11 @@ const RENDERS: readonly ComponentType[] = COMPONENT_TYPES.filter(
  * decision from `HierarchyPanel`'s `ICON_PRIORITY`, and for the reason that
  * file gives: the order is about *this* display, not about the types.
  */
-const PRIORITY: readonly ComponentType[] = COMPONENT_TYPES.filter(
-  (type) => OVERLAYS[type].marker !== null,
-).sort((a, b) => OVERLAYS[a].marker!.priority - OVERLAYS[b].marker!.priority);
+const PRIORITY: readonly (readonly [ComponentTypeId, EntityMarker])[] = [...idMapOf(OVERLAYS, isComponentTypeId)]
+  .flatMap(([type, overlay]) => (overlay.marker === null ? [] : [[type, overlay.marker] as const]))
+  .sort(([, a], [, b]) => a.priority - b.priority);
 
-export const MARKED_TYPES: readonly ComponentType[] = PRIORITY;
+export const MARKED_TYPES: readonly ComponentTypeId[] = PRIORITY.map(([type]) => type);
 
 /** Whether the entity contributes no geometry of its own. */
 export function drawsNothing(scene: SceneDoc, entityId: EntityId): boolean {
@@ -69,9 +70,8 @@ export function markerStyleFor(scene: SceneDoc, entityId: EntityId): MarkerStyle
   if (!scene.entities.has(entityId)) return undefined;
   if (!drawsNothing(scene, entityId)) return undefined;
 
-  for (const type of PRIORITY) {
-    const marker = OVERLAYS[type].marker;
-    if (marker !== null && hasComponent(scene, entityId, type)) return marker;
+  for (const [type, marker] of PRIORITY) {
+    if (hasComponent(scene, entityId, type)) return marker;
   }
   return undefined;
 }

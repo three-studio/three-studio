@@ -3,7 +3,7 @@ import { createLightEntity } from '../components/light/defaults';
 import { createMeshComponent } from '../components/mesh/defaults';
 import { SCENE_FORMAT_VERSION } from '../constants';
 import { createSceneId } from '../ids';
-import { emptyComponentTables, setComponentsOf } from './components';
+import { setComponentsOf } from './components';
 import { createEntity } from './entity';
 import { createBoxGeometry } from './geometry';
 
@@ -111,7 +111,8 @@ export function createEmptyScene(name = 'Main'): SceneDoc {
     id: createSceneId(),
     name,
     entities: new Map(),
-    components: emptyComponentTables(),
+    components: new Map(),
+    unknownComponents: new Map(),
     rootOrder: [],
     environment: createEnvironment(),
   };

@@ -1,8 +1,9 @@
 import {
-  COMPONENT_TYPES,
   findBrokenReferences,
   findMissingEntities,
   hasComponent,
+  idMapOf,
+  isComponentTypeId,
   splitInstancedId,
   type ComponentIcon,
   type ComponentType,
@@ -125,9 +126,10 @@ const ICON_PRIORITY: Record<ComponentType, number> = {
 };
 
 /** The ranked types, best first. Derived, so the two cannot disagree. */
-const RANKED_TYPES = COMPONENT_TYPES.filter((type) => ICON_PRIORITY[type] !== FALLS_THROUGH).sort(
-  (a, b) => ICON_PRIORITY[a] - ICON_PRIORITY[b],
-);
+const RANKED_TYPES = [...idMapOf(ICON_PRIORITY, isComponentTypeId)]
+  .filter(([, rank]) => rank !== FALLS_THROUGH)
+  .sort(([, a], [, b]) => a - b)
+  .map(([type]) => type);
 
 function entityIcon(registries: CoreRegistries, scene: SceneDoc, entityId: EntityId): LucideIcon {
   for (const type of RANKED_TYPES) {

@@ -58,7 +58,7 @@ function random(seed: number): () => number {
 /** Everything a user could notice, as one comparable value. */
 function snapshot(): string {
   return JSON.stringify({
-    scene: serializeScene(doc().scene),
+    scene: serializeScene(registries, doc().scene),
     selection: [...useEditorStore.getState().selection],
   });
 }
@@ -111,7 +111,7 @@ function step(pick: () => number): void {
     }
     case 6: {
       const id = any();
-      if (id !== undefined) duplicateSelection(sel([id]));
+      if (id !== undefined) duplicateSelection(registries, sel([id]));
       return;
     }
     default: {

@@ -10,9 +10,9 @@ import {
 } from '../project/schema';
 import { conformPhysicsMaterial, type PhysicsMaterialDef } from '../scene/physicsMaterial';
 import type { CoreRegistries } from '../registries';
-import { deserializePrefab, type PrefabDoc } from '../scene/prefab';
+import { deserializePrefab, prefabJsonOf, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
-import { deserializeScene } from '../scene/serialization';
+import { deserializeScene, sceneJsonOf } from '../scene/serialization';
 import {
   isDeviceTransport,
   type DeviceBackend,
@@ -91,13 +91,13 @@ export interface ReceivedLaunch {
 
 export function encodeLaunchSnapshot(snapshot: LaunchSnapshot): LaunchSnapshotJson {
   const prefabs: Record<string, string> = {};
-  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefab);
+  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefabJsonOf(prefab));
   return {
     version: snapshot.version,
     entry: {
       id: snapshot.entry.id,
       name: snapshot.entry.name,
-      sceneJson: jsonOf(snapshot.entry.scene),
+      sceneJson: jsonOf(sceneJsonOf(snapshot.entry.scene)),
     },
     materials: Object.fromEntries(snapshot.materials),
     physicsMaterials: Object.fromEntries(snapshot.physicsMaterials),

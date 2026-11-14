@@ -17,6 +17,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ProjectError, discoverScenes, openProject } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * `scenes/` is the list of scenes. `project.json` used to hold a copy of it,
@@ -40,7 +43,7 @@ async function projectWith(paths: readonly string[]): Promise<string> {
   for (const path of paths) {
     const document = createEmptyScene(path);
     await mkdir(join(root, SCENES_DIR, ...path.split('/').slice(0, -1)), { recursive: true });
-    await writeFile(join(root, SCENES_DIR, `${path}.scene.json`), serializeScene(document), 'utf8');
+    await writeFile(join(root, SCENES_DIR, `${path}.scene.json`), serializeScene(registries, document), 'utf8');
     ids.push(document.id);
   }
 
@@ -73,7 +76,7 @@ describe('the scenes of a project are the files under scenes/', () => {
     // the case pinned further down.
     await writeFile(
       join(root, SCENES_DIR, 'Arena.scene.json'),
-      serializeScene(createEmptyScene('Arena')),
+      serializeScene(registries, createEmptyScene('Arena')),
       'utf8',
     );
 

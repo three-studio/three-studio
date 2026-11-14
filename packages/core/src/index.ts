@@ -17,6 +17,7 @@ export {
   idMapOf,
   isAssetId,
   isComponentId,
+  isComponentTypeId,
   isEntityId,
   isSceneId,
 } from './ids';
@@ -203,9 +204,11 @@ export type {
   ColliderComponent,
   ComponentDoc,
   ComponentOfType,
+  ComponentTable,
   ComponentTables,
   ComponentType,
   ComponentTypeId,
+  ComponentTypes,
   EntityDoc,
   EnvironmentDef,
   GeometryDef,
@@ -231,6 +234,7 @@ export type {
   ShadowSettings,
   SkySettings,
   Transform,
+  UnknownComponentTables,
   Vec3,
   WaterComponent,
   WaterSunSource,
@@ -321,19 +325,17 @@ export {
 
 /* The component tables: every read and write of `scene.components`. */
 export {
-  COMPONENT_TYPES,
   componentsOf,
   componentsOfType,
   copyComponentsOf,
   deleteComponent,
   dropComponentsOf,
-  emptyComponentTables,
   entitiesWith,
   findComponent,
   findComponentById,
   findComponents,
   hasComponent,
-  isKnownComponentType,
+  isComponentOfType,
   putComponent,
   renameEntityReferences,
   setComponentsOf,
@@ -370,7 +372,7 @@ export { conformJointMotion, createJoint, createJointMotion } from './components
 /* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
 export { jointFrame } from './components/joint/frame';
 
-export { deserializeScene, serializeScene } from './scene/serialization';
+export { deserializeScene, sceneJsonOf, serializeScene } from './scene/serialization';
 export { jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
@@ -391,6 +393,7 @@ export {
   prefabVariantOf,
   prefabsFromJson,
   sceneToPrefab,
+  prefabJsonOf,
   serializePrefab,
   splitInstancedId,
   variantBaseOf,

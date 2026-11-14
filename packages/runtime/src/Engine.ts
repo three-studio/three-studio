@@ -422,7 +422,7 @@ export class Engine {
     // Read through the rule the build reads.
     for (const [entityId, held] of this.world ? componentsOfType(scene, 'joint') : []) {
       for (const joint of held.values()) {
-        const problem = jointProblem(scene, entityId, joint);
+        const problem = joint.type === 'joint' ? jointProblem(scene, entityId, joint) : null;
         if (problem) warn(problem);
       }
     }

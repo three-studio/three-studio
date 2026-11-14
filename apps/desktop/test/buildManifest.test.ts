@@ -5,7 +5,6 @@ import {
   createPrefabDoc,
   createRenderingSettings,
   defaultSettings,
-  emptyComponentTables,
   fixedId,
   type AssetEntry,
   type AssetId,
@@ -80,8 +79,8 @@ describe('assembling build.json', () => {
       [fixedId('asset', 'pm-b'), createPhysicsMaterial()],
     ] as const;
     const prefabs = [
-      [fixedId('asset', 'pre-a'), createPrefabDoc('A', [], emptyComponentTables(), fixedId('entity', 'root'))],
-      [fixedId('asset', 'pre-b'), createPrefabDoc('B', [], emptyComponentTables(), fixedId('entity', 'root'))],
+      [fixedId('asset', 'pre-a'), createPrefabDoc('A', [], fixedId('entity', 'root'))],
+      [fixedId('asset', 'pre-b'), createPrefabDoc('B', [], fixedId('entity', 'root'))],
     ] as const;
 
     const one = assembleManifest(

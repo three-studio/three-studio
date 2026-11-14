@@ -2,6 +2,7 @@ import {
   BUILD_LAYOUT,
   serializeScene,
   type BuildScene,
+  type CoreRegistries,
   type SceneDoc,
   type SceneEntry,
 } from '@three-studio/core';
@@ -25,11 +26,12 @@ import { digestOf, type BuildPlan } from '../buildPlan';
  * name is what makes it unique.
  */
 export function planScenes(
+  registries: CoreRegistries,
   plan: BuildPlan,
   scenes: readonly { entry: SceneEntry; scene: SceneDoc }[],
 ): BuildScene[] {
   return scenes.map(({ entry, scene }) => {
-    const data = Buffer.from(serializeScene(scene), 'utf8');
+    const data = Buffer.from(serializeScene(registries, scene), 'utf8');
     const path = `scenes/${slugOf(entry.name)}.${digestOf(data).sha256.slice(0, 8)}.json`;
     plan.addBytes(`${BUILD_LAYOUT.game}/${path}`, data, { kind: 'scene', sceneId: entry.id });
     return { id: entry.id, name: entry.name, path };

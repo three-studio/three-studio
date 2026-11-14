@@ -60,7 +60,7 @@ describe('reading across several entities', () => {
     // a target that answered from the component it was built with would go on
     // showing a value the document no longer has.
     doc().mutate('Differ', (draft) => {
-      (componentsOf(draft, a.entity.id)[0] as MeshComponent).castShadow = false;
+      (componentsOf(registries, draft, a.entity.id)[0] as MeshComponent).castShadow = false;
     });
     expect(mesh?.read(['castShadow'])).toBe(false);
   });
@@ -104,7 +104,7 @@ describe('writing to several entities', () => {
 
     mesh.write(['castShadow'], false, { coalesceKey: 'multi' });
 
-    const meshOf = (id: EntityId) => componentsOf(doc().scene, id)[0] as MeshComponent;
+    const meshOf = (id: EntityId) => componentsOf(registries, doc().scene, id)[0] as MeshComponent;
     expect(meshOf(a.entity.id).castShadow).toBe(false);
     expect(meshOf(b.entity.id).castShadow).toBe(false);
     // One entry for however many objects — the coalesce key is what merges them.

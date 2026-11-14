@@ -1,7 +1,6 @@
 import {
   createEmptyScene,
   createPrefabDoc,
-  emptyComponentTables,
   fixedId,
   setComponentsOf,
   type EntityId,
@@ -49,27 +48,24 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
 /**
  * A prefab holding exactly these entities, components included.
  *
- * `createPrefabDoc` takes the component tables ready-made, because in
- * production they are lifted from a scene that already has them. A test builds
- * its entities from the factories, so it needs the same assembly `sceneWith`
- * does.
+ * `createPrefabDoc` takes what the entities carry ready-made, because in
+ * production it is lifted from a scene that already has it. A test builds its
+ * entities from the factories, so it needs the same assembly `sceneWith` does.
  */
 export function prefabWith(
   name: string,
   templates: readonly EntityTemplate[],
   root: EntityId,
 ): PrefabDoc {
-  const components = emptyComponentTables();
-  const host = { components };
-  for (const template of templates) {
-    setComponentsOf(host, template.entity.id, template.components);
-  }
-  return createPrefabDoc(
+  const prefab = createPrefabDoc(
     name,
     templates.map((template) => template.entity),
-    components,
     root,
   );
+  for (const template of templates) {
+    setComponentsOf(prefab, template.entity.id, template.components);
+  }
+  return prefab;
 }
 
 /** Vector comparison that tolerates the last bits: matrix maths never lands exactly. */

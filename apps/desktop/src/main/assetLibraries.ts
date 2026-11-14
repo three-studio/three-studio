@@ -155,7 +155,7 @@ export async function createPrefabAsset(
   // The sidecar and the file say the same id, which they did not: the document
   // was minted one and the sidecar another, and only the sidecar's was ever read.
   const id = assetId ?? prefab.id;
-  await writeFile(file, serializePrefab({ ...prefab, id }), 'utf8');
+  await writeFile(file, serializePrefab(registries, { ...prefab, id }), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
@@ -346,7 +346,7 @@ export async function savePrefabAsset(
     throw new AssetError(`${assetPath} is not a prefab asset.`);
   }
 
-  await writeFile(file, serializePrefab(prefab), 'utf8');
+  await writeFile(file, serializePrefab(registries, prefab), 'utf8');
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.

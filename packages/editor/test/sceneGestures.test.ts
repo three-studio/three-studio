@@ -214,7 +214,7 @@ beforeEach(async () => {
   doc().replaceScene({ ...createEmptyScene('Main'), id: MAIN.id });
   wall = addEntity(named('Wall'));
   doc().markClean();
-  file = serializeScene(doc().scene);
+  file = serializeScene(registries, doc().scene);
   editor().clearSelection();
 
   useProjectStore.setState({
@@ -505,7 +505,7 @@ describe('Save As makes a scene of its own', () => {
     await saveAs('Copy');
     renameEntity(registries, wall, 'Edited after Save As');
 
-    await useProjectStore.getState().save();
+    await useProjectStore.getState().save(registries);
 
     expect(log.at(-2)).toEqual(['saveScene', 'scenes/Copy.scene.json']);
     const saved = deserializeScene(registries, written[0]!);
@@ -933,7 +933,7 @@ describe('Revert Scene', () => {
     [
       'a file holding another scene',
       () =>
-        serializeScene({
+        serializeScene(registries, {
           ...deserializeScene(registries, file as string),
           id: fixedId('scene', 'z'),
           name: 'Intruder',
@@ -961,7 +961,7 @@ describe('Revert Scene', () => {
   it('loads the file as it is now, changed outside the editor', async () => {
     const outside = deserializeScene(registries, file as string);
     assertDefined(outside.entities.get(wall), 'the wall').name = 'Changed outside';
-    file = serializeScene(outside);
+    file = serializeScene(registries, outside);
     renameEntity(registries, wall, 'Edited wall');
 
     await revert();
@@ -989,7 +989,7 @@ describe('Revert Scene', () => {
     // holds it, and the revert brings it back.
     const barrel = addEntity(createModelEntity(fixedId('asset', 'gone-model'), 'Barrel'));
     doc().markClean();
-    file = serializeScene(doc().scene);
+    file = serializeScene(registries, doc().scene);
     deleteSelection(Selection.of([barrel], doc().scene));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 

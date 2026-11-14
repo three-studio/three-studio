@@ -269,7 +269,7 @@ async function newProject(name: string, parent: string): Promise<{ path: string;
 /** Writes `scene` over the project's start scene, keeping that scene's id so `startScene` still names it. */
 async function saveAsStartScene(project: { path: string; scenePath: string; sceneId: SceneId }, scene: SceneDoc): Promise<void> {
   scene.id = project.sceneId;
-  await saveScene(project.path, project.scenePath, serializeScene(scene));
+  await saveScene(project.path, project.scenePath, serializeScene(registries, scene));
 }
 
 /** Writes the `render` recipe's project into `parent`, and answers its path. */
@@ -573,12 +573,12 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   cube.geometry = { ...createBoxGeometry(), width: 4, height: 4, depth: 4 };
   place(loading, createEntity('Cube', [cube, scriptOn(script(`${scriptsDir}/Spinner.ts`))]));
 
-  const start = (await createScene(registries, project.path, 'A', serializeScene(a))).scene.id;
-  await createScene(registries, project.path, 'B', serializeScene(directed()));
-  await createScene(registries, project.path, 'Loading', serializeScene(loading));
+  const start = (await createScene(registries, project.path, 'A', serializeScene(registries, a))).scene.id;
+  await createScene(registries, project.path, 'B', serializeScene(registries, directed()));
+  await createScene(registries, project.path, 'Loading', serializeScene(registries, loading));
   const heavy = renderScene(recipe.heavy);
   place(heavy, createModelEntity(assetAt(manifest, heavyModel).id, 'Images'));
-  await createScene(registries, project.path, 'Heavy', serializeScene(heavy));
+  await createScene(registries, project.path, 'Heavy', serializeScene(registries, heavy));
   // `A` starts the game, and the scene `createProject` made is not one of the four.
   await setStartScene(project.path, start);
   await deleteScene(project.path, project.sceneId);

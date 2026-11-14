@@ -161,6 +161,8 @@ export class SceneBinder {
   /** Parent this into the editor viewport scene or the runtime scene. */
   readonly root = new Group();
 
+  /** For the order an entity's components are read in, which is the order their types were registered in. */
+  private readonly registries: CoreRegistries;
   private readonly reconciler: Reconciler;
   private readonly arena = new ResourceArena();
   private readonly models: ModelCache;
@@ -230,6 +232,7 @@ export class SceneBinder {
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
+    this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
     this.models = new ModelCache(options.registries, options.resolver);
@@ -381,7 +384,7 @@ export class SceneBinder {
         this.removeEntity(id);
         continue;
       }
-      this.syncEntity(entity, componentsOf(scene, id));
+      this.syncEntity(entity, componentsOf(this.registries, scene, id));
     }
 
     // Parenting is resolved after every entity exists, so an entity created

@@ -6,21 +6,20 @@ import {
   isAssetId,
   isEntityId,
   type AssetId,
+  type ComponentId,
   type EntityId,
 } from '../ids';
 import { stableJson } from '../json';
 import type { CoreRegistries } from '../registries';
 import {
-  COMPONENT_TYPES,
   componentsOf,
-  copyComponentTables,
-  emptyComponentTables,
+  componentsOfType,
   entitiesWith,
   findComponent,
   putComponent,
   renameEntityReferences,
   setComponentsOf,
-  tableOf,
+  tableIn,
   type ComponentHost,
 } from './components';
 import { fillComponent } from '../components';
@@ -28,7 +27,7 @@ import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
 import { collectDescendants } from './query';
-import { migrateScene, SceneFormatError } from './serialization';
+import { componentsJsonOf, migrateScene, SceneFormatError } from './serialization';
 import type {
   ComponentDoc,
   ComponentTables,
@@ -37,6 +36,7 @@ import type {
   PrefabOverride,
   SceneDoc,
   Transform,
+  UnknownComponentTables,
 } from './schema';
 
 /**
@@ -60,21 +60,30 @@ export interface PrefabDoc {
   entities: Map<EntityId, EntityDoc>;
   /** The same block a scene carries — see `ComponentTables`. */
   components: ComponentTables;
+  /** And what a scene carries beside it — see `UnknownComponentTables`. */
+  unknownComponents: UnknownComponentTables;
   root: EntityId;
 }
 
+/**
+ * A prefab of these entities, under a new asset id.
+ *
+ * `held` is what they carry, lifted from the scene they came from; left out,
+ * they carry nothing yet.
+ */
 export function createPrefabDoc(
   name: string,
   entities: EntityDoc[],
-  components: ComponentTables,
   root: EntityId,
+  held: Required<ComponentHost> = { components: new Map(), unknownComponents: new Map() },
 ): PrefabDoc {
   return {
     version: PREFAB_FORMAT_VERSION,
     id: createAssetId(),
     name,
     entities: new Map(entities.map((entity) => [entity.id, entity])),
-    components,
+    components: held.components,
+    unknownComponents: held.unknownComponents,
     root,
   };
 }
@@ -85,17 +94,26 @@ export function createPrefabDoc(
  * Lifting a sub-tree out of a scene — or writing one back — has to carry the
  * components of exactly those entities. Taking the whole block would put every
  * other entity's components in the prefab; taking none loses them.
+ *
+ * Those of the types this build does not define go with them, as found: a
+ * prefab made in an editor that lacks a module must still hold what the module
+ * will draw.
  */
-function componentsFor(host: ComponentHost, ids: readonly EntityId[]): ComponentTables {
-  const tables = emptyComponentTables();
+function componentsFor(host: Required<ComponentHost>, ids: readonly EntityId[]): Required<ComponentHost> {
   const wanted = new Set(ids);
-  for (const type of COMPONENT_TYPES) {
-    const into = tableOf(tables, type);
-    for (const [entityId, held] of tableOf(host.components, type)) {
+  const lifted = <Held>(from: Map<EntityId, Map<ComponentId, Held>>): Map<EntityId, Map<ComponentId, Held>> => {
+    const into = new Map<EntityId, Map<ComponentId, Held>>();
+    for (const [entityId, held] of from) {
       if (wanted.has(entityId)) into.set(entityId, structuredClone(held));
     }
-  }
-  return tables;
+    return into;
+  };
+
+  const components: ComponentTables = new Map();
+  for (const [type, table] of host.components) components.set(type, lifted(table));
+  const unknownComponents: UnknownComponentTables = new Map();
+  for (const [type, table] of host.unknownComponents) unknownComponents.set(type, lifted(table));
+  return { components, unknownComponents };
 }
 
 /**
@@ -117,7 +135,7 @@ export function prefabFromEntities(name: string, scene: SceneDoc, rootId: Entity
   root.parent = null;
   root.transform = { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] };
 
-  return createPrefabDoc(name, entities, componentsFor(scene, ids), rootId);
+  return createPrefabDoc(name, entities, rootId, componentsFor(scene, ids));
 }
 
 /**
@@ -139,6 +157,7 @@ export function prefabToScene(prefab: PrefabDoc): SceneDoc {
     name: prefab.name,
     entities: structuredClone(prefab.entities),
     components: structuredClone(prefab.components),
+    unknownComponents: structuredClone(prefab.unknownComponents),
     rootOrder: [prefab.root],
   };
 }
@@ -171,7 +190,7 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
     ...original,
     version: PREFAB_FORMAT_VERSION,
     entities,
-    components: componentsFor(scene, [...entities.keys()]),
+    ...componentsFor(scene, [...entities.keys()]),
     root,
   };
 }
@@ -188,9 +207,9 @@ export function sceneToPrefab(scene: SceneDoc, original: PrefabDoc): PrefabDoc {
  */
 export function prefabVariantOf(name: string, baseAssetId: AssetId): PrefabDoc {
   const root = createEntity(name, [createPrefabInstance(baseAssetId)]);
-  const components = emptyComponentTables();
-  setComponentsOf({ components }, root.entity.id, root.components);
-  return createPrefabDoc(name, [root.entity], components, root.entity.id);
+  const prefab = createPrefabDoc(name, [root.entity], root.entity.id);
+  setComponentsOf(prefab, root.entity.id, root.components);
+  return prefab;
 }
 
 /** The prefab a variant is based on, or `null` for an ordinary prefab. */
@@ -307,7 +326,12 @@ export function expandPrefabs(
   if (instances.length === 0) return { scene, sources: new Map() };
 
   const entities = new Map(scene.entities);
-  const components = copyComponentTables(scene.components);
+  // One level deep: what the instances produce is added to the copies, and the
+  // scene's tables are left alone. The Maps and the components under each
+  // entity stay the very objects the scene holds, because the binder tells what
+  // changed by comparing them.
+  const components: ComponentTables = new Map();
+  for (const [type, table] of scene.components) components.set(type, new Map(table));
   const sources = new Map<EntityId, InstanceSource>();
 
   const adopt = (produced: Produced): void => {
@@ -340,7 +364,7 @@ export function expandPrefabs(
       sources.set(entityId, {
         component,
         chain,
-        produced: { entities: [], components: emptyComponentTables() },
+        produced: { entities: [], components: new Map() },
       });
       continue;
     }
@@ -370,9 +394,9 @@ interface Produced {
  * has under the same id, as assigning the keys of an object did.
  */
 function mergeTables(into: ComponentTables, from: ComponentTables): void {
-  for (const type of COMPONENT_TYPES) {
-    const table = tableOf(into, type);
-    for (const [entityId, held] of tableOf(from, type)) table.set(entityId, held);
+  for (const [type, table] of from) {
+    const target = tableIn(into, type);
+    for (const [entityId, held] of table) target.set(entityId, held);
   }
 }
 
@@ -401,9 +425,9 @@ function chainOf(
   const chain: (PrefabDoc | undefined)[] = [prefab];
   if (!prefab) return chain;
 
-  for (const held of prefab.components.prefabInstance.values()) {
+  for (const held of componentsOfType(prefab, 'prefabInstance').values()) {
     for (const component of held.values()) {
-      chain.push(...chainOf(component.assetId, prefabs, seen));
+      if (component.type === 'prefabInstance') chain.push(...chainOf(component.assetId, prefabs, seen));
     }
   }
   return chain;
@@ -469,7 +493,7 @@ function instantiate(
   ancestry: readonly string[],
   inherited: readonly OverrideLayer[] = [],
 ): Produced {
-  const produced: Produced = { entities: [], components: emptyComponentTables() };
+  const produced: Produced = { entities: [], components: new Map() };
 
   // Nearest first, so the ones further out are applied last and win: what the
   // scene says about an object beats what the variant that placed it says,
@@ -489,7 +513,7 @@ function instantiate(
     // The prefab's own components, copied — the instance may override them, and
     // an override that reached back into the asset would change every other
     // placement of it.
-    let held = componentsOf(prefab, local.id).map((held) => structuredClone(held));
+    let held = componentsOf(registries, prefab, local.id).map((held) => structuredClone(held));
 
     for (const layer of layers) {
       const override = layer.overrides[overrideKey(layer.prefix, local.id)];
@@ -661,17 +685,34 @@ export function migratePrefab(registries: CoreRegistries, input: unknown, assetI
     name: asScene.name,
     entities: asScene.entities,
     components: asScene.components,
+    unknownComponents: asScene.unknownComponents,
     root,
   };
 }
 
 /**
  * A prefab file's text: key-sorted and indented as a scene's is, so that it
- * reads in a diff. Also what the bridge carries, in and out: the main process
- * writes this, and decodes what the editor sends before it writes it.
+ * reads in a diff.
  */
-export function serializePrefab(prefab: PrefabDoc): string {
-  return stableJson(prefab);
+export function serializePrefab(registries: CoreRegistries, prefab: PrefabDoc): string {
+  return stableJson({ ...prefabJsonOf(prefab), components: componentsJsonOf(prefab, registries) });
+}
+
+/**
+ * A prefab as JSON holds it, for `jsonOf` to write: the bridge in and out, a
+ * build's manifest. One `components` block, as a scene's has, and for the
+ * reason `sceneJsonOf` gives. The keys are written out in the order a prefab
+ * has always had them, which a manifest keeps.
+ */
+export function prefabJsonOf(prefab: PrefabDoc): Readonly<Record<string, unknown>> {
+  return {
+    version: prefab.version,
+    id: prefab.id,
+    name: prefab.name,
+    entities: prefab.entities,
+    components: componentsJsonOf(prefab),
+    root: prefab.root,
+  };
 }
 
 /** A prefab file's text, read as a document of the current format. See `migratePrefab` for the id. */

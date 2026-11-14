@@ -239,7 +239,7 @@ describe('the scenes a running game reaches', () => {
       reads,
       readFile: async (path) => {
         reads.push(path);
-        return serializeScene(boss);
+        return serializeScene(registries, boss);
       },
     };
   }

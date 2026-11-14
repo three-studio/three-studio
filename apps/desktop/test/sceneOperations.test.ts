@@ -54,7 +54,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
     const document = createEmptyScene(name);
     await writeFile(
       join(root, SCENES_DIR, `${name}.scene.json`),
-      serializeScene(document),
+      serializeScene(registries, document),
       'utf8',
     );
     ids.push(document.id);
@@ -362,7 +362,7 @@ describe('what these operations write', () => {
       const wall = createEntity('Wall');
       document.entities.set(wall.entity.id, wall.entity);
       document.rootOrder.push(wall.entity.id);
-      return { document: serializeScene(document), wall: wall.entity.id };
+      return { document: serializeScene(registries, document), wall: wall.entity.id };
     }
 
     it('gets its own id and name, and the contents it was handed', async () => {

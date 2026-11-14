@@ -11,8 +11,8 @@ import {
   createPrefabDoc,
   createRenderingSettings,
   createStarterScene,
-  emptyComponentTables,
   encodeLaunchSnapshot,
+  deserializeScene,
   fixedId,
   serializeScene,
   type LaunchSnapshot,
@@ -47,7 +47,7 @@ function snapshot(): LaunchSnapshot {
     physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' }]]),
     // Under the id it is filed by, as a prefab read from a library always is.
     prefabs: new Map([
-      [CRATE, { ...createPrefabDoc('Crate', [], emptyComponentTables(), fixedId('entity', 'root')), id: CRATE }],
+      [CRATE, { ...createPrefabDoc('Crate', [], fixedId('entity', 'root')), id: CRATE }],
     ]),
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: {
@@ -92,7 +92,11 @@ describe('a launch snapshot, as it is sent', () => {
 
     expect(wire.version).toBe(LAUNCH_SNAPSHOT_VERSION);
     expect(wire.entry).toEqual({ id: 'scene-1', name: 'Level', sceneJson: expect.any(String) });
-    expect(JSON.parse(wire.entry.sceneJson)).toEqual(JSON.parse(serializeScene(original.entry.scene)));
+    // A message, not a file: what the main process reads back from it is the
+    // scene that was sent.
+    expect(serializeScene(registries, deserializeScene(registries, wire.entry.sceneJson))).toBe(
+      serializeScene(registries, original.entry.scene),
+    );
     expect(wire.prefabs).toEqual({ [CRATE]: expect.any(String) });
     expect(wire.materials).toEqual(Object.fromEntries(original.materials));
     expect(wire.loadingScene).toBe('loading');
@@ -180,7 +184,7 @@ describe('a launch snapshot, where it arrives', () => {
     expect(tree.version).toBe(PREFAB_FORMAT_VERSION);
     // Under the id it arrived by, whatever the file said of its own.
     expect(tree.id).toBe(TREE);
-    expect(componentsOf(tree, fixedId('entity', 'trunk')).map((component) => component.id)).toEqual([
+    expect(componentsOf(registries, tree, fixedId('entity', 'trunk')).map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
     ]);

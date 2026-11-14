@@ -378,7 +378,7 @@ function withBoss(): string[] {
   beforeAll(() => {
     const readScene = async (path: string) => {
       reads.push(path);
-      return serializeScene(bossScene());
+      return serializeScene(registries, bossScene());
     };
     standInForTheBrowser({ project: { readScene } });
   });
@@ -759,7 +759,7 @@ describe('the scene the game plays', () => {
   function opened(): SceneDoc {
     const script: ScriptComponent = { ...createScript(), assetId: MOVER, props: { offset: [1, 2, 3] } };
     const scene = sceneWith([createEntity('Mover', [script])]);
-    doc().replaceScene(deserializeScene(registries, serializeScene(scene)));
+    doc().replaceScene(deserializeScene(registries, serializeScene(registries, scene)));
     return structuredClone(doc().scene);
   }
 
@@ -919,7 +919,7 @@ describe('Save during Play', () => {
     commandById('save').run(currentContext(registries));
     await until(() => written.length === 1 && !useProjectStore.getState().saving, 'the save');
 
-    expect(written).toEqual([serializeScene(scene)]);
+    expect(written).toEqual([serializeScene(registries, scene)]);
 
     stop();
     await compiles.finish(0, false);

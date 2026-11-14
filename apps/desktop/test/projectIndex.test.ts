@@ -44,7 +44,7 @@ async function projectWith(assets: number, scenes: number): Promise<string> {
   for (let i = 0; i < scenes; i++) {
     await writeFile(
       join(root, SCENES_DIR, `Level${i}.scene.json`),
-      serializeScene(createEmptyScene(`Level${i}`)),
+      serializeScene(registries, createEmptyScene(`Level${i}`)),
       'utf8',
     );
   }
@@ -197,7 +197,7 @@ describe('what the index declines to answer for', () => {
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
 
     const replacement = createEmptyScene('Level0');
-    await writeFile(file, serializeScene(replacement), 'utf8');
+    await writeFile(file, serializeScene(registries, replacement), 'utf8');
 
     const after = await discoverScenes(root);
     expect(after[0]?.id).toBe(replacement.id);
@@ -267,7 +267,7 @@ describe('what the index declines to answer for', () => {
     // for byte the same size and only the timestamp can tell them apart.
     const swapped = createSceneId();
     const original = deserializeScene(registries, await readFile(file, 'utf8'));
-    await writeFile(file, serializeScene({ ...original, id: swapped }), 'utf8');
+    await writeFile(file, serializeScene(registries, { ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);
 
     expect((await discoverScenes(root))[0]?.id).toBe(swapped);

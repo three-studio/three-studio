@@ -72,8 +72,8 @@ export const EDIT_COMMANDS = {
      * Prefab Mode saves the prefabs, then the scene is written.
      */
     can: () => !useProjectStore.getState().saving && windowUnsaved(),
-    run: () => {
-      void useProjectStore.getState().save();
+    run: (ctx) => {
+      void useProjectStore.getState().save(ctx.registries);
     },
   }),
 
@@ -96,7 +96,7 @@ export const EDIT_COMMANDS = {
       ctx.selection.isMultiple ? `Duplicate ${ctx.selection.size} Objects` : 'Duplicate',
     writesScene: true,
     can: (ctx) => ctx.selection.can('duplicate'),
-    run: (ctx) => duplicateSelection(ctx.selection),
+    run: (ctx) => duplicateSelection(ctx.registries, ctx.selection),
   }),
 
   delete: defineCommand({

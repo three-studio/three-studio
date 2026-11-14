@@ -41,6 +41,7 @@ import {
   deserializePrefab,
   isDeviceId,
   jsonOf,
+  prefabJsonOf,
   type BridgeHandlers,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
@@ -507,7 +508,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     readPrefabs: async (): Promise<Record<string, string>> => {
       const prefabs = await readPrefabAssets(deps.registries, requireProject());
-      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefab)]));
+      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefabJsonOf(prefab))]));
     },
 
     createPrefab: (_event, name: string, prefabJson: string, assetId?: AssetId): Promise<AssetId> => {

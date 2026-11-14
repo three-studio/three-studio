@@ -12,10 +12,10 @@ import {
   createSkySettings,
   deserializePrefab,
   deserializeScene,
-  emptyComponentTables,
   findComponent,
   fixedId,
   jsonOf,
+  sceneJsonOf,
   serializePrefab,
   serializeScene,
   setComponentsOf,
@@ -57,7 +57,7 @@ function rawComponents(raw: Record<string, unknown>, type: string): Record<strin
 /** Strips properties from a serialised scene, as an older editor would have. */
 function olderScene(strip: (scene: Record<string, unknown>) => void): string {
   const scene = createStarter();
-  const raw = JSON.parse(serializeScene(scene)) as Record<string, unknown>;
+  const raw = JSON.parse(serializeScene(registries, scene)) as Record<string, unknown>;
   strip(raw);
   return JSON.stringify(raw);
 }
@@ -65,13 +65,13 @@ function olderScene(strip: (scene: Record<string, unknown>) => void): string {
 function createStarter(): SceneDoc {
   const cube = createMeshEntity('box');
   cube.components.push(createRigidBody(), createPlayerController());
-  const components = emptyComponentTables();
   const scene: SceneDoc = {
     version: SCENE_FORMAT_VERSION,
     id: fixedId('scene', 'scene-1'),
     name: 'Main',
     entities: new Map([[cube.entity.id, cube.entity]]),
-    components,
+    components: new Map(),
+    unknownComponents: new Map(),
     rootOrder: [cube.entity.id],
     // From the factory, not written out here. This is a starting point for
     // tests that strip fields back off it, and a literal would need an edit
@@ -244,7 +244,7 @@ describe('scene migration', () => {
       entity['somethingElseEntirely'] = { written: 'by a build this one never saw' };
     });
 
-    const written = JSON.parse(serializeScene(deserializeScene(registries, json))) as Record<string, unknown>;
+    const written = JSON.parse(serializeScene(registries, deserializeScene(registries, json))) as Record<string, unknown>;
     const entity = Object.values(written['entities'] as Record<string, Record<string, unknown>>)[0]!;
 
     expect(entity['chunk']).toBe('cell-04-11');
@@ -384,7 +384,7 @@ describe('scene migration', () => {
     firstMesh(scene).material.tiling = [4, 2];
     firstMesh(scene).geometry = { kind: 'box', width: 9, height: 1, depth: 9, widthSegments: 32, heightSegments: 1, depthSegments: 32 };
 
-    const migrated = deserializeScene(registries, serializeScene(scene));
+    const migrated = deserializeScene(registries, serializeScene(registries, scene));
     expect(firstMesh(migrated).material.tiling).toEqual([4, 2]);
     expect(firstMesh(migrated).geometry).toMatchObject({ width: 9, widthSegments: 32 });
   });
@@ -407,12 +407,11 @@ describe('scene migration', () => {
     });
 
     const migrated = deserializeScene(registries, json);
-    const tables = migrated.components as unknown as Record<
-      string,
-      Record<string, Record<string, Record<string, unknown>>>
-    >;
-    const entityId = [...migrated.entities.keys()][0]!;
-    const kept = tables['plugin:water']?.[entityId]?.['water-1'] ?? {};
+    const entityId = firstEntityId(migrated);
+    const kept = migrated.unknownComponents
+      .get(fixedId('componentType', 'plugin:water'))
+      ?.get(entityId)
+      ?.get(fixedId('component', 'water-1'));
 
     // A table of its own, rather than a shape invented for it: nothing here can
     // read it, and filling it would write that invention over the author's data
@@ -420,7 +419,7 @@ describe('scene migration', () => {
     expect(kept).toEqual({ id: 'water-1', type: 'plugin:water', flow: 2, tint: '#0af' });
     // The old fallback returned a player controller for anything unrecognised,
     // so this used to come back with a move speed and an eye height.
-    expect(kept['moveSpeed']).toBeUndefined();
+    expect(kept).not.toHaveProperty('moveSpeed');
   });
 
   /*
@@ -431,7 +430,7 @@ describe('scene migration', () => {
    * project somebody else made.
    */
   it('files a component whose type is named like a prototype under a table of its own', () => {
-    const file = JSON.parse(serializeScene(createStarter()));
+    const file = JSON.parse(serializeScene(registries, createStarter()));
     file.version = 3;
     delete file.components;
     const entityId = assertDefined(Object.keys(file.entities)[0], 'the first entity');
@@ -441,7 +440,10 @@ describe('scene migration', () => {
       const migrated = deserializeScene(registries, JSON.stringify(file));
 
       expect(Reflect.get({}, entityId)).toBeUndefined();
-      expect(Object.getPrototypeOf(migrated.components)).toBe(Object.prototype);
+      // Kept, under the name the file gave it: a Map takes any key.
+      expect(migrated.unknownComponents.get(fixedId('componentType', '__proto__'))?.has(firstEntityId(migrated))).toBe(
+        true,
+      );
       expect(migrated.entities.size).toBe(1);
     } finally {
       // Not left behind for the tests after this one, if it did get through.
@@ -471,7 +473,6 @@ describe('scene migration', () => {
         },
       },
       components: {
-        ...emptyComponentTables(),
         model: {
           e1: {
             'e1:0': { id: 'e1:0', type: 'model', assetId: 'chair', castShadow: true, receiveShadow: true },
@@ -552,12 +553,13 @@ function sceneAt(version: number, eyeHeight: number, extra: ComponentDoc[] = [])
     id: fixedId('scene', 'scene-1'),
     name: 'Main',
     entities: new Map([[template.entity.id, template.entity]]),
-    components: emptyComponentTables(),
+    components: new Map(),
+    unknownComponents: new Map(),
     rootOrder: [template.entity.id],
     environment: createEnvironment(),
   };
   setComponentsOf(scene, template.entity.id, template.components);
-  return jsonOf(scene);
+  return jsonOf(sceneJsonOf(scene));
 }
 
 function eyeHeightOf(scene: SceneDoc): number {
@@ -633,16 +635,17 @@ describe('eye height, measured from the feet', () => {
    */
   function prefabAt(version: number, eyeHeight: number): PrefabDoc {
     const template = playerEntity(eyeHeight, [personCapsule()]);
-    const components = emptyComponentTables();
-    setComponentsOf({ components }, template.entity.id, template.components);
-    return {
+    const prefab: PrefabDoc = {
       version,
       id: fixedId('asset', 'prefab-1'),
       name: 'Player',
       entities: new Map([[template.entity.id, template.entity]]),
-      components,
+      components: new Map(),
+      unknownComponents: new Map(),
       root: template.entity.id,
     };
+    setComponentsOf(prefab, template.entity.id, template.components);
+    return prefab;
   }
 
   function prefabEyeHeight(prefab: PrefabDoc): number {
@@ -651,7 +654,7 @@ describe('eye height, measured from the feet', () => {
   }
 
   it('raises a prefab written before the change, by its own age', () => {
-    const migrated = deserializePrefab(registries, serializePrefab(prefabAt(6, 1.7)));
+    const migrated = deserializePrefab(registries, serializePrefab(registries, prefabAt(6, 1.7)));
 
     expect(prefabEyeHeight(migrated)).toBeCloseTo(2.55, 6);
     expect(migrated.version).toBe(PREFAB_FORMAT_VERSION);
@@ -659,7 +662,7 @@ describe('eye height, measured from the feet', () => {
 
   it('leaves a prefab that already counts from the feet alone', () => {
     expect(
-      prefabEyeHeight(deserializePrefab(registries, serializePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7)))),
+      prefabEyeHeight(deserializePrefab(registries, serializePrefab(registries, prefabAt(PREFAB_FORMAT_VERSION, 1.7)))),
     ).toBeCloseTo(1.7, 6);
   });
 });

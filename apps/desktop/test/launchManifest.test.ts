@@ -8,8 +8,8 @@ import {
   createRenderingSettings,
   createStarterScene,
   defaultSettings,
-  emptyComponentTables,
   fixedId,
+  prefabJsonOf,
   type AssetEntry,
   type AssetId,
   type AssetKind,
@@ -72,7 +72,7 @@ const ALPHA = fixedId('scene', 'alpha');
 const BETA = fixedId('scene', 'beta');
 
 function snapshot(): LaunchSnapshot {
-  const crate = createPrefabDoc('Crate', [], emptyComponentTables(), fixedId('entity', 'root'));
+  const crate = createPrefabDoc('Crate', [], fixedId('entity', 'root'));
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: ENTRY, name: 'Level', scene: createStarterScene() },
@@ -155,7 +155,10 @@ describe('what else a launch says', () => {
     expect(build.loadingScene).toBe('loading');
     expect(build.materials).toEqual(Object.fromEntries(launched.materials));
     expect(build.physicsMaterials).toEqual(Object.fromEntries(launched.physicsMaterials));
-    expect(build.prefabs).toEqual(Object.fromEntries(launched.prefabs));
+    // Each as the JSON a prefab is written as, which is what a device reads.
+    expect(build.prefabs).toEqual(
+      Object.fromEntries([...launched.prefabs].map(([id, prefab]) => [id, prefabJsonOf(prefab)])),
+    );
   });
 
   it('lists every asset but the scripts, under its id and its source’s file name', () => {

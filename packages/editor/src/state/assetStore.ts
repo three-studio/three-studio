@@ -6,6 +6,7 @@ import {
   idMapOf,
   isAssetId,
   jsonOf,
+  prefabJsonOf,
   type AssetChange,
   type AssetEntry,
   type AssetId,
@@ -209,7 +210,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     }),
 
   createPrefab: async (registries, name, prefab, assetId) => {
-    const created = await window.studio.assets.createPrefab(name, jsonOf(prefab), assetId);
+    const created = await window.studio.assets.createPrefab(name, jsonOf(prefabJsonOf(prefab)), assetId);
     await get().refresh(registries);
     return created;
   },
@@ -248,7 +249,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   savePrefab: async (assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
-    await window.studio.assets.savePrefab(entry.path, jsonOf(prefab));
+    await window.studio.assets.savePrefab(entry.path, jsonOf(prefabJsonOf(prefab)));
     // Updated in place as well as written: every instance re-expands from this
     // table, and waiting for a re-read would show the old shape in between.
     const prefabs = new Map(get().prefabs).set(assetId, prefab);

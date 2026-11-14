@@ -1,6 +1,5 @@
 import {
   COLLIDER_SHAPE_LABELS,
-  COMPONENT_TYPES,
   JOINT_KIND_LABELS,
   PROJECT_FORMAT_VERSION,
   conformColliderShape,
@@ -35,6 +34,8 @@ import { readPath } from '../src/inspector/target';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
+/** Every type the window knows, in the order it registered them. */
+const TYPES = registries.components.values().map((definition) => definition.id);
 
 /*
  * The pane declarations, checked where they carry logic of their own.
@@ -267,7 +268,7 @@ describe('every row that reads a tuple says so', () => {
     }
   }
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
+  it.each(TYPES)('%s', (type) => {
     checkTuples(type, createComponent(registries, type));
   });
 
@@ -320,7 +321,7 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
     ...spec.params,
   });
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
+  it.each(TYPES)('%s', (type) => {
     for (const spec of paneEntriesFor(createComponent(registries, type)).entries) {
       if (!('path' in spec)) continue;
       const unknown = Object.keys(paramsOf(spec as FieldSpec<never>)).filter(
@@ -387,7 +388,7 @@ describe('a declared control fits the value it is bound to', () => {
     }
   }
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
+  it.each(TYPES)('%s', (type) => {
     const component = createComponent(registries, type);
     for (const spec of paneEntriesFor(component).entries) {
       if (!('path' in spec)) continue;

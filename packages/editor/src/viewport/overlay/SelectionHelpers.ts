@@ -1,8 +1,9 @@
 import {
-  COMPONENT_TYPES,
   componentsOfType,
+  idMapOf,
+  isComponentTypeId,
   type ComponentId,
-  type ComponentType,
+  type ComponentTypeId,
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
@@ -51,11 +52,10 @@ export class SelectionHelpers {
    * needed to widen the values — `mount` is a method, so TypeScript keeps its
    * parameter bivariant. See `ComponentHelper`.
    */
-  private readonly helpers = new Map<ComponentType, ComponentHelper>(
-    COMPONENT_TYPES.flatMap((type) => {
-      const helper = OVERLAYS[type].helper;
-      return helper === null ? [] : [[type, helper] as const];
-    }),
+  private readonly helpers = new Map<ComponentTypeId, ComponentHelper>(
+    [...idMapOf(OVERLAYS, isComponentTypeId)].flatMap(([type, overlay]) =>
+      overlay.helper === null ? [] : [[type, overlay.helper] as const],
+    ),
   );
   private readonly mounted = new Map<Key, Mounted>();
 

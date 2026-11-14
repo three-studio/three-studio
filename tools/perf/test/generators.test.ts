@@ -59,7 +59,7 @@ const entityCount = (scene: SceneDoc): number => scene.entities.size;
 async function references(projectPath: string, scenes: readonly SceneDoc[]): Promise<{ resolved: number; unresolved: string[] }> {
   const known = new Set((await scanAssets(registries, projectPath)).assets.map((asset) => asset.id));
   const named = scenes
-    .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(scene, entityId)))
+    .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(registries, scene, entityId)))
     .flatMap((component) => componentAssets(registries, component))
     .filter(isAssetId);
   return {

@@ -1,7 +1,8 @@
 import {
   deserializeScene,
   findScene,
-  serializeScene,
+  jsonOf,
+  sceneJsonOf,
   type CoreRegistries,
   type SceneEntry,
   type SceneId,
@@ -175,7 +176,8 @@ export async function saveSceneAs(): Promise<void> {
     await backToTheScene({ stopPlay: true });
     const change = await window.studio.project.createScene(
       name,
-      serializeScene(useDocumentStore.getState().scene),
+      // A message: the main process reads it and writes the copy's file itself.
+      jsonOf(sceneJsonOf(useDocumentStore.getState().scene)),
     );
     // The copy's file holds this document under the copy's id and name; the
     // document has to say so too, or the next save writes the original's back.

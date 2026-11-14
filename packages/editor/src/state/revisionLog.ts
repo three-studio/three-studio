@@ -76,14 +76,28 @@ function affectedEntities(patches: readonly Patch[]): {
     const [root, second, third] = patch.path;
     if (root === 'environment') {
       environment = true;
-    } else if (root === 'components') {
+    } else if (root === 'components' || root === 'unknownComponents') {
       /*
        * `['components', <type>, <entityId>, <componentId>, …]` — the entity is
        * at index **2**, not 1. Reading it from 1 would name a component type and
-       * wake nothing at all.
+       * wake nothing at all. The components of the types this build does not
+       * define sit under a root of their own, by the same three levels.
+       *
+       * One patch stops a segment short and still names its entities: a type's
+       * table **added** whole. The document holds a table only for a type it has
+       * held a component of, so a scene's first light adds the lights' table
+       * with that light in it. Nothing of the type existed before, so the keys
+       * of what was added are all there is to re-read; read as "everything",
+       * Add Component reconciled the whole scene for one entity. A table
+       * replaced or taken out says nothing of what it held, and stays that.
        */
       if (isEntityId(third)) entities.add(third);
-      else everything = true;
+      else if (third === undefined && patch.op === 'add' && patch.value instanceof Map) {
+        for (const entityId of patch.value.keys()) {
+          if (isEntityId(entityId)) entities.add(entityId);
+          else everything = true;
+        }
+      } else everything = true;
       component = true;
       /*
        * Structural only down to the component itself.

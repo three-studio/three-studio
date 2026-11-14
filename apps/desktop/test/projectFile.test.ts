@@ -12,6 +12,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { openProject, readProject } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A project on disk outlives every version of the editor that will open it, so
@@ -27,7 +30,7 @@ async function projectWith(fields: Record<string, unknown>): Promise<string> {
 
   const document = createEmptyScene('main');
   const path = `${SCENES_DIR}/main.scene.json`;
-  await writeFile(join(root, path), serializeScene(document), 'utf8');
+  await writeFile(join(root, path), serializeScene(registries, document), 'utf8');
 
   await writeFile(
     join(root, PROJECT_FILE_NAME),
@@ -144,7 +147,7 @@ async function formatOneProject(
   for (const name of ['main', 'Loading']) {
     const document = createEmptyScene(name);
     const path = `${SCENES_DIR}/${name}.scene.json`;
-    await writeFile(join(root, path), serializeScene(document), 'utf8');
+    await writeFile(join(root, path), serializeScene(registries, document), 'utf8');
     ids[name] = document.id;
   }
 
@@ -204,7 +207,7 @@ async function formatTwoProject(fields: Record<string, unknown> = {}): Promise<s
   const root = await mkdtemp(join(tmpdir(), 'studio-format2-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
   const document = createEmptyScene('main');
-  await writeFile(join(root, `${SCENES_DIR}/main.scene.json`), serializeScene(document), 'utf8');
+  await writeFile(join(root, `${SCENES_DIR}/main.scene.json`), serializeScene(registries, document), 'utf8');
 
   await writeFile(
     join(root, PROJECT_FILE_NAME),

@@ -492,7 +492,7 @@ export function linkedMaterial(
 export function inspectorSignature(registries: CoreRegistries, entityId: EntityId | undefined): string {
   const scene = expandedScene(registries).scene;
   if (entityId === undefined || !scene.entities.has(entityId)) return '';
-  const parts = componentsOf(scene, entityId).map((component) => {
+  const parts = componentsOf(registries, scene, entityId).map((component) => {
     const effective = effectiveComponent(entityId, component);
     const { key, entries } = paneEntriesFor(effective);
     return `${key}/${shapeOf(entries, effective)}`;

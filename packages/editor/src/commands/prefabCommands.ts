@@ -76,6 +76,9 @@ export async function createPrefabFromEntity(registries: CoreRegistries, entityI
           dropComponentsOf(draft, id);
         }
         target.children = [];
+        // Dropped first, and not only replaced: what the entity carried of a
+        // type this build does not define went into the prefab with the rest.
+        dropComponentsOf(draft, entityId);
         setComponentsOf(draft, entityId, [createPrefabInstance(assetId)]);
       },
       {
@@ -249,7 +252,11 @@ export async function applyInstanceOverrides(registries: CoreRegistries, entityI
     const entity = after.entities.get(localId);
     if (!entity) continue; // The prefab was restructured; drop the stale override.
 
-    setComponentsOf(after, localId, applyPrefabOverride(registries, entity, componentsOf(after, localId), override));
+    setComponentsOf(
+      after,
+      localId,
+      applyPrefabOverride(registries, entity, componentsOf(registries, after, localId), override),
+    );
     // Where the root sits is the placement, not the shape: applying it would
     // move every instance of the prefab to wherever this one happens to stand.
     // Unity draws the line in the same place, and on the same side of scale —
@@ -430,7 +437,11 @@ export function unpackPrefabInstance(registries: CoreRegistries, entityId: Entit
       // Read from the expansion, not from the draft: these entities only exist
       // in the expanded scene, and their components with them. The walk that
       // renames them copies them too.
-      setComponentsOf(draft, copy.id, renameEntityReferences(componentsOf(expanded, entity.id), follow));
+      setComponentsOf(
+        draft,
+        copy.id,
+        renameEntityReferences(componentsOf(registries, expanded, entity.id), follow),
+      );
 
       // Appended, never assigned: whatever the author parented under the
       // instance is already in `children` and is not ours to drop.

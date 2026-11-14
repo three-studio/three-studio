@@ -319,7 +319,7 @@ describe('walking a document that contains a cycle', () => {
 
     // At load the document is already this shape on disk, so healing is right
     // here and refusing is not: the alternative is a project that will not open.
-    const loaded = deserializeScene(registries, serializeScene(sceneWith([a, b])));
+    const loaded = deserializeScene(registries, serializeScene(registries, sceneWith([a, b])));
 
     expect(validateHierarchy(loaded)).toEqual([]);
     expect(loaded.rootOrder.length).toBeGreaterThan(0);

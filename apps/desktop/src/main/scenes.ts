@@ -221,7 +221,7 @@ export async function createScene(
   const document =
     from === undefined ? createEmptyScene(newName) : { ...from, id: createSceneId(), name: newName };
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
-  await writeSceneFile(projectPath, path, serializeScene(document));
+  await writeSceneFile(projectPath, path, serializeScene(registries, document));
 
   return { project, scenes: await discoverScenes(projectPath), scene };
 }
@@ -255,7 +255,7 @@ export async function duplicateScene(
   await writeSceneFile(
     projectPath,
     path,
-    serializeScene({ ...document, id: scene.id, name: copyName }),
+    serializeScene(registries, { ...document, id: scene.id, name: copyName }),
   );
 
   return { project, scenes: await discoverScenes(projectPath), scene };

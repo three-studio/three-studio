@@ -1,14 +1,14 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMPONENT_TYPES, activateCore, createCoreRegistries } from '@three-studio/core';
+import { activateCore, createCoreRegistries } from '@three-studio/core';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 
 /*
  * A component type is folders — one per package that has a part of it — and
- * the lists that have to name them: core's activation and `COMPONENT_TYPES`, the
- * runtime's activation. This checks the lists against the folders.
+ * the lists that have to name them: core's activation and the runtime's. This
+ * checks the lists against the folders.
  *
  * **What it catches that nothing else does.** `tsc` refuses an icon outside
  * `ComponentIcon` or a factory missing from the package's front door, and a type
@@ -22,11 +22,9 @@ import { describe, expect, it } from 'vitest';
  * type simply does not exist, and the author who wrote nine files finds out by
  * noticing their component is absent from a menu.
  *
- * It is also the shape of the lists that stands between this codebase and
- * third-party extension: a plugin cannot add a line to `COMPONENT_TYPES` inside a
- * compiled `core`. Deriving them is the work; agreeing about them is the least
- * that can be done today, and it is what makes the derivation checkable when it
- * comes.
+ * The kernel's types only. A type defined outside it registers through its own
+ * activation and is in no list here: the document's tables are open, and the
+ * registry a root fills is the one list of the types a window knows.
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -75,13 +73,6 @@ describe('core knows about every component folder it has', () => {
     ]);
   });
 
-  it('names each one in `COMPONENT_TYPES`', () => {
-    // The union `ComponentType` is derived from the schema and `tsc` keeps this
-    // list inside it, but nothing makes it *complete*: a type can be in the
-    // union, have a folder, and be absent here.
-    expect([...COMPONENT_TYPES].sort()).toEqual(typeFolders('core'));
-  });
-
   it('leaves its registries empty once the activation is disposed', () => {
     const registries = createCoreRegistries();
     activateCore(registries).dispose();
@@ -111,9 +102,10 @@ describe('the runtime knows about every component folder it has', () => {
   });
 
   it('draws a subset of what core declares, never something core has never heard of', () => {
-    const unknown = typeFolders('runtime').filter(
-      (type) => !COMPONENT_TYPES.some((declared) => declared === type),
-    );
-    expect(unknown).toEqual([]);
+    const core = createCoreRegistries();
+    activateCore(core);
+    const declared = core.components.values().map(({ id }) => id);
+
+    expect(typeFolders('runtime').filter((type) => !declared.some((id) => id === type))).toEqual([]);
   });
 });

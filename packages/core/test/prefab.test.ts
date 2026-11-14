@@ -2,6 +2,7 @@ import {
   applyPrefabOverride,
   assertDefined,
   componentsOf,
+  componentsOfType,
   createAudioListener,
   createCollider,
   createColliderShape,
@@ -93,11 +94,16 @@ describe('a prefab as text', () => {
   it('is written key-sorted, and read back as it was', () => {
     const prefab = treePrefab();
 
-    const text = serializePrefab(prefab);
+    const text = serializePrefab(registries, prefab);
 
-    expect(text).toBe(stableJson(prefab));
+    // Sorting it again changes nothing, and it lists a table for every
+    // registered type, as a scene's file does.
+    expect(text).toBe(stableJson(JSON.parse(text)));
+    expect(Object.keys(JSON.parse(text).components)).toEqual(
+      registries.components.values().map(({ id }) => id).sort(),
+    );
     expect(deserializePrefab(registries, text)).toEqual(prefab);
-    expect(serializePrefab(deserializePrefab(registries, text))).toBe(text);
+    expect(serializePrefab(registries, deserializePrefab(registries, text))).toBe(text);
   });
 
   it('is read through the migration, which fills what an older editor left out', () => {
@@ -106,7 +112,7 @@ describe('a prefab as text', () => {
     const read = deserializePrefab(registries, older);
 
     expect(read.version).toBe(treePrefab().version);
-    expect(componentsOf(read, read.root)).toEqual([]);
+    expect(componentsOf(registries, read, read.root)).toEqual([]);
   });
 
   it('is refused in words when it is not JSON', () => {
@@ -114,7 +120,7 @@ describe('a prefab as text', () => {
   });
 
   it('is read under the id it is given, whatever its own file says', () => {
-    const text = serializePrefab(treePrefab());
+    const text = serializePrefab(registries, treePrefab());
 
     // A prefab is an asset, and the place that read it knows the asset's id: its
     // sidecar's, or its key in a library.
@@ -135,7 +141,7 @@ describe('a prefab as text', () => {
   });
 
   it('holds its entities in a Map once read', () => {
-    const read = deserializePrefab(registries, serializePrefab(treePrefab()));
+    const read = deserializePrefab(registries, serializePrefab(registries, treePrefab()));
 
     expect(read.entities).toBeInstanceOf(Map);
     expect(read.entities.size).toBe(2);
@@ -213,7 +219,7 @@ describe('prefab expansion', () => {
   it('overrides a property of one component and leaves its siblings alone', () => {
     const prefab = treePrefab();
     putComponent(prefab, prefab.root, createRigidBody());
-    const trunkParts = componentsOf(prefab, prefab.root);
+    const trunkParts = componentsOf(registries, prefab, prefab.root);
     const mesh = assertDefined(trunkParts[0], 'the trunk\'s mesh');
     const body = assertDefined(trunkParts[1], 'the trunk\'s rigid body');
 
@@ -228,7 +234,7 @@ describe('prefab expansion', () => {
     // By id, so this lands on the rigidbody however the prefab is reordered
     // later. Keyed by position, inserting anything before it moved the override
     // onto the mesh.
-    const parts = componentsOf(scene, built.id);
+    const parts = componentsOf(registries, scene, built.id);
     expect(parts.find((c) => c.id === body.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
     expect(parts.find((c) => c.id === mesh.id)?.type).toBe('mesh');
   });
@@ -244,7 +250,7 @@ describe('prefab expansion', () => {
     };
 
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
-    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+    const built = componentsOf(registries, scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
 
@@ -265,7 +271,7 @@ describe('prefab expansion', () => {
     };
 
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
-    const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
+    const built = componentsOf(registries, scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
     // Filled from its own kind, as any stored shape is.
@@ -275,7 +281,7 @@ describe('prefab expansion', () => {
   it('follows the component it names when the prefab is reordered', () => {
     const prefab = treePrefab();
     putComponent(prefab, prefab.root, createRigidBody());
-    const body = assertDefined(componentsOf(prefab, prefab.root)[1], 'the trunk\'s rigid body');
+    const body = assertDefined(componentsOf(registries, prefab, prefab.root)[1], 'the trunk\'s rigid body');
 
     const host = instanceOf(prefab);
     (host.components[0] as PrefabInstanceComponent).overrides = {
@@ -289,7 +295,7 @@ describe('prefab expansion', () => {
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
 
-    const parts = componentsOf(scene, built.id);
+    const parts = componentsOf(registries, scene, built.id);
     expect(parts.find((c) => c.id === body.id)).toMatchObject({ mass: 12 });
     expect(parts.find((c) => c.type === 'audioListener')).toBeDefined();
     expect(parts.find((c) => c.type === 'mesh')).not.toMatchObject({ mass: 12 });
@@ -340,9 +346,9 @@ describe('prefab expansion', () => {
     const second = expandPrefabs(registries, scene, library(prefab), first);
 
     const id = instancedId(host.entity.id, prefab.root);
-    const placed = first.scene.components.mesh.get(id);
+    const placed = componentsOfType(first.scene, 'mesh').get(id);
     expect(placed?.size).toBe(1);
-    expect(second.scene.components.mesh.get(id)).toBe(placed);
+    expect(componentsOfType(second.scene, 'mesh').get(id)).toBe(placed);
   });
 
   it('writes into no table the scene owns', () => {
@@ -356,11 +362,11 @@ describe('prefab expansion', () => {
     // The expansion adds what the instance produced to a copy of each table. Added
     // to the scene's own, it would reach the document the author edits, and the
     // next save would write the placed copies out as if they had been drawn.
-    expect(expanded.components.mesh.size).toBe(3);
-    expect([...scene.components.mesh.keys()]).toEqual([own.entity.id]);
-    expect(expanded.components.mesh).not.toBe(scene.components.mesh);
+    expect(componentsOfType(expanded, 'mesh').size).toBe(3);
+    expect([...componentsOfType(scene, 'mesh').keys()]).toEqual([own.entity.id]);
+    expect(componentsOfType(expanded, 'mesh')).not.toBe(componentsOfType(scene, 'mesh'));
     // And what the scene holds is the very same inner table, not a copy.
-    expect(expanded.components.mesh.get(own.entity.id)).toBe(scene.components.mesh.get(own.entity.id));
+    expect(componentsOfType(expanded, 'mesh').get(own.entity.id)).toBe(componentsOfType(scene, 'mesh').get(own.entity.id));
   });
 
   it('puts the lights a prefab places in the expanded scene\'s tables, where the editor looks for one', () => {
@@ -373,8 +379,8 @@ describe('prefab expansion', () => {
 
     // A level whose lights all come from instances has none in the document, and
     // the editor's fallback pair is switched off by asking the expanded scene.
-    expect(scene.components.light.size).toBe(0);
-    expect(expanded.components.light.size).toBe(1);
+    expect(componentsOfType(scene, 'light').size).toBe(0);
+    expect(componentsOfType(expanded, 'light').size).toBe(1);
   });
 
   it('rebuilds an instance whose overrides changed', () => {
@@ -402,7 +408,7 @@ describe('folding one override into an entity', () => {
   function bodied() {
     const prefab = treePrefab();
     putComponent(prefab, prefab.root, createRigidBody());
-    const [mesh, body] = componentsOf(prefab, prefab.root);
+    const [mesh, body] = componentsOf(registries, prefab, prefab.root);
     return {
       entity: structuredClone(assertDefined(prefab.entities.get(prefab.root), 'the prefab root')),
       mesh: assertDefined(mesh, 'its mesh'),
@@ -566,7 +572,7 @@ describe('references inside a prefab', () => {
     ]);
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
-    const script = componentsOf(scene, instancedId(host.entity.id, brain.entity.id))[0] as {
+    const script = componentsOf(registries, scene, instancedId(host.entity.id, brain.entity.id))[0] as {
       props: Record<string, unknown>;
     };
     // The asset's id names nothing in the expanded scene, so every instance was
@@ -599,7 +605,7 @@ describe('references inside a prefab', () => {
     // itself holds is a reference to one of its entities.
     const trunk = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
     expect(trunk.name).toBe('Trunk');
-    const mesh = componentsOf(scene, trunk.id)[0] as { material: { color: string } };
+    const mesh = componentsOf(registries, scene, trunk.id)[0] as { material: { color: string } };
     expect(mesh.material.color).toMatch(/^#/);
   });
 });
@@ -668,10 +674,10 @@ describe('creating a prefab from a scene', () => {
 
     const prefab = prefabFromEntities('Tree', scene, trunk.entity.id);
 
-    expect([...prefab.components.mesh.keys()].sort()).toEqual([trunk.entity.id, leaves.entity.id].sort());
+    expect([...componentsOfType(prefab, 'mesh').keys()].sort()).toEqual([trunk.entity.id, leaves.entity.id].sort());
     // Copies, so editing the prefab does not edit the scene it was made from.
-    expect(prefab.components.mesh.get(trunk.entity.id)).not.toBe(scene.components.mesh.get(trunk.entity.id));
-    expect(prefab.components.mesh.get(trunk.entity.id)).toEqual(scene.components.mesh.get(trunk.entity.id));
+    expect(componentsOfType(prefab, 'mesh').get(trunk.entity.id)).not.toBe(componentsOfType(scene, 'mesh').get(trunk.entity.id));
+    expect(componentsOfType(prefab, 'mesh').get(trunk.entity.id)).toEqual(componentsOfType(scene, 'mesh').get(trunk.entity.id));
   });
 });
 
@@ -717,7 +723,7 @@ describe('prefab variants', () => {
     const variant = prefabVariantOf('Short Tree', PREFAB_1);
     // The override a variant carries lives on its root's instance component —
     // set in Prefab Mode, because a scene cannot reach two prefabs deep.
-    const rootInstance = componentsOf(variant, variant.root)[0] as PrefabInstanceComponent;
+    const rootInstance = componentsOf(registries, variant, variant.root)[0] as PrefabInstanceComponent;
     rootInstance.overrides = { [base.root]: { transform: { scale: [1, 0.4, 1] } } };
 
     const host = createEntity('Tree', [
@@ -749,7 +755,7 @@ describe('editing a prefab as a scene', () => {
     expect(back.name).toBe(prefab.name);
     expect(back.root).toBe(prefab.root);
     expect([...back.entities.keys()].sort()).toEqual([...prefab.entities.keys()].sort());
-    expect([...back.components.mesh.keys()].sort()).toEqual([...prefab.components.mesh.keys()].sort());
+    expect([...componentsOfType(back, 'mesh').keys()].sort()).toEqual([...componentsOfType(prefab, 'mesh').keys()].sort());
   });
 
   it('shares no table with the prefab it was lifted from', () => {
@@ -758,9 +764,9 @@ describe('editing a prefab as a scene', () => {
 
     // Prefab Mode edits the scene; the asset on disk and in the library is what
     // every instance expands from, and is replaced only when the session ends.
-    asScene.components.mesh.clear();
+    asScene.components.get('mesh')?.clear();
 
-    expect(prefab.components.mesh.size).toBe(2);
+    expect(componentsOfType(prefab, 'mesh').size).toBe(2);
   });
 
   it('carries an entity added while editing', () => {
@@ -839,7 +845,7 @@ describe('overriding through nesting', () => {
 
     // The room says the lamp it places is dim; this room says it is off.
     const roomDoc = assertDefined(library.get(ROOM), 'the room prefab');
-    const placement = componentsOf(roomDoc, placed.id)[0] as PrefabInstanceComponent;
+    const placement = componentsOf(registries, roomDoc, placed.id)[0] as PrefabInstanceComponent;
     placement.overrides = { [lamp.root]: { name: 'Dim lamp', visible: true } };
 
     (host.components[0] as PrefabInstanceComponent).overrides = {

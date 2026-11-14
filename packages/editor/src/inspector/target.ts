@@ -106,7 +106,7 @@ export class SingleTarget implements EntityTarget {
 
   components(): readonly ComponentTarget[] {
     if (!this.entity) return [];
-    return componentsOf(expandedScene(this.registries).scene, this.entityId).map(
+    return componentsOf(this.registries, expandedScene(this.registries).scene, this.entityId).map(
       (component) => new SingleComponentTarget(this.registries, this.entityId, component.id, component),
     );
   }
@@ -155,7 +155,7 @@ export class MultiTarget implements EntityTarget {
     const rank = new Map<ComponentType, number>();
     const shared: ComponentTarget[] = [];
 
-    for (const component of componentsOf(scene, first.id)) {
+    for (const component of componentsOf(this.registries, scene, first.id)) {
       const nth = rank.get(component.type) ?? 0;
       rank.set(component.type, nth + 1);
 

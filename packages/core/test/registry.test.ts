@@ -27,9 +27,7 @@ import {
   type MeshComponent,
   type SceneDoc,
 } from '../src/index';
-// Not part of the public surface: the first case walks the list the schema
-// declares, which is a fact internal to core.
-import { COMPONENT_TYPES, componentsOf, emptyComponentTables, setComponentsOf } from '../src/scene/components';
+import { componentsOf, setComponentsOf } from '../src/scene/components';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
@@ -146,7 +144,7 @@ describe('combineDisposables', () => {
 
 describe('component registry', () => {
   it('creates a component of the type asked for', () => {
-    for (const type of COMPONENT_TYPES) {
+    for (const { id: type } of registries.components.values()) {
       const component = createComponent(registries, type);
       expect(component.type).toBe(type);
       expect(component.id).toMatch(/\S/);
@@ -324,24 +322,30 @@ describe('fill', () => {
       id: fixedId('scene', 's1'),
       name: 'Main',
       entities: new Map([[entity.entity.id, entity.entity]]),
-      components: emptyComponentTables(),
+      components: new Map(),
+      unknownComponents: new Map(),
       rootOrder: [entity.entity.id],
       environment: { background: '#000000' } as SceneDoc['environment'],
     };
     setComponentsOf(scene, entity.entity.id, entity.components);
-    // A type no module here defines has no place in a document: it is the
-    // file's own table, so that is where this one is put.
-    const file = JSON.parse(serializeScene(scene));
+    // A type no module here defines cannot be filed by `putComponent`: it
+    // arrives from a file's own table, so that is where this one is put.
+    const file = JSON.parse(serializeScene(registries, scene));
     const stored = { id: 'c2', type: 'teleporter', target: 'x' };
     file.components['teleporter'] = { [entity.entity.id]: { c2: stored } };
 
     const loaded = deserializeScene(registries, JSON.stringify(file));
-    const [light] = componentsOf(loaded, entity.entity.id);
+    const [light] = componentsOf(registries, loaded, entity.entity.id);
     expect(light).toMatchObject({ type: 'light', intensity: expect.any(Number) });
 
-    // Kept under a table of its own, since no type here claims it — and copied
-    // through byte for byte, which is the rule that matters.
-    expect(Reflect.get(loaded.components, 'teleporter')).toEqual({ [entity.entity.id]: { c2: stored } });
+    // Kept apart, since no type here claims it — and copied through byte for
+    // byte, which is the rule that matters.
+    expect(loaded.unknownComponents.get(fixedId('componentType', 'teleporter'))).toEqual(
+      new Map([[entity.entity.id, new Map([['c2', stored]])]]),
+    );
+    expect(JSON.parse(serializeScene(registries, loaded)).components['teleporter']).toEqual({
+      [entity.entity.id]: { c2: stored },
+    });
   });
 });
 

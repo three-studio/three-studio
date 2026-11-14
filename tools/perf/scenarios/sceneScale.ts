@@ -114,7 +114,7 @@ export function nodeTimings(
   if (scene === null) throw new Error('no repetition ran');
   for (let n = 0; n < warmups + repetitions; n += 1) {
     const started = performance.now();
-    serializeScene(scene);
+    serializeScene(registries, scene);
     if (n >= warmups) encodes.push(performance.now() - started);
   }
   return { decodeMs: median(decodes), encodeMs: median(encodes), entities: scene.entities.size };

@@ -6,6 +6,7 @@ import {
   createJoint,
   createPrefabInstance,
   createRigidBody,
+  entitiesWith,
   entityWorldMatrixPath,
   expandPrefabs,
   fixedId,
@@ -101,7 +102,7 @@ describe('physicsBodies', () => {
 
     physicsBodies(watched);
 
-    const colliders = [...scene.components.collider.keys()];
+    const colliders = entitiesWith(scene, 'collider');
     const above = new Set(colliders.flatMap((id) => entityWorldMatrixPath(scene, id)));
     expect(read.size).toBeGreaterThan(0);
     for (const key of read) expect(above).toContain(key);

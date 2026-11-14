@@ -6,7 +6,6 @@ import {
   createPhysicsSettings,
   createPrefabInstance,
   createRenderingSettings,
-  emptyComponentTables,
   findComponent,
   fixedId,
   putComponent,
@@ -168,9 +167,9 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // The list below is the one thing here that has to be kept up to date, and
     // it is meant to be: a family added to the registry and not to this line
     // makes the count wrong, which is the test asking whether the new family
-    // arrived whole. `core`'s component registry checks the same thing against
-    // `COMPONENT_TYPES`; commands have no such canonical union, precisely
-    // because the table *is* the list.
+    // arrived whole. `core`'s component types are checked the same way against
+    // their folders; commands have no such canonical list, precisely because
+    // the table *is* the list.
     const families = [
       EDIT_COMMANDS,
       SCENE_FILE_COMMANDS,
@@ -280,7 +279,8 @@ describe('the two prefab menus ask one question', () => {
             id: PREFAB,
             name: 'Crate',
             entities: new Map<EntityId, EntityDoc>(),
-            components: emptyComponentTables(),
+            components: new Map(),
+            unknownComponents: new Map(),
             root: fixedId('entity', 'crate-root'),
           },
         ],

@@ -468,7 +468,7 @@ export function addComponentWithDependencies(registries: CoreRegistries, id: Ent
   const scene = useDocumentStore.getState().scene;
   if (!scene.entities.has(id)) return;
 
-  const siblings = componentsOf(scene, id);
+  const siblings = componentsOf(registries, scene, id);
   const present = new Set(siblings.map((component) => component.type));
   // Refused here as well as greyed out in the menu: the menu is one caller, and
   // a shortcut or a script reaching this directly must not be able to build a
@@ -728,7 +728,7 @@ export function setSceneName(name: string): void {
   });
 }
 
-export function duplicateSelection(selection: Selection): void {
+export function duplicateSelection(registries: CoreRegistries, selection: Selection): void {
   // Same reason as `deleteSelection`: a copy of something a prefab produced has
   // nowhere in the document to live.
   const ids = selection.documentOnly();
@@ -761,7 +761,7 @@ export function duplicateSelection(selection: Selection): void {
       // trailer duplicated together left the new trailer hitched to the old car.
       // What was not copied keeps the original, as Unity's Duplicate does.
       for (const copyId of renamed.values()) {
-        const components = renameEntityReferences(componentsOf(scene, copyId), (id) => renamed.get(id));
+        const components = renameEntityReferences(componentsOf(registries, scene, copyId), (id) => renamed.get(id));
         setComponentsOf(scene, copyId, components);
       }
     },

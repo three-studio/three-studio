@@ -1,40 +1,56 @@
 import {
-  COMPONENT_TYPES,
   SCENE_FORMAT_VERSION,
   assertDefined,
   cloneSubtree,
   componentsOf,
+  componentsOfType,
   createCollider,
   createColliderShape,
+  createCoreRegistries,
+  createEmptyScene,
   createEntity,
   createLight,
   createMeshEntity,
+  createPrefabInstance,
   createRigidBody,
   createScript,
   deleteComponent,
+  deserializePrefab,
   deserializeScene,
-  emptyComponentTables,
   entitiesWith,
+  expandPrefabs,
   findComponent,
   findComponentById,
   findComponents,
   fixedId,
   hasComponent,
   insertEntity,
+  instancedId,
+  jsonOf,
+  prefabFromEntities,
+  prefabJsonOf,
+  prefabToScene,
   putComponent,
   removeSubtree,
   renameEntityReferences,
+  sceneJsonOf,
+  sceneToPrefab,
+  serializePrefab,
   serializeScene,
+  setComponentsOf,
+  stableJson,
+  unknownComponentTypes,
   validateHierarchy,
   type ColliderComponent,
+  type ComponentDoc,
   type ComponentId,
+  type ComponentTypeId,
   type EntityId,
   type LightComponent,
   type MeshComponent,
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import { copyComponentTables } from '../src/scene/components';
 import { sceneWith } from './fixtures';
 import { builtInRegistries } from './registries';
 
@@ -62,43 +78,57 @@ function lit(count: number): { scene: SceneDoc; ids: EntityId[]; litId: EntityId
 }
 
 describe('the tables themselves', () => {
-  it('are a Map of Maps for each type, of the component that type holds', () => {
-    // The three levels are type, entity, component id. A Map is copied and
-    // frozen by immer in one step, where a record of ten thousand keys is
-    // frozen key by key.
-    expectTypeOf<SceneDoc['components']['mesh']>().toEqualTypeOf<Map<EntityId, Map<ComponentId, MeshComponent>>>();
-    expectTypeOf<SceneDoc['components']['light']>().toEqualTypeOf<Map<EntityId, Map<ComponentId, LightComponent>>>();
-    expectTypeOf<SceneDoc['components']['collider']>().toEqualTypeOf<
-      Map<EntityId, Map<ComponentId, ColliderComponent>>
+  it('are a Map by type, of Maps by entity, of Maps by component id', () => {
+    // A Map is copied and frozen by immer in one step, where a record of ten
+    // thousand keys is frozen key by key. The outer one is keyed by type id and
+    // open: no list of types stands behind it.
+    expectTypeOf<SceneDoc['components']>().toEqualTypeOf<
+      Map<ComponentTypeId, Map<EntityId, Map<ComponentId, ComponentDoc>>>
     >();
   });
 
-  it('start empty, one for every type this build knows', () => {
-    const tables = emptyComponentTables();
+  it('hold a table only for a type the document has held a component of', () => {
+    const scene = sceneWith([]);
+    expect(scene.components.size).toBe(0);
 
-    // Written out type by type, which the compiler checks against the mapped
-    // type, and the list of types is written out beside it: this is what says
-    // the two name the same ones.
-    expect(Object.keys(tables).sort()).toEqual([...COMPONENT_TYPES].sort());
-    for (const type of COMPONENT_TYPES) {
-      expect(tables[type], type).toBeInstanceOf(Map);
-      expect(tables[type].size, type).toBe(0);
-    }
+    insertEntity(scene, createMeshEntity('box'));
+
+    expect([...scene.components.keys()]).toEqual(['mesh']);
   });
 
-  it('are copied one level deep, for every type', () => {
-    const { scene } = lit(2);
+  it('keep a table once made, emptied or not', () => {
+    const { scene, litId } = lit(1);
+    const light = assertDefined(findComponent(scene, litId, 'light'), 'the light');
 
-    const copy = copyComponentTables(scene.components);
+    deleteComponent(scene, litId, light.id);
 
-    // What an expansion adds goes into the copy; the Maps and the components
-    // under each entity stay the very objects the scene holds.
-    expect(Object.keys(copy).sort()).toEqual([...COMPONENT_TYPES].sort());
-    for (const type of COMPONENT_TYPES) {
-      expect(copy[type], type).not.toBe(scene.components[type]);
-      expect(copy[type].size, type).toBe(scene.components[type].size);
-      for (const [entityId, held] of scene.components[type]) expect(copy[type].get(entityId), type).toBe(held);
-    }
+    // Taking the table out would be a change no entity names, which a reader of
+    // the document could only answer by reading all of it again.
+    expect(scene.components.get('light')).toBeInstanceOf(Map);
+    expect(scene.components.get('light')?.size).toBe(0);
+  });
+
+  it('read a type the document holds no table of as one that holds nothing', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+
+    expect(componentsOfType(scene, 'light').size).toBe(0);
+    expect(entitiesWith(scene, 'light')).toEqual([]);
+    expect(hasComponent(scene, cube.entity.id, 'light')).toBe(false);
+    expect(findComponent(scene, cube.entity.id, 'light')).toBeUndefined();
+    expect(findComponents(scene, cube.entity.id, 'light')).toEqual([]);
+  });
+
+  it('give a component read by its type the type that id names', () => {
+    const cube = createMeshEntity('box');
+    const scene = sceneWith([cube]);
+
+    // The tables hold any component. What is read by a type is narrowed by the
+    // `type` it was filed under, so no caller has to claim what it found.
+    expectTypeOf(findComponent(scene, cube.entity.id, 'mesh')).toEqualTypeOf<MeshComponent | undefined>();
+    expectTypeOf(findComponent(scene, cube.entity.id, 'light')).toEqualTypeOf<LightComponent | undefined>();
+    expectTypeOf(findComponents(scene, cube.entity.id, 'collider')).toEqualTypeOf<ColliderComponent[]>();
+    expect(findComponent(scene, cube.entity.id, 'mesh')?.geometry.kind).toBe('box');
   });
 
   it('hold an entity\'s components of a type in a Map keyed by their ids', () => {
@@ -106,7 +136,7 @@ describe('the tables themselves', () => {
     const scene = sceneWith([cube]);
     const mesh = assertDefined(findComponent(scene, cube.entity.id, 'mesh'), 'the cube\'s mesh');
 
-    const held = scene.components.mesh.get(cube.entity.id);
+    const held = componentsOfType(scene, 'mesh').get(cube.entity.id);
 
     expect(held).toBeInstanceOf(Map);
     expect(held?.get(mesh.id)).toBe(mesh);
@@ -144,7 +174,7 @@ describe('listing the components of one type on an entity', () => {
     }
 
     expect(findComponents(scene, cube.entity.id, 'collider')).toEqual([]);
-    expect(scene.components.collider.has(cube.entity.id)).toBe(false);
+    expect(componentsOfType(scene, 'collider').has(cube.entity.id)).toBe(false);
   });
 });
 
@@ -187,7 +217,7 @@ describe('two components of one type on one entity', () => {
     // This is why the third level is the id and not a slot: a slot is a
     // position, and removing the first would slide the second onto it — the
     // override defect reduced to a narrower case but intact.
-    const left = componentsOf(scene, cube.entity.id).filter((c) => c.type === 'collider');
+    const left = componentsOf(registries, scene, cube.entity.id).filter((c) => c.type === 'collider');
     expect(left).toHaveLength(1);
     expect(left[0]!.id).toBe(second.id);
     expect((left[0] as ColliderComponent).shape.kind).toBe('sphere');
@@ -202,7 +232,7 @@ describe('two components of one type on one entity', () => {
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
-    const loaded = componentsOf(deserializeScene(registries, serializeScene(scene)), cube.entity.id);
+    const loaded = componentsOf(registries, deserializeScene(registries, serializeScene(registries, scene)), cube.entity.id);
 
     // Registry order across types still holds: the mesh comes before both
     // scripts. Within one type it does not, and `componentsOf` says so — a
@@ -210,28 +240,167 @@ describe('two components of one type on one entity', () => {
     // `serializeScene` sorts keys, and ids are random. Asserting the order they
     // were added in passed only when the two happened to sort that way, which
     // was about half of every run.
-    expect(loaded[0]!.id).toBe(assertDefined(componentsOf(scene, cube.entity.id)[0], 'the first component').id);
+    expect(loaded[0]!.id).toBe(assertDefined(componentsOf(registries, scene, cube.entity.id)[0], 'the first component').id);
     expect(loaded.slice(1).map((c) => c.id).sort()).toEqual([first.id, second.id].sort());
   });
 });
 
 describe('the order an entity lists its components in', () => {
-  it('follows the registry, whatever order they were added in', () => {
+  /** A cube carrying four types, added in an order that is no registry's. */
+  function crowded(): { scene: SceneDoc; id: EntityId } {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
     putComponent(scene, cube.entity.id, createScript());
     putComponent(scene, cube.entity.id, createLight('point'));
     putComponent(scene, cube.entity.id, createRigidBody());
+    return { scene, id: cube.entity.id };
+  }
+
+  it('follows the registry, whatever order they were added in', () => {
+    const { scene, id } = crowded();
 
     // The array carried the order the author added things in; a table by type
     // has none, so the registry's order stands in. It is the same for every
     // entity, which the old one was not.
-    expect(componentsOf(scene, cube.entity.id).map((c) => c.type)).toEqual([
-      'mesh',
-      'light',
-      'rigidbody',
-      'script',
-    ]);
+    expect(componentsOf(registries, scene, id).map((c) => c.type)).toEqual(['mesh', 'light', 'rigidbody', 'script']);
+  });
+
+  it('is the order of the registry it is handed, and of no list kept beside it', () => {
+    const { scene, id } = crowded();
+    const reversed = createCoreRegistries();
+    for (const definition of [...registries.components.values()].reverse()) reversed.components.register(definition);
+
+    expect(componentsOf(reversed, scene, id).map((c) => c.type)).toEqual(['script', 'rigidbody', 'light', 'mesh']);
+  });
+});
+
+describe('a component of a type this build does not define', () => {
+  const FLICKER = fixedId('componentType', 'plugin.flicker');
+  const F1 = fixedId('component', 'f1');
+  /** As a plugin's file would hold it. Nothing here knows any of its fields. */
+  const flicker = { id: 'f1', type: 'plugin.flicker', rate: 3, curve: { keys: [0, 1] } };
+
+  /** A scene file whose one cube also carries a flicker, and the cube's id. */
+  function written(): { json: string; cubeId: EntityId } {
+    const cube = createMeshEntity('box');
+    const file = JSON.parse(serializeScene(registries, sceneWith([cube])));
+    file.components['plugin.flicker'] = { [cube.entity.id]: { f1: flicker } };
+    return { json: stableJson(file), cubeId: cube.entity.id };
+  }
+
+  function opened(): { scene: SceneDoc; cubeId: EntityId } {
+    const { json, cubeId } = written();
+    return { scene: deserializeScene(registries, json), cubeId };
+  }
+
+  it('is kept exactly as found, apart from the components this build can read', () => {
+    const { scene, cubeId } = opened();
+
+    expect(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+    // And handed to no reader of a component: there it would be read as a type
+    // it is not.
+    expect(scene.components.has(FLICKER)).toBe(false);
+    expect(componentsOf(registries, scene, cubeId).map((c) => c.type)).toEqual(['mesh']);
+    expect(findComponentById(scene, cubeId, F1)).toBeUndefined();
+  });
+
+  it('is saved back byte for byte', () => {
+    const { json } = written();
+
+    expect(serializeScene(registries, deserializeScene(registries, json))).toBe(json);
+  });
+
+  it('crosses a message in the one block a file holds it in', () => {
+    const { scene, cubeId } = opened();
+
+    const message = JSON.parse(jsonOf(sceneJsonOf(scene)));
+
+    // Written raw, the document would put it under a key no reader reads, and
+    // the first save that crossed a process would lose it.
+    expect(message.components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
+    expect(message).not.toHaveProperty('unknownComponents');
+    expect(deserializeScene(registries, JSON.stringify(message)).unknownComponents).toEqual(scene.unknownComponents);
+  });
+
+  it('is named among the types the document holds and this build does not know', () => {
+    const { scene } = opened();
+
+    expect(unknownComponentTypes(scene)).toEqual(['plugin.flicker']);
+    expect(unknownComponentTypes(sceneWith([createMeshEntity('box')]))).toEqual([]);
+  });
+
+  it('goes with its entity, and leaves no line behind in the file', () => {
+    const { scene, cubeId } = opened();
+
+    removeSubtree(scene, cubeId);
+
+    // Left behind it would be unreachable and still written out, for a type
+    // nothing here could ever draw or delete.
+    expect(scene.unknownComponents.get(FLICKER)?.has(cubeId)).toBe(false);
+    expect(unknownComponentTypes(scene)).toEqual([]);
+    expect(JSON.parse(serializeScene(registries, scene)).components).not.toHaveProperty('plugin.flicker');
+    expect(validateHierarchy(scene)).toEqual([]);
+  });
+
+  it('is copied with its entity', () => {
+    const { scene, cubeId } = opened();
+
+    const copyId = assertDefined(cloneSubtree(scene, cubeId, null), 'the copy of the cube');
+
+    const copy = scene.unknownComponents.get(FLICKER)?.get(copyId)?.get(F1);
+    expect(copy).toEqual(flicker);
+    expect(copy).not.toBe(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1));
+  });
+
+  it('stays when what its entity carries of the known types is replaced', () => {
+    const { scene, cubeId } = opened();
+
+    setComponentsOf(scene, cubeId, [createLight('point')]);
+
+    expect(componentsOf(registries, scene, cubeId).map((c) => c.type)).toEqual(['light']);
+    expect(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+  });
+
+  it('is lifted into a prefab with its entity, through the prefab\'s file and back into a scene', () => {
+    const { scene, cubeId } = opened();
+
+    const prefab = prefabFromEntities('Lamp', scene, cubeId);
+    const text = serializePrefab(registries, prefab);
+    const reread = deserializePrefab(registries, text, prefab.id);
+
+    expect(prefab.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+    expect(JSON.parse(text).components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
+    expect(reread.unknownComponents).toEqual(prefab.unknownComponents);
+    expect(JSON.parse(jsonOf(prefabJsonOf(prefab))).components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
+    // Prefab Mode edits the prefab as a scene, and writes it back.
+    const edited = prefabToScene(reread);
+    expect(edited.unknownComponents).toEqual(prefab.unknownComponents);
+    expect(sceneToPrefab(edited, reread).unknownComponents).toEqual(prefab.unknownComponents);
+  });
+
+  it('is not carried onto the entities an instance places', () => {
+    const { scene, cubeId } = opened();
+    const prefab = prefabFromEntities('Lamp', scene, cubeId);
+    const host = createEntity('Lamp', [createPrefabInstance(prefab.id)]);
+    const level = sceneWith([host]);
+
+    const { scene: expanded } = expandPrefabs(registries, level, new Map([[prefab.id, prefab]]));
+
+    // The expansion is what is drawn, and nothing draws a type nobody defines.
+    expect(expanded.entities.has(instancedId(host.entity.id, cubeId))).toBe(true);
+    expect(expanded.unknownComponents.size).toBe(0);
+  });
+});
+
+describe('a scene\'s file', () => {
+  it('lists a table for every registered type, the ones it holds nothing of too, and nothing else', () => {
+    const file = JSON.parse(serializeScene(registries, createEmptyScene()));
+
+    // As a file has always been written: it does not gain a line the first
+    // time a light is added, and where the document keeps the types this build
+    // does not define is no part of it.
+    expect(file.components).toEqual(Object.fromEntries(registries.components.values().map(({ id }) => [id, {}])));
+    expect(Object.keys(file)).toEqual(['components', 'entities', 'environment', 'id', 'name', 'rootOrder', 'version']);
   });
 });
 
@@ -268,17 +437,17 @@ describe('an entity that comes and goes', () => {
     const cube = createMeshEntity('box');
 
     expect(insertEntity(scene, cube)).toBe(true);
-    expect(componentsOf(scene, cube.entity.id)).toHaveLength(1);
+    expect(componentsOf(registries, scene, cube.entity.id)).toHaveLength(1);
     expect(validateHierarchy(scene)).toEqual([]);
   });
 
   it('is copied with them, ids and all', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const source = assertDefined(componentsOf(scene, cube.entity.id)[0], 'the cube\'s component');
+    const source = assertDefined(componentsOf(registries, scene, cube.entity.id)[0], 'the cube\'s component');
 
     const copyId = assertDefined(cloneSubtree(scene, cube.entity.id, null), 'the copy of the cube');
-    const copy = assertDefined(componentsOf(scene, copyId)[0], 'the copy\'s component');
+    const copy = assertDefined(componentsOf(registries, scene, copyId)[0], 'the copy\'s component');
 
     // Keeping the id is deliberate: it is unique within its entity, which is
     // exactly what the per-entity table encodes, and a prefab override names a
@@ -313,7 +482,7 @@ describe('a document written before the tables existed', () => {
   function formatThree(): string {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const raw = JSON.parse(serializeScene(scene)) as Record<string, unknown>;
+    const raw = JSON.parse(serializeScene(registries, scene)) as Record<string, unknown>;
     raw['version'] = 3;
     delete raw['components'];
     const entities = raw['entities'] as Record<string, Record<string, unknown>>;
@@ -329,7 +498,7 @@ describe('a document written before the tables existed', () => {
     const scene = deserializeScene(registries, formatThree());
     const entityId = [...scene.entities.keys()][0]!;
 
-    expect(componentsOf(scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
+    expect(componentsOf(registries, scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
     // Told apart by id: a shape stored as a name reads as the factory's box now.
     expect(findComponent(scene, entityId, 'collider')?.id).toBe('c2');
     expect(scene.version).toBe(SCENE_FORMAT_VERSION);
@@ -347,7 +516,7 @@ describe('a document written before the tables existed', () => {
 
   it('is left exactly as it is the second time through', () => {
     const once = deserializeScene(registries, formatThree());
-    const twice = deserializeScene(registries, serializeScene(once));
+    const twice = deserializeScene(registries, serializeScene(registries, once));
 
     // The pass runs at the boundary and has to be idempotent, or a scene saved
     // and reopened has its components migrated against an array that is no
@@ -357,6 +526,6 @@ describe('a document written before the tables existed', () => {
     // are sorted on the way out now, so a freshly migrated document and the
     // same document read back differ in key order and in nothing else — and
     // plain stringify calls that a difference. See `stableJson`.
-    expect(serializeScene(twice)).toBe(serializeScene(once));
+    expect(serializeScene(registries, twice)).toBe(serializeScene(registries, once));
   });
 });

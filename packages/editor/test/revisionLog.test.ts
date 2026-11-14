@@ -45,6 +45,35 @@ describe('what the log says a patch set touched', () => {
     expect(revisionLog.since(seen).entities).toBe('*');
   });
 
+  it('names the entities of a table added whole, which is how a type\'s first component arrives', () => {
+    const seen = now();
+
+    // The document holds a table only for a type it has held a component of, so
+    // the first light of a scene adds the lights' table with that light in it.
+    // Nothing was drawn for the type before: what the table holds is all of it.
+    revisionLog.note([
+      { op: 'add', path: ['components', 'light'], value: new Map([['lamp', new Map()], ['torch', new Map()]]) },
+    ]);
+
+    expect(revisionLog.since(seen).entities).toEqual(new Set(['lamp', 'torch']));
+  });
+
+  it('reads a table taken out whole as everything: the patch does not say what it held', () => {
+    const seen = now();
+
+    revisionLog.note([{ op: 'remove', path: ['components', 'light'] }]);
+
+    expect(revisionLog.since(seen).entities).toBe('*');
+  });
+
+  it('reads the components of the types this build does not define as it reads the others', () => {
+    const seen = now();
+
+    revisionLog.note([{ op: 'remove', path: ['unknownComponents', 'plugin.flicker', 'cube'] }]);
+
+    expect(revisionLog.since(seen).entities).toEqual(new Set(['cube']));
+  });
+
   it('reads one with an entity that is no id as everything, rather than naming nothing', () => {
     const seen = now();
 

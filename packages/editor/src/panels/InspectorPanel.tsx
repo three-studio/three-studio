@@ -251,7 +251,7 @@ export function InspectorPanel() {
   const existing = new Set(
     entityId === undefined
       ? []
-      : componentsOf(expandedScene(registries).scene, entityId).map((component) => component.type),
+      : componentsOf(registries, expandedScene(registries).scene, entityId).map((component) => component.type),
   );
 
   return (

@@ -1,5 +1,6 @@
 import {
   BUILD_FORMAT_VERSION,
+  prefabJsonOf,
   type AssetEntry,
   type AssetId,
   type AssetSettings,
@@ -103,7 +104,8 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     assets,
     materials: sortedRecord(contents.materials),
     physicsMaterials: sortedRecord(contents.physicsMaterials),
-    prefabs: sortedRecord(contents.prefabs),
+    // Each as its JSON, never the document as it stands: see `prefabJsonOf`.
+    prefabs: sortedRecord(new Map([...contents.prefabs].map(([id, prefab]) => [id, prefabJsonOf(prefab)]))),
     textureEncodings,
     assetSettings,
     scripts: contents.scripts,

@@ -2,7 +2,7 @@ import { componentAssetCandidates, componentAssets, componentEntities } from '..
 import { materialAssets } from '../components/materialAssets';
 import { isAssetId, type AssetId, type EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
-import { COMPONENT_TYPES, tableOf, type ComponentHost } from '../scene/components';
+import { componentsOfType, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
 
@@ -123,8 +123,8 @@ export function findAssetUsage(
  * says an asset ships and the other says nothing references it.
  */
 function* eachComponent(host: ComponentHost): Generator<[EntityId, ComponentDoc]> {
-  for (const type of COMPONENT_TYPES) {
-    for (const [entityId, held] of tableOf(host.components, type)) {
+  for (const table of host.components.values()) {
+    for (const [entityId, held] of table) {
       for (const component of held.values()) yield [entityId, component];
     }
   }
@@ -139,15 +139,12 @@ function* eachComponent(host: ComponentHost): Generator<[EntityId, ComponentDoc]
  * cannot ship what they need, and says so rather than shipping a scene that
  * works in the editor that has the plugin and nowhere else.
  *
- * The one place that reads a table with `Object.keys`, and rightly: the table of
- * a type this build does not define is the JSON object it was found as, not a
- * Map, which the type — written for the types that are defined — cannot say.
- * Known types are skipped before that is asked.
+ * A type whose every component went with its entity is no longer held, though
+ * its emptied table stays.
  */
-export function unknownComponentTypes(host: ComponentHost): string[] {
-  const known = new Set<string>(COMPONENT_TYPES);
-  return Object.entries(host.components)
-    .filter(([type, table]) => !known.has(type) && Object.keys(table).length > 0)
+export function unknownComponentTypes(host: Required<ComponentHost>): string[] {
+  return [...host.unknownComponents]
+    .filter(([, table]) => table.size > 0)
     .map(([type]) => type)
     .sort();
 }
@@ -314,7 +311,9 @@ export function collectSceneAssets(
  * what makes an Apply safe to press.
  */
 export function findPrefabInstances(assetId: AssetId | '', scene: SceneDoc): EntityId[] {
-  return [...scene.components.prefabInstance]
-    .filter(([, held]) => [...held.values()].some((component) => component.assetId === assetId))
+  return [...componentsOfType(scene, 'prefabInstance')]
+    .filter(([, held]) =>
+      [...held.values()].some((component) => component.type === 'prefabInstance' && component.assetId === assetId),
+    )
     .map(([entityId]) => entityId);
 }

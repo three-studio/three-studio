@@ -114,7 +114,7 @@ describe('giving components an identity', () => {
   it('stamps every component of a scene written without ids', () => {
     const scene = deserializeScene(registries, oldScene());
 
-    expect(componentsOf(scene, HOST)[0]?.id).toBe('host:0');
+    expect(componentsOf(registries, scene, HOST)[0]?.id).toBe('host:0');
     expect(scene.version).toBe(SCENE_FORMAT_VERSION);
   });
 
@@ -123,7 +123,7 @@ describe('giving components an identity', () => {
 
     // The ids the scene's overrides will be remapped onto, computed on the other
     // side of the wall without either file knowing about the other.
-    expect(componentsOf(prefab, TRUNK).map((component) => component.id)).toEqual([
+    expect(componentsOf(registries, prefab, TRUNK).map((component) => component.id)).toEqual([
       'trunk:0',
       'trunk:1',
       'trunk:2',
@@ -152,12 +152,12 @@ describe('giving components an identity', () => {
 
   it('leaves an already-migrated document exactly as it is', () => {
     const once = deserializeScene(registries, oldScene());
-    const twice = deserializeScene(registries, serializeScene(once));
+    const twice = deserializeScene(registries, serializeScene(registries, once));
 
     // The remap runs on the boundary and must be idempotent: a scene saved and
     // reopened would otherwise have its keys rewritten a second time, against
     // indices that no longer mean anything.
-    expect(serializeScene(twice)).toBe(serializeScene(once));
+    expect(serializeScene(registries, twice)).toBe(serializeScene(registries, once));
   });
 
   it('gives no id to a component type it has never heard of', () => {
@@ -167,11 +167,8 @@ describe('giving components an identity', () => {
     assertDefined(raw.entities['host'], 'the host in the file').components.push({ type: 'plugin:water', flow: 2 });
 
     const scene = deserializeScene(registries, JSON.stringify(raw));
-    const tables = scene.components as unknown as Record<
-      string,
-      Record<string, Record<string, Record<string, unknown>>>
-    >;
-    const kept = Object.values(tables['plugin:water']?.['host'] ?? {})[0] ?? {};
+    const held = scene.unknownComponents.get(fixedId('componentType', 'plugin:water'))?.get(fixedId('entity', 'host'));
+    const [kept] = [...(held?.values() ?? [])];
 
     // Rule 3 of the format contract: what this build does not recognise is
     // copied through untouched. An invented id would be written over the
@@ -191,7 +188,7 @@ describe('giving components an identity', () => {
     assertDefined(host.components[0], 'its first component')['id'] = 'chosen-by-someone-else';
 
     const scene = deserializeScene(registries, JSON.stringify(raw));
-    expect(componentsOf(scene, HOST)[0]?.id).toBe('chosen-by-someone-else');
+    expect(componentsOf(registries, scene, HOST)[0]?.id).toBe('chosen-by-someone-else');
   });
 });
 
@@ -209,7 +206,7 @@ describe('a prefab that gains a component', () => {
     putComponent(prefab, TRUNK, { id: fixedId('component', 'added-later'), type: 'audioListener', masterVolume: 1 });
 
     const byId = new Map(
-      componentsOf(prefab, TRUNK).map((component) => [component.id, component]),
+      componentsOf(registries, prefab, TRUNK).map((component) => [component.id, component]),
     );
     const overrides = overrideComponents(scene, HOST, 'trunk');
 

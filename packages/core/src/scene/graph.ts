@@ -1,11 +1,6 @@
 import { PREFAB_ID_SEPARATOR } from '../constants';
 import { createEntityId, type EntityId } from '../ids';
-import {
-  COMPONENT_TYPES,
-  copyComponentsOf,
-  dropComponentsOf,
-  setComponentsOf,
-} from './components';
+import { copyComponentsOf, dropComponentsOf, setComponentsOf } from './components';
 import type { EntityTemplate } from './entity';
 import { collectDescendants, cycles, isAncestorOf } from './query';
 import type { EntityDoc, SceneDoc } from './schema';
@@ -314,8 +309,8 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   // Components keyed by an entity that is not there. Nothing draws them and
   // nothing lists them, but a save writes them out and every query counts them,
   // so the only way to notice is to ask.
-  for (const type of COMPONENT_TYPES) {
-    for (const entityId of scene.components[type].keys()) {
+  for (const [type, table] of [...scene.components, ...scene.unknownComponents]) {
+    for (const entityId of table.keys()) {
       if (!scene.entities.has(entityId)) {
         problems.push(`components.${type} holds "${entityId}", which is not in the entity table`);
       }

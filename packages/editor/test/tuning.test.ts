@@ -134,7 +134,7 @@ beforeAll(() => {
   Object.assign(globalThis, {
     window: Object.assign(new EventTarget(), {
       performance,
-      studio: { project: { readScene: async () => serializeScene(bossScene()) } },
+      studio: { project: { readScene: async () => serializeScene(registries, bossScene()) } },
     }),
     document: new EventTarget(),
   });

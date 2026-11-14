@@ -25,6 +25,7 @@ import {
   createEntity,
   createMaterial,
   createMeshEntity,
+  componentsOfType,
   createModel,
   createAudioSourceEntity,
   createPhysicsMaterial,
@@ -35,7 +36,6 @@ import {
   createScript,
   createStarterScene,
   deserializeScene,
-  emptyComponentTables,
   fixedId,
   insertEntity,
   prefabsFromJson,
@@ -134,7 +134,7 @@ async function makeProject(
   scene.environment.backgroundTexture = TEX_SKY;
   scene.environment.environmentTexture = TEX_SKY;
   insertEntity(scene, createAudioSourceEntity(CLIP_BEEP, 'Beep'));
-  await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
+  await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
 
   const project: ProjectFile = {
     version: PROJECT_FORMAT_VERSION,
@@ -422,10 +422,12 @@ describe('web export', () => {
     );
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
-    for (const held of scene.components.mesh.values()) {
-      for (const mesh of held.values()) mesh.materialId = fixedId('asset', 'mat-shared');
+    for (const held of componentsOfType(scene, 'mesh').values()) {
+      for (const mesh of held.values()) {
+        if (mesh.type === 'mesh') mesh.materialId = fixedId('asset', 'mat-shared');
+      }
     }
-    await writeFile(scenePath, serializeScene(scene), 'utf8');
+    await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-manifest');
     await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
@@ -452,13 +454,13 @@ describe('web export', () => {
      */
     const { projectPath, templateRoot } = await makeProject();
     const crate = createMeshEntity('box');
-    const prefab = createPrefabDoc('Crate', [crate.entity], emptyComponentTables(), crate.entity.id);
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
     const prefabId = await createPrefabAsset(registries, projectPath, 'Crate', prefab);
     // Only what a shipped scene places is shipped.
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
     insertEntity(scene, createEntity('Crate', [createPrefabInstance(prefabId)]));
-    await writeFile(scenePath, serializeScene(scene), 'utf8');
+    await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-order');
     await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
@@ -496,7 +498,7 @@ describe('web export', () => {
       scene,
       createEntity('Cube', [{ ...createCollider(), materialId: fixedId('asset', 'pm-ice') }]),
     );
-    await writeFile(scenePath, serializeScene(scene), 'utf8');
+    await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-physics-materials');
     await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
@@ -966,7 +968,7 @@ describe('models that come with other files', () => {
     putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
-      serializeScene(scene),
+      serializeScene(registries, scene),
       'utf8',
     );
 
@@ -1029,7 +1031,7 @@ describe('models that come with other files', () => {
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
-    await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
+    await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out', 'reaching');
     await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
@@ -1055,7 +1057,7 @@ describe('models that come with other files', () => {
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-gone') });
-    await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
+    await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-missing');
     const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
@@ -1398,7 +1400,7 @@ describe('what a scene needs beyond its slots', () => {
     const file = join(projectPath, SCENES_DIR, 'main.scene.json');
     const scene = deserializeScene(registries, await readFile(file, 'utf8'));
     putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component);
-    await writeFile(file, serializeScene(scene), 'utf8');
+    await writeFile(file, serializeScene(registries, scene), 'utf8');
   }
 
   /**
@@ -1450,7 +1452,7 @@ describe('what a scene needs beyond its slots', () => {
     const { projectPath, templateRoot } = await makeProject();
     const loading = createStarterScene();
     loading.name = 'Loading';
-    await writeFile(join(projectPath, SCENES_DIR, 'loading.scene.json'), serializeScene(loading), 'utf8');
+    await writeFile(join(projectPath, SCENES_DIR, 'loading.scene.json'), serializeScene(registries, loading), 'utf8');
     await setLoadingScene(projectPath, loading.id);
     const outputDir = join(projectPath, '..', 'out-loading');
 
@@ -1531,7 +1533,7 @@ describe('a scene whose id is not a name', () => {
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
-    const evil = { ...JSON.parse(serializeScene(createStarterScene())), id: '../../escaped' };
+    const evil = { ...JSON.parse(serializeScene(registries, createStarterScene())), id: '../../escaped' };
     await writeFile(join(projectPath, SCENES_DIR, 'evil.scene.json'), JSON.stringify(evil), 'utf8');
 
     const result = await exportBuild(

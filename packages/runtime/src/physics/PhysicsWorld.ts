@@ -619,7 +619,9 @@ export class PhysicsWorld implements PhysicsApi {
       };
       this.joints.set(
         entityId,
-        [...held.values()].map((joint) => new Joint(this.world, joint, placed, this.endsOf(entityId, joint))),
+        [...held.values()]
+          .filter((joint) => joint.type === 'joint')
+          .map((joint) => new Joint(this.world, joint, placed, this.endsOf(entityId, joint))),
       );
     }
 

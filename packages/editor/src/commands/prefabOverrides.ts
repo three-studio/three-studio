@@ -44,7 +44,7 @@ export function editInstance(
   if (!expanded.entities.has(id)) return;
 
   const override: PrefabOverride = component.overrides[parts.local] ?? {};
-  apply(override, componentsOf(expanded, id));
+  apply(override, componentsOf(registries, expanded, id));
   component.overrides[parts.local] = override;
 }
 
