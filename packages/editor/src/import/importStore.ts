@@ -2,6 +2,7 @@ import {
   FIT_TO_METRE,
   importerForFile,
   type AssetImportResult,
+  type CoreRegistries,
   type ImportSessionState,
 } from '@three-studio/core';
 import { create } from 'zustand';
@@ -61,7 +62,8 @@ interface ImportState {
   applyToAll: (id: string) => void;
   reset: (id: string) => void;
   runAction: (id: string, key: string) => void;
-  confirm: () => Promise<void>;
+  /** Given the window's registries, which the refreshed prefabs are decoded through. */
+  confirm: (registries: CoreRegistries) => Promise<void>;
   cancel: () => void;
 }
 
@@ -171,7 +173,7 @@ export const useImportStore = create<ImportState>()((set, get) => ({
     }
   },
 
-  confirm: async () => {
+  confirm: async (registries) => {
     const { sessionId, rows, folder, pending } = get();
     if (sessionId === null) return;
 
@@ -184,7 +186,7 @@ export const useImportStore = create<ImportState>()((set, get) => ({
       // The manifest is a cache of what is on disk, and what is on disk just
       // changed. Refreshed before the promise resolves, so a caller reading the
       // new asset back finds it in the store.
-      await useAssetStore.getState().refresh();
+      await useAssetStore.getState().refresh(registries);
       close(set);
       pending?.resolve(result);
       if (result.imported.length > 0) {

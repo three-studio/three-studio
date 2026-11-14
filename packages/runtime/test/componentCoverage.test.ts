@@ -1,10 +1,12 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { componentDefinitions } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
 
 const runtimeSrc = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
+/** The kernel's component types, as a root activates them. */
+const definitions = builtInRegistries().components.values();
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -56,19 +58,19 @@ const RESOLVED_IN_CORE: ReadonlySet<string> = new Set(['prefabInstance']);
  */
 describe('component coverage', () => {
   it('every type claiming a runtime has one outside its no-build branch', () => {
-    const missing = componentDefinitions()
-      .filter((definition) => definition.runtime && !RESOLVED_IN_CORE.has(definition.type))
-      .filter((definition) => mentionsOutsideCaseLabel(definition.type) === 0)
-      .map((definition) => definition.type);
+    const missing = definitions
+      .filter((definition) => definition.runtime && !RESOLVED_IN_CORE.has(definition.id))
+      .filter((definition) => mentionsOutsideCaseLabel(definition.id) === 0)
+      .map((definition) => definition.id);
 
     expect(missing).toEqual([]);
   });
 
   it('no type marked without a runtime turns out to have one', () => {
-    const surprises = componentDefinitions()
+    const surprises = definitions
       .filter((definition) => !definition.runtime)
-      .filter((definition) => mentionsOutsideCaseLabel(definition.type) > 0)
-      .map((definition) => definition.type);
+      .filter((definition) => mentionsOutsideCaseLabel(definition.id) > 0)
+      .map((definition) => definition.id);
 
     expect(surprises).toEqual([]);
   });

@@ -18,6 +18,9 @@ import {
   type FakeGain,
   type FakeParam,
 } from '../../runtime/test/audio/fakeContext';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The editor's audition, driven by hand.
@@ -232,7 +235,7 @@ describe('the editor audition', () => {
     await flush();
     frames.run(1);
 
-    setComponentNestedField(entityId, component.id, ['volume'], 0.25);
+    setComponentNestedField(registries, entityId, component.id, ['volume'], 0.25);
     frames.run(1);
 
     // The voice's own gain, which the mixer's six come before — the same index

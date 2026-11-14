@@ -1,8 +1,8 @@
 import {
   PROJECT_FORMAT_VERSION,
   createBuildProfiles,
+  createCollider,
   createColliderShape,
-  createComponent,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -10,6 +10,8 @@ import {
   createPhysicsSettings,
   createPrefabInstance,
   createRenderingSettings,
+  createRigidBody,
+  createScript,
   findComponent,
   findComponentById,
   fixedId,
@@ -46,6 +48,8 @@ import {
 import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The Inspector tunes the running game during Play: a physics row's value goes
@@ -112,7 +116,7 @@ async function playing(): Promise<Engine> {
 function cube(name = 'Cube'): EntityTemplate {
   const template = createMeshEntity('box');
   template.entity.name = name;
-  template.components.push(createComponent('rigidbody'), createComponent('collider'));
+  template.components.push(createRigidBody(), createCollider());
   return template;
 }
 
@@ -178,7 +182,7 @@ describe('tuning during Play', () => {
     const engine = await playing();
     const revision = useDocumentStore.getState().revision;
 
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
 
     expect(massOf(engine, box)).toBeCloseTo(5, 5);
     expect(useDocumentStore.getState().revision).toBe(revision);
@@ -192,7 +196,7 @@ describe('tuning during Play', () => {
     const body = componentOf(box, 'rigidbody');
     await playing();
 
-    tuneComponentField(box.entity.id, body.id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, body.id, ['mass'], 5);
 
     expect((effectiveComponent(box.entity.id, body) as RigidBodyComponent).mass).toBe(5);
     stop();
@@ -204,11 +208,11 @@ describe('tuning during Play', () => {
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     const collider = componentOf(box, 'collider');
     await playing();
-    const before = inspectorSignature(box.entity.id);
+    const before = inspectorSignature(registries, box.entity.id);
 
-    tuneComponentField(box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
+    tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
 
-    expect(inspectorSignature(box.entity.id)).not.toBe(before);
+    expect(inspectorSignature(registries, box.entity.id)).not.toBe(before);
     const labels = paneEntriesFor(effectiveComponent(box.entity.id, collider)).entries.flatMap((entry) =>
       'path' in entry ? [entry.label] : [],
     );
@@ -222,10 +226,10 @@ describe('tuning during Play', () => {
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     await playing();
 
-    tuneComponentField(box.entity.id, collider.id, ['shape', 'radius'], 0.7);
-    tuneComponentField(box.entity.id, collider.id, ['shape'], createColliderShape('box'));
-    tuneComponentField(box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
-    tuneComponentField(box.entity.id, collider.id, ['shape', 'radius'], 0.9);
+    tuneComponentField(registries, box.entity.id, collider.id, ['shape', 'radius'], 0.7);
+    tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('box'));
+    tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
+    tuneComponentField(registries, box.entity.id, collider.id, ['shape', 'radius'], 0.9);
 
     expect((effectiveComponent(box.entity.id, collider) as ColliderComponent).shape).toEqual({
       ...createColliderShape('sphere'),
@@ -259,7 +263,9 @@ describe('tuning during Play', () => {
     useDocumentStore.getState().replaceScene(sceneWith([left, right]));
     const engine = await playing();
 
-    const body = new MultiTarget([left.entity.id, right.entity.id]).components().find(({ type }) => type === 'rigidbody');
+    const body = new MultiTarget(registries, [left.entity.id, right.entity.id])
+      .components()
+      .find(({ type }) => type === 'rigidbody');
     body?.tune(['mass'], 3);
 
     expect(massOf(engine, left)).toBeCloseTo(3, 5);
@@ -280,11 +286,11 @@ describe('tuning during Play', () => {
     }
     const DIRECTOR = fixedId('asset', 'script-director');
     registerScript(DIRECTOR, Director);
-    const director: ScriptComponent = { ...createComponent('script'), assetId: DIRECTOR };
+    const director: ScriptComponent = { ...createScript(), assetId: DIRECTOR };
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box, createEntity('Director', [director])]));
     const first = await playing();
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
 
     Director.to = 'self';
     first.update(1 / 60);
@@ -296,7 +302,7 @@ describe('tuning during Play', () => {
     Director.to = 'Boss';
     restarted.update(1 / 60);
     await until(() => session?.playEngine !== restarted && session?.playEngine != null, 'Boss’s engine');
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 7);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 7);
     expect(tune).not.toHaveBeenCalled();
   });
 
@@ -304,7 +310,7 @@ describe('tuning during Play', () => {
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     await playing();
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
     stop();
 
     const next = await playing();
@@ -319,7 +325,7 @@ describe('keeping what was tuned', () => {
     const ice = { ...createPhysicsMaterial(), friction: 0.05 };
     const save = vi.fn(async () => {});
     const inside = createMeshEntity('sphere');
-    inside.components.push({ ...createComponent('collider'), shape: createColliderShape('sphere') });
+    inside.components.push({ ...createCollider(), shape: createColliderShape('sphere') });
     const BALL = fixedId('asset', 'ball');
     useAssetStore.setState({
       physicsMaterials: new Map([[ICE, ice]]),
@@ -336,19 +342,19 @@ describe('keeping what was tuned', () => {
     const ball = componentOf(inside, 'collider');
     await playing();
 
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
     // A kind, then a measure of it: one field, written whole.
-    tuneComponentField(produced, ball.id, ['shape'], createColliderShape('capsule'));
-    tuneComponentField(produced, ball.id, ['shape', 'radius'], 0.8);
+    tuneComponentField(registries, produced, ball.id, ['shape'], createColliderShape('capsule'));
+    tuneComponentField(registries, produced, ball.id, ['shape', 'radius'], 0.8);
     tunePhysicsMaterialField(ICE, 'friction', 0);
     stop();
-    keepTuning();
+    keepTuning(registries);
 
     const mass = () => findComponent(doc().scene, box.entity.id, 'rigidbody')?.mass;
     const override = () =>
       findComponent(doc().scene, instance.entity.id, 'prefabInstance')?.overrides[inside.entity.id]?.components?.[ball.id];
     const shape = () => {
-      const collider = findComponentById(expandedScene().scene, produced, ball.id);
+      const collider = findComponentById(expandedScene(registries).scene, produced, ball.id);
       return collider?.type === 'collider' ? collider.shape : null;
     };
     expect(mass()).toBe(5);
@@ -373,20 +379,20 @@ describe('keeping what was tuned', () => {
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     await playing();
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
 
     stop();
 
     expect(toasts()).toHaveLength(1);
     expect(toasts()[0]).toMatchObject({ kind: 'info', title: 'Keep the physics tuned during Play?' });
     expect(toasts()[0]!.actions?.map(({ label }) => label)).toEqual(['Keep']);
-    expect(commandById('keepTuning').can(currentContext())).toBe(true);
+    expect(commandById('keepTuning').can(currentContext(registries))).toBe(true);
 
     play();
     expect(toasts()).toEqual([]);
     await until(() => session?.playEngine != null, 'the next engine');
     stop();
-    expect(commandById('keepTuning').can(currentContext())).toBe(false);
+    expect(commandById('keepTuning').can(currentContext(registries))).toBe(false);
     expect(toasts()).toEqual([]);
   });
 
@@ -394,12 +400,12 @@ describe('keeping what was tuned', () => {
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     await playing();
-    tuneComponentField(box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
     stop();
 
     useProjectStore.setState({ sceneId: BOSS.id });
 
-    expect(commandById('keepTuning').can(currentContext())).toBe(false);
+    expect(commandById('keepTuning').can(currentContext(registries))).toBe(false);
     expect(toasts()).toEqual([]);
   });
 
@@ -410,7 +416,7 @@ describe('keeping what was tuned', () => {
     stop();
 
     expect(toasts()).toEqual([]);
-    expect(commandById('keepTuning').can(currentContext())).toBe(false);
+    expect(commandById('keepTuning').can(currentContext(registries))).toBe(false);
   });
 });
 

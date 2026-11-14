@@ -8,13 +8,12 @@ import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindin
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
-import { RegistriesContext } from './registriesContext';
+import { RegistriesContext, useRegistries } from './registriesContext';
 import { useProjectStore } from './state/projectStore';
 import { watchUnsaved } from './state/unsaved';
 
-// Installed at module scope so nothing logged during start-up is missed.
+// Captured at module scope so nothing logged during start-up is missed.
 captureConsole();
-installDevtools();
 
 /**
  * Renders whichever window this is, with the registries its composition root
@@ -26,6 +25,9 @@ installDevtools();
  * asking for it over IPC would have cost.
  */
 export function Root({ registries }: { registries: RuntimeRegistries }) {
+  // Once the registries are in hand, which is here: the devtools publish them
+  // beside the stores, whose actions take them.
+  useEffect(() => installDevtools(registries), [registries]);
   return (
     <RegistriesContext.Provider value={registries}>
       {window.studio.windowRole === 'launcher' ? <LauncherApp /> : <EditorWindow />}
@@ -34,6 +36,7 @@ export function Root({ registries }: { registries: RuntimeRegistries }) {
 }
 
 function EditorWindow() {
+  const registries = useRegistries();
   const summary = useProjectStore((s) => s.summary);
   const adopt = useProjectStore((s) => s.adopt);
   const adoptContents = useProjectStore((s) => s.adoptContents);
@@ -72,11 +75,11 @@ function EditorWindow() {
       // lands on the one it was asked for rather than on the project's start
       // scene. Null falls back to that start scene, which is the first open.
       .open(path, window.studio.sceneId)
-      .then(adopt)
+      .then((opened) => adopt(registries, opened))
       .catch((cause: unknown) => {
         setError(cause instanceof Error ? cause.message : String(cause));
       });
-  }, [adopt, setError, summary]);
+  }, [registries, adopt, setError, summary]);
 
   // Another window may add, rename or remove a scene at any moment, and this
   // window holds a copy of the project taken when it opened.

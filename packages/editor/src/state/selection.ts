@@ -4,6 +4,7 @@ import {
   isAncestorOf,
   splitInstancedId,
   type EntityCapability,
+  type CoreRegistries,
   type EntityDoc,
   type EntityId,
   type SceneDoc,
@@ -72,9 +73,9 @@ export class Selection {
     return value;
   }
 
-  /** What is selected right now, against the scene as it is drawn. */
-  static current(): Selection {
-    return Selection.of(useEditorStore.getState().selection, expandedScene().scene);
+  /** What is selected right now, against the scene as it is drawn with these registries. */
+  static current(registries: CoreRegistries): Selection {
+    return Selection.of(useEditorStore.getState().selection, expandedScene(registries).scene);
   }
 
   get size(): number {

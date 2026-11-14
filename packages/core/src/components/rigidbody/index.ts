@@ -14,7 +14,7 @@ import { BODY_TYPE_LABELS } from './schema';
  * the body through the floor: that reads as the factory's.
  */
 export const rigidbodyComponent = defineComponent({
-  type: 'rigidbody',
+  id: 'rigidbody',
   create: () => createRigidBody(),
   fill: (stored) => {
     const model = createRigidBody();

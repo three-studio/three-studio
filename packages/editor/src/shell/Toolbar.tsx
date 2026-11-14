@@ -1,6 +1,7 @@
 import { ChevronDown, MonitorPlay, Pause, Play, SkipForward, Square } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { commandById, currentContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { useEditorStore } from '../state/editorStore';
 import { MenuTrigger } from '../ui/Menu';
 import { ToolButton } from '../ui/ToolButton';
@@ -41,7 +42,8 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const step = commandById('stepFrame');
   // The words and verdicts of this render; a click reads its own context, as a
   // gesture is read at the moment it is made.
-  const context = currentContext();
+  const registries = useRegistries();
+  const context = currentContext(registries);
 
   return (
     <div className="relative flex shrink-0 items-center gap-0.5 bg-surface-0 px-2">
@@ -63,7 +65,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
             active={!isStopped}
             activeClassName="bg-play/15 text-play"
             takesNoFocus
-            onClick={() => transport.run(currentContext())}
+            onClick={() => transport.run(currentContext(registries))}
           />
           {/*
             Three slots, filled differently stopped and running, and always
@@ -80,7 +82,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 label={fullScreen.label(context)}
                 shortcut={shortcutHint('playFullScreen')}
                 takesNoFocus
-                onClick={() => fullScreen.run(currentContext())}
+                onClick={() => fullScreen.run(currentContext(registries))}
               />
               <span aria-hidden className="h-7 w-7" />
             </>
@@ -94,7 +96,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 shortcut={shortcutHint('togglePause')}
                 active={playState === 'paused'}
                 takesNoFocus
-                onClick={() => pause.run(currentContext())}
+                onClick={() => pause.run(currentContext(registries))}
               />
               <ToolButton
                 icon={SkipForward}
@@ -103,7 +105,7 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                 hint={step.can(context) ? undefined : 'Pause first'}
                 disabled={!step.can(context)}
                 takesNoFocus
-                onClick={() => step.run(currentContext())}
+                onClick={() => step.run(currentContext(registries))}
               />
             </>
           )}

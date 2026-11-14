@@ -9,6 +9,7 @@ import {
   type RenderingSettings,
 } from '../project/schema';
 import { conformPhysicsMaterial, type PhysicsMaterialDef } from '../scene/physicsMaterial';
+import type { CoreRegistries } from '../registries';
 import { deserializePrefab, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
 import { deserializeScene } from '../scene/serialization';
@@ -131,7 +132,7 @@ function libraryOf(value: unknown): Map<AssetId, unknown> {
  * entry scene with no id and name to serve it under, or that is not the text of
  * a scene.
  */
-export function conformLaunchSnapshot(value: unknown): ReceivedLaunch {
+export function conformLaunchSnapshot(registries: CoreRegistries, value: unknown): ReceivedLaunch {
   if (!isRecord(value)) {
     throw new Error('A launch snapshot is an object.');
   }
@@ -157,14 +158,14 @@ export function conformLaunchSnapshot(value: unknown): ReceivedLaunch {
   }
   const prefabs = new Map<AssetId, PrefabDoc>();
   for (const [assetId, text] of libraryOf(value['prefabs'])) {
-    if (typeof text === 'string') prefabs.set(assetId, deserializePrefab(text, assetId));
+    if (typeof text === 'string') prefabs.set(assetId, deserializePrefab(registries, text, assetId));
   }
   const loadingScene = value['loadingScene'];
 
   return {
     snapshot: {
       version: LAUNCH_SNAPSHOT_VERSION,
-      entry: { id, name, scene: deserializeScene(sceneJson) },
+      entry: { id, name, scene: deserializeScene(registries, sceneJson) },
       materials,
       physicsMaterials,
       prefabs,

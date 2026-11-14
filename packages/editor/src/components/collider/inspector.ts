@@ -10,6 +10,7 @@ import {
   type ColliderShapeKind,
   type ComponentDoc,
   type ComponentId,
+  type CoreRegistries,
   type EntityId,
   type PhysicsMaterialDef,
   type Vec3,
@@ -97,11 +98,12 @@ const COLLIDER_SHAPE_FIELDS: Record<ColliderShapeKind, readonly FieldSpec[]> = {
  * collider on its own values rather than linked to an id that does not exist.
  */
 async function extractPhysicsMaterial(
+  registries: CoreRegistries,
   entityId: EntityId,
   componentId: ComponentId,
   material: PhysicsMaterialDef,
 ): Promise<void> {
-  const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Collider';
+  const suggested = expandedScene(registries).scene.entities.get(entityId)?.name ?? 'Collider';
   const name = await askForText({
     title: 'Save Physics Material as Asset',
     label: 'Name',
@@ -110,8 +112,8 @@ async function extractPhysicsMaterial(
   });
   if (name === null) return;
 
-  const assetId = await useAssetStore.getState().createPhysicsMaterial(name, material);
-  setComponentNestedField(entityId, componentId, ['materialId'], assetId);
+  const assetId = await useAssetStore.getState().createPhysicsMaterial(registries, name, material);
+  setComponentNestedField(registries, entityId, componentId, ['materialId'], assetId);
 }
 
 /** What the `{ kind: 'geometry' }` slot expands into: the rows of the collider's kind. */
@@ -144,9 +146,9 @@ export const inspector: ComponentSchema = {
       // A mesh collider is its meshes already.
       visibleWhen: (component) => component.type === 'collider' && component.shape.kind !== 'mesh',
       // The edit view's binder: the meshes as it draws them.
-      run: ({ entityId, componentId }) => {
+      run: ({ registries, entityId, componentId }) => {
         const binder = peekViewport()?.binder;
-        if (binder) fitColliderToMesh(entityId, componentId, binder);
+        if (binder) fitColliderToMesh(registries, entityId, componentId, binder);
       },
     },
     { path: ['isSensor'], label: 'Is sensor' },
@@ -170,23 +172,23 @@ export const inspector: ComponentSchema = {
       kind: 'action',
       title: 'Save as Asset…',
       visibleWhen: (component) => component.type === 'collider' && component.materialId === null,
-      run: ({ entityId, componentId, component }) => {
+      run: ({ registries, entityId, componentId, component }) => {
         if (component.type !== 'collider') return;
-        void extractPhysicsMaterial(entityId, componentId, component.material);
+        void extractPhysicsMaterial(registries, entityId, componentId, component.material);
       },
     },
     {
       kind: 'action',
       title: 'Make Unique',
       visibleWhen: (component) => component.type === 'collider' && component.materialId !== null,
-      run: ({ entityId, componentId, component }) => {
+      run: ({ registries, entityId, componentId, component }) => {
         if (component.type !== 'collider' || component.materialId === null) return;
         // The shared values copied in before unlinking, so the collider grips
         // as it did. A link the project cannot answer played its own already.
         const { physicsMaterials } = useAssetStore.getState();
         const shared = linkedPhysicsMaterial(component.materialId, physicsMaterials);
-        if (shared) setComponentNestedField(entityId, componentId, ['material'], { ...shared });
-        setComponentNestedField(entityId, componentId, ['materialId'], null);
+        if (shared) setComponentNestedField(registries, entityId, componentId, ['material'], { ...shared });
+        setComponentNestedField(registries, entityId, componentId, ['materialId'], null);
       },
     },
     {

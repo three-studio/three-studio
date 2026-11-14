@@ -9,6 +9,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { close } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A joint, read as physics data is: against its factory, its motion against the
@@ -26,7 +29,7 @@ describe('a stored joint', () => {
       extra: true,
     } as unknown as ComponentDoc;
 
-    expect(fillComponent(stored)).toEqual({
+    expect(fillComponent(registries, stored)).toEqual({
       ...createJoint(),
       id: 'j1',
       motion: { ...createJointMotion('slider'), axis: [1, 0, 0] },
@@ -36,16 +39,16 @@ describe('a stored joint', () => {
   it('a kind this build does not know reads as a hinge', () => {
     for (const kind of ['ball', 'constructor', 7]) {
       const stored = { ...createJoint(), motion: { kind, axis: [1, 0, 0] } } as unknown as ComponentDoc;
-      const filled = fillComponent(stored) as JointComponent;
+      const filled = fillComponent(registries, stored) as JointComponent;
       expect(filled.motion).toEqual(createJointMotion('hinge'));
     }
   });
 
   it('keeps the entity it names, and the world it is held to', () => {
     const frame = fixedId('entity', 'frame');
-    const named = fillComponent({ ...createJoint(), connectedEntity: frame }) as JointComponent;
+    const named = fillComponent(registries, { ...createJoint(), connectedEntity: frame }) as JointComponent;
     expect(named.connectedEntity).toBe(frame);
-    expect((fillComponent(createJoint()) as JointComponent).connectedEntity).toBeNull();
+    expect((fillComponent(registries, createJoint()) as JointComponent).connectedEntity).toBeNull();
   });
 });
 

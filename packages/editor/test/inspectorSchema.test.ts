@@ -7,10 +7,12 @@ import {
   conformJointMotion,
   createAudioSource,
   createBuildProfiles,
+  createCollider,
   createColliderShape,
   createComponent,
   createDefaultLayer,
   createEmptyScene,
+  createJoint,
   createPhysicsSettings,
   createRenderingSettings,
   fieldOptions,
@@ -30,6 +32,9 @@ import {
   type FieldSpec,
 } from '../src/inspector/schema';
 import { readPath } from '../src/inspector/target';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The pane declarations, checked where they carry logic of their own.
@@ -96,7 +101,7 @@ function colliderOfKind(kind: string): ComponentDoc {
   // The factory box comes back for a kind it does not know, which would test
   // the box twice and the kind not at all.
   expect(shape.kind).toBe(kind);
-  return { ...createComponent('collider'), shape };
+  return { ...createCollider(), shape };
 }
 
 /** A joint's rows change with its kind, as a collider's do with its shape. */
@@ -105,7 +110,7 @@ const JOINT_KINDS = Object.keys(JOINT_KIND_LABELS);
 function jointOfKind(kind: string): ComponentDoc {
   const motion = conformJointMotion({ kind });
   expect(motion.kind).toBe(kind);
-  return { ...createComponent('joint'), motion };
+  return { ...createJoint(), motion };
 }
 
 describe('the Joint pane', () => {
@@ -263,7 +268,7 @@ describe('every row that reads a tuple says so', () => {
   }
 
   it.each(COMPONENT_TYPES)('%s', (type) => {
-    checkTuples(type, createComponent(type));
+    checkTuples(type, createComponent(registries, type));
   });
 
   it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
@@ -316,7 +321,7 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
   });
 
   it.each(COMPONENT_TYPES)('%s', (type) => {
-    for (const spec of paneEntriesFor(createComponent(type)).entries) {
+    for (const spec of paneEntriesFor(createComponent(registries, type)).entries) {
       if (!('path' in spec)) continue;
       const unknown = Object.keys(paramsOf(spec as FieldSpec<never>)).filter(
         (key) => !KNOWN.has(key),
@@ -383,7 +388,7 @@ describe('a declared control fits the value it is bound to', () => {
   }
 
   it.each(COMPONENT_TYPES)('%s', (type) => {
-    const component = createComponent(type);
+    const component = createComponent(registries, type);
     for (const spec of paneEntriesFor(component).entries) {
       if (!('path' in spec)) continue;
       check(type, spec, readPath(component, spec.path));

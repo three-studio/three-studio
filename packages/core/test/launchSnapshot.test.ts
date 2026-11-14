@@ -18,6 +18,9 @@ import {
   type LaunchSnapshot,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The snapshot a device launch sends, checked where it arrives in the main
@@ -101,7 +104,7 @@ describe('a launch snapshot, where it arrives', () => {
     const original = snapshot();
     const wire = encodeLaunchSnapshot(original);
 
-    const received = conformLaunchSnapshot(structuredClone(wire));
+    const received = conformLaunchSnapshot(registries, structuredClone(wire));
 
     expect(received.snapshot).toEqual(original);
     expect(received.entryJson).toBe(wire.entry.sceneJson);
@@ -119,7 +122,7 @@ describe('a launch snapshot, where it arrives', () => {
     ['no entry', { ...sent(), entry: null }],
     ['not an object', 'snapshot'],
   ])('is refused with %s', (_why, value) => {
-    expect(() => conformLaunchSnapshot(value)).toThrow();
+    expect(() => conformLaunchSnapshot(registries, value)).toThrow();
   });
 
   it('conforms each material', () => {
@@ -128,7 +131,7 @@ describe('a launch snapshot, where it arrives', () => {
       materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
     };
 
-    const { materials } = conformLaunchSnapshot(wire).snapshot;
+    const { materials } = conformLaunchSnapshot(registries, wire).snapshot;
     const material = assertDefined(materials.get(STONE), 'the stone material');
 
     expect(material.side).toBe(createMaterial().side);
@@ -136,7 +139,7 @@ describe('a launch snapshot, where it arrives', () => {
   });
 
   it('conforms each physics material', () => {
-    const { physicsMaterials } = conformLaunchSnapshot({
+    const { physicsMaterials } = conformLaunchSnapshot(registries, {
       ...sent(),
       physicsMaterials: { ice: { restitution: 0.5, frictionCombine: 'sum' }, broken: 'nothing' },
     }).snapshot;
@@ -147,7 +150,7 @@ describe('a launch snapshot, where it arrives', () => {
   });
 
   it('falls back on the factories’ settings, and on no loading scene', () => {
-    const { snapshot: conformed } = conformLaunchSnapshot({ ...sent(), rendering: 'x', loadingScene: 3 });
+    const { snapshot: conformed } = conformLaunchSnapshot(registries, { ...sent(), rendering: 'x', loadingScene: 3 });
 
     expect(conformed.rendering).toEqual(createRenderingSettings());
     expect(conformed.loadingScene).toBeNull();
@@ -158,13 +161,17 @@ describe('a launch snapshot, where it arrives', () => {
 
     // A scene's id is a text that is not empty, and what a window sends is
     // whatever a script on the other side of the bridge made of it.
-    expect(() => conformLaunchSnapshot({ ...wire, entry: { ...wire.entry, id: '' } })).toThrow('by id and name');
-    expect(() => conformLaunchSnapshot({ ...wire, entry: { ...wire.entry, id: 7 } })).toThrow('by id and name');
-    expect(conformLaunchSnapshot({ ...wire, loadingScene: '' }).snapshot.loadingScene).toBeNull();
+    expect(() =>
+      conformLaunchSnapshot(registries, { ...wire, entry: { ...wire.entry, id: '' } }),
+    ).toThrow('by id and name');
+    expect(() =>
+      conformLaunchSnapshot(registries, { ...wire, entry: { ...wire.entry, id: 7 } }),
+    ).toThrow('by id and name');
+    expect(conformLaunchSnapshot(registries, { ...wire, loadingScene: '' }).snapshot.loadingScene).toBeNull();
   });
 
   it('migrates a prefab an older editor wrote, and drops one that is not text', () => {
-    const { prefabs } = conformLaunchSnapshot({
+    const { prefabs } = conformLaunchSnapshot(registries, {
       ...sent(),
       prefabs: { tree: JSON.stringify(oldPrefab()), broken: { not: 'text' } },
     }).snapshot;
@@ -181,16 +188,18 @@ describe('a launch snapshot, where it arrives', () => {
   });
 
   it('refuses a prefab whose text is not JSON, as it refuses a scene', () => {
-    expect(() => conformLaunchSnapshot({ ...sent(), prefabs: { tree: '{ not json' } })).toThrow('not valid JSON');
+    expect(() =>
+      conformLaunchSnapshot(registries, { ...sent(), prefabs: { tree: '{ not json' } }),
+    ).toThrow('not valid JSON');
   });
 
   it('drops a field it does not know', () => {
-    expect(conformLaunchSnapshot({ ...sent(), trap: 1 }).snapshot).not.toHaveProperty('trap');
+    expect(conformLaunchSnapshot(registries, { ...sent(), trap: 1 }).snapshot).not.toHaveProperty('trap');
   });
 
   it('reads its layer table entry by entry', () => {
     const wire = sent();
-    const { physics } = conformLaunchSnapshot({
+    const { physics } = conformLaunchSnapshot(registries, {
       ...wire,
       physics: { ...wire.physics, layers: [{ id: 'player', name: 'Player', ignores: [] }, 'oops'] },
     }).snapshot;

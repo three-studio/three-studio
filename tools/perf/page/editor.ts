@@ -450,11 +450,12 @@ export async function assetAction(
   action: { kind: 'move'; path: string; folder: string } | { kind: 'renameFolder'; folder: string; name: string } | { kind: 'refresh' },
 ): Promise<Record<string, number>> {
   const store = window.__studioStores?.asset;
-  if (!store) throw new Error('no stores');
+  const registries = window.__studioRegistries;
+  if (!store || !registries) throw new Error('no stores');
   const started = performance.now();
   if (action.kind === 'move') await store.getState().move(action.path, action.folder);
   else if (action.kind === 'renameFolder') await store.getState().renameFolder(action.folder, action.name);
-  else await store.getState().refresh();
+  else await store.getState().refresh(registries);
   const ms = performance.now() - started;
   const error = store.getState().error;
   if (error !== null) throw new Error(`${action.kind} failed: ${error}`);

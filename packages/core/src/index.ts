@@ -297,13 +297,17 @@ export {
 } from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
 /* Each slice's own factories, from the slice that owns them. */
-export { createAudioListenerEntity } from './components/audioListener/defaults';
+export { createAudioListener, createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
-export { createCameraEntity } from './components/camera/defaults';
-export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createCamera, createCameraEntity } from './components/camera/defaults';
+export { createCollider } from './components/collider/defaults';
+export { createLight, createLightEntity, createShadowSettings } from './components/light/defaults';
 export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
-export { createModelEntity } from './components/model/defaults';
+export { createModel, createModelEntity } from './components/model/defaults';
+export { createPlayerController } from './components/playerController/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
+export { createRigidBody } from './components/rigidbody/defaults';
+export { createScript } from './components/script/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';
 export {
   createParticleEmitter,
@@ -335,8 +339,6 @@ export {
   addableTypes,
   componentAssetCandidates,
   componentAssets,
-  componentDefinition,
-  componentDefinitions,
   componentEntities,
   createComponent,
   createComponentForEntity,
@@ -346,6 +348,9 @@ export {
   typesWithoutRuntime,
 } from './components';
 export type { ComponentDefinition, ComponentIcon } from './components';
+/* What the core knows by registration, made and filled by each app's composition root. */
+export { activateCore, createCoreRegistries } from './registries';
+export type { CoreRegistries } from './registries';
 
 export { conformColliderShape, createColliderShape } from './components/collider/defaults';
 /*

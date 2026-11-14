@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, createComponent, createLightEntity, createMaterial, createMeshComponent, createWater, fixedId, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { SUN_CUSTOM, createCamera, createLightEntity, createMaterial, createMeshComponent, createModel, createWater, fixedId, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -415,7 +415,7 @@ describe('the light system', () => {
 
 describe('the camera system', () => {
   const camera = (projection: CameraComponent['projection']): CameraComponent => ({
-    ...(createComponent('camera') as CameraComponent),
+    ...createCamera(),
     projection,
   });
 
@@ -493,7 +493,7 @@ const CHAIR = fixedId('asset', 'chair');
 const SHARED = fixedId('asset', 'shared');
 
 const modelComponent = (partial: Partial<ModelComponent> = {}): ModelComponent => ({
-  ...createComponent('model'),
+  ...createModel(),
   assetId: CHAIR,
   ...partial,
 });

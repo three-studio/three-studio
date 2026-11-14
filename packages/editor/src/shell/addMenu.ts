@@ -1,4 +1,4 @@
-import { createEntity, type EntityTemplate } from '@three-studio/core';
+import { createEntity, type CoreRegistries, type EntityTemplate } from '@three-studio/core';
 import { addMenuGroups } from '../components/menus';
 import type { AddMenuEntry } from '../components/registry';
 import { addEntityInView, canAddInView } from '../commands/placeEntity';
@@ -24,10 +24,10 @@ const placing = (): Pick<MenuItem, 'disabled' | 'detail'> =>
   canAddInView() ? {} : { disabled: true, detail: STOP_TO_EDIT };
 
 /** One thing a slice offers, as a menu entry that places it. */
-const offer = (entry: AddMenuEntry): MenuEntry =>
+const offer = (registries: CoreRegistries, entry: AddMenuEntry): MenuEntry =>
   entry === null
     ? null
-    : { label: entry.label, ...placing(), onSelect: () => addEntityInView(entry.create()) };
+    : { label: entry.label, ...placing(), onSelect: () => addEntityInView(registries, entry.create()) };
 
 /*
  * Where the new object lands is `addEntityInView`'s business, not the menu's.
@@ -36,10 +36,11 @@ const offer = (entry: AddMenuEntry): MenuEntry =>
  * the moment the entry is picked instead, which is also the moment it is true.
  *
  * `context` is what Group is asked and run against: the selection as the bar
- * read it for this render.
+ * read it for this render. Its registries are what every entry places through.
  */
 export function buildAddMenu(context: EditorContext): MenuEntry[] {
-  const add = (factory: () => EntityTemplate) => () => addEntityInView(factory());
+  const { registries } = context;
+  const add = (factory: () => EntityTemplate) => () => addEntityInView(registries, factory());
 
   return [
     // three calls this a Group; Unity calls it an Empty. Both names are in the
@@ -56,7 +57,7 @@ export function buildAddMenu(context: EditorContext): MenuEntry[] {
     null,
     ...addMenuGroups().map((group) => ({
       label: group.label,
-      submenu: group.entries.map(offer),
+      submenu: group.entries.map((entry) => offer(registries, entry)),
     })),
   ];
 }

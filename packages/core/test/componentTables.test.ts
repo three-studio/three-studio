@@ -4,10 +4,13 @@ import {
   assertDefined,
   cloneSubtree,
   componentsOf,
+  createCollider,
   createColliderShape,
-  createComponent,
   createEntity,
+  createLight,
   createMeshEntity,
+  createRigidBody,
+  createScript,
   deleteComponent,
   deserializeScene,
   emptyComponentTables,
@@ -33,6 +36,9 @@ import {
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { copyComponentTables } from '../src/scene/components';
 import { sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Components live in `scene.components`, by type then by entity then by their
@@ -51,7 +57,7 @@ function lit(count: number): { scene: SceneDoc; ids: EntityId[]; litId: EntityId
   const cubes = [...Array(count)].map(() => createMeshEntity('box'));
   const scene = sceneWith(cubes);
   const litId = cubes[0]!.entity.id;
-  putComponent(scene, litId, createComponent('light'));
+  putComponent(scene, litId, createLight('point'));
   return { scene, ids: cubes.map((cube) => cube.entity.id), litId };
 }
 
@@ -111,8 +117,8 @@ describe('listing the components of one type on an entity', () => {
   it('answers every one of them, in the order they were added', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createComponent('collider');
-    const second = createComponent('collider');
+    const first = createCollider();
+    const second = createCollider();
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
@@ -130,8 +136,8 @@ describe('listing the components of one type on an entity', () => {
   it('answers a copy of the list, so a caller may delete while it walks', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    putComponent(scene, cube.entity.id, createComponent('collider'));
-    putComponent(scene, cube.entity.id, createComponent('collider'));
+    putComponent(scene, cube.entity.id, createCollider());
+    putComponent(scene, cube.entity.id, createCollider());
 
     for (const collider of findComponents(scene, cube.entity.id, 'collider')) {
       deleteComponent(scene, cube.entity.id, collider.id);
@@ -171,8 +177,8 @@ describe('two components of one type on one entity', () => {
   it('keeps the second one intact when the first is removed', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createComponent('collider');
-    const second = { ...createComponent('collider'), shape: createColliderShape('sphere') };
+    const first = createCollider();
+    const second = { ...createCollider(), shape: createColliderShape('sphere') };
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
@@ -191,12 +197,12 @@ describe('two components of one type on one entity', () => {
   it('survives a round trip through the file', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createComponent('script');
-    const second = createComponent('script');
+    const first = createScript();
+    const second = createScript();
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
-    const loaded = componentsOf(deserializeScene(serializeScene(scene)), cube.entity.id);
+    const loaded = componentsOf(deserializeScene(registries, serializeScene(scene)), cube.entity.id);
 
     // Registry order across types still holds: the mesh comes before both
     // scripts. Within one type it does not, and `componentsOf` says so — a
@@ -213,9 +219,9 @@ describe('the order an entity lists its components in', () => {
   it('follows the registry, whatever order they were added in', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    putComponent(scene, cube.entity.id, createComponent('script'));
-    putComponent(scene, cube.entity.id, createComponent('light'));
-    putComponent(scene, cube.entity.id, createComponent('rigidbody'));
+    putComponent(scene, cube.entity.id, createScript());
+    putComponent(scene, cube.entity.id, createLight('point'));
+    putComponent(scene, cube.entity.id, createRigidBody());
 
     // The array carried the order the author added things in; a table by type
     // has none, so the registry's order stands in. It is the same for every
@@ -287,7 +293,7 @@ describe('the references a component holds to other entities', () => {
   it('asks about what is an id and nothing else, and renames what it is told to', () => {
     const door = fixedId('entity', 'door');
     const copy = fixedId('entity', 'door-copy');
-    const script = { ...createComponent('script'), props: { target: door, empty: '', count: 3 } };
+    const script = { ...createScript(), props: { target: door, empty: '', count: 3 } };
     const asked: string[] = [];
 
     const [renamed] = renameEntityReferences([script], (id) => {
@@ -320,7 +326,7 @@ describe('a document written before the tables existed', () => {
   }
 
   it('moves every component into the tables, in the order it had', () => {
-    const scene = deserializeScene(formatThree());
+    const scene = deserializeScene(registries, formatThree());
     const entityId = [...scene.entities.keys()][0]!;
 
     expect(componentsOf(scene, entityId).map((c) => c.id)).toEqual(['c1', 'c2', 'c3']);
@@ -330,7 +336,7 @@ describe('a document written before the tables existed', () => {
   });
 
   it('leaves nothing behind on the entity', () => {
-    const scene = deserializeScene(formatThree());
+    const scene = deserializeScene(registries, formatThree());
     const entity = [...scene.entities.values()][0] as unknown as Record<string, unknown>;
 
     // Kept, the stale array would be re-imported on the next load and would
@@ -340,8 +346,8 @@ describe('a document written before the tables existed', () => {
   });
 
   it('is left exactly as it is the second time through', () => {
-    const once = deserializeScene(formatThree());
-    const twice = deserializeScene(serializeScene(once));
+    const once = deserializeScene(registries, formatThree());
+    const twice = deserializeScene(registries, serializeScene(once));
 
     // The pass runs at the boundary and has to be idempotent, or a scene saved
     // and reopened has its components migrated against an array that is no

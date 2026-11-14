@@ -3,7 +3,9 @@ import {
   createJoint,
   createPrefabInstance,
   createMaterial,
-  createComponent,
+  createCollider,
+  createModel,
+  createScript,
   createMeshEntity,
   collectSceneAssets,
   findAssetUsage,
@@ -21,6 +23,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import { prefabWith } from './fixtures';
 import { sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Deleting an asset is the one operation no undo takes back, so what uses it
@@ -45,6 +50,7 @@ describe('who uses an asset', () => {
     const prefab = prefabWith('Rock', [inPrefab], inPrefab.entity.id);
 
     const usage = findAssetUsage(
+      registries,
       TEXTURE,
       sceneWith([mesh]),
       new Map([
@@ -63,25 +69,25 @@ describe('who uses an asset', () => {
   it('finds a model, a script and a sound by the id their component carries', () => {
     const modelId = fixedId('asset', 'model-1');
     const scriptId = fixedId('asset', 'script-1');
-    const model = createEntity('Tree', [{ ...createComponent('model'), assetId: modelId }]);
+    const model = createEntity('Tree', [{ ...createModel(), assetId: modelId }]);
     const scripted = createEntity('Spinner', [
-      { ...createComponent('script'), assetId: scriptId },
+      { ...createScript(), assetId: scriptId },
     ]);
     const scene = sceneWith([model, scripted]);
 
-    expect(findAssetUsage(modelId, scene, new Map(), new Map()).entities).toEqual([model.entity.id]);
-    expect(findAssetUsage(scriptId, scene, new Map(), new Map()).entities).toEqual([scripted.entity.id]);
-    expect(isUsed(findAssetUsage(fixedId('asset', 'audio-1'), scene, new Map(), new Map()))).toBe(false);
+    expect(findAssetUsage(registries, modelId, scene, new Map(), new Map()).entities).toEqual([model.entity.id]);
+    expect(findAssetUsage(registries, scriptId, scene, new Map(), new Map()).entities).toEqual([scripted.entity.id]);
+    expect(isUsed(findAssetUsage(registries, fixedId('asset', 'audio-1'), scene, new Map(), new Map()))).toBe(false);
   });
 
   it('a physics material is used by the colliders that link it, ships with their scene, and is a broken reference once gone', () => {
     const ice = fixedId('asset', 'ice');
-    const puck = createEntity('Puck', [{ ...createComponent('collider'), materialId: ice }]);
+    const puck = createEntity('Puck', [{ ...createCollider(), materialId: ice }]);
     const scene = sceneWith([puck]);
 
-    expect(findAssetUsage(ice, scene, new Map(), new Map()).entities).toEqual([puck.entity.id]);
-    expect(collectSceneAssets(scene, new Map(), new Map())).toContain(ice);
-    expect(findBrokenReferences(scene, new Set())).toEqual([
+    expect(findAssetUsage(registries, ice, scene, new Map(), new Map()).entities).toEqual([puck.entity.id]);
+    expect(collectSceneAssets(registries, scene, new Map(), new Map())).toContain(ice);
+    expect(findBrokenReferences(registries, scene, new Set())).toEqual([
       { entityId: puck.entity.id, assetId: ice },
     ]);
   });
@@ -91,7 +97,7 @@ describe('who uses an asset', () => {
     scene.environment.backgroundMode = 'texture';
     scene.environment.backgroundTexture = SKY;
 
-    const usage = findAssetUsage(SKY, scene, new Map(), new Map());
+    const usage = findAssetUsage(registries, SKY, scene, new Map(), new Map());
 
     // Before this the answer was "nothing in the open scene uses it", and the
     // delete went ahead on a file the whole level was lit by.
@@ -108,11 +114,12 @@ describe('who uses an asset', () => {
 
     // There is one environment, so it is one use however many of its slots name
     // the file — "2 things use it" would be counting slots, not things.
-    expect(totalUses(findAssetUsage(SKY, scene, new Map(), new Map()))).toBe(1);
+    expect(totalUses(findAssetUsage(registries, SKY, scene, new Map(), new Map()))).toBe(1);
   });
 
   it('says nothing uses an asset nothing names', () => {
     const usage = findAssetUsage(
+      registries,
       fixedId('asset', 'tex-spare'),
       sceneWith([createMeshEntity('box')]),
       new Map(),
@@ -125,9 +132,9 @@ describe('who uses an asset', () => {
     // A model not yet given a file holds `''` and an unset texture slot holds
     // `null`. Neither names an asset, and counting them as uses of one would
     // report the whole scene.
-    const scene = sceneWith([createEntity('Blank', [createComponent('model')]), createMeshEntity('box')]);
+    const scene = sceneWith([createEntity('Blank', [createModel()]), createMeshEntity('box')]);
 
-    expect(isUsed(findAssetUsage(TEXTURE, scene, new Map(), new Map()))).toBe(false);
+    expect(isUsed(findAssetUsage(registries, TEXTURE, scene, new Map(), new Map()))).toBe(false);
   });
 });
 
@@ -159,7 +166,7 @@ describe('who names an entity that is gone', () => {
     const free = createEntity('Free', [createJoint()]);
     const held = createEntity('Held', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
 
-    expect(findMissingEntities(sceneWith([frame, door, free, held]))).toEqual([
+    expect(findMissingEntities(registries, sceneWith([frame, door, free, held]))).toEqual([
       { entityId: door.entity.id, type: 'joint' },
     ]);
   });
@@ -169,9 +176,9 @@ describe('who names an entity that is gone', () => {
     const prefab = prefabWith('Door', [door], door.entity.id);
     const host = createEntity('Doorway', [createPrefabInstance(PREFAB)]);
 
-    const { scene } = expandPrefabs(sceneWith([host]), new Map([[PREFAB, prefab]]));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), new Map([[PREFAB, prefab]]));
 
-    expect(findMissingEntities(scene)).toEqual([
+    expect(findMissingEntities(registries, scene)).toEqual([
       { entityId: instancedId(host.entity.id, door.entity.id), type: 'joint' },
     ]);
   });

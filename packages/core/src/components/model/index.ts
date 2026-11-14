@@ -3,7 +3,7 @@ import { createModel } from './defaults';
 
 /** An imported glTF, FBX or OBJ. */
 export const modelComponent = defineComponent({
-  type: 'model',
+  id: 'model',
   create: createModel,
   // The material as well as the file. Without it, reference counting and "what
   // does this scene use" both miss a material an imported model is drawing with,

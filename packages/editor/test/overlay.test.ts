@@ -2,8 +2,8 @@ import {
   colliderGeometry,
   createAudioSourceEntity,
   createCameraEntity,
+  createCollider,
   createColliderShape,
-  createComponent,
   createEntity,
   createJoint,
   createJointMotion,
@@ -11,6 +11,7 @@ import {
   createMeshComponent,
   createMeshEntity,
   createRenderingSettings,
+  createRigidBody,
   findComponent,
   fixedId,
   jointFrame,
@@ -598,7 +599,7 @@ function conesOf(root: Object3D | undefined): boolean[] {
 
 /** An entity carrying one collider of this shape. */
 function colliderEntity(shape: ColliderShape, components: ComponentDoc[] = []): EntityTemplate {
-  return createEntity('Collider', [{ ...createComponent('collider'), shape }, ...components]);
+  return createEntity('Collider', [{ ...createCollider(), shape }, ...components]);
 }
 
 /** The position attribute of a collider's outline. */
@@ -739,7 +740,7 @@ describe('what a collider is built as', () => {
   });
 
   it('draws a child’s collider at its own entity’s pose', () => {
-    const parent = createEntity('Parent', [createComponent('rigidbody')]);
+    const parent = createEntity('Parent', [createRigidBody()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];
@@ -810,7 +811,7 @@ describe('what a mesh collider is built as', () => {
     const template = createMeshEntity('torus');
     // At the origin, where its axis is the world's z; a new one stands on the ground.
     template.entity.transform.position = [0, 0, 0];
-    template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } }, ...components);
+    template.components.push({ ...createCollider(), shape: { kind: 'mesh', build } }, ...components);
     return template;
   };
 
@@ -842,10 +843,10 @@ describe('what a mesh collider is built as', () => {
   });
 
   it('draws Triangles as the hull a dynamic body makes of them, its own or an ancestor’s', () => {
-    const own = torus('triangles', createComponent('rigidbody'));
+    const own = torus('triangles', createRigidBody());
     expect(Math.min(...fromAxis(drawn([own], own)))).toBeGreaterThan(R - 1e-3);
 
-    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const cart = createEntity('Cart', [createRigidBody()]);
     const ridden = torus('triangles');
     nest(cart, ridden);
     expect(Math.min(...fromAxis(drawn([cart, ridden], ridden)))).toBeGreaterThan(R - 1e-3);
@@ -863,7 +864,7 @@ describe('what a mesh collider is built as', () => {
     // three hands back a sliver of four of a disc's points, drawn as a triangle.
     const disc = (build: MeshBuild): EntityTemplate => {
       const template = createMeshEntity('circle');
-      template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } });
+      template.components.push({ ...createCollider(), shape: { kind: 'mesh', build } });
       return template;
     };
     const hull = disc('hull');
@@ -875,7 +876,7 @@ describe('what a mesh collider is built as', () => {
   it('draws its own entity’s meshes, never its children’s', () => {
     const base = createMeshEntity('box');
     base.entity.transform.position = [0, 0, 0];
-    base.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build: 'hull' } });
+    base.components.push({ ...createCollider(), shape: { kind: 'mesh', build: 'hull' } });
     const above = createMeshEntity('box');
     above.entity.transform.position = [0, 3, 0];
     nest(base, above);
@@ -1038,7 +1039,7 @@ describe('where a joint holds', () => {
   });
 
   it('draws a joint on a child where the child is', () => {
-    const parent = createEntity('Door', [createComponent('rigidbody')]);
+    const parent = createEntity('Door', [createRigidBody()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];

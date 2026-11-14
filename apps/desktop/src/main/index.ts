@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { IPC_EVENTS } from '@three-studio/core';
+import { IPC_EVENTS, activateCore, createCoreRegistries } from '@three-studio/core';
 import { BrowserWindow, app, session } from 'electron';
 import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
@@ -60,6 +60,11 @@ void app.whenReady().then(() => {
   handleAssetProtocol();
   handleImportProtocol();
 
+  // The process's own, for as long as it runs: core alone, since what the main
+  // process does with a component is decode it, and none of it runs a game.
+  const registries = createCoreRegistries();
+  activateCore(registries);
+
   // A hidden window standing in for a phone, for the smoke harness. See
   // `followWithSmokeDevice`.
   const smokeDevice = process.env['STUDIO_SMOKE_DEVICE'] ? followWithSmokeDevice() : null;
@@ -95,6 +100,7 @@ void app.whenReady().then(() => {
     openSceneWindow,
     noteScene,
     isSceneOpenElsewhere,
+    registries,
     editorWindows,
     devices,
   });

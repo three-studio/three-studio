@@ -12,6 +12,7 @@ import {
 import { Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { commandById, contextForScene } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { isStartScene } from '../commands/sceneFiles';
 import { notify } from '../state/toastStore';
 import { useProjectStore } from '../state/projectStore';
@@ -37,6 +38,7 @@ const INPUT =
   'w-full rounded-xs border border-line-soft bg-surface-0 px-2 py-1 text-2xs text-ink outline-none focus:border-accent';
 
 export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
+  const registries = useRegistries();
   const project = useProjectStore((s) => s.project);
   const scenes = useProjectStore((s) => s.scenes);
   const [section, setSection] = useState('project');
@@ -144,7 +146,7 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
                     disabled={scene.shadowedBy !== null}
                     // Written straight through rather than into the draft: it
                     // is a property of the project, not of its settings.
-                    onChange={() => commandById('setStartScene').run(contextForScene(scene.id))}
+                    onChange={() => commandById('setStartScene').run(contextForScene(registries, scene.id))}
                   />
                   <span className="flex-1">{scene.name}</span>
                   {/* Keyed and labelled by path, because two files can now be

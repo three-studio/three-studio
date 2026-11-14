@@ -31,6 +31,9 @@ import { createDeviceHandler } from '../src/main/devices/routes';
 import { WAITING_PAGE } from '../src/main/devices/waitingPage';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
 import { pngOf } from './png';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The routes, over a real socket: what a phone asks for, and what it is
@@ -228,7 +231,7 @@ beforeAll(async () => {
   const scenes = await discoverScenes(root);
   entryId = main!.id;
   slashedId = scenes.find((scene) => scene.path.endsWith('Two.scene.json'))!.id;
-  const scene = deserializeScene(await readFile(join(root, main!.path), 'utf8'));
+  const scene = deserializeScene(registries, await readFile(join(root, main!.path), 'utf8'));
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
@@ -243,7 +246,7 @@ beforeAll(async () => {
     physics: settings.physics,
     loadingScene: null,
   };
-  const prepared = await prepareLaunch(root, conformLaunchSnapshot(encodeLaunchSnapshot(snapshot)));
+  const prepared = await prepareLaunch(root, conformLaunchSnapshot(registries, encodeLaunchSnapshot(snapshot)));
 
   // A scaled copy, given by hand: what a device should download in place of
   // the source, under the source's name.

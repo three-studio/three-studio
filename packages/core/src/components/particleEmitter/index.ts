@@ -10,7 +10,7 @@ import { createParticleEmitter } from './defaults';
  * the same reason `Transform` is spread whole.
  */
 export const particleEmitterComponent = defineComponent({
-  type: 'particleEmitter',
+  id: 'particleEmitter',
   create: () => createParticleEmitter(),
   // Named so the exporter ships the sprite, the loading bar counts it, and
   // deleting it does not claim nothing uses it.

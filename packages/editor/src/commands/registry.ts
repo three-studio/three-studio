@@ -26,9 +26,10 @@ export type { Command, EditorContext } from './command';
  * command simply goes missing" — and that was right about a registry filled by
  * *side effect*, which is what it was. A table composed by value has no such
  * mode: a family that is not spread below is absent from `CommandId`, and every
- * caller naming one of its ids stops compiling. That is stricter than the throw
- * `core`'s component registry falls back on, and `core` only falls back to it
- * because `COMPONENT_TYPES` is a canonical union it can check against. Commands
+ * caller naming one of its ids stops compiling. That is stricter than what
+ * guards `core`'s component types — a test checking their activation list
+ * against their folders and `COMPONENT_TYPES` — and `core` can lean on that test
+ * only because `COMPONENT_TYPES` is a canonical union to check against. Commands
  * have no such union — which is precisely why theirs has to come from the table.
  *
  * **What is not here**, and deliberately. Opening a panel and changing the

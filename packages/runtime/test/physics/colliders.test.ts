@@ -1,8 +1,8 @@
 import {
   createColliderShape,
-  createComponent,
   createComponentForEntity,
   createMeshEntity,
+  createRigidBody,
   originAboveFeet,
   type ColliderShape,
   type CombineRule,
@@ -10,6 +10,7 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { builtInRegistries } from '../registries';
 import {
   colliderOf,
   ground,
@@ -18,6 +19,8 @@ import {
   takeTheBrowserBack,
   withBody,
 } from './rig';
+
+const registries = builtInRegistries();
 
 /*
  * A collider rests where what is drawn rests: the shape physics builds is the
@@ -233,8 +236,8 @@ function coneBody(position: Vec3): EntityTemplate {
   if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
   mesh.geometry = { ...mesh.geometry, radiusTop: 0 };
   template.components.push(
-    { ...createComponent('rigidbody'), lockRotation: [true, true, true] },
-    createComponentForEntity('collider', template.components),
+    { ...createRigidBody(), lockRotation: [true, true, true] },
+    createComponentForEntity(registries, 'collider', template.components),
   );
   template.entity.transform.position = position;
   return template;

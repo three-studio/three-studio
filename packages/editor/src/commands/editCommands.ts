@@ -124,7 +124,7 @@ export const EDIT_COMMANDS = {
     can: (ctx) => ctx.selection.isSingle && ctx.selection.can('toggleVisible'),
     run: (ctx) => {
       const id = ctx.selection.primary;
-      if (id !== null) setEntityVisible(id, !visibleIn(ctx));
+      if (id !== null) setEntityVisible(ctx.registries, id, !visibleIn(ctx));
     },
   }),
 

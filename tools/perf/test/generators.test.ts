@@ -37,6 +37,9 @@ import {
   writeTexturesProject,
   type ScriptedRecipe,
 } from '../generate/projects';
+import { builtInRegistries } from '../registries';
+
+const registries = builtInRegistries();
 
 /*
  * The harness's projects, held to what the scenarios assume of them.
@@ -57,7 +60,7 @@ async function references(projectPath: string, scenes: readonly SceneDoc[]): Pro
   const known = new Set((await scanAssets(projectPath)).assets.map((asset) => asset.id));
   const named = scenes
     .flatMap((scene) => [...scene.entities.keys()].flatMap((entityId) => componentsOf(scene, entityId)))
-    .flatMap((component) => componentAssets(component))
+    .flatMap((component) => componentAssets(registries, component))
     .filter(isAssetId);
   return {
     resolved: named.filter((assetId) => known.has(assetId)).length,
@@ -67,7 +70,7 @@ async function references(projectPath: string, scenes: readonly SceneDoc[]): Pro
 
 /** The project's start scene, as the editor reads it. */
 async function startScene(projectPath: string): Promise<SceneDoc> {
-  return deserializeScene((await openProject(projectPath)).sceneJson);
+  return deserializeScene(registries, (await openProject(projectPath)).sceneJson);
 }
 
 describe('the full-size recipes, counted without encoding a byte', () => {
@@ -201,7 +204,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
 
     const scenes = new Map<string, SceneDoc>();
     for (const entry of opened.scenes) {
-      scenes.set(entry.name, deserializeScene(await readSceneFile(path, entry.path)));
+      scenes.set(entry.name, deserializeScene(registries, await readSceneFile(path, entry.path)));
     }
     const counts = Object.fromEntries([...scenes].map(([name, scene]) => [name, entityCount(scene)]));
     // A: the props, a sun, a camera, the Director and one entity per ballast

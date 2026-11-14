@@ -4,6 +4,7 @@ import { originAboveFeet } from '../components/collider/geometry';
 import { isRecord } from '../conform';
 import { idMapOf, isComponentId, isEntityId, type ComponentId, type EntityId } from '../ids';
 import { stableJson } from '../json';
+import type { CoreRegistries } from '../registries';
 import {
   COMPONENT_TYPES,
   emptyComponentTables,
@@ -59,14 +60,14 @@ export function serializeScene(scene: SceneDoc): string {
   return stableJson(scene);
 }
 
-export function deserializeScene(json: string): SceneDoc {
+export function deserializeScene(registries: CoreRegistries, json: string): SceneDoc {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
   } catch (cause) {
     throw new SceneFormatError(`Scene file is not valid JSON: ${(cause as Error).message}`);
   }
-  return migrateScene(parsed);
+  return migrateScene(registries, parsed);
 }
 
 /**
@@ -85,8 +86,12 @@ export function deserializeScene(json: string): SceneDoc {
  *
  * The gate is also why `migratePrefab` may not pass `SCENE_FORMAT_VERSION`: see
  * the note there.
+ *
+ * `registries` say which types this build knows: each registered type's
+ * components are filled from its own definition, and any other is kept as
+ * found.
  */
-export function migrateScene(input: unknown): SceneDoc {
+export function migrateScene(registries: CoreRegistries, input: unknown): SceneDoc {
   if (typeof input !== 'object' || input === null) {
     throw new SceneFormatError('Scene file is not an object.');
   }
@@ -116,7 +121,7 @@ export function migrateScene(input: unknown): SceneDoc {
   };
   repairHierarchy(scene);
   adoptComponentTables(scene);
-  fillMissingFields(scene);
+  fillMissingFields(registries, scene);
   // After the fill, not before: a collider written before one of its fields
   // existed carries `undefined` there until the fill has run, and the offset
   // would come out `NaN` — which would travel into the camera silently.
@@ -220,8 +225,11 @@ function raiseEyeHeightToFeet(scene: SceneDoc): void {
  * is worse: it threw once per frame, and a slider bound to `undefined` took
  * the whole Inspector down. Defaults are cheap; a scene that cannot open is
  * not.
+ *
+ * Over the registered types: a type is known exactly when the registries hold
+ * it, and a table of any other is the one `tablesFrom` kept as found.
  */
-function fillMissingFields(scene: SceneDoc): void {
+function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
   const blank = createEnvironment();
   // Merged a level deeper for `sky`, because the spread above it is shallow and
   // a scene written before the analytic sky existed carries no `sky` at all —
@@ -246,13 +254,13 @@ function fillMissingFields(scene: SceneDoc): void {
     entity.children ??= [];
   }
 
-  for (const type of COMPONENT_TYPES) {
+  for (const { id: type } of registries.components.values()) {
     for (const held of tableOf(scene.components, type).values()) {
       for (const [componentId, component] of held) {
         // Each type fills itself. Shallow is right for the flat ones; `mesh` owns
         // a material and a geometry that have to be merged a level deeper, and
         // that knowledge lives with `mesh` rather than as a special case here.
-        const filled = fillComponent(component) as ComponentDoc;
+        const filled = fillComponent(registries, component);
         // The key is the identity; a `fill` that handed back a fresh id would
         // orphan every override naming it.
         filled.id = componentId;

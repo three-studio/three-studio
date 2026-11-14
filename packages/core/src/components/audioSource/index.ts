@@ -15,7 +15,7 @@ import { createAudioSource } from './defaults';
  * no flag.
  */
 export const audioSourceComponent = defineComponent({
-  type: 'audioSource',
+  id: 'audioSource',
   create: () => createAudioSource(),
   assets: (component) => [component.assetId],
   entities: () => [],

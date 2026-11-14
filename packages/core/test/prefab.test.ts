@@ -2,14 +2,17 @@ import {
   applyPrefabOverride,
   assertDefined,
   componentsOf,
+  createAudioListener,
+  createCollider,
   createColliderShape,
-  createComponent,
   createJoint,
   createLightEntity,
   insertEntity,
   createEntity,
   createMeshEntity,
   createPrefabInstance,
+  createRigidBody,
+  createScript,
   deserializePrefab,
   expandPrefabs,
   findComponent,
@@ -34,6 +37,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { prefabWith, sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A prefab is held by reference, so a thousand trees are a thousand lines in
@@ -90,21 +96,21 @@ describe('a prefab as text', () => {
     const text = serializePrefab(prefab);
 
     expect(text).toBe(stableJson(prefab));
-    expect(deserializePrefab(text)).toEqual(prefab);
-    expect(serializePrefab(deserializePrefab(text))).toBe(text);
+    expect(deserializePrefab(registries, text)).toEqual(prefab);
+    expect(serializePrefab(deserializePrefab(registries, text))).toBe(text);
   });
 
   it('is read through the migration, which fills what an older editor left out', () => {
     const older = jsonOf({ ...treePrefab(), version: 1, components: undefined });
 
-    const read = deserializePrefab(older);
+    const read = deserializePrefab(registries, older);
 
     expect(read.version).toBe(treePrefab().version);
     expect(componentsOf(read, read.root)).toEqual([]);
   });
 
   it('is refused in words when it is not JSON', () => {
-    expect(() => deserializePrefab('{ not json')).toThrow('Prefab file is not valid JSON');
+    expect(() => deserializePrefab(registries, '{ not json')).toThrow('Prefab file is not valid JSON');
   });
 
   it('is read under the id it is given, whatever its own file says', () => {
@@ -112,24 +118,24 @@ describe('a prefab as text', () => {
 
     // A prefab is an asset, and the place that read it knows the asset's id: its
     // sidecar's, or its key in a library.
-    expect(deserializePrefab(text, TREE).id).toBe(TREE);
+    expect(deserializePrefab(registries, text, TREE).id).toBe(TREE);
   });
 
   it('is refused when it has no id of its own and none is given', () => {
     const text = jsonOf({ ...treePrefab(), id: '' });
 
-    expect(() => deserializePrefab(text)).toThrow('no id of its own');
-    expect(deserializePrefab(text, TREE).id).toBe(TREE);
+    expect(() => deserializePrefab(registries, text)).toThrow('no id of its own');
+    expect(deserializePrefab(registries, text, TREE).id).toBe(TREE);
   });
 
   it('is refused when its root is not an id, where every copy would hang under an entity named nothing', () => {
-    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: '' }))).toThrow('no root entity');
-    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: 7 }))).toThrow('no root entity');
-    expect(() => deserializePrefab(jsonOf({ ...treePrefab(), root: undefined }))).toThrow('no root entity');
+    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: '' }))).toThrow('no root entity');
+    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: 7 }))).toThrow('no root entity');
+    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: undefined }))).toThrow('no root entity');
   });
 
   it('holds its entities in a Map once read', () => {
-    const read = deserializePrefab(serializePrefab(treePrefab()));
+    const read = deserializePrefab(registries, serializePrefab(treePrefab()));
 
     expect(read.entities).toBeInstanceOf(Map);
     expect(read.entities.size).toBe(2);
@@ -141,7 +147,7 @@ describe('a prefab as text', () => {
     // As `build.json` is written, and fetched.
     const fetched = JSON.parse(jsonOf({ [TREE]: tree }));
 
-    const read = prefabsFromJson(fetched);
+    const read = prefabsFromJson(registries, fetched);
 
     expect(read.get(TREE)?.entities).toBeInstanceOf(Map);
     expect(read.get(TREE)).toEqual(tree);
@@ -150,7 +156,7 @@ describe('a prefab as text', () => {
   it('refuses a document that already holds a Map, which no file does', () => {
     // `Object.entries` of a Map is empty: taken for a file's table, it would be
     // a prefab with no entities, and nothing to say so.
-    expect(() => migratePrefab(treePrefab())).toThrow('missing its entity table');
+    expect(() => migratePrefab(registries, treePrefab())).toThrow('missing its entity table');
   });
 });
 
@@ -158,7 +164,7 @@ describe('prefab expansion', () => {
   it('replaces an instance with the prefab contents, parented to it', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab, [5, 0, 5]);
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
     const produced = [...scene.entities.values()].filter((e) => instanceOwnerOf(e.id) === host.entity.id);
     expect(produced.map((e) => e.name).sort()).toEqual(['Leaves', 'Trunk']);
@@ -178,7 +184,7 @@ describe('prefab expansion', () => {
     const prefab = treePrefab();
     const a = instanceOf(prefab, [0, 0, 0]);
     const b = instanceOf(prefab, [10, 0, 0]);
-    const { scene } = expandPrefabs(sceneWith([a, b]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([a, b]), library(prefab));
 
     // Two instances, four entities, and no id collides — which is the whole
     // reason instanced ids carry the instance they belong to.
@@ -195,7 +201,7 @@ describe('prefab expansion', () => {
       [prefab.root]: { name: 'Short trunk', transform: { scale: [1, 0.5, 1] } },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const trunk = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
 
     expect(trunk.name).toBe('Short trunk');
@@ -206,7 +212,7 @@ describe('prefab expansion', () => {
 
   it('overrides a property of one component and leaves its siblings alone', () => {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createComponent('rigidbody'));
+    putComponent(prefab, prefab.root, createRigidBody());
     const trunkParts = componentsOf(prefab, prefab.root);
     const mesh = assertDefined(trunkParts[0], 'the trunk\'s mesh');
     const body = assertDefined(trunkParts[1], 'the trunk\'s rigid body');
@@ -216,7 +222,7 @@ describe('prefab expansion', () => {
       [prefab.root]: { components: { [body.id]: { mass: 12 } } },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
 
     // By id, so this lands on the rigidbody however the prefab is reordered
@@ -229,7 +235,7 @@ describe('prefab expansion', () => {
 
   it('cannot put a name where a collider’s shape lives, from an override written before scene 11', () => {
     const prefab = treePrefab();
-    const collider = createComponent('collider');
+    const collider = createCollider();
     putComponent(prefab, prefab.root, collider);
 
     const host = instanceOf(prefab);
@@ -237,7 +243,7 @@ describe('prefab expansion', () => {
       [prefab.root]: { components: { [collider.id]: { shape: 'sphere', radius: 0.4, isSensor: true } } },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
@@ -249,7 +255,7 @@ describe('prefab expansion', () => {
 
   it('lets a whole shape in an override win', () => {
     const prefab = treePrefab();
-    const collider = createComponent('collider');
+    const collider = createCollider();
     putComponent(prefab, prefab.root, collider);
     const sphere = { kind: 'sphere', radius: 0.4 };
 
@@ -258,7 +264,7 @@ describe('prefab expansion', () => {
       [prefab.root]: { components: { [collider.id]: { shape: sphere } } },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = componentsOf(scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
@@ -268,7 +274,7 @@ describe('prefab expansion', () => {
 
   it('follows the component it names when the prefab is reordered', () => {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createComponent('rigidbody'));
+    putComponent(prefab, prefab.root, createRigidBody());
     const body = assertDefined(componentsOf(prefab, prefab.root)[1], 'the trunk\'s rigid body');
 
     const host = instanceOf(prefab);
@@ -278,9 +284,9 @@ describe('prefab expansion', () => {
 
     // The author adds another component, which used to slide every override of
     // every instance one place along when they were named by position.
-    putComponent(prefab, prefab.root, createComponent('audioListener'));
+    putComponent(prefab, prefab.root, createAudioListener());
 
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
 
     const parts = componentsOf(scene, built.id);
@@ -298,12 +304,12 @@ describe('prefab expansion', () => {
 
     // The prefab was restructured after the override was recorded. Unity has
     // the same problem and the same answer: forget it rather than fail.
-    expect(() => expandPrefabs(sceneWith([host]), library(prefab))).not.toThrow();
+    expect(() => expandPrefabs(registries, sceneWith([host]), library(prefab))).not.toThrow();
   });
 
   it('leaves an instance whose prefab is missing as an empty entity', () => {
     const host = instanceOf(treePrefab());
-    const { scene } = expandPrefabs(sceneWith([host]), { get: () => undefined });
+    const { scene } = expandPrefabs(registries, sceneWith([host]), { get: () => undefined });
 
     // Deleting what an author placed because an asset is momentarily
     // unreadable is worse than showing nothing there.
@@ -316,8 +322,8 @@ describe('prefab expansion', () => {
     const host = instanceOf(prefab);
     const scene = sceneWith([host]);
 
-    const first = expandPrefabs(scene, library(prefab));
-    const second = expandPrefabs(scene, library(prefab), first);
+    const first = expandPrefabs(registries, scene, library(prefab));
+    const second = expandPrefabs(registries, scene, library(prefab), first);
 
     // The binder decides what to rebuild by comparing identity, so a fresh copy
     // each time would throw away every geometry and material in the scene.
@@ -330,8 +336,8 @@ describe('prefab expansion', () => {
     const host = instanceOf(prefab);
     const scene = sceneWith([host]);
 
-    const first = expandPrefabs(scene, library(prefab));
-    const second = expandPrefabs(scene, library(prefab), first);
+    const first = expandPrefabs(registries, scene, library(prefab));
+    const second = expandPrefabs(registries, scene, library(prefab), first);
 
     const id = instancedId(host.entity.id, prefab.root);
     const placed = first.scene.components.mesh.get(id);
@@ -345,7 +351,7 @@ describe('prefab expansion', () => {
     const own = createMeshEntity('box');
     const scene = sceneWith([host, own]);
 
-    const { scene: expanded } = expandPrefabs(scene, library(prefab));
+    const { scene: expanded } = expandPrefabs(registries, scene, library(prefab));
 
     // The expansion adds what the instance produced to a copy of each table. Added
     // to the scene's own, it would reach the document the author edits, and the
@@ -363,7 +369,7 @@ describe('prefab expansion', () => {
     const host = createEntity('Lamp', [createPrefabInstance(PREFAB_1)]);
     const scene = sceneWith([host]);
 
-    const { scene: expanded } = expandPrefabs(scene, library(prefab));
+    const { scene: expanded } = expandPrefabs(registries, scene, library(prefab));
 
     // A level whose lights all come from instances has none in the document, and
     // the editor's fallback pair is switched off by asking the expanded scene.
@@ -374,13 +380,13 @@ describe('prefab expansion', () => {
   it('rebuilds an instance whose overrides changed', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab);
-    const first = expandPrefabs(sceneWith([host]), library(prefab));
+    const first = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
     const edited = structuredClone(host);
     (edited.components[0] as PrefabInstanceComponent).overrides = {
       [prefab.root]: { name: 'Edited' },
     };
-    const second = expandPrefabs(sceneWith([edited]), library(prefab), first);
+    const second = expandPrefabs(registries, sceneWith([edited]), library(prefab), first);
 
     expect(second.scene.entities.get(instancedId(host.entity.id, prefab.root))?.name).toBe('Edited');
   });
@@ -395,7 +401,7 @@ describe('folding one override into an entity', () => {
   /** A copy of a prefab's root, and the mesh and the rigid body it holds. */
   function bodied() {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createComponent('rigidbody'));
+    putComponent(prefab, prefab.root, createRigidBody());
     const [mesh, body] = componentsOf(prefab, prefab.root);
     return {
       entity: structuredClone(assertDefined(prefab.entities.get(prefab.root), 'the prefab root')),
@@ -407,7 +413,7 @@ describe('folding one override into an entity', () => {
   it('reaches the component it names, and no other', () => {
     const { entity, mesh, body } = bodied();
 
-    const folded = applyPrefabOverride(entity, [mesh, body], { components: { [body.id]: { mass: 12 } } });
+    const folded = applyPrefabOverride(registries, entity, [mesh, body], { components: { [body.id]: { mass: 12 } } });
 
     expect(folded.find((component) => component.id === body.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
     // The very same object: nothing named it.
@@ -417,7 +423,7 @@ describe('folding one override into an entity', () => {
   it('drops an override that names a component the prefab lost', () => {
     const { entity, mesh, body } = bodied();
 
-    const folded = applyPrefabOverride(entity, [mesh, body], {
+    const folded = applyPrefabOverride(registries, entity, [mesh, body], {
       components: { [fixedId('component', 'lost-long-ago')]: { mass: 12 } },
     });
 
@@ -429,7 +435,7 @@ describe('folding one override into an entity', () => {
   it('never lets an override change the id it is looked up by', () => {
     const { entity, mesh, body } = bodied();
 
-    const folded = applyPrefabOverride(entity, [mesh, body], {
+    const folded = applyPrefabOverride(registries, entity, [mesh, body], {
       components: { [body.id]: { id: 'somebody-else', mass: 12 } },
     });
 
@@ -470,7 +476,7 @@ describe('nested prefabs', () => {
     const room = roomPrefab();
     const host = roomInstance();
 
-    const { scene } = expandPrefabs(sceneWith([host]), twoPrefabs(tree, room));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), twoPrefabs(tree, room));
     const names = [...scene.entities.values()].map((entity) => entity.name);
 
     // Before this, the inner instance was copied as an entity carrying a
@@ -496,8 +502,8 @@ describe('nested prefabs', () => {
     // Reachable by hand-editing a file, or by a rename that makes two assets
     // agree on an id. An editor that freezes is worse than one that shows less.
     const library = { get: () => selfish };
-    expect(() => expandPrefabs(sceneWith([host]), library)).not.toThrow();
-    expect(expandPrefabs(sceneWith([host]), library).scene.entities.size).toBeLessThan(5);
+    expect(() => expandPrefabs(registries, sceneWith([host]), library)).not.toThrow();
+    expect(expandPrefabs(registries, sceneWith([host]), library).scene.entities.size).toBeLessThan(5);
   });
 
   it('rebuilds when the inner prefab changed, not just the outer one', () => {
@@ -506,10 +512,10 @@ describe('nested prefabs', () => {
     const host = roomInstance();
     const scene = sceneWith([host]);
 
-    const first = expandPrefabs(scene, twoPrefabs(tree, room));
+    const first = expandPrefabs(registries, scene, twoPrefabs(tree, room));
     const editedTree = structuredClone(tree);
     [...editedTree.entities.values()].find((e) => e.name === 'Trunk')!.name = 'Thick trunk';
-    const second = expandPrefabs(scene, twoPrefabs(editedTree, room), first);
+    const second = expandPrefabs(registries, scene, twoPrefabs(editedTree, room), first);
 
     // The outer instance and its own prefab are untouched objects, so an
     // identity check on those alone would have handed back the stale room.
@@ -524,8 +530,8 @@ describe('nested prefabs', () => {
     const scene = sceneWith([host]);
     const library = twoPrefabs(tree, room);
 
-    const first = expandPrefabs(scene, library);
-    const second = expandPrefabs(scene, library, first);
+    const first = expandPrefabs(registries, scene, library);
+    const second = expandPrefabs(registries, scene, library, first);
 
     for (const id of first.scene.entities.keys()) {
       expect(second.scene.entities.get(id)).toBe(first.scene.entities.get(id));
@@ -539,7 +545,7 @@ describe('nested prefabs', () => {
 
     // Two instances on one entity would build the same ids twice and quietly
     // keep half of each.
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     expect(scene.entities.size).toBe(3);
   });
 });
@@ -549,7 +555,7 @@ describe('references inside a prefab', () => {
     const turret = createMeshEntity('box');
     turret.entity.name = 'Turret';
     const brain = createEntity('Brain', [
-      { ...createComponent('script'), assetId: SCRIPT_1, props: { target: turret.entity.id, speed: 3 } },
+      { ...createScript(), assetId: SCRIPT_1, props: { target: turret.entity.id, speed: 3 } },
     ]);
     turret.entity.children = [brain.entity.id];
     brain.entity.parent = turret.entity.id;
@@ -558,7 +564,7 @@ describe('references inside a prefab', () => {
     const host = createEntity('Tank', [
       createPrefabInstance(PREFAB_1),
     ]);
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
     const script = componentsOf(scene, instancedId(host.entity.id, brain.entity.id))[0] as {
       props: Record<string, unknown>;
@@ -578,7 +584,7 @@ describe('references inside a prefab', () => {
     const prefab = prefabWith('Doorway', [frame, door], frame.entity.id);
 
     const host = createEntity('Doorway', [createPrefabInstance(PREFAB_1)]);
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
     const joint = findComponent(scene, instancedId(host.entity.id, door.entity.id), 'joint');
     expect(joint?.connectedEntity).toBe(instancedId(host.entity.id, frame.entity.id));
@@ -587,7 +593,7 @@ describe('references inside a prefab', () => {
   it('leaves values that only look like ids alone', () => {
     const prefab = treePrefab();
     const host = instanceOf(prefab);
-    const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
 
     // Names, colours and asset ids are strings too; only an id the prefab
     // itself holds is a reference to one of its entities.
@@ -696,7 +702,7 @@ describe('prefab variants', () => {
     };
 
     const names = () =>
-      [...expandPrefabs(sceneWith([host]), library).scene.entities.values()].map((e) => e.name);
+      [...expandPrefabs(registries, sceneWith([host]), library).scene.entities.values()].map((e) => e.name);
 
     expect(names()).toContain('Trunk');
 
@@ -717,7 +723,7 @@ describe('prefab variants', () => {
     const host = createEntity('Tree', [
       createPrefabInstance(PREFAB_2),
     ]);
-    const { scene } = expandPrefabs(sceneWith([host]), {
+    const { scene } = expandPrefabs(registries, sceneWith([host]), {
       get: (id: AssetId) => (id === PREFAB_1 ? base : id === PREFAB_2 ? variant : undefined),
     });
 
@@ -817,7 +823,7 @@ describe('overriding through nesting', () => {
       [`${placed.id}${'/'}${lamp.root}`]: { name: 'Broken lamp' },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library);
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library);
     const names = [...scene.entities.values()].map((entity) => entity.name);
 
     // Before this the edit was refused: the scene had nowhere to put it, and
@@ -840,7 +846,7 @@ describe('overriding through nesting', () => {
       [`${placed.id}/${lamp.root}`]: { visible: false },
     };
 
-    const { scene } = expandPrefabs(sceneWith([host]), library);
+    const { scene } = expandPrefabs(registries, sceneWith([host]), library);
     const built = [...scene.entities.values()].find((entity) => entity.name === 'Dim lamp')!;
 
     // Nearest layer first, outermost last: the room's rename survives because
@@ -858,7 +864,7 @@ describe('overriding through nesting', () => {
       createPrefabInstance(ROOM),
     ]);
 
-    const { scene } = expandPrefabs(sceneWith([host, other]), library);
+    const { scene } = expandPrefabs(registries, sceneWith([host, other]), library);
     const names = [...scene.entities.values()].map((entity) => entity.name);
 
     // The whole point of an override rather than an edit to the asset.

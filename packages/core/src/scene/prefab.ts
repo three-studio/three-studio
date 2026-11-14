@@ -9,6 +9,7 @@ import {
   type EntityId,
 } from '../ids';
 import { stableJson } from '../json';
+import type { CoreRegistries } from '../registries';
 import {
   COMPONENT_TYPES,
   componentsOf,
@@ -293,8 +294,11 @@ function prefabNamed(prefabs: PrefabLibrary, assetId: AssetId | ''): PrefabDoc |
  * time. The binder decides what to rebuild by comparing object identity, so a
  * fresh copy on every keystroke would throw away every geometry and material in
  * the scene.
+ *
+ * `registries` fill each overridden component through its own type.
  */
 export function expandPrefabs(
+  registries: CoreRegistries,
   scene: SceneDoc,
   prefabs: PrefabLibrary,
   previous?: ExpandedScene,
@@ -341,7 +345,7 @@ export function expandPrefabs(
       continue;
     }
 
-    const produced = instantiate(entityId, prefab, component, prefabs, [component.assetId]);
+    const produced = instantiate(registries, entityId, prefab, component, prefabs, [component.assetId]);
     adopt(produced);
     sources.set(entityId, { component, chain, produced });
   }
@@ -457,6 +461,7 @@ function overrideKey(prefix: EntityId | null, local: EntityId): EntityId {
 }
 
 function instantiate(
+  registries: CoreRegistries,
   hostId: EntityId,
   prefab: PrefabDoc,
   component: PrefabInstanceComponent,
@@ -488,7 +493,7 @@ function instantiate(
 
     for (const layer of layers) {
       const override = layer.overrides[overrideKey(layer.prefix, local.id)];
-      if (override) held = applyPrefabOverride(copy, held, override);
+      if (override) held = applyPrefabOverride(registries, copy, held, override);
     }
     // A component that points at another entity — a script property declared
     // `type: 'entity'` — holds an id local to the prefab, which nothing in the
@@ -516,6 +521,7 @@ function instantiate(
     // Every layer gains one path segment rather than being re-keyed, which is
     // what makes this work at any depth without the expansion counting levels.
     const nested = instantiate(
+      registries,
       copy.id,
       innerPrefab,
       inner,
@@ -541,6 +547,7 @@ function instantiate(
  * disagreeing is the shape of bug nobody finds until a scene is already wrong.
  */
 export function applyPrefabOverride(
+  registries: CoreRegistries,
   entity: EntityDoc,
   components: readonly ComponentDoc[],
   override: PrefabOverride,
@@ -569,7 +576,7 @@ export function applyPrefabOverride(
     // lives now, and the runtime built nothing from it. For every other type,
     // the fill of a whole component is that same component.
     return {
-      ...fillComponent({ ...component, ...properties } as ComponentDoc),
+      ...fillComponent(registries, { ...component, ...properties } as ComponentDoc),
       // Never overridable: it is what this very lookup keys on.
       id: component.id,
     };
@@ -620,7 +627,7 @@ function sceneFormatOfPrefab(version: unknown): number {
  *   file's own is read, which is the document a window sends before there is a
  *   sidecar to ask.
  */
-export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
+export function migratePrefab(registries: CoreRegistries, input: unknown, assetId?: AssetId): PrefabDoc {
   if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
   const id = assetId ?? input['id'];
   if (!isAssetId(id)) throw new SceneFormatError('Prefab file has no id of its own.');
@@ -631,7 +638,7 @@ export function migratePrefab(input: unknown, assetId?: AssetId): PrefabDoc {
 
   // Borrowed wholesale: a prefab is a scene without an environment, and
   // duplicating the walk is how the two would drift apart.
-  const asScene = migrateScene({
+  const asScene = migrateScene(registries, {
     // Its **own** age, not the current format. This used to say
     // `SCENE_FORMAT_VERSION`, which told `migrateScene` the document had
     // nothing left to do. That was harmless for as long as every pass in there
@@ -668,7 +675,7 @@ export function serializePrefab(prefab: PrefabDoc): string {
 }
 
 /** A prefab file's text, read as a document of the current format. See `migratePrefab` for the id. */
-export function deserializePrefab(json: string, assetId?: AssetId): PrefabDoc {
+export function deserializePrefab(registries: CoreRegistries, json: string, assetId?: AssetId): PrefabDoc {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -677,7 +684,7 @@ export function deserializePrefab(json: string, assetId?: AssetId): PrefabDoc {
       `Prefab file is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
-  return migratePrefab(parsed, assetId);
+  return migratePrefab(registries, parsed, assetId);
 }
 
 /**
@@ -688,8 +695,11 @@ export function deserializePrefab(json: string, assetId?: AssetId): PrefabDoc {
  * every one through the migration, as the editor reads a file, under the id the
  * manifest names it by. A key that is not an id names no prefab.
  */
-export function prefabsFromJson(prefabs: Readonly<Record<string, unknown>>): Map<AssetId, PrefabDoc> {
+export function prefabsFromJson(
+  registries: CoreRegistries,
+  prefabs: Readonly<Record<string, unknown>>,
+): Map<AssetId, PrefabDoc> {
   const read = new Map<AssetId, PrefabDoc>();
-  for (const [id, prefab] of idMapOf(prefabs, isAssetId)) read.set(id, migratePrefab(prefab, id));
+  for (const [id, prefab] of idMapOf(prefabs, isAssetId)) read.set(id, migratePrefab(registries, prefab, id));
   return read;
 }

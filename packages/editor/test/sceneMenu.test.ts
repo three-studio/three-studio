@@ -22,6 +22,9 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { useProjectStore } from '../src/state/projectStore';
 import type { MenuEntry, MenuItem } from '../src/ui/Menu';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The Scene menu holds every scene gesture, and decides none of them: each row
@@ -112,7 +115,7 @@ function open(
     sceneId,
     saving: false,
   });
-  return { scenes, sceneId, startScene, context: currentContext() };
+  return { scenes, sceneId, startScene, context: currentContext(registries) };
 }
 
 /** Edits the document, so that it has something to save. */
@@ -227,7 +230,7 @@ describe('no guard of its own', () => {
     const menu = buildSceneMenu(STATES[state]!());
     // Every row that is not a submenu's heading runs a command.
     const rows = menu.filter((entry): entry is MenuItem => entry !== null && entry.submenu === undefined);
-    expect(rows.map(shown)).toEqual(BOUND.map((id) => shown(commandEntry(id, currentContext()))));
+    expect(rows.map(shown)).toEqual(BOUND.map((id) => shown(commandEntry(id, currentContext(registries)))));
   });
 
   it('greys Revert Scene on a clean scene, and offers it once edited', () => {

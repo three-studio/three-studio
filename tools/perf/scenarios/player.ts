@@ -5,6 +5,7 @@ import { isRecord } from '@three-studio/core';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { readProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import { stringAt } from '../launch/cdp';
 import { serveFolder } from '../launch/serve';
 import { type MetricSpec, metricsOf, type ScenarioResult } from '../report/results';
@@ -80,7 +81,7 @@ export async function playerScenario(context: ScenarioContext): Promise<Scenario
       const profile = build.profiles[build.active];
       if (!profile) throw new Error('the render project has no active build profile');
       const out = join(folder, 'export');
-      await exportBuild(project, profile, out, [context.repo]);
+      await exportBuild(builtInRegistries(), project, profile, out, [context.repo]);
       return { project, out };
     },
     decodeSubject,

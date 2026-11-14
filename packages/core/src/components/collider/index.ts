@@ -19,7 +19,7 @@ import { conformColliderShape, createCollider } from './defaults';
  * opening the file, and its old `size` as a box's when it was half of one.
  */
 export const colliderComponent = defineComponent({
-  type: 'collider',
+  id: 'collider',
   create: () => createCollider(),
   fill: (stored) => ({
     ...conform(stored, createCollider()),

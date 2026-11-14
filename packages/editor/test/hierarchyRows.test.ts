@@ -11,6 +11,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { buildRows } from '../src/panels/hierarchyRows';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The row model, testable now that it is not shut inside a component module.
@@ -25,7 +28,7 @@ const TREE = fixedId('asset', 'tree');
 
 /** An expansion of a scene holding no prefabs, which is most scenes. */
 const plain = (templates: EntityTemplate[]) =>
-  expandPrefabs(sceneWith(templates), { get: () => undefined });
+  expandPrefabs(registries, sceneWith(templates), { get: () => undefined });
 
 describe('flattening the tree', () => {
   it('indents a child under its parent', () => {
@@ -78,7 +81,7 @@ describe('rows a prefab produced', () => {
     const prefab = { ...prefabWith('Tree', [trunk], trunk.entity.id), id: TREE };
     const host = createEntity('Tree', [createPrefabInstance(TREE)]);
 
-    const expanded = expandPrefabs(sceneWith([host]), {
+    const expanded = expandPrefabs(registries, sceneWith([host]), {
       get: (id) => (id === TREE ? prefab : undefined),
     });
     const rows = buildRows(expanded, NONE, '');

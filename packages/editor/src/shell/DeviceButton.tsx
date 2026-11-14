@@ -1,6 +1,7 @@
 import { ChevronDown, Smartphone } from 'lucide-react';
 import { useRef } from 'react';
 import { commandById, currentContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { setDevicePopoverOpen, useDeviceStore } from '../state/deviceStore';
 import { useProjectStore } from '../state/projectStore';
 import { toolTone } from '../ui/ToolButton';
@@ -18,6 +19,7 @@ import { deviceView } from './deviceView';
  * are some, in the same tone — and the tooltip the link it serves.
  */
 export function DeviceButton({ className = '' }: { className?: string }) {
+  const registries = useRegistries();
   const anchor = useRef<HTMLDivElement>(null);
   const status = useDeviceStore((s) => s.status);
   const open = useDeviceStore((s) => s.popoverOpen);
@@ -48,8 +50,8 @@ export function DeviceButton({ className = '' }: { className?: string }) {
         type="button"
         aria-label="Launch on Devices"
         {...tooltip(view.title)}
-        disabled={!launch.can(currentContext())}
-        onClick={() => launch.run(currentContext())}
+        disabled={!launch.can(currentContext(registries))}
+        onClick={() => launch.run(currentContext(registries))}
         className={`relative flex h-7 w-7 items-center justify-center rounded-l-sm transition-colors ${toolTone(false)} disabled:text-ink-dim disabled:hover:bg-transparent`}
       >
         <Smartphone size={15} strokeWidth={1.75} />

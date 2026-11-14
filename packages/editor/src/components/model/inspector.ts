@@ -38,7 +38,7 @@ export const inspector: ComponentSchema = {
       // Through its command, as the prefab instance's actions go: calling
       // `unpackModel` here went past the command's `can()`, so neither the
       // padlock nor the scene lock was ever asked.
-      run: ({ entityId }) => commandById('unpackModel').run(contextFor([entityId])),
+      run: ({ registries, entityId }) => commandById('unpackModel').run(contextFor(registries, [entityId])),
     },
   ],
 };

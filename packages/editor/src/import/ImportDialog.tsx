@@ -61,6 +61,7 @@ export function ImportDialog() {
 }
 
 function ImportDialogBody({ sessionId }: { sessionId: string }) {
+  const registries = useRegistries();
   const rows = useImportStore((state) => state.rows);
   const selectedId = useImportStore((state) => state.selectedId);
   const busy = useImportStore((state) => state.busy);
@@ -109,7 +110,7 @@ function ImportDialogBody({ sessionId }: { sessionId: string }) {
             type="button"
             className={PRIMARY}
             disabled={busy || counts.included === 0}
-            onClick={() => void store.getState().confirm()}
+            onClick={() => void store.getState().confirm(registries)}
           >
             {busy
               ? 'Importing…'

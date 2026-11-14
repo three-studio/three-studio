@@ -3,7 +3,7 @@ import { createPlayerController } from './defaults';
 
 /** A first-, third-person or fly controller. */
 export const playerControllerComponent = defineComponent({
-  type: 'playerController',
+  id: 'playerController',
   create: () => createPlayerController(),
   assets: () => [],
   entities: () => [],

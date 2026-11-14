@@ -8,6 +8,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { composedPrefabMode, usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useToastStore } from '../src/state/toastStore';
 import { sceneUnsaved, windowUnsaved } from '../src/state/unsaved';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Opening a prefab sets the scene aside; leaving it must give back everything
@@ -48,7 +51,7 @@ describe('a round trip through Prefab Mode', () => {
   it('gives the scene its undo stack back', async () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
-    renameEntity(cube.entity.id, 'Renamed');
+    renameEntity(registries, cube.entity.id, 'Renamed');
     const depth = doc().past.length;
     expect(depth).toBe(2);
 

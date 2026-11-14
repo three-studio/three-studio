@@ -22,6 +22,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeviceServer } from '../src/main/devices/DeviceServer';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
 import { pngOf } from './png';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The device server, started and stopped for real on loopback: the port it
@@ -263,12 +266,13 @@ async function snapshot(root: string, exposure = 1): Promise<ReceivedLaunch> {
   const [entry] = await discoverScenes(root);
   const { settings } = await readProject(root);
   return conformLaunchSnapshot(
+    registries,
     encodeLaunchSnapshot({
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: {
         id: entry!.id,
         name: entry!.name,
-        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+        scene: deserializeScene(registries, await readFile(join(root, entry!.path), 'utf8')),
       },
       materials: new Map(),
       physicsMaterials: new Map(),

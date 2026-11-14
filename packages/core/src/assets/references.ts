@@ -1,6 +1,7 @@
 import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
 import { materialAssets } from '../components/materialAssets';
 import { isAssetId, type AssetId, type EntityId } from '../ids';
+import type { CoreRegistries } from '../registries';
 import { COMPONENT_TYPES, tableOf, type ComponentHost } from '../scene/components';
 import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
@@ -68,8 +69,8 @@ export function totalUses(usage: AssetUsage): number {
  * the exporter ships: a slot named in one and not the other is either a texture
  * that does not arrive or a delete that claims nothing uses it.
  */
-function componentNames(component: ComponentDoc): readonly (AssetId | '' | null)[] {
-  return componentAssets(component);
+function componentNames(registries: CoreRegistries, component: ComponentDoc): readonly (AssetId | '' | null)[] {
+  return componentAssets(registries, component);
 }
 
 /**
@@ -81,6 +82,7 @@ function componentNames(component: ComponentDoc): readonly (AssetId | '' | null)
  * alternative, reading every scene on every delete, is a round trip per file.
  */
 export function findAssetUsage(
+  registries: CoreRegistries,
   assetId: AssetId,
   scene: SceneDoc,
   materials: ReadonlyMap<AssetId, MaterialDef>,
@@ -90,7 +92,7 @@ export function findAssetUsage(
 
   const named = new Set<EntityId>();
   for (const [entityId, component] of eachComponent(scene)) {
-    if (componentNames(component).includes(assetId)) named.add(entityId);
+    if (componentNames(registries, component).includes(assetId)) named.add(entityId);
   }
   usage.entities.push(...named);
 
@@ -102,7 +104,7 @@ export function findAssetUsage(
 
   for (const [id, prefab] of prefabs) {
     for (const [, component] of eachComponent(prefab)) {
-      if (componentNames(component).includes(assetId)) {
+      if (componentNames(registries, component).includes(assetId)) {
         usage.prefabs.push(id);
         break;
       }
@@ -177,6 +179,7 @@ export interface BrokenReference {
  * what the hierarchy shows and therefore what it can mark.
  */
 export function findBrokenReferences(
+  registries: CoreRegistries,
   scene: SceneDoc,
   known: ReadonlySet<AssetId>,
 ): BrokenReference[] {
@@ -198,7 +201,7 @@ export function findBrokenReferences(
   };
 
   for (const [entityId, component] of eachComponent(scene)) {
-    for (const assetId of componentNames(component)) note(entityId, assetId);
+    for (const assetId of componentNames(registries, component)) note(entityId, assetId);
   }
 
   // Not a component, so the walk cannot reach it — the same blind spot that
@@ -217,10 +220,13 @@ export function findBrokenReferences(
  * Play. `null` and `''` are empty slots, as an asset's are. Give it the
  * expanded scene to reach what prefab instances place.
  */
-export function findMissingEntities(scene: SceneDoc): { entityId: EntityId; type: ComponentType }[] {
+export function findMissingEntities(
+  registries: CoreRegistries,
+  scene: SceneDoc,
+): { entityId: EntityId; type: ComponentType }[] {
   const missing: { entityId: EntityId; type: ComponentType }[] = [];
   for (const [entityId, component] of eachComponent(scene)) {
-    const gone = componentEntities(component).some(
+    const gone = componentEntities(registries, component).some(
       (id) => id !== null && id !== '' && !scene.entities.has(id),
     );
     if (gone) missing.push({ entityId, type: component.type });
@@ -239,6 +245,7 @@ export function findMissingEntities(scene: SceneDoc): { entityId: EntityId; type
  * arrives with a model and four textures behind it.
  */
 export function collectSceneAssets(
+  registries: CoreRegistries,
   scene: SceneDoc,
   materials: ReadonlyMap<AssetId, MaterialDef>,
   prefabs: ReadonlyMap<AssetId, PrefabDoc>,
@@ -259,10 +266,10 @@ export function collectSceneAssets(
     const candidates =
       knownAssets === undefined
         ? []
-        : componentAssetCandidates(component).flatMap((text) =>
+        : componentAssetCandidates(registries, component).flatMap((text) =>
             isAssetId(text) && knownAssets.has(text) ? [text] : [],
           );
-    for (const id of [...componentNames(component), ...candidates]) {
+    for (const id of [...componentNames(registries, component), ...candidates]) {
       if (id === null || id === '') continue;
       ids.add(id);
 

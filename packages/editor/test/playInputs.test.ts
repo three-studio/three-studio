@@ -34,6 +34,8 @@ import {
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
 
+const registries = builtInRegistries();
+
 /*
  * What Play runs and what a device launch sends are one reading of the editor's
  * stores. Two readings drift: a device that runs something other than what Play
@@ -247,7 +249,7 @@ describe('the scenes a running game reaches', () => {
     const unsaved = createMeshEntity('box');
     addEntity(unsaved);
     const entry = readPlayInputs().entry;
-    const source = playSceneSource(entry, readFile);
+    const source = playSceneSource(registries, entry, readFile);
 
     const byId = await source.read(SCENE_ID);
     const byName = await source.read('Level One');
@@ -263,7 +265,7 @@ describe('the scenes a running game reaches', () => {
 
   it('reads any other scene from its file, by id or by name', async () => {
     const { reads, readFile } = givenTwoScenes();
-    const source = playSceneSource(readPlayInputs().entry, readFile);
+    const source = playSceneSource(registries, readPlayInputs().entry, readFile);
 
     expect((await source.read('Boss')).name).toBe('Boss');
     expect((await source.read(OTHER.id)).name).toBe('Boss');
@@ -272,7 +274,7 @@ describe('the scenes a running game reaches', () => {
 
   it('refuses a scene the project does not have, and names it', async () => {
     const { readFile } = givenTwoScenes();
-    const source = playSceneSource(readPlayInputs().entry, readFile);
+    const source = playSceneSource(registries, readPlayInputs().entry, readFile);
 
     await expect(source.read('Nowhere')).rejects.toThrow('No scene "Nowhere"');
   });

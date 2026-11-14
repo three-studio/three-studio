@@ -186,7 +186,7 @@ export class SceneHost implements SceneApi {
     // forget, and the symptom is a level that loads with its props missing.
     const engine = await Engine.create({
       ...this.options,
-      scene: expandPrefabs(scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
+      scene: expandPrefabs(this.options.registries, scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
       scenes: this.sceneApiFor(path),
       // Handed over rather than built per engine, so the clips outlive the
       // scene that first asked for them.
@@ -237,6 +237,7 @@ export class SceneHost implements SceneApi {
 
   assetsOf(scene: SceneDoc): AssetId[] {
     return collectSceneAssets(
+      this.options.registries,
       scene,
       this.options.materials ?? new Map<AssetId, MaterialDef>(),
       this.options.prefabs ?? new Map<AssetId, PrefabDoc>(),

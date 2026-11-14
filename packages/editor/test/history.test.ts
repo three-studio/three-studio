@@ -20,9 +20,12 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { expandedScene } from '../src/state/expansion';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
 
 /*
  * The round-trip property, the measure that pays for itself
@@ -94,7 +97,7 @@ function step(pick: () => number): void {
     }
     case 4: {
       const id = any();
-      if (id !== undefined) renameEntity(id, `Renamed ${Math.floor(pick() * 1000)}`);
+      if (id !== undefined) renameEntity(registries, id, `Renamed ${Math.floor(pick() * 1000)}`);
       return;
     }
     case 5: {
@@ -103,7 +106,7 @@ function step(pick: () => number): void {
       // Sometimes coalesced, sometimes not: an entry that absorbs later writes
       // has a different shape, and both must undo to the same place.
       const key = pick() < 0.5 ? { coalesceKey: 'drag' } : undefined;
-      setTransform(id, { position: [pick() * 10, pick() * 10, pick() * 10] }, key);
+      setTransform(registries, id, { position: [pick() * 10, pick() * 10, pick() * 10] }, key);
       return;
     }
     case 6: {
@@ -116,9 +119,9 @@ function step(pick: () => number): void {
       if (id === undefined) return;
       if (pick() < 0.5) {
         useEditorStore.getState().setSelection([id]);
-        groupSelection(Selection.current());
+        groupSelection(Selection.current(registries));
       } else {
-        setEntityVisible(id, pick() < 0.5);
+        setEntityVisible(registries, id, pick() < 0.5);
       }
     }
   }

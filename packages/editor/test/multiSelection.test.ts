@@ -24,6 +24,9 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { expandedScene } from '../src/state/expansion';
 import { Selection } from '../src/state/selection';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The gestures that run through `Selection` and its filters.
@@ -34,7 +37,7 @@ import { Selection } from '../src/state/selection';
 const doc = () => useDocumentStore.getState();
 const TREE = fixedId('asset', 'tree');
 const INNER = fixedId('entity', 'inner');
-const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
 const at = (id: EntityId) => doc().scene.entities.get(id)?.transform.position ?? [];
 
 beforeEach(() => {
@@ -59,7 +62,7 @@ describe('moving several objects at once', () => {
     const cubes = three();
     const before = cubes.map((cube) => [...at(cube.entity.id)]);
 
-    transformSelection(sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(0, 3, -1));
+    transformSelection(registries, sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(0, 3, -1));
 
     cubes.forEach((cube, i) => {
       close(at(cube.entity.id), [before[i]![0]!, before[i]![1]! + 3, before[i]![2]! - 1]);
@@ -73,7 +76,7 @@ describe('moving several objects at once', () => {
 
     // Sixty frames of a drag, as the gizmo produces them.
     for (let frame = 1; frame <= 60; frame++) {
-      transformSelection(selection, new Matrix4().makeTranslation(0.1, 0, 0), {
+      transformSelection(registries, selection, new Matrix4().makeTranslation(0.1, 0, 0), {
         coalesceKey: 'gizmo:1',
       });
     }
@@ -93,7 +96,7 @@ describe('moving several objects at once', () => {
     const child = createEntity('Child');
     addEntity(child, parent.entity.id);
 
-    transformSelection(sel([parent.entity.id, child.entity.id]), new Matrix4().makeTranslation(5, 0, 0));
+    transformSelection(registries, sel([parent.entity.id, child.entity.id]), new Matrix4().makeTranslation(5, 0, 0));
 
     // The child rides along under its parent.entity. Moving it on its own account as
     // well would put it at ten.
@@ -108,7 +111,7 @@ describe('moving several objects at once', () => {
     });
     const base = doc().past.length;
 
-    transformSelection(sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(9, 0, 0));
+    transformSelection(registries, sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(9, 0, 0));
 
     // `transformable()` drops the locked one; the others still move, which is
     // what Unity does. What must not happen is a silent partial move recorded as
@@ -175,7 +178,7 @@ describe("a selection mixing the document and a prefab's contents", () => {
     // the override path, as a single transform already does.
     const produced = instancedId(cube.entity.id, INNER);
     expect(() =>
-      transformSelection(sel([cube.entity.id, produced]), new Matrix4().makeTranslation(1, 0, 0)),
+      transformSelection(registries, sel([cube.entity.id, produced]), new Matrix4().makeTranslation(1, 0, 0)),
     ).not.toThrow();
     close(at(cube.entity.id), [1, 0.5, 0]);
   });
@@ -230,11 +233,11 @@ describe("moving an entity a prefab produced", () => {
     const produced = instancedId(host.entity.id, branch.entity.id);
     // Where the branch stands before anything is dragged: the instance at x=10,
     // the trunk a metre up, the branch two above that.
-    close(worldPosition(expandedScene().scene, produced), [10, 3, 0]);
+    close(worldPosition(expandedScene(registries).scene, produced), [10, 3, 0]);
 
-    transformSelection(sel([produced]), new Matrix4().makeTranslation(0, 0, 5));
+    transformSelection(registries, sel([produced]), new Matrix4().makeTranslation(0, 0, 5));
 
-    close(worldPosition(expandedScene().scene, produced), [10, 3, 5]);
+    close(worldPosition(expandedScene(registries).scene, produced), [10, 3, 5]);
   });
 
   it('records the move as an override on the instance, not on the asset', () => {
@@ -245,6 +248,7 @@ describe("moving an entity a prefab produced", () => {
     addEntity(host);
 
     transformSelection(
+      registries,
       sel([instancedId(host.entity.id, branch.entity.id)]),
       new Matrix4().makeTranslation(0, 0, 5),
     );
@@ -258,11 +262,11 @@ describe("moving an entity a prefab produced", () => {
 describe('a single object still goes through the same path', () => {
   it('matches what setTransform gives', () => {
     const [a] = three();
-    transformSelection(sel([a!.entity.id]), new Matrix4().makeTranslation(0, 2, 0));
+    transformSelection(registries, sel([a!.entity.id]), new Matrix4().makeTranslation(0, 2, 0));
     const viaDelta = [...at(a!.entity.id)];
 
     doc().undo();
-    setTransform(a!.entity.id, { position: [0, 3, 0] });
+    setTransform(registries, a!.entity.id, { position: [0, 3, 0] });
 
     // One code path that handles one object is worth more than two that disagree
     // at the edges.

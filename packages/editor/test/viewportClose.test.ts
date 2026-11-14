@@ -2,8 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { showPanel } from '../src/shell/dockApi';
 import { watchViewportClose, type WatchedDock } from '../src/shell/viewportClose';
 import { useEditorStore } from '../src/state/editorStore';
+import { builtInRegistries } from './registries';
 
 vi.mock('../src/shell/dockApi', () => ({ showPanel: vi.fn() }));
+
+const registries = builtInRegistries();
 
 /*
  * Closing the Viewport during Play stops the game. It is the game's only view,
@@ -57,7 +60,7 @@ afterEach(() => {
 describe('closing the Viewport', () => {
   it('stops the game when a removal takes the Viewport out', () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('remove', (panels) => panels.delete('viewport'));
     expect(playState()).toBe('stopped');
   });
@@ -65,7 +68,7 @@ describe('closing the Viewport', () => {
   it('does nothing while stopped', () => {
     useEditorStore.getState().stop();
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     expect(() => mutate('remove', (panels) => panels.delete('viewport'))).not.toThrow();
     expect(playState()).toBe('stopped');
     expect(showPanel).not.toHaveBeenCalled();
@@ -73,14 +76,14 @@ describe('closing the Viewport', () => {
 
   it('leaves the game alone when another panel is closed', () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('remove', (panels) => panels.delete('console'));
     expect(playState()).toBe('playing');
   });
 
   it('leaves the game alone through a move and a float, which keep the Viewport', () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('move', () => {});
     mutate('float', () => {});
     expect(playState()).toBe('playing');
@@ -90,7 +93,7 @@ describe('closing the Viewport', () => {
 describe('a template applied during Play', () => {
   it('leaves everything be when it has a Viewport', async () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('load', (panels) => {
       panels.clear();
       for (const id of ALL) panels.add(id);
@@ -102,7 +105,7 @@ describe('a template applied during Play', () => {
 
   it('brings the Viewport back when it has none, and the game goes on', async () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('load', (panels) => panels.delete('viewport'));
     // Not from inside dockview's dispatch: a panel added there would be a
     // mutation nested in the load's own announcement.
@@ -114,7 +117,7 @@ describe('a template applied during Play', () => {
 
   it('does nothing when the load left the dock empty: the template could not be read', async () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('load', (panels) => panels.clear());
     await microtask();
     expect(playState()).toBe('playing');
@@ -125,7 +128,7 @@ describe('a template applied during Play', () => {
 describe('what is not a close', () => {
   it('leaves the game alone when a clear takes the Viewport', async () => {
     const { dock, mutate } = fakeDock(...ALL);
-    watchViewportClose(dock);
+    watchViewportClose(registries, dock);
     mutate('clear', (panels) => panels.clear());
     await microtask();
     expect(playState()).toBe('playing');
@@ -134,7 +137,7 @@ describe('what is not a close', () => {
 
   it('stops listening once told to', () => {
     const { dock, mutate } = fakeDock(...ALL);
-    const stop = watchViewportClose(dock);
+    const stop = watchViewportClose(registries, dock);
     stop();
     mutate('remove', (panels) => panels.delete('viewport'));
     expect(playState()).toBe('playing');

@@ -110,7 +110,7 @@ export const SCENE_FILE_COMMANDS = {
     // `sceneUnsaved`, not `windowUnsaved`: an edited prefab is saved on the way
     // out, not reverted, so an untouched scene behind it has nothing to go back to.
     can: () => hasScene() && sceneUnsaved(),
-    run: () => revertCurrentScene(),
+    run: (ctx) => revertCurrentScene(ctx.registries),
   }),
 
   duplicateScene: defineCommand({

@@ -19,6 +19,7 @@ import {
   type ComponentDoc,
   type ComponentId,
   type ComponentType,
+  type CoreRegistries,
   type EntityId,
   type EntityTemplate,
   type SceneDoc,
@@ -138,21 +139,21 @@ export function deleteSelection(selection: Selection): void {
   );
 }
 
-export function renameEntity(id: EntityId, name: string): void {
+export function renameEntity(registries: CoreRegistries, id: EntityId, name: string): void {
   const trimmed = name.trim();
   if (trimmed === '') return;
   mutate('Rename entity', (scene) => {
     const entity = scene.entities.get(id);
     if (entity) entity.name = trimmed;
-    else editInstance(scene, id, (override) => void (override.name = trimmed));
+    else editInstance(registries, scene, id, (override) => void (override.name = trimmed));
   });
 }
 
-export function setEntityVisible(id: EntityId, visible: boolean): void {
+export function setEntityVisible(registries: CoreRegistries, id: EntityId, visible: boolean): void {
   mutate(visible ? 'Show entity' : 'Hide entity', (scene) => {
     const entity = scene.entities.get(id);
     if (entity) entity.visible = visible;
-    else editInstance(scene, id, (override) => void (override.visible = visible));
+    else editInstance(registries, scene, id, (override) => void (override.visible = visible));
   });
 }
 
@@ -280,6 +281,7 @@ export function groupSelection(selection: Selection): EntityId | null {
  * on their own and once under their parent.
  */
 export function transformSelection(
+  registries: CoreRegistries,
   selection: Selection,
   delta: Matrix4,
   options?: { coalesceKey?: string },
@@ -306,7 +308,7 @@ export function transformSelection(
    * Read before the mutation whichever scene it is: reading it inside the recipe
    * would compound each target's own move into the next one's.
    */
-  const scene = expandedScene().scene;
+  const scene = expandedScene(registries).scene;
   const poses = new Map(targets.map((id) => [id, localTransformAfterDelta(scene, id, delta)]));
 
   mutate(
@@ -320,7 +322,7 @@ export function transformSelection(
         }
         // An id the document does not hold names an instance's contents, and the
         // move becomes an override — the same path a single transform takes.
-        editInstance(draft, id, (override) => {
+        editInstance(registries, draft, id, (override) => {
           override.transform = { ...override.transform, ...pose };
         });
       }
@@ -378,6 +380,7 @@ export function reparentSelection(
 }
 
 export function setTransform(
+  registries: CoreRegistries,
   id: EntityId,
   patch: Partial<Transform>,
   options?: { coalesceKey?: string },
@@ -398,7 +401,7 @@ export function setTransform(
       // differ from the next. Only what was patched is stored, so a later change
       // to the prefab's rotation still reaches an instance whose position was
       // nudged.
-      editInstance(scene, id, (override) => {
+      editInstance(registries, scene, id, (override) => {
         override.transform = { ...override.transform, ...patch };
       });
     },
@@ -461,7 +464,7 @@ export function componentFits(type: ComponentType, present: ReadonlySet<Componen
 }
 
 /** Adds a component along with anything it needs, as one undo step. */
-export function addComponentWithDependencies(id: EntityId, type: ComponentType): void {
+export function addComponentWithDependencies(registries: CoreRegistries, id: EntityId, type: ComponentType): void {
   const scene = useDocumentStore.getState().scene;
   if (!scene.entities.has(id)) return;
 
@@ -476,9 +479,9 @@ export function addComponentWithDependencies(id: EntityId, type: ComponentType):
   for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
     if (present.has(companion)) continue;
     // Over the expanded scene, so the contents of a prefab placed under it count.
-    if (type === 'joint' && bodyOf(expandedScene().scene, id) !== null) continue;
+    if (type === 'joint' && bodyOf(expandedScene(registries).scene, id) !== null) continue;
     const carries = (type === 'rigidbody' || type === 'joint') && companion === 'collider'
-      && collidersOfBody(expandedScene().scene, id).length > 0;
+      && collidersOfBody(expandedScene(registries).scene, id).length > 0;
     if (!carries) toAdd.push(companion);
   }
 
@@ -491,7 +494,7 @@ export function addComponentWithDependencies(id: EntityId, type: ComponentType):
     const guessable = present.has('mesh') || present.has('model');
 
     for (const kind of toAdd) {
-      const component = createComponentForEntity(kind, siblings);
+      const component = createComponentForEntity(registries, kind, siblings);
       // A character is moved by the controller, not by forces, so its body has
       // to be kinematic or physics would fight the input.
       if (component.type === 'rigidbody' && type === 'playerController') {
@@ -563,6 +566,7 @@ function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly strin
  */
 /** Nested update for material and geometry blocks inside a mesh component. */
 export function setComponentNestedField(
+  registries: CoreRegistries,
   id: EntityId,
   componentId: ComponentId,
   path: readonly string[],
@@ -572,7 +576,7 @@ export function setComponentNestedField(
   if (typeof value === 'number' && !Number.isFinite(value)) return;
   mutate(
     'Edit component',
-    (scene) => writeComponentPath(scene, id, componentId, path, value),
+    (scene) => writeComponentPath(registries, scene, id, componentId, path, value),
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
 }
@@ -583,6 +587,7 @@ export function setComponentNestedField(
  * scene no longer has.
  */
 export function writeComponentPath(
+  registries: CoreRegistries,
   scene: SceneDoc,
   entityId: EntityId,
   componentId: ComponentId,
@@ -591,7 +596,7 @@ export function writeComponentPath(
 ): void {
   const component = findComponentById(scene, entityId, componentId);
   if (!component) {
-    editInstance(scene, entityId, (override, current) => {
+    editInstance(registries, scene, entityId, (override, current) => {
       overrideComponentPath(override, current, componentId, path, value);
     });
     return;
@@ -632,8 +637,13 @@ export function writePath(target: object, path: readonly string[], value: unknow
  * its children's are theirs. The binder is the edit view's, which holds those
  * meshes as they are drawn, a model loaded through its cache included.
  */
-export function fitColliderToMesh(id: EntityId, componentId: ComponentId, binder: SceneBinder): void {
-  const { scene } = expandedScene();
+export function fitColliderToMesh(
+  registries: CoreRegistries,
+  id: EntityId,
+  componentId: ComponentId,
+  binder: SceneBinder,
+): void {
+  const { scene } = expandedScene(registries);
   const collider = findComponentById(scene, id, componentId);
   if (collider?.type !== 'collider') return;
 
@@ -648,7 +658,7 @@ export function fitColliderToMesh(id: EntityId, componentId: ComponentId, binder
     });
     return;
   }
-  setComponentNestedField(id, componentId, ['shape'], fitColliderShape(collider.shape, vertices.positions));
+  setComponentNestedField(registries, id, componentId, ['shape'], fitColliderShape(collider.shape, vertices.positions));
 }
 
 /*

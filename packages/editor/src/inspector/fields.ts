@@ -23,6 +23,7 @@ import {
   type FieldDef,
   type GeometryKind,
 } from '@three-studio/core';
+import type { RuntimeRegistries } from '@three-studio/runtime';
 
 /**
  * `Omit` that survives a union.
@@ -134,7 +135,13 @@ export interface ActionSpec {
    */
   label?: string;
   visibleWhen?: (component: ComponentDoc) => boolean;
-  run: (context: { entityId: EntityId; componentId: ComponentId; component: ComponentDoc }) => void;
+  /** Given the window's registries with the component, for what the action expands, creates or asks. */
+  run: (context: {
+    registries: RuntimeRegistries;
+    entityId: EntityId;
+    componentId: ComponentId;
+    component: ComponentDoc;
+  }) => void;
 }
 
 /**

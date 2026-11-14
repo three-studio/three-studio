@@ -5,11 +5,13 @@ import {
   type BuildManifest,
   type TextureEncoding,
   SCRIPT_API_VERSION,
+  activateCore,
   deserializeScene,
   encodePath,
   idMapOf,
   isAssetId,
   prefabsFromJson,
+  type CoreRegistries,
   type SceneDoc,
 } from '@three-studio/core';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
@@ -111,13 +113,13 @@ function buildResolver(
  * exporter names them by their content, so a path worked out from an id would
  * be a guess.
  */
-async function readScene(build: BuildManifest, named: string): Promise<SceneDoc> {
+async function readScene(registries: CoreRegistries, build: BuildManifest, named: string): Promise<SceneDoc> {
   const { path } = sceneOf(build, named);
   const response = await fetch(resolve(path));
   // Named, so a missing scene reads as a missing scene. Without it a static
   // server's 404 page is handed to the parser, which reports a syntax error.
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
-  return deserializeScene(await response.text());
+  return deserializeScene(registries, await response.text());
 }
 
 async function loadScripts(file: string | null): Promise<void> {
@@ -149,6 +151,13 @@ async function boot(): Promise<void> {
     );
   }
 
+  // The page's composition root: what the game is built from, made and filled
+  // once, before the first scene is decoded through it. The device page runs
+  // this same page, so it is that page's root too.
+  const registries = createRuntimeRegistries();
+  activateCore(registries);
+  activateRuntime(registries);
+
   /*
    * The entry scene can only be asked for once the manifest has arrived, since
    * the manifest is what names it. It used to be `scene.json` and could go out
@@ -157,7 +166,7 @@ async function boot(): Promise<void> {
    */
   const entry = build.scenes[0];
   if (entry === undefined) throw new Error('This build lists no scene to start on.');
-  const scene = await readScene(build, entry.id);
+  const scene = await readScene(registries, build, entry.id);
 
   await loadScripts(build.scripts);
 
@@ -177,18 +186,13 @@ async function boot(): Promise<void> {
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
 
-  // The page's composition root: what the game is built from, made and filled
-  // once. The device page runs this same page, so it is that page's root too.
-  const registries = createRuntimeRegistries();
-  activateRuntime(registries);
-
   // Hosted rather than a single engine: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
     source: {
       // By id, or by the name a script held: `sceneOf` finds either, and the
       // manifest says where the file is.
-      read: (named: string) => readScene(build, named),
+      read: (named: string) => readScene(registries, build, named),
     },
     registries,
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
@@ -198,7 +202,7 @@ async function boot(): Promise<void> {
     physicsMaterials: idMapOf(physicsMaterials, isAssetId),
     // The manifest holds each as the JSON of a file, and a document keeps its
     // entities in a Map: read here, once, as the editor reads a file.
-    prefabs: prefabsFromJson(build.prefabs),
+    prefabs: prefabsFromJson(registries, build.prefabs),
     loadingScene: build.loadingScene,
     rendering,
     physicsSettings: physics,

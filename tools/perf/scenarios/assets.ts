@@ -5,6 +5,7 @@ import { readMaterialAssets, readPhysicsMaterialAssets, readPrefabAssets } from 
 import { moveAsset, renameAssetFolder } from '../../../apps/desktop/src/main/assetMutations';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { ASSETS, assetTextures, writeAssetsProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import { decodeNumbers, freePort, numberAt, recordAt, runInPage, stringAt } from '../launch/cdp';
 import { launchEditor } from '../launch/electron';
 import { assetAction, assetsLoaded, listAssets } from '../page/editor';
@@ -96,7 +97,7 @@ export async function ipcBytes(
   const libraries = [
     await readMaterialAssets(project, manifest),
     await readPhysicsMaterialAssets(project, manifest),
-    await readPrefabAssets(project, manifest),
+    await readPrefabAssets(builtInRegistries(), project, manifest),
   ];
   return {
     list: jsonBytes(manifest),

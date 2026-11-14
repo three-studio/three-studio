@@ -1,10 +1,11 @@
 import {
   bodyOf,
   collidersOfBody,
-  createComponent,
+  createCollider,
   createEntity,
   createJoint,
   createPrefabInstance,
+  createRigidBody,
   entityWorldMatrixPath,
   expandPrefabs,
   fixedId,
@@ -18,14 +19,17 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { nest, prefabWith, sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Which body each collider rides: the nearest Rigid Body up the tree, or, with
  * none above it, a fixed body of its own entity.
  */
 
-const withRigidBody = (name: string) => createEntity(name, [createComponent('rigidbody')]);
-const withCollider = (name: string) => createEntity(name, [createComponent('collider')]);
+const withRigidBody = (name: string) => createEntity(name, [createRigidBody()]);
+const withCollider = (name: string) => createEntity(name, [createCollider()]);
 const PREFAB = fixedId('asset', 'prefab-1');
 
 /**
@@ -37,7 +41,7 @@ function tree(): Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', EntityTemplate>
     A: withRigidBody('A'),
     B: withCollider('B'),
     C: withCollider('C'),
-    D: createEntity('D', [createComponent('rigidbody'), createComponent('collider')]),
+    D: createEntity('D', [createRigidBody(), createCollider()]),
     E: withCollider('E'),
     F: withCollider('F'),
     G: withRigidBody('G'),
@@ -67,7 +71,7 @@ describe('physicsBodies', () => {
     const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
+    const { scene } = expandPrefabs(registries, sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     // The copy names the entity that placed it as its parent, which does not
     // name it back: a walk down from the cart would miss it.
@@ -125,7 +129,7 @@ describe('bodyOf', () => {
     const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
+    const { scene } = expandPrefabs(registries, sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     expect(bodyOf(scene, instancedId(placed.entity.id, crate.entity.id))).toBe(cart.entity.id);
   });

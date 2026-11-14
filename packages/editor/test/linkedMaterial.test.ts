@@ -1,6 +1,6 @@
 import {
   assertDefined,
-  createComponent,
+  createCollider,
   createEntity,
   createMaterial,
   createMeshComponent,
@@ -20,6 +20,9 @@ import { isAction, type ActionSpec } from '../src/inspector/schema';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDialogStore } from '../src/state/dialogStore';
 import { useDocumentStore } from '../src/state/documentStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A shared asset is edited where it is linked: the Inspector shows the asset's
@@ -68,7 +71,7 @@ afterEach(() => {
 
 /** A Cube whose Collider grips by its own 0.7, linking `materialId`. */
 function cubeLinking(materialId: AssetId | null): EntityId {
-  const cube = createEntity('Cube', [{ ...createComponent('collider'), materialId }]);
+  const cube = createEntity('Cube', [{ ...createCollider(), materialId }]);
   doc().replaceScene(sceneWith([cube]));
   return cube.entity.id;
 }
@@ -126,7 +129,7 @@ describe('the collider’s two actions', () => {
     );
     if (!action) throw new Error(`no ${title} action`);
     const component = colliderOf(entityId);
-    action.run({ entityId, componentId: component.id, component });
+    action.run({ registries, entityId, componentId: component.id, component });
   };
 
   it('Save as Asset… links a collider to a new physics material of its own values; Make Unique copies them back and unlinks', async () => {
@@ -138,7 +141,7 @@ describe('the collider’s two actions', () => {
     expect(useDialogStore.getState().prompt?.defaultValue).toBe('Cube Physics Material');
     useDialogStore.getState().submit('Ice');
     await vi.waitFor(() => expect(colliderOf(cube).materialId).toBe(NEW_PHYSICS_MATERIAL));
-    expect(saves.createPhysicsMaterial).toHaveBeenCalledWith('Ice', own);
+    expect(saves.createPhysicsMaterial).toHaveBeenCalledWith(registries, 'Ice', own);
 
     // The table as a refresh leaves it, the asset holding Ice's values.
     useAssetStore.setState({

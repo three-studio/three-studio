@@ -4,6 +4,9 @@ import { createWater } from '../src/components/water/defaults';
 import { createSkySettings } from '../src/scene/defaults';
 import { fillComponent } from '../src/components';
 import type { WaterComponent } from '../src/scene/schema';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The sun conversion is pinned here because two places have to agree on it: the
@@ -56,7 +59,7 @@ describe('a fresh water surface', () => {
 
   it('fills the three onto a surface saved before they existed', () => {
     const { speed: _s, direction: _d, choppiness: _c, ...older } = createWater();
-    const filled = fillComponent(older as WaterComponent) as WaterComponent;
+    const filled = fillComponent(registries, older as WaterComponent) as WaterComponent;
 
     expect(filled.speed).toBe(1);
     expect(filled.direction).toBe(0);

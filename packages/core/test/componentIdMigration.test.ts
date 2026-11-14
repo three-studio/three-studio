@@ -16,6 +16,9 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Components gain an id, and prefab overrides stop naming them by position.
@@ -109,14 +112,14 @@ const overrideComponents = (scene: SceneDoc, entityId: EntityId, key: string): R
 
 describe('giving components an identity', () => {
   it('stamps every component of a scene written without ids', () => {
-    const scene = deserializeScene(oldScene());
+    const scene = deserializeScene(registries, oldScene());
 
     expect(componentsOf(scene, HOST)[0]?.id).toBe('host:0');
     expect(scene.version).toBe(SCENE_FORMAT_VERSION);
   });
 
   it('stamps every component of a prefab, by the position it had', () => {
-    const prefab = migratePrefab(oldPrefab());
+    const prefab = migratePrefab(registries, oldPrefab());
 
     // The ids the scene's overrides will be remapped onto, computed on the other
     // side of the wall without either file knowing about the other.
@@ -129,7 +132,7 @@ describe('giving components an identity', () => {
   });
 
   it('rekeys overrides from position to component id', () => {
-    const scene = deserializeScene(oldScene());
+    const scene = deserializeScene(registries, oldScene());
     const direct = overrideComponents(scene, HOST, 'trunk');
 
     expect(Object.keys(direct).sort()).toEqual(['trunk:1', 'trunk:2']);
@@ -138,7 +141,7 @@ describe('giving components an identity', () => {
   });
 
   it('rekeys an override that reaches two prefabs deep', () => {
-    const scene = deserializeScene(oldScene());
+    const scene = deserializeScene(registries, oldScene());
     const nested = overrideComponents(scene, HOST, 'inner/lampRoot');
 
     // The key is a path; the entity it names is its last segment, and that is
@@ -148,8 +151,8 @@ describe('giving components an identity', () => {
   });
 
   it('leaves an already-migrated document exactly as it is', () => {
-    const once = deserializeScene(oldScene());
-    const twice = deserializeScene(serializeScene(once));
+    const once = deserializeScene(registries, oldScene());
+    const twice = deserializeScene(registries, serializeScene(once));
 
     // The remap runs on the boundary and must be idempotent: a scene saved and
     // reopened would otherwise have its keys rewritten a second time, against
@@ -163,7 +166,7 @@ describe('giving components an identity', () => {
     };
     assertDefined(raw.entities['host'], 'the host in the file').components.push({ type: 'plugin:water', flow: 2 });
 
-    const scene = deserializeScene(JSON.stringify(raw));
+    const scene = deserializeScene(registries, JSON.stringify(raw));
     const tables = scene.components as unknown as Record<
       string,
       Record<string, Record<string, Record<string, unknown>>>
@@ -187,7 +190,7 @@ describe('giving components an identity', () => {
     const host = assertDefined(raw.entities['host'], 'the host in the file');
     assertDefined(host.components[0], 'its first component')['id'] = 'chosen-by-someone-else';
 
-    const scene = deserializeScene(JSON.stringify(raw));
+    const scene = deserializeScene(registries, JSON.stringify(raw));
     expect(componentsOf(scene, HOST)[0]?.id).toBe('chosen-by-someone-else');
   });
 });
@@ -197,8 +200,8 @@ describe('giving components an identity', () => {
  */
 describe('a prefab that gains a component', () => {
   it('does not slide the overrides of its instances onto other components', () => {
-    const scene = deserializeScene(oldScene());
-    const prefab = migratePrefab(oldPrefab());
+    const scene = deserializeScene(registries, oldScene());
+    const prefab = migratePrefab(registries, oldPrefab());
 
     // An author adds a light at the front of the trunk. Every override recorded
     // against the rigidbody and the collider used to move one place along: mass

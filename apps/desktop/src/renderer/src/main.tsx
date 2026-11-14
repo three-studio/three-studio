@@ -1,3 +1,4 @@
+import { activateCore } from '@three-studio/core';
 import { Root } from '@three-studio/editor';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime';
 import '@fontsource-variable/inter';
@@ -12,6 +13,7 @@ if (!container) throw new Error('#root is missing from index.html');
 // disposed. Nothing here accepts a hot update, so an edit to anything activated
 // reloads the window rather than registering a second time.
 const registries = createRuntimeRegistries();
+activateCore(registries);
 activateRuntime(registries);
 
 // Deliberately no <StrictMode>: the viewport owns imperative GPU resources

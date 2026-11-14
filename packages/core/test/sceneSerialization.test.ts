@@ -1,10 +1,13 @@
 import {
   COMPONENT_TYPES,
   assertDefined,
+  createCollider,
   createComponent,
   createEmptyScene,
   createEntity,
+  createMeshComponent,
   createPrefabInstance,
+  createRigidBody,
   deserializeScene,
   fixedId,
   insertEntity,
@@ -15,6 +18,9 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A scene file has to be the same file on two machines, or a project cannot
@@ -36,12 +42,12 @@ import { describe, expect, it } from 'vitest';
 function bothWays(): [SceneDoc, SceneDoc] {
   const alpha = createEntity('Alpha').entity;
   const beta = createEntity('Beta').entity;
-  const meshOnAlpha = createComponent('mesh');
-  const meshOnBeta = createComponent('mesh');
+  const meshOnAlpha = createMeshComponent('box');
+  const meshOnBeta = createMeshComponent('box');
   // Two of one type on one entity: the only object key order in this format
   // that anything ever read back.
-  const hullOne = createComponent('collider');
-  const hullTwo = createComponent('collider');
+  const hullOne = createCollider();
+  const hullTwo = createCollider();
 
   const rootOrder = [alpha.id, beta.id];
 
@@ -82,7 +88,7 @@ describe('a scene serialises to one file however it was built', () => {
     // as it fills defaults — `fillMissingFields` reassigns every transform and
     // every component, and sets `id` last — so this is what says the sort
     // survives the trip rather than being undone by the migration.
-    expect(serializeScene(deserializeScene(once))).toBe(once);
+    expect(serializeScene(deserializeScene(registries, once))).toBe(once);
   });
 
   it('leaves arrays alone, because in this format their order is the meaning', () => {
@@ -167,12 +173,12 @@ describe('a scene through a file', () => {
    * written as a file.
    */
   function written(): { json: string; unknownOn: string } {
-    const parent = createEntity('Parent', [createComponent('mesh'), createComponent('collider')]);
-    const child = createEntity('Child', [createComponent('rigidbody')]);
+    const parent = createEntity('Parent', [createMeshComponent('box'), createCollider()]);
+    const child = createEntity('Child', [createRigidBody()]);
     const crate = createEntity('Crate', [createPrefabInstance(fixedId('asset', 'prefab-1'))]);
     const everything = createEntity(
       'Everything',
-      COMPONENT_TYPES.map((type) => createComponent(type)),
+      COMPONENT_TYPES.map((type) => createComponent(registries, type)),
     );
     const scene: SceneDoc = { ...createEmptyScene(), id: fixedId('scene', 'scene') };
     insertEntity(scene, parent);
@@ -187,13 +193,13 @@ describe('a scene through a file', () => {
   it('is written back byte for byte', () => {
     const { json } = written();
 
-    expect(serializeScene(deserializeScene(json))).toBe(json);
+    expect(serializeScene(deserializeScene(registries, json))).toBe(json);
   });
 
   it('holds its entities in a Map, every one of them', () => {
     const { json } = written();
 
-    const scene = deserializeScene(json);
+    const scene = deserializeScene(registries, json);
 
     expect(scene.entities).toBeInstanceOf(Map);
     expect(scene.entities.size).toBe(Object.keys(JSON.parse(json).entities).length);
@@ -203,7 +209,7 @@ describe('a scene through a file', () => {
   });
 
   it('holds the table of every known type as a Map of Maps, each component under its own id', () => {
-    const scene = deserializeScene(written().json);
+    const scene = deserializeScene(registries, written().json);
 
     // The fixture carries every type, so no table is empty by accident.
     expect(COMPONENT_TYPES.filter((type) => scene.components[type].size === 0)).toEqual([]);
@@ -220,7 +226,7 @@ describe('a scene through a file', () => {
     const file = JSON.parse(serializeScene(createEmptyScene()));
     file.components = {};
 
-    const scene = deserializeScene(JSON.stringify(file));
+    const scene = deserializeScene(registries, JSON.stringify(file));
 
     for (const type of COMPONENT_TYPES) {
       expect(scene.components[type], type).toBeInstanceOf(Map);
@@ -231,7 +237,7 @@ describe('a scene through a file', () => {
   it('keeps the table of an unknown type exactly as found', () => {
     const { json, unknownOn } = written();
 
-    const out = JSON.parse(serializeScene(deserializeScene(json)));
+    const out = JSON.parse(serializeScene(deserializeScene(registries, json)));
 
     expect(out.components['plugin.sparkle']).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
   });
@@ -239,7 +245,7 @@ describe('a scene through a file', () => {
   it('keeps it as the object it came in, which is no Map, because nothing here can read into it', () => {
     const { json, unknownOn } = written();
 
-    const kept = Reflect.get(deserializeScene(json).components, 'plugin.sparkle');
+    const kept = Reflect.get(deserializeScene(registries, json).components, 'plugin.sparkle');
 
     expect(kept).not.toBeInstanceOf(Map);
     expect(kept).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
@@ -250,7 +256,7 @@ describe('a scene through a file', () => {
     // JSON.parse makes it an own key, which is what a hostile file would write.
     file.components = JSON.parse('{"__proto__": {"mesh": {"x": {"y": {}}}}}');
 
-    const scene = deserializeScene(JSON.stringify(file));
+    const scene = deserializeScene(registries, JSON.stringify(file));
 
     expect(Object.getPrototypeOf(scene.components)).toBe(Object.prototype);
     expect(scene.components.mesh.size).toBe(0);

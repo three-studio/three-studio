@@ -47,6 +47,9 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { useToastStore } from '../src/state/toastStore';
 import { launchSnapshot } from '../src/viewport/PlaySession';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The device server's gestures, against a bridge written by hand: what each
@@ -183,7 +186,7 @@ const toasts = () => useToastStore.getState().toasts;
 const lastToast = () => toasts().at(-1)!;
 const lastEntry = () => useConsoleStore.getState().entries.at(-1)!;
 /** What a command is asked and run against: the selection as it stands, which no device gesture reads. */
-const context = () => currentContext();
+const context = () => currentContext(registries);
 
 beforeEach(() => {
   useToastStore.getState().clear();

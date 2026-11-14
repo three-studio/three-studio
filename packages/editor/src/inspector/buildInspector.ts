@@ -5,10 +5,12 @@ import {
   type AssetId,
   type ComponentDoc,
   type ComponentId,
+  type CoreRegistries,
   type EntityDoc,
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
+import type { RuntimeRegistries } from '@three-studio/runtime';
 import type { FolderApi } from 'tweakpane';
 import {
   renameEntity,
@@ -65,11 +67,18 @@ export class InspectorBinding {
   private readonly binder: PaneBinder;
 
   /**
+   * @param registries The window's, which the expansion is read through and an
+   *   action is handed.
    * @param actions What the asset slot cannot reach for itself; see
    *   `AssetFieldActions`. Handed down rather than imported, because the edge
    *   from a field control to the import store was an import cycle.
    */
-  constructor(container: HTMLElement, target: InspectorTarget, actions: AssetFieldActions) {
+  constructor(
+    private readonly registries: RuntimeRegistries,
+    container: HTMLElement,
+    target: InspectorTarget,
+    actions: AssetFieldActions,
+  ) {
     this.binder = new PaneBinder(container, [assetFieldBundle(actions)]);
 
     if (target.kind === 'scene') {
@@ -80,7 +89,7 @@ export class InspectorBinding {
       this.buildMulti(target.ids);
       return;
     }
-    const entity = currentEntity(target.entityId);
+    const entity = currentEntity(registries, target.entityId);
     if (entity) this.build(entity);
   }
 
@@ -105,7 +114,7 @@ export class InspectorBinding {
    * multiple-object inspector starts at the components.
    */
   private buildMulti(ids: readonly EntityId[]): void {
-    const target = new MultiTarget(ids);
+    const target = new MultiTarget(this.registries, ids);
     const folder = this.binder.pane.addFolder({ title: `${ids.length} objects selected` });
     folder.addBinding({ value: ids.length }, 'value', { label: 'Objects', readonly: true });
 
@@ -122,7 +131,7 @@ export class InspectorBinding {
 
     // Through the target, so `buildComponent` does not know whether it is
     // editing one entity or forty: `buildMulti` hands it a `MultiTarget`.
-    const target = new SingleTarget(entity.id);
+    const target = new SingleTarget(this.registries, entity.id);
     for (const component of target.components()) {
       this.buildComponent(entity.id, component, target);
     }
@@ -196,15 +205,17 @@ export class InspectorBinding {
       .addBinding(name, 'value', { label: 'Name' })
       .on('change', (event) => {
         // Renaming commits on blur rather than per keystroke.
-        if (event.last) this.binder.edit(() => renameEntity(entity.id, String(event.value)));
+        if (event.last) this.binder.edit(() => renameEntity(this.registries, entity.id, String(event.value)));
       });
-    this.binder.track(name, () => currentEntity(entity.id)?.name ?? '');
+    this.binder.track(name, () => currentEntity(this.registries, entity.id)?.name ?? '');
 
     const visible: Holder = { value: entity.visible };
     this.binder.pane
       .addBinding(visible, 'value', { label: 'Visible' })
-      .on('change', (event) => this.binder.edit(() => setEntityVisible(entity.id, Boolean(event.value))));
-    this.binder.track(visible, () => currentEntity(entity.id)?.visible ?? true);
+      .on('change', (event) =>
+        this.binder.edit(() => setEntityVisible(this.registries, entity.id, Boolean(event.value))),
+      );
+    this.binder.track(visible, () => currentEntity(this.registries, entity.id)?.visible ?? true);
   }
 
   private buildTransform(entityId: EntityId): void {
@@ -227,7 +238,7 @@ export class InspectorBinding {
     scale: number,
   ): void {
     const read = () => {
-      const transform = currentEntity(entityId)?.transform[key] ?? [0, 0, 0];
+      const transform = currentEntity(this.registries, entityId)?.transform[key] ?? [0, 0, 0];
       return { x: transform[0] * scale, y: transform[1] * scale, z: transform[2] * scale };
     };
 
@@ -247,6 +258,7 @@ export class InspectorBinding {
         const inverse = key === 'rotation' ? DEG_TO_RAD : 1;
         this.binder.edit(() =>
           setTransform(
+            this.registries,
             entityId,
             { [key]: [raw.x * inverse, raw.y * inverse, raw.z * inverse] },
             { coalesceKey: `inspector:${entityId}:${key}:${this.binder.generation}` },
@@ -286,9 +298,10 @@ export class InspectorBinding {
           .addButton({ title: spec.title, label: spec.label ?? '' })
           .on('click', () =>
             spec.run({
+              registries: this.registries,
               entityId,
               componentId,
-              component: currentComponent(entityId, componentId) ?? component,
+              component: currentComponent(this.registries, entityId, componentId) ?? component,
             }),
           );
         continue;
@@ -319,7 +332,7 @@ export class InspectorBinding {
           // throw "No matching controller", so there is nothing else to show.
           return target.read(spec.path);
         }
-        const component = currentComponent(entityId, componentId);
+        const component = currentComponent(this.registries, entityId, componentId);
         return readPath(component && effectiveComponent(entityId, component), spec.path);
       },
       write: (value, { last, generation }) => {
@@ -328,7 +341,7 @@ export class InspectorBinding {
         // is not written. A linked collider's material rows tune the asset,
         // every collider linking it, as they edit its file when stopped.
         if (isSceneLocked()) {
-          const component = currentComponent(entityId, componentId);
+          const component = currentComponent(this.registries, entityId, componentId);
           const linked =
             multiple || !component ? null : linkedMaterial(effectiveComponent(entityId, component), spec.path);
           const key = spec.path[1];
@@ -348,7 +361,7 @@ export class InspectorBinding {
           );
           return;
         }
-        const current = currentComponent(entityId, componentId);
+        const current = currentComponent(this.registries, entityId, componentId);
         const linked = linkedMaterial(current && effectiveComponent(entityId, current), spec.path);
         if (linked) {
           // The values belong to a shared asset, so the edit goes to the file
@@ -380,15 +393,19 @@ function currentScene(): SceneDoc {
   return useDocumentStore.getState().scene;
 }
 
-function currentEntity(entityId: EntityId): EntityDoc | undefined {
+function currentEntity(registries: CoreRegistries, entityId: EntityId): EntityDoc | undefined {
   // The expanded scene, not the document. A prefab instance's contents are
   // drawn and selectable, but the document has never heard of their ids — read
   // from it alone and the panel goes blank for anything inside a prefab.
-  return expandedScene().scene.entities.get(entityId);
+  return expandedScene(registries).scene.entities.get(entityId);
 }
 
-function currentComponent(entityId: EntityId, componentId: ComponentId): ComponentDoc | undefined {
-  return findComponentById(expandedScene().scene, entityId, componentId);
+function currentComponent(
+  registries: CoreRegistries,
+  entityId: EntityId,
+  componentId: ComponentId,
+): ComponentDoc | undefined {
+  return findComponentById(expandedScene(registries).scene, entityId, componentId);
 }
 
 /**
@@ -472,8 +489,8 @@ export function linkedMaterial(
  * a mesh linked to a shared material shows the shared values' rows, so the
  * predicates have to be asked about the material actually on screen.
  */
-export function inspectorSignature(entityId: EntityId | undefined): string {
-  const scene = expandedScene().scene;
+export function inspectorSignature(registries: CoreRegistries, entityId: EntityId | undefined): string {
+  const scene = expandedScene(registries).scene;
   if (entityId === undefined || !scene.entities.has(entityId)) return '';
   const parts = componentsOf(scene, entityId).map((component) => {
     const effective = effectiveComponent(entityId, component);

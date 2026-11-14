@@ -2,11 +2,13 @@ import {
   PREFAB_FORMAT_VERSION,
   SCENE_FORMAT_VERSION,
   assertDefined,
+  createCollider,
   createColliderShape,
-  createComponent,
   createEntity,
   createEnvironment,
   createMeshEntity,
+  createPlayerController,
+  createRigidBody,
   createSkySettings,
   deserializePrefab,
   deserializeScene,
@@ -25,6 +27,9 @@ import {
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A scene on disk outlives every version of the editor that will open it.
@@ -59,7 +64,7 @@ function olderScene(strip: (scene: Record<string, unknown>) => void): string {
 
 function createStarter(): SceneDoc {
   const cube = createMeshEntity('box');
-  cube.components.push(createComponent('rigidbody'), createComponent('playerController'));
+  cube.components.push(createRigidBody(), createPlayerController());
   const components = emptyComponentTables();
   const scene: SceneDoc = {
     version: SCENE_FORMAT_VERSION,
@@ -99,7 +104,7 @@ describe('scene migration', () => {
       delete mesh['materialId'];
     });
 
-    const mesh = firstMesh(deserializeScene(json));
+    const mesh = firstMesh(deserializeScene(registries, json));
     expect(mesh.material.tiling).toEqual([1, 1]);
     expect(mesh.material.bumpScale).toBe(1);
     expect(mesh.material.displacementScale).toBeCloseTo(0.1);
@@ -114,7 +119,7 @@ describe('scene migration', () => {
       delete geometry['depthSegments'];
     });
 
-    const mesh = firstMesh(deserializeScene(json));
+    const mesh = firstMesh(deserializeScene(registries, json));
     expect(mesh.geometry).toMatchObject({ widthSegments: 1, heightSegments: 1, depthSegments: 1 });
   });
 
@@ -134,7 +139,7 @@ describe('scene migration', () => {
       }
     });
 
-    const migrated = deserializeScene(json);
+    const migrated = deserializeScene(registries, json);
     const entityId = firstEntityId(migrated);
     const body = assertDefined(findComponent(migrated, entityId, 'rigidbody'), 'its rigid body');
     const player = assertDefined(findComponent(migrated, entityId, 'playerController'), 'its player controller');
@@ -156,7 +161,7 @@ describe('scene migration', () => {
       }
     });
 
-    const migrated = deserializeScene(json);
+    const migrated = deserializeScene(registries, json);
     const entityId = [...migrated.entities.keys()][0]!;
     expect(findComponent(migrated, entityId, 'rigidbody')).toMatchObject({
       interpolate: true,
@@ -200,7 +205,7 @@ describe('scene migration', () => {
       };
     });
 
-    const scene = deserializeScene(json);
+    const scene = deserializeScene(registries, json);
     const entityId = firstEntityId(scene);
     const light = assertDefined(findComponent(scene, entityId, 'light'), 'its light');
 
@@ -239,7 +244,7 @@ describe('scene migration', () => {
       entity['somethingElseEntirely'] = { written: 'by a build this one never saw' };
     });
 
-    const written = JSON.parse(serializeScene(deserializeScene(json))) as Record<string, unknown>;
+    const written = JSON.parse(serializeScene(deserializeScene(registries, json))) as Record<string, unknown>;
     const entity = Object.values(written['entities'] as Record<string, Record<string, unknown>>)[0]!;
 
     expect(entity['chunk']).toBe('cell-04-11');
@@ -255,7 +260,7 @@ describe('scene migration', () => {
       delete environment['fogFar'];
     });
 
-    const scene = deserializeScene(json);
+    const scene = deserializeScene(registries, json);
     const entity = [...scene.entities.values()][0]!;
     expect(entity.visible).toBe(true);
     expect(entity.locked).toBe(false);
@@ -280,7 +285,7 @@ describe('scene migration', () => {
       };
     });
 
-    const { environment } = deserializeScene(json);
+    const { environment } = deserializeScene(registries, json);
     expect(environment).toMatchObject({
       backgroundMode: 'color',
       backgroundTexture: null,
@@ -312,7 +317,7 @@ describe('scene migration', () => {
       };
     });
 
-    const { environment } = deserializeScene(json);
+    const { environment } = deserializeScene(registries, json);
 
     // Every default is three's own, so the scene draws exactly as it did: no
     // blur, no attenuation, no turn. That is the whole bar a new field on a
@@ -342,7 +347,7 @@ describe('scene migration', () => {
       environment['sky'] = { elevation: 42, turbidity: 8 };
     });
 
-    const { sky } = deserializeScene(json).environment;
+    const { sky } = deserializeScene(registries, json).environment;
 
     expect(sky.elevation).toBe(42);
     expect(sky.turbidity).toBe(8);
@@ -371,7 +376,7 @@ describe('scene migration', () => {
       delete (raw['environment'] as Record<string, unknown>)['sky'];
     });
 
-    expect(deserializeScene(json).environment.sky).toEqual(createSkySettings());
+    expect(deserializeScene(registries, json).environment.sky).toEqual(createSkySettings());
   });
 
   it('leaves values the scene already had alone', () => {
@@ -379,7 +384,7 @@ describe('scene migration', () => {
     firstMesh(scene).material.tiling = [4, 2];
     firstMesh(scene).geometry = { kind: 'box', width: 9, height: 1, depth: 9, widthSegments: 32, heightSegments: 1, depthSegments: 32 };
 
-    const migrated = deserializeScene(serializeScene(scene));
+    const migrated = deserializeScene(registries, serializeScene(scene));
     expect(firstMesh(migrated).material.tiling).toEqual([4, 2]);
     expect(firstMesh(migrated).geometry).toMatchObject({ width: 9, widthSegments: 32 });
   });
@@ -401,7 +406,7 @@ describe('scene migration', () => {
       delete raw['components'];
     });
 
-    const migrated = deserializeScene(json);
+    const migrated = deserializeScene(registries, json);
     const tables = migrated.components as unknown as Record<
       string,
       Record<string, Record<string, Record<string, unknown>>>
@@ -433,7 +438,7 @@ describe('scene migration', () => {
     file.entities[entityId].components = [{ id: 'evil-1', type: '__proto__', polluted: true }];
 
     try {
-      const migrated = deserializeScene(JSON.stringify(file));
+      const migrated = deserializeScene(registries, JSON.stringify(file));
 
       expect(Reflect.get({}, entityId)).toBeUndefined();
       expect(Object.getPrototypeOf(migrated.components)).toBe(Object.prototype);
@@ -478,7 +483,7 @@ describe('scene migration', () => {
     });
 
     const model = assertDefined(
-      findComponent(deserializeScene(json), fixedId('entity', 'e1'), 'model'),
+      findComponent(deserializeScene(registries, json), fixedId('entity', 'e1'), 'model'),
       'the model of e1',
     );
 
@@ -499,12 +504,12 @@ describe('scene migration', () => {
     const json = olderScene((raw) => {
       raw['version'] = 0;
     });
-    expect(deserializeScene(json).version).toBe(SCENE_FORMAT_VERSION);
+    expect(deserializeScene(registries, json).version).toBe(SCENE_FORMAT_VERSION);
   });
 
   it('refuses a scene written by a newer editor rather than mangling it', () => {
     const json = jsonOf({ ...createStarter(), version: SCENE_FORMAT_VERSION + 1 });
-    expect(() => deserializeScene(json)).toThrow(/newer version/);
+    expect(() => deserializeScene(registries, json)).toThrow(/newer version/);
   });
 });
 
@@ -529,14 +534,14 @@ describe('scene migration', () => {
  */
 function personCapsule(): ColliderComponent {
   return {
-    ...createComponent('collider'),
+    ...createCollider(),
     shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
   };
 }
 
 /** One entity carrying a player controller, and whatever else is handed in. */
 function playerEntity(eyeHeight: number, extra: ComponentDoc[] = []) {
-  const player = { ...createComponent('playerController'), eyeHeight };
+  const player = { ...createPlayerController(), eyeHeight };
   return createEntity('Player', [player, ...extra]);
 }
 
@@ -565,7 +570,7 @@ describe('eye height, measured from the feet', () => {
     // Stored as 1.7 above the origin, and the origin is the middle of a capsule
     // whose bottom is 0.85 m below it. 1.7 above the origin is 2.55 above the
     // feet, and that is the number this has to come out with.
-    const migrated = deserializeScene(sceneAt(9, 1.7, [personCapsule()]));
+    const migrated = deserializeScene(registries, sceneAt(9, 1.7, [personCapsule()]));
 
     expect(eyeHeightOf(migrated)).toBeCloseTo(2.55, 6);
     expect(migrated.version).toBe(SCENE_FORMAT_VERSION);
@@ -575,10 +580,10 @@ describe('eye height, measured from the feet', () => {
     // The shape the old default gave every bare entity, and the reason the
     // default player's eye sat half a metre higher than anyone had asked for.
     const box: ColliderComponent = {
-      ...createComponent('collider'),
+      ...createCollider(),
       shape: { ...createColliderShape('box'), size: [1, 1.8, 1] },
     };
-    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.2, [box])))).toBeCloseTo(2.1, 6);
+    expect(eyeHeightOf(deserializeScene(registries, sceneAt(9, 1.2, [box])))).toBeCloseTo(2.1, 6);
   });
 
   it('gives a player written before scene 10 a finite eye height, whatever its collider was', () => {
@@ -587,26 +592,26 @@ describe('eye height, measured from the feet', () => {
     // box, so the eye is raised by that box's half rather than by the
     // capsule's 0.85 — finite, where the shape read as written gave `NaN`.
     const old = {
-      ...createComponent('collider'),
+      ...createCollider(),
       shape: 'capsule',
       radius: 0.3,
       halfHeight: 0.55,
     } as unknown as ComponentDoc;
-    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [old])))).toBeCloseTo(1.7 + 0.5, 6);
+    expect(eyeHeightOf(deserializeScene(registries, sceneAt(9, 1.7, [old])))).toBeCloseTo(1.7 + 0.5, 6);
   });
 
   it('leaves a controller with no collider alone', () => {
     // Nothing is centred on the origin, so the origin already was the feet —
     // which is also exactly what fly mode does.
-    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7)))).toBeCloseTo(1.7, 6);
+    expect(eyeHeightOf(deserializeScene(registries, sceneAt(9, 1.7)))).toBeCloseTo(1.7, 6);
   });
 
   it('measures a mesh-derived shape as zero rather than guessing', () => {
     // A triangle mesh is built from the entity's own geometry in its own local
     // space, so the origin is wherever the author put it. Guessing here would
     // also be a guess the runtime could not reproduce.
-    const mesh: ColliderComponent = { ...createComponent('collider'), shape: createColliderShape('mesh') };
-    expect(eyeHeightOf(deserializeScene(sceneAt(9, 1.7, [mesh])))).toBeCloseTo(1.7, 6);
+    const mesh: ColliderComponent = { ...createCollider(), shape: createColliderShape('mesh') };
+    expect(eyeHeightOf(deserializeScene(registries, sceneAt(9, 1.7, [mesh])))).toBeCloseTo(1.7, 6);
   });
 
   it('does not raise a document that already counts from the feet', () => {
@@ -614,7 +619,7 @@ describe('eye height, measured from the feet', () => {
     // meaning it was written under. Migrating twice would lift the camera by
     // another whole collider on every open.
     const already = sceneAt(SCENE_FORMAT_VERSION, 1.7, [personCapsule()]);
-    expect(eyeHeightOf(deserializeScene(already))).toBeCloseTo(1.7, 6);
+    expect(eyeHeightOf(deserializeScene(registries, already))).toBeCloseTo(1.7, 6);
   });
 
   /*
@@ -646,13 +651,15 @@ describe('eye height, measured from the feet', () => {
   }
 
   it('raises a prefab written before the change, by its own age', () => {
-    const migrated = deserializePrefab(serializePrefab(prefabAt(6, 1.7)));
+    const migrated = deserializePrefab(registries, serializePrefab(prefabAt(6, 1.7)));
 
     expect(prefabEyeHeight(migrated)).toBeCloseTo(2.55, 6);
     expect(migrated.version).toBe(PREFAB_FORMAT_VERSION);
   });
 
   it('leaves a prefab that already counts from the feet alone', () => {
-    expect(prefabEyeHeight(deserializePrefab(serializePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7))))).toBeCloseTo(1.7, 6);
+    expect(
+      prefabEyeHeight(deserializePrefab(registries, serializePrefab(prefabAt(PREFAB_FORMAT_VERSION, 1.7)))),
+    ).toBeCloseTo(1.7, 6);
   });
 });

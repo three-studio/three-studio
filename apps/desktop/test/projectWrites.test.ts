@@ -5,6 +5,9 @@ import { PROJECT_FILE_NAME, fixedId, type SceneId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createProject, discoverScenes, readProject, updateProject } from '../src/main/project';
 import { createScene, renameScene, setStartScene } from '../src/main/scenes';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A project has one editor window per open scene, and every one of them can
@@ -22,7 +25,7 @@ import { createScene, renameScene, setStartScene } from '../src/main/scenes';
 async function project(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-writes-'));
   const root = (await createProject('Races', parent)).summary.path;
-  await createScene(root, 'Boss');
+  await createScene(registries, root, 'Boss');
   return root;
 }
 

@@ -12,6 +12,7 @@ import {
   type AssetId,
   type BuildProfile,
   type BuildProfiles,
+  type CoreRegistries,
   type ExportProgress,
   type ExportResult,
   type SceneDoc,
@@ -87,6 +88,7 @@ export function requireBuildProfile(
  * hold is found while the folder still holds the previous build, whole.
  */
 export async function exportBuild(
+  registries: CoreRegistries,
   projectPath: string,
   profile: BuildProfile,
   outputDir: string,
@@ -139,7 +141,7 @@ export async function exportBuild(
   const release = await claimOutputFolder(outputDir, projectPath, roots);
   try {
     const plan = new BuildPlan(new Set(roots));
-    const planned = await planExport(plan, projectPath, profile, template, base, report);
+    const planned = await planExport(registries, plan, projectPath, profile, template, base, report);
 
     report(0.8, 'Writing the build');
     await writeBuild(plan, outputDir, roots, (fraction) =>
@@ -161,6 +163,7 @@ export async function exportBuild(
 
 /** Everything the export decides, read and hashed, with nothing written. */
 async function planExport(
+  registries: CoreRegistries,
   plan: BuildPlan,
   projectPath: string,
   profile: BuildProfile,
@@ -180,7 +183,7 @@ async function planExport(
 
   const read = async (entry: SceneEntry): Promise<SceneDoc> => {
     try {
-      return deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8'));
+      return deserializeScene(registries, await readFile(resolveInside(projectPath, entry.path), 'utf8'));
     } catch (cause) {
       throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
     }
@@ -241,7 +244,7 @@ async function planExport(
   const [materials, physicsMaterials, prefabs] = await Promise.all([
     readMaterialAssets(projectPath, manifest),
     readPhysicsMaterialAssets(projectPath, manifest),
-    readPrefabAssets(projectPath, manifest),
+    readPrefabAssets(registries, projectPath, manifest),
   ]);
   const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
 
@@ -270,7 +273,7 @@ async function planExport(
     ...(profile.includeAllAssets
       ? knownAssets
       : union(
-          scenes.map(({ scene }) => collectSceneAssets(scene, materials, prefabs, knownAssets)),
+          scenes.map(({ scene }) => collectSceneAssets(registries, scene, materials, prefabs, knownAssets)),
         )),
   ].sort();
 

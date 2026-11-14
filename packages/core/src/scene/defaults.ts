@@ -20,8 +20,8 @@ import { createBoxGeometry } from './geometry';
  * types answer that themselves now; see `ComponentDefinition.placeable`.
  *
  * The slice imports point at each `<type>/defaults.ts` and never at its
- * `index.ts`: importing an index registers the type, and registration order is
- * the order the Add Component menu is built in.
+ * `index.ts`: an index is the type's definition, and the core's activation list
+ * is the one place that imports it.
  */
 import type {
   CameraComponent,

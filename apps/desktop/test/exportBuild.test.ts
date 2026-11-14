@@ -20,17 +20,19 @@ import {
   SCENES_DIR,
   assertDefined,
   createBuildProfiles,
-  createComponent,
+  createCollider,
   createDefaultLayer,
   createEntity,
   createMaterial,
   createMeshEntity,
+  createModel,
   createAudioSourceEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabDoc,
   createPrefabInstance,
   createRenderingSettings,
+  createScript,
   createStarterScene,
   deserializeScene,
   emptyComponentTables,
@@ -54,6 +56,9 @@ import { readAssetMeta, scanAssets } from '../src/main/assetScan';
 import { buildScripts } from '../src/main/scripts';
 import { BUILD_FILES_NAME, verifyBuild, type BuildFileList } from '../src/main/build/buildFiles';
 import { exportBuild, requireBuildProfile } from '../src/main/build/exportBuild';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The export is the one place the editor writes something a stranger runs, so
@@ -327,7 +332,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out');
 
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // The player, copied as-is.
     expect(await readdir(outputDir)).toContain('index.html');
@@ -416,14 +421,14 @@ describe('web export', () => {
       'utf8',
     );
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
     for (const held of scene.components.mesh.values()) {
       for (const mesh of held.values()) mesh.materialId = fixedId('asset', 'mat-shared');
     }
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-manifest');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
@@ -451,12 +456,12 @@ describe('web export', () => {
     const prefabId = await createPrefabAsset(projectPath, 'Crate', prefab);
     // Only what a shipped scene places is shipped.
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
     insertEntity(scene, createEntity('Crate', [createPrefabInstance(prefabId)]));
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-order');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const text = await readFile(join(outputDir, ...BUILD_LAYOUT.manifest.split('/')), 'utf8');
     const build = manifestOf(text);
@@ -465,7 +470,7 @@ describe('web export', () => {
     expect(Object.keys(build.prefabs)).toEqual([prefabId]);
     expect(build.prefabs[prefabId]).toMatchObject({ name: 'Crate', root: crate.entity.id });
     // As the player reads it: the JSON of each prefab becomes a document.
-    expect(prefabsFromJson(build.prefabs).get(prefabId)?.entities).toBeInstanceOf(Map);
+    expect(prefabsFromJson(registries, build.prefabs).get(prefabId)?.entities).toBeInstanceOf(Map);
   });
 
   it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
@@ -486,15 +491,15 @@ describe('web export', () => {
       );
     }
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
     insertEntity(
       scene,
-      createEntity('Cube', [{ ...createComponent('collider'), materialId: fixedId('asset', 'pm-ice') }]),
+      createEntity('Cube', [{ ...createCollider(), materialId: fixedId('asset', 'pm-ice') }]),
     );
     await writeFile(scenePath, serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-physics-materials');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     // Read against its factory: the rule it does not know is Average.
@@ -520,11 +525,11 @@ describe('web export', () => {
     const outputDir = join(projectPath, '..', 'out-rehash');
     const texture = join(projectPath, ASSETS_DIR, 'textures', 'used.png');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const before = await buildOf(outputDir);
 
     await writeFile(texture, 'something else entirely', 'utf8');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const after = await buildOf(outputDir);
 
     expect(after.assets?.['tex-used']).not.toBe(before.assets?.['tex-used']);
@@ -549,7 +554,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.assetSettings['clip-beep']).toMatchObject({
@@ -577,7 +582,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject(rendering);
     const outputDir = join(projectPath, '..', 'out-rendering');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.rendering).toEqual(rendering);
@@ -599,7 +604,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject(createRenderingSettings(), physics);
     const outputDir = join(projectPath, '..', 'out-physics');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.physics).toEqual(physics);
@@ -619,7 +624,7 @@ describe('web export', () => {
     );
 
     const outputDir = join(projectPath, '..', 'out-encodings');
-    await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     const manifest = await scanAssets(projectPath);
@@ -637,10 +642,10 @@ describe('web export', () => {
     await writeAsset(projectPath, `${ASSETS_DIR}/_shared/stone.png`, 'tex-stone', 'texture');
     const outputDir = join(projectPath, '..', 'out-underscore');
 
-    const plain = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const plain = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     expect(plain.warnings).toEqual([]);
 
-    const result = await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [
+    const result = await exportBuild(registries, projectPath, profile({ includeAllAssets: true }), outputDir, [
       templateRoot,
     ]);
     expect(result.warnings.join('\n')).toMatch(/\.nojekyll file: game\/assets\/_shared\/stone\./);
@@ -651,6 +656,7 @@ describe('web export', () => {
     const outputDir = join(projectPath, '..', 'out-all');
 
     const result = await exportBuild(
+      registries,
       projectPath,
       profile({ includeAllAssets: true }),
       outputDir,
@@ -674,7 +680,7 @@ describe('web export', () => {
     const { projectPath, templateRoot } = await makeProject();
     const before = await readdir(join(projectPath, ASSETS_DIR, 'textures'));
 
-    await expect(exportBuild(projectPath, profile(), projectPath, [templateRoot])).rejects.toThrow(
+    await expect(exportBuild(registries, projectPath, profile(), projectPath, [templateRoot])).rejects.toThrow(
       /project itself/,
     );
     expect(await readdir(join(projectPath, ASSETS_DIR, 'textures'))).toEqual(before);
@@ -686,8 +692,8 @@ describe('web export', () => {
     const outputDir = join(projectPath, '..', 'out-twice');
 
     const [first, second] = await Promise.allSettled([
-      exportBuild(projectPath, profile(), outputDir, [templateRoot]),
-      exportBuild(projectPath, profile(), outputDir, [templateRoot]),
+      exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]),
+      exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]),
     ]);
     expect([first.status, second.status].sort()).toEqual(['fulfilled', 'rejected']);
     const refused = first.status === 'rejected' ? first : second;
@@ -697,7 +703,7 @@ describe('web export', () => {
   it('refuses when the player has not been built', async () => {
     const { projectPath } = await makeProject();
     await expect(
-      exportBuild(projectPath, profile(), join(projectPath, '..', 'out-none'), []),
+      exportBuild(registries, projectPath, profile(), join(projectPath, '..', 'out-none'), []),
     ).rejects.toThrow(/has not been built/);
   });
 });
@@ -723,10 +729,12 @@ describe('a profile that names a scene the project no longer has', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out');
     const scene = deserializeScene(
+      registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
 
     const result = await exportBuild(
+      registries,
       projectPath,
       profile({ scenes: [scene.id, fixedId('scene', 'a-scene-that-was-deleted')] }),
       outputDir,
@@ -754,6 +762,7 @@ describe('a profile that names a scene the project no longer has', () => {
 
     await expect(
       exportBuild(
+        registries,
         projectPath,
         profile({ scenes: [fixedId('scene', 'gone'), fixedId('scene', 'also-gone')] }),
         outputDir,
@@ -771,7 +780,7 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-none');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // Byte for byte the template but for its title: an empty base is what
     // every build produced before this field existed, and it has to stay that.
@@ -782,7 +791,7 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     for (const [index, basePath] of ['.', './', '  '].entries()) {
       const outputDir = join(projectPath, '..', `out-dot-${index}`);
-      await exportBuild(projectPath, profile({ basePath }), outputDir, [templateRoot]);
+      await exportBuild(registries, projectPath, profile({ basePath }), outputDir, [templateRoot]);
       // All three resolve against the document, which is what the untagged page
       // already does. A tag saying so would be a difference with no effect.
       expect(await indexOf(outputDir)).toBe(PAGE);
@@ -793,7 +802,7 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-root');
 
-    await exportBuild(projectPath, profile({ basePath: '/' }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ basePath: '/' }), outputDir, [templateRoot]);
 
     const html = await indexOf(outputDir);
     expect(html).toContain('<base href="/" />');
@@ -806,7 +815,7 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-sub');
 
-    await exportBuild(projectPath, profile({ basePath: '/games/demo' }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ basePath: '/games/demo' }), outputDir, [templateRoot]);
 
     // Without it, `assets/x.png` resolves to `/games/assets/x.png` — one level
     // too high, and every file in the build a 404.
@@ -817,7 +826,7 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-dollar');
 
-    await exportBuild(projectPath, profile({ basePath: 'https://host/v$1/' }), outputDir, [
+    await exportBuild(registries, projectPath, profile({ basePath: 'https://host/v$1/' }), outputDir, [
       templateRoot,
     ]);
 
@@ -832,7 +841,7 @@ describe('base URL', () => {
 
     for (const [index, basePath] of ['http://localhost:8080', '//cdn.example.com'].entries()) {
       const outputDir = join(projectPath, '..', `out-abs-${index}`);
-      const result = await exportBuild(projectPath, profile({ basePath }), outputDir, [
+      const result = await exportBuild(registries, projectPath, profile({ basePath }), outputDir, [
         templateRoot,
       ]);
       expect(await indexOf(outputDir)).toContain(`<base href="${basePath}/" />`);
@@ -848,7 +857,7 @@ describe('base URL', () => {
     const outputDir = join(projectPath, '..', 'out-rel');
 
     const base = profile({ basePath: '/games/demo/' });
-    const result = await exportBuild(projectPath, base, outputDir, [
+    const result = await exportBuild(registries, projectPath, base, outputDir, [
       templateRoot,
     ]);
 
@@ -861,7 +870,7 @@ describe('base URL', () => {
 
     // Normalizing would run straight through it and produce `?v=1/`.
     await expect(
-      exportBuild(projectPath, profile({ basePath: '/app?v=1' }), outputDir, [templateRoot]),
+      exportBuild(registries, projectPath, profile({ basePath: '/app?v=1' }), outputDir, [templateRoot]),
     ).rejects.toThrow(/query or a fragment/);
     // Refused before the folder was touched, so the author is not left with a
     // half-written build to clean up.
@@ -872,12 +881,12 @@ describe('base URL', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-again');
 
-    await exportBuild(projectPath, profile({ basePath: '/demo/' }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ basePath: '/demo/' }), outputDir, [templateRoot]);
     expect(await indexOf(outputDir)).toContain('<base');
 
     // The copy overwrites `index.html` with the pristine template, so nothing
     // is left of the last base. Nothing else guarantees that.
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     expect(await indexOf(outputDir)).toBe(PAGE);
   });
 
@@ -888,6 +897,7 @@ describe('base URL', () => {
     const outputDir = join(projectPath, '..', 'out-title');
 
     await exportBuild(
+      registries,
       projectPath,
       profile({ title: 'Tom & Jerry <3 $& more', basePath: '/demo/' }),
       outputDir,
@@ -899,7 +909,7 @@ describe('base URL', () => {
     expect(html).not.toContain('Studio Build');
 
     // No title of its own: the project's name, rather than a tab saying nothing.
-    await exportBuild(projectPath, profile({ title: '  ' }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ title: '  ' }), outputDir, [templateRoot]);
     expect(await indexOf(outputDir)).toContain('<title>Export Test</title>');
   });
 
@@ -912,7 +922,7 @@ describe('base URL', () => {
     );
 
     await expect(
-      exportBuild(projectPath, profile({ basePath: '/' }), join(projectPath, '..', 'out-nohead'), [
+      exportBuild(registries, projectPath, profile({ basePath: '/' }), join(projectPath, '..', 'out-nohead'), [
         templateRoot,
       ]),
     ).rejects.toThrow(/no <head>/);
@@ -949,10 +959,11 @@ describe('models that come with other files', () => {
     );
 
     const scene = deserializeScene(
+      registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-tri') });
+    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
       serializeScene(scene),
@@ -960,7 +971,7 @@ describe('models that come with other files', () => {
     );
 
     const outputDir = join(projectPath, '..', 'out-gltf');
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     // A data URI is already inside the file and is not a path to copy.
     expect(result.warnings).toEqual([]);
 
@@ -989,7 +1000,7 @@ describe('models that come with other files', () => {
      * old texture from the cache. Any of them changing is a new folder.
      */
     await writeFile(join(models, 'maps', 'albedo.png'), 'repainted', 'utf8');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const repainted = assertDefined((await buildOf(outputDir)).assets['model-tri'], 'the repainted model');
     expect(repainted).not.toBe(model);
     expect(await readFile(join(inGame(outputDir, repainted), '..', 'maps', 'albedo.png'), 'utf8')).toBe(
@@ -1013,14 +1024,15 @@ describe('models that come with other files', () => {
       'utf8',
     );
     const scene = deserializeScene(
+      registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-tri') });
+    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out', 'reaching');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const listed = (await listOf(outputDir)).files.map((file) => file.path);
     expect(listed.some((path) => path.endsWith('secret.txt'))).toBe(false);
@@ -1038,14 +1050,15 @@ describe('models that come with other files', () => {
     );
 
     const scene = deserializeScene(
+      registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createComponent('model'), assetId: fixedId('asset', 'model-gone') });
+    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-gone') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-missing');
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // A silent half-export is the thing to avoid: the build runs and the model
     // is simply not there.
@@ -1063,7 +1076,7 @@ describe('the list of what an export wrote', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-files');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     const listed = (await listOf(outputDir)).files;
@@ -1103,7 +1116,7 @@ describe('the list of what an export wrote', () => {
   it('fails when a byte of the player changes after the export', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-tampered');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const page = join(outputDir, 'index.html');
     await writeFile(page, `${await readFile(page, 'utf8')}<!-- -->`, 'utf8');
@@ -1119,7 +1132,7 @@ describe('the list of what an export wrote', () => {
     // manifest carrying the list could never be checked.
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-manifest-edit');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const manifest = join(outputDir, ...BUILD_LAYOUT.manifest.split('/'));
     const build = await buildOf(outputDir);
@@ -1131,7 +1144,7 @@ describe('the list of what an export wrote', () => {
   it('names what has gone missing and what has appeared', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-moved');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     await rm(join(outputDir, 'player', 'player.js'));
     await writeFile(join(outputDir, 'player', 'analytics.js'), 'fetch("//elsewhere")', 'utf8');
@@ -1150,7 +1163,7 @@ describe('the list of what an export wrote', () => {
   it('reports a link inside the build, which can point anywhere', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-linked');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const elsewhere = join(projectPath, '..', 'elsewhere.js');
     await writeFile(elsewhere, '// not the player', 'utf8');
 
@@ -1171,7 +1184,7 @@ describe('the list of what an export wrote', () => {
     // verifier hashing files outside the build, or crashed it.
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-badlist');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const digest = 'a'.repeat(64);
 
     for (const broken of [
@@ -1202,12 +1215,12 @@ describe('the list of what an export wrote', () => {
      */
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-stale');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // What a scene deleted or renamed in the project leaves behind.
     const scenes = join(outputDir, 'game', 'scenes');
     await writeFile(join(scenes, 'a-scene-since-deleted.1a2b3c4d.json'), '{}', 'utf8');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(await readdir(scenes)).not.toContain('a-scene-since-deleted.1a2b3c4d.json');
     expect((await verifyBuild(outputDir)).ok).toBe(true);
@@ -1219,7 +1232,7 @@ describe('the list of what an export wrote', () => {
     // tampered build.
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-nolist');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     await rm(join(outputDir, BUILD_FILES_NAME));
 
     await expect(verifyBuild(outputDir)).rejects.toThrow(/nothing to check it against/);
@@ -1256,8 +1269,8 @@ describe('a folder the build shares with its author', () => {
     const shared = join(projectPath, '..', 'out-shared');
     const seeded = await seedRepository(shared);
 
-    const alone = await exportBuild(projectPath, profile(), clean, [templateRoot]);
-    const beside = await exportBuild(projectPath, profile(), shared, [templateRoot]);
+    const alone = await exportBuild(registries, projectPath, profile(), clean, [templateRoot]);
+    const beside = await exportBuild(registries, projectPath, profile(), shared, [templateRoot]);
 
     const listed = (await listOf(shared)).files.map((file) => file.path);
     for (const [path, text] of seeded) {
@@ -1273,14 +1286,14 @@ describe('a folder the build shares with its author', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-committed');
     await seedRepository(outputDir);
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const before = await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8');
 
     // What a commit does to the folder.
     await writeFile(join(outputDir, '.git', 'HEAD'), 'ref: refs/heads/release\n', 'utf8');
     await mkdir(join(outputDir, '.git', 'objects', '12'), { recursive: true });
     await writeFile(join(outputDir, '.git', 'objects', '12', '3456'), 'commit', 'utf8');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(await readFile(join(outputDir, BUILD_FILES_NAME), 'utf8')).toBe(before);
   });
@@ -1290,12 +1303,12 @@ describe('what a re-export takes back', () => {
   it('a chunk of the player it no longer ships', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-chunk');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // What an older build of the player leaves behind: Vite names a chunk by
     // its content, so the next one lands beside it rather than over it.
     await writeFile(join(outputDir, 'player', 'index-OLD.js'), '// last week', 'utf8');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(await readdir(join(outputDir, 'player'))).toEqual(['player.js']);
     expect((await verifyBuild(outputDir)).ok).toBe(true);
@@ -1304,11 +1317,11 @@ describe('what a re-export takes back', () => {
   it('the script bundle of a project that no longer has scripts', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-noscripts');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     await mkdir(join(outputDir, 'game', 'scripts'), { recursive: true });
     await writeFile(join(outputDir, 'game', 'scripts', 'bundle.1a2b3c4d.mjs'), 'export {};', 'utf8');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(await readdir(join(outputDir, 'game'))).not.toContain('scripts');
     expect((await buildOf(outputDir)).scripts).toBeNull();
@@ -1321,13 +1334,13 @@ describe('what a re-export takes back', () => {
     // ignore case, answers 404 for every texture.
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-case');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const assets = join(outputDir, 'game', 'assets');
     // In two steps, so a volume that ignores case renames it at all.
     await rename(join(assets, 'textures'), join(assets, 'renaming'));
     await rename(join(assets, 'renaming'), join(assets, 'TEXTURES'));
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(await readdir(assets)).toContain('textures');
     expect(await readdir(assets)).not.toContain('TEXTURES');
@@ -1359,7 +1372,7 @@ describe('an export that cannot finish', () => {
   it('leaves the folder as it was when a script does not compile', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-broken');
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
     const before = await snapshot(outputDir);
 
     await writeAsset(projectPath, `${ASSETS_DIR}/scripts/Broken.ts`, 'script-broken', 'script');
@@ -1367,7 +1380,7 @@ describe('an export that cannot finish', () => {
     // And a texture that changed, so there is something an early write would replace.
     await writeFile(join(projectPath, ASSETS_DIR, 'textures', 'used.png'), 'repainted', 'utf8');
 
-    await expect(exportBuild(projectPath, profile(), outputDir, [templateRoot])).rejects.toThrow(
+    await expect(exportBuild(registries, projectPath, profile(), outputDir, [templateRoot])).rejects.toThrow(
       /did not compile/,
     );
     expect(await snapshot(outputDir)).toEqual(before);
@@ -1383,7 +1396,7 @@ describe('what a scene needs beyond its slots', () => {
   /** Puts a component on the main scene's first entity. */
   async function addToMainScene(projectPath: string, component: ComponentDoc): Promise<void> {
     const file = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(await readFile(file, 'utf8'));
+    const scene = deserializeScene(registries, await readFile(file, 'utf8'));
     putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component);
     await writeFile(file, serializeScene(scene), 'utf8');
   }
@@ -1419,14 +1432,14 @@ describe('what a scene needs beyond its slots', () => {
       'utf8',
     );
     await addToMainScene(projectPath, {
-      ...createComponent('script'),
+      ...createScript(),
       assetId: fixedId('asset', 'script-door'),
       // The spare texture is named by nothing else in the project.
       props: { texture: 'tex-spare', greeting: 'Hello' },
     });
     const outputDir = join(projectPath, '..', 'out-scripted');
 
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect((await buildOf(outputDir)).assets['tex-spare']).toMatch(/^assets\/textures\/spare\./);
     // A string that names no asset is not a reference to a missing one.
@@ -1441,7 +1454,7 @@ describe('what a scene needs beyond its slots', () => {
     await setLoadingScene(projectPath, loading.id);
     const outputDir = join(projectPath, '..', 'out-loading');
 
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.loadingScene).toBe(loading.id);
@@ -1457,7 +1470,7 @@ describe('what a scene needs beyond its slots', () => {
     await setLoadingScene(projectPath, fixedId('scene', 'scene-deleted-in-the-finder'));
     const outputDir = join(projectPath, '..', 'out-noloading');
 
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(result.warnings.join(' ')).toMatch(/loading scene \(scene-deleted-in-the-finder\)/);
     expect((await buildOf(outputDir)).loadingScene).toBeNull();
@@ -1468,7 +1481,7 @@ describe('what a scene needs beyond its slots', () => {
     await addUnknownToMainScene(projectPath, { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' });
     const outputDir = join(projectPath, '..', 'out-plugin');
 
-    const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     expect(result.warnings.join(' ')).toMatch(/Scene "main" uses plugin\.flicker/);
   });
@@ -1491,7 +1504,7 @@ describe('what a published script bundle carries', () => {
     );
     const outputDir = join(projectPath, '..', 'out-bundle');
 
-    await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     const build = await buildOf(outputDir);
     expect(build.scripts).toMatch(/^scripts\/bundle\.[0-9a-f]{8}\.mjs$/);
@@ -1515,12 +1528,14 @@ describe('a scene whose id is not a name', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-evil');
     const main = deserializeScene(
+      registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const evil = { ...JSON.parse(serializeScene(createStarterScene())), id: '../../escaped' };
     await writeFile(join(projectPath, SCENES_DIR, 'evil.scene.json'), JSON.stringify(evil), 'utf8');
 
     const result = await exportBuild(
+      registries,
       projectPath,
       profile({ scenes: [main.id, fixedId('scene', '../../escaped')] }),
       outputDir,
@@ -1560,7 +1575,7 @@ describe('what ships through a link', () => {
     );
 
     const outputDir = join(projectPath, '..', 'out-link');
-    await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
+    await exportBuild(registries, projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
 
     const shipped = inGame(
       outputDir,
@@ -1580,7 +1595,7 @@ describe('what the build weighs', () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-size');
 
-    const { size } = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
+    const { size } = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
 
     // The page, the bundle and `build.json`: what a build carries whatever is
     // in it.

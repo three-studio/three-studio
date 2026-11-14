@@ -5,6 +5,7 @@ import {
   isPlaceable,
   type AssetId,
   type AssetKind,
+  type CoreRegistries,
   type EntityId,
   type EntityTemplate,
   type Transform,
@@ -71,14 +72,14 @@ export function canAddInView(): boolean {
  * `null` while the game runs: refused, said in the toast, with nothing measured
  * or added — the menu greys its entries, and this is the refusal itself.
  */
-export function addEntityInView(template: EntityTemplate): EntityId | null {
+export function addEntityInView(registries: CoreRegistries, template: EntityTemplate): EntityId | null {
   if (!canAddInView()) {
     refuseWhileLocked();
     return null;
   }
   // No viewport means no view to place against — under vitest, or before the
   // canvas exists. The factory's own offset is then the whole answer.
-  const hit = isPlaceable(template) ? peekViewport()?.placementPoint() : undefined;
+  const hit = isPlaceable(registries, template) ? peekViewport()?.placementPoint() : undefined;
   if (hit) {
     // Positioned before insertion so the whole add stays one undo step.
     template.entity.transform = placedAt(template.entity.transform, [hit.x, hit.y, hit.z]);
@@ -107,7 +108,7 @@ export const DROPPABLE_KINDS: readonly AssetKind[] = ['prefab', 'model', 'audio'
  * While the game runs a placeable drop is refused, in the toast, where the view
  * used to place it — the drop came through the dock during Play as well.
  */
-export function placeDroppedAsset(assetId: AssetId, point: Vec3): void {
+export function placeDroppedAsset(registries: CoreRegistries, assetId: AssetId, point: Vec3): void {
   const asset = useAssetStore.getState().byId(assetId);
   if (!asset || !DROPPABLE_KINDS.includes(asset.kind)) return;
   if (isSceneLocked()) {
@@ -128,7 +129,7 @@ export function placeDroppedAsset(assetId: AssetId, point: Vec3): void {
   // one entity until it is unpacked, every node of it its own, so one collider
   // covers it all; Unpack hands each piece a copy. It was read by nothing.
   if (asset.settings.kind === 'model' && asset.settings.generateColliders) {
-    template.components.push(createComponentForEntity('collider', template.components));
+    template.components.push(createComponentForEntity(registries, 'collider', template.components));
   }
   // Positioned before insertion so the drop is a single undo step.
   template.entity.transform.position = position;

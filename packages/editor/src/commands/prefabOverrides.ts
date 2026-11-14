@@ -4,6 +4,7 @@ import {
   splitInstancedId,
   type ComponentDoc,
   type ComponentId,
+  type CoreRegistries,
   type EntityId,
   type PrefabOverride,
   type SceneDoc,
@@ -21,6 +22,7 @@ import { expandedScene } from '../state/expansion';
  * as a fallback when their own lookup misses.
  */
 export function editInstance(
+  registries: CoreRegistries,
   scene: SceneDoc,
   id: EntityId,
   apply: (override: PrefabOverride, current: readonly ComponentDoc[]) => void,
@@ -38,7 +40,7 @@ export function editInstance(
 
   // The entity as it is drawn, overrides already applied — which is what the
   // caller needs to build the next one from.
-  const expanded = expandedScene().scene;
+  const expanded = expandedScene(registries).scene;
   if (!expanded.entities.has(id)) return;
 
   const override: PrefabOverride = component.overrides[parts.local] ?? {};

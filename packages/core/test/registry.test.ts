@@ -4,17 +4,18 @@ import {
   Registry,
   combineDisposables,
   componentAssets,
-  componentDefinition,
-  componentDefinitions,
   conformColliderShape,
   conformPhysicsMaterial,
   createColliderShape,
   createComponent,
   createComponentForEntity,
+  createCoreRegistries,
   createEntity,
+  createLight,
   createMeshComponent,
   createMeshEntity,
   createPhysicsMaterial,
+  createRigidBody,
   deserializeScene,
   fillComponent,
   fixedId,
@@ -26,9 +27,12 @@ import {
   type MeshComponent,
   type SceneDoc,
 } from '../src/index';
-// Not part of the public surface: the point of the first test is to check the
-// registry against the list the schema declares, which is a fact internal to core.
+// Not part of the public surface: the first case walks the list the schema
+// declares, which is a fact internal to core.
 import { COMPONENT_TYPES, componentsOf, emptyComponentTables, setComponentsOf } from '../src/scene/components';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The one registry every table of definitions is: component types, systems,
@@ -141,19 +145,9 @@ describe('combineDisposables', () => {
 });
 
 describe('component registry', () => {
-  /*
-   * The registry fills itself as a side effect of importing eleven modules. A
-   * module nobody imports registers nothing and the type goes missing with no
-   * error at all, so this is the assertion the whole design rests on.
-   */
-  it('knows every type the schema declares', () => {
-    const registered = componentDefinitions().map((definition) => definition.type);
-    expect([...registered].sort()).toEqual([...COMPONENT_TYPES].sort());
-  });
-
   it('creates a component of the type asked for', () => {
     for (const type of COMPONENT_TYPES) {
-      const component = createComponent(type);
+      const component = createComponent(registries, type);
       expect(component.type).toBe(type);
       expect(component.id).toMatch(/\S/);
     }
@@ -165,19 +159,32 @@ describe('component registry', () => {
    * original's fields glued on — and the migration then wrote that to disk.
    */
   it('refuses a type it has never heard of', () => {
-    expect(() => createComponent('teleporter' as ComponentType)).toThrow(/Unknown component type/);
-    expect(componentDefinition('teleporter' as ComponentType)).toBeUndefined();
+    expect(() => createComponent(registries, 'teleporter' as ComponentType)).toThrow(/Unknown component type/);
+    expect(registries.components.get('teleporter' as ComponentType)).toBeUndefined();
+  });
+
+  /*
+   * Nothing registers by being imported: a type is known to the registries a
+   * root activated, and to no others. A built-in type is no exception, and
+   * registries nobody activated answer for it what they answer for a plugin's.
+   */
+  it('treats a type the registries do not hold as unknown, though the kernel defines it', () => {
+    const empty = createCoreRegistries();
+    const light = createLight('point');
+
+    expect(() => createComponent(empty, 'light')).toThrow(/Unknown component type/);
+    expect(fillComponent(empty, light)).toBe(light);
   });
 
   it('gives two components of a type distinct ids', () => {
-    expect(createComponent('light').id).not.toBe(createComponent('light').id);
+    expect(createComponent(registries, 'light').id).not.toBe(createComponent(registries, 'light').id);
   });
 });
 
 describe('fill', () => {
   it('fills a component written before a field existed', () => {
     const stored = { id: 'c1', type: 'light' } as unknown as ComponentDoc;
-    const filled = fillComponent(stored);
+    const filled = fillComponent(registries, stored);
     expect(filled.id).toBe('c1');
     expect(filled).toMatchObject({ type: 'light', intensity: expect.any(Number) });
   });
@@ -192,7 +199,7 @@ describe('fill', () => {
      * the factory that is the source of the defaults takes a kind.
      */
     const stored = { id: 'c1', type: 'light', kind: 'directional' } as unknown as ComponentDoc;
-    const filled = fillComponent(stored) as LightComponent;
+    const filled = fillComponent(registries, stored) as LightComponent;
 
     expect(filled.kind).toBe('directional');
     expect(filled.intensity).toBe(2);
@@ -206,7 +213,7 @@ describe('fill', () => {
       shadow: { bias: -0.0005 },
     } as unknown as ComponentDoc;
 
-    const filled = fillComponent(stored) as LightComponent;
+    const filled = fillComponent(registries, stored) as LightComponent;
     expect(filled.shadow).toMatchObject({ bias: -0.0005, normalBias: 0, far: 500 });
   });
 
@@ -224,7 +231,7 @@ describe('fill', () => {
       material: { color: '#ff0000' },
     } as unknown as ComponentDoc;
 
-    const mesh = fillComponent(stored) as MeshComponent;
+    const mesh = fillComponent(registries, stored) as MeshComponent;
     expect(mesh.geometry).toMatchObject({ kind: 'box', width: 4, widthSegments: expect.any(Number) });
     expect(mesh.material).toMatchObject({ color: '#ff0000', roughness: expect.any(Number) });
     expect(mesh.materialId).toBeNull();
@@ -250,7 +257,7 @@ describe('fill', () => {
 
     // Its old fields dropped: kept, `friction` would sit beside `material` and
     // read as the collider's to anyone opening the file.
-    expect(fillComponent(stored)).toEqual({
+    expect(fillComponent(registries, stored)).toEqual({
       id: 'c1',
       type: 'collider',
       shape: createColliderShape('box'),
@@ -272,7 +279,7 @@ describe('fill', () => {
       stray: 1,
     } as unknown as ComponentDoc;
 
-    expect(fillComponent(stored)).toEqual({ ...createComponent('rigidbody'), id: 'c1', ccd: true });
+    expect(fillComponent(registries, stored)).toEqual({ ...createRigidBody(), id: 'c1', ccd: true });
   });
 
   it('fills a shape from its own kind, keeping each measure that fits', () => {
@@ -307,7 +314,7 @@ describe('fill', () => {
    */
   it('leaves an unknown type exactly as found', () => {
     const stored = { id: 'c1', type: 'teleporter', target: 'x' } as unknown as ComponentDoc;
-    expect(fillComponent(stored)).toBe(stored);
+    expect(fillComponent(registries, stored)).toBe(stored);
   });
 
   it('is what the scene migration goes through', () => {
@@ -328,7 +335,7 @@ describe('fill', () => {
     const stored = { id: 'c2', type: 'teleporter', target: 'x' };
     file.components['teleporter'] = { [entity.entity.id]: { c2: stored } };
 
-    const loaded = deserializeScene(JSON.stringify(file));
+    const loaded = deserializeScene(registries, JSON.stringify(file));
     const [light] = componentsOf(loaded, entity.entity.id);
     expect(light).toMatchObject({ type: 'light', intensity: expect.any(Number) });
 
@@ -348,32 +355,32 @@ describe('assets', () => {
     mesh.material.normalMap = normal;
     mesh.materialId = material;
 
-    const named = componentAssets(mesh);
+    const named = componentAssets(registries, mesh);
     expect(named).toContain(material);
     expect(named).toContain(colour);
     expect(named).toContain(normal);
   });
 
   it('names nothing for a type that points at no asset', () => {
-    expect(componentAssets(createComponent('rigidbody'))).toEqual([]);
+    expect(componentAssets(registries, createRigidBody())).toEqual([]);
   });
 
   it('names nothing for an unknown type rather than guessing', () => {
     const stored = { id: 'c1', type: 'teleporter', assetId: 'a1' } as unknown as ComponentDoc;
-    expect(componentAssets(stored)).toEqual([]);
+    expect(componentAssets(registries, stored)).toEqual([]);
   });
 });
 
 describe('createComponentForEntity', () => {
   it('shapes a collider from the mesh it joins', () => {
     const entity = createMeshEntity('sphere');
-    const collider = createComponentForEntity('collider', entity.components);
+    const collider = createComponentForEntity(registries, 'collider', entity.components);
     expect(collider).toMatchObject({ shape: { kind: 'sphere', radius: 0.5 } });
   });
 
   it('is the plain factory for every other type', () => {
     const entity = createMeshEntity('box');
-    expect(createComponentForEntity('light', entity.components).type).toBe('light');
+    expect(createComponentForEntity(registries, 'light', entity.components).type).toBe('light');
   });
 });
 
@@ -394,6 +401,6 @@ describe('createComponentForEntity', () => {
  */
 describe('types with no runtime', () => {
   it('is empty: every authorable component builds something', () => {
-    expect([...typesWithoutRuntime()].sort()).toEqual([]);
+    expect([...typesWithoutRuntime(registries)].sort()).toEqual([]);
   });
 });

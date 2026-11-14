@@ -8,6 +8,9 @@ import { selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { sceneUnsaved, watchUnsaved, windowUnsaved } from '../src/state/unsaved';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Two questions about unsaved work, which Prefab Mode makes different.
@@ -112,7 +115,7 @@ describe('what is unsaved', () => {
     edit();
     await prefabMode().open(CRATE);
 
-    expect(commandById('save').can(currentContext())).toBe(true);
+    expect(commandById('save').can(currentContext(registries))).toBe(true);
   });
 });
 

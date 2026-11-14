@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useEditorStore } from '../state/editorStore';
 import { expandedScene } from '../state/expansion';
+import { useRegistries } from '../registriesContext';
 import { Selection } from '../state/selection';
 import { useProjectStore } from '../state/projectStore';
 import { useSceneLocked } from '../state/sceneLock';
@@ -80,7 +81,8 @@ export function MenuBar({ onResetLayout }: MenuBarProps) {
    * Watching the document from here would re-render the bar once per frame of a
    * gizmo drag, as it once did.
    */
-  const ctx = { selection: Selection.of(selection, expandedScene().scene) };
+  const registries = useRegistries();
+  const ctx = { selection: Selection.of(selection, expandedScene(registries).scene), registries };
 
   // Subscribed to the list rather than to the project: the two used to be one
   // object, and the list is now replaced on its own whenever a scene appears or

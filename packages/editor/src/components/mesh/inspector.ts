@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentId, EntityId, MaterialDef } from '@three-studio/core';
+import type { ComponentDoc, ComponentId, CoreRegistries, EntityId, MaterialDef } from '@three-studio/core';
 import { setComponentNestedField } from '../../commands/sceneCommands';
 import {
   GEOMETRY_FIELDS,
@@ -18,11 +18,12 @@ import { expandedScene } from '../../state/expansion';
  * pointing at its own material rather than at an id that does not exist.
  */
 async function extractMaterial(
+  registries: CoreRegistries,
   entityId: EntityId,
   componentId: ComponentId,
   material: MaterialDef,
 ): Promise<void> {
-  const suggested = expandedScene().scene.entities.get(entityId)?.name ?? 'Material';
+  const suggested = expandedScene(registries).scene.entities.get(entityId)?.name ?? 'Material';
   const name = await askForText({
     title: 'Save Material as Asset',
     label: 'Name',
@@ -31,8 +32,8 @@ async function extractMaterial(
   });
   if (name === null) return;
 
-  const assetId = await useAssetStore.getState().createMaterial(name, material);
-  setComponentNestedField(entityId, componentId, ['materialId'], assetId);
+  const assetId = await useAssetStore.getState().createMaterial(registries, name, material);
+  setComponentNestedField(registries, entityId, componentId, ['materialId'], assetId);
 }
 
 export const inspector: ComponentSchema = {
@@ -68,23 +69,23 @@ export const inspector: ComponentSchema = {
       // create an asset — which is consistent but means a file per tinted
       // cube. Here the file appears when sharing is actually wanted.
       visibleWhen: (component) => component.type === 'mesh' && component.materialId === null,
-      run: ({ entityId, componentId, component }) => {
+      run: ({ registries, entityId, componentId, component }) => {
         if (component.type !== 'mesh') return;
-        void extractMaterial(entityId, componentId, component.material);
+        void extractMaterial(registries, entityId, componentId, component.material);
       },
     },
     {
       kind: 'action',
       title: 'Make Unique',
       visibleWhen: (component) => component.type === 'mesh' && component.materialId !== null,
-      run: ({ entityId, componentId, component }) => {
+      run: ({ registries, entityId, componentId, component }) => {
         if (component.type !== 'mesh' || component.materialId === null) return;
         // Copy the shared values in before unlinking, so the object keeps the
         // look it had. Detaching to whatever was embedded before would look
         // like the material was lost.
         const shared = useAssetStore.getState().materials.get(component.materialId);
-        if (shared) setComponentNestedField(entityId, componentId, ['material'], { ...shared });
-        setComponentNestedField(entityId, componentId, ['materialId'], null);
+        if (shared) setComponentNestedField(registries, entityId, componentId, ['material'], { ...shared });
+        setComponentNestedField(registries, entityId, componentId, ['materialId'], null);
       },
     },
     ...MATERIAL_FIELDS,

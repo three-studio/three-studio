@@ -114,7 +114,7 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
  * name, and two can share an id — while the gesture still aims at the id.
  */
 function sceneRows(
-  { scenes, startScene }: SceneMenuInput,
+  { scenes, startScene, context }: SceneMenuInput,
   command: 'openScene' | 'openSceneInNewWindow',
 ): MenuItem[] {
   const homonyms = repeatedNames(scenes);
@@ -131,7 +131,7 @@ function sceneRows(
        */
       return { key: entry.path, label: entry.name, detail, disabled: true };
     }
-    return { ...commandEntry(command, contextForScene(entry.id)), key: entry.path, detail };
+    return { ...commandEntry(command, contextForScene(context.registries, entry.id)), key: entry.path, detail };
   });
 }
 

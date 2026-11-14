@@ -16,6 +16,7 @@ import {
   type ProjectFile,
   type ProjectSettings,
   type AssetChange,
+  type CoreRegistries,
   type LayoutPreferences,
   type ShortcutPreferences,
   type DeviceScreenshot,
@@ -123,8 +124,8 @@ function adopt(opened: OpenProject): OpenProject {
  * anything reachable from the page has to be justified here.
  */
 /**
- * What the handlers need from outside themselves: the window layer, and the
- * device server.
+ * What the handlers need from outside themselves: the window layer, the device
+ * server, and the registries the process activated.
  *
  * Injected rather than imported. The cycle this used to avoid is gone —
  * `windows.ts` read `isDirty` from here, and now reads it from `session.ts` —
@@ -148,6 +149,8 @@ export interface IpcDeps {
   noteScene: (from: Electron.WebContents, sceneId: SceneId) => void;
   /** True when a scene is open in a window other than the one asking. */
   isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: SceneId) => boolean;
+  /** Every component type the handlers decode a scene, a prefab or a launch through. */
+  registries: CoreRegistries;
   /** Every editor window, for broadcasting a project that has changed. */
   editorWindows: () => readonly BrowserWindow[];
   devices: DeviceServer;
@@ -371,7 +374,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * to a project it cannot read.
    */
     createScene: async (event, name: string, contents?: string): Promise<SceneChange> => {
-      const change = await createScene(requireProject(), name, contents);
+      const change = await createScene(deps.registries, requireProject(), name, contents);
       // A Save As: the asking window goes on editing this document under the
       // new id. Noted before `announce`, with nothing awaited in between, so no
       // other window hears of the scene while the table says nobody shows it —
@@ -383,7 +386,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     duplicateScene: async (event, sceneId: SceneId, name: string): Promise<SceneChange> => {
-      const change = await duplicateScene(requireProject(), sceneId, name);
+      const change = await duplicateScene(deps.registries, requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
 
@@ -503,7 +506,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     readPrefabs: async (): Promise<Record<string, string>> => {
-      const prefabs = await readPrefabAssets(requireProject());
+      const prefabs = await readPrefabAssets(deps.registries, requireProject());
       return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefab)]));
     },
 
@@ -517,7 +520,12 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       //
       // The id is handed to it as well, which is where a script that calls the
       // bridge with an `assetId` that is none is refused.
-      return createPrefabAsset(requireProject(), name, deserializePrefab(prefabJson, assetId), assetId);
+      return createPrefabAsset(
+        requireProject(),
+        name,
+        deserializePrefab(deps.registries, prefabJson, assetId),
+        assetId,
+      );
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
@@ -525,7 +533,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     savePrefab: (_event, assetPath: string, prefabJson: string): Promise<void> => {
-      return savePrefabAsset(requireProject(), assetPath, deserializePrefab(prefabJson));
+      return savePrefabAsset(requireProject(), assetPath, deserializePrefab(deps.registries, prefabJson));
     },
 
     readPhysicsMaterials: async (): Promise<Record<string, PhysicsMaterialDef>> =>
@@ -570,6 +578,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // Packaged, the player sits in the app's resources; in development it is
       // the workspace build, found by walking up from the app path.
       const result = await exportBuild(
+        deps.registries,
         projectPath,
         profile,
         outputDir,
@@ -624,7 +633,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     launch: (_event, snapshot: LaunchSnapshotJson): Promise<DeviceServerStatus | null> =>
       // Conformed here, where it arrives: it is whatever the renderer sent, and
       // it becomes the files a phone downloads. See `conformLaunchSnapshot`.
-      deps.devices.launch(requireProject(), conformLaunchSnapshot(snapshot)),
+      deps.devices.launch(requireProject(), conformLaunchSnapshot(deps.registries, snapshot)),
 
     saveSettings: (_event, patch: DeviceSettingsPatch): Promise<DeviceServerStatus> =>
       // Never the token: a script that chose it would hold a link it knows.

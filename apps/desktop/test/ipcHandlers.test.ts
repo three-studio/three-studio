@@ -33,6 +33,9 @@ import {
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The handler table, driven.
@@ -161,6 +164,7 @@ beforeAll(async () => {
     openSceneWindow: () => undefined,
     noteScene: (from, sceneId) => void timeline.push(['noted', from.id, sceneId]),
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
+    registries,
     editorWindows: () => windows as unknown as BrowserWindow[],
     devices,
   });
@@ -385,16 +389,16 @@ describe('the guards are reached, not merely written', () => {
 
     // The file is the codec's, key-sorted for a diff, whatever order it arrived in.
     const created = await readFile(file, 'utf8');
-    expect(created).toBe(serializePrefab(deserializePrefab(sent)));
+    expect(created).toBe(serializePrefab(deserializePrefab(registries, sent)));
     expect(Object.keys(JSON.parse(created))).toEqual(Object.keys(JSON.parse(created)).sort());
 
-    const renamed = { ...deserializePrefab(sent), name: 'Renamed' };
+    const renamed = { ...deserializePrefab(registries, sent), name: 'Renamed' };
     await invoke(IPC_INVOKE.assets.savePrefab, 1, 'assets/prefabs/Crate.prefab.json', jsonOf(renamed));
     expect(await readFile(file, 'utf8')).toBe(serializePrefab(renamed));
 
     const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
     expect(Object.keys(read)).toEqual([id]);
-    expect(deserializePrefab(assertDefined(read[id], 'the prefab read'))).toEqual(renamed);
+    expect(deserializePrefab(registries, assertDefined(read[id], 'the prefab read'))).toEqual(renamed);
   });
 
   it('refuses a prefab that is not JSON, and writes nothing', async () => {
@@ -452,7 +456,7 @@ describe('the guards are reached, not merely written', () => {
     const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
 
     expect(Object.keys(read)).toEqual([id]);
-    expect(deserializePrefab(assertDefined(read[id], 'the prefab read'), id).id).toBe(id);
+    expect(deserializePrefab(registries, assertDefined(read[id], 'the prefab read'), id).id).toBe(id);
     expect(JSON.parse(assertDefined(read[id], 'the prefab read')).id).toBe(id);
   });
 
@@ -619,7 +623,7 @@ describe('showing a file in the file manager', () => {
     const scene = (await discoverScenes(root))[0]!;
 
     const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
-    expect(deserializeScene(read).id).toBe(scene.id);
+    expect(deserializeScene(registries, read).id).toBe(scene.id);
     await expect(invoke(IPC_INVOKE.project.readScene, 1, 'scenes/gone.scene.json')).rejects.toThrow(
       'There is no file at scenes/gone.scene.json',
     );

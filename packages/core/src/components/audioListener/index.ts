@@ -10,7 +10,7 @@ import { createAudioListener } from './defaults';
  * gets a warning, because two ears is a bug that sounds like a mixing problem.
  */
 export const audioListenerComponent = defineComponent({
-  type: 'audioListener',
+  id: 'audioListener',
   create: createAudioListener,
   assets: () => [],
   entities: () => [],

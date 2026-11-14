@@ -5,6 +5,7 @@ import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { openProject, readProject } from '../../../apps/desktop/src/main/project';
 import { writeGeometryProject, writeTexturesProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import {
   type CdpSession,
   decodeNumberList,
@@ -107,7 +108,7 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map(RECIPES.flatMap((recipe
 
 /** The entity holding the model, read from the start scene with the app's own code. */
 async function modelEntityOf(projectPath: string): Promise<EntityId> {
-  const scene = deserializeScene((await openProject(projectPath)).sceneJson);
+  const scene = deserializeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson);
   const [entityId] = entitiesWith(scene, 'model');
   if (entityId === undefined) throw new Error('the scene holds no model');
   return entityId;
@@ -245,7 +246,7 @@ async function prepareRecipe(context: ScenarioContext, recipe: Recipe, folder: s
   const profile = build.profiles[build.active];
   if (!profile) throw new Error(`the ${recipe.name} project has no active build profile`);
   const out = join(folder, 'export');
-  await exportBuild(project, profile, out, [context.repo]);
+  await exportBuild(builtInRegistries(), project, profile, out, [context.repo]);
   // Read where the disk is fullest: the model, its copy if it has one, the
   // export beside them, and the harness's application data. The run's own
   // folder, not the volume's free space: with the system swapping, that moved

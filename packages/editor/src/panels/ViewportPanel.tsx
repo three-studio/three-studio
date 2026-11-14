@@ -135,7 +135,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     if (!viewport) return;
     // Measured on the edit canvas, which keeps its box on the stage during Play.
     const point = viewport.dropPoint(event.clientX, event.clientY);
-    placeDroppedAsset(assetId, [point.x, point.y, point.z]);
+    placeDroppedAsset(registries, assetId, [point.x, point.y, point.z]);
   };
 
   return (
@@ -250,6 +250,7 @@ function StartingPill() {
  *   reports it. `fullScreen` is what was asked for; this is what happened.
  */
 function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean {
+  const registries = useRegistries();
   const isRunning = useEditorStore((s) => s.playState !== 'stopped');
   const fullScreen = useEditorStore((s) => s.fullScreen);
   const [holdingScreen, setHoldingScreen] = useState(false);
@@ -263,7 +264,7 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
       const holding = document.fullscreenElement === stage;
       setHoldingScreen(holding);
       if (!holding && useEditorStore.getState().playState !== 'stopped') {
-        commandById('stop').run(currentContext());
+        commandById('stop').run(currentContext(registries));
       }
     };
     document.addEventListener('fullscreenchange', onChange);
@@ -296,7 +297,7 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
       if (document.fullscreenElement === stage) void document.exitFullscreen();
       setHoldingScreen(false);
     };
-  }, [isRunning, fullScreen, stageRef]);
+  }, [registries, isRunning, fullScreen, stageRef]);
 
   return holdingScreen;
 }

@@ -11,6 +11,7 @@ import {
   type AssetId,
   type AssetKind,
   type AssetManifest,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
@@ -60,14 +61,28 @@ interface AssetState {
   viewMode: AssetViewMode;
   tileSize: number;
 
-  refresh: () => Promise<void>;
+  /**
+   * Reads the manifest and the libraries again. Given the window's registries,
+   * which every prefab's components are decoded through — and so is every action
+   * below that ends in it.
+   */
+  refresh: (registries: CoreRegistries) => Promise<void>;
   /** Extracts an embedded material into a new asset; returns its id. */
-  createMaterial: (name: string, material: MaterialDef) => Promise<AssetId>;
-  createPrefab: (name: string, prefab: PrefabDoc, assetId?: AssetId) => Promise<AssetId>;
+  createMaterial: (registries: CoreRegistries, name: string, material: MaterialDef) => Promise<AssetId>;
+  createPrefab: (
+    registries: CoreRegistries,
+    name: string,
+    prefab: PrefabDoc,
+    assetId?: AssetId,
+  ) => Promise<AssetId>;
   /** Writes back to a material asset, then re-reads so every user updates. */
   saveMaterial: (assetId: AssetId, material: MaterialDef) => Promise<void>;
   /** Writes a new physics material asset; returns its id. */
-  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<AssetId>;
+  createPhysicsMaterial: (
+    registries: CoreRegistries,
+    name: string,
+    material: PhysicsMaterialDef,
+  ) => Promise<AssetId>;
   /** Writes back to a physics material asset, every collider linking it following. */
   savePhysicsMaterial: (assetId: AssetId, material: PhysicsMaterialDef) => Promise<void>;
   savePrefab: (assetId: AssetId, prefab: PrefabDoc) => Promise<void>;
@@ -168,7 +183,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   viewMode: 'grid',
   tileSize: 88,
 
-  refresh: () =>
+  refresh: (registries) =>
     guard(set, async () => {
       const [manifest, materialRecord, physicsMaterialRecord, prefabTexts] = await Promise.all([
         window.studio.assets.list(),
@@ -180,7 +195,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
       // as one, and the prefab is read under it, as the main wrote it.
       const prefabs = new Map<AssetId, PrefabDoc>();
       for (const [id, text] of idMapOf(prefabTexts, isAssetId)) {
-        prefabs.set(id, deserializePrefab(text, id));
+        prefabs.set(id, deserializePrefab(registries, text, id));
       }
       set({
         manifest,
@@ -193,15 +208,15 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
       useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
 
-  createPrefab: async (name, prefab, assetId) => {
+  createPrefab: async (registries, name, prefab, assetId) => {
     const created = await window.studio.assets.createPrefab(name, jsonOf(prefab), assetId);
-    await get().refresh();
+    await get().refresh(registries);
     return created;
   },
 
-  createMaterial: async (name, material) => {
+  createMaterial: async (registries, name, material) => {
     const assetId = await window.studio.assets.createMaterial(name, material);
-    await get().refresh();
+    await get().refresh(registries);
     return assetId;
   },
 
@@ -216,9 +231,9 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     useDocumentStore.getState().noteLibraryChange('materials');
   },
 
-  createPhysicsMaterial: async (name, material) => {
+  createPhysicsMaterial: async (registries, name, material) => {
     const assetId = await window.studio.assets.createPhysicsMaterial(name, material);
-    await get().refresh();
+    await get().refresh(registries);
     return assetId;
   },
 

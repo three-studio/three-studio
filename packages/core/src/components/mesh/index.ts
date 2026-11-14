@@ -13,7 +13,7 @@ import { createMeshComponent } from './defaults';
  * what shipped twice before `fillMissingFields` was written.
  */
 export const meshComponent = defineComponent({
-  type: 'mesh',
+  id: 'mesh',
   create: () => createMeshComponent('box'),
   fill: (stored) => {
     const filled = { ...createMeshComponent('box'), ...stored };

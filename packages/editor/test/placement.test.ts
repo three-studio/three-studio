@@ -29,6 +29,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { STOP_TO_EDIT } from '../src/state/sceneLock';
 import { useToastStore } from '../src/state/toastStore';
 import type { MenuEntry, MenuItem } from '../src/ui/Menu';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Where an object added from the menu ends up.
@@ -93,7 +96,7 @@ describe('the transform a template needs to land on a point', () => {
 
 /** The id the Add menu gives an entity it placed. */
 function addedInView(template: EntityTemplate): EntityId {
-  return assertDefined(addEntityInView(template), 'the entity the Add menu placed');
+  return assertDefined(addEntityInView(registries, template), 'the entity the Add menu placed');
 }
 
 describe('adding from the menu', () => {
@@ -148,8 +151,8 @@ describe('adding from the menu while the game runs', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     play();
 
-    expect(addEntityInView(createMeshEntity('box'))).toBeNull();
-    expect(addEntityInView(createMeshEntity('sphere'))).toBeNull();
+    expect(addEntityInView(registries, createMeshEntity('box'))).toBeNull();
+    expect(addEntityInView(registries, createMeshEntity('sphere'))).toBeNull();
 
     expect(doc().scene.rootOrder).toEqual([]);
     expect(toasts()).toHaveLength(1);
@@ -158,13 +161,13 @@ describe('adding from the menu while the game runs', () => {
     expect(error).not.toHaveBeenCalled();
 
     stop();
-    expect(addEntityInView(createMeshEntity('box'))).toEqual(expect.any(String));
+    expect(addEntityInView(registries, createMeshEntity('box'))).toEqual(expect.any(String));
   });
 
   it('greys every row that places, Group included, saying why', () => {
     // Something selected, so Group would act: greyed only for the game's sake.
     useEditorStore.getState().setSelection([addEntity(createMeshEntity('box'))]);
-    const menu = () => buildAddMenu(currentContext());
+    const menu = () => buildAddMenu(currentContext(registries));
     /** The rows that place something: the leaves, under their headings. */
     const placing = (entries: readonly MenuEntry[]): MenuItem[] =>
       entries.flatMap((entry) => (entry === null ? [] : entry.submenu ? placing(entry.submenu) : [entry]));
@@ -236,7 +239,7 @@ describe('a drop on the view', () => {
   it('places a prefab as an instance where it was let go, selected inside its undo step', () => {
     const before = addEntity(createEntity('Before'));
 
-    placeDroppedAsset(CRATE, [1, 2, 3]);
+    placeDroppedAsset(registries, CRATE, [1, 2, 3]);
 
     const id = placed();
     expect(id).not.toBe(before);
@@ -254,9 +257,9 @@ describe('a drop on the view', () => {
   });
 
   it('places a sound as an audio source, and a model as a model', () => {
-    placeDroppedAsset(CHIME, [0, 1, 0]);
+    placeDroppedAsset(registries, CHIME, [0, 1, 0]);
     const sound = placed();
-    placeDroppedAsset(CHAIR, [4, 0, 0]);
+    placeDroppedAsset(registries, CHAIR, [4, 0, 0]);
     const model = placed();
 
     expect(findComponent(doc().scene, sound, 'audioSource')?.assetId).toBe(CHIME);
@@ -266,7 +269,7 @@ describe('a drop on the view', () => {
   });
 
   it('places a model with the Collider its import settings ask for, in one undo step', () => {
-    placeDroppedAsset(RUINS, [0, 0, 0]);
+    placeDroppedAsset(registries, RUINS, [0, 0, 0]);
     const ruins = placed();
 
     // The one Add Component gives a model: a mesh built from its triangles.
@@ -278,7 +281,7 @@ describe('a drop on the view', () => {
   });
 
   it('places a model with none when its settings do not ask', () => {
-    placeDroppedAsset(CHAIR, [0, 0, 0]);
+    placeDroppedAsset(registries, CHAIR, [0, 0, 0]);
     const chair = placed();
 
     expect(findComponent(doc().scene, chair, 'model')?.assetId).toBe(CHAIR);
@@ -290,7 +293,7 @@ describe('a drop on the view', () => {
     // could never load anything, and said nothing about why.
     const revision = doc().revision;
 
-    placeDroppedAsset(BRICK, [0, 0, 0]);
+    placeDroppedAsset(registries, BRICK, [0, 0, 0]);
 
     expect(doc().scene.rootOrder).toEqual([]);
     expect(doc().revision).toBe(revision);
@@ -301,8 +304,8 @@ describe('a drop on the view', () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     play();
 
-    placeDroppedAsset(CRATE, [1, 2, 3]);
-    placeDroppedAsset(CHAIR, [1, 2, 3]);
+    placeDroppedAsset(registries, CRATE, [1, 2, 3]);
+    placeDroppedAsset(registries, CHAIR, [1, 2, 3]);
 
     expect(doc().scene.rootOrder).toEqual([]);
     expect(toasts()).toHaveLength(1);

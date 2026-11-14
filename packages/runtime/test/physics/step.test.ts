@@ -1,4 +1,4 @@
-import { createComponent, createEntity, fixedId, type ScriptComponent } from '@three-studio/core';
+import { createEntity, createScript, fixedId, type ScriptComponent } from '@three-studio/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Behaviour, clearScripts, registerScript } from '../../src/scripting/ScriptHost';
 import { physicsRig, standInForTheBrowser, takeTheBrowserBack } from './rig';
@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe('Step', () => {
   it("advances one tick of the project's step, whatever the last frame left over", async () => {
-    const script: ScriptComponent = { ...createComponent('script'), assetId: TICKER };
+    const script: ScriptComponent = { ...createScript(), assetId: TICKER };
     const { engine } = await physicsRig([createEntity('Ticker', [script])], {
       fixedTimestep: 1 / 50,
     });

@@ -1,4 +1,5 @@
 import type { AssetId, EntityId, SceneId } from '@three-studio/core';
+import type { RuntimeRegistries } from '@three-studio/runtime';
 import { expandedScene } from '../state/expansion';
 import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
@@ -23,6 +24,14 @@ import { Selection } from '../state/selection';
  */
 export interface EditorContext {
   readonly selection: Selection;
+  /**
+   * The window's registries: what a gesture decodes, expands and creates with.
+   *
+   * In the context because a command is a value in a table, built before any
+   * window exists, and has no other way to them: the composition root made
+   * them, and nothing holds them in a module.
+   */
+  readonly registries: RuntimeRegistries;
   /**
    * The asset a gesture was aimed at, when it was aimed at one.
    *
@@ -51,23 +60,23 @@ export interface EditorContext {
   readonly sceneId?: SceneId;
 }
 
-export function currentContext(): EditorContext {
-  return { selection: Selection.current() };
+export function currentContext(registries: RuntimeRegistries): EditorContext {
+  return { selection: Selection.current(registries), registries };
 }
 
 /** The context for a specific set of ids — a right-click outside the selection. */
-export function contextFor(ids: readonly EntityId[]): EditorContext {
-  return { selection: Selection.of(ids, expandedScene().scene) };
+export function contextFor(registries: RuntimeRegistries, ids: readonly EntityId[]): EditorContext {
+  return { selection: Selection.of(ids, expandedScene(registries).scene), registries };
 }
 
 /** The context for a gesture aimed at one asset — a tile, a row, an Inspector slot. */
-export function contextForAsset(assetId: AssetId): EditorContext {
-  return { ...currentContext(), assetId };
+export function contextForAsset(registries: RuntimeRegistries, assetId: AssetId): EditorContext {
+  return { ...currentContext(registries), assetId };
 }
 
 /** The context for a gesture aimed at one scene — a row of the Scene menu. */
-export function contextForScene(sceneId: SceneId): EditorContext {
-  return { ...currentContext(), sceneId };
+export function contextForScene(registries: RuntimeRegistries, sceneId: SceneId): EditorContext {
+  return { ...currentContext(registries), sceneId };
 }
 
 /**

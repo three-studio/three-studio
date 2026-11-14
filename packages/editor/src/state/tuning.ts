@@ -5,6 +5,7 @@ import {
   type AssetId,
   type ComponentDoc,
   type ComponentId,
+  type CoreRegistries,
   type EntityId,
   type PhysicsMaterialDef,
 } from '@three-studio/core';
@@ -76,7 +77,7 @@ export function dropTuning(): void {
  * scene. A toast is never the only way to something. Ignored, the values are
  * dropped then.
  */
-export function offerTuning(): void {
+export function offerTuning(registries: CoreRegistries): void {
   if (!hasTuning()) return;
   const { values, materials } = useTuningStore.getState();
   const entities = new Set(values.map(({ entityId }) => entityId)).size;
@@ -90,7 +91,7 @@ export function offerTuning(): void {
     title: 'Keep the physics tuned during Play?',
     description: `Tuned on ${on.join(' and ')}. Edit ▸ Keep Tuned Physics keeps it until the next Play.`,
     duration: null,
-    actions: [{ label: 'Keep', primary: true, onClick: keepTuning }],
+    actions: [{ label: 'Keep', primary: true, onClick: () => keepTuning(registries) }],
   });
 }
 
@@ -111,10 +112,10 @@ export function hasTuning(): boolean {
  * a time, a radius tuned under a tuned shape went into an instance's override
  * built from the shape the document held before, as the expansion still had it.
  */
-export function keepTuning(): void {
+export function keepTuning(registries: CoreRegistries): void {
   if (isSceneLocked() || !hasTuning()) return;
   const { values, materials } = useTuningStore.getState();
-  const { scene } = expandedScene();
+  const { scene } = expandedScene(registries);
   const writes: { entityId: EntityId; componentId: ComponentId; key: string; value: unknown }[] = [];
   for (const { entityId, componentId, path } of values) {
     const [key] = path;
@@ -139,7 +140,7 @@ export function keepTuning(): void {
     'Keep tuned physics',
     (draft) => {
       for (const { entityId, componentId, key, value } of writes) {
-        writeComponentPath(draft, entityId, componentId, [key], value);
+        writeComponentPath(registries, draft, entityId, componentId, [key], value);
       }
     },
     files.length === 0 ? undefined : { external: { apply: () => save('after'), revert: () => save('before') } },
@@ -152,7 +153,7 @@ export function keepTuning(): void {
  * everything tuned so far: a game that restarts the scene, or comes back to it,
  * keeps what this Play tuned.
  */
-export function tuningEngine(next: Engine | null): void {
+export function tuningEngine(registries: CoreRegistries, next: Engine | null): void {
   engine = next;
   if (!next) return;
   const { values, materials } = useTuningStore.getState();
@@ -163,12 +164,13 @@ export function tuningEngine(next: Engine | null): void {
     const key = JSON.stringify([entityId, componentId]);
     if (handed.has(key)) continue;
     handed.add(key);
-    handTo(next, entityId, componentId);
+    handTo(registries, next, entityId, componentId);
   }
 }
 
 /** Records a component's value as tuned, and hands the running game the component with it. */
 export function tuneComponentField(
+  registries: CoreRegistries,
   entityId: EntityId,
   componentId: ComponentId,
   path: readonly string[],
@@ -183,7 +185,7 @@ export function tuneComponentField(
     ],
     revision: state.revision + 1,
   }));
-  if (engine) handTo(engine, entityId, componentId);
+  if (engine) handTo(registries, engine, entityId, componentId);
 }
 
 /**
@@ -243,8 +245,8 @@ function within(path: readonly string[], prefix: readonly string[]): boolean {
  * Hands the running game a component with what was tuned on it, when it is one
  * the world builds: a Rigid Body, a Collider or a Joint.
  */
-function handTo(running: Engine, entityId: EntityId, componentId: ComponentId): void {
-  const component = findComponentById(expandedScene().scene, entityId, componentId);
+function handTo(registries: CoreRegistries, running: Engine, entityId: EntityId, componentId: ComponentId): void {
+  const component = findComponentById(expandedScene(registries).scene, entityId, componentId);
   if (!component) return;
   const tuned = tunedComponent(entityId, component);
   if (tuned.type === 'rigidbody' || tuned.type === 'collider' || tuned.type === 'joint') {

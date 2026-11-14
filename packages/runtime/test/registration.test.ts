@@ -1,3 +1,4 @@
+import { activateCore } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { MeshSystem } from '../src/components/mesh/MeshSystem';
 import { activateRuntime, createRuntimeRegistries } from '../src/registries';
@@ -12,6 +13,7 @@ import { defineSystem } from '../src/systems/ComponentSystem';
 describe('built-in registrations', () => {
   it('refuses to replace a registered behaviour', () => {
     const registries = createRuntimeRegistries();
+    activateCore(registries);
     activateRuntime(registries);
     const script = registries.behaviours.get('script');
     if (!script) throw new Error('script behaviour is not registered');
@@ -24,6 +26,7 @@ describe('built-in registrations', () => {
 
   it('refuses to replace a registered component system', () => {
     const registries = createRuntimeRegistries();
+    activateCore(registries);
     activateRuntime(registries);
     const mesh = registries.systems.get('mesh');
     expect(mesh?.create()).toBeInstanceOf(MeshSystem);
@@ -36,6 +39,7 @@ describe('built-in registrations', () => {
 
   it('leaves both registries empty once the activation is disposed', () => {
     const registries = createRuntimeRegistries();
+    activateCore(registries);
     activateRuntime(registries).dispose();
 
     expect(registries.systems.values()).toEqual([]);

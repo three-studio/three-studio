@@ -1,12 +1,16 @@
 import {
   createAssetId,
+  createCollider,
   createColliderShape,
-  createComponent,
   createComponentForEntity,
   createEntity,
+  createJoint,
   createMeshEntity,
   createPhysicsSettings,
+  createPlayerController,
   createRenderingSettings,
+  createRigidBody,
+  createScript,
   type AssetId,
   type BodyType,
   type ColliderComponent,
@@ -33,6 +37,8 @@ import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
 import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
 import { builtInRegistries } from '../registries';
+
+const registries = builtInRegistries();
 
 /*
  * A scene document running in the real `Engine`, with real Rapier, under Node.
@@ -84,7 +90,7 @@ export type PhysicsRigMaker = (
 ) => Promise<PhysicsRig>;
 
 /** A rig whose engine runs on the kernel's systems and behaviours, as a root activates them. */
-export const physicsRig: PhysicsRigMaker = physicsRigOn(builtInRegistries());
+export const physicsRig: PhysicsRigMaker = physicsRigOn(registries);
 
 /**
  * Rigs whose engines run on these registries: a test file that registers a
@@ -202,7 +208,7 @@ export function takeTheBrowserBack(): void {
 export function ground(tiltDegrees = 0): EntityTemplate {
   const tilt = (tiltDegrees * Math.PI) / 180;
   const template = createEntity('Ground', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
+    { ...createCollider(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   // Half its thickness below the surface along the tilted normal, so whatever
   // the tilt the slope passes through the origin, and a body placed above it
@@ -223,8 +229,8 @@ export function withBody(
 ): EntityTemplate {
   const template = createMeshEntity(kind);
   template.components.push(
-    { ...createComponent('rigidbody'), ...body },
-    createComponentForEntity('collider', template.components),
+    { ...createRigidBody(), ...body },
+    createComponentForEntity(registries, 'collider', template.components),
   );
   template.entity.transform.position = position;
   return template;
@@ -233,7 +239,7 @@ export function withBody(
 /** A primitive with the collider `createComponentForEntity` guesses for it, and no body: `withBody`'s sibling. */
 export function withCollider(kind: GeometryKind, position: Vec3): EntityTemplate {
   const template = createMeshEntity(kind);
-  template.components.push(createComponentForEntity('collider', template.components));
+  template.components.push(createComponentForEntity(registries, 'collider', template.components));
   template.entity.transform.position = position;
   return template;
 }
@@ -250,12 +256,12 @@ export function player(
   }: { controller?: Partial<PlayerControllerComponent>; bodyType?: BodyType } = {},
 ): EntityTemplate {
   const template = createEntity('Player', [
-    { ...createComponent('playerController'), ...controller },
+    { ...createPlayerController(), ...controller },
     {
-      ...createComponent('collider'),
+      ...createCollider(),
       shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
     },
-    { ...createComponent('rigidbody'), bodyType },
+    { ...createRigidBody(), bodyType },
   ]);
   template.entity.transform.position = position;
   return template;
@@ -271,7 +277,7 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
   const assetId = createAssetId();
   registerScript(assetId, type);
   onTestFinished(clearScripts);
-  template.components.push({ ...createComponent('script'), assetId });
+  template.components.push({ ...createScript(), assetId });
   return template;
 }
 
@@ -280,14 +286,14 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
  * otherwise. A test names the other side by its template's entity id.
  */
 export function withJoint(template: EntityTemplate, joint?: Partial<JointComponent>): EntityTemplate {
-  template.components.push({ ...createComponent('joint'), ...joint });
+  template.components.push({ ...createJoint(), ...joint });
   return template;
 }
 
 /** Collider-only level geometry, a step or a wall: a box of this full size. */
 export function block(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Block', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size } },
+    { ...createCollider(), shape: { ...createColliderShape('box'), size } },
   ]);
   template.entity.transform.position = position;
   return template;
@@ -296,7 +302,7 @@ export function block(position: Vec3, size: Vec3): EntityTemplate {
 /** `block`'s sibling that touches nothing: a box of this full size, its Collider *Is sensor*. */
 export function sensor(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Sensor', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size }, isSensor: true },
+    { ...createCollider(), shape: { ...createColliderShape('box'), size }, isSensor: true },
   ]);
   template.entity.transform.position = position;
   return template;

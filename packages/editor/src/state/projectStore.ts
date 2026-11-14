@@ -2,6 +2,7 @@ import {
   deserializeScene,
   findScene,
   serializeScene,
+  type CoreRegistries,
   type OpenProject,
   type ProjectContents,
   type ProjectFile,
@@ -38,7 +39,8 @@ interface ProjectState {
   saving: boolean;
   error: string | null;
 
-  adopt: (opened: OpenProject) => void;
+  /** Given the window's registries, which the scene's components are decoded through. */
+  adopt: (registries: CoreRegistries, opened: OpenProject) => void;
   /** Replaces the project file after its settings were written back. */
   adoptProject: (project: ProjectFile) => void;
   /**
@@ -90,17 +92,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ project, scenes, sceneId: scene.id, scenePath: scene.path });
   },
 
-  adopt: (opened) => {
+  adopt: (registries, opened) => {
     // Parsing here rather than in the main process keeps the scene format
     // owned entirely by @three-studio/core, which the web export also uses.
-    const scene = deserializeScene(opened.sceneJson);
+    const scene = deserializeScene(registries, opened.sceneJson);
     useDocumentStore.getState().replaceScene(scene);
     // Chained rather than fired and forgotten: the report asks what the project
     // holds, and asking before the manifest lands calls every asset missing.
     void useAssetStore
       .getState()
-      .refresh()
-      .then(() => reportBrokenReferences());
+      .refresh(registries)
+      .then(() => reportBrokenReferences(registries));
     // Compiled on open, not only on Play: the inspector reads a script's
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.

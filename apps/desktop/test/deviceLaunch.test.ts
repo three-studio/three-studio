@@ -17,6 +17,9 @@ import { scanAssets } from '../src/main/assetScan';
 import { prepareLaunch } from '../src/main/devices/launch';
 import { launchManifest } from '../src/main/devices/launchManifest';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A launch, prepared from what is on screen: the editor's snapshot for the
@@ -66,12 +69,13 @@ async function project(script: string | null = SCRIPT): Promise<string> {
  */
 async function snapshot(root: string): Promise<ReceivedLaunch> {
   const [entry] = await discoverScenes(root);
-  const scene = deserializeScene(await readFile(join(root, entry!.path), 'utf8'));
+  const scene = deserializeScene(registries, await readFile(join(root, entry!.path), 'utf8'));
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
   const { settings } = await readProject(root);
   return conformLaunchSnapshot(
+    registries,
     encodeLaunchSnapshot({
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: { id: entry!.id, name: entry!.name, scene },

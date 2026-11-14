@@ -44,6 +44,9 @@ import { useProjectStore } from '../src/state/projectStore';
 import { Selection } from '../src/state/selection';
 import { useToastStore } from '../src/state/toastStore';
 import { sceneUnsaved, watchUnsaved, windowUnsaved } from '../src/state/unsaved';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The scene gestures act on the scene, whatever stands in front of it.
@@ -260,7 +263,7 @@ afterEach(() => {
 describe('back to the scene', () => {
   it('leaves Prefab Mode before it stops the game', async () => {
     await openCrate();
-    renameEntity(crateRoot, 'Edited');
+    renameEntity(registries, crateRoot, 'Edited');
     editor().play();
 
     await backToTheScene({ stopPlay: true });
@@ -295,7 +298,7 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
     await done;
 
     expect(methods()).toEqual(['savePrefab', 'createScene']);
-    const copy = deserializeScene(log[1]![2] as string);
+    const copy = deserializeScene(registries, log[1]![2] as string);
     expect(copy.entities.get(wall)).toBeDefined();
     expect(copy.entities.get(crateRoot)).toBeUndefined();
     expect(prefabMode().stack).toEqual([]);
@@ -331,7 +334,7 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
   });
 
   it('marks the scene clean, and tells the main process, before it switches', async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     await openCrate();
     stops.push(watchUnsaved());
     log.length = 0;
@@ -461,7 +464,7 @@ describe('Save As makes a scene of its own', () => {
    * Cmd+S wrote the original's id into the copy again.
    */
   beforeEach(() => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     stops.push(watchUnsaved());
     log.length = 0;
   });
@@ -483,7 +486,7 @@ describe('Save As makes a scene of its own', () => {
     const [, name, contents] = log[0]!;
     expect(name).toBe('Copy');
     // As it stands, original id included: the main process is what replaces it.
-    const handed = deserializeScene(contents as string);
+    const handed = deserializeScene(registries, contents as string);
     expect(handed.id).toBe('a');
     expect(handed.entities.get(wall)?.name).toBe('Edited wall');
 
@@ -500,12 +503,12 @@ describe('Save As makes a scene of its own', () => {
 
   it('is what the next save writes', async () => {
     await saveAs('Copy');
-    renameEntity(wall, 'Edited after Save As');
+    renameEntity(registries, wall, 'Edited after Save As');
 
     await useProjectStore.getState().save();
 
     expect(log.at(-2)).toEqual(['saveScene', 'scenes/Copy.scene.json']);
-    const saved = deserializeScene(written[0]!);
+    const saved = deserializeScene(registries, written[0]!);
     expect(saved.id).toBe('c');
     expect(saved.name).toBe('Copy');
     expect(saved.entities.get(wall)?.name).toBe('Edited after Save As');
@@ -543,7 +546,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   /** A prefab open over the scene and edited, the game running, the main process told. */
   async function inAnEditedPrefabWhilePlaying(): Promise<void> {
     await openCrate();
-    renameEntity(crateRoot, 'Edited');
+    renameEntity(registries, crateRoot, 'Edited');
     editor().play();
     stops.push(watchUnsaved());
     log.length = 0;
@@ -565,7 +568,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   });
 
   it("leaves the main process holding the scene's unsaved work, for its prompt", async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     await inAnEditedPrefabWhilePlaying();
 
     await openScene(LEVEL_2.id);
@@ -769,10 +772,10 @@ describe('Revert Scene', () => {
    * file is read before anything is left, so a file that cannot be used leaves
    * Prefab Mode and the game where they were.
    */
-  const can = () => commandById('revertScene').can(currentContext());
+  const can = () => commandById('revertScene').can(currentContext(registries));
 
   async function revert(): Promise<void> {
-    const done = revertCurrentScene();
+    const done = revertCurrentScene(registries);
     await confirm();
     await done;
   }
@@ -798,25 +801,25 @@ describe('Revert Scene', () => {
   describe('is offered only when there is scene work to drop', () => {
     it('not on a clean scene, and once it is edited', () => {
       expect(can()).toBe(false);
-      renameEntity(wall, 'Edited wall');
+      renameEntity(registries, wall, 'Edited wall');
       expect(can()).toBe(true);
     });
 
     it('with the scene edited behind an untouched prefab', async () => {
-      renameEntity(wall, 'Edited wall');
+      renameEntity(registries, wall, 'Edited wall');
       await openCrate();
       expect(can()).toBe(true);
     });
 
     it('not for an edited prefab over a clean scene, which leaving saves', async () => {
       await openCrate();
-      renameEntity(crateRoot, 'Edited');
+      renameEntity(registries, crateRoot, 'Edited');
       expect(can()).toBe(false);
     });
   });
 
   it('puts the document back the way its file has it, clean and with no history', async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     const added = addEntity(named('Barrel'));
     editor().setSelection([wall, added]);
     stops.push(watchUnsaved());
@@ -840,9 +843,9 @@ describe('Revert Scene', () => {
   });
 
   it('asks first, in words that say what stays', async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
 
-    const done = revertCurrentScene();
+    const done = revertCurrentScene(registries);
     await vi.waitFor(() => expect(useDialogStore.getState().confirm).not.toBeNull());
     const asked = useDialogStore.getState().confirm!;
     useDialogStore.getState().cancel();
@@ -854,11 +857,11 @@ describe('Revert Scene', () => {
 
   describe('cancelled, leaves everything as it was', () => {
     it('in Prefab Mode', async () => {
-      renameEntity(wall, 'Edited wall');
+      renameEntity(registries, wall, 'Edited wall');
       await openCrate();
       log.length = 0;
 
-      const done = revertCurrentScene();
+      const done = revertCurrentScene(registries);
       await cancel();
       await done;
 
@@ -868,10 +871,10 @@ describe('Revert Scene', () => {
     });
 
     it('during Play', async () => {
-      renameEntity(wall, 'Edited wall');
+      renameEntity(registries, wall, 'Edited wall');
       editor().play();
 
-      const done = revertCurrentScene();
+      const done = revertCurrentScene(registries);
       await cancel();
       await done;
 
@@ -882,9 +885,9 @@ describe('Revert Scene', () => {
   });
 
   it('reads the file, then leaves Prefab Mode, saving the prefab, then loads', async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     await openCrate();
-    renameEntity(crateRoot, 'Edited');
+    renameEntity(registries, crateRoot, 'Edited');
     log.length = 0;
 
     await revert();
@@ -900,7 +903,7 @@ describe('Revert Scene', () => {
   });
 
   it('stops the game before it loads, so Stop cannot put the edits back', async () => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     restoreAtStop();
     editor().play();
     log.length = 0;
@@ -929,11 +932,16 @@ describe('Revert Scene', () => {
     ['a file that does not read', () => '{', undefined],
     [
       'a file holding another scene',
-      () => serializeScene({ ...deserializeScene(file as string), id: fixedId('scene', 'z'), name: 'Intruder' }),
+      () =>
+        serializeScene({
+          ...deserializeScene(registries, file as string),
+          id: fixedId('scene', 'z'),
+          name: 'Intruder',
+        }),
       'another scene',
     ],
   ])('refuses %s, and nothing moves', async (_, contents, said) => {
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
     await openCrate();
     const before = doc().scene;
     file = contents();
@@ -951,10 +959,10 @@ describe('Revert Scene', () => {
   });
 
   it('loads the file as it is now, changed outside the editor', async () => {
-    const outside = deserializeScene(file as string);
+    const outside = deserializeScene(registries, file as string);
     assertDefined(outside.entities.get(wall), 'the wall').name = 'Changed outside';
     file = serializeScene(outside);
-    renameEntity(wall, 'Edited wall');
+    renameEntity(registries, wall, 'Edited wall');
 
     await revert();
 

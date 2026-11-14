@@ -10,6 +10,7 @@ import {
   safeFileName,
   sceneName,
   serializeScene,
+  type CoreRegistries,
   type ProjectContents,
   type ProjectFile,
   type SceneChange,
@@ -197,6 +198,7 @@ function repointStartScene(
  * refused or fails leaves no empty scene behind in every window's menu.
  */
 export async function createScene(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   contents?: string,
@@ -205,7 +207,7 @@ export async function createScene(
   // no file behind. Read as Duplicate reads its source: migrated, and with a
   // component type this build does not know filed away untouched, so the round
   // trip loses nothing.
-  const from = contents === undefined ? undefined : deserializeScene(contents);
+  const from = contents === undefined ? undefined : deserializeScene(registries, contents);
   const project = await readProject(projectPath);
   const scenes = await discoverScenes(projectPath);
 
@@ -234,6 +236,7 @@ export async function createScene(
  * which `createScene` gives a fresh id for the same reason.
  */
 export async function duplicateScene(
+  registries: CoreRegistries,
   projectPath: string,
   sceneId: SceneId,
   name: string,
@@ -247,7 +250,7 @@ export async function duplicateScene(
   const path = scenePathIn(posix.dirname(source.path), copyName);
   await requireFree(projectPath, path);
 
-  const document = deserializeScene(await readFile(resolveInside(projectPath, source.path), 'utf8'));
+  const document = deserializeScene(registries, await readFile(resolveInside(projectPath, source.path), 'utf8'));
   const scene: SceneEntry = { id: createSceneId(), name: copyName, path, shadowedBy: null };
   await writeSceneFile(
     projectPath,

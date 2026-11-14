@@ -1,3 +1,4 @@
+import type { RuntimeRegistries } from '@three-studio/runtime';
 import { commandById, currentContext } from '../commands/registry';
 import { useEditorStore } from '../state/editorStore';
 import { showPanel } from './dockApi';
@@ -41,7 +42,7 @@ export interface WatchedDock {
  * Once per dock: a Reset Layout disposes the dock and its emitters with it, and
  * the new dock is watched by a call of its own.
  */
-export function watchViewportClose(dock: WatchedDock): () => void {
+export function watchViewportClose(registries: RuntimeRegistries, dock: WatchedDock): () => void {
   const isOpen = () => dock.getPanel(VIEWPORT) !== undefined;
   let openBefore = false;
 
@@ -58,7 +59,7 @@ export function watchViewportClose(dock: WatchedDock): () => void {
 
     // Its tab's close button or Window ▸ Viewport: closed.
     if (event.kind === 'remove') {
-      commandById('stop').run(currentContext());
+      commandById('stop').run(currentContext(registries));
       return;
     }
 

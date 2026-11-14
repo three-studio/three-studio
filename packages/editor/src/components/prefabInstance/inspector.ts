@@ -35,14 +35,17 @@ export const inspector: ComponentSchema = {
     {
       kind: 'action',
       title: 'Create Variant…',
-      run: ({ entityId }) => commandById('createPrefabVariant').run(contextFor([entityId])),
+      run: ({ registries, entityId }) =>
+        commandById('createPrefabVariant').run(contextFor(registries, [entityId])),
     },
     {
       kind: 'action',
       title: 'Show in Project',
-      run: ({ entityId }) => {
+      run: ({ registries, entityId }) => {
         const info = instanceInfo(entityId);
-        if (info && info.assetId !== '') commandById('revealAsset').run(contextForAsset(info.assetId));
+        if (info && info.assetId !== '') {
+          commandById('revealAsset').run(contextForAsset(registries, info.assetId));
+        }
       },
     },
     {
@@ -50,19 +53,22 @@ export const inspector: ComponentSchema = {
       // Reads the count, so pressing Apply is an informed decision rather
       // than a hope.
       title: 'Select All Instances',
-      run: ({ entityId }) => commandById('selectPrefabInstances').run(contextFor([entityId])),
+      run: ({ registries, entityId }) =>
+        commandById('selectPrefabInstances').run(contextFor(registries, [entityId])),
     },
     {
       kind: 'action',
       title: 'Apply Overrides',
       // The other half of the prefab loop: an instance is where an edit is
       // convenient to make, and this is what sends it to every other copy.
-      run: ({ entityId }) => commandById('applyPrefabOverrides').run(contextFor([entityId])),
+      run: ({ registries, entityId }) =>
+        commandById('applyPrefabOverrides').run(contextFor(registries, [entityId])),
     },
     {
       kind: 'action',
       title: 'Revert Overrides',
-      run: ({ entityId }) => commandById('revertPrefabOverrides').run(contextFor([entityId])),
+      run: ({ registries, entityId }) =>
+        commandById('revertPrefabOverrides').run(contextFor(registries, [entityId])),
     },
     {
       kind: 'action',
@@ -70,7 +76,7 @@ export const inspector: ComponentSchema = {
       // Unity's "Unpack Prefab": the contents become ordinary entities and
       // stop following the asset. One-way, which is why it is a button and
       // not a checkbox.
-      run: ({ entityId }) => commandById('unpackPrefab').run(contextFor([entityId])),
+      run: ({ registries, entityId }) => commandById('unpackPrefab').run(contextFor(registries, [entityId])),
     },
   ],
 };

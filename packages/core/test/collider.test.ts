@@ -2,7 +2,6 @@ import {
   GEOMETRY_LABELS,
   colliderGeometry,
   createColliderShape,
-  createComponentForEntity,
   createMeshEntity,
   createModelEntity,
   createPhysicsMaterial,
@@ -20,6 +19,10 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { createColliderFor } from '../src/components/collider/defaults';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * How far a collider hangs below the entity's origin.
@@ -319,7 +322,7 @@ describe('createColliderFor', () => {
   const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(GEOMETRY_LABELS, kind);
   const guessed = (kind: GeometryKind): ColliderShape => {
     const template = createMeshEntity(kind);
-    return createComponentForEntity('collider', template.components).shape;
+    return createColliderFor(template.components).shape;
   };
 
   it('guesses each primitive’s collider as it is drawn', () => {
@@ -352,7 +355,7 @@ describe('createColliderFor', () => {
     const mesh = template.components[0]!;
     if (mesh.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
     mesh.geometry = { ...mesh.geometry, radiusTop, radiusBottom };
-    return createComponentForEntity('collider', template.components).shape;
+    return createColliderFor(template.components).shape;
   };
 
   it('guesses a cylinder whose top radius is 0 as a cone, apex up', () => {
@@ -374,7 +377,7 @@ describe('createColliderFor', () => {
 
   it('gives a model a mesh collider built from its triangles', () => {
     const model = createModelEntity(fixedId('asset', 'asset-1'), 'Tree');
-    expect(createComponentForEntity('collider', model.components).shape).toEqual({
+    expect(createColliderFor(model.components).shape).toEqual({
       kind: 'mesh',
       build: 'triangles',
     });
@@ -385,7 +388,7 @@ describe('a collider’s physics material', () => {
   const ICE = fixedId('asset', 'ice');
   const stored = (fields: object) => {
     const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
-    return fillComponent(component) as ColliderComponent;
+    return fillComponent(registries, component) as ColliderComponent;
   };
 
   it('a stored collider keeps the physics material it names, and reads anything else as none', () => {

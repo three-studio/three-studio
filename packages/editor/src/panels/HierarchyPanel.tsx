@@ -1,12 +1,12 @@
 import {
   COMPONENT_TYPES,
-  componentDefinition,
   findBrokenReferences,
   findMissingEntities,
   hasComponent,
   splitInstancedId,
   type ComponentIcon,
   type ComponentType,
+  type CoreRegistries,
   type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
@@ -53,6 +53,7 @@ import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
+import { useRegistries } from '../registriesContext';
 import { STOP_TO_EDIT, isSceneLocked, refuseWhileLocked, useSceneLocked } from '../state/sceneLock';
 import { ContextMenu, type MenuEntry } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
@@ -128,16 +129,17 @@ const RANKED_TYPES = COMPONENT_TYPES.filter((type) => ICON_PRIORITY[type] !== FA
   (a, b) => ICON_PRIORITY[a] - ICON_PRIORITY[b],
 );
 
-function entityIcon(scene: SceneDoc, entityId: EntityId): LucideIcon {
+function entityIcon(registries: CoreRegistries, scene: SceneDoc, entityId: EntityId): LucideIcon {
   for (const type of RANKED_TYPES) {
     if (!hasComponent(scene, entityId, type)) continue;
-    const icon = componentDefinition(type)?.icon;
+    const icon = registries.components.get(type)?.icon;
     if (icon) return COMPONENT_ICONS[icon];
   }
   return Box;
 }
 
 export function HierarchyPanel() {
+  const registries = useRegistries();
   /*
    * Structure, not the scene.
    *
@@ -158,7 +160,7 @@ export function HierarchyPanel() {
   const setSelection = useEditorStore((s) => s.setSelection);
   // One value for the whole render, memoised on `(ids, scene)`: `has()` is asked
   // once per row, and rebuilding a Set per row is the cost this removes.
-  const expanded = expandedScene().scene;
+  const expanded = expandedScene(registries).scene;
   const selected = Selection.of(selection, expanded);
 
   const [collapsed, setCollapsed] = useState<ReadonlySet<EntityId>>(new Set());
@@ -181,8 +183,8 @@ export function HierarchyPanel() {
   const locked = useSceneLocked();
 
   const rows = useMemo(
-    () => buildRows(expandedScene(), collapsed, filter),
-    [structureRevision, prefabs, collapsed, filter],
+    () => buildRows(expandedScene(registries), collapsed, filter),
+    [registries, structureRevision, prefabs, collapsed, filter],
   );
 
   /*
@@ -199,9 +201,9 @@ export function HierarchyPanel() {
    * Body again clears its mark at once.
    */
   const brokenBy = useMemo(() => {
-    const { scene } = expandedScene();
+    const { scene } = expandedScene(registries);
     const assets = new Map<EntityId, string[]>();
-    for (const { entityId, assetId } of findBrokenReferences(scene, knownAssetIds())) {
+    for (const { entityId, assetId } of findBrokenReferences(registries, scene, knownAssetIds())) {
       // The environment is not a row. It is reported at load and shown in the
       // Inspector; there is nothing here to mark.
       if (entityId === null) continue;
@@ -212,11 +214,11 @@ export function HierarchyPanel() {
     const byEntity = new Map<EntityId, string[]>();
     const say = (entityId: EntityId, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
     for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
-    for (const { entityId, type } of findMissingEntities(scene)) {
+    for (const { entityId, type } of findMissingEntities(registries, scene)) {
       say(entityId, `Its ${COMPONENT_PANES[type].label} names an entity this scene does not have`);
     }
     return byEntity;
-  }, [structureRevision, componentRevision, prefabs, assetRevision]);
+  }, [registries, structureRevision, componentRevision, prefabs, assetRevision]);
 
   /* Only the rows that fit are rendered; the arithmetic is `rowWindow`. */
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -273,7 +275,7 @@ export function HierarchyPanel() {
   };
 
   const menuItems = (entityId: EntityId): MenuEntry[] => {
-    const targets = selected.has(entityId) ? selected : Selection.of([entityId], expandedScene().scene);
+    const targets = selected.has(entityId) ? selected : Selection.of([entityId], expandedScene(registries).scene);
     const many = targets.isMultiple;
     const instance = splitInstancedId(entityId);
     // Read when the menu opens, not subscribed to: the panel no longer re-renders
@@ -287,7 +289,7 @@ export function HierarchyPanel() {
     // Built against `targets`, which is the clicked row when it is not in the
     // selection — the reason a command's context can be supplied rather than
     // only read. Labels, verdicts and bodies all come from the registry.
-    const ctx = { selection: targets };
+    const ctx = { selection: targets, registries };
     const entry = (id: CommandId): MenuEntry => commandEntry(id, ctx);
 
     // A produced entity belongs to a prefab, not to the scene. Renaming it is an
@@ -306,7 +308,7 @@ export function HierarchyPanel() {
           label: 'Show Prefab in Project',
           disabled: owner === null || owner.missing,
           onSelect: () => {
-            if (owner && owner.assetId !== '') commandById('revealAsset').run(contextForAsset(owner.assetId));
+            if (owner && owner.assetId !== '') commandById('revealAsset').run(contextForAsset(registries, owner.assetId));
           },
         },
       ];
@@ -330,7 +332,7 @@ export function HierarchyPanel() {
               disabled: many || prefabInfo === null || prefabInfo.missing,
               onSelect: () => {
                 if (prefabInfo && prefabInfo.assetId !== '') {
-                  commandById('revealAsset').run(contextForAsset(prefabInfo.assetId));
+                  commandById('revealAsset').run(contextForAsset(registries, prefabInfo.assetId));
                 }
               },
             },
@@ -382,7 +384,7 @@ export function HierarchyPanel() {
     // what dragging one of several highlighted rows plainly means. Read as ids:
     // the payload is text, and an empty piece of it names no entity.
     const ids = draggedEntityIds(dragged);
-    reparentSelection(Selection.of(ids, expandedScene().scene), targetId, index);
+    reparentSelection(Selection.of(ids, expandedScene(registries).scene), targetId, index);
   };
 
   return (
@@ -421,7 +423,7 @@ export function HierarchyPanel() {
         {above > 0 && <div style={{ height: above }} />}
 
         {visibleRows.map(({ entity, depth, hasChildren, instance }) => {
-          const Icon = entityIcon(expanded, entity.id);
+          const Icon = entityIcon(registries, expanded, entity.id);
           const isSelected = selected.has(entity.id);
           // Reparenting an entity a prefab produced would have to move it in the
           // asset, which is not what dropping it here means. And nothing is
@@ -476,7 +478,7 @@ export function HierarchyPanel() {
               onClick={(event) => onRowClick(event, entity.id)}
               // Through the command, like the menu entry: the double-click used
               // to walk straight past `can('rename')`.
-              onDoubleClick={() => commandById('rename').run(contextFor([entity.id]))}
+              onDoubleClick={() => commandById('rename').run(contextFor(registries, [entity.id]))}
               onContextMenu={(event) => openMenu(event, entity.id)}
               // The height is the windowing's, not a class of its own: `h-6`
               // beside a `ROW_HEIGHT` of 24 was one number in two languages,
@@ -516,7 +518,7 @@ export function HierarchyPanel() {
                   ref={(element) => element?.focus({ preventScroll: true })}
                   defaultValue={entity.name}
                   onBlur={(event) => {
-                    renameEntity(entity.id, event.target.value);
+                    renameEntity(registries, entity.id, event.target.value);
                     endRename();
                   }}
                   onKeyDown={(event) => {
@@ -550,7 +552,7 @@ export function HierarchyPanel() {
                   // Through the command, like the delete button below it. The
                   // row's own entity, not the selection: this eye belongs to
                   // this line.
-                  commandById('toggleVisibility').run(contextFor([entity.id]));
+                  commandById('toggleVisibility').run(contextFor(registries, [entity.id]));
                 }}
                 className={`shrink-0 ${entity.visible ? 'opacity-0 group-hover:opacity-60' : 'opacity-60'} enabled:hover:opacity-100`}
               >
@@ -571,6 +573,7 @@ export function HierarchyPanel() {
                   // padlock has to stop the row button too.
                   commandById('delete').run(
                     contextFor(
+                      registries,
                       selected.has(entity.id) ? [...selected.ids] : [entity.id],
                     ),
                   );

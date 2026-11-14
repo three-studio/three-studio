@@ -1,8 +1,8 @@
 import {
   assertDefined,
-  createComponent,
   createEntity,
   createMeshEntity,
+  createModel,
   findBrokenReferences,
   findComponent,
   fixedId,
@@ -10,6 +10,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A reference to an asset that is gone is an **ordinary state**, not a fault.
@@ -32,17 +35,17 @@ const KNOWN: ReadonlySet<AssetId> = new Set([MODEL, TEXTURE]);
 
 describe('what a scene names and the project does not have', () => {
   it('names the entity and the id, so both ends of the break are reachable', () => {
-    const tree = createEntity('Tree', [{ ...createComponent('model'), assetId: GONE }]);
+    const tree = createEntity('Tree', [{ ...createModel(), assetId: GONE }]);
 
-    expect(findBrokenReferences(sceneWith([tree]), KNOWN)).toEqual([
+    expect(findBrokenReferences(registries, sceneWith([tree]), KNOWN)).toEqual([
       { entityId: tree.entity.id, assetId: GONE },
     ]);
   });
 
   it('says nothing about an id the project holds', () => {
-    const tree = createEntity('Tree', [{ ...createComponent('model'), assetId: MODEL }]);
+    const tree = createEntity('Tree', [{ ...createModel(), assetId: MODEL }]);
 
-    expect(findBrokenReferences(sceneWith([tree]), KNOWN)).toEqual([]);
+    expect(findBrokenReferences(registries, sceneWith([tree]), KNOWN)).toEqual([]);
   });
 
   it('leaves an empty slot alone, which is a field nobody filled', () => {
@@ -55,7 +58,7 @@ describe('what a scene names and the project does not have', () => {
     // Written past the type, as a file does.
     Reflect.set(mesh.material, 'normalMap', '');
 
-    expect(findBrokenReferences(scene, KNOWN)).toEqual([]);
+    expect(findBrokenReferences(registries, scene, KNOWN)).toEqual([]);
   });
 
   it('reads texture slots inside a mesh material, not only whole-asset ids', () => {
@@ -65,7 +68,7 @@ describe('what a scene names and the project does not have', () => {
     mesh.material.colorMap = TEXTURE;
     mesh.material.aoMap = BURNT;
 
-    expect(findBrokenReferences(scene, KNOWN)).toEqual([
+    expect(findBrokenReferences(registries, scene, KNOWN)).toEqual([
       { entityId: box.entity.id, assetId: BURNT },
     ]);
   });
@@ -79,7 +82,7 @@ describe('what a scene names and the project does not have', () => {
     mesh.material.colorMap = BURNT;
     mesh.material.aoMap = BURNT;
 
-    expect(findBrokenReferences(scene, KNOWN)).toHaveLength(1);
+    expect(findBrokenReferences(registries, scene, KNOWN)).toHaveLength(1);
   });
 
   it('finds the environment, which is not an entity and carries no component', () => {
@@ -88,22 +91,22 @@ describe('what a scene names and the project does not have', () => {
     const scene = sceneWith([createMeshEntity('box')]);
     scene.environment = { ...scene.environment, backgroundTexture: SKY_GONE };
 
-    expect(findBrokenReferences(scene, KNOWN)).toEqual([
+    expect(findBrokenReferences(registries, scene, KNOWN)).toEqual([
       { entityId: null, assetId: SKY_GONE },
     ]);
   });
 
   it('reports every entity separately when several name the same missing asset', () => {
-    const one = createEntity('A', [{ ...createComponent('model'), assetId: GONE }]);
-    const two = createEntity('B', [{ ...createComponent('model'), assetId: GONE }]);
+    const one = createEntity('A', [{ ...createModel(), assetId: GONE }]);
+    const two = createEntity('B', [{ ...createModel(), assetId: GONE }]);
 
-    const broken = findBrokenReferences(sceneWith([one, two]), KNOWN);
+    const broken = findBrokenReferences(registries, sceneWith([one, two]), KNOWN);
     expect(broken.map((entry) => entry.entityId).sort()).toEqual(
       [one.entity.id, two.entity.id].sort(),
     );
   });
 
   it('finds nothing in a scene that names nothing', () => {
-    expect(findBrokenReferences(sceneWith([createEntity('Empty')]), new Set())).toEqual([]);
+    expect(findBrokenReferences(registries, sceneWith([createEntity('Empty')]), new Set())).toEqual([]);
   });
 });

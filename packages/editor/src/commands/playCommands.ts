@@ -81,6 +81,6 @@ export const PLAY_COMMANDS = {
     label: () => 'Keep Tuned Physics',
     writesScene: true,
     can: () => hasTuning(),
-    run: () => keepTuning(),
+    run: (ctx) => keepTuning(ctx.registries),
   }),
 };

@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { commandById, currentContext, type CommandId, type EditorContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { bindingOf, commandForBinding, isFunctionKey } from './shortcutBindings';
 import { hasModifier, isTypingTarget } from '../platform';
 import { useEditorStore, type TransformMode } from '../state/editorStore';
@@ -106,6 +107,7 @@ function runBound(id: CommandId, event: KeyboardEvent, ctx: EditorContext): void
  * listener of the bubble phase leaves it alone.
  */
 export function useShortcuts(): void {
+  const registries = useRegistries();
   useEffect(() => {
     function onKeyDownBeforeTheGame(event: KeyboardEvent) {
       if (!landedInGame(event)) return;
@@ -119,7 +121,7 @@ export function useShortcuts(): void {
       // tooltips' among them; only the page below never sees it.
       event.preventDefault();
       event.stopPropagation();
-      runBound(action, event, currentContext());
+      runBound(action, event, currentContext(registries));
     }
 
     function onKeyDown(event: KeyboardEvent) {
@@ -153,7 +155,7 @@ export function useShortcuts(): void {
 
       if (action !== null) {
         const command = commandById(action);
-        const ctx = currentContext();
+        const ctx = currentContext(registries);
         // A modifier binding is the editor's whether or not the command will
         // act — Cmd+S must not open the browser's save dialog on a clean
         // document. A bare one is only swallowed when something will happen: a
@@ -212,5 +214,5 @@ export function useShortcuts(): void {
       window.removeEventListener('keydown', onKeyDownBeforeTheGame, true);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [registries]);
 }

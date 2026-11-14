@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { deserializeScene, isRecord, serializeScene, type EntityId, type SceneDoc } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeLargeProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import {
   decodeNumberList,
   decodeNumbers,
@@ -101,10 +102,13 @@ export function nodeTimings(
 ): { decodeMs: number; encodeMs: number; entities: number } {
   const decodes: number[] = [];
   const encodes: number[] = [];
+  // Made before the clock starts: a root makes them once, and the decoders are
+  // what is timed.
+  const registries = builtInRegistries();
   let scene: SceneDoc | null = null;
   for (let n = 0; n < warmups + repetitions; n += 1) {
     const started = performance.now();
-    scene = deserializeScene(text);
+    scene = deserializeScene(registries, text);
     if (n >= warmups) decodes.push(performance.now() - started);
   }
   if (scene === null) throw new Error('no repetition ran');
@@ -269,7 +273,7 @@ async function prepare(context: ScenarioContext, folder: string): Promise<Subjec
   const project = await writeLargeProject(folder);
   const opened = await openProject(project);
   const scenePath = join(project, opened.scenePath);
-  const scene = deserializeScene(await readFile(scenePath, 'utf8'));
+  const scene = deserializeScene(builtInRegistries(), await readFile(scenePath, 'utf8'));
   const groups = groupsToSelect(scene, 100);
   const [first] = groups;
   const dragged = first === undefined ? undefined : scene.entities.get(first)?.children[0];

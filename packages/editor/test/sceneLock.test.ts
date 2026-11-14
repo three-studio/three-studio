@@ -27,6 +27,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { STOP_TO_EDIT, isSceneLocked, sceneLocked } from '../src/state/sceneLock';
 import { useToastStore } from '../src/state/toastStore';
 import { useTuningStore } from '../src/state/tuning';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * From the press of Play until Stop, nothing edits the scene document.
@@ -340,25 +343,25 @@ describe('the toast that says it', () => {
 
 /** Each command that writes the scene, in a context of the fixture where it acts. */
 const WRITERS: Readonly<Record<string, () => EditorContext>> = {
-  undo: () => currentContext(),
-  redo: () => currentContext(),
-  duplicate: () => contextFor([first]),
-  delete: () => contextFor([first]),
-  toggleVisibility: () => contextFor([first]),
-  group: () => contextFor([first]),
-  rename: () => contextFor([first]),
-  createPrefab: () => contextFor([first]),
-  applyPrefabOverrides: () => contextFor([crate]),
-  revertPrefabOverrides: () => contextFor([crate]),
-  unpackPrefab: () => contextFor([crate]),
-  revertEntityOverride: () => contextFor([produced]),
-  unpackModel: () => contextFor([chair]),
+  undo: () => currentContext(registries),
+  redo: () => currentContext(registries),
+  duplicate: () => contextFor(registries, [first]),
+  delete: () => contextFor(registries, [first]),
+  toggleVisibility: () => contextFor(registries, [first]),
+  group: () => contextFor(registries, [first]),
+  rename: () => contextFor(registries, [first]),
+  createPrefab: () => contextFor(registries, [first]),
+  applyPrefabOverrides: () => contextFor(registries, [crate]),
+  revertPrefabOverrides: () => contextFor(registries, [crate]),
+  unpackPrefab: () => contextFor(registries, [crate]),
+  revertEntityOverride: () => contextFor(registries, [produced]),
+  unpackModel: () => contextFor(registries, [chair]),
   // With something tuned during Play to keep.
   keepTuning: () => {
     useTuningStore.setState({
       values: [{ entityId: first, componentId: fixedId('component', 'any'), path: ['castShadow'], value: false }],
     });
-    return currentContext();
+    return currentContext(registries);
   },
 };
 
@@ -445,7 +448,7 @@ describe('the commands that write the scene', () => {
 
   it('say nothing during Play when they would not act anyway', () => {
     play();
-    const nothing = contextFor([]);
+    const nothing = contextFor(registries, []);
     const remove = commandById('delete');
 
     expect(remove.can(nothing)).toBe(false);
@@ -475,7 +478,7 @@ describe('the commands that write the scene', () => {
   });
 
   it('leave every other command as it was, Save offered', () => {
-    const context = () => contextFor([first]);
+    const context = () => contextFor(registries, [first]);
     const stopped = OTHERS.map((id) => commandById(id).can(context()));
 
     play();
@@ -490,12 +493,12 @@ describe('the commands that write the scene', () => {
       'togglePause',
     ]);
     // The document during Play is the one Play started from, and it is unsaved.
-    expect(commandById('save').can(currentContext())).toBe(true);
+    expect(commandById('save').can(currentContext(registries))).toBe(true);
   });
 
   it('drop out of the palette during Play, which keeps Save and Stop, and offers Pause', () => {
     useEditorStore.getState().setSelection([first]);
-    const palette = () => commandIds().filter((id) => commandById(id).can(currentContext()));
+    const palette = () => commandIds().filter((id) => commandById(id).can(currentContext(registries)));
     expect(palette()).toEqual(expect.arrayContaining(['undo', 'redo', 'duplicate', 'delete', 'save']));
     expect(palette()).not.toContain('togglePause');
 

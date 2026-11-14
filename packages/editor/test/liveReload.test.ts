@@ -40,6 +40,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { launchSnapshot } from '../src/viewport/PlaySession';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Live reload: every device relaunched a second after the last change, from
@@ -365,7 +368,7 @@ let cube = fixedId('entity', 'cube');
 
 /** The entry scene a relaunch sent, read back from its text. */
 const sentScene = (index: number) =>
-  deserializeScene(assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson);
+  deserializeScene(registries, assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson);
 
 /** Every relaunch's callbacks, run. */
 async function settle(): Promise<void> {
@@ -558,7 +561,7 @@ describe('watching the window', () => {
 
     expect(sent).toHaveLength(1);
     expect(sentScene(0)).toEqual(scene);
-    const prefab = deserializePrefab(assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'));
+    const prefab = deserializePrefab(registries, assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'));
     expect(prefab.entities.get(inside)).toBeDefined();
   });
 

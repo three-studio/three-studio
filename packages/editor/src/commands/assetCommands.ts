@@ -5,6 +5,7 @@ import {
   totalUses,
   type AssetEntry,
   type AssetId,
+  type CoreRegistries,
 } from '@three-studio/core';
 import { defineCommand } from './command';
 import { ipcErrorMessage } from './ipcError';
@@ -24,9 +25,10 @@ import { notify } from '../state/toastStore';
  *
  * Not exported, for the reason `revealAsset` is not: one door.
  */
-async function deleteAsset(asset: AssetEntry): Promise<void> {
+async function deleteAsset(registries: CoreRegistries, asset: AssetEntry): Promise<void> {
   const store = useAssetStore.getState();
   const usage = findAssetUsage(
+    registries,
     asset.id,
     useDocumentStore.getState().scene,
     store.materials,
@@ -297,7 +299,7 @@ export const ASSET_COMMANDS = {
     can: (ctx) => target(ctx.assetId) !== undefined,
     run: async (ctx) => {
       const asset = target(ctx.assetId);
-      if (asset) await deleteAsset(asset);
+      if (asset) await deleteAsset(ctx.registries, asset);
     },
   }),
 };

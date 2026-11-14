@@ -1,19 +1,21 @@
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COMPONENT_TYPES, assertDefined } from '@three-studio/core';
+import { COMPONENT_TYPES, activateCore, createCoreRegistries } from '@three-studio/core';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 
 /*
  * A component type is folders — one per package that has a part of it — and
- * the lists that have to name them: core's imports and `COMPONENT_TYPES`, the
+ * the lists that have to name them: core's activation and `COMPONENT_TYPES`, the
  * runtime's activation. This checks the lists against the folders.
  *
- * **What it catches that nothing else does.** Core's `index.ts` throws at load
- * when a type in `COMPONENT_TYPES` was never registered, and `tsc` refuses an
- * icon outside `ComponentIcon` or a factory missing from the package's front
- * door. All of those start from a declaration and look for the code.
+ * **What it catches that nothing else does.** `tsc` refuses an icon outside
+ * `ComponentIcon` or a factory missing from the package's front door, and a type
+ * registered twice throws. All of those start from a declaration and look for
+ * the code. Nothing at all throws for a definition no activation lists: nothing
+ * registers by being imported any more, so this test is where a forgotten line
+ * fails — in CI, before anything ships.
  *
  * This goes the other way: it starts from the **folders on disk** and looks for
  * the declarations. A folder nobody listed throws nothing and fails nothing — the
@@ -37,19 +39,40 @@ function typeFolders(pkg: string): string[] {
     .sort();
 }
 
-/** The `import './<type>';` lines of a registering index, in order. */
-function registeringImports(pkg: string): string[] {
-  const source = readFileSync(join(repoRoot, 'packages', pkg, 'src/components/index.ts'), 'utf8');
-  return [...source.matchAll(/^import '\.\/([A-Za-z]+)';$/gm)]
-    .map((match) => assertDefined(match[1], 'the folder of a registering import'))
-    .sort();
-}
-
 describe('core knows about every component folder it has', () => {
-  it('imports each one, which is how it registers', () => {
-    // Registration *is* the import — there is no table to fill in — so a folder
-    // missing from this list is a type that silently does not exist.
-    expect(registeringImports('core')).toEqual(typeFolders('core'));
+  it('activates a definition for each one', () => {
+    // A folder whose definition the activation leaves out throws nothing: the
+    // type silently does not exist, and a scene holding one keeps it as a type
+    // of no module, exactly as found.
+    const registries = createCoreRegistries();
+    activateCore(registries);
+    const activated = registries.components.values().map(({ id }) => id);
+
+    expect([...activated].sort()).toEqual(typeFolders('core'));
+  });
+
+  it('activates them in the order the Add Component menu offers them', () => {
+    // The menu lists what is addable in registration order, which used to be
+    // the order of the registering imports: moving a line reordered the menu.
+    const registries = createCoreRegistries();
+    activateCore(registries);
+
+    expect(registries.components.values().map(({ id }) => id)).toEqual([
+      'mesh',
+      'model',
+      'light',
+      'camera',
+      'rigidbody',
+      'collider',
+      'joint',
+      'audioSource',
+      'audioListener',
+      'script',
+      'prefabInstance',
+      'playerController',
+      'water',
+      'particleEmitter',
+    ]);
   });
 
   it('names each one in `COMPONENT_TYPES`', () => {
@@ -57,6 +80,13 @@ describe('core knows about every component folder it has', () => {
     // list inside it, but nothing makes it *complete*: a type can be in the
     // union, have a folder, and be absent here.
     expect([...COMPONENT_TYPES].sort()).toEqual(typeFolders('core'));
+  });
+
+  it('leaves its registries empty once the activation is disposed', () => {
+    const registries = createCoreRegistries();
+    activateCore(registries).dispose();
+
+    expect(registries.components.values()).toEqual([]);
   });
 });
 

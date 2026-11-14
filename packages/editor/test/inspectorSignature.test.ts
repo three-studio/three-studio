@@ -4,6 +4,9 @@ import {
   SUN_FROM_SKY,
   createComponent,
   createEnvironment,
+  createLight,
+  createModel,
+  createWater,
   fixedId,
   type ComponentDoc,
   type LightComponent,
@@ -14,6 +17,9 @@ import { describe, expect, it } from 'vitest';
 import { paneEntriesFor } from '../src/components/panes';
 import { SCENE_SCHEMA, sceneSignature } from '../src/inspector/schema';
 import { shapeOf } from '../src/inspector/signature';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What decides whether the Inspector is rebuilt or merely refreshed.
@@ -33,11 +39,11 @@ function shape(component: ComponentDoc): string {
 }
 
 function light(kind: LightKind, castShadow = false): LightComponent {
-  return { ...createComponent('light'), kind, castShadow };
+  return { ...createLight('point'), kind, castShadow };
 }
 
 function water(sunSource: WaterComponent['sunSource']): WaterComponent {
-  return { ...createComponent('water'), sunSource };
+  return { ...createWater(), sunSource };
 }
 
 describe('every component type is measured, not defaulted', () => {
@@ -46,8 +52,8 @@ describe('every component type is measured, not defaulted', () => {
     // had a shape that could never change. Every type now answers with as many
     // bits as it has rows, which is the shape being read rather than guessed.
     for (const type of COMPONENT_TYPES) {
-      const { entries } = paneEntriesFor(createComponent(type));
-      expect(shapeOf(entries, createComponent(type))).toHaveLength(entries.length);
+      const { entries } = paneEntriesFor(createComponent(registries, type));
+      expect(shapeOf(entries, createComponent(registries, type))).toHaveLength(entries.length);
     }
   });
 
@@ -55,7 +61,7 @@ describe('every component type is measured, not defaulted', () => {
     // A mesh's, a collider's and a joint's geometry slot and a script's
     // declared properties change the list itself, which no arrangement of bits
     // can express. Everything else does.
-    const keys = COMPONENT_TYPES.map((type) => paneEntriesFor(createComponent(type)).key);
+    const keys = COMPONENT_TYPES.map((type) => paneEntriesFor(createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
       'collider:box',
       'joint:hinge',
@@ -114,8 +120,8 @@ describe('a model', () => {
      * moved no row and still threw the pane away and rebuilt it. Now it
      * refreshes, which is what keeps focus and drag state.
      */
-    const linked: ComponentDoc = { ...createComponent('model'), materialId: fixedId('asset', 'mat-1') };
-    expect(shape(linked)).toBe(shape(createComponent('model')));
+    const linked: ComponentDoc = { ...createModel(), materialId: fixedId('asset', 'mat-1') };
+    expect(shape(linked)).toBe(shape(createModel()));
   });
 });
 

@@ -1,9 +1,10 @@
 import {
-  createComponent,
+  createCamera,
   createEntity,
   createLightEntity,
   createMaterial,
   createMeshEntity,
+  createModel,
   createRenderingSettings,
   fixedId,
   type AssetId,
@@ -175,7 +176,7 @@ describe('a material asset shared by several meshes', () => {
  */
 describe('a model that arrives late', () => {
   it('is thrown away when its entity went while it was loading', async () => {
-    const entity = createEntity('Crate', [{ ...createComponent('model'), assetId: fixedId('asset', 'crate') }]);
+    const entity = createEntity('Crate', [{ ...createModel(), assetId: fixedId('asset', 'crate') }]);
     const model = new Group();
 
     let land = (): void => {};
@@ -241,7 +242,7 @@ describe('editing a light', () => {
   });
 
   it('does not try to dispose a camera, which has no dispose', () => {
-    const entity = createEntity('Camera', [createComponent('camera')]);
+    const entity = createEntity('Camera', [createCamera()]);
     const binder = binderWith();
     binder.sync(sceneWith([entity]));
 

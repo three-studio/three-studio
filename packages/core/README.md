@@ -15,7 +15,18 @@ npm install @three-studio/core
 ## Use
 
 ```ts
-import { createStarterScene, serializeScene, deserializeScene } from '@three-studio/core';
+import {
+  activateCore,
+  createCoreRegistries,
+  createStarterScene,
+  deserializeScene,
+  serializeScene,
+} from '@three-studio/core';
+
+// The component types a document is read through, made and filled once by the
+// app: nothing registers by being imported.
+const registries = createCoreRegistries();
+activateCore(registries);
 
 const scene = createStarterScene();
 const json = serializeScene(scene);
@@ -23,7 +34,7 @@ const json = serializeScene(scene);
 // Takes the text, not a parsed object: reading is where the versioned migrations
 // run, so a document written by an older build loads without losing the fields
 // this build does not know about.
-const restored = deserializeScene(json);
+const restored = deserializeScene(registries, json);
 ```
 
 ## What's in it

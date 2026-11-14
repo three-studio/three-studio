@@ -1,8 +1,9 @@
 import {
   assertDefined,
   collectSceneAssets,
-  createComponent,
   createEmptyScene,
+  createModel,
+  createScript,
   deserializeScene,
   emptyComponentTables,
   fixedId,
@@ -21,6 +22,9 @@ import {
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { prefabWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What a loading bar counts. The document is a few kilobytes of JSON and the
@@ -64,13 +68,14 @@ function sceneWith(templates: EntityTemplate[]): SceneDoc {
 describe('what a scene needs before it can be shown', () => {
   it('collects models, textures and a linked material’s own maps', () => {
     const mesh = createMeshEntity('box');
-    const model = createEntity('Tree', [{ ...createComponent('model'), assetId: MODEL }]);
+    const model = createEntity('Tree', [{ ...createModel(), assetId: MODEL }]);
     const scene = sceneWith([mesh, model]);
     const component = assertDefined(findComponent(scene, mesh.entity.id, 'mesh'), 'the box mesh');
     component.material.colorMap = TEX_INLINE;
     component.materialId = MAT;
 
     const ids = collectSceneAssets(
+      registries,
       scene,
       new Map([[MAT, { ...createMaterial(), normalMap: TEX_SHARED }]]),
       new Map(),
@@ -82,7 +87,7 @@ describe('what a scene needs before it can be shown', () => {
   });
 
   it('follows a prefab into its contents, and through a nested one', () => {
-    const inner = createEntity('Lamp', [{ ...createComponent('model'), assetId: MODEL_LAMP }]);
+    const inner = createEntity('Lamp', [{ ...createModel(), assetId: MODEL_LAMP }]);
     const lamp = prefabWith('Lamp', [inner], inner.entity.id);
 
     const roomRoot = createEntity('Room', [
@@ -95,6 +100,7 @@ describe('what a scene needs before it can be shown', () => {
     ]);
 
     const ids = collectSceneAssets(
+      registries,
       sceneWith([host]),
       new Map(),
       new Map([
@@ -114,7 +120,7 @@ describe('what a scene needs before it can be shown', () => {
     scene.environment.backgroundTexture = TEX_SKY;
     scene.environment.environmentTexture = TEX_IBL;
 
-    const ids = collectSceneAssets(scene, new Map(), new Map());
+    const ids = collectSceneAssets(registries, scene, new Map(), new Map());
 
     // The walk this used to be went over the component tables only, and the
     // environment is a property of the scene. So the heaviest file in the
@@ -134,7 +140,7 @@ describe('what a scene needs before it can be shown', () => {
     scene.environment.backgroundMode = 'color';
     scene.environment.backgroundTexture = TEX_SKY;
 
-    expect(collectSceneAssets(scene, new Map(), new Map())).toContain(TEX_SKY);
+    expect(collectSceneAssets(registries, scene, new Map(), new Map())).toContain(TEX_SKY);
   });
 
   it('terminates on a prefab that contains itself', () => {
@@ -144,7 +150,7 @@ describe('what a scene needs before it can be shown', () => {
     const loop = prefabWith('Loop', [root], root.entity.id);
 
     expect(() =>
-      collectSceneAssets(sceneWith([root]), new Map(), new Map([[PREFAB_LOOP, loop]])),
+      collectSceneAssets(registries, sceneWith([root]), new Map(), new Map([[PREFAB_LOOP, loop]])),
     ).not.toThrow();
   });
 });
@@ -157,7 +163,7 @@ describe('what a script was handed in the inspector', () => {
   const scripted = (props: Record<string, string | number>) =>
     sceneWith([
       createEntity('Door', [
-        { ...createComponent('script'), assetId: SCRIPT_DOOR, props },
+        { ...createScript(), assetId: SCRIPT_DOOR, props },
       ]),
     ]);
 
@@ -165,10 +171,10 @@ describe('what a script was handed in the inspector', () => {
     const scene = scripted({ texture: 'tex-door', greeting: 'Hello', speed: 3 });
     const known: ReadonlySet<AssetId> = new Set([SCRIPT_DOOR, TEX_DOOR]);
 
-    expect(collectSceneAssets(scene, new Map(), new Map(), known).sort()).toEqual([SCRIPT_DOOR, TEX_DOOR]);
+    expect(collectSceneAssets(registries, scene, new Map(), new Map(), known).sort()).toEqual([SCRIPT_DOOR, TEX_DOOR]);
     // Without the project's ids nothing tells the two strings apart, so only
     // the slots that say they hold an asset are read — as a loading bar asks.
-    expect(collectSceneAssets(scene, new Map(), new Map())).toEqual([SCRIPT_DOOR]);
+    expect(collectSceneAssets(registries, scene, new Map(), new Map())).toEqual([SCRIPT_DOOR]);
   });
 
   it('follows a material a script was handed to the maps it uses', () => {
@@ -176,7 +182,7 @@ describe('what a script was handed in the inspector', () => {
     const known: ReadonlySet<AssetId> = new Set([SCRIPT_DOOR, MAT_DOOR, TEX_WOOD]);
     const materials = new Map([[MAT_DOOR, { ...createMaterial(), colorMap: TEX_WOOD }]]);
 
-    expect(collectSceneAssets(scene, materials, new Map(), known).sort()).toEqual([
+    expect(collectSceneAssets(registries, scene, materials, new Map(), known).sort()).toEqual([
       MAT_DOOR,
       SCRIPT_DOOR,
       TEX_WOOD,
@@ -195,7 +201,7 @@ describe('component types this editor does not know', () => {
       [lamp]: { c1: { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' } },
     };
 
-    expect(unknownComponentTypes(deserializeScene(JSON.stringify(file)))).toEqual(['plugin.flicker']);
+    expect(unknownComponentTypes(deserializeScene(registries, JSON.stringify(file)))).toEqual(['plugin.flicker']);
     expect(unknownComponentTypes(sceneWith([]))).toEqual([]);
   });
 });

@@ -3,13 +3,15 @@ import {
   PROJECT_FORMAT_VERSION,
   assertDefined,
   createBuildProfiles,
-  createComponent,
+  createCollider,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
+  createRigidBody,
+  createScript,
   defaultSettings,
   deserializeScene,
   fixedId,
@@ -39,6 +41,8 @@ import { useViewportStore } from '../src/state/viewportStore';
 import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What pressing Play does, and what Stop undoes — above all when the game never
@@ -345,7 +349,7 @@ const GO_TO_BOSS = fixedId('asset', 'script-go-to-boss');
 
 /** A body nothing can touch: its own problem, which the first scene does not have. */
 function bossScene() {
-  const scene = sceneWith([createEntity('Crate', [createComponent('rigidbody')])]);
+  const scene = sceneWith([createEntity('Crate', [createRigidBody()])]);
   scene.name = 'Boss';
   return scene;
 }
@@ -401,7 +405,7 @@ function withBoss(): string[] {
 /** The document becomes one entity whose script moves to Boss from its first frame. */
 function directedToBoss(): void {
   registerScript(GO_TO_BOSS, GoToBoss);
-  const director: ScriptComponent = { ...createComponent('script'), assetId: GO_TO_BOSS };
+  const director: ScriptComponent = { ...createScript(), assetId: GO_TO_BOSS };
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
 
@@ -447,7 +451,7 @@ describe('the problems over the game', () => {
     const ICE = fixedId('asset', 'ice');
     const cube = createMeshEntity('box');
     cube.entity.name = 'Cube';
-    cube.components.push({ ...createComponent('collider'), materialId: ICE });
+    cube.components.push({ ...createCollider(), materialId: ICE });
     useDocumentStore.getState().replaceScene(sceneWith([cube]));
     useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
     watching();
@@ -754,9 +758,9 @@ describe('the scene the game plays', () => {
 
   /** The scene as a file opens it — read, so never produced by immer and not frozen — and a copy of it. */
   function opened(): SceneDoc {
-    const script: ScriptComponent = { ...createComponent('script'), assetId: MOVER, props: { offset: [1, 2, 3] } };
+    const script: ScriptComponent = { ...createScript(), assetId: MOVER, props: { offset: [1, 2, 3] } };
     const scene = sceneWith([createEntity('Mover', [script])]);
-    doc().replaceScene(deserializeScene(serializeScene(scene)));
+    doc().replaceScene(deserializeScene(registries, serializeScene(scene)));
     return structuredClone(doc().scene);
   }
 
@@ -853,13 +857,13 @@ describe('an edit tried during Play, then Stop', () => {
     watching();
 
     play();
-    commandById('delete').run(currentContext());
-    commandById('duplicate').run(currentContext());
-    commandById('undo').run(currentContext());
+    commandById('delete').run(currentContext(registries));
+    commandById('duplicate').run(currentContext(registries));
+    commandById('undo').run(currentContext(registries));
     doc().mutate('Probe', (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').name = 'Probed'));
-    addEntityInView(createMeshEntity('box'));
-    placeDroppedAsset(PREFAB_ID, [0, 0, 0]);
-    reparentSelection(Selection.of([b.entity.id], expandedScene().scene), a.entity.id);
+    addEntityInView(registries, createMeshEntity('box'));
+    placeDroppedAsset(registries, PREFAB_ID, [0, 0, 0]);
+    reparentSelection(Selection.of([b.entity.id], expandedScene(registries).scene), a.entity.id);
     expect(toasts().map((toast) => toast.title)).toEqual(['Stop the game to edit the scene']);
 
     stop();
@@ -913,7 +917,7 @@ describe('Save during Play', () => {
     watching();
 
     play();
-    commandById('save').run(currentContext());
+    commandById('save').run(currentContext(registries));
     await until(() => written.length === 1 && !useProjectStore.getState().saving, 'the save');
 
     expect(written).toEqual([serializeScene(scene)]);

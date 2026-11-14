@@ -3,7 +3,7 @@ import { createCamera } from './defaults';
 
 /** A camera the game can look through. */
 export const cameraComponent = defineComponent({
-  type: 'camera',
+  id: 'camera',
   create: () => createCamera(),
   assets: () => [],
   entities: () => [],

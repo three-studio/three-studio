@@ -5,6 +5,7 @@ import {
   deserializeScene,
   formatLogArgs,
   resolveScene,
+  type CoreRegistries,
   type LaunchSnapshot,
   type RenderingSettings,
   type SceneDoc,
@@ -126,6 +127,7 @@ export function launchSnapshot(): LaunchSnapshot {
  * Every other scene is read from its file, as it always was.
  */
 export function playSceneSource(
+  registries: CoreRegistries,
   entry: LaunchSnapshot['entry'],
   readFile: (path: string) => Promise<string>,
 ): SceneSource {
@@ -134,7 +136,7 @@ export function playSceneSource(
       if (namesEntry(entry, idOrName)) return structuredClone(entry.scene);
       const scene = resolveScene(useProjectStore.getState().scenes, idOrName);
       if (!scene) throw new Error(`No scene "${idOrName}" in this project.`);
-      return deserializeScene(await readFile(scene.path));
+      return deserializeScene(registries, await readFile(scene.path));
     },
   };
 }
@@ -317,7 +319,9 @@ export class PlaySession {
       // be testable without exporting a build first. The scene it starts on is
       // the document being edited, not `startScene`: pressing Play means "run
       // what is on screen".
-      const source = playSceneSource(inputs.entry, (path) => window.studio.project.readScene(path));
+      const source = playSceneSource(this.host.registries, inputs.entry, (path) =>
+        window.studio.project.readScene(path),
+      );
       const host = new SceneHost({
         source,
         registries: this.host.registries,
@@ -434,7 +438,7 @@ export class PlaySession {
     useViewportStore.getState().setRunningScene(sceneId);
     // The Inspector tunes the window's scene: another scene's engine is handed
     // nothing, and the window's, restarted or come back to, all of it.
-    tuningEngine(sceneId !== null && sceneId === running?.entry.id ? engine : null);
+    tuningEngine(this.host.registries, sceneId !== null && sceneId === running?.entry.id ? engine : null);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
     engine.onWarning = (warnings) => {
@@ -470,9 +474,9 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine = null;
     running = null;
-    tuningEngine(null);
+    tuningEngine(this.host.registries, null);
     // What the Play tuned, offered back now that the document can take it.
-    offerTuning();
+    offerTuning(this.host.registries);
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);

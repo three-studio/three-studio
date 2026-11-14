@@ -1,4 +1,4 @@
-import { findBrokenReferences, type AssetId } from '@three-studio/core';
+import { findBrokenReferences, type AssetId, type CoreRegistries } from '@three-studio/core';
 import { useAssetStore } from './assetStore';
 import { expandedScene } from './expansion';
 
@@ -29,9 +29,9 @@ const SHOWN = 5;
  * Called after the manifest has landed, never before: `refresh()` is what fills
  * it, and asking first would report every asset in the project as missing.
  */
-export function reportBrokenReferences(): void {
-  const scene = expandedScene().scene;
-  const broken = findBrokenReferences(scene, knownAssetIds());
+export function reportBrokenReferences(registries: CoreRegistries): void {
+  const scene = expandedScene(registries).scene;
+  const broken = findBrokenReferences(registries, scene, knownAssetIds());
   if (broken.length === 0) return;
 
   const named = broken

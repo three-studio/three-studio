@@ -2,8 +2,8 @@ import {
   assertDefined,
   componentsOf,
   createAudioSourceEntity,
+  createCollider,
   createColliderShape,
-  createComponent,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -11,6 +11,8 @@ import {
   createPrefabInstance,
   createJoint,
   createRenderingSettings,
+  createRigidBody,
+  createScript,
   findComponent,
   fixedId,
   instancedId,
@@ -46,8 +48,10 @@ import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
 import { builtInRegistries } from './registries';
 
+const registries = builtInRegistries();
+
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
 
 const doc = () => useDocumentStore.getState();
 const scene = () => useDocumentStore.getState().scene;
@@ -85,11 +89,11 @@ describe('what the document refuses to take', () => {
     const component = template.components[0] as AudioSourceComponent;
     const entityId = addEntity(template);
 
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], 0);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], 0);
     expect(read(entityId, component.id).spatialBlend).toBe(0);
 
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], Number.NaN);
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], Number.POSITIVE_INFINITY);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], Number.NaN);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], Number.POSITIVE_INFINITY);
 
     expect(read(entityId, component.id).spatialBlend).toBe(0);
   });
@@ -102,7 +106,7 @@ describe('what the document refuses to take', () => {
     const entityId = addEntity(template);
 
     for (const value of [0, -1200, 0.001, 1]) {
-      setComponentNestedField(entityId, component.id, ['detune'], value);
+      setComponentNestedField(registries, entityId, component.id, ['detune'], value);
       expect(read(entityId, component.id).detune).toBe(value);
     }
   });
@@ -189,7 +193,7 @@ describe('document store', () => {
     const historyAfterAdd = doc().past.length;
 
     for (let step = 1; step <= 20; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
     }
 
     expect(doc().past.length).toBe(historyAfterAdd + 1);
@@ -205,8 +209,8 @@ describe('document store', () => {
     addEntity(cube);
     const base = doc().past.length;
 
-    setTransform(cube.entity.id, { position: [1, 0, 0] }, { coalesceKey: 'drag:a' });
-    setTransform(cube.entity.id, { position: [2, 0, 0] }, { coalesceKey: 'drag:b' });
+    setTransform(registries, cube.entity.id, { position: [1, 0, 0] }, { coalesceKey: 'drag:a' });
+    setTransform(registries, cube.entity.id, { position: [2, 0, 0] }, { coalesceKey: 'drag:b' });
 
     expect(doc().past.length).toBe(base + 2);
   });
@@ -216,7 +220,7 @@ describe('document store', () => {
     addEntity(cube);
     const seen = doc().changesSince(0).revision;
 
-    renameEntity(cube.entity.id, 'Renamed');
+    renameEntity(registries, cube.entity.id, 'Renamed');
     expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([cube.entity.id]);
   });
 
@@ -376,7 +380,7 @@ describe('what a transaction carries', () => {
     const produced = instancedId(host.entity.id, fixedId('entity', 'root'));
     useEditorStore.getState().setSelection([produced]);
 
-    renameEntity(host.entity.id, 'Renamed');
+    renameEntity(registries, host.entity.id, 'Renamed');
 
     // An expanded id is not in `scene.entities` and pruning against the document
     // alone would clear every selection made inside a prefab.
@@ -389,7 +393,7 @@ describe('what a transaction carries', () => {
     useEditorStore.getState().setSelection([cube.entity.id]);
 
     for (let step = 1; step <= 5; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
     }
 
     doc().undo();
@@ -478,7 +482,7 @@ describe('bounding a coalesced entry', () => {
     addEntity(cube);
 
     for (let step = 1; step <= 100; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: 'drag' });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: 'drag' });
     }
 
     const entry = doc().past.at(-1);
@@ -543,11 +547,11 @@ describe('asking what changed since', () => {
     const first = doc().changesSince(0).revision;
     const second = first;
 
-    renameEntity(b.entity.id, 'First change');
+    renameEntity(registries, b.entity.id, 'First change');
     const forFirst = doc().changesSince(first);
     expect([...(forFirst.entities as ReadonlySet<EntityId>)]).toEqual([b.entity.id]);
 
-    renameEntity(a.entity.id, 'Second change');
+    renameEntity(registries, a.entity.id, 'Second change');
 
     // The consumer that never read is still owed both, and the other one's read
     // took nothing away from it. Under the old drained buffer it would have been
@@ -622,7 +626,7 @@ describe('asking what changed since', () => {
 
     // More than the ring holds. Merging that many deltas costs more than one
     // full reconcile, so the useful answer is "re-read".
-    for (let step = 0; step < 300; step++) renameEntity(cube.entity.id, `Name ${step}`);
+    for (let step = 0; step < 300; step++) renameEntity(registries, cube.entity.id, `Name ${step}`);
 
     expect(doc().changesSince(stale).entities).toBe('*');
   });
@@ -678,7 +682,7 @@ describe('asking what changed since', () => {
   it('carries an undo like any other change', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
-    renameEntity(cube.entity.id, 'Renamed');
+    renameEntity(registries, cube.entity.id, 'Renamed');
     const seen = doc().changesSince(0).revision;
     const marker = doc().revision;
 
@@ -721,7 +725,7 @@ describe('revision counters', () => {
     const componentId = meshComponentId(cube.entity.id);
     const before = revisions();
 
-    setComponentNestedField(cube.entity.id, componentId, ['material', 'roughness'], 0.3);
+    setComponentNestedField(registries, cube.entity.id, componentId, ['material', 'roughness'], 0.3);
 
     // The hierarchy lists nothing that moved — a roughness is not a row, not an
     // icon and not a name.
@@ -734,7 +738,7 @@ describe('revision counters', () => {
     addEntity(cube);
     const before = revisions();
 
-    addComponentWithDependencies(cube.entity.id, 'light');
+    addComponentWithDependencies(registries, cube.entity.id, 'light');
 
     // Both, and the hierarchy half is earned: `iconFor` picks the row's icon
     // from which components the entity carries.
@@ -759,7 +763,7 @@ describe('revision counters', () => {
     addEntity(cube);
     const before = revisions();
 
-    setTransform(cube.entity.id, { position: [1, 2, 3] });
+    setTransform(registries, cube.entity.id, { position: [1, 2, 3] });
 
     // The one edit that changes nothing anyone lists, which is what makes a
     // gizmo drag free for both panels.
@@ -770,7 +774,7 @@ describe('revision counters', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
     const componentId = meshComponentId(cube.entity.id);
-    setComponentNestedField(cube.entity.id, componentId, ['material', 'roughness'], 0.3);
+    setComponentNestedField(registries, cube.entity.id, componentId, ['material', 'roughness'], 0.3);
     const before = revisions();
 
     doc().undo();
@@ -786,7 +790,7 @@ describe('components that cannot sit together', () => {
     const model = createModelEntity(fixedId('asset', 'chair'), 'Chair');
     addEntity(model);
 
-    addComponentWithDependencies(model.entity.id, 'mesh');
+    addComponentWithDependencies(registries, model.entity.id, 'mesh');
 
     // Both draw, both hang from the same container, and both get drawn — so
     // "Add Component ▸ Mesh" on an import used to put a grey 1×1×1 box through
@@ -799,7 +803,7 @@ describe('components that cannot sit together', () => {
     addEntity(cube);
 
     // The table is read both ways round, so neither order has to be written out.
-    addComponentWithDependencies(cube.entity.id, 'model');
+    addComponentWithDependencies(registries, cube.entity.id, 'model');
 
     expect(componentsOf(scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
   });
@@ -820,7 +824,7 @@ describe('the companions a player controller brings', () => {
     const empty = createEntity('Player');
     addEntity(empty);
 
-    addComponentWithDependencies(empty.entity.id, 'playerController');
+    addComponentWithDependencies(registries, empty.entity.id, 'playerController');
 
     const collider = findComponent(scene(), empty.entity.id, 'collider');
     // 1.70 m standing, so the origin sits 0.85 m up and the 1.6 m default eye
@@ -841,7 +845,7 @@ describe('the companions a player controller brings', () => {
     const ball = createMeshEntity('sphere');
     addEntity(ball);
 
-    addComponentWithDependencies(ball.entity.id, 'playerController');
+    addComponentWithDependencies(registries, ball.entity.id, 'playerController');
 
     expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({
       shape: { kind: 'sphere' },
@@ -854,7 +858,7 @@ describe('the companions a player controller brings', () => {
     const empty = createEntity('Player');
     addEntity(empty);
 
-    addComponentWithDependencies(empty.entity.id, 'playerController');
+    addComponentWithDependencies(registries, empty.entity.id, 'playerController');
 
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
@@ -878,14 +882,14 @@ describe('the companions a rigid body brings', () => {
 
   const withCollider = () => {
     const wheel = createMeshEntity('sphere');
-    wheel.components.push(createComponent('collider'));
+    wheel.components.push(createCollider());
     return wheel;
   };
 
   it('brings no Collider to an entity whose children carry them', () => {
     const cart = cartOver(withCollider(), withCollider());
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
@@ -893,17 +897,17 @@ describe('the companions a rigid body brings', () => {
   it('still brings one to an entity with nothing to collide with', () => {
     const cart = cartOver(createMeshEntity('sphere'));
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
 
   it('counts no child that has a body of its own', () => {
     const trailer = withCollider();
-    trailer.components.push(createComponent('rigidbody'));
+    trailer.components.push(createRigidBody());
     const cart = cartOver(trailer);
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
@@ -916,7 +920,7 @@ describe('the companions a rigid body brings', () => {
     });
     const cart = cartOver(createEntity('Crate', [createPrefabInstance(CRATE)]));
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
@@ -931,7 +935,7 @@ describe('the companions a joint brings', () => {
   it('brings a Rigid Body to a Cube, and that body its Collider', () => {
     const cube = addEntity(createMeshEntity('box'));
 
-    addComponentWithDependencies(cube, 'joint');
+    addComponentWithDependencies(registries, cube, 'joint');
 
     expect(componentsOf(scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
     expect(findComponent(scene(), cube, 'rigidbody')?.bodyType).toBe('dynamic');
@@ -939,18 +943,18 @@ describe('the companions a joint brings', () => {
 
   it('brings none to a child of a body', () => {
     const door = createMeshEntity('box');
-    door.components.push(createComponent('rigidbody'), createComponent('collider'));
+    door.components.push(createRigidBody(), createCollider());
     const hinge = addEntity(createEntity('Hinge'), addEntity(door));
 
-    addComponentWithDependencies(hinge, 'joint');
+    addComponentWithDependencies(registries, hinge, 'joint');
 
     expect(componentsOf(scene(), hinge).map((c) => c.type)).toEqual(['joint']);
   });
 
   it('brings none to an entity that has a Rigid Body', () => {
-    const cart = addEntity(createEntity('Cart', [createComponent('rigidbody')]));
+    const cart = addEntity(createEntity('Cart', [createRigidBody()]));
 
-    addComponentWithDependencies(cart, 'joint');
+    addComponentWithDependencies(registries, cart, 'joint');
 
     expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
   });
@@ -966,9 +970,9 @@ describe('references to the entities copied with them', () => {
 
   /** A Frame, and a Door jointed to it. */
   function doorway(): { frame: EntityId; door: EntityId } {
-    const frame = addEntity(createEntity('Frame', [createComponent('collider')]));
+    const frame = addEntity(createEntity('Frame', [createCollider()]));
     const door = addEntity(
-      createEntity('Door', [createComponent('rigidbody'), { ...createJoint(), connectedEntity: frame }]),
+      createEntity('Door', [createRigidBody(), { ...createJoint(), connectedEntity: frame }]),
     );
     return { frame, door };
   }
@@ -1001,7 +1005,7 @@ describe('references to the entities copied with them', () => {
     const turret = addEntity(createEntity('Turret'));
     const AIM = fixedId('asset', 'aim');
     const brain = addEntity(
-      createEntity('Brain', [{ ...createComponent('script'), assetId: AIM, props: { target: turret } }]),
+      createEntity('Brain', [{ ...createScript(), assetId: AIM, props: { target: turret } }]),
       turret,
     );
 
@@ -1015,9 +1019,9 @@ describe('references to the entities copied with them', () => {
   });
 
   it('unpacking a prefab keeps its joint on the entity it named', () => {
-    const frame = createEntity('Frame', [createComponent('collider')]);
+    const frame = createEntity('Frame', [createCollider()]);
     const door = createEntity('Door', [
-      createComponent('rigidbody'),
+      createRigidBody(),
       { ...createJoint(), connectedEntity: frame.entity.id },
     ]);
     frame.entity.children = [door.entity.id];
@@ -1030,7 +1034,7 @@ describe('references to the entities copied with them', () => {
     });
     const host = addEntity(createEntity('Doorway', [createPrefabInstance(DOORWAY)]));
 
-    unpackPrefabInstance(host);
+    unpackPrefabInstance(registries, host);
 
     const unpackedFrame = copyOf('Frame');
     expect(unpackedFrame).toBeDefined();
@@ -1075,7 +1079,7 @@ describe('fitting a collider to its mesh', () => {
       resolver: NULL_ASSET_RESOLVER,
       rendering: createRenderingSettings(),
     });
-    binder.sync(expandedScene().scene);
+    binder.sync(expandedScene(registries).scene);
     return binder;
   }
 
@@ -1086,7 +1090,7 @@ describe('fitting a collider to its mesh', () => {
     if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
     mesh.geometry = { ...mesh.geometry, radius: 1 };
     const collider: ColliderComponent = {
-      ...createComponent('collider'),
+      ...createCollider(),
       shape: createColliderShape('sphere'),
       isSensor: true,
     };
@@ -1109,7 +1113,7 @@ describe('fitting a collider to its mesh', () => {
     const { template, colliderId } = grownSphere();
     const entityId = addEntity(template);
 
-    fitColliderToMesh(entityId, colliderId, drawnBinder());
+    fitColliderToMesh(registries, entityId, colliderId, drawnBinder());
 
     const fitted = colliderOf(entityId, colliderId);
     if (fitted.shape.kind !== 'sphere') throw new Error('not a sphere');
@@ -1130,18 +1134,18 @@ describe('fitting a collider to its mesh', () => {
     const entityId = addEntity(template);
     addEntity(above, entityId);
 
-    fitColliderToMesh(entityId, colliderId, drawnBinder());
+    fitColliderToMesh(registries, entityId, colliderId, drawnBinder());
 
     const fitted = colliderOf(entityId, colliderId);
     expect(fitted.shape.kind === 'sphere' && Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
   });
 
   it('says so, and writes nothing, when the entity draws no mesh of its own', () => {
-    const collider = createComponent('collider');
+    const collider = createCollider();
     const entityId = addEntity(createEntity('Shelf', [collider]));
     const { revision } = doc();
 
-    fitColliderToMesh(entityId, collider.id, drawnBinder());
+    fitColliderToMesh(registries, entityId, collider.id, drawnBinder());
 
     expect(doc().revision).toBe(revision);
     const warnings = useToastStore.getState().toasts.filter((toast) => toast.kind === 'warning');

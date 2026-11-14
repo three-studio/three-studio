@@ -171,7 +171,7 @@ export class EditorViewport {
      * leave a prefab instance's produced ids unknown to the very next edit.
      */
     const projection = createEditorProjection({
-      scene: expandedScene().scene,
+      scene: expandedScene(registries).scene,
       systems: registries.systems,
       resolver: editorAssetResolver,
       rendering,
@@ -204,7 +204,7 @@ export class EditorViewport {
     this.picker = new Picker(
       this.binder,
       (entityId) => {
-        const scene = expandedScene().scene;
+        const scene = expandedScene(registries).scene;
         return (
           !scene.entities.has(entityId) ||
           capabilitiesOf(scene, entityId).has('translate')
@@ -214,7 +214,7 @@ export class EditorViewport {
       // their marker. Tested before the scene — see `Picker.pickOverlay`.
       this.overlay.markers,
     );
-    this.gizmo = new GizmoController(this.camera, this.view.editView.canvas);
+    this.gizmo = new GizmoController(registries, this.camera, this.view.editView.canvas);
     // Into the group the projection reserved for it, because `TransformControls`
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
@@ -680,7 +680,7 @@ export class EditorViewport {
      * for everyone, which `can('translate')` decides inside the controller from
      * the same rule that greys the menu entry.
      */
-    const current = Selection.of(selection, expandedScene().scene);
+    const current = Selection.of(selection, expandedScene(this.registries).scene);
     // `isNavigating` only covers the fly gesture; `navigating` covers pan and
     // orbit too, and it is what keeps the handles away for the whole press.
     // Never reached during Play: this runs only while the edit view is the one
@@ -694,7 +694,7 @@ export class EditorViewport {
     // camera's aspect was built from, and the two differ for a frame after a
     // dock resize.
     this.overlay.update(
-      expandedScene().scene,
+      expandedScene(this.registries).scene,
       current.ids,
       this.camera,
       this.view.editView.height,
@@ -767,7 +767,7 @@ export class EditorViewport {
     // Expanding here is what keeps them from each needing to know what a prefab
     // is; the shared expansion hands back the same entity objects for anything
     // untouched, so nothing gets rebuilt.
-    const expanded = expandedScene();
+    const expanded = expandedScene(this.registries);
     const scene = expanded.scene;
 
     /*

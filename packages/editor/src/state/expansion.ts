@@ -1,6 +1,7 @@
 import {
   expandPrefabs,
   type AssetId,
+  type CoreRegistries,
   type EntityId,
   type ExpandedScene,
   type PrefabDoc,
@@ -19,23 +20,29 @@ import { useDocumentStore } from './documentStore';
  * second expansion handing back fresh copies would have thrown away every
  * geometry in the scene on each keystroke.
  *
- * Memoised on its two inputs, below, and the comparison is written out there
+ * Memoised on its inputs, below, and the comparison is written out there
  * rather than handed to a `derived()` primitive. That primitive had exactly one
  * caller — this one — and its whole argument was that memoisation by hand
- * cannot say *what it is memoised on*. Two named identity checks say it better
- * than a pair of callbacks does.
+ * cannot say *what it is memoised on*. Three named identity checks say it
+ * better than a set of callbacks does.
  */
 let expanded: ExpandedScene | undefined;
-let from: { scene: SceneDoc; prefabs: ReadonlyMap<AssetId, PrefabDoc> } | null = null;
+let from: {
+  scene: SceneDoc;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
+  registries: CoreRegistries;
+} | null = null;
 
 /**
- * The expansion, recomputed only when one of its two inputs moved.
+ * The expansion, recomputed only when one of its inputs moved.
  *
  * **Identity is the signal**, and immer is what makes it exact: anything a
  * mutation did not touch keeps its reference, so `scene === from.scene` is a
  * true "the document did not change" rather than a guess. Ten lines of
  * comparison rather than a signals library, which is the "more patterns" this codebase
- * refuses.
+ * refuses. The registries are the window's one object, so comparing them costs
+ * nothing and never misses: a test that hands in other registries gets an
+ * expansion made with them.
  *
  * The previous result is handed back to `expandPrefabs` so an instance nothing
  * touched gives back the entities and components it produced last time. That is
@@ -55,21 +62,21 @@ let from: { scene: SceneDoc; prefabs: ReadonlyMap<AssetId, PrefabDoc> } | null =
  * on every mutation. Narrower is not a mirror gone wrong; it is a filter this
  * cannot express.
  */
-export function expandedScene(): ExpandedScene {
+export function expandedScene(registries: CoreRegistries): ExpandedScene {
   const scene = useDocumentStore.getState().scene;
   const prefabs = useAssetStore.getState().prefabs;
 
-  if (from !== null && from.scene === scene && from.prefabs === prefabs) {
+  if (from !== null && from.scene === scene && from.prefabs === prefabs && from.registries === registries) {
     return expanded as ExpandedScene;
   }
-  from = { scene, prefabs };
-  expanded = expandPrefabs(scene, prefabs, expanded);
+  from = { scene, prefabs, registries };
+  expanded = expandPrefabs(registries, scene, prefabs, expanded);
   return expanded;
 }
 
 /** The entity as it is drawn — an instance's contents included. */
-export function expandedEntity(id: EntityId) {
-  return expandedScene().scene.entities.get(id);
+export function expandedEntity(registries: CoreRegistries, id: EntityId) {
+  return expandedScene(registries).scene.entities.get(id);
 }
 
 /**

@@ -6,12 +6,12 @@ import {
   CACHE_DIR,
   createBoxGeometry,
   createCameraEntity,
-  createComponent,
   createEmptyScene,
   createEntity,
   createLightEntity,
   createMeshComponent,
   createModelEntity,
+  createScript,
   createWaterEntity,
   insertEntity,
   serializeScene,
@@ -29,6 +29,7 @@ import { scanAssets, updateAssetSettings } from '../../../apps/desktop/src/main/
 import { writeGlb } from '../../../apps/desktop/src/main/glb';
 import { createProject, saveScene } from '../../../apps/desktop/src/main/project';
 import { createScene, deleteScene, setStartScene } from '../../../apps/desktop/src/main/scenes';
+import { builtInRegistries } from '../registries';
 import { GEOMETRY, TEXTURES, geometryGlb, texturesGlb, type GeometryRecipe, type TexturesRecipe } from './glb';
 import { encodePng } from './png';
 
@@ -521,7 +522,7 @@ export function ballastPaths(recipe: ScriptedRecipe = SCRIPTED): string[] {
 }
 
 function scriptOn(assetId: AssetId): ComponentDoc {
-  return { ...createComponent('script'), assetId };
+  return { ...createScript(), assetId };
 }
 
 /** Writes the `scripted` recipe's project into `parent`, and answers its path. */
@@ -562,12 +563,13 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   cube.geometry = { ...createBoxGeometry(), width: 4, height: 4, depth: 4 };
   place(loading, createEntity('Cube', [cube, scriptOn(script(`${scriptsDir}/Spinner.ts`))]));
 
-  const start = (await createScene(project.path, 'A', serializeScene(a))).scene.id;
-  await createScene(project.path, 'B', serializeScene(directed()));
-  await createScene(project.path, 'Loading', serializeScene(loading));
+  const registries = builtInRegistries();
+  const start = (await createScene(registries, project.path, 'A', serializeScene(a))).scene.id;
+  await createScene(registries, project.path, 'B', serializeScene(directed()));
+  await createScene(registries, project.path, 'Loading', serializeScene(loading));
   const heavy = renderScene(recipe.heavy);
   place(heavy, createModelEntity(assetAt(manifest, heavyModel).id, 'Images'));
-  await createScene(project.path, 'Heavy', serializeScene(heavy));
+  await createScene(registries, project.path, 'Heavy', serializeScene(heavy));
   // `A` starts the game, and the scene `createProject` made is not one of the four.
   await setStartScene(project.path, start);
   await deleteScene(project.path, project.sceneId);

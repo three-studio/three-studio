@@ -21,28 +21,32 @@ import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
+import { useRegistries } from '../registriesContext';
 import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock';
 import { useScriptStore } from '../state/scriptStore';
 import { useTuningStore } from '../state/tuning';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
 
-/**
- * What the Inspector's asset slots cannot reach for themselves.
- *
- * The panel is where they come from because it is the outermost thing that owns
- * an Inspector: a Tweakpane control reaching into the import store closed an
- * import cycle, and one reaching into the dock decided which panel is in front
- * — neither is a field table's business. Module-level rather than rebuilt per
- * render: nothing here depends on props, and a new object each render would
- * rebuild the pane.
- */
-const ASSET_FIELD_ACTIONS: AssetFieldActions = {
-  importAssets: async () => (await browseAndImport())?.imported ?? [],
-  reveal: (assetId: AssetId) => commandById('revealAsset').run(contextForAsset(assetId)),
-};
-
 export function InspectorPanel() {
+  const registries = useRegistries();
+  /*
+   * What the Inspector's asset slots cannot reach for themselves.
+   *
+   * The panel is where they come from because it is the outermost thing that owns
+   * an Inspector: a Tweakpane control reaching into the import store closed an
+   * import cycle, and one reaching into the dock decided which panel is in front
+   * — neither is a field table's business. Kept for as long as the registries
+   * rather than rebuilt per render: those are the window's and do not change, and
+   * a new object each render would rebuild the pane.
+   */
+  const actions = useMemo<AssetFieldActions>(
+    () => ({
+      importAssets: async () => (await browseAndImport())?.imported ?? [],
+      reveal: (assetId: AssetId) => commandById('revealAsset').run(contextForAsset(registries, assetId)),
+    }),
+    [registries],
+  );
   const selection = useEditorStore((s) => s.selection);
   // The environment alone, not the document: immer keeps the identity of what a
   // mutation did not touch, so moving an entity does not re-key the scene pane.
@@ -58,7 +62,7 @@ export function InspectorPanel() {
   const sceneName = useProjectStore(selectSceneName);
   // Named rather than recomputed: `isSingle` is one of the three cases nobody
   // had a word for, and the panel is where the missing word was most obvious.
-  const selected = Selection.of(selection, expandedScene().scene);
+  const selected = Selection.of(selection, expandedScene(registries).scene);
   const entityId = selected.isSingle ? selected.primary ?? undefined : undefined;
   /*
    * The selected entity, not the whole scene.
@@ -91,7 +95,7 @@ export function InspectorPanel() {
   // and have to be inspectable, and editing a prefab changes what fields exist
   // without touching the document.
   const prefabs = useAssetStore((s) => s.prefabs);
-  const entity = entityId === undefined ? undefined : expandedScene().scene.entities.get(entityId);
+  const entity = entityId === undefined ? undefined : expandedScene(registries).scene.entities.get(entityId);
   const instance = entityId === undefined ? null : splitInstancedId(entityId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -154,7 +158,7 @@ export function InspectorPanel() {
       return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
     }
     if (entityId !== undefined) {
-      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
+      return `${inspectorSignature(registries, entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
     }
 
     /*
@@ -164,13 +168,14 @@ export function InspectorPanel() {
      * when any one of them gains or loses one — and the ids are in it too, since
      * selecting a different set of the same shapes is a different pane.
      */
-    const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
+    const shapes = selection.map((id) => `${id}:${inspectorSignature(registries, id)}`).join('|');
     return `${shapes}#${assetRevision}#${scriptRevision}#${layers}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
     // what a drag wants anyway — reaches the pane.
   }, [
+    registries,
     selection,
     entityId,
     environment,
@@ -191,13 +196,14 @@ export function InspectorPanel() {
     if (!container || signature === '') return;
 
     const binding = new InspectorBinding(
+      registries,
       container,
       entityId !== undefined
         ? { kind: 'entity', entityId }
         : selection.length > 1
           ? { kind: 'entities', ids: selection }
           : { kind: 'scene' },
-      ASSET_FIELD_ACTIONS,
+      actions,
     );
     // Read now rather than from `locked`, so that the lock is not one of this
     // effect's dependencies: Play and Stop would rebuild the pane and lose its
@@ -210,7 +216,7 @@ export function InspectorPanel() {
       bindingRef.current = null;
       binding.dispose();
     };
-  }, [signature, entityId, selection]);
+  }, [registries, actions, signature, entityId, selection]);
 
   // Materials are in here as well as the scene: undoing an edit to a shared
   // material changes no entity, so without it the panel kept showing the value
@@ -245,7 +251,7 @@ export function InspectorPanel() {
   const existing = new Set(
     entityId === undefined
       ? []
-      : componentsOf(expandedScene().scene, entityId).map((component) => component.type),
+      : componentsOf(expandedScene(registries).scene, entityId).map((component) => component.type),
   );
 
   return (
@@ -276,7 +282,7 @@ export function InspectorPanel() {
               anchor={addButton}
               placement="above"
               onClose={() => setAddOpen(false)}
-              items={addableTypes().map((type) => ({
+              items={addableTypes(registries).map((type) => ({
                 label: COMPONENT_PANES[type].label,
                 // A second mesh or camera on one entity has no meaning here —
                 // and neither does a mesh on something already drawing a
@@ -284,7 +290,7 @@ export function InspectorPanel() {
                 disabled:
                   (existing.has(type) && type !== 'collider' && type !== 'script') ||
                   !componentFits(type, existing),
-                onSelect: () => addComponentWithDependencies(entity.id, type),
+                onSelect: () => addComponentWithDependencies(registries, entity.id, type),
               }))}
             />
           )}
@@ -300,6 +306,7 @@ export function InspectorPanel() {
  * indistinguishable from one that did nothing.
  */
 function PrefabBanner({ id, depth, locked }: { id: EntityId; depth: number; locked: boolean }) {
+  const registries = useRegistries();
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-prefab/10 px-2 py-1.5">
       <Boxes size={12} className="shrink-0 text-prefab" />
@@ -313,7 +320,7 @@ function PrefabBanner({ id, depth, locked }: { id: EntityId; depth: number; lock
           type="button"
           disabled={locked}
           {...tooltip('Revert to the prefab', { hint: locked ? STOP_TO_EDIT : undefined })}
-          onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
+          onClick={() => commandById('revertEntityOverride').run(contextFor(registries, [id]))}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-50"
         >
           <RotateCcw size={11} />

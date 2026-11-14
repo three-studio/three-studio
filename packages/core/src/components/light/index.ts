@@ -16,11 +16,11 @@ import type { LightKind } from './schema';
  * `fill` below. A pattern proved on a type whose `fill` is a one-line spread
  * would have proved nothing about the ones that are not.
  *
- * Not a barrel, and it must not become one: importing this module *registers*
- * the type, and registration order is the order the Add Component menu is
- * built in. `scene/defaults.ts` and `core/src/index.ts` therefore reach past it
- * to `./schema` and `./defaults`, which have no side effect, and the only thing
- * that imports this file is the one place that means to register everything.
+ * Not a barrel, and it must not become one: the definition is what the core's
+ * activation registers, and the order of its list is the order the Add
+ * Component menu is built in. `scene/defaults.ts` and `core/src/index.ts`
+ * reach past it to `./schema` and `./defaults`, so that what a light is made of
+ * is not imported with the one object that describes it.
  */
 
 /**
@@ -49,7 +49,7 @@ const UNPLACED_LIGHTS: ReadonlySet<LightKind> = new Set(['ambient', 'hemisphere'
  * `undefined` off every field of it.
  */
 export const lightComponent = defineComponent({
-  type: 'light',
+  id: 'light',
   create: () => createLight('point'),
   fill: (stored) => {
     const base = createLight(stored.kind ?? 'point');

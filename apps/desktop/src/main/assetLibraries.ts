@@ -19,6 +19,7 @@ import {
   type AssetId,
   type AssetManifest,
   type AssetMeta,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
@@ -91,6 +92,7 @@ const PHYSICS_MATERIALS: MaterialLibrary<PhysicsMaterialDef> = {
  *   more than one of these read the tree once and pass it here.
  */
 export async function readPrefabAssets(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
 ): Promise<Map<AssetId, PrefabDoc>> {
@@ -109,7 +111,7 @@ export async function readPrefabAssets(
           if (!isRecord(parsed)) return;
           const version = parsed['version'];
           if (typeof version === 'number' && version > PREFAB_FORMAT_VERSION) return;
-          prefabs.set(asset.id, deserializePrefab(text, asset.id));
+          prefabs.set(asset.id, deserializePrefab(registries, text, asset.id));
         } catch {
           // One unreadable prefab must not cost the others; the instances that
           // point at it render empty and say so.

@@ -9,7 +9,7 @@ import { createPrefabInstance } from './defaults';
  * behind it.
  */
 export const prefabInstanceComponent = defineComponent({
-  type: 'prefabInstance',
+  id: 'prefabInstance',
   create: () => createPrefabInstance(),
   assets: (component) => [component.assetId],
   entities: () => [],

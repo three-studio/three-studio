@@ -1,8 +1,9 @@
 import type { AssetId, EntityId } from '../ids';
-import type { ComponentDoc, ComponentOfType, ComponentType } from '../scene/schema';
+import type { ComponentDoc } from '../scene/schema';
 
 /*
- * One module per component type, registered once.
+ * One module per component type, each a definition the core's activation
+ * registers.
  *
  * Adding a type cost eight files, and eight chances to forget one. For `light`:
  * the schema, the factory, the migration, the three build, the inspector schema,
@@ -39,10 +40,26 @@ export type ComponentIcon =
   | 'waves'
   | 'weight';
 
-export interface ComponentDefinition<T extends ComponentType = ComponentType> {
-  readonly type: T;
+/**
+ * What a component type answers about itself: what the core's activation
+ * registers.
+ *
+ * Its functions are methods, and that is what lets one registry hold all
+ * fourteen: TypeScript compares a method's parameters both ways, so a
+ * `ComponentDefinition<MeshComponent>` is a `ComponentDefinition` with no cast.
+ * Sound because a registry files a definition under its own `id`, and a
+ * component is only ever handed to the definition of its own `type`. Written as
+ * arrow-typed properties instead, they would be compared one way only, and no
+ * definition would register: the build would say so.
+ *
+ * Parameterised by the component rather than by its type's name: through
+ * `ComponentOfType<'mesh'>`, a conditional type, TypeScript can no longer tell
+ * which way the parameter varies, and holds it fixed.
+ */
+export interface ComponentDefinition<C extends ComponentDoc = ComponentDoc> {
+  readonly id: C['type'];
   /** A blank one, for "Add Component" and for filling a stored one's gaps. */
-  create: () => ComponentOfType<T>;
+  create(): C;
   /**
    * A stored component with everything it lacks filled in — declared **only by
    * the types the default is wrong for**.
@@ -66,20 +83,20 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * modules give: physics data is read against its factory, and what it does
    * not know is dropped.
    */
-  fill?: (stored: ComponentOfType<T>) => ComponentOfType<T>;
+  fill?(stored: C): C;
   /**
    * Asset ids this component points at. Empty for most types. `''` and `null`
    * are the slots that name none, which the four that say it with `''` hand
    * over as they hold it.
    */
-  assets: (component: ComponentOfType<T>) => readonly (AssetId | '' | null)[];
+  assets(component: C): readonly (AssetId | '' | null)[];
   /**
    * Entity ids this component points at — a joint its Connected Body. Empty
    * for most types. Asked of every type, as `assets` is, so that a new type
    * answers in its own module. `''` and `null` are the slots that name none, as
    * they are for `assets`.
    */
-  entities: (component: ComponentOfType<T>) => readonly (EntityId | '' | null)[];
+  entities(component: C): readonly (EntityId | '' | null)[];
   /**
    * Strings that may name an asset, and count only when they do — declared by
    * the types whose fields do not say which they are.
@@ -91,7 +108,7 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * and a sentence does not. Without it, the texture a script was handed in the
    * inspector shipped in no build that did not ship the whole project.
    */
-  assetCandidates?: (component: ComponentOfType<T>) => readonly string[];
+  assetCandidates?(component: C): readonly string[];
   readonly icon: ComponentIcon;
   /**
    * Whether anything builds this type at runtime.
@@ -120,7 +137,7 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
    * checks. Eleven of the twelve answer `() => true`, the same way seven of
    * them answer `assets: () => []`.
    */
-  placeable: (component: ComponentOfType<T>) => boolean;
+  placeable(component: C): boolean;
   /**
    * Whether a user can attach one by hand, from "Add Component".
    *
@@ -136,106 +153,14 @@ export interface ComponentDefinition<T extends ComponentType = ComponentType> {
   readonly addable: boolean;
 }
 
-const definitions = new Map<ComponentType, ComponentDefinition>();
-
 /**
- * Declares a component type.
+ * Declares a component type: its argument, with `C` inferred from what its
+ * `create` makes, and its `id` held to that component's own `type`.
  *
- * Registration happens as a side effect of importing the module, which has one
- * failure mode worth knowing: a module nobody imports registers nothing, and the
- * type simply goes missing with no error. `components/index.ts` imports all of
- * them and a test counts them.
+ * Each slice exports what this returns, and registers nothing by being
+ * imported: the core's activation lists the kernel's definitions, in the order
+ * the Add Component menu offers them.
  */
-export function defineComponent<T extends ComponentType>(
-  definition: ComponentDefinition<T>,
-): ComponentDefinition<T> {
-  definitions.set(definition.type, definition as unknown as ComponentDefinition);
+export function defineComponent<C extends ComponentDoc>(definition: ComponentDefinition<C>): ComponentDefinition<C> {
   return definition;
-}
-
-/** The definition for a type, or `undefined` for one this build never heard of. */
-export function componentDefinition<T extends ComponentType>(
-  type: T,
-): ComponentDefinition<T> | undefined {
-  return definitions.get(type) as ComponentDefinition<T> | undefined;
-}
-
-/** Every registered definition, in registration order. */
-export function componentDefinitions(): readonly ComponentDefinition[] {
-  return [...definitions.values()];
-}
-
-/**
- * Types that can be authored but that nothing builds when the game runs.
- *
- * Not a list kept by hand — derived, so it cannot drift. A type that gains a
- * system leaves it by changing one flag in one file.
- */
-export function typesWithoutRuntime(): readonly ComponentType[] {
-  return componentDefinitions()
-    .filter((definition) => !definition.runtime)
-    .map((definition) => definition.type);
-}
-
-/**
- * Types a user can attach by hand, in registration order.
- *
- * Derived for the same reason `typesWithoutRuntime` is: a new type answers the
- * question in its own module, where the compiler insists on an answer, rather
- * than in a list somewhere else that nothing checks.
- */
-export function addableTypes(): readonly ComponentType[] {
-  return componentDefinitions()
-    .filter((definition) => definition.addable)
-    .map((definition) => definition.type);
-}
-
-/** Asset ids a component points at, whatever its type. */
-export function componentAssets(component: ComponentDoc): readonly (AssetId | '' | null)[] {
-  const definition = componentDefinition(component.type);
-  // A type from a plugin, or from a later version of the editor. It names assets
-  // this build cannot see, and guessing would be worse than saying none.
-  return definition ? definition.assets(component as never) : [];
-}
-
-/** Entity ids a component points at, whatever its type; none for a type this build does not know. */
-export function componentEntities(component: ComponentDoc): readonly (EntityId | '' | null)[] {
-  return componentDefinition(component.type)?.entities(component as never) ?? [];
-}
-
-/** Strings a component holds that may name an asset; see `ComponentDefinition.assetCandidates`. */
-export function componentAssetCandidates(component: ComponentDoc): readonly string[] {
-  return componentDefinition(component.type)?.assetCandidates?.(component as never) ?? [];
-}
-
-/**
- * Whether a component's position in the world means anything.
- *
- * An unknown type — a plugin's, or a newer editor's — is placed. It is the
- * answer eleven of the twelve types here give, and a position that turns out
- * to mean nothing is cosmetic where dropping a new object at the world origin,
- * out of sight of the author who just added it, is not.
- */
-export function componentIsPlaceable(component: ComponentDoc): boolean {
-  const definition = componentDefinition(component.type);
-  return definition ? definition.placeable(component as never) : true;
-}
-
-/**
- * A stored component with everything added since it was written filled in.
- *
- * An unknown type comes back **exactly as found**. Filling it against a type we
- * do not have would invent a shape, and the next save would write that invention
- * over the author's data. A field is deprecated, never lost.
- *
- * A type that declared no `fill` gets the default: its own factory underneath
- * what was stored, so nothing the author wrote is overwritten and nothing added
- * since is left `undefined`. See `ComponentDefinition.fill` for the types that
- * need more than that.
- */
-export function fillComponent(stored: ComponentDoc): ComponentDoc {
-  const definition = componentDefinition(stored.type);
-  if (!definition) return stored;
-  if (definition.fill) return definition.fill(stored as never);
-  return { ...definition.create(), ...stored };
 }

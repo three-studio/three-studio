@@ -12,7 +12,7 @@ import { conformJointMotion, createJoint } from './defaults';
  * it names.
  */
 export const jointComponent = defineComponent({
-  type: 'joint',
+  id: 'joint',
   create: () => createJoint(),
   fill: (stored) => ({ ...conform(stored, createJoint()), motion: conformJointMotion(stored.motion) }),
   assets: () => [],

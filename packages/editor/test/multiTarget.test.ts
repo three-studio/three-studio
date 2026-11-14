@@ -1,9 +1,10 @@
 import {
   componentsOf,
-  createComponent,
+  createCollider,
   createEmptyScene,
   createEntity,
   createMeshEntity,
+  createRigidBody,
   putComponent,
   type EntityId,
   type MeshComponent,
@@ -13,6 +14,9 @@ import { addEntity } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { MultiTarget } from '../src/inspector/target';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Several entities presented as one — Godot's `MultiNodeEdit`, Unity's
@@ -49,7 +53,7 @@ function twoCubes() {
 describe('reading across several entities', () => {
   it('reads the first entity’s value, from the document rather than a snapshot', () => {
     const [a, b] = twoCubes();
-    const mesh = new MultiTarget([a.entity.id, b.entity.id]).components()[0];
+    const mesh = new MultiTarget(registries, [a.entity.id, b.entity.id]).components()[0];
     expect(mesh?.read(['castShadow'])).toBe(true);
 
     // Re-resolved on every read: the panel holds this object across frames, so
@@ -66,36 +70,36 @@ describe('pairing components across entities', () => {
   it('keeps only the types they all have', () => {
     const [a, b] = twoCubes();
     doc().mutate('One rigidbody', (draft) => {
-      putComponent(draft, a.entity.id, createComponent('rigidbody'));
+      putComponent(draft, a.entity.id, createRigidBody());
     });
 
     // Showing a field only some objects have would write it onto the others,
     // which is not what the author asked for.
-    const types = new MultiTarget([a.entity.id, b.entity.id]).components().map((c) => c.type);
+    const types = new MultiTarget(registries, [a.entity.id, b.entity.id]).components().map((c) => c.type);
     expect(types).toEqual(['mesh']);
   });
 
   it('pairs by rank when an entity has two of a type', () => {
-    const a = createEntity('A', [createComponent('collider'), createComponent('collider')]);
-    const b = createEntity('B', [createComponent('collider'), createComponent('collider')]);
+    const a = createEntity('A', [createCollider(), createCollider()]);
+    const b = createEntity('B', [createCollider(), createCollider()]);
     addEntity(a);
     addEntity(b);
 
     // Ids differ between entities, so the pairing is by type and rank — the very
     // reason `EntityTarget` hands back component objects rather than paths.
-    expect(new MultiTarget([a.entity.id, b.entity.id]).components()).toHaveLength(2);
+    expect(new MultiTarget(registries, [a.entity.id, b.entity.id]).components()).toHaveLength(2);
   });
 
   it("shows nothing for a selection of one, which is SingleTarget's job", () => {
     const [a] = twoCubes();
-    expect(new MultiTarget([a.entity.id]).components()).toEqual([]);
+    expect(new MultiTarget(registries, [a.entity.id]).components()).toEqual([]);
   });
 });
 
 describe('writing to several entities', () => {
   it('lands as one undo step', () => {
     const [a, b] = twoCubes();
-    const mesh = new MultiTarget([a.entity.id, b.entity.id]).components()[0]!;
+    const mesh = new MultiTarget(registries, [a.entity.id, b.entity.id]).components()[0]!;
     const before = doc().past.length;
 
     mesh.write(['castShadow'], false, { coalesceKey: 'multi' });

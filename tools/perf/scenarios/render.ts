@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { deserializeScene, entitiesWith, findComponent, isRecord } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
+import { builtInRegistries } from '../registries';
 import {
   type CdpSession,
   decodeNumberList,
@@ -68,7 +69,7 @@ interface CameraPose {
 
 /** The scene's main camera, read from its file with the app's own code. */
 async function mainCameraPose(projectPath: string): Promise<CameraPose> {
-  const scene = deserializeScene((await openProject(projectPath)).sceneJson);
+  const scene = deserializeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson);
   for (const entityId of entitiesWith(scene, 'camera')) {
     const camera = findComponent(scene, entityId, 'camera');
     const entity = scene.entities.get(entityId);

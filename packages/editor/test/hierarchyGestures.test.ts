@@ -16,6 +16,9 @@ import {
   rangeSelection,
 } from '../src/panels/hierarchyGestures';
 import { buildRows } from '../src/panels/hierarchyRows';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The last two rules that were written inside `HierarchyPanel.tsx`.
@@ -44,7 +47,7 @@ function siblings(names: string[]): EntityTemplate[] {
 }
 
 const rowsOf = (templates: EntityTemplate[]) =>
-  buildRows(expandPrefabs(sceneWith(templates), { get: () => undefined }), NONE, '');
+  buildRows(expandPrefabs(registries, sceneWith(templates), { get: () => undefined }), NONE, '');
 
 describe('the top band of a row', () => {
   it('means "between rows" above the band and "onto the row" below it', () => {

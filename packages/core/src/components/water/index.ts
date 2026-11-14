@@ -9,7 +9,7 @@ import { createWater } from './defaults';
  * `heightSegments` existed a plane with `undefined` in it.
  */
 export const waterComponent = defineComponent({
-  type: 'water',
+  id: 'water',
   create: () => createWater(),
   fill: (stored) => {
     const base = createWater();

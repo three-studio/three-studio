@@ -44,7 +44,7 @@ loop. The host calls `update(delta)` and draws `engine.scene` itself, which is w
 play a scene inside its own viewport while an exported build runs the same code from a bare loop.
 
 ```ts
-import { deserializeScene } from '@three-studio/core';
+import { activateCore, deserializeScene } from '@three-studio/core';
 import {
   SceneHost,
   activateRuntime,
@@ -55,16 +55,18 @@ import {
 const canvas = document.querySelector('canvas')!;
 const { renderer } = await createRenderer({ canvas });
 
-// What a game is built from — the system that draws each component type, and
-// the behaviour of each type that acts — made and filled once, by the page.
+// What a game is built from — the component types, the system that draws each
+// one, and the behaviour of each type that acts — made and filled once, by the
+// page, the core's layer first.
 const registries = createRuntimeRegistries();
+activateCore(registries);
 activateRuntime(registries);
 
 const host = new SceneHost({
   registries,
   domElement: canvas,
   renderer,
-  source: { read: async (name) => deserializeScene(await (await fetch(`${name}.json`)).text()) },
+  source: { read: async (name) => deserializeScene(registries, await (await fetch(`${name}.json`)).text()) },
   // Maps an asset id to a URL. Scenes reference ids, never paths, so this is
   // where a build decides where its files actually live.
   resolver: { url: (assetId) => `assets/${assetId}` },

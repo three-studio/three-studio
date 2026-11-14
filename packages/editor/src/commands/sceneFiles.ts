@@ -2,6 +2,7 @@ import {
   deserializeScene,
   findScene,
   serializeScene,
+  type CoreRegistries,
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
@@ -304,7 +305,7 @@ export async function deleteCurrentScene(): Promise<void> {
  * not read, or that now holds another scene leaves the document, the open
  * prefabs and the game as they were — and Save Scene can still write it.
  */
-export async function revertCurrentScene(): Promise<void> {
+export async function revertCurrentScene(registries: CoreRegistries): Promise<void> {
   const { sceneId, scenePath } = useProjectStore.getState();
   if (sceneId === null || scenePath === null) return;
 
@@ -319,7 +320,7 @@ export async function revertCurrentScene(): Promise<void> {
   if (!confirmed) return;
 
   try {
-    const saved = deserializeScene(await window.studio.project.readScene(scenePath));
+    const saved = deserializeScene(registries, await window.studio.project.readScene(scenePath));
     // Since Save As writes a scene of its own, a file carries its window's id
     // unless something outside the editor put another scene there. Loading it
     // would leave this window — its URL, the main process's table — on an id
@@ -338,7 +339,7 @@ export async function revertCurrentScene(): Promise<void> {
     setSelection(pruneSelection(saved, selection));
     // Said again: the file can point at what the session had dealt with — an
     // entity removed since, whose asset is gone, comes back with it.
-    reportBrokenReferences();
+    reportBrokenReferences(registries);
   } catch (cause) {
     report(cause, 'Could not revert the scene');
   }

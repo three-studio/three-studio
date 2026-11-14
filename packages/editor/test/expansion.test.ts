@@ -11,6 +11,9 @@ import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { expandedScene } from '../src/state/expansion';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The one expansion everything reads, and what it is memoised on.
@@ -50,38 +53,38 @@ describe('the expansion everything shares', () => {
   it('computes once for as many reads as you like', () => {
     // Every panel calls this during its own render, several times over. The
     // same object each time is what makes that free.
-    expect(expandedScene()).toBe(expandedScene());
+    expect(expandedScene(registries)).toBe(expandedScene(registries));
   });
 
   it('recomputes when the document moves, and not before', () => {
-    const first = expandedScene();
+    const first = expandedScene(registries);
     useDocumentStore.setState({ scene: sceneWithInstance() });
-    expect(expandedScene()).not.toBe(first);
+    expect(expandedScene(registries)).not.toBe(first);
   });
 
   it('recomputes when the prefab library moves', () => {
     // Editing a prefab changes what a scene shows without touching a single
     // entity in it. The store replaces the table, so this sees a new identity.
-    const first = expandedScene();
+    const first = expandedScene(registries);
     useAssetStore.setState({ prefabs: new Map([[TREE, treePrefab()]]) });
-    expect(expandedScene()).not.toBe(first);
+    expect(expandedScene(registries)).not.toBe(first);
   });
 
   it('is blind to a mutation in place, which is the contract', () => {
     // It holds because the stores never mutate: immer replaces. A test that
     // reached in and changed a field would be testing something the product
     // cannot do.
-    const first = expandedScene();
+    const first = expandedScene(registries);
     const scene = useDocumentStore.getState().scene;
     scene.name = 'Renamed';
-    expect(expandedScene()).toBe(first);
+    expect(expandedScene(registries)).toBe(first);
   });
 
   it('gives back the entities an untouched instance produced last time', () => {
     // The property the binder rests on. A change elsewhere in the document must
     // not hand back fresh copies of what the instance produced, or every
     // geometry under it is rebuilt.
-    const before = expandedScene();
+    const before = expandedScene(registries);
     const scene = useDocumentStore.getState().scene;
     // The one the expansion invented: the document has never heard of it.
     const produced = assertDefined(
@@ -91,7 +94,7 @@ describe('the expansion everything shares', () => {
 
     useDocumentStore.setState({ scene: { ...scene, name: 'Renamed' } });
 
-    const after = expandedScene();
+    const after = expandedScene(registries);
     expect(after).not.toBe(before);
     expect(after.scene.entities.get(produced)).toBe(before.scene.entities.get(produced));
   });

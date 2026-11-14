@@ -18,6 +18,9 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
 import { discoverScenes } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * `.studio/*.index.json` remembers what a file held so the next walk does not
@@ -263,7 +266,7 @@ describe('what the index declines to answer for', () => {
     // The same document under another id of the same length: the file is byte
     // for byte the same size and only the timestamp can tell them apart.
     const swapped = createSceneId();
-    const original = deserializeScene(await readFile(file, 'utf8'));
+    const original = deserializeScene(registries, await readFile(file, 'utf8'));
     await writeFile(file, serializeScene({ ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);
 

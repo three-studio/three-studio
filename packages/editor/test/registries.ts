@@ -1,3 +1,4 @@
+import { activateCore } from '@three-studio/core';
 import { activateRuntime, createRuntimeRegistries, type RuntimeRegistries } from '@three-studio/runtime';
 
 /**
@@ -10,6 +11,7 @@ import { activateRuntime, createRuntimeRegistries, type RuntimeRegistries } from
  */
 export function builtInRegistries(): RuntimeRegistries {
   const registries = createRuntimeRegistries();
+  activateCore(registries);
   activateRuntime(registries);
   return registries;
 }
