@@ -207,11 +207,13 @@ describe('prefab expansion', () => {
   it('overrides a property of one component and leaves its siblings alone', () => {
     const prefab = treePrefab();
     putComponent(prefab, prefab.root, createComponent('rigidbody'));
-    const [mesh, body] = componentsOf(prefab, prefab.root);
+    const trunkParts = componentsOf(prefab, prefab.root);
+    const mesh = assertDefined(trunkParts[0], 'the trunk\'s mesh');
+    const body = assertDefined(trunkParts[1], 'the trunk\'s rigid body');
 
     const host = instanceOf(prefab);
     (host.components[0] as PrefabInstanceComponent).overrides = {
-      [prefab.root]: { components: { [body!.id]: { mass: 12 } } },
+      [prefab.root]: { components: { [body.id]: { mass: 12 } } },
     };
 
     const { scene } = expandPrefabs(sceneWith([host]), library(prefab));
@@ -221,8 +223,8 @@ describe('prefab expansion', () => {
     // later. Keyed by position, inserting anything before it moved the override
     // onto the mesh.
     const parts = componentsOf(scene, built.id);
-    expect(parts.find((c) => c.id === body!.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
-    expect(parts.find((c) => c.id === mesh!.id)?.type).toBe('mesh');
+    expect(parts.find((c) => c.id === body.id)).toMatchObject({ type: 'rigidbody', mass: 12 });
+    expect(parts.find((c) => c.id === mesh.id)?.type).toBe('mesh');
   });
 
   it('cannot put a name where a collider’s shape lives, from an override written before scene 11', () => {
@@ -267,7 +269,7 @@ describe('prefab expansion', () => {
   it('follows the component it names when the prefab is reordered', () => {
     const prefab = treePrefab();
     putComponent(prefab, prefab.root, createComponent('rigidbody'));
-    const body = componentsOf(prefab, prefab.root)[1]!;
+    const body = assertDefined(componentsOf(prefab, prefab.root)[1], 'the trunk\'s rigid body');
 
     const host = instanceOf(prefab);
     (host.components[0] as PrefabInstanceComponent).overrides = {
@@ -830,7 +832,7 @@ describe('overriding through nesting', () => {
     void room;
 
     // The room says the lamp it places is dim; this room says it is off.
-    const roomDoc = library.get(ROOM)!;
+    const roomDoc = assertDefined(library.get(ROOM), 'the room prefab');
     const placement = componentsOf(roomDoc, placed.id)[0] as PrefabInstanceComponent;
     placement.overrides = { [lamp.root]: { name: 'Dim lamp', visible: true } };
 

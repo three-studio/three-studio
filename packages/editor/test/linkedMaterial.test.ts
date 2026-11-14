@@ -1,4 +1,5 @@
 import {
+  assertDefined,
   createComponent,
   createEntity,
   createMaterial,
@@ -73,7 +74,7 @@ function cubeLinking(materialId: AssetId | null): EntityId {
 }
 
 const colliderOf = (entityId: EntityId): ColliderComponent =>
-  findComponent(doc().scene, entityId, 'collider')!;
+  assertDefined(findComponent(doc().scene, entityId, 'collider'), 'its collider');
 
 describe('a linked physics material', () => {
   it('a collider linked to a physics material shows its values, and an edit goes to the asset in one undo step', () => {
@@ -104,7 +105,7 @@ describe('a linked physics material', () => {
   it('a mesh’s linked material keeps its edit going to its asset', () => {
     const mesh = createEntity('Cube', [{ ...createMeshComponent('box'), materialId: STONE }]);
     doc().replaceScene(sceneWith([mesh]));
-    const component = () => findComponent(doc().scene, mesh.entity.id, 'mesh')!;
+    const component = () => assertDefined(findComponent(doc().scene, mesh.entity.id, 'mesh'), 'its mesh');
 
     expect((effectiveComponent(mesh.entity.id, component()) as MeshComponent).material).toEqual(stone);
     const linked = linkedMaterial(component(), ['material', 'roughness']);

@@ -1,6 +1,7 @@
 import {
   PREFAB_FORMAT_VERSION,
   SCENE_FORMAT_VERSION,
+  assertDefined,
   componentsOf,
   deserializeScene,
   findComponent,
@@ -160,7 +161,7 @@ describe('giving components an identity', () => {
     const raw = JSON.parse(oldScene()) as {
       entities: Record<string, { components: unknown[] }>;
     };
-    raw.entities['host']!.components.push({ type: 'plugin:water', flow: 2 });
+    assertDefined(raw.entities['host'], 'the host in the file').components.push({ type: 'plugin:water', flow: 2 });
 
     const scene = deserializeScene(JSON.stringify(raw));
     const tables = scene.components as unknown as Record<
@@ -183,7 +184,8 @@ describe('giving components an identity', () => {
       entities: Record<string, { components: Record<string, unknown>[] }>;
     };
     raw.version = SCENE_FORMAT_VERSION;
-    raw.entities['host']!.components[0]!['id'] = 'chosen-by-someone-else';
+    const host = assertDefined(raw.entities['host'], 'the host in the file');
+    assertDefined(host.components[0], 'its first component')['id'] = 'chosen-by-someone-else';
 
     const scene = deserializeScene(JSON.stringify(raw));
     expect(componentsOf(scene, HOST)[0]?.id).toBe('chosen-by-someone-else');

@@ -1,4 +1,11 @@
-import { createEntity, createMeshEntity, createPrefabInstance, fixedId, type PrefabDoc } from '@three-studio/core';
+import {
+  assertDefined,
+  createEntity,
+  createMeshEntity,
+  createPrefabInstance,
+  fixedId,
+  type PrefabDoc,
+} from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { useAssetStore } from '../src/state/assetStore';
@@ -77,13 +84,15 @@ describe('the expansion everything shares', () => {
     const before = expandedScene();
     const scene = useDocumentStore.getState().scene;
     // The one the expansion invented: the document has never heard of it.
-    const produced = [...before.scene.entities.keys()].find((id) => !scene.entities.has(id));
-    expect(produced).toBeDefined();
+    const produced = assertDefined(
+      [...before.scene.entities.keys()].find((id) => !scene.entities.has(id)),
+      'the entity the expansion invented',
+    );
 
     useDocumentStore.setState({ scene: { ...scene, name: 'Renamed' } });
 
     const after = expandedScene();
     expect(after).not.toBe(before);
-    expect(after.scene.entities.get(produced!)).toBe(before.scene.entities.get(produced!));
+    expect(after.scene.entities.get(produced)).toBe(before.scene.entities.get(produced));
   });
 });

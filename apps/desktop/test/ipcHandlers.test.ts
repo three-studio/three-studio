@@ -222,10 +222,10 @@ describe('the guards are reached, not merely written', () => {
 
     // Read back through the channel that reads the file, so what is checked is
     // what a scene will be given, not what the handler was handed.
-    const written = (await invoke<Record<string, Record<string, unknown>>>(
-      IPC_INVOKE.assets.readMaterials,
-      1,
-    ))[id]!;
+    const written = assertDefined(
+      (await invoke<Record<string, Record<string, unknown>>>(IPC_INVOKE.assets.readMaterials, 1))[id],
+      'the material written',
+    );
     // `side` is a closed union, so a member nobody declared falls back to the
     // factory's; `roughness` is a number and a string does not fit; and a field
     // the model does not name is dropped rather than carried into the file.
@@ -243,7 +243,10 @@ describe('the guards are reached, not merely written', () => {
       createMaterial(),
     );
     const manifest = await invoke<AssetManifest>(IPC_INVOKE.assets.list, 1);
-    const entry = manifest.assets.find((asset) => asset.id === id)!;
+    const entry = assertDefined(
+      manifest.assets.find((asset) => asset.id === id),
+      'the material in the manifest',
+    );
 
     await invoke(IPC_INVOKE.assets.saveMaterial, 1, entry.path, {
       ...createMaterial('#ff0000'),
@@ -251,10 +254,10 @@ describe('the guards are reached, not merely written', () => {
       trap: 1,
     });
 
-    const written = (await invoke<Record<string, Record<string, unknown>>>(
-      IPC_INVOKE.assets.readMaterials,
-      1,
-    ))[id]!;
+    const written = assertDefined(
+      (await invoke<Record<string, Record<string, unknown>>>(IPC_INVOKE.assets.readMaterials, 1))[id],
+      'the material read back',
+    );
     expect(written['color']).toBe('#ff0000');
     expect(written['wrap']).toBe(createMaterial().wrap);
     expect(written).not.toHaveProperty('trap');
@@ -331,7 +334,8 @@ describe('the guards are reached, not merely written', () => {
     const build = (await (await fetch(manifest)).json()) as {
       materials: Record<string, Record<string, unknown>>;
     };
-    expect(build.materials['stone']!['side']).toBe('front');
+    const stone = assertDefined(build.materials['stone'], 'the stone material');
+    expect(stone['side']).toBe('front');
     expect(build.materials['stone']).not.toHaveProperty('trap');
   });
 

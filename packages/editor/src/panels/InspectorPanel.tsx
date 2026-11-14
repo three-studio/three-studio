@@ -250,7 +250,9 @@ export function InspectorPanel() {
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-1">
-      {instance &&<PrefabBanner id={entityId!} depth={instance.depth} locked={locked} />}
+      {entityId !== undefined && instance && (
+        <PrefabBanner id={entityId} depth={instance.depth} locked={locked} />
+      )}
       <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-1.5" />
 
       {/* The scene pane has nothing to add a component to. */}

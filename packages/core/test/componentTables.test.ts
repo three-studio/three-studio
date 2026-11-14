@@ -155,7 +155,7 @@ describe('asking which entities carry a type', () => {
 
   it('forgets an entity once its last component of a type goes', () => {
     const { scene, litId } = lit(2);
-    const light = findComponent(scene, litId, 'light')!;
+    const light = assertDefined(findComponent(scene, litId, 'light'), 'the light');
 
     deleteComponent(scene, litId, light.id);
 
@@ -204,7 +204,7 @@ describe('two components of one type on one entity', () => {
     // `serializeScene` sorts keys, and ids are random. Asserting the order they
     // were added in passed only when the two happened to sort that way, which
     // was about half of every run.
-    expect(loaded[0]!.id).toBe(componentsOf(scene, cube.entity.id)[0]!.id);
+    expect(loaded[0]!.id).toBe(assertDefined(componentsOf(scene, cube.entity.id)[0], 'the first component').id);
     expect(loaded.slice(1).map((c) => c.id).sort()).toEqual([first.id, second.id].sort());
   });
 });
@@ -269,10 +269,10 @@ describe('an entity that comes and goes', () => {
   it('is copied with them, ids and all', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const source = componentsOf(scene, cube.entity.id)[0]!;
+    const source = assertDefined(componentsOf(scene, cube.entity.id)[0], 'the cube\'s component');
 
-    const copyId = cloneSubtree(scene, cube.entity.id, null)!;
-    const copy = componentsOf(scene, copyId)[0]!;
+    const copyId = assertDefined(cloneSubtree(scene, cube.entity.id, null), 'the copy of the cube');
+    const copy = assertDefined(componentsOf(scene, copyId)[0], 'the copy\'s component');
 
     // Keeping the id is deliberate: it is unique within its entity, which is
     // exactly what the per-entity table encodes, and a prefab override names a
@@ -311,7 +311,7 @@ describe('a document written before the tables existed', () => {
     raw['version'] = 3;
     delete raw['components'];
     const entities = raw['entities'] as Record<string, Record<string, unknown>>;
-    entities[cube.entity.id]!['components'] = [
+    assertDefined(entities[cube.entity.id], 'the cube in the file')['components'] = [
       { id: 'c1', type: 'mesh', geometry: { kind: 'box' }, material: { color: '#ffffff' } },
       { id: 'c2', type: 'collider', shape: 'sphere' },
       { id: 'c3', type: 'collider', shape: 'box' },

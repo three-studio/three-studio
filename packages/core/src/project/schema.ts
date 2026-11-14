@@ -16,6 +16,7 @@
  * layout is the one place a reader goes for the truth, so what it can name it
  * points at instead.
  */
+import { assertDefined } from '../assert';
 import { conform, isRecord } from '../conform';
 import { isSceneId, type SceneId } from '../ids';
 import type { Vec3 } from '../scene/schema';
@@ -350,7 +351,7 @@ export function normalizeBuildProfiles(
 ): BuildProfiles {
   const fresh = createBuildProfiles(projectName);
   if (!build) return fresh;
-  const defaults = fresh.profiles[DEFAULT_BUILD_PROFILE_ID]!;
+  const defaults = assertDefined(fresh.profiles[DEFAULT_BUILD_PROFILE_ID], 'the default build profile');
   return {
     active: build.active,
     profiles: Object.fromEntries(

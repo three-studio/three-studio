@@ -6,6 +6,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createBuildProfiles,
   createEmptyScene,
   createEntity,
@@ -62,7 +63,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
   // The profile does need its scenes filled in, because what a delete does to
   // that list is half of what is pinned below.
   const build = createBuildProfiles('Registry');
-  build.profiles[DEFAULT_BUILD_PROFILE_ID]!.scenes = ids;
+  assertDefined(build.profiles[DEFAULT_BUILD_PROFILE_ID], 'the default build profile').scenes = ids;
 
   const project: ProjectFile = {
     version: PROJECT_FORMAT_VERSION,

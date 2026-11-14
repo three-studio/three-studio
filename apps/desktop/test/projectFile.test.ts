@@ -5,6 +5,7 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createDefaultLayer,
   createEmptyScene,
   serializeScene,
@@ -187,7 +188,11 @@ async function formatOneProject(
     }),
     'utf8',
   );
-  return { root, main: ids['main']!, loading: ids['Loading']! };
+  return {
+    root,
+    main: assertDefined(ids['main'], 'the main scene\'s id'),
+    loading: assertDefined(ids['Loading'], 'the loading scene\'s id'),
+  };
 }
 
 /*

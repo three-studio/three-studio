@@ -709,7 +709,10 @@ describe('revision counters', () => {
   };
 
   const meshComponentId = (entityId: EntityId) =>
-    componentsOf(scene(), entityId).find((component) => component.type === 'mesh')!.id;
+    assertDefined(
+      componentsOf(scene(), entityId).find((component) => component.type === 'mesh'),
+      'its mesh',
+    ).id;
 
   it('counts a value written inside a component as a component change only', () => {
     const cube = createMeshEntity('box');
@@ -969,8 +972,11 @@ describe('references to the entities copied with them', () => {
     return { frame, door };
   }
 
-  const copyOf = (name: string) =>
-    [...scene().entities.values()].find((entity) => entity.name === name)?.id;
+  const copyOf = (name: string): EntityId =>
+    assertDefined(
+      [...scene().entities.values()].find((entity) => entity.name === name)?.id,
+      `the entity called "${name}"`,
+    );
 
   it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
     const { frame, door } = doorway();
@@ -979,7 +985,7 @@ describe('references to the entities copied with them', () => {
 
     const copiedFrame = copyOf('Frame (1)');
     expect(copiedFrame).toBeDefined();
-    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(copiedFrame);
+    expect(findComponent(scene(), copyOf('Door (1)'), 'joint')?.connectedEntity).toBe(copiedFrame);
     // The originals keep theirs.
     expect(findComponent(scene(), door, 'joint')?.connectedEntity).toBe(frame);
 
@@ -987,7 +993,7 @@ describe('references to the entities copied with them', () => {
     expect([...scene().entities.keys()].sort()).toEqual([door, frame].sort());
 
     duplicateSelection(sel([door]));
-    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(frame);
+    expect(findComponent(scene(), copyOf('Door (1)'), 'joint')?.connectedEntity).toBe(frame);
   });
 
   it("a script's entity property follows the copy too", () => {
@@ -1000,8 +1006,9 @@ describe('references to the entities copied with them', () => {
 
     duplicateSelection(sel([turret]));
 
-    const copy = copyOf('Turret (1)')!;
-    const copiedBrain = assertDefined(scene().entities.get(copy), 'the copied turret').children[0]!;
+    const copy = copyOf('Turret (1)');
+    const copiedTurret = assertDefined(scene().entities.get(copy), 'the copied turret');
+    const copiedBrain = assertDefined(copiedTurret.children[0], 'the copied brain');
     expect(copiedBrain).not.toBe(brain);
     expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
   });
@@ -1027,7 +1034,7 @@ describe('references to the entities copied with them', () => {
     const unpackedFrame = copyOf('Frame');
     expect(unpackedFrame).toBeDefined();
     expect(unpackedFrame).not.toBe(instancedId(host, frame.entity.id));
-    expect(findComponent(scene(), copyOf('Door')!, 'joint')?.connectedEntity).toBe(unpackedFrame);
+    expect(findComponent(scene(), copyOf('Door'), 'joint')?.connectedEntity).toBe(unpackedFrame);
   });
 });
 

@@ -208,7 +208,10 @@ describe('choosing the profile an export runs', () => {
   const profiles = () => {
     const settings = createBuildProfiles('Races');
     const id = Object.keys(settings.profiles)[0]!;
-    settings.profiles[id] = { ...settings.profiles[id]!, outputDir: '/builds/Races' };
+    settings.profiles[id] = {
+      ...assertDefined(settings.profiles[id], 'the first profile'),
+      outputDir: '/builds/Races',
+    };
     return { settings, id };
   };
 
@@ -223,7 +226,11 @@ describe('choosing the profile an export runs', () => {
     // decision: the Package dialog saves `active` before asking for the export,
     // so a second way to choose would be its copy beating the file's.
     const { settings, id } = profiles();
-    settings.profiles['itch'] = { ...settings.profiles[id]!, name: 'itch', outputDir: '/builds/itch' };
+    settings.profiles['itch'] = {
+      ...assertDefined(settings.profiles[id], 'the first profile'),
+      name: 'itch',
+      outputDir: '/builds/itch',
+    };
 
     expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
 
@@ -360,7 +367,12 @@ describe('web export', () => {
     expect(paths['tex-sky']).toMatch(/^assets\/textures\/sky\.[0-9a-f]{8}\.hdr$/);
     expect(paths['tex-spare']).toBeUndefined();
     expect((await readdir(join(outputDir, 'game', 'assets', 'textures'))).sort()).toEqual(
-      [paths['tex-sky']!, paths['tex-used']!].map((path) => basename(path)).sort(),
+      [
+        assertDefined(paths['tex-sky'], 'the sky texture'),
+        assertDefined(paths['tex-used'], 'the used texture'),
+      ]
+        .map((path) => basename(path))
+        .sort(),
     );
 
     expect(build.title).toBe('Export Test');
@@ -524,8 +536,10 @@ describe('web export', () => {
     // predecessor rather than over it, so without taking the old one back a
     // folder re-exported through a morning of tweaking carries every round.
     const shipped = await readdir(join(outputDir, 'game', 'assets', 'textures'));
-    expect(shipped).toContain(basename(after.assets!['tex-used']!));
-    expect(shipped).not.toContain(basename(before.assets!['tex-used']!));
+    const usedAfter = assertDefined(after.assets?.['tex-used'], 'the used texture after the edit');
+    const usedBefore = assertDefined(before.assets?.['tex-used'], 'the used texture before the edit');
+    expect(shipped).toContain(basename(usedAfter));
+    expect(shipped).not.toContain(basename(usedBefore));
   });
 
   it('ships what a clip was imported with, so the build sounds like the editor', async () => {
@@ -955,7 +969,7 @@ describe('models that come with other files', () => {
      * The side files keep their names — they are written *inside* the `.gltf`,
      * relative to it — and the folder is what carries the hash.
      */
-    const model = (await buildOf(outputDir)).assets['model-tri']!;
+    const model = assertDefined((await buildOf(outputDir)).assets['model-tri'], 'the model in the build');
     expect(model).toMatch(/^assets\/models\/Tri\/Tri\.[0-9a-f]{8}\/Tri\.gltf$/);
     const shipped = join(inGame(outputDir, model), '..');
     expect(await readFile(join(shipped, 'Tri.bin'), 'utf8')).toBe('binary');
@@ -976,7 +990,7 @@ describe('models that come with other files', () => {
      */
     await writeFile(join(models, 'maps', 'albedo.png'), 'repainted', 'utf8');
     await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
-    const repainted = (await buildOf(outputDir)).assets['model-tri']!;
+    const repainted = assertDefined((await buildOf(outputDir)).assets['model-tri'], 'the repainted model');
     expect(repainted).not.toBe(model);
     expect(await readFile(join(inGame(outputDir, repainted), '..', 'maps', 'albedo.png'), 'utf8')).toBe(
       'repainted',
@@ -1062,7 +1076,7 @@ describe('the list of what an export wrote', () => {
     expect(paths).toContain('index.html');
     expect(paths).toContain('player/player.js');
     expect(paths).toContain(`game/${build.scenes[0]!.path}`);
-    expect(paths).toContain(`game/${build.assets['tex-used']!}`);
+    expect(paths).toContain(`game/${assertDefined(build.assets['tex-used'], 'the used texture')}`);
     // Itself included, and that is what a file of its own buys: a manifest
     // cannot carry its own digest, so `build.json` could not be checked while
     // this list lived inside it.
@@ -1548,7 +1562,10 @@ describe('what ships through a link', () => {
     const outputDir = join(projectPath, '..', 'out-link');
     await exportBuild(projectPath, profile({ includeAllAssets: true }), outputDir, [templateRoot]);
 
-    const shipped = inGame(outputDir, (await buildOf(outputDir)).assets['tex-shared']!);
+    const shipped = inGame(
+      outputDir,
+      assertDefined((await buildOf(outputDir)).assets['tex-shared'], 'the shared texture in the build'),
+    );
     expect((await lstat(shipped)).isSymbolicLink()).toBe(false);
     expect(await readFile(shipped, 'utf8')).toBe('shared pixels');
   });

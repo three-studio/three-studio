@@ -41,6 +41,8 @@ import type { MenuEntry, MenuItem } from '../src/ui/Menu';
 
 const doc = () => useDocumentStore.getState();
 const selection = () => useEditorStore.getState().selection;
+/** The entity a drop selected. */
+const placed = () => assertDefined(selection()[0], 'the entity a drop selected');
 const toasts = () => useToastStore.getState().toasts;
 const play = () => useEditorStore.getState().play();
 const stop = () => useEditorStore.getState().stop();
@@ -235,13 +237,13 @@ describe('a drop on the view', () => {
 
     placeDroppedAsset(CRATE, [1, 2, 3]);
 
-    const [id] = selection();
+    const id = placed();
     expect(id).not.toBe(before);
-    expect(findComponent(doc().scene, id!, 'prefabInstance')?.assetId).toBe(CRATE);
-    expect(assertDefined(doc().scene.entities.get(id!), 'the placed instance').transform.position).toEqual([1, 2, 3]);
+    expect(findComponent(doc().scene, id, 'prefabInstance')?.assetId).toBe(CRATE);
+    expect(assertDefined(doc().scene.entities.get(id), 'the placed instance').transform.position).toEqual([1, 2, 3]);
 
     doc().undo();
-    expect(doc().scene.entities.get(id!)).toBeUndefined();
+    expect(doc().scene.entities.get(id)).toBeUndefined();
     expect(selection()).toEqual([before]);
 
     // The selection was set after the edit, outside its entry, so Redo brought
@@ -252,34 +254,34 @@ describe('a drop on the view', () => {
 
   it('places a sound as an audio source, and a model as a model', () => {
     placeDroppedAsset(CHIME, [0, 1, 0]);
-    const [sound] = selection();
+    const sound = placed();
     placeDroppedAsset(CHAIR, [4, 0, 0]);
-    const [model] = selection();
+    const model = placed();
 
-    expect(findComponent(doc().scene, sound!, 'audioSource')?.assetId).toBe(CHIME);
-    expect(assertDefined(doc().scene.entities.get(sound!), 'the sound').transform.position).toEqual([0, 1, 0]);
-    expect(findComponent(doc().scene, model!, 'model')?.assetId).toBe(CHAIR);
-    expect(assertDefined(doc().scene.entities.get(model!), 'the model').transform.position).toEqual([4, 0, 0]);
+    expect(findComponent(doc().scene, sound, 'audioSource')?.assetId).toBe(CHIME);
+    expect(assertDefined(doc().scene.entities.get(sound), 'the sound').transform.position).toEqual([0, 1, 0]);
+    expect(findComponent(doc().scene, model, 'model')?.assetId).toBe(CHAIR);
+    expect(assertDefined(doc().scene.entities.get(model), 'the model').transform.position).toEqual([4, 0, 0]);
   });
 
   it('places a model with the Collider its import settings ask for, in one undo step', () => {
     placeDroppedAsset(RUINS, [0, 0, 0]);
-    const [ruins] = selection();
+    const ruins = placed();
 
     // The one Add Component gives a model: a mesh built from its triangles.
-    expect(findComponent(doc().scene, ruins!, 'collider')?.shape).toEqual({ kind: 'mesh', build: 'triangles' });
+    expect(findComponent(doc().scene, ruins, 'collider')?.shape).toEqual({ kind: 'mesh', build: 'triangles' });
 
     doc().undo();
-    expect(doc().scene.entities.get(ruins!)).toBeUndefined();
-    expect(findComponent(doc().scene, ruins!, 'collider')).toBeUndefined();
+    expect(doc().scene.entities.get(ruins)).toBeUndefined();
+    expect(findComponent(doc().scene, ruins, 'collider')).toBeUndefined();
   });
 
   it('places a model with none when its settings do not ask', () => {
     placeDroppedAsset(CHAIR, [0, 0, 0]);
-    const [chair] = selection();
+    const chair = placed();
 
-    expect(findComponent(doc().scene, chair!, 'model')?.assetId).toBe(CHAIR);
-    expect(findComponent(doc().scene, chair!, 'collider')).toBeUndefined();
+    expect(findComponent(doc().scene, chair, 'model')?.assetId).toBe(CHAIR);
+    expect(findComponent(doc().scene, chair, 'collider')).toBeUndefined();
   });
 
   it('places nothing for an asset that is not placed, and says nothing', () => {

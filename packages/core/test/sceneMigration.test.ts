@@ -19,6 +19,7 @@ import {
   setComponentsOf,
   type ColliderComponent,
   type ComponentDoc,
+  type EntityId,
   type MeshComponent,
   type PrefabDoc,
   type SceneDoc,
@@ -77,9 +78,13 @@ function createStarter(): SceneDoc {
   return scene;
 }
 
+/** The id of the first entity a document holds. */
+function firstEntityId(doc: { readonly entities: ReadonlyMap<EntityId, unknown> }): EntityId {
+  return assertDefined([...doc.entities.keys()][0], 'the first entity');
+}
+
 function firstMesh(scene: SceneDoc): MeshComponent {
-  const entityId = [...scene.entities.keys()][0]!;
-  return findComponent(scene, entityId, 'mesh')!;
+  return assertDefined(findComponent(scene, firstEntityId(scene), 'mesh'), 'the first entity\'s mesh');
 }
 
 describe('scene migration', () => {
@@ -130,9 +135,9 @@ describe('scene migration', () => {
     });
 
     const migrated = deserializeScene(json);
-    const entityId = [...migrated.entities.keys()][0]!;
-    const body = findComponent(migrated, entityId, 'rigidbody')!;
-    const player = findComponent(migrated, entityId, 'playerController')!;
+    const entityId = firstEntityId(migrated);
+    const body = assertDefined(findComponent(migrated, entityId, 'rigidbody'), 'its rigid body');
+    const player = assertDefined(findComponent(migrated, entityId, 'playerController'), 'its player controller');
 
     expect(body).toMatchObject({ gravityScale: 1, linearDamping: 0 });
     // A missing multiplier would reach the controller as NaN, and a character
@@ -196,8 +201,8 @@ describe('scene migration', () => {
     });
 
     const scene = deserializeScene(json);
-    const entityId = [...scene.entities.keys()][0]!;
-    const light = findComponent(scene, entityId, 'light')!;
+    const entityId = firstEntityId(scene);
+    const light = assertDefined(findComponent(scene, entityId, 'light'), 'its light');
 
     expect(light.shadow).toEqual({
       bias: 0,
@@ -472,7 +477,10 @@ describe('scene migration', () => {
       environment: createEnvironment(),
     });
 
-    const model = findComponent(deserializeScene(json), fixedId('entity', 'e1'), 'model')!;
+    const model = assertDefined(
+      findComponent(deserializeScene(json), fixedId('entity', 'e1'), 'model'),
+      'the model of e1',
+    );
 
     // `''` is what "the whole file" has always meant, so the scene draws exactly
     // what it drew — which is the only way to add a field to a persisted format
@@ -548,8 +556,8 @@ function sceneAt(version: number, eyeHeight: number, extra: ComponentDoc[] = [])
 }
 
 function eyeHeightOf(scene: SceneDoc): number {
-  const entityId = [...scene.entities.keys()][0]!;
-  return findComponent(scene, entityId, 'playerController')!.eyeHeight;
+  const player = findComponent(scene, firstEntityId(scene), 'playerController');
+  return assertDefined(player, 'the player controller').eyeHeight;
 }
 
 describe('eye height, measured from the feet', () => {
@@ -633,8 +641,8 @@ describe('eye height, measured from the feet', () => {
   }
 
   function prefabEyeHeight(prefab: PrefabDoc): number {
-    const entityId = [...prefab.entities.keys()][0]!;
-    return findComponent(prefab, entityId, 'playerController')!.eyeHeight;
+    const player = findComponent(prefab, firstEntityId(prefab), 'playerController');
+    return assertDefined(player, 'the player controller').eyeHeight;
   }
 
   it('raises a prefab written before the change, by its own age', () => {
