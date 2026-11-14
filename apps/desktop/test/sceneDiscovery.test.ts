@@ -5,14 +5,17 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createBuildProfiles,
   createEmptyScene,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   serializeScene,
   type ProjectFile,
+  type SceneId,
 } from '@three-studio/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ProjectError, discoverScenes, openProject } from '../src/main/project';
 
 /*
@@ -33,7 +36,7 @@ async function projectWith(paths: readonly string[]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-discover-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
 
-  const ids: string[] = [];
+  const ids: SceneId[] = [];
   for (const path of paths) {
     const document = createEmptyScene(path);
     await mkdir(join(root, SCENES_DIR, ...path.split('/').slice(0, -1)), { recursive: true });
@@ -45,7 +48,7 @@ async function projectWith(paths: readonly string[]): Promise<string> {
     version: PROJECT_FORMAT_VERSION,
     name: 'Discovery',
     engineVersion: '0.1.0',
-    startScene: ids[0] ?? '',
+    startScene: assertDefined(ids[0], 'the first scene'),
     settings: {
       loadingScene: null,
       rendering: createRenderingSettings(),
@@ -111,16 +114,34 @@ describe('the scenes of a project are the files under scenes/', () => {
   });
 
   /*
-   * A hand-written `.scene.json` carries no identity, so it is addressed by
-   * where it is — a reference its next move will break, which is the truth
-   * about it, and better than a file the editor refuses to list.
+   * A hand-written `.scene.json` carries no identity, and a path is not one: it
+   * is what its next move breaks, and every reference to it — the start scene,
+   * a build profile, the window's URL — would break with it, with nothing to say
+   * why. It used to be listed under its path, which hid that; it is not listed
+   * now, and the main says so, naming the file.
    */
-  it('addresses a scene with no id of its own by its path', async () => {
+  it('does not list a scene with no id of its own', async () => {
     const root = await projectWith(['main']);
     await writeFile(join(root, SCENES_DIR, 'Hand.scene.json'), '{ "name": "Hand" }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Empty.scene.json'), '{ "id": "" }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Number.scene.json'), '{ "id": 7 }', 'utf8');
 
-    const entry = (await discoverScenes(root)).find((scene) => scene.name === 'Hand');
-    expect(entry?.id).toBe(`${SCENES_DIR}/Hand.scene.json`);
+    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['main']);
+  });
+
+  it('says which file it did not list, and why', async () => {
+    const root = await projectWith(['main']);
+    await writeFile(join(root, SCENES_DIR, 'Hand.scene.json'), '{ "name": "Hand" }', 'utf8');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      await discoverScenes(root);
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${SCENES_DIR}/Hand.scene.json`));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no id'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 
@@ -140,7 +161,7 @@ describe('opening a project whose scenes moved without it', () => {
   it('ignores a wanted scene that is no longer on disk', async () => {
     const root = await projectWith(['main']);
     // A window reopening on a URL from before the scene was deleted.
-    const opened = await openProject(root, 'an-id-nothing-has');
+    const opened = await openProject(root, fixedId('scene', 'an-id-nothing-has'));
     expect(opened.sceneId).toBe((await discoverScenes(root))[0]!.id);
   });
 

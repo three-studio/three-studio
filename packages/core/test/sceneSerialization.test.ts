@@ -6,6 +6,7 @@ import {
   createEntity,
   createPrefabInstance,
   deserializeScene,
+  fixedId,
   insertEntity,
   jsonOf,
   putComponent,
@@ -44,7 +45,7 @@ function bothWays(): [SceneDoc, SceneDoc] {
 
   const rootOrder = [alpha.id, beta.id];
 
-  const first: SceneDoc = { ...createEmptyScene(), id: 'scene', rootOrder };
+  const first: SceneDoc = { ...createEmptyScene(), id: fixedId('scene', 'scene'), rootOrder };
   first.entities.set(alpha.id, alpha);
   first.entities.set(beta.id, beta);
   putComponent(first, alpha.id, meshOnAlpha);
@@ -52,7 +53,7 @@ function bothWays(): [SceneDoc, SceneDoc] {
   putComponent(first, alpha.id, hullOne);
   putComponent(first, alpha.id, hullTwo);
 
-  const second: SceneDoc = { ...createEmptyScene(), id: 'scene', rootOrder };
+  const second: SceneDoc = { ...createEmptyScene(), id: fixedId('scene', 'scene'), rootOrder };
   second.entities.set(beta.id, beta);
   second.entities.set(alpha.id, alpha);
   putComponent(second, alpha.id, hullTwo);
@@ -173,7 +174,7 @@ describe('a scene through a file', () => {
       'Everything',
       COMPONENT_TYPES.map((type) => createComponent(type)),
     );
-    const scene: SceneDoc = { ...createEmptyScene(), id: 'scene' };
+    const scene: SceneDoc = { ...createEmptyScene(), id: fixedId('scene', 'scene') };
     insertEntity(scene, parent);
     insertEntity(scene, child, parent.entity.id);
     insertEntity(scene, crate);

@@ -15,6 +15,7 @@ import {
   type ExportResult,
   type SceneDoc,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { AssetError } from '../assetFiles';
 import { readMaterialAssets, readPhysicsMaterialAssets, readPrefabAssets } from '../assetLibraries';
@@ -214,7 +215,7 @@ async function planExport(
    * the list, so it is never mistaken for the entry. A loading scene the
    * project no longer has is said once, here, and the build has none.
    */
-  let loadingScene: string | null = null;
+  let loadingScene: SceneId | null = null;
   if (project.settings.loadingScene !== null) {
     const entry = findScene(known, project.settings.loadingScene);
     if (!entry) {

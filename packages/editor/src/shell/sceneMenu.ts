@@ -1,4 +1,4 @@
-import { SCENES_DIR, findScene, type SceneEntry } from '@three-studio/core';
+import { SCENES_DIR, findScene, type SceneEntry, type SceneId } from '@three-studio/core';
 import { contextForScene } from '../commands/registry';
 import { isStartScene } from '../commands/sceneFiles';
 import type { MenuEntry, MenuItem } from '../ui/Menu';
@@ -24,9 +24,9 @@ export interface SceneMenuInput {
   /** The project's scenes, in path order — `useProjectStore.scenes`. */
   scenes: readonly SceneEntry[];
   /** The window's scene — `useProjectStore.sceneId`. */
-  sceneId: string | null;
+  sceneId: SceneId | null;
   /** The scene a build starts on — `project.startScene`, or `null` with no project open. */
-  startScene: string | null;
+  startScene: SceneId | null;
 }
 
 /**
@@ -153,7 +153,7 @@ function repeatedNames(scenes: readonly SceneEntry[]): Set<string> {
  * Then the state: `start` or `duplicate id`, never both, since a shadowed file
  * is never the start scene. So a row says two things at most: `old · start`.
  */
-function rowDetail(entry: SceneEntry, homonym: boolean, startScene: string | null): string | undefined {
+function rowDetail(entry: SceneEntry, homonym: boolean, startScene: SceneId | null): string | undefined {
   const said = [
     homonym ? entry.path.slice(`${SCENES_DIR}/`.length, entry.path.lastIndexOf('/')) : '',
     isStartScene(entry, startScene) ? 'start' : '',

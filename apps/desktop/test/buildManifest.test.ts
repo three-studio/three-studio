@@ -4,6 +4,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   defaultSettings,
+  fixedId,
   type AssetEntry,
   type AssetKind,
   type AssetSettings,
@@ -44,7 +45,7 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
     title: 'Game',
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
-    scenes: [{ id: 'main', name: 'Main', path: 'scenes/main.json' }],
+    scenes: [{ id: fixedId('scene', 'main'), name: 'Main', path: 'scenes/main.json' }],
     loadingScene: null,
     assets: [],
     materials: {},
@@ -123,9 +124,9 @@ describe('assembling build.json', () => {
     // A name shared with another scene stays in the list: which one answers to
     // it is the player's to decide, and the entry comes first.
     const scenes = [
-      { id: 'b', name: 'Level', path: 'scenes/level.2.json' },
-      { id: 'a', name: 'Level', path: 'scenes/level.1.json' },
-      { id: 'c', name: '__proto__', path: 'scenes/proto.3.json' },
+      { id: fixedId('scene', 'b'), name: 'Level', path: 'scenes/level.2.json' },
+      { id: fixedId('scene', 'a'), name: 'Level', path: 'scenes/level.1.json' },
+      { id: fixedId('scene', 'c'), name: '__proto__', path: 'scenes/proto.3.json' },
     ];
     const build = assembleManifest(contents({ scenes }));
     expect(build.scenes).toEqual(scenes);
@@ -134,7 +135,11 @@ describe('assembling build.json', () => {
 
   it('passes the rest through, and says which format it is', () => {
     const build = assembleManifest(
-      contents({ title: 'Mine', loadingScene: 'loading', scripts: 'scripts/bundle.1a2b3c4d.mjs' }),
+      contents({
+        title: 'Mine',
+        loadingScene: fixedId('scene', 'loading'),
+        scripts: 'scripts/bundle.1a2b3c4d.mjs',
+      }),
     );
     expect(build.title).toBe('Mine');
     expect(build.loadingScene).toBe('loading');

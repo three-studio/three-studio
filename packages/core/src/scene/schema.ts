@@ -32,6 +32,7 @@ import type { PrefabInstanceComponent } from '../components/prefabInstance/schem
 import type { RigidBodyComponent } from '../components/rigidbody/schema';
 import type { ScriptComponent } from '../components/script/schema';
 import type { WaterComponent } from '../components/water/schema';
+import type { SceneId } from '../ids';
 import type { Hex, Transform } from './primitives';
 
 // --- the shared vocabulary --------------------------------------------------
@@ -330,7 +331,7 @@ export interface EnvironmentDef {
 export interface SceneDoc {
   /** Bumped whenever the shape changes; `deserializeScene` migrates or rejects. */
   version: number;
-  id: string;
+  id: SceneId;
   name: string;
   /**
    * Flat table rather than a nested tree: reparenting is O(1), immer patches stay

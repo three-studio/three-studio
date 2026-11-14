@@ -17,6 +17,7 @@
  * points at instead.
  */
 import { conform, isRecord } from '../conform';
+import { isSceneId, type SceneId } from '../ids';
 import type { Vec3 } from '../scene/schema';
 import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers';
 
@@ -41,7 +42,7 @@ import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers
  * moves with it, because no reference is a name.
  */
 export interface SceneEntry {
-  id: string;
+  id: SceneId;
   name: string;
   /** Relative to the project root, with `/` separators on every platform. */
   path: string;
@@ -76,7 +77,7 @@ export interface ProjectFile {
    * the Finder. `openProject` falls back to the first scene rather than
    * refusing, so one stale line here never costs a project.
    */
-  startScene: string;
+  startScene: SceneId;
   settings: ProjectSettings;
 }
 
@@ -101,7 +102,7 @@ export interface ProjectContents {
  */
 export function findScene(
   scenes: readonly SceneEntry[],
-  id: string,
+  id: SceneId,
 ): SceneEntry | undefined {
   return scenes.find((entry) => entry.id === id);
 }
@@ -119,7 +120,10 @@ export function resolveScene(
   scenes: readonly SceneEntry[],
   idOrName: string,
 ): SceneEntry | undefined {
-  return findScene(scenes, idOrName) ?? scenes.find((entry) => entry.name === idOrName);
+  return (
+    (isSceneId(idOrName) ? findScene(scenes, idOrName) : undefined) ??
+    scenes.find((entry) => entry.name === idOrName)
+  );
 }
 
 /**
@@ -158,7 +162,7 @@ export interface ProjectSettings {
    * the same tools as a level. It loads first and the target loads behind it —
    * the classic Unity arrangement, which needs no additive loading at all.
    */
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   rendering: RenderingSettings;
   physics: PhysicsSettings;
   /** Named build configurations, keyed by id; see `BuildProfile`. */
@@ -280,7 +284,7 @@ export interface BuildProfile {
    * Scene **ids** to ship. The first is the entry point, as in Unity's Scenes
    * In Build. Empty means "the start scene only".
    */
-  scenes: string[];
+  scenes: SceneId[];
   /** Last folder exported to, so the next export can offer it again. */
   outputDir: string | null;
   /**
@@ -408,7 +412,7 @@ export interface OpenProject extends ProjectContents {
   /** Path of the loaded scene, relative to the project root. */
   scenePath: string;
   /** Id of the loaded scene — what the window and every reference use. */
-  sceneId: string;
+  sceneId: SceneId;
   /** Serialized `SceneDoc`; the renderer parses it so `core` owns the format. */
   sceneJson: string;
 }

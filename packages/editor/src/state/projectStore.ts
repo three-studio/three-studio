@@ -7,6 +7,7 @@ import {
   type ProjectFile,
   type ProjectSummary,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { create } from 'zustand';
 import { peekViewport } from '../viewport/viewportHost';
@@ -30,7 +31,7 @@ interface ProjectState {
    */
   scenes: SceneEntry[];
   /** Id of the scene this window edits — what every reference uses. */
-  sceneId: string | null;
+  sceneId: SceneId | null;
   /** Where its file is: what Save writes, Revert reads and Show in Finder shows. */
   scenePath: string | null;
   /** Set while a save is in flight, and after a save that failed. */

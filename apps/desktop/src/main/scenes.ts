@@ -4,7 +4,7 @@ import {
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
   createEmptyScene,
-  createId,
+  createSceneId,
   deserializeScene,
   findScene,
   safeFileName,
@@ -14,6 +14,7 @@ import {
   type ProjectFile,
   type SceneChange,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
@@ -142,7 +143,7 @@ async function requireFree(projectPath: string, path: string): Promise<void> {
   throw new ProjectError(`"${path}" already exists in this project.`);
 }
 
-function requireScene(scenes: readonly SceneEntry[], sceneId: string): SceneEntry {
+function requireScene(scenes: readonly SceneEntry[], sceneId: SceneId): SceneEntry {
   const entry = findScene(scenes, sceneId);
   if (!entry) throw new ProjectError(`"${sceneId}" is not a scene of this project.`);
   return entry;
@@ -162,7 +163,7 @@ function requireScene(scenes: readonly SceneEntry[], sceneId: string): SceneEntr
  */
 function repointStartScene(
   project: ProjectFile,
-  sceneId: string,
+  sceneId: SceneId,
   remaining: readonly SceneEntry[],
 ): ProjectFile {
   if (project.startScene !== sceneId) return project;
@@ -170,8 +171,9 @@ function repointStartScene(
   // — so removing one of the two did not remove the scene `startScene` names.
   if (findScene(remaining, sceneId)) return project;
 
-  // `remaining` cannot be empty: deleting the last scene is refused.
-  return { ...project, startScene: remaining[0]?.id ?? '' };
+  // `remaining` cannot be empty: deleting the last scene is refused. Were it
+  // to be, the line keeps the id it had, which `openProject` falls back from.
+  return { ...project, startScene: remaining[0]?.id ?? project.startScene };
 }
 
 /**
@@ -215,7 +217,7 @@ export async function createScene(
   // The document is authored first so it carries the id, rather than an id
   // being minted beside it that could drift from the one in the file.
   const document =
-    from === undefined ? createEmptyScene(newName) : { ...from, id: createId(), name: newName };
+    from === undefined ? createEmptyScene(newName) : { ...from, id: createSceneId(), name: newName };
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
   await writeSceneFile(projectPath, path, serializeScene(document));
 
@@ -233,7 +235,7 @@ export async function createScene(
  */
 export async function duplicateScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
@@ -246,7 +248,7 @@ export async function duplicateScene(
   await requireFree(projectPath, path);
 
   const document = deserializeScene(await readFile(resolveInside(projectPath, source.path), 'utf8'));
-  const scene: SceneEntry = { id: createId(), name: copyName, path, shadowedBy: null };
+  const scene: SceneEntry = { id: createSceneId(), name: copyName, path, shadowedBy: null };
   await writeSceneFile(
     projectPath,
     path,
@@ -270,7 +272,7 @@ export async function duplicateScene(
  */
 export async function renameScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
@@ -300,7 +302,7 @@ export async function renameScene(
 
 export async function deleteScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
 ): Promise<ProjectContents> {
   let remaining: SceneEntry[] = [];
 
@@ -339,7 +341,7 @@ export async function deleteScene(
 
 export async function setStartScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
 ): Promise<ProjectContents> {
   const scenes = await discoverScenes(projectPath);
   requireScene(scenes, sceneId);

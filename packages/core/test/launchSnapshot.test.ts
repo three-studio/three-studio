@@ -13,6 +13,7 @@ import {
   createStarterScene,
   emptyComponentTables,
   encodeLaunchSnapshot,
+  fixedId,
   serializeScene,
   type LaunchSnapshot,
 } from '@three-studio/core';
@@ -32,7 +33,7 @@ import { describe, expect, it } from 'vitest';
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id: 'scene-1', name: 'Level', scene: createStarterScene() },
+    entry: { id: fixedId('scene', 'scene-1'), name: 'Level', scene: createStarterScene() },
     materials: { stone: createMaterial('#777777') },
     physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' } },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
@@ -42,7 +43,7 @@ function snapshot(): LaunchSnapshot {
       gravity: [0, -3, 0],
       layers: [createDefaultLayer(), { id: 'player', name: 'Player', ignores: ['default'] }],
     },
-    loadingScene: 'loading',
+    loadingScene: fixedId('scene', 'loading'),
   };
 }
 
@@ -141,6 +142,16 @@ describe('a launch snapshot, where it arrives', () => {
 
     expect(conformed.rendering).toEqual(createRenderingSettings());
     expect(conformed.loadingScene).toBeNull();
+  });
+
+  it('refuses an entry whose id is not an id, and has no loading scene when that is not one', () => {
+    const wire = sent();
+
+    // A scene's id is a text that is not empty, and what a window sends is
+    // whatever a script on the other side of the bridge made of it.
+    expect(() => conformLaunchSnapshot({ ...wire, entry: { ...wire.entry, id: '' } })).toThrow('by id and name');
+    expect(() => conformLaunchSnapshot({ ...wire, entry: { ...wire.entry, id: 7 } })).toThrow('by id and name');
+    expect(conformLaunchSnapshot({ ...wire, loadingScene: '' }).snapshot.loadingScene).toBeNull();
   });
 
   it('migrates a prefab an older editor wrote, and drops one that is not text', () => {

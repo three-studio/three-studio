@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { BuildCollisionError, BuildPlan } from '../src/main/build/buildPlan';
 
@@ -12,7 +13,7 @@ const asset = (assetId: string) => ({ kind: 'asset', assetId, assetKind: 'textur
 describe('a build plan', () => {
   it('lists every file once, in the same order on every machine', () => {
     const plan = new BuildPlan(roots);
-    plan.addBytes('scenes/b.json', '{}', { kind: 'scene', sceneId: 'b' });
+    plan.addBytes('scenes/b.json', '{}', { kind: 'scene', sceneId: fixedId('scene', 'b') });
     plan.addBytes('index.html', '<!doctype html>', { kind: 'page' });
     plan.addBytes('assets/a.png', 'a', asset('tex-a'));
 

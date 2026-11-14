@@ -11,6 +11,7 @@ import {
   findScene,
   isDeviceId,
   isRequestId,
+  isSceneId,
   jsonOf,
   type AssetEntry,
   type DeviceLaunchOptions,
@@ -405,6 +406,8 @@ async function answer(
     const name = within.join('/');
     if (!name.endsWith('.json')) return notFound();
     const id = name.slice(0, -'.json'.length);
+    // A name out of a URL: it is a scene's id, or it is nothing this serves.
+    if (!isSceneId(id)) return notFound();
     // The entry is the scene on screen, unsaved edits and all, every time it
     // is asked for: the first load, and a script that restarts the level.
     if (id === launch.entryId) {

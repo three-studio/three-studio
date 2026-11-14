@@ -12,6 +12,7 @@ import {
   createRenderingSettings,
   findComponent,
   findComponentById,
+  fixedId,
   instancedId,
   serializeScene,
   type ColliderComponent,
@@ -51,8 +52,8 @@ import type { Presentation } from '../src/viewport/Presentation';
  * scene lock holds still until Stop.
  */
 
-const SCENE_ID = 'window-scene';
-const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+const SCENE_ID = fixedId('scene', 'window-scene');
+const BOSS = { id: fixedId('scene', 'boss-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
 
 const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,

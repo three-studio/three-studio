@@ -4,6 +4,8 @@
  * handles `devtools.ts` declares on `window`.
  */
 
+import type { SceneId } from '@three-studio/core';
+
 /** Which of the editor's handles the window has, and whether it believes it has the focus: 1 or 0 each. */
 export function editorHandles(): Record<string, number> {
   return {
@@ -551,7 +553,7 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
 }
 
 /** Makes a scene the project's loading scene, or none, as the Project Settings dialog does. */
-export async function setLoadingScene(id: string | null): Promise<Record<string, number>> {
+export async function setLoadingScene(id: SceneId | null): Promise<Record<string, number>> {
   const saved = await window.studio.project.updateSettings({ loadingScene: id });
   window.__studioStores?.project.getState().adoptProject(saved);
   return { set: id === null ? 0 : 1 };

@@ -13,6 +13,7 @@ import type {
   DeviceSettingsPatch,
   LaunchSnapshotJson,
 } from './devices/schema';
+import type { SceneId } from './ids';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
@@ -81,21 +82,21 @@ export interface ProjectApi {
   pickDirectory: () => Promise<string | null>;
   create: (input: { name: string; directory: string }) => Promise<OpenProject>;
   /** @param sceneId A scene of the project, instead of its start scene. */
-  open: (projectPath: string, sceneId?: string | null) => Promise<OpenProject>;
+  open: (projectPath: string, sceneId?: SceneId | null) => Promise<OpenProject>;
   /**
    * Reloads this window on another scene, unsaved-changes prompt included.
    *
    * Resolves `false` when the user cancelled at that prompt. A reload rather
    * than a swap in place: see `switchScene` in `windows.ts`.
    */
-  switchScene: (sceneId: string) => Promise<boolean>;
+  switchScene: (sceneId: SceneId) => Promise<boolean>;
   /**
    * Opens a scene of this project in a window of its own.
    *
    * Focuses the window that already has it rather than showing one scene
    * twice: two documents over one file means whichever saves last wins.
    */
-  openSceneWindow: (sceneId: string) => Promise<void>;
+  openSceneWindow: (sceneId: SceneId) => Promise<void>;
   /** Native file picker scoped to project files, then opens it. */
   browseAndOpen: () => Promise<OpenProject | null>;
   saveScene: (input: {
@@ -130,7 +131,7 @@ export interface ProjectApi {
    */
   createScene: (name: string, contents?: string) => Promise<SceneChange>;
   /** Copies a scene under a new name, with its own document id. */
-  duplicateScene: (sceneId: string, name: string) => Promise<SceneChange>;
+  duplicateScene: (sceneId: SceneId, name: string) => Promise<SceneChange>;
   /**
    * Renames a scene, which moves its file: the file name is the name.
    *
@@ -138,10 +139,10 @@ export interface ProjectApi {
    * the scene has to take the new path out of the result, or its next save
    * would write the file back under the name it had.
    */
-  renameScene: (sceneId: string, name: string) => Promise<SceneChange>;
+  renameScene: (sceneId: SceneId, name: string) => Promise<SceneChange>;
   /** Refused for the last scene: a project without one cannot be opened. */
-  deleteScene: (sceneId: string) => Promise<ProjectContents>;
-  setStartScene: (sceneId: string) => Promise<ProjectContents>;
+  deleteScene: (sceneId: SceneId) => Promise<ProjectContents>;
+  setStartScene: (sceneId: SceneId) => Promise<ProjectContents>;
   /** Drops a project from the recents list without touching the files. */
   forget: (projectPath: string) => Promise<void>;
   /** Clears the main process's notion of the open project. */
@@ -438,7 +439,7 @@ export interface StudioBridge {
    * editor window that changes. An id rather than a path so that
    * renaming a scene cannot invalidate an open window.
    */
-  readonly sceneId: string | null;
+  readonly sceneId: SceneId | null;
   readonly versions: {
     readonly electron: string;
     readonly chrome: string;

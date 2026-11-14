@@ -115,11 +115,15 @@ export function prefabFromEntities(name: string, scene: SceneDoc, rootId: string
  * and the binder all take a `SceneDoc`, and handing them one is what makes
  * editing a prefab cost nothing to build. Unity's Prefab Mode is the same
  * trick — an isolated stage holding one object.
+ *
+ * The scene is given an id of its own, which `createEmptyScene` makes: a
+ * prefab's id is an asset's and a scene's is not the same kind of id, so the
+ * one cannot stand for the other. Nothing reads it — Play and a device launch
+ * name the window's scene, and `sceneToPrefab` keeps the prefab's own id.
  */
 export function prefabToScene(prefab: PrefabDoc): SceneDoc {
   return {
     ...createEmptyScene(),
-    id: prefab.id,
     name: prefab.name,
     entities: structuredClone(prefab.entities),
     components: structuredClone(prefab.components),

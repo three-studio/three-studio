@@ -4,6 +4,7 @@ import {
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
+  fixedId,
   instancedId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
@@ -262,7 +263,7 @@ describe('what the lock leaves alone while the game runs', () => {
     doc().restoreHistory({ ...stash, past: [], future: [] });
     expect(doc().past).toEqual([]);
 
-    doc().adoptIdentity({ id: 'copy', name: 'Copy' });
+    doc().adoptIdentity({ id: fixedId('scene', 'copy'), name: 'Copy' });
     expect(doc().scene).toMatchObject({ id: 'copy', name: 'Copy' });
 
     doc().markClean();

@@ -1,4 +1,10 @@
-import { deserializeScene, findScene, serializeScene, type SceneEntry } from '@three-studio/core';
+import {
+  deserializeScene,
+  findScene,
+  serializeScene,
+  type SceneEntry,
+  type SceneId,
+} from '@three-studio/core';
 import { reportBrokenReferences } from '../state/brokenReport';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { pruneSelection, useDocumentStore } from '../state/documentStore';
@@ -54,7 +60,7 @@ export function currentSceneName(): string {
  * One rule for every place that marks or sets the start scene: Project
  * Settings, the Scene menu and Set as Start Scene.
  */
-export function isStartScene(entry: SceneEntry, startScene: string | null): boolean {
+export function isStartScene(entry: SceneEntry, startScene: SceneId | null): boolean {
   return entry.shadowedBy === null && entry.id === startScene;
 }
 
@@ -94,7 +100,7 @@ export async function backToTheScene(options: { stopPlay: boolean }): Promise<vo
  * edits, so those are saved where they stand; what is still unsaved then is the
  * scene's work, which is what the prompt is about.
  */
-export async function openScene(sceneId: string): Promise<void> {
+export async function openScene(sceneId: SceneId): Promise<void> {
   // The checked row: nothing to open, so nothing to save either.
   if (sceneId === useProjectStore.getState().sceneId) return;
   try {
@@ -106,7 +112,7 @@ export async function openScene(sceneId: string): Promise<void> {
 }
 
 /** The same scene, in a second window. Focuses the window that already has it. */
-export async function openSceneInNewWindow(sceneId: string): Promise<void> {
+export async function openSceneInNewWindow(sceneId: SceneId): Promise<void> {
   try {
     await window.studio.project.openSceneWindow(sceneId);
   } catch (cause) {
@@ -361,7 +367,7 @@ export async function showSceneSettings(): Promise<void> {
   editor.requestSceneSettings();
 }
 
-export async function chooseStartScene(sceneId: string): Promise<void> {
+export async function chooseStartScene(sceneId: SceneId): Promise<void> {
   try {
     useProjectStore.getState().adoptContents(await window.studio.project.setStartScene(sceneId));
   } catch (cause) {

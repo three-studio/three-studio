@@ -9,6 +9,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  fixedId,
   serializeScene,
   type PrefabDoc,
   type ProjectFile,
@@ -40,7 +41,7 @@ import type { Presentation } from '../src/viewport/Presentation';
 
 const doc = () => useDocumentStore.getState();
 
-const SCENE_ID = 'window-scene';
+const SCENE_ID = fixedId('scene', 'window-scene');
 const PREFAB_ID = 'prefab-under-test';
 const MATERIAL_ID = 'material-under-test';
 
@@ -53,7 +54,7 @@ const project: ProjectFile = {
   engineVersion: '0.1.0',
   startScene: SCENE_ID,
   settings: {
-    loadingScene: 'loading-scene',
+    loadingScene: fixedId('scene', 'loading-scene'),
     rendering,
     physics,
     build: createBuildProfiles('Inputs'),
@@ -217,7 +218,7 @@ describe('the scenes a running game reaches', () => {
    * edit: the game on screen was the edited scene right up to the moment a
    * script reloaded it.
    */
-  const OTHER = { id: 'other-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+  const OTHER = { id: fixedId('scene', 'other-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
 
   function givenTwoScenes(): { reads: string[]; readFile: (path: string) => Promise<string> } {
     useProjectStore.setState({

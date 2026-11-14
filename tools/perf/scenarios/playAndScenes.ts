@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isRecord } from '@three-studio/core';
+import { isRecord, isSceneId, type SceneId } from '@three-studio/core';
 import { openProject, updateProject } from '../../../apps/desktop/src/main/project';
 import { ballastPaths, writeScriptedProject } from '../generate/projects';
 import {
@@ -80,7 +80,7 @@ async function memoryNow(session: CdpSession): Promise<{ heap: number; gpu: numb
 interface Subject {
   readonly project: string;
   /** The scenes' ids by name. */
-  readonly scenes: Readonly<Record<string, string>>;
+  readonly scenes: Readonly<Record<string, SceneId>>;
   readonly ballast: string;
 }
 
@@ -89,12 +89,19 @@ function decodeSubject(value: unknown): Subject {
   const scenes = recordAt(value, 'scenes');
   return {
     project: stringAt(value, 'project'),
-    scenes: Object.fromEntries(Object.keys(scenes).map((name) => [name, stringAt(scenes, name)])),
+    scenes: Object.fromEntries(Object.keys(scenes).map((name) => [name, sceneIdAt(scenes, name)])),
     ballast: stringAt(value, 'ballast'),
   };
 }
 
-function sceneId(subject: Subject, name: string): string {
+/** A scene's id out of a record a launch wrote and this one reads back. */
+function sceneIdAt(record: Record<string, unknown>, key: string): SceneId {
+  const id = record[key];
+  if (!isSceneId(id)) throw new Error(`${key} is not a scene id`);
+  return id;
+}
+
+function sceneId(subject: Subject, name: string): SceneId {
   const id = subject.scenes[name];
   if (id === undefined) throw new Error(`the scripted project has no scene ${name}`);
   return id;

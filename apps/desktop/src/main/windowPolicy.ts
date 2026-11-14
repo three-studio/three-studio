@@ -14,17 +14,17 @@
  * still attached.
  */
 
-import type { WindowRole } from '@three-studio/core';
+import type { SceneId, WindowRole } from '@three-studio/core';
 
 /** One open scene, as the rules need to see it: an `Editor` without its window. */
 export interface OpenScene {
   projectPath: string;
   /** `null` until the renderer reports which scene it settled on. */
-  sceneId: string | null;
+  sceneId: SceneId | null;
   contentsId: number;
 }
 
-function showing<T extends OpenScene>(editors: readonly T[], sceneId: string): T | undefined {
+function showing<T extends OpenScene>(editors: readonly T[], sceneId: SceneId): T | undefined {
   return editors.find((entry) => entry.sceneId === sceneId);
 }
 
@@ -38,7 +38,7 @@ function showing<T extends OpenScene>(editors: readonly T[], sceneId: string): T
 export function isSceneOpenElsewhere(
   editors: readonly OpenScene[],
   fromId: number,
-  sceneId: string,
+  sceneId: SceneId,
 ): boolean {
   const open = showing(editors, sceneId);
   return open !== undefined && open.contentsId !== fromId;
@@ -61,7 +61,7 @@ export type OpenPlan<T> =
 export function planOpenEditor<T extends OpenScene>(
   editors: readonly T[],
   projectPath: string,
-  sceneId?: string,
+  sceneId?: SceneId,
 ): OpenPlan<T> {
   const open = editors[0];
   if (open === undefined) return { do: 'build' };
@@ -88,7 +88,7 @@ export type ScenePlan<T> =
 
 export function planSceneWindow<T extends OpenScene>(
   editors: readonly T[],
-  sceneId: string,
+  sceneId: SceneId,
 ): ScenePlan<T> {
   const open = editors[0];
   if (open === undefined) return { do: 'nothing' };
@@ -112,7 +112,7 @@ export type SwitchPlan<T> = { do: 'focus'; entry: T } | { do: 'reload'; entry: T
 export function planSwitchScene<T extends OpenScene>(
   editors: readonly T[],
   fromId: number,
-  sceneId: string,
+  sceneId: SceneId,
 ): SwitchPlan<T> {
   const entry = editors.find((candidate) => candidate.contentsId === fromId);
   if (entry === undefined) return { do: 'nothing' };

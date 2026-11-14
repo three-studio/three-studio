@@ -14,6 +14,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   fieldOptions,
+  fixedId,
   type ComponentDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
@@ -202,7 +203,7 @@ describe('the Collider pane', () => {
         version: PROJECT_FORMAT_VERSION,
         name: 'Layers',
         engineVersion: '0.6.0',
-        startScene: 'scene-1',
+        startScene: fixedId('scene', 'scene-1'),
         settings: {
           loadingScene: null,
           rendering: createRenderingSettings(),

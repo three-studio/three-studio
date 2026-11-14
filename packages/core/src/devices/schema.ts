@@ -1,6 +1,6 @@
 import { conform, conformPatch, isRecord } from '../conform';
 import { conformMaterial } from '../guards';
-import { createId } from '../ids';
+import { createId, isSceneId, type SceneId } from '../ids';
 import { jsonOf } from '../json';
 import {
   conformPhysicsSettings,
@@ -43,7 +43,7 @@ export interface LaunchSnapshot {
    * window's id is what the project's scene list and every reference use, and
    * the entry is always answered from here, so it needs no file on disk.
    */
-  entry: { id: string; name: string; scene: SceneDoc };
+  entry: { id: SceneId; name: string; scene: SceneDoc };
   /** The asset store's, with Prefab Mode's unsaved edits composed in. */
   materials: Record<string, MaterialDef>;
   /** The asset store's, by asset id: what a collider linking one is built with. */
@@ -52,7 +52,7 @@ export interface LaunchSnapshot {
   /** The project's current settings, as held in memory. */
   rendering: RenderingSettings;
   physics: PhysicsSettings;
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
 }
 
 /**
@@ -66,14 +66,14 @@ export interface LaunchSnapshot {
  */
 export interface LaunchSnapshotJson {
   version: typeof LAUNCH_SNAPSHOT_VERSION;
-  entry: { id: string; name: string; sceneJson: string };
+  entry: { id: SceneId; name: string; sceneJson: string };
   materials: Record<string, MaterialDef>;
   physicsMaterials: Record<string, PhysicsMaterialDef>;
   /** Each prefab's JSON, by asset id. */
   prefabs: Record<string, string>;
   rendering: RenderingSettings;
   physics: PhysicsSettings;
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
 }
 
 /** A snapshot as the main process holds it once it has read it. */
@@ -136,7 +136,7 @@ export function conformLaunchSnapshot(value: unknown): ReceivedLaunch {
   }
   const given = value['entry'];
   const { id, name, sceneJson } = isRecord(given) ? given : {};
-  if (typeof id !== 'string' || typeof name !== 'string') {
+  if (!isSceneId(id) || typeof name !== 'string') {
     throw new Error('A launch snapshot names its entry scene by id and name.');
   }
   if (typeof sceneJson !== 'string') {
@@ -166,7 +166,7 @@ export function conformLaunchSnapshot(value: unknown): ReceivedLaunch {
       prefabs,
       rendering: conform(value['rendering'], createRenderingSettings()),
       physics: conformPhysicsSettings(value['physics']),
-      loadingScene: typeof loadingScene === 'string' ? loadingScene : null,
+      loadingScene: isSceneId(loadingScene) ? loadingScene : null,
     },
     entryJson: sceneJson,
   };

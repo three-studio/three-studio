@@ -212,15 +212,15 @@ beforeAll(async () => {
     'utf8',
   );
 
-  // A second scene, and a hand-written one with no id, which is then
-  // addressed by its path: an id holding slashes.
+  // A second scene, and one whose id holds slashes: an id is any text that is
+  // not empty, and the route has to carry one in a URL a segment at a time.
   const other = createEmptyScene();
   otherSceneJson = `${serializeScene(other)}\n`;
   await writeFile(join(root, SCENES_DIR, 'Other.scene.json'), otherSceneJson, 'utf8');
   await mkdir(join(root, SCENES_DIR, 'levels'), { recursive: true });
-  const withoutId = JSON.parse(serializeScene(createEmptyScene())) as Record<string, unknown>;
-  delete withoutId['id'];
-  await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(withoutId), 'utf8');
+  const slashed = JSON.parse(serializeScene(createEmptyScene())) as Record<string, unknown>;
+  slashed['id'] = 'levels/Two';
+  await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(slashed), 'utf8');
 
   const scenes = await discoverScenes(root);
   entryId = main!.id;
@@ -712,6 +712,8 @@ describe('the scenes', () => {
 
   it('answers 404 for a scene the project does not have', async () => {
     expect((await ask(under('game/scenes/nobody.json'))).status).toBe(404);
+    // Nor for the empty name, which is no scene's id.
+    expect((await ask(under('game/scenes/.json'))).status).toBe(404);
   });
 });
 

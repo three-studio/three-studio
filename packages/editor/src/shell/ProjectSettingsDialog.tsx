@@ -2,6 +2,7 @@ import {
   DEFAULT_LAYER_ID,
   MAX_COLLISION_LAYERS,
   createId,
+  isSceneId,
   layerNamesProblem,
   layersTouch,
   setLayersTouch,
@@ -169,7 +170,12 @@ export function ProjectSettingsDialog({ onClose }: { onClose: () => void }) {
             <select
               value={draft.loadingScene ?? ''}
               onChange={(event) =>
-                setDraft({ ...draft, loadingScene: event.target.value || null })
+                // Checked where it enters: the value of a <select> is text, and
+                // "None" is the empty one.
+                setDraft({
+                  ...draft,
+                  loadingScene: isSceneId(event.target.value) ? event.target.value : null,
+                })
               }
               className={INPUT}
             >

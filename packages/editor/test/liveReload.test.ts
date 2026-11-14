@@ -15,6 +15,7 @@ import {
   createStarterScene,
   deserializePrefab,
   deserializeScene,
+  fixedId,
   type DeviceServerStatus,
   type LaunchSnapshot,
   type LaunchSnapshotJson,
@@ -50,7 +51,7 @@ import { launchSnapshot } from '../src/viewport/PlaySession';
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id: 'scene-1', name: 'Level 1', scene: createStarterScene() },
+    entry: { id: fixedId('scene', 'scene-1'), name: 'Level 1', scene: createStarterScene() },
     materials: { stone: createMaterial('#808080') },
     physicsMaterials: { ice: createPhysicsMaterial() },
     prefabs: {},
@@ -310,7 +311,7 @@ describe('the same launch', () => {
  * `EventTarget` for the window, so a gesture is an event a test dispatches.
  */
 
-const SCENE_ID = 'window-scene';
+const SCENE_ID = fixedId('scene', 'window-scene');
 const PREFAB_ID = 'prefab-under-test';
 const MATERIAL_ID = 'material-under-test';
 

@@ -8,10 +8,12 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  fixedId,
   serializeScene,
   type PrefabDoc,
   type ProjectFile,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -81,10 +83,15 @@ const prefabMode = () => usePrefabModeStore.getState();
 const editor = () => useEditorStore.getState();
 
 // In path order, as `discoverScenes` hands them over.
-const LEVEL_2: SceneEntry = { id: 'b', name: 'Level 2', path: 'scenes/Level 2.scene.json', shadowedBy: null };
-const MAIN: SceneEntry = { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null };
+const LEVEL_2: SceneEntry = {
+  id: fixedId('scene', 'b'),
+  name: 'Level 2',
+  path: 'scenes/Level 2.scene.json',
+  shadowedBy: null,
+};
+const MAIN: SceneEntry = { id: fixedId('scene', 'a'), name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null };
 
-const startingOn = (startScene: string): ProjectFile => ({
+const startingOn = (startScene: SceneId): ProjectFile => ({
   version: PROJECT_FORMAT_VERSION,
   name: 'Races',
   engineVersion: '0.1.0',
@@ -97,7 +104,7 @@ const startingOn = (startScene: string): ProjectFile => ({
   },
 });
 
-const entryFor = (id: string, name: string): SceneEntry => ({
+const entryFor = (id: SceneId, name: string): SceneEntry => ({
   id,
   name,
   path: `scenes/${name}.scene.json`,
@@ -123,24 +130,24 @@ function installBridge(): void {
     studio: {
       project: {
         createScene: record('createScene', (name: string) => {
-          const scene = entryFor('c', name);
-          return { project: startingOn('a'), scenes: [LEVEL_2, MAIN, scene], scene };
+          const scene = entryFor(fixedId('scene', 'c'), name);
+          return { project: startingOn(MAIN.id), scenes: [LEVEL_2, MAIN, scene], scene };
         }),
         saveScene: async (input: { scenePath: string; contents: string }) => {
           log.push(['saveScene', input.scenePath]);
           written.push(input.contents);
         },
         duplicateScene: record('duplicateScene', (_sceneId: string, name: string) => {
-          const scene = entryFor('d', name);
-          return { project: startingOn('a'), scenes: [LEVEL_2, MAIN, scene], scene };
+          const scene = entryFor(fixedId('scene', 'd'), name);
+          return { project: startingOn(MAIN.id), scenes: [LEVEL_2, MAIN, scene], scene };
         }),
-        renameScene: record('renameScene', (sceneId: string, name: string) => {
+        renameScene: record('renameScene', (sceneId: SceneId, name: string) => {
           const scene = entryFor(sceneId, name);
-          return { project: startingOn('a'), scenes: [LEVEL_2, scene], scene };
+          return { project: startingOn(MAIN.id), scenes: [LEVEL_2, scene], scene };
         }),
         // The main process moves the start scene off the one it deletes.
         deleteScene: record('deleteScene', (_sceneId: string) => ({
-          project: startingOn('b'),
+          project: startingOn(LEVEL_2.id),
           scenes: [LEVEL_2],
         })),
         switchScene: record('switchScene', (_sceneId: string) => true),
@@ -208,9 +215,9 @@ beforeEach(async () => {
 
   useProjectStore.setState({
     summary: { name: 'Races', path: '/projects/Races', lastOpenedAt: 1 },
-    project: startingOn('a'),
+    project: startingOn(MAIN.id),
     scenes: [LEVEL_2, MAIN],
-    sceneId: 'a',
+    sceneId: MAIN.id,
     scenePath: MAIN.path,
   });
 
@@ -544,7 +551,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   it('saves the prefab, says the window is clean, then opens the other scene', async () => {
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene('b');
+    await openScene(LEVEL_2.id);
 
     expect(log).toEqual([
       ['savePrefab', CRATE],
@@ -560,7 +567,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
     renameEntity(wall, 'Edited wall');
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene('b');
+    await openScene(LEVEL_2.id);
 
     expect(log).toEqual([
       ['savePrefab', CRATE],
@@ -571,7 +578,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   it("does nothing for the window's own scene", async () => {
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene('a');
+    await openScene(MAIN.id);
 
     expect(log).toEqual([]);
     expect(prefabMode().stack).toHaveLength(1);
@@ -921,7 +928,7 @@ describe('Revert Scene', () => {
     ['a file that does not read', () => '{', undefined],
     [
       'a file holding another scene',
-      () => serializeScene({ ...deserializeScene(file as string), id: 'z', name: 'Intruder' }),
+      () => serializeScene({ ...deserializeScene(file as string), id: fixedId('scene', 'z'), name: 'Intruder' }),
       'another scene',
     ],
   ])('refuses %s, and nothing moves', async (_, contents, said) => {

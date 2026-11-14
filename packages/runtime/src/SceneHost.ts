@@ -4,6 +4,7 @@ import {
   type MaterialDef,
   type PrefabDoc,
   type SceneDoc,
+  type SceneId,
 } from '@three-studio/core';
 import { Engine, type EngineOptions } from './Engine';
 import { AudioClipCache } from './audio/AudioClipCache';
@@ -37,14 +38,14 @@ export interface SceneHostOptions extends Omit<EngineOptions, 'scene'> {
   materials?: Readonly<Record<string, MaterialDef>>;
   prefabs?: Readonly<Record<string, PrefabDoc>>;
   /**
-   * Shown while another scene loads, by name. `null` swaps straight over.
+   * Shown while another scene loads, by id. `null` swaps straight over.
    *
    * Loaded *single*, replacing what was on screen, and the target loads behind
    * it. That is the original Unity arrangement — the one from before additive
    * loading — and it works because a loading scene is small enough that its own
    * load is not worth showing anything for.
    */
-  loadingScene?: string | null;
+  loadingScene?: SceneId | null;
 }
 
 export interface SceneLoad {

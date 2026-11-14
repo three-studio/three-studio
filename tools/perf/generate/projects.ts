@@ -21,6 +21,7 @@ import {
   type EntityTemplate,
   type GeometryDef,
   type SceneDoc,
+  type SceneId,
 } from '@three-studio/core';
 import { scanAssets, updateAssetSettings } from '../../../apps/desktop/src/main/assetScan';
 import { writeGlb } from '../../../apps/desktop/src/main/glb';
@@ -247,13 +248,13 @@ export function largeScene(recipe: LargeRecipe = LARGE): SceneDoc {
 // ------------------------------------------------------------------ writers
 
 /** A new project, its folder's path, and the scene it opens on. */
-async function newProject(name: string, parent: string): Promise<{ path: string; scenePath: string; sceneId: string }> {
+async function newProject(name: string, parent: string): Promise<{ path: string; scenePath: string; sceneId: SceneId }> {
   const opened = await createProject(name, parent);
   return { path: opened.summary.path, scenePath: opened.scenePath, sceneId: opened.sceneId };
 }
 
 /** Writes `scene` over the project's start scene, keeping that scene's id so `startScene` still names it. */
-async function saveAsStartScene(project: { path: string; scenePath: string; sceneId: string }, scene: SceneDoc): Promise<void> {
+async function saveAsStartScene(project: { path: string; scenePath: string; sceneId: SceneId }, scene: SceneDoc): Promise<void> {
   scene.id = project.sceneId;
   await saveScene(project.path, project.scenePath, serializeScene(scene));
 }
@@ -351,7 +352,7 @@ function assetAt(manifest: AssetManifest, path: string): AssetManifest['assets']
  * camera: over the field, or at `cameraAt` looking down -z when given.
  */
 async function saveModelScene(
-  project: { path: string; scenePath: string; sceneId: string },
+  project: { path: string; scenePath: string; sceneId: SceneId },
   manifest: AssetManifest,
   modelPath: string,
   half: { x: number; z: number },

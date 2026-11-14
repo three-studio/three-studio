@@ -12,6 +12,7 @@ import {
   createJoint,
   createRenderingSettings,
   findComponent,
+  fixedId,
   instancedId,
   serializeScene,
   type AudioSourceComponent,
@@ -441,7 +442,7 @@ describe('knowing whether the work is saved', () => {
     const seen = doc().changesSince(0).revision;
     const { past, revision, savedRevision, structureRevision, componentRevision } = doc();
 
-    doc().adoptIdentity({ id: 'c', name: 'Copy' });
+    doc().adoptIdentity({ id: fixedId('scene', 'c'), name: 'Copy' });
 
     expect(scene().id).toBe('c');
     expect(scene().name).toBe('Copy');

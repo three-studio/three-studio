@@ -1,7 +1,7 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PROJECT_FILE_NAME } from '@three-studio/core';
+import { PROJECT_FILE_NAME, fixedId, type SceneId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createProject, discoverScenes, readProject, updateProject } from '../src/main/project';
 import { createScene, renameScene, setStartScene } from '../src/main/scenes';
@@ -26,7 +26,7 @@ async function project(): Promise<string> {
   return root;
 }
 
-async function idOf(root: string, name: string): Promise<string> {
+async function idOf(root: string, name: string): Promise<SceneId> {
   const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
@@ -44,7 +44,7 @@ describe('two windows writing the project file at once', () => {
       setStartScene(root, boss),
       updateProject(root, (current) => ({
         ...current,
-        settings: { ...current.settings, loadingScene: 'splash' },
+        settings: { ...current.settings, loadingScene: fixedId('scene', 'splash') },
       })),
     ]);
 

@@ -9,6 +9,7 @@ import {
   type RenderingSettings,
   type SceneDoc,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { Engine, SceneHost, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -151,7 +152,7 @@ export function playSceneId(
   entry: LaunchSnapshot['entry'],
   scenes: readonly SceneEntry[],
   idOrName: string,
-): string | null {
+): SceneId | null {
   if (namesEntry(entry, idOrName)) return entry.id;
   return resolveScene(scenes, idOrName)?.id ?? null;
 }
@@ -425,7 +426,7 @@ export class PlaySession {
    * next one, whose own were never shown. The exported player says them again
    * at every scene; so does this.
    */
-  private run(engine: Engine, sceneId: string | null): void {
+  private run(engine: Engine, sceneId: SceneId | null): void {
     this.engine = engine;
     useViewportStore.getState().setRunningScene(sceneId);
     // The Inspector tunes the window's scene: another scene's engine is handed

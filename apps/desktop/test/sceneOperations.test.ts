@@ -12,8 +12,10 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   deserializeScene,
+  fixedId,
   serializeScene,
   type ProjectFile,
+  type SceneId,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { discoverScenes, openProject, readProject } from '../src/main/project';
@@ -42,7 +44,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-scenes-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
 
-  const ids: string[] = [];
+  const ids: SceneId[] = [];
   for (const name of names) {
     const document = createEmptyScene(name);
     await writeFile(
@@ -77,7 +79,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
   return root;
 }
 
-async function idOf(root: string, name: string): Promise<string> {
+async function idOf(root: string, name: string): Promise<SceneId> {
   const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
@@ -239,7 +241,7 @@ describe('the start scene is always one of the scenes', () => {
 
   it('refuses to start on a scene the project does not have', async () => {
     const root = await projectWith(['main']);
-    await expect(setStartScene(root, 'not-an-id')).rejects.toThrow(/not a scene/i);
+    await expect(setStartScene(root, fixedId('scene', 'not-an-id'))).rejects.toThrow(/not a scene/i);
   });
 });
 

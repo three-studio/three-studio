@@ -25,6 +25,7 @@ import {
   type PortHolder,
   type ProjectSummary,
   type SceneChange,
+  type SceneId,
   type ScriptBuildResult,
   IPC_EVENTS,
   IPC_INVOKE,
@@ -139,13 +140,13 @@ export interface IpcDeps {
    * `false` when the user cancelled at the unsaved-changes prompt. The window
    * is passed because with several open there is no such thing as "the editor".
    */
-  switchScene: (from: Electron.WebContents, sceneId: string) => boolean;
+  switchScene: (from: Electron.WebContents, sceneId: SceneId) => boolean;
   /** Opens a scene of the same project in a window of its own. */
-  openSceneWindow: (sceneId: string) => void;
+  openSceneWindow: (sceneId: SceneId) => void;
   /** Records which scene a window's renderer settled on, and after a Save As. */
-  noteScene: (from: Electron.WebContents, sceneId: string) => void;
+  noteScene: (from: Electron.WebContents, sceneId: SceneId) => void;
   /** True when a scene is open in a window other than the one asking. */
-  isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: string) => boolean;
+  isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: SceneId) => boolean;
   /** Every editor window, for broadcasting a project that has changed. */
   editorWindows: () => readonly BrowserWindow[];
   devices: DeviceServer;
@@ -299,7 +300,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return adopt(await createProject(input.name, input.directory));
     },
 
-    open: async (event, projectPath: string, sceneId?: string | null): Promise<OpenProject> => {
+    open: async (event, projectPath: string, sceneId?: SceneId | null): Promise<OpenProject> => {
       const opened = adopt(await openProject(projectPath, sceneId ?? undefined));
       // A window opened without a scene id lands on the start scene, and this
       // is where the main process learns which that was — see `noteScene`.
@@ -352,11 +353,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * renderer asking permission to destroy itself would be asking the thing it
    * is about to destroy.
    */
-    switchScene: (event, sceneId: string): boolean => {
+    switchScene: (event, sceneId: SceneId): boolean => {
       return deps.switchScene(event.sender, sceneId);
     },
 
-    openSceneWindow: (_event, sceneId: string): void => {
+    openSceneWindow: (_event, sceneId: SceneId): void => {
       deps.openSceneWindow(sceneId);
     },
 
@@ -380,17 +381,17 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return announce(change, event.sender, change);
     },
 
-    duplicateScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
+    duplicateScene: async (event, sceneId: SceneId, name: string): Promise<SceneChange> => {
       const change = await duplicateScene(requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
 
-    renameScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
+    renameScene: async (event, sceneId: SceneId, name: string): Promise<SceneChange> => {
       const change = await renameScene(requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
 
-    deleteScene: async (event, sceneId: string): Promise<ProjectContents> => {
+    deleteScene: async (event, sceneId: SceneId): Promise<ProjectContents> => {
       // Refused rather than left to go wrong later: the file would go, the other
       // window would stay open on it, and its next save would write back a scene
       // the project no longer lists.
@@ -401,7 +402,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return announce(contents, event.sender, contents);
     },
 
-    setStartScene: async (event, sceneId: string): Promise<ProjectContents> => {
+    setStartScene: async (event, sceneId: SceneId): Promise<ProjectContents> => {
       const contents = await setStartScene(requireProject(), sceneId);
       return announce(contents, event.sender, contents);
     },

@@ -6,6 +6,7 @@ import {
   createRenderingSettings,
   createStarterScene,
   encodeLaunchSnapshot,
+  fixedId,
   type DeviceInfo,
   type DeviceLogs,
   type DeviceServerStatus,
@@ -53,6 +54,7 @@ import { launchSnapshot } from '../src/viewport/PlaySession';
  */
 
 const TOKEN = 'abcdefghijKLMNOPQRST01';
+const SCENE_ID = fixedId('scene', 'scene-1');
 
 function status(overrides: Partial<DeviceServerStatus> = {}): DeviceServerStatus {
   const port = overrides.port ?? 7700;
@@ -138,7 +140,7 @@ const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,
   name: 'Races',
   engineVersion: '0.1.0',
-  startScene: 'scene-1',
+  startScene: SCENE_ID,
   settings: {
     loadingScene: null,
     rendering: createRenderingSettings(),
@@ -151,8 +153,8 @@ function openProject(): void {
   useProjectStore.setState({
     summary: { name: 'Races', path: '/projects/Races', lastOpenedAt: 1 },
     project,
-    sceneId: 'scene-1',
-    scenes: [{ id: 'scene-1', name: 'Level', path: 'scenes/Level.scene.json', shadowedBy: null }],
+    sceneId: SCENE_ID,
+    scenes: [{ id: SCENE_ID, name: 'Level', path: 'scenes/Level.scene.json', shadowedBy: null }],
   } as never);
 }
 

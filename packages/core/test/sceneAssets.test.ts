@@ -5,6 +5,7 @@ import {
   createEmptyScene,
   deserializeScene,
   emptyComponentTables,
+  fixedId,
   setComponentsOf,
   serializeScene,
   unknownComponentTypes,
@@ -29,7 +30,7 @@ import { prefabWith } from './fixtures';
 function sceneWith(templates: EntityTemplate[]): SceneDoc {
   const scene: SceneDoc = {
     version: 1,
-    id: 'scene',
+    id: fixedId('scene', 'scene'),
     name: 'Main',
     entities: new Map(templates.map(({ entity }) => [entity.id, entity])),
     components: emptyComponentTables(),

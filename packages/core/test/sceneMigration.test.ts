@@ -12,6 +12,7 @@ import {
   deserializeScene,
   emptyComponentTables,
   findComponent,
+  fixedId,
   jsonOf,
   serializePrefab,
   serializeScene,
@@ -61,7 +62,7 @@ function createStarter(): SceneDoc {
   const components = emptyComponentTables();
   const scene: SceneDoc = {
     version: SCENE_FORMAT_VERSION,
-    id: 'scene-1',
+    id: fixedId('scene', 'scene-1'),
     name: 'Main',
     entities: new Map([[cube.entity.id, cube.entity]]),
     components,
@@ -535,7 +536,7 @@ function sceneAt(version: number, eyeHeight: number, extra: ComponentDoc[] = [])
   const template = playerEntity(eyeHeight, extra);
   const scene: SceneDoc = {
     version,
-    id: 'scene-1',
+    id: fixedId('scene', 'scene-1'),
     name: 'Main',
     entities: new Map([[template.entity.id, template.entity]]),
     components: emptyComponentTables(),

@@ -15,6 +15,7 @@ import {
   createPhysicsMaterial,
   deserializeScene,
   fillComponent,
+  fixedId,
   serializeScene,
   typesWithoutRuntime,
   type ComponentDoc,
@@ -201,7 +202,7 @@ describe('fill', () => {
     const entity = createEntity('Thing', [{ id: 'c1', type: 'light' } as unknown as ComponentDoc]);
     const scene: SceneDoc = {
       version: 1,
-      id: 's1',
+      id: fixedId('scene', 's1'),
       name: 'Main',
       entities: new Map([[entity.entity.id, entity.entity]]),
       components: emptyComponentTables(),

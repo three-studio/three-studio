@@ -34,6 +34,7 @@ import {
   createStarterScene,
   deserializeScene,
   emptyComponentTables,
+  fixedId,
   insertEntity,
   prefabsFromJson,
   putComponent,
@@ -45,6 +46,7 @@ import {
   type PhysicsSettings,
   type ProjectFile,
   type RenderingSettings,
+  type SceneId,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createPrefabAsset, readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
@@ -702,7 +704,7 @@ describe('a profile that names a scene the project no longer has', () => {
 
     const result = await exportBuild(
       projectPath,
-      profile({ scenes: [scene.id, 'a-scene-that-was-deleted'] }),
+      profile({ scenes: [scene.id, fixedId('scene', 'a-scene-that-was-deleted')] }),
       outputDir,
       [templateRoot],
     );
@@ -727,9 +729,12 @@ describe('a profile that names a scene the project no longer has', () => {
     const outputDir = join(projectPath, '..', 'out');
 
     await expect(
-      exportBuild(projectPath, profile({ scenes: ['gone', 'also-gone'] }), outputDir, [
-        templateRoot,
-      ]),
+      exportBuild(
+        projectPath,
+        profile({ scenes: [fixedId('scene', 'gone'), fixedId('scene', 'also-gone')] }),
+        outputDir,
+        [templateRoot],
+      ),
     ).rejects.toThrow(/no scene/i);
   });
 });
@@ -1374,7 +1379,7 @@ describe('what a scene needs beyond its slots', () => {
     await writeFile(file, JSON.stringify(written), 'utf8');
   }
 
-  async function setLoadingScene(projectPath: string, id: string): Promise<void> {
+  async function setLoadingScene(projectPath: string, id: SceneId): Promise<void> {
     const file = join(projectPath, PROJECT_FILE_NAME);
     const project = JSON.parse(await readFile(file, 'utf8')) as ProjectFile;
     project.settings.loadingScene = id;
@@ -1425,7 +1430,7 @@ describe('what a scene needs beyond its slots', () => {
 
   it('says so when the loading scene is gone, and names none', async () => {
     const { projectPath, templateRoot } = await makeProject();
-    await setLoadingScene(projectPath, 'scene-deleted-in-the-finder');
+    await setLoadingScene(projectPath, fixedId('scene', 'scene-deleted-in-the-finder'));
     const outputDir = join(projectPath, '..', 'out-noloading');
 
     const result = await exportBuild(projectPath, profile(), outputDir, [templateRoot]);
@@ -1493,7 +1498,7 @@ describe('a scene whose id is not a name', () => {
 
     const result = await exportBuild(
       projectPath,
-      profile({ scenes: [main.id, '../../escaped'] }),
+      profile({ scenes: [main.id, fixedId('scene', '../../escaped')] }),
       outputDir,
       [templateRoot],
     );

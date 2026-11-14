@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { entrySceneName, sceneOf } from '../src/scenes';
 
@@ -15,10 +16,10 @@ import { entrySceneName, sceneOf } from '../src/scenes';
 
 const BUILD = {
   scenes: [
-    { id: 's-main', name: 'main', path: 'scenes/main.1a2b3c4d.json' },
-    { id: 's-boss', name: 'Boss', path: 'scenes/boss.5e6f7a8b.json' },
+    { id: fixedId('scene', 's-main'), name: 'main', path: 'scenes/main.1a2b3c4d.json' },
+    { id: fixedId('scene', 's-boss'), name: 'Boss', path: 'scenes/boss.5e6f7a8b.json' },
     // Another folder's scene under the entry's name: the entry keeps it.
-    { id: 's-other', name: 'main', path: 'scenes/main.9c0d1e2f.json' },
+    { id: fixedId('scene', 's-other'), name: 'main', path: 'scenes/main.9c0d1e2f.json' },
   ],
 };
 
@@ -35,8 +36,8 @@ describe('naming a scene in a build', () => {
   it('prefers an id to a name that happens to spell it', () => {
     const build = {
       scenes: [
-        { id: 'a', name: 'b', path: 'scenes/b.json' },
-        { id: 'b', name: 'other', path: 'scenes/other.json' },
+        { id: fixedId('scene', 'a'), name: 'b', path: 'scenes/b.json' },
+        { id: fixedId('scene', 'b'), name: 'other', path: 'scenes/other.json' },
       ],
     };
     expect(sceneOf(build, 'b').id).toBe('b');

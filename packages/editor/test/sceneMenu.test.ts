@@ -5,9 +5,11 @@ import {
   createMeshEntity,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   sceneName,
   type ProjectFile,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity } from '../src/commands/sceneCommands';
@@ -30,12 +32,22 @@ import type { MenuEntry, MenuItem } from '../src/ui/Menu';
 
 // In path order, as `discoverScenes` hands them over: `L` sorts before `M`.
 const LEVEL_2: SceneEntry = {
-  id: 'level-2',
+  id: fixedId('scene', 'level-2'),
   name: 'Level 2',
   path: 'scenes/Level 2.scene.json',
   shadowedBy: null,
 };
-const MAIN: SceneEntry = { id: 'main', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null };
+const MAIN: SceneEntry = {
+  id: fixedId('scene', 'main'),
+  name: 'Main',
+  path: 'scenes/Main.scene.json',
+  shadowedBy: null,
+};
+
+const A = fixedId('scene', 'a');
+const B = fixedId('scene', 'b');
+const D = fixedId('scene', 'd');
+const GONE = fixedId('scene', 'gone');
 
 /*
  * Lists `discoverScenes` can produce, and only those: in path order by code
@@ -43,7 +55,7 @@ const MAIN: SceneEntry = { id: 'main', name: 'Main', path: 'scenes/Main.scene.js
  * test that let a shadowed file's row open another file held a list with none
  * of these properties.
  */
-const scene = (path: string, id: string, shadowedBy: string | null = null): SceneEntry => ({
+const scene = (path: string, id: SceneId, shadowedBy: string | null = null): SceneEntry => ({
   id,
   name: sceneName(path),
   path,
@@ -56,20 +68,20 @@ const scene = (path: string, id: string, shadowedBy: string | null = null): Scen
  * shadowed file.
  */
 const COPY = [
-  scene('scenes/Boss copy.scene.json', 'b'),
-  scene('scenes/Boss.scene.json', 'b', 'scenes/Boss copy.scene.json'),
-  scene('scenes/Main.scene.json', 'a'),
+  scene('scenes/Boss copy.scene.json', B),
+  scene('scenes/Boss.scene.json', B, 'scenes/Boss copy.scene.json'),
+  scene('scenes/Main.scene.json', A),
 ];
 /** Two scenes called Boss, each with an id of its own. */
 const HOMONYMS = [
-  scene('scenes/Boss.scene.json', 'b'),
-  scene('scenes/Main.scene.json', 'a'),
-  scene('scenes/old/Boss.scene.json', 'd'),
+  scene('scenes/Boss.scene.json', B),
+  scene('scenes/Main.scene.json', A),
+  scene('scenes/old/Boss.scene.json', D),
 ];
 /** The homonyms, and a copy of Main in `old/` that keeps its id. */
-const BOTH = [...HOMONYMS, scene('scenes/old/Main.scene.json', 'a', 'scenes/Main.scene.json')];
+const BOTH = [...HOMONYMS, scene('scenes/old/Main.scene.json', A, 'scenes/Main.scene.json')];
 
-const startingOn = (startScene: string): ProjectFile => ({
+const startingOn = (startScene: SceneId): ProjectFile => ({
   version: PROJECT_FORMAT_VERSION,
   name: 'Races',
   engineVersion: '0.1.0',
@@ -89,8 +101,8 @@ const startingOn = (startScene: string): ProjectFile => ({
  */
 function open(
   scenes: readonly SceneEntry[],
-  sceneId: string | null,
-  startScene: string | null = null,
+  sceneId: SceneId | null,
+  startScene: SceneId | null = null,
 ): SceneMenuInput {
   useProjectStore.setState({
     summary: { name: 'Races', path: '/projects/Races', lastOpenedAt: 1 },
@@ -109,25 +121,25 @@ function edit(): void {
 
 /** Each state the bar can build the menu in, set up from nothing. */
 const STATES: Record<string, () => SceneMenuInput> = {
-  'one scene': () => open([MAIN], 'main'),
-  'two scenes, on Main': () => open([LEVEL_2, MAIN], 'main'),
-  'two scenes, on Level 2': () => open([LEVEL_2, MAIN], 'level-2'),
+  'one scene': () => open([MAIN], MAIN.id),
+  'two scenes, on Main': () => open([LEVEL_2, MAIN], MAIN.id),
+  'two scenes, on Level 2': () => open([LEVEL_2, MAIN], LEVEL_2.id),
   'a dirty document': () => {
-    const input = open([LEVEL_2, MAIN], 'main');
+    const input = open([LEVEL_2, MAIN], MAIN.id);
     edit();
     return input;
   },
   'a save in flight': () => {
-    const input = open([LEVEL_2, MAIN], 'main');
+    const input = open([LEVEL_2, MAIN], MAIN.id);
     edit();
     useProjectStore.setState({ saving: true });
     return input;
   },
-  'a sceneId that names no entry': () => open([LEVEL_2, MAIN], 'gone'),
-  'homonyms, and a copy that keeps its id': () => open(BOTH, 'a'),
-  'the window on the start scene': () => open(HOMONYMS, 'a', 'a'),
-  'another scene the start one': () => open(HOMONYMS, 'a', 'b'),
-  'a start scene that names no file': () => open(HOMONYMS, 'a', 'gone'),
+  'a sceneId that names no entry': () => open([LEVEL_2, MAIN], GONE),
+  'homonyms, and a copy that keeps its id': () => open(BOTH, A),
+  'the window on the start scene': () => open(HOMONYMS, A, A),
+  'another scene the start one': () => open(HOMONYMS, A, B),
+  'a start scene that names no file': () => open(HOMONYMS, A, GONE),
 };
 
 /** What the menu reads, top to bottom, with `─` for a separator. */
@@ -167,7 +179,7 @@ afterEach(() => {
 
 describe('the order', () => {
   it('reads opening, then the document against its file, then the file, then the project', () => {
-    expect(labels(buildSceneMenu(open([LEVEL_2, MAIN], 'main')))).toEqual([
+    expect(labels(buildSceneMenu(open([LEVEL_2, MAIN], MAIN.id)))).toEqual([
       'New Scene…',
       'Open Scene',
       'Open in New Window',
@@ -218,7 +230,7 @@ describe('no guard of its own', () => {
   });
 
   it('greys Revert Scene on a clean scene, and offers it once edited', () => {
-    const input = open([LEVEL_2, MAIN], 'main');
+    const input = open([LEVEL_2, MAIN], MAIN.id);
     expect(row(buildSceneMenu(input), 'Revert Scene').disabled).toBe(true);
 
     edit();
@@ -226,12 +238,12 @@ describe('no guard of its own', () => {
   });
 
   it('greys Delete Scene with one scene, and offers it with two', () => {
-    expect(row(buildSceneMenu(open([MAIN], 'main')), 'Delete Scene').disabled).toBe(true);
-    expect(row(buildSceneMenu(open([LEVEL_2, MAIN], 'main')), 'Delete Scene').disabled).toBe(false);
+    expect(row(buildSceneMenu(open([MAIN], MAIN.id)), 'Delete Scene').disabled).toBe(true);
+    expect(row(buildSceneMenu(open([LEVEL_2, MAIN], MAIN.id)), 'Delete Scene').disabled).toBe(false);
   });
 
   it('offers Save Scene once the document is edited, and not while it saves', () => {
-    const input = open([LEVEL_2, MAIN], 'main');
+    const input = open([LEVEL_2, MAIN], MAIN.id);
     expect(shortcutHint('save')).toBeDefined();
     expect(row(buildSceneMenu(input), 'Save Scene')).toMatchObject({
       disabled: true,
@@ -248,7 +260,7 @@ describe('no guard of its own', () => {
 
 describe('Open Scene ▸', () => {
   it("lists every scene in the list's order, the window's checked and still offered", () => {
-    const rows = submenu(buildSceneMenu(open([LEVEL_2, MAIN], 'main')), 'Open Scene');
+    const rows = submenu(buildSceneMenu(open([LEVEL_2, MAIN], MAIN.id)), 'Open Scene');
     expect(rows.map((entry) => entry && { ...shown(entry), checked: entry.checked })).toEqual([
       { label: 'Level 2', shortcut: undefined, disabled: false, checked: false },
       { label: 'Main', shortcut: undefined, disabled: false, checked: true },
@@ -256,14 +268,14 @@ describe('Open Scene ▸', () => {
   });
 
   it('is there with one scene, so that the actions keep their places', () => {
-    const rows = submenu(buildSceneMenu(open([MAIN], 'main')), 'Open Scene');
+    const rows = submenu(buildSceneMenu(open([MAIN], MAIN.id)), 'Open Scene');
     expect(rows.map((entry) => entry?.label)).toEqual(['Main']);
   });
 
   it('switches to the scene a row names, and not to the one already open', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
-    const [level2, main] = submenu(buildSceneMenu(open([LEVEL_2, MAIN], 'main')), 'Open Scene');
+    const [level2, main] = submenu(buildSceneMenu(open([LEVEL_2, MAIN], MAIN.id)), 'Open Scene');
 
     main?.onSelect?.();
     expect(switchScene).not.toHaveBeenCalled();
@@ -276,7 +288,7 @@ describe('Open Scene ▸', () => {
   it('gives a shadowed file a row of its own, greyed, under its own name', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
-    const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open Scene');
+    const rows = rowsIn(buildSceneMenu(open(COPY, A)), 'Open Scene');
 
     // The middle row used to read `Boss copy`, offered, and open the copy: it
     // was the command aimed at `b`, and `b` names the copy.
@@ -294,7 +306,7 @@ describe('Open Scene ▸', () => {
   it('names the folder of homonyms, and of them only', async () => {
     const switchScene = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { switchScene } } });
-    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'a')), 'Open Scene');
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, A)), 'Open Scene');
 
     // No folder for the Boss at the top of `scenes/`: the other one's is
     // enough to tell them apart.
@@ -310,13 +322,13 @@ describe('Open Scene ▸', () => {
   });
 
   it('keys every row by its path, since names repeat', () => {
-    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene');
+    const rows = rowsIn(buildSceneMenu(open(BOTH, A)), 'Open Scene');
     expect(rows.map((entry) => entry.label)).toEqual(['Boss', 'Main', 'Boss', 'Main']);
     expect(rows.map((entry) => entry.key)).toEqual(BOTH.map((entry) => entry.path));
   });
 
   it('says the folder, then the state, on one row', () => {
-    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene');
+    const rows = rowsIn(buildSceneMenu(open(BOTH, A)), 'Open Scene');
     expect(said(rows[3]!)).toEqual({
       key: 'scenes/old/Main.scene.json',
       label: 'Main',
@@ -326,12 +338,12 @@ describe('Open Scene ▸', () => {
   });
 
   it("checks the file that wins the window's id, never a shadowed file carrying it", () => {
-    expect(rowsIn(buildSceneMenu(open(COPY, 'b')), 'Open Scene').map((entry) => entry.checked)).toEqual([
+    expect(rowsIn(buildSceneMenu(open(COPY, B)), 'Open Scene').map((entry) => entry.checked)).toEqual([
       true,
       false,
       false,
     ]);
-    expect(rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open Scene').map((entry) => entry.checked)).toEqual([
+    expect(rowsIn(buildSceneMenu(open(BOTH, A)), 'Open Scene').map((entry) => entry.checked)).toEqual([
       false,
       true,
       false,
@@ -342,14 +354,14 @@ describe('Open Scene ▸', () => {
 
 describe('Open in New Window ▸', () => {
   it('offers the other scene', () => {
-    const rows = submenu(buildSceneMenu(open([LEVEL_2, MAIN], 'main')), 'Open in New Window');
+    const rows = submenu(buildSceneMenu(open([LEVEL_2, MAIN], MAIN.id)), 'Open in New Window');
     expect(rows.map((entry) => entry && shown(entry))).toEqual([
       { label: 'Level 2', shortcut: undefined, disabled: false },
     ]);
   });
 
   it('is left out with one scene', () => {
-    expect(labels(buildSceneMenu(open([MAIN], 'main')))).not.toContain('Open in New Window');
+    expect(labels(buildSceneMenu(open([MAIN], MAIN.id)))).not.toContain('Open in New Window');
   });
 
   it('is left out when the other file only shadows this one', () => {
@@ -357,18 +369,18 @@ describe('Open in New Window ▸', () => {
     // by path order answer to it, and the other can be opened nowhere. Shown
     // enabled, the heading would open an empty list.
     const copy: SceneEntry = {
-      id: 'main',
+      id: MAIN.id,
       name: 'Main',
       path: 'scenes/old/Main.scene.json',
       shadowedBy: 'scenes/Main.scene.json',
     };
-    expect(labels(buildSceneMenu(open([MAIN, copy], 'main')))).not.toContain('Open in New Window');
+    expect(labels(buildSceneMenu(open([MAIN, copy], MAIN.id)))).not.toContain('Open in New Window');
   });
 
   it('holds the rows of Open Scene ▸ that can act, with their folder and their key', () => {
     const openSceneWindow = vi.fn(async (_sceneId: string) => {});
     vi.stubGlobal('window', { studio: { project: { openSceneWindow } } });
-    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'a')), 'Open in New Window');
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, A)), 'Open in New Window');
 
     expect(rows.map(said)).toEqual([
       { key: 'scenes/Boss.scene.json', label: 'Boss', detail: undefined, disabled: false },
@@ -383,7 +395,7 @@ describe('Open in New Window ▸', () => {
     // The window is on the top-level Boss, so only the other one is listed. It
     // still says `old`: Open Scene ▸ shows both, and one file has to read the
     // same in both lists.
-    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, 'b')), 'Open in New Window');
+    const rows = rowsIn(buildSceneMenu(open(HOMONYMS, B)), 'Open in New Window');
     expect(rows.map((entry) => [entry.label, entry.detail])).toEqual([
       ['Main', undefined],
       ['Boss', 'old'],
@@ -393,7 +405,7 @@ describe('Open in New Window ▸', () => {
   it("leaves out this window's scene and a shadowed file", () => {
     // Main is this window's, and its namesake in `old/` carries an id that
     // names Main: no window can be opened on that file.
-    const rows = rowsIn(buildSceneMenu(open(BOTH, 'a')), 'Open in New Window');
+    const rows = rowsIn(buildSceneMenu(open(BOTH, A)), 'Open in New Window');
     expect(rows.map(said)).toEqual([
       { key: 'scenes/Boss.scene.json', label: 'Boss', detail: undefined, disabled: false },
       { key: 'scenes/old/Boss.scene.json', label: 'Boss', detail: 'old', disabled: false },
@@ -403,7 +415,7 @@ describe('Open in New Window ▸', () => {
   it('does not offer a shadowed file under the name of the file that wins its id', () => {
     // The shadowed `Boss` used to be listed here as a second `Boss copy`, which
     // opened the copy.
-    const rows = rowsIn(buildSceneMenu(open(COPY, 'a')), 'Open in New Window');
+    const rows = rowsIn(buildSceneMenu(open(COPY, A)), 'Open in New Window');
     expect(rows.map((entry) => entry.key)).toEqual(['scenes/Boss copy.scene.json']);
   });
 });
@@ -414,23 +426,23 @@ describe('the start scene', () => {
     rowsIn(buildSceneMenu(input), label).map((entry) => entry.detail);
 
   it('says so on its row', () => {
-    expect(details(open(HOMONYMS, 'a', 'a'))).toEqual([undefined, 'start', 'old']);
+    expect(details(open(HOMONYMS, A, A))).toEqual([undefined, 'start', 'old']);
   });
 
   it('is the file that wins the start id, never a shadowed copy carrying it', () => {
-    expect(details(open(COPY, 'a', 'b'))).toEqual(['start', 'duplicate id', undefined]);
+    expect(details(open(COPY, A, B))).toEqual(['start', 'duplicate id', undefined]);
   });
 
   it('is said nowhere when the start id names no file', () => {
-    expect(details(open(HOMONYMS, 'a', 'gone'))).toEqual([undefined, undefined, 'old']);
+    expect(details(open(HOMONYMS, A, GONE))).toEqual([undefined, undefined, 'old']);
   });
 
   it('comes after the folder on one row', () => {
-    expect(details(open(BOTH, 'a', 'd'))).toEqual([undefined, undefined, 'old · start', 'old · duplicate id']);
+    expect(details(open(BOTH, A, D))).toEqual([undefined, undefined, 'old · start', 'old · duplicate id']);
   });
 
   it('is said in Open in New Window ▸ too', () => {
-    expect(details(open(HOMONYMS, 'a', 'd'), 'Open in New Window')).toEqual([undefined, 'old · start']);
+    expect(details(open(HOMONYMS, A, D), 'Open in New Window')).toEqual([undefined, 'old · start']);
   });
 });
 
@@ -438,20 +450,20 @@ describe('Set as Start Scene', () => {
   // The verdict is the command's, which refuses the start scene itself; the
   // check is all the builder adds.
   it.each([
-    ['is checked and greyed on the start scene', 'a', 'a', { checked: true, disabled: true }],
-    ['is offered while another scene is the start one', 'a', 'b', { checked: false, disabled: false }],
-    ['is offered when the start id names no file', 'a', 'gone', { checked: false, disabled: false }],
-    ['is greyed when the window names no scene', 'gone', 'a', { checked: false, disabled: true }],
+    ['is checked and greyed on the start scene', A, A, { checked: true, disabled: true }],
+    ['is offered while another scene is the start one', A, B, { checked: false, disabled: false }],
+    ['is offered when the start id names no file', A, GONE, { checked: false, disabled: false }],
+    ['is greyed when the window names no scene', GONE, A, { checked: false, disabled: true }],
   ])('%s', (_, sceneId, startScene, expected) => {
     const entry = row(buildSceneMenu(open(HOMONYMS, sceneId, startScene)), 'Set as Start Scene');
     expect({ checked: entry.checked, disabled: entry.disabled }).toEqual(expected);
   });
 
   it("makes the window's scene the start scene", () => {
-    const setStartScene = vi.fn(async (_sceneId: string) => ({ project: startingOn('a'), scenes: HOMONYMS }));
+    const setStartScene = vi.fn(async (_sceneId: string) => ({ project: startingOn(A), scenes: HOMONYMS }));
     vi.stubGlobal('window', { studio: { project: { setStartScene } } });
 
-    row(buildSceneMenu(open(HOMONYMS, 'a', 'b')), 'Set as Start Scene').onSelect?.();
+    row(buildSceneMenu(open(HOMONYMS, A, B)), 'Set as Start Scene').onSelect?.();
     expect(setStartScene.mock.calls).toEqual([['a']]);
   });
 });

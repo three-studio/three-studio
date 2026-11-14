@@ -2,7 +2,7 @@ import { createCameraEntity } from '../components/camera/defaults';
 import { createLightEntity } from '../components/light/defaults';
 import { createMeshComponent } from '../components/mesh/defaults';
 import { SCENE_FORMAT_VERSION } from '../constants';
-import { createId } from '../ids';
+import { createSceneId } from '../ids';
 import { emptyComponentTables, setComponentsOf } from './components';
 import { createEntity } from './entity';
 import { createBoxGeometry } from './geometry';
@@ -108,7 +108,7 @@ export function createEnvironment(): EnvironmentDef {
 export function createEmptyScene(name = 'Main'): SceneDoc {
   return {
     version: SCENE_FORMAT_VERSION,
-    id: createId(),
+    id: createSceneId(),
     name,
     entities: new Map(),
     components: emptyComponentTables(),

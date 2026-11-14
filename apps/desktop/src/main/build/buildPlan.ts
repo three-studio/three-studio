@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { stat } from 'node:fs/promises';
-import type { AssetKind } from '@three-studio/core';
+import type { AssetKind, SceneId } from '@three-studio/core';
 import { AssetError, hashFile } from '../assetFiles';
 import { foldKey, toBuildPath, type BuildPath } from './buildPath';
 
@@ -36,7 +36,7 @@ export type FileRole =
   | { kind: 'page' }
   | { kind: 'player' }
   | { kind: 'manifest' }
-  | { kind: 'scene'; sceneId: string }
+  | { kind: 'scene'; sceneId: SceneId }
   | { kind: 'scripts' }
   | { kind: 'asset'; assetId: string; assetKind: AssetKind };
 

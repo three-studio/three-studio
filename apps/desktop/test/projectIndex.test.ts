@@ -6,13 +6,15 @@ import {
   ASSET_META_SUFFIX,
   ASSET_META_VERSION,
   CACHE_DIR,
+  ENGINE_VERSION,
   SCENES_DIR,
   createEmptyScene,
+  createSceneId,
   deserializeScene,
   serializeScene,
   type AssetMeta,
 } from '@three-studio/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
 import { discoverScenes } from '../src/main/project';
 
@@ -198,6 +200,51 @@ describe('what the index declines to answer for', () => {
   });
 
   /*
+   * What the index holds for a scene is an id, and it is checked when it is
+   * reused: one that is not — a hand-edited cache, or a value some other build
+   * left — is a read, and not a scene named `''`.
+   */
+  it('reads a scene again when what the index holds for it is not an id', async () => {
+    const root = await projectWith(0, 1);
+    const before = await discoverScenes(root);
+    const path = indexFile(root, 'scenes.index.json');
+    const written = JSON.parse(await readFile(path, 'utf8'));
+    for (const entry of Object.values<{ v: unknown }>(written.entries)) entry.v = '';
+    await writeFile(path, JSON.stringify(written), 'utf8');
+
+    expect(await discoverScenes(root)).toEqual(before);
+  });
+
+  /*
+   * The build before this one listed a scene file with no id under its path, and
+   * cached the path as its id. Its index says the file is unchanged, and it is:
+   * what changed is that a path is not an id. The index names what built it, so
+   * that one is thrown away, and the file is read again and not listed.
+   */
+  it('does not serve a path as the id of a scene from an index an earlier build wrote', async () => {
+    const root = await projectWith(0, 1);
+    const hand = join(root, SCENES_DIR, 'Hand.scene.json');
+    await writeFile(hand, '{ "name": "Hand" }', 'utf8');
+    const info = await stat(hand);
+    await mkdir(join(root, CACHE_DIR), { recursive: true });
+    await writeFile(
+      indexFile(root, 'scenes.index.json'),
+      JSON.stringify({
+        builtBy: ENGINE_VERSION,
+        entries: { [`${SCENES_DIR}/Hand.scene.json`]: { m: info.mtimeMs, s: info.size, v: `${SCENES_DIR}/Hand.scene.json` } },
+      }),
+      'utf8',
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['Level0']);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  /*
    * A file replaced by one of exactly the same length within the same clock
    * tick is the one thing mtime and size cannot see. The stamp is only as fine
    * as the file system's timestamps — nanoseconds on APFS and ext4 — so this
@@ -207,12 +254,13 @@ describe('what the index declines to answer for', () => {
   it('sees a replacement of exactly the same size, because the timestamp moves', async () => {
     const root = await projectWith(0, 1);
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
-    const before = await discoverScenes(root);
+    // Warms the index, which the replacement below has to get past.
+    await discoverScenes(root);
     const sizeBefore = (await stat(file)).size;
 
-    // The same document with its id reversed: same length, so the file is byte
+    // The same document under another id of the same length: the file is byte
     // for byte the same size and only the timestamp can tell them apart.
-    const swapped = before[0]!.id.split('').reverse().join('');
+    const swapped = createSceneId();
     const original = deserializeScene(await readFile(file, 'utf8'));
     await writeFile(file, serializeScene({ ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);

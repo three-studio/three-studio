@@ -15,6 +15,8 @@ import {
   createRenderingSettings,
   createStarterScene,
   findScene,
+  isRecord,
+  isSceneId,
   normalizeBuildProfiles,
   resolveScene,
   safeFileName,
@@ -25,6 +27,7 @@ import {
   type ProjectFile,
   type ProjectSummary,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
 import { MissingFileError, isNotFound, resolveInside } from './paths';
@@ -104,6 +107,16 @@ export async function createProject(name: string, directory: string): Promise<Op
 }
 
 /**
+ * What the scene index was built by: the app version, and what an id is.
+ *
+ * The second half is not decoration. A build before scene ids were checked
+ * listed a scene file with no id under its **path**, and cached the path as its
+ * id. Its index still says the file is unchanged, and it is: what changed is
+ * that a path is not an id. So that index is read again, and not reused.
+ */
+const SCENE_INDEX_BUILT_BY = `${ENGINE_VERSION}:ids-are-checked`;
+
+/**
  * Every scene in the project, read off the disk.
  *
  * `scenes/` is walked rather than a list being consulted, because a list is a
@@ -118,13 +131,15 @@ export async function createProject(name: string, directory: string): Promise<Op
  * again, and a missing or stale index costs one slow walk.
  *
  * A file that cannot be read or parsed is skipped rather than thrown on: one
- * broken scene must not be a project that will not open.
+ * broken scene must not be a project that will not open. So is one that has no
+ * id of its own, which is said in the log (`readSceneId`).
  */
 export async function discoverScenes(projectPath: string): Promise<SceneEntry[]> {
   const found: SceneEntry[] = [];
-  // Only the app version: unlike a sidecar, nothing here is repaired or filled
-  // in on read, so the id in the file is the whole of what is cached.
-  const index = await FileIndex.open<string>(projectPath, 'scenes.index.json', ENGINE_VERSION);
+  // Nothing here is repaired or filled in on read, so the id in the file is the
+  // whole of what is cached — and it is checked when it is reused, since an
+  // index is a file somebody may have edited.
+  const index = await FileIndex.open<string>(projectPath, 'scenes.index.json', SCENE_INDEX_BUILT_BY);
 
   const walk = async (directory: string): Promise<void> => {
     let entries;
@@ -145,13 +160,10 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
         const stamp = await stampOf(child);
         if (stamp === null) continue;
 
-        let id = index.reuse(path, stamp);
-        if (id === undefined) {
-          const read = await readSceneId(child, path);
-          if (read === null) continue;
-          index.put(path, stamp, read);
-          id = read;
-        }
+        const cached = index.reuse(path, stamp);
+        const id = isSceneId(cached) ? cached : await readSceneId(child, path);
+        if (id === null) continue;
+        if (id !== cached) index.put(path, stamp, id);
         found.push({ id, name: sceneName(path), path, shadowedBy: null });
       }
     }
@@ -175,26 +187,30 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
 }
 
 /**
- * The `SceneDoc.id` in a scene file, or `null` when the file is not readable.
+ * The `SceneDoc.id` in a scene file, or `null` when the scene cannot be listed.
  *
  * Parsed rather than deserialized: `deserializeScene` validates and migrates a
  * whole document, and this runs once per file every time a project opens.
  *
- * A file with no id falls back to its own path. A hand-written `.scene.json`
- * has no identity of its own, and addressing it by where it is says exactly
- * that — a reference that its next move will break, which is the truth about a
- * scene that never carried one. Showing it beats refusing to list it.
+ * A file with no id is not listed, and says so. A hand-written `.scene.json`
+ * carries no identity of its own, and addressing it by its path would be a
+ * reference that its next move breaks — the start scene, a build profile and a
+ * window's URL with it, none of them saying why. A reference is an identifier,
+ * never a path, and a file that has none is not one anything can refer to. It
+ * is named in the log for now, until the editor reports it to its author.
  */
-async function readSceneId(file: string, path: string): Promise<string | null> {
+async function readSceneId(file: string, path: string): Promise<SceneId | null> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(file, 'utf8'));
   } catch {
     return null;
   }
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  const id = (parsed as { id?: unknown }).id;
-  return typeof id === 'string' && id !== '' ? id : path;
+  if (!isRecord(parsed)) return null;
+  const id = parsed['id'];
+  if (isSceneId(id)) return id;
+  console.warn(`[scenes] ${path} is not listed: it has no id of its own, and a path is not one.`);
+  return null;
 }
 
 /** Project-relative paths are `/`-separated everywhere; Windows is not. */
@@ -208,7 +224,7 @@ function toPosix(path: string): string {
  *   window opens on a different one. Ignored when the project no longer has
  *   it: a stale URL must not make a project refuse to open.
  */
-export async function openProject(projectPath: string, wanted?: string): Promise<OpenProject> {
+export async function openProject(projectPath: string, wanted?: SceneId): Promise<OpenProject> {
   const project = await readProjectFile(projectPath);
   const scenes = await discoverScenes(projectPath);
 
@@ -459,7 +475,7 @@ function adoptSceneIds(project: ProjectFile, scenes: readonly SceneEntry[]): voi
  * falls back to the first scene; throwing here would put back the failure this
  * whole function exists to remove.
  */
-function sceneIdFor(scenes: readonly SceneEntry[], reference: string): string {
+function sceneIdFor(scenes: readonly SceneEntry[], reference: SceneId): SceneId {
   const entry = scenes.find((scene) => scene.path === reference) ?? resolveScene(scenes, reference);
   return entry?.id ?? reference;
 }

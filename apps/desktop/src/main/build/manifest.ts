@@ -9,6 +9,7 @@ import {
   type PhysicsSettings,
   type PrefabDoc,
   type RenderingSettings,
+  type SceneId,
   type TextureEncoding,
 } from '@three-studio/core';
 
@@ -31,7 +32,7 @@ export interface ManifestContents {
   physics: PhysicsSettings;
   /** Entry point first; the rest ship for a script to load later. */
   scenes: readonly BuildScene[];
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   assets: readonly ShippedAsset[];
   materials: Record<string, MaterialDef>;
   physicsMaterials: Record<string, PhysicsMaterialDef>;

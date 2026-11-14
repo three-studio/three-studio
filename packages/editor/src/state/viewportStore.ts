@@ -1,3 +1,4 @@
+import type { SceneId } from '@three-studio/core';
 import type { RendererBackend } from '@three-studio/runtime';
 import { create } from 'zustand';
 
@@ -54,8 +55,8 @@ interface ViewportState extends ViewportStats {
    * looks the name up in the scene list: a scene renamed meanwhile is shown by
    * its new name.
    */
-  runningScene: string | null;
-  setRunningScene: (id: string | null) => void;
+  runningScene: SceneId | null;
+  setRunningScene: (id: SceneId | null) => void;
   /**
    * Whether the game's canvas holds the focus, in a window that has it: the
    * game hears keys only then. Written by the viewport from the canvas's own

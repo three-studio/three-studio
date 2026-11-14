@@ -65,6 +65,13 @@ describe('the scene, which travels in the URL', () => {
     expect(windowIdentity([], '').sceneId).toBeNull();
     expect(windowIdentity([], '?other=1').sceneId).toBeNull();
   });
+
+  it('is null when the URL names no scene at all, which is not the scene named ""', () => {
+    // A URL somebody edited, or a stale link. `''` is no id, and a window that
+    // asked the project for it would find nothing and say so in the wrong place.
+    expect(windowIdentity([], '?scene=').sceneId).toBeNull();
+    expect(windowIdentity([], '?scene=&other=1').sceneId).toBeNull();
+  });
 });
 
 describe('a role that is not one', () => {

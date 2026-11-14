@@ -1,3 +1,4 @@
+import type { SceneId } from '@three-studio/core';
 import { expandedScene } from '../state/expansion';
 import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
@@ -47,7 +48,7 @@ export interface EditorContext {
    * named this way: the id names the earlier file. The Scene menu builds that
    * file's row itself.
    */
-  readonly sceneId?: string;
+  readonly sceneId?: SceneId;
 }
 
 export function currentContext(): EditorContext {
@@ -65,7 +66,7 @@ export function contextForAsset(assetId: string): EditorContext {
 }
 
 /** The context for a gesture aimed at one scene — a row of the Scene menu. */
-export function contextForScene(sceneId: string): EditorContext {
+export function contextForScene(sceneId: SceneId): EditorContext {
   return { ...currentContext(), sceneId };
 }
 

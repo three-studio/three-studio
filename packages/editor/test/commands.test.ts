@@ -8,9 +8,11 @@ import {
   createRenderingSettings,
   emptyComponentTables,
   findComponent,
+  fixedId,
   putComponent,
   type ProjectFile,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity, groupSelection } from '../src/commands/sceneCommands';
@@ -28,6 +30,11 @@ import { Selection } from '../src/state/selection';
  * padlock defect in a second costume: the capability was wired once and three
  * callers out of four used it.
  */
+
+const MAIN = fixedId('scene', 'a');
+const BOSS = fixedId('scene', 'b');
+const LEVEL2 = fixedId('scene', 'c');
+const GONE = fixedId('scene', 'gone');
 
 const doc = () => useDocumentStore.getState();
 
@@ -369,41 +376,41 @@ describe('a gesture aimed at a scene', () => {
      * winner's name and opened the winner.
      */
     useProjectStore.setState({
-      sceneId: 'a',
+      sceneId: MAIN,
       scenes: [
-        { id: 'b', name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
-        { id: 'b', name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
-        { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
-        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+        { id: BOSS, name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
+        { id: BOSS, name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
+        { id: LEVEL2, name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+        { id: MAIN, name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
       ],
     } as never);
 
     // `b` names the copy. No context can aim at `scenes/Boss.scene.json`: the
     // Scene menu builds that file's row itself (`sceneMenu.test.ts`).
-    expect(commandById('openScene').can(contextForScene('b'))).toBe(true);
-    expect(commandById('openScene').label(contextForScene('b'))).toBe('Boss copy');
-    expect(commandById('openScene').can(contextForScene('c'))).toBe(true);
+    expect(commandById('openScene').can(contextForScene(BOSS))).toBe(true);
+    expect(commandById('openScene').label(contextForScene(BOSS))).toBe('Boss copy');
+    expect(commandById('openScene').can(contextForScene(LEVEL2))).toBe(true);
     // The label is the scene's name, which is what the menu row shows.
-    expect(commandById('openScene').label(contextForScene('c'))).toBe('Level2');
-    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('openScene').label(contextForScene(LEVEL2))).toBe('Level2');
+    expect(commandById('openScene').can(contextForScene(GONE))).toBe(false);
     expect(commandById('openScene').can(), 'no target').toBe(false);
 
     // A second window on the scene this window already holds is not a second
     // window. The menu said this in a `.filter` and the shadow rule in a
     // `disabled`, in two different sets of words.
-    expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(true);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(MAIN)), 'current').toBe(false);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(LEVEL2))).toBe(true);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(BOSS))).toBe(true);
   });
 });
 
 describe('Set as Start Scene', () => {
   const SCENES: SceneEntry[] = [
-    { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
-    { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+    { id: LEVEL2, name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+    { id: MAIN, name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
   ];
 
-  const startingOn = (startScene: string): ProjectFile => ({
+  const startingOn = (startScene: SceneId): ProjectFile => ({
     version: PROJECT_FORMAT_VERSION,
     name: 'Races',
     engineVersion: '0.1.0',
@@ -417,9 +424,9 @@ describe('Set as Start Scene', () => {
   });
 
   /** A window on Main, in a project that starts on `startScene`. */
-  async function onMain(startScene: string): Promise<void> {
+  async function onMain(startScene: SceneId): Promise<void> {
     const { useProjectStore } = await import('../src/state/projectStore');
-    useProjectStore.setState({ sceneId: 'a', scenes: SCENES, project: startingOn(startScene) });
+    useProjectStore.setState({ sceneId: MAIN, scenes: SCENES, project: startingOn(startScene) });
   }
 
   afterEach(() => {
@@ -428,7 +435,7 @@ describe('Set as Start Scene', () => {
 
   it("acts on the window's scene when it is aimed at none", async () => {
     const { commandById } = await import('../src/commands/registry');
-    await onMain('c');
+    await onMain(LEVEL2);
 
     // What the menu and the palette ask. The palette used to leave it out —
     // with no scene named, it had nothing to act on.
@@ -438,26 +445,26 @@ describe('Set as Start Scene', () => {
 
   it('refuses the scene that already is the start scene', async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
-    await onMain('c');
-    expect(commandById('setStartScene').can(contextForScene('c'))).toBe(false);
+    await onMain(LEVEL2);
+    expect(commandById('setStartScene').can(contextForScene(LEVEL2))).toBe(false);
 
-    await onMain('a');
+    await onMain(MAIN);
     expect(commandById('setStartScene').can()).toBe(false);
   });
 
   it("refuses a scene that is gone, rather than falling back on the window's", async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
-    await onMain('c');
+    await onMain(LEVEL2);
 
     // A radio was clicked for that scene; Main is not what anyone picked.
-    expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('setStartScene').can(contextForScene(GONE))).toBe(false);
   });
 
   it("makes the window's scene the start scene", async () => {
     const { commandById } = await import('../src/commands/registry');
     const { useProjectStore } = await import('../src/state/projectStore');
-    await onMain('c');
-    const setStartScene = vi.fn(async (startScene: string) => ({
+    await onMain(LEVEL2);
+    const setStartScene = vi.fn(async (startScene: SceneId) => ({
       project: startingOn(startScene),
       scenes: SCENES,
     }));

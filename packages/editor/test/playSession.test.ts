@@ -12,6 +12,7 @@ import {
   createRenderingSettings,
   defaultSettings,
   deserializeScene,
+  fixedId,
   serializeScene,
   type ProjectFile,
   type SceneDoc,
@@ -45,7 +46,7 @@ import type { Presentation } from '../src/viewport/Presentation';
  * looking at the scene with nothing to say what had happened.
  */
 
-const SCENE_ID = 'window-scene';
+const SCENE_ID = fixedId('scene', 'window-scene');
 const PREFAB_ID = 'prefab-under-test';
 
 const project: ProjectFile = {
@@ -337,7 +338,7 @@ function takeTheBrowserBack(): void {
 }
 
 // The window answers the one scene a script reads from its file.
-const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+const BOSS = { id: fixedId('scene', 'boss-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
 const GO_TO_BOSS = 'script-go-to-boss';
 
 /** A body nothing can touch: its own problem, which the first scene does not have. */
@@ -544,7 +545,12 @@ describe('the id of the scene a running game asked for', () => {
   it('is the entry’s for its name, as the source answers from the entry, with another file of that name first', () => {
     // Two folders under `scenes/` can each hold a file of one name; the source
     // reads the entry for it all the same.
-    const elsewhere = { id: 'elsewhere', name: 'Level One', path: 'scenes/old/level-one.scene.json', shadowedBy: null };
+    const elsewhere = {
+      id: fixedId('scene', 'elsewhere'),
+      name: 'Level One',
+      path: 'scenes/old/level-one.scene.json',
+      shadowedBy: null,
+    };
 
     expect(playSceneId(entry, [elsewhere, LEVEL_ONE, BOSS], 'Level One')).toBe(SCENE_ID);
   });

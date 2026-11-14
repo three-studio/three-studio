@@ -2,6 +2,7 @@ import {
   createEmptyScene,
   createPrefabDoc,
   emptyComponentTables,
+  fixedId,
   setComponentsOf,
   type EntityTemplate,
   type PrefabDoc,
@@ -32,7 +33,7 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
     ...createEmptyScene(),
     // Fixed rather than generated: a test that prints a scene should print the
     // same thing twice.
-    id: 'scene',
+    id: fixedId('scene', 'scene'),
     entities: new Map(entities.map((entity) => [entity.id, entity])),
     rootOrder: entities.filter((entity) => entity.parent === null).map((entity) => entity.id),
   };

@@ -1,4 +1,5 @@
 import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
+import type { SceneId } from '../ids';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
 export type AssetKind =
@@ -92,7 +93,7 @@ export const BUILD_LAYOUT = {
 
 /** One scene a build ships. */
 export interface BuildScene {
-  id: string;
+  id: SceneId;
   /**
    * What the author called it: what a script may name it by, and what
    * `scenes.current` answers in the build as it does in Play. An alias, never
@@ -144,7 +145,7 @@ export interface BuildManifest {
    * Id of the scene shown while another loads, or `null`. It ships with the
    * build whether the profile lists it or not.
    */
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   /** Asset id → path, so nothing in a scene is a file name. */
   assets: Record<string, string>;
   /**

@@ -9,10 +9,12 @@ import {
   createStarterScene,
   defaultSettings,
   emptyComponentTables,
+  fixedId,
   type AssetEntry,
   type AssetKind,
   type LaunchSnapshot,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import {
@@ -51,7 +53,7 @@ function asset(
 }
 
 function scene(
-  id: string,
+  id: SceneId,
   name: string,
   path: string,
   shadowedBy: string | null = null,
@@ -60,17 +62,20 @@ function scene(
 }
 
 const IMPORTED_BRICK = 'assets/textures/.imported/brick.png';
+const ENTRY = fixedId('scene', 'entry');
+const ALPHA = fixedId('scene', 'alpha');
+const BETA = fixedId('scene', 'beta');
 
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id: 'entry', name: 'Level', scene: createStarterScene() },
+    entry: { id: ENTRY, name: 'Level', scene: createStarterScene() },
     materials: { stone: createMaterial() },
     physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } },
     prefabs: { crate: createPrefabDoc('Crate', [], emptyComponentTables(), '') },
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: { ...createPhysicsSettings(), gravity: [0, -3, 0] },
-    loadingScene: 'loading',
+    loadingScene: fixedId('scene', 'loading'),
   };
 }
 
@@ -87,12 +92,12 @@ function contents(overrides: Partial<LaunchContents> = {}): LaunchContents {
 
 describe('the scenes a launch lists', () => {
   const ON_DISK = [
-    scene('alpha', 'Alpha', 'scenes/alpha.scene.json'),
-    scene('entry', 'Level', 'scenes/level.scene.json'),
-    scene('beta', 'Beta', 'scenes/sub/beta.scene.json'),
+    scene(ALPHA, 'Alpha', 'scenes/alpha.scene.json'),
+    scene(ENTRY, 'Level', 'scenes/level.scene.json'),
+    scene(BETA, 'Beta', 'scenes/sub/beta.scene.json'),
     // A copy made in the Finder: it carries alpha's id, and alpha's file
     // answers to it.
-    scene('alpha', 'Alpha copy', 'scenes/sub/z-alpha.scene.json', 'scenes/alpha.scene.json'),
+    scene(ALPHA, 'Alpha copy', 'scenes/sub/z-alpha.scene.json', 'scenes/alpha.scene.json'),
   ];
 
   const ids = (build: { scenes: { id: string }[] }) => build.scenes.map(({ id }) => id);
@@ -105,9 +110,9 @@ describe('the scenes a launch lists', () => {
   it('lists every other scene after it, its own file not twice and a shadowed one not at all', () => {
     const build = launchManifest(contents({ scenes: ON_DISK }));
     expect(build.scenes).toEqual([
-      { id: 'entry', name: 'Level', path: launchScenePath('entry') },
-      { id: 'alpha', name: 'Alpha', path: launchScenePath('alpha') },
-      { id: 'beta', name: 'Beta', path: launchScenePath('beta') },
+      { id: 'entry', name: 'Level', path: launchScenePath(ENTRY) },
+      { id: 'alpha', name: 'Alpha', path: launchScenePath(ALPHA) },
+      { id: 'beta', name: 'Beta', path: launchScenePath(BETA) },
     ]);
   });
 
@@ -123,7 +128,12 @@ describe('the scenes a launch lists', () => {
     // First, so the player — which gives a shared name to the first scene that
     // has it — answers `scenes.current` with the entry, as Play does.
     const build = launchManifest(
-      contents({ scenes: [...ON_DISK, scene('other', 'Level', 'scenes/other/level.scene.json')] }),
+      contents({
+        scenes: [
+          ...ON_DISK,
+          scene(fixedId('scene', 'other'), 'Level', 'scenes/other/level.scene.json'),
+        ],
+      }),
     );
     expect(ids(build)).toEqual(['entry', 'alpha', 'beta', 'other']);
     expect(build.scenes.find(({ name }) => name === 'Level')?.id).toBe('entry');
