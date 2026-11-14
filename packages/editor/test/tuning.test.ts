@@ -24,7 +24,7 @@ import {
   type RigidBodyComponent,
   type ScriptComponent,
 } from '@three-studio/core';
-import { Behaviour, Engine, clearScripts, registerScript } from '@three-studio/runtime';
+import { Behaviour, Engine, NO_SCRIPTS } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -154,7 +154,7 @@ beforeEach(() => {
     scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
   });
   useAssetStore.setState({ physicsMaterials: new Map(), prefabs: new Map() });
-  // Compiled, with nothing to import: the classes are registered here.
+  // Compiled, with nothing to import: a test puts its classes in the store.
   useScriptStore.setState({ build: async () => true });
   useToastStore.getState().clear();
 });
@@ -163,7 +163,7 @@ afterEach(() => {
   stop();
   session?.dispose();
   session = null;
-  clearScripts();
+  useScriptStore.setState({ scripts: NO_SCRIPTS });
   useAssetStore.setState({ savePhysicsMaterial: realSavePhysicsMaterial });
   vi.restoreAllMocks();
 });
@@ -285,7 +285,7 @@ describe('tuning during Play', () => {
       }
     }
     const DIRECTOR = fixedId('asset', 'script-director');
-    registerScript(DIRECTOR, Director);
+    useScriptStore.setState({ scripts: new Map([[DIRECTOR, Director]]) });
     const director: ScriptComponent = { ...createScript(), assetId: DIRECTOR };
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box, createEntity('Director', [director])]));

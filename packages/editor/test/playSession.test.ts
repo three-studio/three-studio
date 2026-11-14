@@ -21,7 +21,7 @@ import {
   type ScriptComponent,
   type Vec3,
 } from '@three-studio/core';
-import { Behaviour, clearScripts, registerScript, type Engine } from '@three-studio/runtime';
+import { Behaviour, NO_SCRIPTS, type Engine } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -389,13 +389,13 @@ function withBoss(): string[] {
     useProjectStore.setState({
       scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
     });
-    // Compiled, with nothing to import: the classes are registered here.
+    // Compiled, with nothing to import: a test puts its classes in the store.
     useScriptStore.setState({ build: async () => true });
     reads.length = 0;
   });
 
   afterEach(() => {
-    clearScripts();
+    useScriptStore.setState({ scripts: NO_SCRIPTS });
     GoToBoss.target = 'Boss';
   });
 
@@ -404,7 +404,7 @@ function withBoss(): string[] {
 
 /** The document becomes one entity whose script moves to Boss from its first frame. */
 function directedToBoss(): void {
-  registerScript(GO_TO_BOSS, GoToBoss);
+  useScriptStore.setState({ scripts: new Map([[GO_TO_BOSS, GoToBoss]]) });
   const director: ScriptComponent = { ...createScript(), assetId: GO_TO_BOSS };
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
@@ -747,13 +747,12 @@ describe('the scene the game plays', () => {
   afterAll(takeTheBrowserBack);
 
   beforeEach(() => {
-    useScriptStore.setState({ build: async () => true });
-    registerScript(MOVER, Mover);
+    useScriptStore.setState({ build: async () => true, scripts: new Map([[MOVER, Mover]]) });
     Object.assign(record, { started: false, name: '', frames: 0, offset: [] });
   });
 
   afterEach(() => {
-    clearScripts();
+    useScriptStore.setState({ scripts: NO_SCRIPTS });
   });
 
   /** The scene as a file opens it — read, so never produced by immer and not frozen — and a copy of it. */

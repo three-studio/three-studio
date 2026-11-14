@@ -60,8 +60,14 @@ export const ENGINE_VERSION = '0.6.0';
  * capsule casts, sphere and box overlaps, and the project's collision layers: a
  * bundle compiled against them calls members an older build does not have. So
  * did `joint(id)`, which reads a joint and drives its motor.
+ *
+ * 4 — the API lost `registerScript`. A bundle no longer files its classes in a
+ * table of the page's: it exports them as `scripts`, pairs of an asset id and a
+ * class, and the host decodes them and hands them to the engine that runs them.
+ * A bundle compiled against 3 calls a `registerScript` that is gone, which this
+ * check turns into a sentence rather than a `TypeError`.
  */
-export const SCRIPT_API_VERSION = 3;
+export const SCRIPT_API_VERSION = 4;
 
 /**
  * Scene document format version. Bump on any schema change; `migrateScene`

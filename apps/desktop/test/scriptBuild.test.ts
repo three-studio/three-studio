@@ -73,6 +73,29 @@ describe('a build after an edit made on disk', () => {
   });
 });
 
+/*
+ * What a bundle hands the page is its classes, as data: the host decodes them
+ * and gives them to the engine that runs them. A bundle that registered its
+ * classes itself filled a table of the page's, which every engine then read.
+ */
+describe('what a bundle exports', () => {
+  it('exports its classes as `scripts`, and registers nothing', async () => {
+    const { project } = await projectWithScript(scriptLogging('', "'EXPORTED'"));
+    const { code, errors } = await buildScripts(registries, project);
+
+    expect(errors).toEqual([]);
+    expect(code).toMatch(/export\s*\{[^}]*\bscripts\b/);
+    expect(code).not.toContain('registerScript');
+  });
+
+  it('checks for version 4 of the script API, the first without `registerScript`', async () => {
+    const { project } = await projectWithScript(scriptLogging('', "'VERSIONED'"));
+    const { code } = await buildScripts(registries, project);
+
+    expect(code).toContain('api.version !== 4');
+  });
+});
+
 describe('a build of an unchanged project', () => {
   it('compiles the same code twice', async () => {
     // The renderer skips importing a bundle equal to the one it holds, which

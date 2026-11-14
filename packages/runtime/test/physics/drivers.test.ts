@@ -1,7 +1,8 @@
 import { createRigidBody, type EntityTemplate } from '@three-studio/core';
 import { Euler, Quaternion } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Behaviour, type ScriptClass } from '../../src/scripting/ScriptHost';
+import { Behaviour } from '../../src/scripting/ScriptHost';
+import type { ScriptClass } from '../../src/scripting/scriptBundle';
 import {
   block,
   ground,

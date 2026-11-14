@@ -21,6 +21,7 @@ import { SceneBinder } from '../../src/SceneBinder';
 import { studioTime } from '../../src/time/StudioTime';
 import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import type { Input } from '../../src/input/Input';
+import { NO_SCRIPTS } from '../../src/scripting/scriptBundle';
 import { builtInRegistries } from '../registries';
 
 /*
@@ -168,6 +169,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
     time: studioTime,
     scenes: null,
     audio: null,
+    scripts: NO_SCRIPTS,
     warn: () => {},
   } satisfies BehaviourContext;
 

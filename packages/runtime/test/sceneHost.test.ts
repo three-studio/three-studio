@@ -6,12 +6,12 @@ import {
   type SceneDoc,
   type ScriptComponent,
 } from '@three-studio/core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import type { SceneApi } from '../src/behaviour/Behaviour';
 import { SceneHost } from '../src/SceneHost';
-import { Behaviour, clearScripts, registerScript } from '../src/scripting/ScriptHost';
+import { Behaviour } from '../src/scripting/ScriptHost';
 import { builtInRegistries } from './registries';
 
 /*
@@ -67,6 +67,8 @@ function hostOf(scenes: Record<string, SceneDoc>): SceneHost {
       },
     },
     registries: builtInRegistries(),
+    // The bundle the host hands every engine it builds, the script in it.
+    scripts: new Map([[WHERE, Where]]),
     resolver: NULL_ASSET_RESOLVER,
     rendering: createRenderingSettings(),
     domElement: eventTarget as unknown as HTMLElement,
@@ -76,13 +78,8 @@ function hostOf(scenes: Record<string, SceneDoc>): SceneHost {
 }
 
 beforeEach(() => {
-  registerScript(WHERE, Where);
   seen.length = 0;
   held.length = 0;
-});
-
-afterEach(() => {
-  clearScripts();
 });
 
 describe('scenes.current, as a script sees it', () => {

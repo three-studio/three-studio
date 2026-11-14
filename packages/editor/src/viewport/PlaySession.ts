@@ -325,6 +325,9 @@ export class PlaySession {
       const host = new SceneHost({
         source,
         registries: this.host.registries,
+        // The classes of the bundle just compiled, which every scene this game
+        // moves to runs: the host hands them to each engine it builds.
+        scripts: useScriptStore.getState().scripts,
         loadingScene: inputs.loadingScene,
         resolver: editorAssetResolver,
         physicsSettings: inputs.physics,

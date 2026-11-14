@@ -39,7 +39,6 @@ if (api.version !== ${SCRIPT_API_VERSION}) {
   );
 }
 export const Behaviour = api.Behaviour;
-export const registerScript = api.registerScript;
 export default api;
 `;
 
@@ -93,9 +92,9 @@ export type ScriptBuildPurpose = 'play' | 'export';
  * Compiles every script asset in the project into one ES module, from what is
  * on disk, on every call.
  *
- * A generated entry imports each script and registers it against its asset id,
- * so the runtime resolves a `script` component without knowing anything about
- * how the code was built.
+ * A generated entry imports each script and exports it beside its asset id, as
+ * `scripts`, so the host resolves a `script` component without knowing anything
+ * about how the code was built.
  *
  * There is no cache. The one this replaced was keyed on the script assets'
  * paths, sizes and times, while esbuild also bundles whatever a script imports:
@@ -196,7 +195,7 @@ function buildErrorsOf(cause: unknown): string[] {
 }
 
 function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): string {
-  const lines = [`import { registerScript } from '@three-studio/runtime';`];
+  const lines: string[] = [];
 
   scripts.forEach((script, index) => {
     // Paths come from the manifest, but they still go through the guard: a
@@ -211,11 +210,11 @@ function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): str
     lines.push(`import * as module${index} from ${JSON.stringify(absolute)};`);
   });
 
-  scripts.forEach((script, index) => {
-    lines.push(
-      `if (typeof module${index}.default === 'function') registerScript(${JSON.stringify(script.id)}, module${index}.default);`,
-    );
-  });
+  // Exported as data, and nothing called: the host decodes the pairs and hands
+  // the classes to the engine that runs them. A helper's default export, or
+  // none, is in the list too, and the decoding drops it.
+  const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, module${index}.default]`);
+  lines.push(`export const scripts = [${pairs.join(', ')}];`);
 
   return `${lines.join('\n')}\n`;
 }

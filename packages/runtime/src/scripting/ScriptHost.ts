@@ -1,4 +1,3 @@
-import { isAssetId, type AssetId } from '@three-studio/core';
 import type {
   Behaviour as RuntimeBehaviour,
   BehaviourContext,
@@ -7,44 +6,13 @@ import type {
 } from '../behaviour/Behaviour';
 import type { Collision } from '../physics/PhysicsApi';
 import { audioApiFor } from './audioApi';
+import { isScriptClass } from './scriptBundle';
 import { noBody, scriptPhysicsFor } from './scriptPhysics';
 import {
   Behaviour,
   RESERVED_PROPERTY_NAMES,
   internalContext,
-  type ScriptProperties,
 } from './ScriptApi';
-
-/** Constructor shape a compiled script module must default-export. */
-export interface ScriptClass {
-  new (): Behaviour;
-  properties?: ScriptProperties;
-}
-
-const registry = new Map<AssetId, ScriptClass>();
-
-/**
- * Registers a compiled script under its asset id.
- *
- * The compiled bundle calls this once per script at import time, so the runtime
- * never has to know how scripts were built — the editor bundles them with
- * esbuild, and an exported web build ships the same bundle.
- *
- * A bundle is generated text, and nothing typechecks the id it passes: one that
- * is not an id registers nothing, where `''` would have sat in the table under a
- * key no component can name.
- */
-export function registerScript(assetId: string, scriptClass: ScriptClass): void {
-  if (isAssetId(assetId)) registry.set(assetId, scriptClass);
-}
-
-export function scriptClassFor(assetId: string): ScriptClass | undefined {
-  return isAssetId(assetId) ? registry.get(assetId) : undefined;
-}
-
-export function clearScripts(): void {
-  registry.clear();
-}
 
 /**
  * Adapts a user script to the engine's behaviour interface.
@@ -136,8 +104,11 @@ export const scriptBehaviour: BehaviourDefinition = {
     const { component } = target;
     if (component.type !== 'script' || component.assetId === '') return null;
 
-    const ScriptType = registry.get(component.assetId);
-    if (!ScriptType) {
+    // The classes of the bundle this engine was given, and of no other. Checked
+    // as it is read: the context cannot name the script API without the API
+    // naming the context back, so it holds them as values of no known type.
+    const ScriptType = ctx.scripts.get(component.assetId);
+    if (!isScriptClass(ScriptType)) {
       ctx.warn(`"${target.entity.name}" references a script that is not compiled.`);
       return null;
     }
@@ -163,7 +134,7 @@ export const scriptBehaviour: BehaviourDefinition = {
         );
         continue;
       }
-      (instance as unknown as Record<string, unknown>)[key] = value;
+      Reflect.set(instance, key, value);
     }
 
     const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);

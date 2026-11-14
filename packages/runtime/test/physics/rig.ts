@@ -35,10 +35,16 @@ import { Engine } from '../../src/Engine';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
-import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
+import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
 import { builtInRegistries } from '../registries';
 
 const registries = builtInRegistries();
+
+/**
+ * The script each template runs, by the asset id its component names: what
+ * `withScript` gave it, which the rig hands its engine as a build's bundle.
+ */
+const scriptsOf = new WeakMap<EntityTemplate, readonly (readonly [AssetId, ScriptClass])[]>();
 
 /*
  * A scene document running in the real `Engine`, with real Rapier, under Node.
@@ -112,6 +118,7 @@ async function runningRig(
   const engine = await Engine.create({
     scene: sceneWith(entities),
     registries,
+    scripts: bundleOf(entities),
     resolver: NULL_ASSET_RESOLVER,
     // Batching off: a batched mesh is drawn by the batch, and the object a test
     // reads would be one the screen never shows.
@@ -270,15 +277,19 @@ export function player(
 /**
  * The template, running `type` as its script.
  *
- * Registered under an asset id of its own until the test finishes, as a
- * project's compiled bundle registers each script under its asset id.
+ * Under an asset id of its own, which the rig's engine is handed with the class
+ * in its bundle, as a project's compiled bundle pairs each script with its id.
  */
 export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
   const assetId = createAssetId();
-  registerScript(assetId, type);
-  onTestFinished(clearScripts);
+  scriptsOf.set(template, [...(scriptsOf.get(template) ?? []), [assetId, type]]);
   template.components.push({ ...createScript(), assetId });
   return template;
+}
+
+/** The bundle that runs these templates' scripts, as a build would compile it. */
+export function bundleOf(templates: readonly EntityTemplate[]): ScriptClasses {
+  return new Map(templates.flatMap((template) => scriptsOf.get(template) ?? []));
 }
 
 /**

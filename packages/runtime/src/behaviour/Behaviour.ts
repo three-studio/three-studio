@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentType, EntityDoc, SceneDoc } from '@three-studio/core';
+import type { AssetId, ComponentDoc, ComponentType, EntityDoc, SceneDoc } from '@three-studio/core';
 import type { Camera, Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { SceneBinder } from '../SceneBinder';
@@ -74,6 +74,15 @@ export interface BehaviourContext {
    * declines, so the component is inert rather than throwing once a frame.
    */
   readonly audio: AudioEngine | null;
+  /**
+   * The classes of the script bundle this engine runs, by script asset id: its
+   * own, never another engine's.
+   *
+   * Values of no known type here. Naming the script API would close an import
+   * cycle, since the API names this context, so the `script` behaviour checks
+   * each class as it reads it; the engine's options are where they are typed.
+   */
+  readonly scripts: ReadonlyMap<AssetId, unknown>;
   /** Surfaces a problem in the editor, laid over the game in the Viewport. */
   warn: (message: string) => void;
 }

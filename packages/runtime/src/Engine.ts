@@ -44,6 +44,7 @@ import {
 } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
 import type { RuntimeRegistries } from './registries';
+import { NO_SCRIPTS, type ScriptClasses } from './scripting/scriptBundle';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
 
@@ -126,6 +127,12 @@ export interface EngineOptions {
    * engine; an engine built on its own does not have a next scene to go to.
    */
   scenes?: SceneApi | null;
+  /**
+   * The classes of the compiled script bundle this engine runs, decoded by
+   * `scriptClassesOf`. Left out, none: a scene's scripts say they are not
+   * compiled.
+   */
+  scripts?: ScriptClasses;
 }
 
 /**
@@ -250,6 +257,7 @@ export class Engine {
       time: studioTime,
       scenes: options.scenes ?? null,
       audio: this.audio,
+      scripts: options.scripts ?? NO_SCRIPTS,
       warn: (message) => {
         // Repeats are dropped: a warning raised per frame would otherwise fill
         // the panel with one line per tick.

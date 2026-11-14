@@ -4,7 +4,6 @@ import {
   type AssetSettings,
   type BuildManifest,
   type TextureEncoding,
-  SCRIPT_API_VERSION,
   activateCore,
   deserializeScene,
   encodePath,
@@ -23,9 +22,13 @@ import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
-import { Behaviour } from '@three-studio/runtime/scripting/ScriptApi';
+import {
+  NO_SCRIPTS,
+  publishScriptApi,
+  scriptClassesOf,
+  type ScriptClasses,
+} from '@three-studio/runtime/scripting/scriptBundle';
 import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
-import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
 
 /**
  * The player an exported build ships.
@@ -70,15 +73,6 @@ const overlay = document.querySelector<HTMLElement>('#overlay');
 const message = document.querySelector<HTMLElement>('#message');
 const startButton = document.querySelector<HTMLButtonElement>('#start');
 
-/** Published for the compiled script bundle; see `ScriptHost`. */
-function publishScriptApi(): void {
-  (globalThis as unknown as Record<string, unknown>)['__STUDIO_SCRIPT_API__'] = {
-    version: SCRIPT_API_VERSION,
-    Behaviour,
-    registerScript,
-  };
-}
-
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: ${response.status} ${response.statusText}`);
@@ -122,18 +116,20 @@ async function readScene(registries: CoreRegistries, build: BuildManifest, named
   return deserializeScene(registries, await response.text());
 }
 
-async function loadScripts(file: string | null): Promise<void> {
+/** The compiled behaviours' classes, decoded from what the bundle exports; none when it has none, or fails. */
+async function loadScripts(file: string | null): Promise<ScriptClasses> {
   publishScriptApi();
-  if (!file) return; // The build manifest says this project has no scripts.
+  if (!file) return NO_SCRIPTS; // The build manifest says this project has no scripts.
 
   try {
     // Off the manifest, not `import.meta.url`: this module lives in `player/`,
     // and resolving from it asked for `player/scripts.mjs`.
-    await import(/* @vite-ignore */ resolve(file));
+    return scriptClassesOf(await import(/* @vite-ignore */ resolve(file)));
   } catch (cause) {
     // A scene without its behaviours is worth more than a black page: the
     // geometry, lights and camera are all still there to look at.
     console.error('[studio] scripts failed to load; running without them:', cause);
+    return NO_SCRIPTS;
   }
 }
 
@@ -168,7 +164,7 @@ async function boot(): Promise<void> {
   if (entry === undefined) throw new Error('This build lists no scene to start on.');
   const scene = await readScene(registries, build, entry.id);
 
-  await loadScripts(build.scripts);
+  const scripts = await loadScripts(build.scripts);
 
   const { rendering, physics, materials, physicsMaterials } = build;
 
@@ -195,6 +191,7 @@ async function boot(): Promise<void> {
       read: (named: string) => readScene(registries, build, named),
     },
     registries,
+    scripts,
     resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
     // Records in the manifest, as a message is, and Maps here: a key read back
     // as an id is checked as one.

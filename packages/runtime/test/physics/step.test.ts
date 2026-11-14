@@ -1,7 +1,7 @@
-import { createEntity, createScript, fixedId, type ScriptComponent } from '@three-studio/core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { Behaviour, clearScripts, registerScript } from '../../src/scripting/ScriptHost';
-import { physicsRig, standInForTheBrowser, takeTheBrowserBack } from './rig';
+import { createEntity } from '@three-studio/core';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Behaviour } from '../../src/scripting/ScriptHost';
+import { physicsRig, standInForTheBrowser, takeTheBrowserBack, withScript } from './rig';
 
 /*
  * The editor's Step moves the game exactly one tick of the project's step.
@@ -10,7 +10,6 @@ import { physicsRig, standInForTheBrowser, takeTheBrowserBack } from './rig';
  * other press ran no tick, and at 120 Hz every press ran two.
  */
 
-const TICKER = fixedId('asset', 'script-ticker');
 let ticks = 0;
 
 class Ticker extends Behaviour {
@@ -23,18 +22,12 @@ beforeAll(standInForTheBrowser);
 afterAll(takeTheBrowserBack);
 
 beforeEach(() => {
-  registerScript(TICKER, Ticker);
   ticks = 0;
-});
-
-afterEach(() => {
-  clearScripts();
 });
 
 describe('Step', () => {
   it("advances one tick of the project's step, whatever the last frame left over", async () => {
-    const script: ScriptComponent = { ...createScript(), assetId: TICKER };
-    const { engine } = await physicsRig([createEntity('Ticker', [script])], {
+    const { engine } = await physicsRig([withScript(createEntity('Ticker', []), Ticker)], {
       fixedTimestep: 1 / 50,
     });
     expect(engine.fixedStep).toBe(1 / 50);

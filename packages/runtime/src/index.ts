@@ -100,7 +100,11 @@ export type {
   Vec3Like,
 } from './physics/PhysicsApi';
 
-/* Scripting: the base class user scripts extend, and the registry the host compiles into. */
+/*
+ * Scripting: the base class user scripts extend, and what a compiled bundle's
+ * classes are once the host has decoded them — handed to the engine that runs
+ * them, never filed in a table of the page's.
+ */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';
 export type {
   BehaviourMember,
@@ -108,8 +112,8 @@ export type {
   ScriptProperties,
   ScriptPropertyDef,
 } from './scripting/ScriptApi';
-export { clearScripts, registerScript, scriptClassFor } from './scripting/ScriptHost';
-export type { ScriptClass } from './scripting/ScriptHost';
+export { NO_SCRIPTS, publishScriptApi, scriptClassesOf } from './scripting/scriptBundle';
+export type { ScriptClass, ScriptClasses } from './scripting/scriptBundle';
 
 /* Input and the built-in character controller. */
 export { Input, type InputOptions } from './input/Input';

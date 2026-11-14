@@ -144,7 +144,7 @@ describe('a launch', () => {
     const launch = await prepareLaunch(registries, withScript, await snapshot(withScript));
     const bare = await prepareLaunch(registries, without, await snapshot(without));
 
-    expect(launch.scripts).toContain('registerScript');
+    expect(launch.scripts).toMatch(/export\s*\{[^}]*\bscripts\b/);
     expect(launch.manifest.scripts).toBe('scripts.mjs');
     expect(bare.scripts).toBeNull();
     expect(bare.manifest.scripts).toBeNull();
