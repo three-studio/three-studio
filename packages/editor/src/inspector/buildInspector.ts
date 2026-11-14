@@ -40,8 +40,12 @@ import { paneEntriesFor, paneFor, unknownTypesOn } from './panes';
 import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
 
-/** What stands in for the rows of a component whose type no module of this editor defines. */
-const UNKNOWN_TYPE_NOTICE = 'Not installed in this editor.\nKept with its entity, and saved as found.';
+/**
+ * What stands in for the rows of a component whose type no module of this
+ * editor defines. Short lines: Tweakpane's text row does not wrap, and a line
+ * wider than the Inspector's value column was cut off behind a scrollbar.
+ */
+const UNKNOWN_TYPE_NOTICE = 'Module not installed.\nKept with its entity,\nand saved as found.';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
