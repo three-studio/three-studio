@@ -7,7 +7,7 @@ import {
   createEntity,
   createMeshComponent,
   createPrefabInstance,
-  createRigidBody,
+  rigidbodyType,
   deserializeScene,
   fixedId,
   insertEntity,
@@ -177,7 +177,7 @@ describe('a scene through a file', () => {
    */
   function written(): { json: string; unknownOn: string } {
     const parent = createEntity('Parent', [createMeshComponent('box'), createCollider()]);
-    const child = createEntity('Child', [createRigidBody()]);
+    const child = createEntity('Child', [rigidbodyType.create()]);
     const crate = createEntity('Crate', [createPrefabInstance(fixedId('asset', 'prefab-1'))]);
     const everything = createEntity(
       'Everything',

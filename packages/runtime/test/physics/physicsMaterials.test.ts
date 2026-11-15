@@ -47,7 +47,7 @@ const LIBRARY: ReadonlyMap<AssetId, PhysicsMaterialDef> = new Map([
 
 /** A box on the slope, of its own friction 1 by this rule, linking this asset. */
 function boxOnSlope(frictionCombine: CombineRule, z: number, materialId: AssetId): EntityTemplate {
-  const box = withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
+  const box = withBody('box', [0, 1, z], { lockRotation: { x: true, y: true, z: true } });
   const collider = colliderOf(box);
   collider.material = { ...collider.material, friction: 1, frictionCombine };
   collider.materialId = materialId;

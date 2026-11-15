@@ -16,7 +16,7 @@ import {
   createMeshComponent,
   createMeshEntity,
   createPhysicsMaterial,
-  createRigidBody,
+  rigidbodyType,
   deserializeScene,
   fillComponent,
   fixedId,
@@ -24,7 +24,6 @@ import {
   typesWithoutRuntime,
   type ComponentDoc,
   type ComponentType,
-  type LightComponent,
   type MeshComponent,
   type SceneDoc,
 } from '../src/index';
@@ -153,7 +152,7 @@ describe('component registry', () => {
   });
 
   /*
-   * The chain this replaced ended in `createPlayerController()`, so a component
+   * The chain this replaced ended in `playerControllerType.create()`, so a component
    * from a plugin or a hand-edited file came back as a player controller with the
    * original's fields glued on — and the migration then wrote that to disk.
    */
@@ -186,34 +185,6 @@ describe('fill', () => {
     const filled = fillComponent(registries, stored);
     expect(filled.id).toBe('c1');
     expect(filled).toMatchObject({ type: 'light', intensity: expect.any(Number) });
-  });
-
-  it('fills a light against its own kind, not against a fixed one', () => {
-    /*
-     * three's units differ by an order of magnitude between light kinds: a
-     * directional light's default intensity is 2 and a point light's is 12.
-     * Filling every light from the point defaults handed a stored directional
-     * light six times the brightness its author chose — rule 2 of the
-     * persisted-format rules read to the letter and missed in spirit, because
-     * the factory that is the source of the defaults takes a kind.
-     */
-    const stored = { id: 'c1', type: 'light', kind: 'directional' } as unknown as ComponentDoc;
-    const filled = fillComponent(registries, stored) as LightComponent;
-
-    expect(filled.kind).toBe('directional');
-    expect(filled.intensity).toBe(2);
-  });
-
-  it('fills a light a level deeper, so its shadow settings are not undefined', () => {
-    const stored = {
-      id: 'c1',
-      type: 'light',
-      kind: 'spot',
-      shadow: { bias: -0.0005 },
-    } as unknown as ComponentDoc;
-
-    const filled = fillComponent(registries, stored) as LightComponent;
-    expect(filled.shadow).toMatchObject({ bias: -0.0005, normalBias: 0, far: 500 });
   });
 
   /*
@@ -265,20 +236,6 @@ describe('fill', () => {
       isSensor: true,
       layer: DEFAULT_LAYER_ID,
     });
-  });
-
-  it('reads a stored rigid body against its factory, field by field', () => {
-    const stored = {
-      id: 'c1',
-      type: 'rigidbody',
-      bodyType: 'kinematicVelocity',
-      mass: -3,
-      ccd: true,
-      lockPosition: [true, 'no', false],
-      stray: 1,
-    } as unknown as ComponentDoc;
-
-    expect(fillComponent(registries, stored)).toEqual({ ...createRigidBody(), id: 'c1', ccd: true });
   });
 
   it('fills a shape from its own kind, keeping each measure that fits', () => {
@@ -367,7 +324,7 @@ describe('assets', () => {
   });
 
   it('names nothing for a type that points at no asset', () => {
-    expect(componentAssets(registries, createRigidBody())).toEqual([]);
+    expect(componentAssets(registries, rigidbodyType.create())).toEqual([]);
   });
 
   it('names nothing for an unknown type rather than guessing', () => {

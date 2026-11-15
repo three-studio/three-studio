@@ -32,20 +32,16 @@ const registries = builtInRegistries();
  */
 
 describe('activating the editor', () => {
-  it('registers a pane for each kernel type, all still written by hand', () => {
+  it('registers what each kernel type adds to its pane: the panes still written by hand, and the extensions', () => {
     expect(registries.panes.values().map((pane) => pane.id)).toEqual([
       'mesh',
       'model',
-      'light',
-      'camera',
       'rigidbody',
       'collider',
       'joint',
       'audioSource',
-      'audioListener',
       'script',
       'prefabInstance',
-      'playerController',
       'water',
     ]);
   });
@@ -60,7 +56,7 @@ describe('activating the editor', () => {
     const own = createEditorRegistries();
     const activation = activateEditor(own);
 
-    expect(own.panes.values()).toHaveLength(13);
+    expect(own.panes.values()).toHaveLength(9);
     expect(() => activateEditor(own)).toThrow('The pane "mesh" is already registered.');
 
     activation.dispose();

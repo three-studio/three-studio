@@ -1,44 +1,7 @@
-import { BODY_TYPE_LABELS, optionsFrom, type ComponentDoc } from '@three-studio/core';
-import type { ComponentPane } from '../../inspector/fields';
-
-export const pane: ComponentPane = {
-  id: 'rigidbody',
-  live: true,
-  fields: [
-    {
-      path: ['bodyType'],
-      label: 'Type',
-      type: 'enum',
-      options: optionsFrom(BODY_TYPE_LABELS),
-    },
-    { path: ['mass'], label: 'Mass', type: 'number', min: 0.001, step: 0.1 },
-    {
-      path: ['linearDamping'],
-      label: 'Linear damping',
-      type: 'number', min: 0, max: 10, step: 0.01,
-    },
-    {
-      path: ['angularDamping'],
-      label: 'Angular damping',
-      type: 'number', min: 0, max: 10, step: 0.01,
-    },
-    { path: ['gravityScale'], label: 'Gravity scale', type: 'number', min: -5, max: 5, step: 0.1 },
-    { path: ['ccd'], label: 'Continuous detection' },
-    { path: ['interpolate'], label: 'Interpolate', visibleWhen: isDynamic },
-    // One row each: three checkboxes to a row would need a Tweakpane plugin.
-    { path: ['lockPosition', '0'], label: 'Lock position X', visibleWhen: isDynamic },
-    { path: ['lockPosition', '1'], label: 'Lock position Y', visibleWhen: isDynamic },
-    { path: ['lockPosition', '2'], label: 'Lock position Z', visibleWhen: isDynamic },
-    { path: ['lockRotation', '0'], label: 'Lock rotation X', visibleWhen: isDynamic },
-    { path: ['lockRotation', '1'], label: 'Lock rotation Y', visibleWhen: isDynamic },
-    { path: ['lockRotation', '2'], label: 'Lock rotation Z', visibleWhen: isDynamic },
-  ],
-};
+import { extendPane } from '../../inspector/fields';
 
 /**
- * The rows only the solver reads. A kinematic body is drawn where its
- * transform is, and the player's always between ticks, whatever they say.
+ * A rigid body's pane is derived from its fields; what it adds is that its rows
+ * tune the running game during Play, where every other row is locked.
  */
-function isDynamic(component: ComponentDoc): boolean {
-  return component.type === 'rigidbody' && component.bodyType === 'dynamic';
-}
+export const pane = extendPane('rigidbody', { live: true });

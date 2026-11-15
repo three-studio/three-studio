@@ -256,8 +256,6 @@ export { AUDIO_BUSES } from './scene/schema';
 export {
   AUDIO_BUS_LABELS,
   BACKGROUND_MODE_LABELS,
-  BODY_TYPE_LABELS,
-  CAMERA_PROJECTION_LABELS,
   COLLIDER_SHAPE_LABELS,
   COMBINE_RULE_LABELS,
   DISTANCE_MODEL_LABELS,
@@ -266,9 +264,7 @@ export {
   JOINT_KIND_LABELS,
   MATERIAL_SIDE_LABELS,
   MESH_BUILD_LABELS,
-  PLAYER_CONTROLLER_MODE_LABELS,
   TEXTURE_WRAP_LABELS,
-  TOUCH_CONTROLS_LABELS,
 } from './scene/schema';
 export type {
   BackgroundMode,
@@ -306,17 +302,24 @@ export {
   linkedPhysicsMaterial,
 } from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
-/* Each slice's own factories, from the slice that owns them. */
-export { createAudioListener, createAudioListenerEntity } from './components/audioListener/defaults';
+/*
+ * Each type described by its fields, whose `create()` is its blank component;
+ * then each slice's own factories, from the slice that owns them, for what
+ * knows more than a type's defaults.
+ */
+export { audioListenerType } from './components/audioListener';
+export { cameraType } from './components/camera';
+export { lightType } from './components/light';
+export { playerControllerType } from './components/playerController';
+export { rigidbodyType } from './components/rigidbody';
+export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCamera, createCameraEntity } from './components/camera/defaults';
 export { createCollider } from './components/collider/defaults';
-export { createLight, createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createLight, createLightEntity } from './components/light/defaults';
 export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
 export { createModel, createModelEntity } from './components/model/defaults';
-export { createPlayerController } from './components/playerController/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
-export { createRigidBody } from './components/rigidbody/defaults';
 export { createScript } from './components/script/defaults';
 export { createWater, createWaterEntity } from './components/water/defaults';
 

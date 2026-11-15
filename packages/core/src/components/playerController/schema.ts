@@ -1,96 +1,104 @@
-import type { ComponentBase } from '../../scene/primitives';
+import type { Infer, Schema } from '../../fieldSchema';
+import type { Component } from '../../scene/primitives';
 
-/** First person, third person, or a free fly with no gravity. */
-export type PlayerControllerMode = 'fps' | 'tps' | 'fly';
+/** A character the player drives, as its fields. The order is the pane's. */
+export const playerControllerSchema = {
+  mode: {
+    type: 'enum',
+    label: 'Mode',
+    default: 'fps',
+    options: [
+      { value: 'fps', label: 'FPS' },
+      { value: 'tps', label: 'TPS' },
+      { value: 'fly', label: 'Fly' },
+    ],
+  },
+  moveSpeed: { type: 'number', label: 'Move speed', default: 6, min: 0.1, max: 40, step: 0.1 },
+  sprintMultiplier: { type: 'number', label: 'Sprint ×', default: 1.8, min: 1, max: 5, step: 0.1 },
+  jumpHeight: { type: 'number', label: 'Jump height', default: 1.2, min: 0, max: 10, step: 0.1 },
+  /*
+   * The steepest slope the player walks up, and the highest step it climbs:
+   * the 50° and 0.4 m the physics world used to hard-code for every character,
+   * and the two numbers a level's ramps and stairs are built against. Hidden in
+   * fly mode, where the player collides with nothing: no slope stops it and no
+   * step is in its way.
+   */
+  maxSlope: {
+    type: 'number',
+    label: 'Max slope',
+    default: (50 * Math.PI) / 180,
+    min: 0,
+    max: 89,
+    step: 1,
+    unit: 'radians',
+    shownWhen: { field: 'mode', notEquals: 'fly' },
+  },
+  stepHeight: {
+    type: 'number',
+    label: 'Step height',
+    default: 0.4,
+    min: 0,
+    max: 2,
+    step: 0.05,
+    shownWhen: { field: 'mode', notEquals: 'fly' },
+  },
+  mouseSensitivity: { type: 'number', label: 'Mouse sensitivity', default: 0.0022, min: 0.0002, max: 0.01, step: 0.0001 },
+  /*
+   * An adult's eye, measured from the floor: from the feet, not from the
+   * entity's origin, which is the middle of the collider — which is the
+   * question the label answers before it is asked. It pairs with the 1.70 m
+   * capsule a new player is given, so the two defaults compose into a person.
+   *
+   * Shown in every mode, which it was not: it used to be hidden unless the mode
+   * was FPS, while TPS reads the very same field twice — as the height of the
+   * point the camera orbits and of the point it looks at.
+   */
+  eyeHeight: { type: 'number', label: 'Eye height (from feet)', default: 1.6, min: 0, max: 4, step: 0.05 },
+  cameraDistance: {
+    type: 'number',
+    label: 'Camera distance',
+    default: 5,
+    min: 0.5,
+    max: 25,
+    step: 0.1,
+    shownWhen: { field: 'mode', equals: 'tps' },
+  },
+  /*
+   * The camera this controller owns wins over any the scene carries, so
+   * without this a project had no way to ask for a different field of view.
+   */
+  fov: { type: 'number', label: 'Field of view', default: 70, min: 30, max: 120, step: 1 },
+  /*
+   * The on-screen sticks. Nothing is drawn until someone touches the screen,
+   * so a desktop build is by default exactly what it always was.
+   */
+  touchControls: {
+    type: 'enum',
+    label: 'Touch controls',
+    default: 'auto',
+    options: [
+      { value: 'auto', label: 'On first touch' },
+      { value: 'always', label: 'Always' },
+      { value: 'never', label: 'Never' },
+    ],
+  },
+  /*
+   * Its own number rather than the mouse sensitivity reused, and the units are
+   * why: a mouse reports a displacement that becomes an angle once, a stick a
+   * deflection integrated over time. One number for both would be wrong in one
+   * of the two places whatever it held.
+   */
+  touchLookSpeed: {
+    type: 'number',
+    label: 'Touch look speed',
+    default: 2.5,
+    min: 0.5,
+    max: 8,
+    step: 0.1,
+    shownWhen: { field: 'touchControls', notEquals: 'never' },
+  },
+} as const satisfies Schema;
 
-export const PLAYER_CONTROLLER_MODE_LABELS: Record<PlayerControllerMode, string> = {
-  fps: 'FPS',
-  tps: 'TPS',
-  fly: 'Fly',
-};
-
-/**
- * When the on-screen sticks are drawn.
- *
- * `auto` is not a device check. Every property that claims to identify a touch
- * device answers for a laptop with a touchscreen and for a Surface with its
- * keyboard attached — `navigator.maxTouchPoints` and `(pointer: coarse)` both
- * say yes to hardware that is being driven with a mouse. The only honest signal
- * is what someone actually did, so `auto` draws nothing until a real touch
- * arrives and takes it away again at the first mouse move.
- */
-export type TouchControlsMode = 'auto' | 'always' | 'never';
-
-export const TOUCH_CONTROLS_LABELS: Record<TouchControlsMode, string> = {
-  auto: 'On first touch',
-  always: 'Always',
-  never: 'Never',
-};
-
-export interface PlayerControllerComponent extends ComponentBase {
-  type: 'playerController';
-  mode: PlayerControllerMode;
-  moveSpeed: number;
-  sprintMultiplier: number;
-  jumpHeight: number;
-  /**
-   * The steepest slope the player walks up, in radians, shown in degrees: a
-   * ramp steeper than this is a wall. A level's ramps are built against it.
-   *
-   * This and `stepHeight` are the two numbers a level decides. The character's
-   * others — the gap it keeps, the floor a step needs on top, how far the
-   * ground holds it — are `PlayerController`'s.
-   */
-  maxSlope: number;
-  /**
-   * The highest step the player walks onto without jumping, in metres: a kerb
-   * or a stair under this is climbed, anything higher is a wall. A level's
-   * stairs are built against it.
-   */
-  stepHeight: number;
-  mouseSensitivity: number;
-  /**
-   * How high the eye sits above the character's **feet** — the bottom of its
-   * collider, not the entity's origin.
-   *
-   * It used to mean "above the origin", and that is scene format 9. The origin
-   * is the middle of the collider, because physics centres a shape on its body,
-   * so the default player — a 1 m box collider and an eye height of 1.7 — put
-   * the camera at 2.2 m above the floor on a character 1 m tall. Nothing in the
-   * Inspector could have told anyone that; the offset was only knowable by
-   * reading `describeCollider`. Format 10 raises every stored value by its
-   * collider's half height, so the camera does not move, and from then on the
-   * number means what its name says. See `originAboveFeet`.
-   *
-   * Read in FPS mode as the eye, and in TPS mode as the height of the point the
-   * camera orbits — which is why the Inspector shows it in both.
-   */
-  eyeHeight: number;
-  /** Camera distance behind the character in TPS mode. */
-  cameraDistance: number;
-  /**
-   * Vertical field of view, in degrees.
-   *
-   * A field rather than the literal 70 it was, because this camera wins over
-   * any the document carries — `Engine.activeCamera` prefers a behaviour's —
-   * so a project that wanted a different field had no way at all to ask for
-   * one. The default is that same 70, so no scene changes.
-   */
-  fov: number;
-  /** Whether the on-screen sticks are drawn. See `TouchControlsMode`. */
-  touchControls: TouchControlsMode;
-  /**
-   * How fast the look stick turns the camera, in radians per second at full
-   * deflection.
-   *
-   * A separate number from `mouseSensitivity`, and it has to be: a mouse
-   * reports a **displacement** in pixels, which is turned into an angle once;
-   * a stick reports a **deflection** that has to be integrated over time. They
-   * are different units, and a single slider for both would be wrong in one of
-   * the two places whatever value it held.
-   *
-   * 2.5 rad/s is about 143°/s — half a turn in one and a quarter seconds, which
-   * is roughly where mobile shooters sit.
-   */
-  touchLookSpeed: number;
-}
+export type PlayerControllerComponent = Component<'playerController', Infer<typeof playerControllerSchema>>;
+export type PlayerControllerMode = PlayerControllerComponent['mode'];
+export type TouchControlsMode = PlayerControllerComponent['touchControls'];

@@ -105,7 +105,7 @@ describe('a script hearing its colliders', () => {
   });
 
   it("a script on a child hears its collider, and its body's script hears it too, once", async () => {
-    const cart = withScript(withBody('box', [0, 3, 0], { lockRotation: [true, true, true] }), Log);
+    const cart = withScript(withBody('box', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } }), Log);
     const wheel = withScript(withCollider('sphere', [0, -1.5, 0]), Log);
     nest(cart, wheel);
     const floor = withScript(ground(), Log);

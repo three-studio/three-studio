@@ -10,7 +10,7 @@ import {
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   defaultSettings,
   deserializeScene,
@@ -349,7 +349,7 @@ const GO_TO_BOSS = fixedId('asset', 'script-go-to-boss');
 
 /** A body nothing can touch: its own problem, which the first scene does not have. */
 function bossScene() {
-  const scene = sceneWith([createEntity('Crate', [createRigidBody()])]);
+  const scene = sceneWith([createEntity('Crate', [rigidbodyType.create()])]);
   scene.name = 'Boss';
   return scene;
 }

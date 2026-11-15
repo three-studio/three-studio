@@ -4,7 +4,7 @@ import {
   createEmptyScene,
   createEntity,
   createMeshEntity,
-  createRigidBody,
+  rigidbodyType,
   putComponent,
   type EntityId,
   type MeshComponent,
@@ -70,7 +70,7 @@ describe('pairing components across entities', () => {
   it('keeps only the types they all have', () => {
     const [a, b] = twoCubes();
     doc().mutate('One rigidbody', (draft) => {
-      putComponent(draft, a.entity.id, createRigidBody());
+      putComponent(draft, a.entity.id, rigidbodyType.create());
     });
 
     // Showing a field only some objects have would write it onto the others,

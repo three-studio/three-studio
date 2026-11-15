@@ -64,7 +64,6 @@ export {
   DISTANCE_MODEL_LABELS,
 } from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
-export { CAMERA_PROJECTION_LABELS } from '../components/camera/schema';
 export type {
   ColliderComponent,
   ColliderShape,
@@ -90,16 +89,11 @@ export type {
   PlayerControllerMode,
   TouchControlsMode,
 } from '../components/playerController/schema';
-export {
-  PLAYER_CONTROLLER_MODE_LABELS,
-  TOUCH_CONTROLS_LABELS,
-} from '../components/playerController/schema';
 export type {
   PrefabInstanceComponent,
   PrefabOverride,
 } from '../components/prefabInstance/schema';
 export type { BodyType, RigidBodyComponent } from '../components/rigidbody/schema';
-export { BODY_TYPE_LABELS } from '../components/rigidbody/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
 export type { WaterComponent, WaterSunSource } from '../components/water/schema';
 

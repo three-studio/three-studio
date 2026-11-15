@@ -69,7 +69,7 @@ describe('the bits a query asks for', () => {
 
 describe('colliders whose layers do not touch', () => {
   it("a ball on a layer that ignores a box's falls through it", async () => {
-    const box = onLayer(withBody('box', [0, 0.5, 0], { lockRotation: [true, true, true] }), 'a');
+    const box = onLayer(withBody('box', [0, 0.5, 0], { lockRotation: { x: true, y: true, z: true } }), 'a');
     const ball = onLayer(withBody('sphere', [0, 3, 0]), 'b');
     const rig = await physicsRig([ground(), box, ball], { layers: parted });
 
@@ -79,7 +79,7 @@ describe('colliders whose layers do not touch', () => {
   });
 
   it("a ball on the box's own layer lands on it", async () => {
-    const box = onLayer(withBody('box', [0, 0.5, 0], { lockRotation: [true, true, true] }), 'a');
+    const box = onLayer(withBody('box', [0, 0.5, 0], { lockRotation: { x: true, y: true, z: true } }), 'a');
     const ball = onLayer(withBody('sphere', [0, 3, 0]), 'a');
     const rig = await physicsRig([ground(), box, ball], { layers: parted });
 

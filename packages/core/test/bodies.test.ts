@@ -5,7 +5,7 @@ import {
   createEntity,
   createJoint,
   createPrefabInstance,
-  createRigidBody,
+  rigidbodyType,
   entitiesWith,
   entityWorldMatrixPath,
   expandPrefabs,
@@ -29,7 +29,7 @@ const registries = builtInRegistries();
  * none above it, a fixed body of its own entity.
  */
 
-const withRigidBody = (name: string) => createEntity(name, [createRigidBody()]);
+const withRigidBody = (name: string) => createEntity(name, [rigidbodyType.create()]);
 const withCollider = (name: string) => createEntity(name, [createCollider()]);
 const PREFAB = fixedId('asset', 'prefab-1');
 
@@ -42,7 +42,7 @@ function tree(): Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', EntityTemplate>
     A: withRigidBody('A'),
     B: withCollider('B'),
     C: withCollider('C'),
-    D: createEntity('D', [createRigidBody(), createCollider()]),
+    D: createEntity('D', [rigidbodyType.create(), createCollider()]),
     E: withCollider('E'),
     F: withCollider('F'),
     G: withRigidBody('G'),

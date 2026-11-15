@@ -172,7 +172,7 @@ describe('collision and trigger events', () => {
   });
 
   it("a child's collider is heard by the child and by the body it rides, once each", async () => {
-    const cart = withBody('box', [0, 3, 0], { lockRotation: [true, true, true] });
+    const cart = withBody('box', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } });
     const wheel = withCollider('sphere', [0, -1.5, 0]);
     nest(cart, wheel);
     const floor = ground();

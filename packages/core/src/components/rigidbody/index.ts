@@ -1,35 +1,12 @@
-import { conform, oneOf } from '../../conform';
-import type { ComponentDefinition } from '../registry';
-import { createRigidBody } from './defaults';
-import { BODY_TYPE_LABELS } from './schema';
-import type { RigidBodyComponent } from './schema';
+import { defineComponent } from '../registry';
+import { rigidbodySchema } from './schema';
 
-/**
- * Physics motion for an entity, and for the colliders of its descendants that
- * have no body of their own.
- *
- * Read field by field against its factory, as the collider is, and what it does
- * not know is dropped. Its type decides how every collider riding it is built,
- * and Play threw on one this build does not know: that reads as Dynamic. Its
- * mass is shared out among its colliders by volume, and one not above zero sank
- * the body through the floor: that reads as the factory's.
- */
-export const rigidbodyComponent: ComponentDefinition<RigidBodyComponent> = {
+/** A body physics moves: see `rigidbodySchema`. */
+export const rigidbodyType = defineComponent({
   id: 'rigidbody',
   label: 'Rigid Body',
-  create: () => createRigidBody(),
-  fill: (stored) => {
-    const model = createRigidBody();
-    const body = conform(stored, model);
-    return {
-      ...body,
-      bodyType: oneOf(stored.bodyType, BODY_TYPE_LABELS, model.bodyType),
-      mass: body.mass > 0 ? body.mass : model.mass,
-    };
-  },
-  assets: () => [],
-  entities: () => [],
-  placeable: () => true,
+  version: 1,
+  schema: rigidbodySchema,
   runtime: true,
   addable: true,
-};
+});

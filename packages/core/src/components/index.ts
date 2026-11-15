@@ -122,9 +122,9 @@ export { defineComponent, type ComponentDefinition } from './registry';
  * that knows the type it makes calls that type's factory — `createCollider()`.
  *
  * Throws on a type it does not know rather than falling back. The chain this
- * replaced ended in `createPlayerController()`, so a component from a plugin or
- * a hand-edited file came back as a player controller with the original's fields
- * glued on — which the migration then wrote to disk.
+ * replaced ended in the player controller's factory, so a component from a
+ * plugin or a hand-edited file came back as a player controller with the
+ * original's fields glued on — which the migration then wrote to disk.
  */
 export function createComponent(registries: CoreRegistries, type: ComponentType): ComponentDoc {
   const definition = registries.components.get(type);

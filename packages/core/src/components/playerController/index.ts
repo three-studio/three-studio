@@ -1,15 +1,12 @@
-import type { ComponentDefinition } from '../registry';
-import { createPlayerController } from './defaults';
-import type { PlayerControllerComponent } from './schema';
+import { defineComponent } from '../registry';
+import { playerControllerSchema } from './schema';
 
-/** A first-, third-person or fly controller. */
-export const playerControllerComponent: ComponentDefinition<PlayerControllerComponent> = {
+/** A character the player drives: see `playerControllerSchema`. */
+export const playerControllerType = defineComponent({
   id: 'playerController',
   label: 'Player Controller',
-  create: () => createPlayerController(),
-  assets: () => [],
-  entities: () => [],
-  placeable: () => true,
+  version: 1,
+  schema: playerControllerSchema,
   runtime: true,
   addable: true,
-};
+});

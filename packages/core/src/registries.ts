@@ -12,18 +12,18 @@ import { FbxImporter } from './assets/import/importers/FbxImporter';
 import { GltfImporter } from './assets/import/importers/GltfImporter';
 import { ObjImporter } from './assets/import/importers/ObjImporter';
 import { TextureImporter } from './assets/import/importers/TextureImporter';
-import { audioListenerComponent } from './components/audioListener';
+import { audioListenerType } from './components/audioListener';
 import { audioSourceComponent } from './components/audioSource';
-import { cameraComponent } from './components/camera';
+import { cameraType } from './components/camera';
 import { colliderComponent } from './components/collider';
 import { jointComponent } from './components/joint';
-import { lightComponent } from './components/light';
+import { lightType } from './components/light';
 import { meshComponent } from './components/mesh';
 import { modelComponent } from './components/model';
-import { playerControllerComponent } from './components/playerController';
+import { playerControllerType } from './components/playerController';
 import { prefabInstanceComponent } from './components/prefabInstance';
 import type { ComponentDefinition } from './components/registry';
-import { rigidbodyComponent } from './components/rigidbody';
+import { rigidbodyType } from './components/rigidbody';
 import { scriptComponent } from './components/script';
 import { waterComponent } from './components/water';
 import { combineDisposables, type Disposable } from './disposable';
@@ -52,16 +52,16 @@ export interface CoreRegistries {
 const COMPONENTS: readonly ComponentDefinition[] = [
   meshComponent,
   modelComponent,
-  lightComponent,
-  cameraComponent,
-  rigidbodyComponent,
+  lightType,
+  cameraType,
+  rigidbodyType,
   colliderComponent,
   jointComponent,
   audioSourceComponent,
-  audioListenerComponent,
+  audioListenerType,
   scriptComponent,
   prefabInstanceComponent,
-  playerControllerComponent,
+  playerControllerType,
   waterComponent,
 ];
 

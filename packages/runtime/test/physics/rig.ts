@@ -7,9 +7,9 @@ import {
   createJoint,
   createMeshEntity,
   createPhysicsSettings,
-  createPlayerController,
+  playerControllerType,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   type AssetId,
   type BodyType,
@@ -236,7 +236,7 @@ export function withBody(
 ): EntityTemplate {
   const template = createMeshEntity(kind);
   template.components.push(
-    { ...createRigidBody(), ...body },
+    { ...rigidbodyType.create(), ...body },
     createComponentForEntity(registries, 'collider', template.components),
   );
   template.entity.transform.position = position;
@@ -263,12 +263,12 @@ export function player(
   }: { controller?: Partial<PlayerControllerComponent>; bodyType?: BodyType } = {},
 ): EntityTemplate {
   const template = createEntity('Player', [
-    { ...createPlayerController(), ...controller },
+    { ...playerControllerType.create(), ...controller },
     {
       ...createCollider(),
       shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
     },
-    { ...createRigidBody(), bodyType },
+    { ...rigidbodyType.create(), bodyType },
   ]);
   template.entity.transform.position = position;
   return template;

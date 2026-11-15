@@ -92,6 +92,11 @@ export const SCRIPT_API_VERSION = 4;
  * is refused, where it used to be filled and converted on every load. What the
  * earlier numbers changed is in git's history, with the code that converted
  * them.
+ *
+ * And the types described by their fields are decoded whole: a field of the
+ * wrong kind, one missing inside an object — a light's shadow — or one no
+ * field of the type refuses the scene, where it was filled or dropped. A rigid
+ * body's locks are named axes, `{ x, y, z }`, where they were a tuple.
  */
 export const SCENE_FORMAT_VERSION = 12;
 

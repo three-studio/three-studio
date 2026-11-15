@@ -1,5 +1,5 @@
 import {
-  createAudioListener,
+  audioListenerType,
   createAudioSource,
   createEntity,
   fixedId,
@@ -161,7 +161,7 @@ describe('the audioSource behaviour', () => {
 describe('the audioListener behaviour', () => {
   it('places the ear where its entity is, and takes the master volume with it', () => {
     const { context: audioContext, engine } = rig();
-    const listener = createAudioListener();
+    const listener = audioListenerType.create();
     listener.masterVolume = 0.5;
 
     const behaviour = audioListenerBehaviour.create(

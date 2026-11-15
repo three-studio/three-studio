@@ -1,4 +1,4 @@
-import { createRigidBody } from '@three-studio/core';
+import { rigidbodyType } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -50,7 +50,7 @@ describe('a teleported body', () => {
     // Its entity left where it was, the next tick's follow pulled the platform
     // back at 600 m/s, through the crate resting on it.
     const platform = block([0, -0.25, 0], [8, 0.5, 8]);
-    platform.components.push({ ...createRigidBody(), bodyType: 'kinematicPosition' });
+    platform.components.push({ ...rigidbodyType.create(), bodyType: 'kinematicPosition' });
     const crate = withBody('box', [0, 0.5, 0]);
     const rig = await physicsRig([platform, crate]);
     rig.run(1);

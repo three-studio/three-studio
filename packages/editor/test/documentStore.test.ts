@@ -12,7 +12,7 @@ import {
   createPrefabInstance,
   createJoint,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   findComponent,
   fixedId,
@@ -920,7 +920,7 @@ describe('the companions a rigid body brings', () => {
 
   it('counts no child that has a body of its own', () => {
     const trailer = withCollider();
-    trailer.components.push(createRigidBody());
+    trailer.components.push(rigidbodyType.create());
     const cart = cartOver(trailer);
 
     addComponentWithDependencies(registries, cart, 'rigidbody');
@@ -959,7 +959,7 @@ describe('the companions a joint brings', () => {
 
   it('brings none to a child of a body', () => {
     const door = createMeshEntity('box');
-    door.components.push(createRigidBody(), createCollider());
+    door.components.push(rigidbodyType.create(), createCollider());
     const hinge = addEntity(createEntity('Hinge'), addEntity(door));
 
     addComponentWithDependencies(registries, hinge, 'joint');
@@ -968,7 +968,7 @@ describe('the companions a joint brings', () => {
   });
 
   it('brings none to an entity that has a Rigid Body', () => {
-    const cart = addEntity(createEntity('Cart', [createRigidBody()]));
+    const cart = addEntity(createEntity('Cart', [rigidbodyType.create()]));
 
     addComponentWithDependencies(registries, cart, 'joint');
 
@@ -988,7 +988,7 @@ describe('references to the entities copied with them', () => {
   function doorway(): { frame: EntityId; door: EntityId } {
     const frame = addEntity(createEntity('Frame', [createCollider()]));
     const door = addEntity(
-      createEntity('Door', [createRigidBody(), { ...createJoint(), connectedEntity: frame }]),
+      createEntity('Door', [rigidbodyType.create(), { ...createJoint(), connectedEntity: frame }]),
     );
     return { frame, door };
   }
@@ -1037,7 +1037,7 @@ describe('references to the entities copied with them', () => {
   it('unpacking a prefab keeps its joint on the entity it named', () => {
     const frame = createEntity('Frame', [createCollider()]);
     const door = createEntity('Door', [
-      createRigidBody(),
+      rigidbodyType.create(),
       { ...createJoint(), connectedEntity: frame.entity.id },
     ]);
     frame.entity.children = [door.entity.id];

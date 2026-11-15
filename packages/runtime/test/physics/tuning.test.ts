@@ -94,7 +94,7 @@ function meshSlope(): EntityTemplate {
 
 /** A box that cannot turn, placed to land on the slope. */
 function boxOnSlope(z: number): EntityTemplate {
-  return withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
+  return withBody('box', [0, 1, z], { lockRotation: { x: true, y: true, z: true } });
 }
 
 /** A hinge on this axis, its limits as given and otherwise as made. */
@@ -218,7 +218,7 @@ describe('a body tuned while running', () => {
     const rig = await physicsRig([ball]);
     rig.run(0.5);
 
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: [false, true, false] });
+    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: { x: false, y: true, z: false } });
     const held = rig.solved(ball.entity.id).position.y;
     rig.run(1);
 

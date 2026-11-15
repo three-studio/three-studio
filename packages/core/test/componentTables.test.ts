@@ -11,7 +11,7 @@ import {
   createLight,
   createMeshEntity,
   createPrefabInstance,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   deleteComponent,
   deserializePrefab,
@@ -251,7 +251,7 @@ describe('the order an entity lists its components in', () => {
     const scene = sceneWith([cube]);
     putComponent(scene, cube.entity.id, createScript());
     putComponent(scene, cube.entity.id, createLight('point'));
-    putComponent(scene, cube.entity.id, createRigidBody());
+    putComponent(scene, cube.entity.id, rigidbodyType.create());
     return { scene, id: cube.entity.id };
   }
 

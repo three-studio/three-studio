@@ -12,7 +12,7 @@ afterAll(takeTheBrowserBack);
 
 describe('a body with locked axes', () => {
   it('does not fall with its Y position locked', async () => {
-    const ball = withBody('sphere', [0, 3, 0], { lockPosition: [false, true, false] });
+    const ball = withBody('sphere', [0, 3, 0], { lockPosition: { x: false, y: true, z: false } });
     const rig = await physicsRig([ball]);
 
     rig.run(1);
@@ -23,7 +23,7 @@ describe('a body with locked axes', () => {
 
   it('slides down a steep slope without turning, its rotations locked', async () => {
     // Unlocked, the same ball rolls down it, as `pose.test.ts` shows.
-    const ball = withBody('sphere', [0, 1, 0], { lockRotation: [true, true, true] });
+    const ball = withBody('sphere', [0, 1, 0], { lockRotation: { x: true, y: true, z: true } });
     const rig = await physicsRig([ground(50), ball]);
 
     rig.run(0.25);

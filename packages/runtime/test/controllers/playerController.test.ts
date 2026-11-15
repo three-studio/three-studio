@@ -3,9 +3,9 @@ import {
   createColliderShape,
   createEntity,
   createPhysicsSettings,
-  createPlayerController,
+  playerControllerType,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   fixedId,
   type ColliderComponent,
   type PlayerControllerComponent,
@@ -136,11 +136,11 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   ground.entity.transform.position = [0, -0.5, 0];
 
   const player = createEntity('Player', [
-    createPlayerController(),
+    playerControllerType.create(),
     personCapsule(),
     // What `addComponentWithDependencies` gives a player: the controller writes
     // the transform, so the body must not be solved for.
-    { ...createRigidBody(), bodyType: 'kinematicPosition' as const },
+    { ...rigidbodyType.create(), bodyType: 'kinematicPosition' as const },
   ]);
   player.entity.transform.position = [0, startY, 0];
 
@@ -267,7 +267,7 @@ describe('PlayerController falls at the world it is in', () => {
     // not, and a 1.2 m jump on Mars would carry to nearly 3.2 m.
     const { apex } = await jumpIn(-3.71);
 
-    expect(apex).toBeCloseTo(createPlayerController().jumpHeight, 1);
+    expect(apex).toBeCloseTo(playerControllerType.create().jumpHeight, 1);
   });
 
   for (const [name, gravity] of [
@@ -295,7 +295,7 @@ describe('PlayerController places the eye above the feet', () => {
   function eyeAbove(groundY: number, eyeHeight: number, collider?: ColliderComponent): number {
     const object = new Object3D();
     object.position.set(0, groundY, 0);
-    const component = { ...createPlayerController(), eyeHeight };
+    const component = { ...playerControllerType.create(), eyeHeight };
     const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), collider);
     controller.postUpdate();
     return controller.camera.position.y;
@@ -331,7 +331,7 @@ describe('PlayerController places the eye above the feet', () => {
 
   it('takes the field of view from the component, and follows it', () => {
     const object = new Object3D();
-    const component = { ...createPlayerController(), fov: 85 };
+    const component = { ...playerControllerType.create(), fov: 85 };
     const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), undefined);
 
     expect(controller.camera.fov).toBe(85);
@@ -406,7 +406,7 @@ describe('PlayerController driven by the sticks', () => {
     const before = yawOf(rig.controller);
     rig.run(1);
 
-    const speed = createPlayerController().touchLookSpeed;
+    const speed = playerControllerType.create().touchLookSpeed;
     expect(before - yawOf(rig.controller)).toBeCloseTo(speed, 1);
   });
 

@@ -101,7 +101,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/core/test/joint.test.ts', { as: 7 }],
   ['packages/core/test/prefab.test.ts', { as: 14, nonNull: 8 }],
   ['packages/core/test/references.test.ts', { as: 2 }],
-  ['packages/core/test/registry.test.ts', { as: 24 }],
+  ['packages/core/test/registry.test.ts', { as: 16 }],
   ['packages/core/test/water.test.ts', { as: 2 }],
   ['packages/editor/src/audio/context.ts', { state: 1 }],
   ['packages/editor/src/audio/peaks.ts', { state: 1 }],

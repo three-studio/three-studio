@@ -4,7 +4,7 @@ import {
   assertDefined,
   componentsOf,
   componentsOfType,
-  createAudioListener,
+  audioListenerType,
   createCollider,
   createColliderShape,
   createJoint,
@@ -13,7 +13,7 @@ import {
   createEntity,
   createMeshEntity,
   createPrefabInstance,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   deserializePrefab,
   expandPrefabs,
@@ -221,7 +221,7 @@ describe('prefab expansion', () => {
 
   it('overrides a property of one component and leaves its siblings alone', () => {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createRigidBody());
+    putComponent(prefab, prefab.root, rigidbodyType.create());
     const trunkParts = componentsOf(registries, prefab, prefab.root);
     const mesh = assertDefined(trunkParts[0], 'the trunk\'s mesh');
     const body = assertDefined(trunkParts[1], 'the trunk\'s rigid body');
@@ -283,7 +283,7 @@ describe('prefab expansion', () => {
 
   it('follows the component it names when the prefab is reordered', () => {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createRigidBody());
+    putComponent(prefab, prefab.root, rigidbodyType.create());
     const body = assertDefined(componentsOf(registries, prefab, prefab.root)[1], 'the trunk\'s rigid body');
 
     const host = instanceOf(prefab);
@@ -293,7 +293,7 @@ describe('prefab expansion', () => {
 
     // The author adds another component, which used to slide every override of
     // every instance one place along when they were named by position.
-    putComponent(prefab, prefab.root, createAudioListener());
+    putComponent(prefab, prefab.root, audioListenerType.create());
 
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = assertDefined(scene.entities.get(instancedId(host.entity.id, prefab.root)), 'the placed trunk');
@@ -410,7 +410,7 @@ describe('folding one override into an entity', () => {
   /** A copy of a prefab's root, and the mesh and the rigid body it holds. */
   function bodied() {
     const prefab = treePrefab();
-    putComponent(prefab, prefab.root, createRigidBody());
+    putComponent(prefab, prefab.root, rigidbodyType.create());
     const [mesh, body] = componentsOf(registries, prefab, prefab.root);
     return {
       entity: structuredClone(assertDefined(prefab.entities.get(prefab.root), 'the prefab root')),

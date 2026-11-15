@@ -10,7 +10,7 @@ import {
   createPhysicsSettings,
   createPrefabInstance,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   createScript,
   findComponent,
   findComponentById,
@@ -116,7 +116,7 @@ async function playing(): Promise<Engine> {
 function cube(name = 'Cube'): EntityTemplate {
   const template = createMeshEntity('box');
   template.entity.name = name;
-  template.components.push(createRigidBody(), createCollider());
+  template.components.push(rigidbodyType.create(), createCollider());
   return template;
 }
 

@@ -1,4 +1,4 @@
-import { createDefaultLayer, createRigidBody, type CollisionLayer } from '@three-studio/core';
+import { createDefaultLayer, rigidbodyType, type CollisionLayer } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CharacterSettings } from '../../src/physics/PhysicsApi';
@@ -85,7 +85,7 @@ describe('a character', () => {
     // and again, then gave up: a player walked 0.4 m of the 9 it walked on a
     // fixed floor, and sank into it.
     const floor = block([0, -0.25, 0], [40, 0.5, 40]);
-    floor.components.push({ ...createRigidBody(), bodyType: 'kinematicPosition' });
+    floor.components.push({ ...rigidbodyType.create(), bodyType: 'kinematicPosition' });
     const walker = player([0, 1, 0]);
     const rig = await physicsRig([floor, walker]);
 

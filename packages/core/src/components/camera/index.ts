@@ -1,15 +1,12 @@
-import type { ComponentDefinition } from '../registry';
-import { createCamera } from './defaults';
-import type { CameraComponent } from './schema';
+import { defineComponent } from '../registry';
+import { cameraSchema } from './schema';
 
-/** A camera the game can look through. */
-export const cameraComponent: ComponentDefinition<CameraComponent> = {
+/** A camera the game can look through: see `cameraSchema`. */
+export const cameraType = defineComponent({
   id: 'camera',
   label: 'Camera',
-  create: () => createCamera(),
-  assets: () => [],
-  entities: () => [],
-  placeable: () => true,
+  version: 1,
+  schema: cameraSchema,
   runtime: true,
   addable: true,
-};
+});

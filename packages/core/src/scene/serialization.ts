@@ -220,8 +220,7 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
   const blank = createEnvironment();
   // Merged a level deeper for `sky`, because the spread above it is shallow and
   // a scene written before the analytic sky existed carries no `sky` at all —
-  // or, worse, a `sky` from a build that had only half its fields. This is the
-  // same second level `lightComponent.fill` merges for `shadow`, and it is the
+  // or, worse, a `sky` from a build that had only half its fields. It is the
   // reason `createEnvironment` exists rather than a literal: one factory, one
   // merge per level, and a property added later is migrated by existing.
   scene.environment = {

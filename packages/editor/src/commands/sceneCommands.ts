@@ -504,8 +504,8 @@ export function addComponentWithDependencies(registries: CoreRegistries, id: Ent
       // That box is what made the default player incoherent: centred on the
       // origin, it put a 1.6 m eye at 2.1 m above the floor on a character one
       // metre tall, and nothing on screen said where the extra half metre came
-      // from. 1.70 m standing is what `eyeHeight` is chosen against — see
-      // `createPlayerController`.
+      // from. 1.70 m standing is what `eyeHeight` is chosen against — see the
+      // player controller's schema.
       if (component.type === 'collider' && type === 'playerController' && !guessable) {
         component.shape = { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 };
       }

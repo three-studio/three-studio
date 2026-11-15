@@ -1,7 +1,7 @@
 import {
   createDefaultLayer,
   createEntity,
-  createRigidBody,
+  rigidbodyType,
   fixedId,
   type EntityTemplate,
   createPhysicsSettings,
@@ -37,7 +37,7 @@ afterAll(takeTheBrowserBack);
 
 describe('the physics set-up', () => {
   it('says nothing of a Rigid Body whose colliders are on its children', async () => {
-    const cart = createEntity('Cart', [createRigidBody()]);
+    const cart = createEntity('Cart', [rigidbodyType.create()]);
     const wheel = withCollider('sphere', [0.5, 0, 0]);
     nest(cart, wheel);
     const rig = await physicsRig([ground(), cart, wheel]);
@@ -46,7 +46,7 @@ describe('the physics set-up', () => {
   });
 
   it('says where a Collider may go for a Rigid Body with none anywhere', async () => {
-    const rig = await physicsRig([ground(), createEntity('Cart', [createRigidBody()])]);
+    const rig = await physicsRig([ground(), createEntity('Cart', [rigidbodyType.create()])]);
 
     expect(rig.engine.warnings).toContain(
       '"Cart" has a Rigid Body but no Collider, on it or on a child without a body of its own, so nothing can touch it. Add a Collider.',

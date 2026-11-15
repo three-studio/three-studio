@@ -11,7 +11,7 @@ import {
   createMeshComponent,
   createMeshEntity,
   createRenderingSettings,
-  createRigidBody,
+  rigidbodyType,
   findComponent,
   fixedId,
   jointFrame,
@@ -742,7 +742,7 @@ describe('what a collider is built as', () => {
   });
 
   it('draws a child’s collider at its own entity’s pose', () => {
-    const parent = createEntity('Parent', [createRigidBody()]);
+    const parent = createEntity('Parent', [rigidbodyType.create()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];
@@ -845,10 +845,10 @@ describe('what a mesh collider is built as', () => {
   });
 
   it('draws Triangles as the hull a dynamic body makes of them, its own or an ancestor’s', () => {
-    const own = torus('triangles', createRigidBody());
+    const own = torus('triangles', rigidbodyType.create());
     expect(Math.min(...fromAxis(drawn([own], own)))).toBeGreaterThan(R - 1e-3);
 
-    const cart = createEntity('Cart', [createRigidBody()]);
+    const cart = createEntity('Cart', [rigidbodyType.create()]);
     const ridden = torus('triangles');
     nest(cart, ridden);
     expect(Math.min(...fromAxis(drawn([cart, ridden], ridden)))).toBeGreaterThan(R - 1e-3);
@@ -1041,7 +1041,7 @@ describe('where a joint holds', () => {
   });
 
   it('draws a joint on a child where the child is', () => {
-    const parent = createEntity('Door', [createRigidBody()]);
+    const parent = createEntity('Door', [rigidbodyType.create()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];

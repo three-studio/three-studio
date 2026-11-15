@@ -87,16 +87,14 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
    * from the factory for its type, never from a second list.
    *
    * What the default cannot do is reach a level deeper, and a **nested object**
-   * is exactly what the three overrides have: `mesh` (its material and its
-   * geometry), `water` (its geometry), `light` (its shadow settings, and a
-   * `kind` that decides which defaults to merge against at all). A scene
-   * written before a sub-object gained a field comes back with `undefined`
-   * inside it otherwise — the bug that shipped twice on this project. Each of
-   * the three says so in its own module.
+   * is exactly what the two overrides have: `mesh` (its material and its
+   * geometry) and `water` (its geometry). A scene written before a sub-object
+   * gained a field comes back with `undefined` inside it otherwise — the bug
+   * that shipped twice on this project. Each says so in its own module.
    *
-   * The collider and the rigid body declare one for another reason, which their
-   * modules give: physics data is read against its factory, and what it does
-   * not know is dropped.
+   * The collider declares one for another reason, which its module gives:
+   * physics data is read against its factory, and what it does not know is
+   * dropped.
    */
   fill?(stored: C): C;
   /**

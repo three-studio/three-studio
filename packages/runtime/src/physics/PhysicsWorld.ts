@@ -1301,10 +1301,9 @@ function describeBody(rigidbody: RigidBodyComponent | null): RAPIER.RigidBodyDes
   // takes a lock hidden since it stopped being dynamic. Rapier names the axes
   // left free, where the document names those locked.
   if (rigidbody.bodyType === 'dynamic') {
-    const [px, py, pz] = rigidbody.lockPosition;
-    const [rx, ry, rz] = rigidbody.lockRotation;
-    desc.enabledTranslations(!px, !py, !pz);
-    desc.enabledRotations(!rx, !ry, !rz);
+    const { lockPosition: position, lockRotation: rotation } = rigidbody;
+    desc.enabledTranslations(!position.x, !position.y, !position.z);
+    desc.enabledRotations(!rotation.x, !rotation.y, !rotation.z);
   }
   return desc;
 }
