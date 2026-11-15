@@ -167,7 +167,7 @@ export type {
 } from './fields';
 /* A type's fields written once, and what reading a value from outside answers. */
 export { conditionHolds, planFields, variantDefaults, variantFactory } from './fieldSchema';
-export type { FieldPlan, Infer, Schema, SchemaField, ShownWhen } from './fieldSchema';
+export type { FieldPlan, Infer, LinkedObject, Schema, SchemaField, ShownWhen } from './fieldSchema';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
 export {

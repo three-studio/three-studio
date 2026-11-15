@@ -74,6 +74,14 @@ interface FieldFacts {
    * active variant's rows stay.
    */
   readonly shown?: false;
+  /**
+   * Its value may change while the game runs: its row stays enabled in Play,
+   * the running game takes the value at once, and the document does not move
+   * until the tuned values are kept. On an object or a union, it holds for
+   * each of its rows. Marked only where the running game takes a change: a
+   * row that stayed enabled and changed nothing on screen would read as a bug.
+   */
+  readonly tunable?: true;
 }
 
 /** What a numeric row offers. A stored value is not held to them. */
@@ -125,8 +133,16 @@ export type SchemaField = FieldFacts &
     | ({ readonly type: 'asset'; readonly kind: AssetKind } & EmptyChoice)
     /** Another entity of the scene, or none: its default is `null`, since no scene is known here. */
     | ({ readonly type: 'entity' } & EmptyChoice)
-    /** Fields of their own, stored as one object. Its default is its fields'. */
-    | { readonly type: 'object'; readonly fields: Schema }
+    /**
+     * Fields of their own, stored as one object. Its default is its fields'.
+     *
+     * `linkedBy` names an asset field beside it whose asset fills it — a
+     * mesh's material and its material asset. While that field names an asset
+     * the project holds, the object's values are the asset's: its rows show
+     * them, an edit writes the asset's file, a tune in Play tunes the asset.
+     * The object keeps values of its own all the same, for when it is unlinked.
+     */
+    | { readonly type: 'object'; readonly fields: Schema; readonly linkedBy?: string }
     /**
      * One of several objects, told apart by the `kind` each is stored with:
      * `{ kind: 'sphere', radius: 0.5 }`. `default` names a variant, and the
@@ -198,6 +214,18 @@ export type Infer<S extends Schema> = { -readonly [Key in keyof S]: ValueOf<S[Ke
 /** The `kind`s of a union field's variants; `never` for any other field. */
 type VariantName<Field> = Field extends { readonly type: 'union'; readonly variants: infer V } ? keyof V & string : never;
 
+/** An object an asset fills, by the paths a value is read and written at: see `SchemaField`'s `object`. */
+export interface LinkedObject {
+  /** Where the object sits in a value: `['material']`. */
+  readonly object: readonly string[];
+  /** Where the asset field that fills it sits, beside it: `['materialId']`. */
+  readonly by: readonly string[];
+  /** The kind of asset that field names. */
+  readonly kind: AssetKind;
+  /** The object's label: what an edit of its asset is called, « Edit material Roughness ». */
+  readonly label: string;
+}
+
 /** What `planFields` derives from a schema, once. */
 export interface FieldPlan<S extends Schema> {
   /**
@@ -229,6 +257,8 @@ export interface FieldPlan<S extends Schema> {
   renameEntities(value: Infer<S>, rename: (id: EntityId) => EntityId | undefined): Infer<S>;
   /** A union field's variant at its defaults, under its `kind`: what choosing it in the selector writes. A new value each time. */
   createVariant<K extends keyof S & string>(field: K, variant: VariantName<S[K]>): Infer<S>[K];
+  /** The objects an asset fills, in the schema's order, through objects and every variant. */
+  readonly links: readonly LinkedObject[];
 }
 
 /*
@@ -623,6 +653,32 @@ function inspect(object: PlannedObject, around: readonly PlannedObject[], where:
   }
 }
 
+// ------------------------------------------------------------------ links
+
+/**
+ * The objects an asset fills under `object`, which sits at `path` in a value,
+ * and why a `linkedBy` cannot be read: it names no field of its own object, or
+ * one that is no asset. A variant adds no step to the path, its fields being
+ * stored beside its `kind`; while another variant is chosen, the asset field
+ * is not there, and nothing is linked.
+ */
+function planLinks(object: PlannedObject, path: readonly string[], links: LinkedObject[], problems: string[]): void {
+  for (const { key, field, node } of object.entries) {
+    const at = [...path, key];
+    if (field.type === 'object' && field.linkedBy !== undefined) {
+      const by = object.byKey.get(field.linkedBy)?.field;
+      if (by?.type === 'asset') {
+        links.push({ object: at, by: [...path, field.linkedBy], kind: by.kind, label: field.label });
+      } else {
+        const which = by === undefined ? 'no field of its object' : 'no asset field';
+        problems.push(`${at.join('.')}: linked by "${field.linkedBy}", which is ${which}`);
+      }
+    }
+    if (node.form === 'object') planLinks(node, at, links, problems);
+    if (node.form === 'union') for (const variant of node.variants.values()) planLinks(variant, at, links, problems);
+  }
+}
+
 // ------------------------------------------------------------------ walks
 
 function activeVariant(node: PlannedUnion, value: unknown): PlannedObject | undefined {
@@ -727,7 +783,8 @@ function renamedObject(node: PlannedObject, value: unknown, rename: Rename, kind
  *
  * Throws on a schema that contradicts itself — a default its own field
  * refuses, in any variant; a `shownWhen` that names no field around it or a
- * value that field cannot hold; a variant with a field named `kind` — since
+ * value that field cannot hold; a variant with a field named `kind`; a
+ * `linkedBy` that names no asset field beside its object — since
  * such a schema is a mistake in the code that wrote it, and is found the first
  * time that code is loaded, by any test.
  *
@@ -764,6 +821,8 @@ export function planFields<const S extends Schema>(schema: S): FieldPlan<S> {
     ? []
     : defaults.diagnostics.map((fault) => `${fault.path.join('.')}: its default — ${fault.message}`);
   inspect(root, [], '', problems);
+  const links: LinkedObject[] = [];
+  planLinks(root, [], links, problems);
   if (!defaults.ok || problems.length > 0) {
     throw new Error(['A schema contradicts itself:', ...new Set(problems)].join('\n  '));
   }
@@ -797,5 +856,6 @@ export function planFields<const S extends Schema>(schema: S): FieldPlan<S> {
       const value = rebuilt({ ...declaredRoot, [field]: declaredVariant(union.variants, kind) }, `The variant "${kind}"`);
       return structuredClone(value[field]);
     },
+    links,
   };
 }

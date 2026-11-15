@@ -765,3 +765,119 @@ describe('the types of nested data', () => {
     expect(Object.keys(meshPlan.defaults.material)).toHaveLength(26);
   });
 });
+
+// ------------------------------------------------ facts read beside the data
+
+/** A schema with each of its fields marked tunable, as the type that declares it writes it. */
+type Tuned<S extends Schema> = { readonly [Key in keyof S]: S[Key] & { readonly tunable: true } };
+
+/** Each field of a schema marked tunable, at its own level. */
+function tunedFields(fields: Schema): Schema {
+  const out: Record<string, SchemaField> = {};
+  for (const [key, field] of Object.entries(fields)) out[key] = { ...field, tunable: true };
+  return out;
+}
+
+describe('a tunable field', () => {
+  /*
+   * Read by the editor alone: its row stays enabled in Play, where a change
+   * reaches the running game and not the document. Between them, `schema` and
+   * `lamp` hold a field of every kind.
+   */
+  it('is taken on every kind, and changes no default and no decoding', () => {
+    const tuned = planFields(tunedFields(schema));
+    const tunedLamp = planFields(tunedFields(lamp));
+
+    expect(tuned.defaults).toEqual(plan.defaults);
+    expect(tunedLamp.defaults).toEqual(lampPlan.defaults);
+    expect(tuned.decode(stored(), [])).toEqual(plan.decode(stored(), []));
+    expect(tunedLamp.decode(storedLamp(), ['lamp'])).toEqual(lampPlan.decode(storedLamp(), ['lamp']));
+    expect(faults(tunedLamp.decode({ ...storedLamp(), name: 1 }, []))).toEqual([['field.invalid', 'name']]);
+  });
+
+  it('changes no inferred type', () => {
+    expectTypeOf<Infer<Tuned<typeof schema>>>().toEqualTypeOf<Infer<typeof schema>>();
+    expectTypeOf<Infer<Tuned<typeof lamp>>>().toEqualTypeOf<Infer<typeof lamp>>();
+  });
+});
+
+describe('an object an asset fills', () => {
+  /** A material its material asset fills, and inside a trim a paint its physics material fills. */
+  const linked = {
+    materialId: { type: 'asset', label: 'Material asset', kind: 'material' },
+    material: {
+      type: 'object',
+      label: 'Material',
+      linkedBy: 'materialId',
+      fields: { roughness: { type: 'number', label: 'Roughness', default: 1 } },
+    },
+    trim: {
+      type: 'object',
+      label: 'Trim',
+      fields: {
+        paintId: { type: 'asset', label: 'Paint asset', kind: 'physicsMaterial' },
+        paint: {
+          type: 'object',
+          label: 'Paint',
+          linkedBy: 'paintId',
+          fields: { friction: { type: 'number', label: 'Friction', default: 0.5 } },
+        },
+      },
+    },
+  } as const satisfies Schema;
+
+  it('is planned: where it sits, where the asset that fills it sits, that asset\'s kind and the object\'s label', () => {
+    expect(planFields(linked).links).toEqual([
+      { object: ['material'], by: ['materialId'], kind: 'material', label: 'Material' },
+      { object: ['trim', 'paint'], by: ['trim', 'paintId'], kind: 'physicsMaterial', label: 'Paint' },
+    ]);
+    expect(plan.links).toEqual([]);
+    expect(lampPlan.links).toEqual([]);
+  });
+
+  it('is planned in a variant too, which adds no step to the path: its fields sit beside its `kind`', () => {
+    const finish = {
+      finish: {
+        type: 'union',
+        label: 'Finish',
+        default: 'bare',
+        variants: {
+          bare: { label: 'Bare', fields: {} },
+          painted: { label: 'Painted', fields: { paintId: linked.trim.fields.paintId, paint: linked.trim.fields.paint } },
+        },
+      },
+    } as const satisfies Schema;
+
+    expect(planFields(finish).links).toEqual([
+      { object: ['finish', 'paint'], by: ['finish', 'paintId'], kind: 'physicsMaterial', label: 'Paint' },
+    ]);
+  });
+
+  it('keeps values of its own in the data, as any object does, for when no asset fills it', () => {
+    expect(planFields(linked).defaults).toEqual({
+      materialId: null,
+      material: { roughness: 1 },
+      trim: { paintId: null, paint: { friction: 0.5 } },
+    });
+    expectTypeOf<Infer<typeof linked>['material']>().toEqualTypeOf<{ roughness: number }>();
+  });
+
+  it.each([
+    ['names no field', { material: linked.material }, 'material: linked by "materialId", which is no field of its object'],
+    [
+      'names a field of an object around it, not of its own',
+      {
+        materialId: linked.materialId,
+        trim: { ...linked.trim, fields: { paint: { ...linked.trim.fields.paint, linkedBy: 'materialId' } } },
+      },
+      'trim.paint: linked by "materialId", which is no field of its object',
+    ],
+    [
+      'names a field that is no asset',
+      { materialId: { type: 'string', label: 'Material asset', default: '' }, material: linked.material },
+      'material: linked by "materialId", which is no asset field',
+    ],
+  ] satisfies [string, Schema, string][])('is refused when its `linkedBy` %s', (_what, bad, message) => {
+    expect(() => planFields(bad)).toThrow(message);
+  });
+});
