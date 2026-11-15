@@ -264,6 +264,17 @@ interface PlannedObject {
   readonly entries: readonly PlannedEntry[];
   readonly keys: ReadonlySet<string>;
   readonly holds: Holds;
+  /**
+   * Every key the object holds, a variant's `kind` first, each `null`: what a
+   * decoded value is copied from and then filled in, so that it is made with
+   * all its fields at once. Grown a computed key at a time instead, V8 turns an
+   * object past about sixteen fields into a hash table, some 800 bytes more
+   * each, held as long as the document: a mesh's material is twenty-six fields,
+   * and a scene of 9 000 meshes held 7 MB more in the editor than when its file
+   * was read whole. Read from JSON for the same reason: `JSON.parse` makes it
+   * with every field in place.
+   */
+  readonly shape: Readonly<Record<string, unknown>>;
 }
 
 interface PlannedUnion {
@@ -305,13 +316,16 @@ function holdsOf(nodes: readonly Planned[]): Holds {
   return { asset, entity, candidates };
 }
 
-function planObject(fields: Schema): PlannedObject {
+function planObject(fields: Schema, variant = false): PlannedObject {
   const entries = Object.entries(fields).map(([key, field]) => ({ key, field, node: planField(field) }));
+  const keys = [...(variant ? ['kind'] : []), ...entries.map((entry) => entry.key)];
+  const shape: unknown = JSON.parse(JSON.stringify(Object.fromEntries(keys.map((key) => [key, null]))));
   return {
     form: 'object',
     entries,
     keys: new Set(entries.map((entry) => entry.key)),
     holds: holdsOf(entries.map((entry) => entry.node)),
+    shape: isRecord(shape) ? shape : {},
   };
 }
 
@@ -333,7 +347,9 @@ function planField(field: SchemaField): Planned {
     case 'object':
       return planObject(field.fields);
     case 'union': {
-      const variants = new Map(Object.entries(field.variants).map(([kind, variant]) => [kind, planObject(variant.fields)]));
+      const variants = new Map(
+        Object.entries(field.variants).map(([kind, variant]) => [kind, planObject(variant.fields, true)]),
+      );
       return { form: 'union', variants, kinds: oneOf([...variants.keys()]), holds: holdsOf([...variants.values()]) };
     }
     case 'custom':
@@ -393,7 +409,9 @@ function decodeObject(
     faults.push(invalid(path, 'an object', value));
     return undefined;
   }
-  const out: Record<string, unknown> = kind === null ? {} : { kind };
+  // A copy of the object's shape, filled in: see `PlannedObject.shape`.
+  const out: Record<string, unknown> = { ...node.shape };
+  if (kind !== null) out['kind'] = kind;
   for (const { key, node: field } of node.entries) {
     // Its own keys only, here and below: a file may name a key `constructor`,
     // which every object answers to without holding it.

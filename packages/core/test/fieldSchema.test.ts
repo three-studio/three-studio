@@ -1,3 +1,4 @@
+import { setFlagsFromString } from 'node:v8';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   conditionHolds,
@@ -120,6 +121,25 @@ describe('planFields', () => {
 });
 
 describe('a planned decoder', () => {
+  /*
+   * V8 turns an object grown a computed key at a time past about sixteen
+   * fields into a hash table: some 800 bytes more each, held as long as the
+   * document. A mesh's material is twenty-six fields, and a scene of 9 000
+   * meshes held 7 MB more in the editor than when its file was read whole.
+   * Asked of V8 itself, the only one that can say.
+   */
+  it('builds an object of many fields as V8 keeps a fast one, the first time', () => {
+    setFlagsFromString('--allow-natives-syntax');
+    const hasFastProperties = new Function('value', 'return %HasFastProperties(value)');
+    const fields: Record<string, SchemaField> = {};
+    for (let at = 0; at < 26; at += 1) fields[`wide${at}`] = { type: 'number', label: `Wide ${at}`, default: at };
+    const wide = planFields(fields);
+
+    const decoded = wide.decode(JSON.parse(JSON.stringify(wide.defaults)), []);
+
+    expect(decoded.ok && hasFastProperties(decoded.value)).toBe(true);
+  });
+
   it('accepts a value every field accepts, as a value of its own', () => {
     const given = stored();
     const decoded = plan.decode(given, []);
