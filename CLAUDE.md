@@ -36,11 +36,16 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
 - **Un type de composant se décrit par son schéma.** `defineComponent` en dérive le type TypeScript
   (`Infer`), la factory, le décodeur, les références et la pane de l'Inspector ; on n'écrit à la main ni
   interface, ni `fill`, ni liste de références, ni pane. Ce que le schéma ne peut pas dire passe par
-  l'extension de pane du type (`drawers`, `after`). Chaque type porte sa `version`, et chaque fichier de
-  scène ou de prefab enregistre dans `componentVersions` celle de chaque type dont il tient un
-  composant : un type connu à une autre version fait refuser le fichier, un type inconnu garde la sienne
-  telle qu'elle a été trouvée. Changer les champs d'un type du noyau incrémente sa version et
-  `PROJECT_FORMAT_VERSION` ; un module n'incrémente que la version de son type.
+  l'extension de pane du type (`drawers`, `after`). Ce qu'un type exige ou refuse à côté de lui
+  (`requires`, `excludes`, `multiple`), ce qu'il devient quand le dessin de son entité passe à d'autres
+  (`followsDrawing`), les champs qui se règlent pendant Play (`tunable`) et l'objet qu'un asset remplit
+  (`linkedBy`) se déclarent sur le type, jamais dans une table du noyau : l'Inspector, les commandes de
+  scène et le réglage en Play ne nomment aucun type de composant, ce que `test/architecture.test.ts`
+  vérifie. Chaque type porte sa `version`, et chaque fichier de scène ou de prefab enregistre dans
+  `componentVersions` celle de chaque type dont il tient un composant : un type connu à une autre version
+  fait refuser le fichier, un type inconnu garde la sienne telle qu'elle a été trouvée. Changer les
+  champs d'un type du noyau incrémente sa version et `PROJECT_FORMAT_VERSION` ; un module n'incrémente
+  que la version de son type.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
