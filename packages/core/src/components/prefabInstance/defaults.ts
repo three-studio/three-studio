@@ -1,12 +1,8 @@
-import { createComponentId, type AssetId } from '../../ids';
+import type { AssetId } from '../../ids';
+import { prefabInstanceType } from './index';
 import type { PrefabInstanceComponent } from './schema';
 
-/**
- * An instance component, pointing at nothing until something supplies the id.
- *
- * Its own factory because the literal was written out at nine call sites, and
- * every one of them had to be found again the day components gained an id.
- */
-export function createPrefabInstance(assetId: AssetId | '' = ''): PrefabInstanceComponent {
-  return { id: createComponentId(), type: 'prefabInstance', assetId, overrides: {} };
+/** An instance of the prefab `assetId`, overriding nothing. */
+export function createPrefabInstance(assetId: AssetId | null = null): PrefabInstanceComponent {
+  return { ...prefabInstanceType.create(), assetId };
 }

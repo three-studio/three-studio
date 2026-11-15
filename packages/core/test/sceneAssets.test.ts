@@ -3,8 +3,8 @@ import {
   assertDefined,
   collectSceneAssets,
   createEmptyScene,
-  createModel,
-  createScript,
+  modelType,
+  scriptType,
   deserializeScene,
   fixedId,
   setComponentsOf,
@@ -69,7 +69,7 @@ function sceneWith(templates: EntityTemplate[]): SceneDoc {
 describe('what a scene needs before it can be shown', () => {
   it('collects models, textures and a linked material’s own maps', () => {
     const mesh = createMeshEntity('box');
-    const model = createEntity('Tree', [{ ...createModel(), assetId: MODEL }]);
+    const model = createEntity('Tree', [{ ...modelType.create(), assetId: MODEL }]);
     const scene = sceneWith([mesh, model]);
     const component = assertDefined(findComponent(scene, mesh.entity.id, 'mesh'), 'the box mesh');
     component.material.colorMap = TEX_INLINE;
@@ -88,7 +88,7 @@ describe('what a scene needs before it can be shown', () => {
   });
 
   it('follows a prefab into its contents, and through a nested one', () => {
-    const inner = createEntity('Lamp', [{ ...createModel(), assetId: MODEL_LAMP }]);
+    const inner = createEntity('Lamp', [{ ...modelType.create(), assetId: MODEL_LAMP }]);
     const lamp = prefabWith('Lamp', [inner], inner.entity.id);
 
     const roomRoot = createEntity('Room', [
@@ -164,7 +164,7 @@ describe('what a script was handed in the inspector', () => {
   const scripted = (props: Record<string, string | number>) =>
     sceneWith([
       createEntity('Door', [
-        { ...createScript(), assetId: SCRIPT_DOOR, props },
+        { ...scriptType.create(), assetId: SCRIPT_DOOR, props },
       ]),
     ]);
 

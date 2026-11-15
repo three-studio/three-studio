@@ -1,6 +1,6 @@
 import {
   audioListenerType,
-  createAudioSource,
+  audioSourceType,
   createEntity,
   fixedId,
   type AudioSourceComponent,
@@ -25,7 +25,7 @@ import { flush, rig } from './rig';
 const STEP = fixedId('asset', 'step');
 
 function source(overrides: Partial<AudioSourceComponent> = {}): AudioSourceComponent {
-  return { ...createAudioSource(), assetId: STEP, ...overrides };
+  return { ...audioSourceType.create(), assetId: STEP, ...overrides };
 }
 
 function at(x: number, y: number, z: number): Object3D {

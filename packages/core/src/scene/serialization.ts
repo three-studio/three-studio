@@ -1,5 +1,4 @@
 import { SCENE_FORMAT_VERSION } from '../constants';
-import { fillComponent } from '../components';
 import { isRecord } from '../conform';
 import { formatDiagnostics, versionRefusal, type Diagnostic } from '../decoded';
 import {
@@ -129,13 +128,12 @@ export function deserializeScene(registries: CoreRegistries, json: string): Scen
  * until 1.0.0 nothing converts an older scene, and a newer one holds fields
  * whose meaning this build cannot know (`SCENE_FORMAT_VERSION`).
  *
- * What is done here is mending, not converting: a broken hierarchy is healed
- * (`repairHierarchy`), and each component is filled from its own type's
- * factory and checked where its type is written as a schema
+ * A broken hierarchy is healed (`repairHierarchy`), and each component is
+ * decoded by its type: one it refuses refuses the scene
  * (`fillMissingFields`).
  *
  * `registries` say which types this build knows: each registered type's
- * components are filled from its own definition, and any other is kept as
+ * components are decoded by its own definition, and any other is kept as
  * found, in `unknownComponents`.
  */
 export function migrateScene(registries: CoreRegistries, input: unknown): SceneDoc {
@@ -200,18 +198,8 @@ function tablesFrom(registries: CoreRegistries, json: TablesJson | undefined): R
 }
 
 /**
- * Fills in everything added since a scene was written.
- *
- * Against each type's own factory rather than a list kept by hand, so a
- * property added to a component is migrated by existing: keeping a second
- * list in step with the first is a promise nobody keeps, and this exact
- * omission has already shipped twice — texture slots and then geometry
- * segments both reached three as `undefined` on scenes a fortnight old.
- *
- * The alternative is defending at every read site. The binder proved why that
- * is worse: it threw once per frame, and a slider bound to `undefined` took
- * the whole Inspector down. Defaults are cheap; a scene that cannot open is
- * not.
+ * Fills what an entity and the environment lack from their factories, and
+ * decodes each component by its type.
  *
  * Over the document's tables, which are those of the registered types: a table
  * of any other is in `unknownComponents`, where `tablesFrom` kept it as found.
@@ -245,20 +233,14 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
     const definition = registries.components.get(type);
     for (const [entityId, held] of table) {
       for (const [componentId, component] of held) {
-        // Each type fills itself. Shallow is right for the flat ones; `mesh` owns
-        // a material and a geometry that have to be merged a level deeper, and
-        // that knowledge lives with `mesh` rather than as a special case here.
-        const filled = fillComponent(registries, component);
-        // The key is the identity; a `fill` that handed back a fresh id would
-        // orphan every override naming it.
-        filled.id = componentId;
-        // A type written as a schema is then checked against it, field by
-        // field. After the fill, so that a file written before one of its
-        // fields existed still opens, as it does for every other type: what is
-        // refused is a field of the wrong kind, or one the type does not have.
-        const decoded = definition?.decode?.(filled, ['components', type, entityId, componentId]);
-        if (decoded === undefined) held.set(componentId, filled);
-        else if (decoded.ok) held.set(componentId, decoded.value);
+        // Checked against its type, field by field: a field of the wrong kind,
+        // one missing or one the type does not have refuses the scene. Nothing
+        // is filled in — a field added since the file was written is a format
+        // that moved, and the format's version moved with it.
+        const decoded = definition?.decode(component, ['components', type, entityId, componentId]);
+        if (decoded === undefined) continue;
+        // The key is the identity: an override names the component by it.
+        if (decoded.ok) held.set(componentId, { ...decoded.value, id: componentId });
         else refused.push(...decoded.diagnostics);
       }
     }

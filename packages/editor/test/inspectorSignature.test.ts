@@ -2,7 +2,7 @@ import {
   createComponent,
   createEnvironment,
   createLight,
-  createModel,
+  modelType,
   fixedId,
   waterType,
   type ComponentDoc,
@@ -122,8 +122,8 @@ describe('a model', () => {
      * moved no row and still threw the pane away and rebuilt it. Now it
      * refreshes, which is what keeps focus and drag state.
      */
-    const linked: ComponentDoc = { ...createModel(), materialId: fixedId('asset', 'mat-1') };
-    expect(shape(linked)).toBe(shape(createModel()));
+    const linked: ComponentDoc = { ...modelType.create(), materialId: fixedId('asset', 'mat-1') };
+    expect(shape(linked)).toBe(shape(modelType.create()));
   });
 });
 

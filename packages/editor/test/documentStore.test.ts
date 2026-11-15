@@ -13,12 +13,13 @@ import {
   jointType,
   createRenderingSettings,
   rigidbodyType,
-  createScript,
+  scriptType,
   findComponent,
   fixedId,
   instancedId,
   putComponent,
   serializeScene,
+  waterType,
   type AudioSourceComponent,
   type ColliderComponent,
   type ComponentId,
@@ -1021,7 +1022,7 @@ describe('references to the entities copied with them', () => {
     const turret = addEntity(createEntity('Turret'));
     const AIM = fixedId('asset', 'aim');
     const brain = addEntity(
-      createEntity('Brain', [{ ...createScript(), assetId: AIM, props: { target: turret } }]),
+      createEntity('Brain', [{ ...scriptType.create(), assetId: AIM, props: { target: turret } }]),
       turret,
     );
 
@@ -1032,6 +1033,19 @@ describe('references to the entities copied with them', () => {
     const copiedBrain = assertDefined(copiedTurret.children[0], 'the copied brain');
     expect(copiedBrain).not.toBe(brain);
     expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
+  });
+
+  it("a water surface's light follows the copy too", () => {
+    const lamp = addEntity(createEntity('Lamp', [createLight('directional')]));
+    const pond = addEntity(createEntity('Pond', [{ ...waterType.create(), sun: { kind: 'light', entity: lamp } }]), lamp);
+
+    duplicateSelection(registries, sel([lamp]));
+
+    const copy = copyOf('Lamp (1)');
+    const copiedPond = assertDefined(scene().entities.get(copy)?.children[0], 'the copied pond');
+    expect(copiedPond).not.toBe(pond);
+    expect(findComponent(scene(), copiedPond, 'water')?.sun).toEqual({ kind: 'light', entity: copy });
+    expect(findComponent(scene(), pond, 'water')?.sun).toEqual({ kind: 'light', entity: lamp });
   });
 
   it('unpacking a prefab keeps its joint on the entity it named', () => {

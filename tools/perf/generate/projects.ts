@@ -12,7 +12,7 @@ import {
   createLightEntity,
   createMeshComponent,
   createModelEntity,
-  createScript,
+  scriptType,
   createWaterEntity,
   insertEntity,
   serializeScene,
@@ -532,7 +532,7 @@ export function ballastPaths(recipe: ScriptedRecipe = SCRIPTED): string[] {
 }
 
 function scriptOn(assetId: AssetId): ComponentDoc {
-  return { ...createScript(), assetId };
+  return { ...scriptType.create(), assetId };
 }
 
 /** Writes the `scripted` recipe's project into `parent`, and answers its path. */

@@ -1,10 +1,9 @@
 import {
-  assertDefined,
   PROJECT_FORMAT_VERSION,
   colliderShapeField,
   createJointMotion,
   jointMotionField,
-  createAudioSource,
+  audioSourceType,
   createBuildProfiles,
   colliderType,
   createColliderShape,
@@ -18,11 +17,10 @@ import {
   fixedId,
   type ColliderShapeKind,
   type ComponentDoc,
-  type ComponentType,
   type JointKind,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { paneEntriesFor, paneFor } from '../src/inspector/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { useProjectStore } from '../src/state/projectStore';
 import { declaredControl } from '../src/inspector/declaredFields';
 import {
@@ -37,8 +35,6 @@ import { readPath } from '../src/inspector/target';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
-/** The pane of a type, which every kernel type has: written by hand, or derived from its schema. */
-const paneOf = (type: ComponentType) => assertDefined(paneFor(registries, type), `the pane of ${type}`);
 /** Every type the window knows, in the order it registered them. */
 const TYPES = registries.components.values().map((definition) => definition.id);
 
@@ -51,33 +47,33 @@ const TYPES = registries.components.values().map((definition) => definition.id);
  * correctly and writes nonsense.
  */
 
-function fields(type: 'audioSource'): FieldSpec[] {
-  return paneOf(type).fields.filter(
+function fields(): FieldSpec[] {
+  return paneEntriesFor(registries, audioSourceType.create()).entries.filter(
     (entry): entry is FieldSpec => !isSeparator(entry) && !isAction(entry) && 'path' in entry,
   );
 }
 
-function field(type: 'audioSource', label: string): FieldSpec {
-  const found = fields(type).find((spec) => spec.label === label);
+function field(label: string): FieldSpec {
+  const found = fields().find((spec) => spec.label === label);
   if (!found) throw new Error(`no field labelled ${label}`);
   return found;
 }
 
 describe('the Audio Source pane', () => {
   it('offers the blend as a switch and as a dial, both onto the one field', () => {
-    const onBlend = fields('audioSource').filter((spec) => spec.path[0] === 'spatialBlend');
+    const onBlend = fields().filter((spec) => spec.path[0] === 'spatialBlend');
     expect(onBlend.map((spec) => spec.label)).toEqual(['Spatialize', '2D  ↔  3D']);
   });
 
   it('shows Spatialize ticked for anything that is not fully flat', () => {
-    const { toModel } = field('audioSource', 'Spatialize');
+    const { toModel } = field('Spatialize');
     expect(toModel?.(0)).toBe(false);
     expect(toModel?.(0.6)).toBe(true);
     expect(toModel?.(1)).toBe(true);
   });
 
   it('writes the two ends of the dial, and nothing in between', () => {
-    const { fromModel } = field('audioSource', 'Spatialize');
+    const { fromModel } = field('Spatialize');
     expect(fromModel?.(true)).toBe(1);
     expect(fromModel?.(false)).toBe(0);
   });
@@ -85,14 +81,14 @@ describe('the Audio Source pane', () => {
   it('starts a new source spatialized, which is what the switch will show', () => {
     // The default is `1`, and the switch has to agree with it or a source added
     // from the Add menu reads as flat in a pane that is about to prove it is not.
-    const { toModel } = field('audioSource', 'Spatialize');
-    expect(toModel?.(createAudioSource().spatialBlend)).toBe(true);
+    const { toModel } = field('Spatialize');
+    expect(toModel?.(audioSourceType.create().spatialBlend)).toBe(true);
   });
 
   it('leaves the dial always reachable, so a blend can be dialled back up', () => {
     // The falloff rows are conditional; this one must not be, or unticking the
     // switch would take away the only control that can undo it by degrees.
-    expect(field('audioSource', '2D  ↔  3D').visibleWhen).toBeUndefined();
+    expect(field('2D  ↔  3D').visibleWhen).toBeUndefined();
   });
 });
 

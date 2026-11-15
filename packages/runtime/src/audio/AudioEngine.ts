@@ -92,7 +92,7 @@ export class AudioEngine {
     const { assetId } = request;
     if (this.disposed) return failedVoice(id, assetId);
 
-    if (assetId === '') {
+    if (assetId === null) {
       // Not a warning. A source with no clip yet is the normal state of one that
       // was just added, and warning per frame about an empty field is noise.
       return failedVoice(id, assetId);
@@ -116,8 +116,8 @@ export class AudioEngine {
   }
 
   /** Decodes a clip ahead of the first play, and keeps it. */
-  async preload(assetId: AssetId | ''): Promise<void> {
-    if (this.disposed || assetId === '') return;
+  async preload(assetId: AssetId | null): Promise<void> {
+    if (this.disposed || assetId === null) return;
     const held = this.cache.acquire(assetId);
     await held.clip;
     // The reference is given straight back: preloading means "have it ready",

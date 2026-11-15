@@ -29,7 +29,7 @@ describe('AudioContextLike', () => {
 describe('AudioEngine', () => {
   it('refuses a source with no clip, quietly', async () => {
     const { engine, warnings } = rig();
-    const voice = engine.play({ assetId: '' });
+    const voice = engine.play({ assetId: null });
     await flush();
 
     expect(voice.state).toBe('failed');

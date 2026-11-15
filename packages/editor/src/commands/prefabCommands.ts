@@ -220,8 +220,8 @@ export async function applyInstanceOverrides(registries: CoreRegistries, entityI
   if (!component) return;
 
   const { assetId } = component;
-  const prefab = assetId === '' ? undefined : useAssetStore.getState().prefabs.get(assetId);
-  if (assetId === '' || !prefab) {
+  const prefab = assetId === null ? undefined : useAssetStore.getState().prefabs.get(assetId);
+  if (assetId === null || !prefab) {
     notify({
       kind: 'warning',
       title: 'Nothing to apply to',
@@ -314,13 +314,13 @@ export function revertInstanceOverrides(entityId: EntityId): void {
  */
 export function instanceInfo(
   entityId: EntityId,
-): { assetId: AssetId | ''; name: string; siblings: EntityId[]; missing: boolean } | null {
+): { assetId: AssetId | null; name: string; siblings: EntityId[]; missing: boolean } | null {
   const scene = useDocumentStore.getState().scene;
   const component = scene.entities.has(entityId) ? prefabInstanceOf(scene, entityId) : undefined;
   if (!component) return null;
 
   const { assetId } = component;
-  const prefab = assetId === '' ? undefined : useAssetStore.getState().prefabs.get(assetId);
+  const prefab = assetId === null ? undefined : useAssetStore.getState().prefabs.get(assetId);
   return {
     assetId,
     name: prefab?.name ?? 'Missing prefab',
@@ -367,7 +367,7 @@ export function unpackPrefabInstance(registries: CoreRegistries, entityId: Entit
   if (!host || !component) return;
 
   const prefab =
-    component.assetId === '' ? undefined : useAssetStore.getState().prefabs.get(component.assetId);
+    component.assetId === null ? undefined : useAssetStore.getState().prefabs.get(component.assetId);
   if (!prefab) {
     notify({
       kind: 'warning',
@@ -440,7 +440,7 @@ export function unpackPrefabInstance(registries: CoreRegistries, entityId: Entit
       setComponentsOf(
         draft,
         copy.id,
-        renameEntityReferences(componentsOf(registries, expanded, entity.id), follow),
+        renameEntityReferences(registries, componentsOf(registries, expanded, entity.id), follow),
       );
 
       // Appended, never assigned: whatever the author parented under the
@@ -510,7 +510,7 @@ export const PREFAB_COMMANDS = {
     can: (ctx) => instance(ctx)?.missing === false,
     run: async (ctx) => {
       const info = instance(ctx);
-      if (info && !info.missing && info.assetId !== '') await createPrefabVariant(ctx.registries, info.assetId);
+      if (info && !info.missing && info.assetId !== null) await createPrefabVariant(ctx.registries, info.assetId);
     },
   }),
 

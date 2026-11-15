@@ -116,8 +116,8 @@ interface AssetState {
   setViewMode: (mode: AssetViewMode) => void;
   setTileSize: (size: number) => void;
 
-  /** The entry an id names. `''` is the slot that names none, and finds nothing. */
-  byId: (assetId: AssetId | '') => AssetEntry | undefined;
+  /** The entry an id names. */
+  byId: (assetId: AssetId) => AssetEntry | undefined;
   byKind: (kind: AssetKind) => AssetEntry[];
 }
 

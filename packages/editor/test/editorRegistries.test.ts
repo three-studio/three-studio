@@ -16,7 +16,7 @@ import { sceneWith } from '../../core/test/fixtures';
 import { activateEditor } from '../src/activate';
 import { inspectorSignature } from '../src/inspector/buildInspector';
 import { derivedPane } from '../src/inspector/derivePane';
-import { paneFor, unknownTypesOn } from '../src/inspector/panes';
+import { paneEntriesFor, unknownTypesOn } from '../src/inspector/panes';
 import { createEditorRegistries } from '../src/registries';
 import { addMenuGroups } from '../src/shell/addMenu';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -224,7 +224,7 @@ describe('the pane of a type written as a schema', () => {
   });
 
   it('is none for a type nobody registered', () => {
-    expect(paneFor(createEditorRegistries(), 'mesh')).toBeUndefined();
+    expect(paneEntriesFor(createEditorRegistries(), createLight('point')).entries).toEqual([]);
   });
 });
 

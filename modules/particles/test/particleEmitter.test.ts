@@ -163,13 +163,11 @@ describe('a scene holding a particle emitter', () => {
     );
   });
 
-  it('still opens when the file was written before one of the emitter\'s fields existed', () => {
-    // An older file is read through each type's factory until the formats stop
-    // being converted: a missing field is filled, not refused.
+  it('is refused when the file was written before one of the emitter\'s fields existed, naming the field', () => {
+    // Nothing fills a missing field from the factory: an emitter of another
+    // shape is another version of its type.
     const older = file((emitter) => delete emitter['additive']);
-    const scene = deserializeScene(registries, older);
-    const [entityId] = scene.entities.keys();
 
-    expect(findComponent(scene, assertDefined(entityId, 'the entity'), 'particleEmitter')?.additive).toBe(true);
+    expect(() => deserializeScene(registries, older)).toThrow(/components\.particleEmitter\.\w+\.\w+\.additive: is missing/);
   });
 });

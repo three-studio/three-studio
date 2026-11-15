@@ -254,9 +254,7 @@ export { AUDIO_BUSES } from './scene/schema';
  * control offers.
  */
 export {
-  AUDIO_BUS_LABELS,
   BACKGROUND_MODE_LABELS,
-  DISTANCE_MODEL_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
 } from './scene/schema';
@@ -307,18 +305,21 @@ export { colliderType } from './components/collider';
 export { jointType } from './components/joint';
 export { lightType } from './components/light';
 export { meshType } from './components/mesh';
+export { audioSourceType } from './components/audioSource';
+export { modelType } from './components/model';
 export { playerControllerType } from './components/playerController';
+export { prefabInstanceType } from './components/prefabInstance';
+export { scriptType } from './components/script';
 export { rigidbodyType } from './components/rigidbody';
 export { waterType } from './components/water';
 export { waterSchema } from './components/water/schema';
 export { createAudioListenerEntity } from './components/audioListener/defaults';
-export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
+export { createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCamera, createCameraEntity } from './components/camera/defaults';
 export { createLight, createLightEntity } from './components/light/defaults';
 export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
-export { createModel, createModelEntity } from './components/model/defaults';
+export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
-export { createScript } from './components/script/defaults';
 export { createWaterEntity } from './components/water/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
@@ -342,13 +343,12 @@ export type { ComponentHost } from './scene/components';
 
 export {
   addableTypes,
-  componentAssetCandidates,
+  componentCandidates,
   componentAssets,
   componentEntities,
   createComponent,
   createComponentForEntity,
   defineComponent,
-  fillComponent,
   isPlaceable,
   typesWithoutRuntime,
 } from './components';

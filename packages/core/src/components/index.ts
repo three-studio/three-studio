@@ -45,7 +45,7 @@ export function addableTypes(registries: CoreRegistries): readonly ComponentType
 export function componentAssets(
   registries: CoreRegistries,
   component: ComponentDoc,
-): readonly (AssetId | '' | null)[] {
+): readonly (AssetId | null)[] {
   // A type from a plugin, or from a later version of the editor. It names assets
   // this build cannot see, and guessing would be worse than saying none.
   return registries.components.get(component.type)?.assets(component) ?? [];
@@ -55,13 +55,13 @@ export function componentAssets(
 export function componentEntities(
   registries: CoreRegistries,
   component: ComponentDoc,
-): readonly (EntityId | '' | null)[] {
+): readonly (EntityId | null)[] {
   return registries.components.get(component.type)?.entities(component) ?? [];
 }
 
-/** Strings a component holds that may name an asset; see `ComponentDefinition.assetCandidates`. */
-export function componentAssetCandidates(registries: CoreRegistries, component: ComponentDoc): readonly string[] {
-  return registries.components.get(component.type)?.assetCandidates?.(component) ?? [];
+/** Strings a component holds that may name an asset or an entity; see `ComponentDefinition.candidates`. */
+export function componentCandidates(registries: CoreRegistries, component: ComponentDoc): readonly string[] {
+  return registries.components.get(component.type)?.candidates(component) ?? [];
 }
 
 /**
@@ -74,25 +74,6 @@ export function componentAssetCandidates(registries: CoreRegistries, component: 
  */
 export function componentIsPlaceable(registries: CoreRegistries, component: ComponentDoc): boolean {
   return registries.components.get(component.type)?.placeable(component) ?? true;
-}
-
-/**
- * A stored component with everything added since it was written filled in.
- *
- * An unknown type comes back **exactly as found**. Filling it against a type we
- * do not have would invent a shape, and the next save would write that invention
- * over the author's data. A field is deprecated, never lost.
- *
- * A type that declared no `fill` gets the default: its own factory underneath
- * what was stored, so nothing the author wrote is overwritten and nothing added
- * since is left `undefined`. See `ComponentDefinition.fill` for the types that
- * need more than that.
- */
-export function fillComponent(registries: CoreRegistries, stored: ComponentDoc): ComponentDoc {
-  const definition = registries.components.get(stored.type);
-  if (!definition) return stored;
-  if (definition.fill) return definition.fill(stored);
-  return { ...definition.create(), ...stored };
 }
 
 /**

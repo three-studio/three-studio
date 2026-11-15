@@ -13,18 +13,18 @@ import { GltfImporter } from './assets/import/importers/GltfImporter';
 import { ObjImporter } from './assets/import/importers/ObjImporter';
 import { TextureImporter } from './assets/import/importers/TextureImporter';
 import { audioListenerType } from './components/audioListener';
-import { audioSourceComponent } from './components/audioSource';
+import { audioSourceType } from './components/audioSource';
 import { cameraType } from './components/camera';
 import { colliderType } from './components/collider';
 import { jointType } from './components/joint';
 import { lightType } from './components/light';
 import { meshType } from './components/mesh';
-import { modelComponent } from './components/model';
+import { modelType } from './components/model';
 import { playerControllerType } from './components/playerController';
-import { prefabInstanceComponent } from './components/prefabInstance';
+import { prefabInstanceType } from './components/prefabInstance';
 import type { ComponentDefinition } from './components/registry';
 import { rigidbodyType } from './components/rigidbody';
-import { scriptComponent } from './components/script';
+import { scriptType } from './components/script';
 import { waterType } from './components/water';
 import { combineDisposables, type Disposable } from './disposable';
 import type { ImporterId } from './ids';
@@ -51,16 +51,16 @@ export interface CoreRegistries {
  */
 const COMPONENTS: readonly ComponentDefinition[] = [
   meshType,
-  modelComponent,
+  modelType,
   lightType,
   cameraType,
   rigidbodyType,
   colliderType,
   jointType,
-  audioSourceComponent,
+  audioSourceType,
   audioListenerType,
-  scriptComponent,
-  prefabInstanceComponent,
+  scriptType,
+  prefabInstanceType,
   playerControllerType,
   waterType,
 ];

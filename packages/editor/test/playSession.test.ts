@@ -11,7 +11,7 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   rigidbodyType,
-  createScript,
+  scriptType,
   defaultSettings,
   deserializeScene,
   fixedId,
@@ -405,7 +405,7 @@ function withBoss(): string[] {
 /** The document becomes one entity whose script moves to Boss from its first frame. */
 function directedToBoss(): void {
   useScriptStore.setState({ scripts: new Map([[GO_TO_BOSS, GoToBoss]]) });
-  const director: ScriptComponent = { ...createScript(), assetId: GO_TO_BOSS };
+  const director: ScriptComponent = { ...scriptType.create(), assetId: GO_TO_BOSS };
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
 
@@ -757,7 +757,7 @@ describe('the scene the game plays', () => {
 
   /** The scene as a file opens it — read, so never produced by immer and not frozen — and a copy of it. */
   function opened(): SceneDoc {
-    const script: ScriptComponent = { ...createScript(), assetId: MOVER, props: { offset: [1, 2, 3] } };
+    const script: ScriptComponent = { ...scriptType.create(), assetId: MOVER, props: { offset: [1, 2, 3] } };
     const scene = sceneWith([createEntity('Mover', [script])]);
     doc().replaceScene(deserializeScene(registries, serializeScene(registries, scene)));
     return structuredClone(doc().scene);

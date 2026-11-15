@@ -122,8 +122,8 @@ export class ModelCache {
    * asking before loading rather than finding out by catching. `ModelSystem`
    * asks, and draws a placeholder instead of nothing.
    */
-  knows(assetId: AssetId | ''): boolean {
-    return assetId !== '' && this.resolver.url(assetId) !== null;
+  knows(assetId: AssetId | null): boolean {
+    return assetId !== null && this.resolver.url(assetId) !== null;
   }
 
   /**

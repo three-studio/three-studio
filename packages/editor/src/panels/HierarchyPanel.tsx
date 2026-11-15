@@ -235,7 +235,7 @@ export function HierarchyPanel() {
           label: 'Show Prefab in Project',
           disabled: owner === null || owner.missing,
           onSelect: () => {
-            if (owner && owner.assetId !== '') commandById('revealAsset').run(contextForAsset(registries, owner.assetId));
+            if (owner && owner.assetId !== null) commandById('revealAsset').run(contextForAsset(registries, owner.assetId));
           },
         },
       ];
@@ -258,7 +258,7 @@ export function HierarchyPanel() {
               label: 'Show Prefab in Project',
               disabled: many || prefabInfo === null || prefabInfo.missing,
               onSelect: () => {
-                if (prefabInfo && prefabInfo.assetId !== '') {
+                if (prefabInfo && prefabInfo.assetId !== null) {
                   commandById('revealAsset').run(contextForAsset(registries, prefabInfo.assetId));
                 }
               },

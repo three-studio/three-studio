@@ -1,4 +1,4 @@
-import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
+import { componentAssets, componentCandidates, componentEntities } from '../components';
 import { materialAssets } from '../scene/material';
 import { isAssetId, type AssetId, type EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
@@ -69,7 +69,7 @@ export function totalUses(usage: AssetUsage): number {
  * the exporter ships: a slot named in one and not the other is either a texture
  * that does not arrive or a delete that claims nothing uses it.
  */
-function componentNames(registries: CoreRegistries, component: ComponentDoc): readonly (AssetId | '' | null)[] {
+function componentNames(registries: CoreRegistries, component: ComponentDoc): readonly (AssetId | null)[] {
   return componentAssets(registries, component);
 }
 
@@ -183,11 +183,11 @@ export function findBrokenReferences(
   const broken: BrokenReference[] = [];
   const seen = new Set<string>();
 
-  const note = (entityId: EntityId | null, assetId: AssetId | '' | null): void => {
-    // `''` is a slot the author has not filled, which is not the same thing as
-    // one pointing at something gone: an empty Texture field is how a material
-    // says it has no normal map.
-    if (assetId === null || assetId === '' || known.has(assetId)) return;
+  const note = (entityId: EntityId | null, assetId: AssetId | null): void => {
+    // `null` is a slot the author has not filled, which is not the same thing
+    // as one pointing at something gone: an empty Texture field is how a
+    // material says it has no normal map.
+    if (assetId === null || known.has(assetId)) return;
 
     // One entity can name the same missing id from several slots — a material
     // reusing one texture — and that is one broken reference, not four.
@@ -214,7 +214,7 @@ export function findBrokenReferences(
  *
  * Beside `findBrokenReferences`, over the same walk, for the same reason: a
  * reference that answers to nothing must be seen while it is edited, not at
- * Play. `null` and `''` are empty slots, as an asset's are. Give it the
+ * Play. `null` is an empty slot, as an asset's is. Give it the
  * expanded scene to reach what prefab instances place.
  */
 export function findMissingEntities(
@@ -224,7 +224,7 @@ export function findMissingEntities(
   const missing: { entityId: EntityId; type: ComponentType }[] = [];
   for (const [entityId, component] of eachComponent(scene)) {
     const gone = componentEntities(registries, component).some(
-      (id) => id !== null && id !== '' && !scene.entities.has(id),
+      (id) => id !== null && !scene.entities.has(id),
     );
     if (gone) missing.push({ entityId, type: component.type });
   }
@@ -249,7 +249,7 @@ export function collectSceneAssets(
   /**
    * Every asset id the project holds. Given, the strings a component may hold
    * an asset in — a script's properties — count where one of these answers to
-   * them; see `ComponentDefinition.assetCandidates`. Left out, as a loading bar
+   * them; see `ComponentDefinition.candidates`. Left out, as a loading bar
    * does, only the slots that say they hold an asset are read.
    */
   knownAssets?: ReadonlySet<AssetId>,
@@ -263,11 +263,11 @@ export function collectSceneAssets(
     const candidates =
       knownAssets === undefined
         ? []
-        : componentAssetCandidates(registries, component).flatMap((text) =>
+        : componentCandidates(registries, component).flatMap((text) =>
             isAssetId(text) && knownAssets.has(text) ? [text] : [],
           );
     for (const id of [...componentNames(registries, component), ...candidates]) {
-      if (id === null || id === '') continue;
+      if (id === null) continue;
       ids.add(id);
 
       // A linked material's own textures: nothing else in the scene names them.
@@ -310,7 +310,7 @@ export function collectSceneAssets(
  * "can I delete this" but "how many objects does editing this touch", which is
  * what makes an Apply safe to press.
  */
-export function findPrefabInstances(assetId: AssetId | '', scene: SceneDoc): EntityId[] {
+export function findPrefabInstances(assetId: AssetId | null, scene: SceneDoc): EntityId[] {
   return [...componentsOfType(scene, 'prefabInstance')]
     .filter(([, held]) =>
       [...held.values()].some((component) => component.type === 'prefabInstance' && component.assetId === assetId),

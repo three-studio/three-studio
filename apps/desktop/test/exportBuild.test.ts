@@ -26,14 +26,14 @@ import {
   createMaterial,
   createMeshEntity,
   componentsOfType,
-  createModel,
+  modelType,
   createAudioSourceEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
   createPrefabDoc,
   createPrefabInstance,
   createRenderingSettings,
-  createScript,
+  scriptType,
   createStarterScene,
   deserializeScene,
   fixedId,
@@ -965,7 +965,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
+    putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(
       join(projectPath, SCENES_DIR, 'main.scene.json'),
       serializeScene(registries, scene),
@@ -1030,7 +1030,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-tri') });
+    putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out', 'reaching');
@@ -1056,7 +1056,7 @@ describe('models that come with other files', () => {
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
     );
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
-    putComponent(scene, entityId, { ...createModel(), assetId: fixedId('asset', 'model-gone') });
+    putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-gone') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
 
     const outputDir = join(projectPath, '..', 'out-missing');
@@ -1434,7 +1434,7 @@ describe('what a scene needs beyond its slots', () => {
       'utf8',
     );
     await addToMainScene(projectPath, {
-      ...createScript(),
+      ...scriptType.create(),
       assetId: fixedId('asset', 'script-door'),
       // The spare texture is named by nothing else in the project.
       props: { texture: 'tex-spare', greeting: 'Hello' },

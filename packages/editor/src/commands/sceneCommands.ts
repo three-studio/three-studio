@@ -761,7 +761,9 @@ export function duplicateSelection(registries: CoreRegistries, selection: Select
       // trailer duplicated together left the new trailer hitched to the old car.
       // What was not copied keeps the original, as Unity's Duplicate does.
       for (const copyId of renamed.values()) {
-        const components = renameEntityReferences(componentsOf(registries, scene, copyId), (id) => renamed.get(id));
+        const components = renameEntityReferences(registries, componentsOf(registries, scene, copyId), (id) =>
+          renamed.get(id),
+        );
         setComponentsOf(scene, copyId, components);
       }
     },

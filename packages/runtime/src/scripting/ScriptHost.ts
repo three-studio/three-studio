@@ -102,7 +102,7 @@ export const scriptBehaviour: BehaviourDefinition = {
   id: 'script',
   create(target: BehaviourTarget, ctx: BehaviourContext) {
     const { component } = target;
-    if (component.type !== 'script' || component.assetId === '') return null;
+    if (component.type !== 'script' || component.assetId === null) return null;
 
     // The classes of the bundle this engine was given, and of no other. Checked
     // as it is read: the context cannot name the script API without the API

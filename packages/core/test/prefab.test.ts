@@ -14,7 +14,7 @@ import {
   createMeshEntity,
   createPrefabInstance,
   rigidbodyType,
-  createScript,
+  scriptType,
   deserializePrefab,
   expandPrefabs,
   findComponent,
@@ -567,7 +567,7 @@ describe('references inside a prefab', () => {
     const turret = createMeshEntity('box');
     turret.entity.name = 'Turret';
     const brain = createEntity('Brain', [
-      { ...createScript(), assetId: SCRIPT_1, props: { target: turret.entity.id, speed: 3 } },
+      { ...scriptType.create(), assetId: SCRIPT_1, props: { target: turret.entity.id, speed: 3 } },
     ]);
     turret.entity.children = [brain.entity.id];
     brain.entity.parent = turret.entity.id;

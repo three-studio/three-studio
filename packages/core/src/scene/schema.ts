@@ -57,11 +57,7 @@ export type {
   AudioSourceComponent,
   DistanceModel,
 } from '../components/audioSource/schema';
-export {
-  AUDIO_BUSES,
-  AUDIO_BUS_LABELS,
-  DISTANCE_MODEL_LABELS,
-} from '../components/audioSource/schema';
+export { AUDIO_BUSES } from '../components/audioSource/schema';
 export type { CameraComponent, CameraProjection } from '../components/camera/schema';
 export type {
   ColliderComponent,

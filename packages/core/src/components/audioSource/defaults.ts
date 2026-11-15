@@ -1,39 +1,6 @@
-import { createComponentId, type AssetId } from '../../ids';
+import type { AssetId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
-import type { AudioSourceComponent } from './schema';
-
-export function createAudioSource(): AudioSourceComponent {
-  return {
-    id: createComponentId(),
-    type: 'audioSource',
-    assetId: '',
-    // Defaults to fully positional: a sound placed on an entity in 3D space is
-    // almost always meant to come from there.
-    spatialBlend: 1,
-    volume: 1,
-    pitch: 1,
-    loop: false,
-    playOnStart: false,
-    bus: 'sfx',
-    distanceModel: 'inverse',
-    refDistance: 1,
-    maxDistance: 50,
-    rolloffFactor: 1,
-    coneInnerAngle: 360,
-    coneOuterAngle: 360,
-    coneOuterGain: 0,
-    mute: false,
-    detune: 0,
-    startOffset: 0,
-    delay: 0,
-    fadeIn: 0,
-    fadeOut: 0,
-    // Unity's default sits in the middle of its 0–256 range, which leaves room
-    // to say "this one matters" in both directions without editing everything
-    // else first.
-    priority: 128,
-  };
-}
+import { audioSourceType } from './index';
 
 /**
  * An entity whose whole job is to make a noise somewhere.
@@ -43,8 +10,6 @@ export function createAudioSource(): AudioSourceComponent {
  * hand every single time. The same reason a dropped model is named after its
  * file.
  */
-export function createAudioSourceEntity(assetId: AssetId | '' = '', name = 'Audio Source'): EntityTemplate {
-  const component = createAudioSource();
-  component.assetId = assetId;
-  return createEntity(name, [component]);
+export function createAudioSourceEntity(assetId: AssetId | null = null, name = 'Audio Source'): EntityTemplate {
+  return createEntity(name, [{ ...audioSourceType.create(), assetId }]);
 }

@@ -1,7 +1,7 @@
 import {
   createEntity,
   createRenderingSettings,
-  createScript,
+  scriptType,
   fixedId,
   type SceneDoc,
   type ScriptComponent,
@@ -53,7 +53,7 @@ class Where extends Behaviour {
 }
 
 function sceneWithWhere(): SceneDoc {
-  const script: ScriptComponent = { ...createScript(), assetId: WHERE };
+  const script: ScriptComponent = { ...scriptType.create(), assetId: WHERE };
   return sceneWith([createEntity('Holder', [script])]);
 }
 

@@ -11,7 +11,7 @@ import {
   createPrefabInstance,
   createRenderingSettings,
   rigidbodyType,
-  createScript,
+  scriptType,
   findComponent,
   findComponentById,
   fixedId,
@@ -286,7 +286,7 @@ describe('tuning during Play', () => {
     }
     const DIRECTOR = fixedId('asset', 'script-director');
     useScriptStore.setState({ scripts: new Map([[DIRECTOR, Director]]) });
-    const director: ScriptComponent = { ...createScript(), assetId: DIRECTOR };
+    const director: ScriptComponent = { ...scriptType.create(), assetId: DIRECTOR };
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box, createEntity('Director', [director])]));
     const first = await playing();

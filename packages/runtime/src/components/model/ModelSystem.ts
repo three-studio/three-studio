@@ -7,7 +7,7 @@ import { SharedMaterial } from '../../systems/ResourceArena';
 import { createMissingModel } from './missingModel';
 
 export interface ModelHandle extends SystemHandle {
-  assetId: AssetId | '';
+  assetId: AssetId | null;
   /** Which node of the file; `''` is the whole thing. See `ModelComponent`. */
   nodePath: string;
   nodeName: string;
@@ -214,7 +214,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
 
   private load(entityId: EntityId, handle: ModelHandle, ctx: SystemContext): void {
     const { assetId } = handle;
-    if (assetId === '') return;
+    if (assetId === null) return;
 
     // Asked before loading, because it is not a failure. A scene that names a
     // deleted asset is ordinary — the delete dialog says the reference will be

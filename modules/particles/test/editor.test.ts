@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../packages/core/test/fixtures';
 import { isSeparator } from '../../../packages/editor/src/inspector/fields';
-import { paneEntriesFor, paneFor } from '../../../packages/editor/src/inspector/panes';
+import { paneEntriesFor } from '../../../packages/editor/src/inspector/panes';
 import { addMenuGroups } from '../../../packages/editor/src/shell/addMenu';
 import { markerRules } from '../../../packages/editor/src/viewport/overlay/markerStyles';
 import { registriesWithParticles } from './registries';
@@ -49,7 +49,6 @@ describe('the pane of a type written as a schema', () => {
     expect(JSON.parse(JSON.stringify(pane.entries))).toEqual(WRITTEN_BY_HAND);
     expect(pane.key).toBe('particleEmitter');
     expect(registries.panes.get('particleEmitter')).toBeUndefined();
-    expect(paneFor(registries, 'particleEmitter')).toBeUndefined();
   });
 
   it('shows the radius for a sphere, the box size for a box, and every other row always', () => {

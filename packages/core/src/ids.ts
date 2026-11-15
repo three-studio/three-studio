@@ -12,8 +12,7 @@ const ALPHABET = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
  * and code that takes a value from outside — a file, a message, three's
  * `userData`, the user's script — knows which field it is reading, and checks it
  * there. The check verifies the form, which is all a value can show: text that
- * is not empty. `''` is no id, and that is what lets `AssetId | ''` say "no
- * asset" in the four fields that still say it that way.
+ * is not empty. An empty slot is `null`, never `''`.
  *
  * This file is the only place an id is made or checked. A cast would claim the
  * kind with no check, and a second check written elsewhere would soon disagree

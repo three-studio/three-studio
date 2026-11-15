@@ -1,4 +1,4 @@
-import { createCamera, createLightEntity, createMaterial, createMeshComponent, createModel, fixedId, waterType, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { createCamera, createLightEntity, createMaterial, createMeshComponent, modelType, fixedId, waterType, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -496,7 +496,7 @@ const CHAIR = fixedId('asset', 'chair');
 const SHARED = fixedId('asset', 'shared');
 
 const modelComponent = (partial: Partial<ModelComponent> = {}): ModelComponent => ({
-  ...createModel(),
+  ...modelType.create(),
   assetId: CHAIR,
   ...partial,
 });

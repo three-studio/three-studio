@@ -1,5 +1,5 @@
 import {
-  createAudioSource,
+  audioSourceType,
   createEntity,
   fixedId,
   type AudioSourceComponent,
@@ -39,7 +39,7 @@ function mountSource(
 ): Object3D {
   const object = new Group();
   const entity = { ...createEntity('noise').entity, id: entityId };
-  const component = { ...createAudioSource(), assetId: STEP, ...overrides };
+  const component = { ...audioSourceType.create(), assetId: STEP, ...overrides };
   audioSourceBehaviour.create({ entity, object, component }, context(engine));
   return object;
 }

@@ -76,7 +76,7 @@ describe('an entity made of a sound', () => {
   it('is a plain Audio Source when nothing was dropped on it', () => {
     const template = createAudioSourceEntity();
     expect(template.entity.name).toBe('Audio Source');
-    expect(template.components[0]).toMatchObject({ assetId: '' });
+    expect(template.components[0]).toMatchObject({ assetId: null });
   });
 
   it('places like anything else, because a sound is somewhere', () => {

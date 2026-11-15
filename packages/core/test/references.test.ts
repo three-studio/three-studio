@@ -4,8 +4,8 @@ import {
   createPrefabInstance,
   createMaterial,
   colliderType,
-  createModel,
-  createScript,
+  modelType,
+  scriptType,
   createMeshEntity,
   collectSceneAssets,
   findAssetUsage,
@@ -69,9 +69,9 @@ describe('who uses an asset', () => {
   it('finds a model, a script and a sound by the id their component carries', () => {
     const modelId = fixedId('asset', 'model-1');
     const scriptId = fixedId('asset', 'script-1');
-    const model = createEntity('Tree', [{ ...createModel(), assetId: modelId }]);
+    const model = createEntity('Tree', [{ ...modelType.create(), assetId: modelId }]);
     const scripted = createEntity('Spinner', [
-      { ...createScript(), assetId: scriptId },
+      { ...scriptType.create(), assetId: scriptId },
     ]);
     const scene = sceneWith([model, scripted]);
 
@@ -132,7 +132,7 @@ describe('who uses an asset', () => {
     // A model not yet given a file holds `''` and an unset texture slot holds
     // `null`. Neither names an asset, and counting them as uses of one would
     // report the whole scene.
-    const scene = sceneWith([createEntity('Blank', [createModel()]), createMeshEntity('box')]);
+    const scene = sceneWith([createEntity('Blank', [modelType.create()]), createMeshEntity('box')]);
 
     expect(isUsed(findAssetUsage(registries, TEXTURE, scene, new Map(), new Map()))).toBe(false);
   });

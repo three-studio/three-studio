@@ -15,8 +15,8 @@ import {
   createPhysicsMaterial,
   rigidbodyType,
   deserializeScene,
-  fillComponent,
   fixedId,
+  lightType,
   serializeScene,
   typesWithoutRuntime,
   type ComponentDoc,
@@ -167,7 +167,8 @@ describe('component registry', () => {
     const light = createLight('point');
 
     expect(() => createComponent(empty, 'light')).toThrow(/Unknown component type/);
-    expect(fillComponent(empty, light)).toBe(light);
+    expect(empty.components.get(light.type)).toBeUndefined();
+    expect(componentAssets(empty, light)).toEqual([]);
   });
 
   it('gives two components of a type distinct ids', () => {
@@ -175,12 +176,13 @@ describe('component registry', () => {
   });
 });
 
-describe('fill', () => {
-  it('fills a component written before a field existed', () => {
-    const stored = { id: 'c1', type: 'light' } as unknown as ComponentDoc;
-    const filled = fillComponent(registries, stored);
-    expect(filled.id).toBe('c1');
-    expect(filled).toMatchObject({ type: 'light', intensity: expect.any(Number) });
+describe('a stored component', () => {
+  it('is refused when written before a field of its type existed, naming the field', () => {
+    const { intensity: _intensity, ...older } = createLight('point');
+    const decoded = lightType.decode(older, []);
+    expect(decoded.ok ? [] : decoded.diagnostics.map(({ code, path }) => `${code} ${path.join('.')}`)).toEqual([
+      'field.missing intensity',
+    ]);
   });
 
   it('reads a material naming a rule this build does not know as Average', () => {
@@ -191,17 +193,12 @@ describe('fill', () => {
   });
 
   /*
-   * Filling an unknown type against a type we do not have would invent a shape,
+   * Reading an unknown type against a type we do not have would invent a shape,
    * and the next save would write that invention over the author's data. A field
    * is deprecated, never lost.
    */
-  it('leaves an unknown type exactly as found', () => {
-    const stored = { id: 'c1', type: 'teleporter', target: 'x' } as unknown as ComponentDoc;
-    expect(fillComponent(registries, stored)).toBe(stored);
-  });
-
-  it('is what the scene migration goes through', () => {
-    const entity = createEntity('Thing', [{ id: 'c1', type: 'light' } as unknown as ComponentDoc]);
+  it('of a type no module here defines is kept apart, and written back as found', () => {
+    const entity = createEntity('Thing', [createLight('point')]);
     const scene: SceneDoc = {
       version: SCENE_FORMAT_VERSION,
       id: fixedId('scene', 's1'),

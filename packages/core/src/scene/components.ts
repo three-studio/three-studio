@@ -1,4 +1,4 @@
-import { isEntityId, type ComponentId, type EntityId } from '../ids';
+import type { ComponentId, EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
 import type {
   ComponentDoc,
@@ -291,38 +291,23 @@ function copyEntry<Held>(
 }
 
 /**
- * The components with each string that `rename` answers for replaced by its
- * answer: references to entities that were copied, made to name the copies.
+ * The components with each entity they name replaced by `rename`'s answer,
+ * where there is one: references to entities that were copied, made to name
+ * the copies.
  *
- * Matched by value rather than by a declared list of reference fields: which
- * properties hold an entity id is decided by a user's script at runtime, and
- * core cannot see that. An id is twelve random characters, so a string that
- * equals one and means something else does not happen in practice — and the
- * alternative, leaving a reference pointing at the original, is a lookup that
- * silently answers with the wrong entity, or with none.
- *
- * Each string is checked as the id it would have to be before `rename` is asked
- * about it, so `rename` is only ever handed an id.
+ * Each type renames what its schema says names an entity — a joint's Connected
+ * Body, a water surface's light — and, by value, the strings of the data only
+ * its owner can read, a script's properties and a prefab's overrides, where a
+ * string equal to a copied id is one. An id is twelve random characters, so a
+ * string that equals one and means something else does not happen in
+ * practice; leaving a reference on the original is a lookup that answers with
+ * the wrong entity, or none. A component of a type this build does not know is
+ * left as found, as everything about it is.
  */
 export function renameEntityReferences(
+  registries: CoreRegistries,
   components: readonly ComponentDoc[],
   rename: (id: EntityId) => EntityId | undefined,
 ): ComponentDoc[] {
-  const rewrite = (value: unknown): unknown => {
-    if (typeof value === 'string') return (isEntityId(value) ? rename(value) : undefined) ?? value;
-    if (Array.isArray(value)) return value.map(rewrite);
-    if (typeof value === 'object' && value !== null) {
-      const out: Record<string, unknown> = {};
-      for (const [key, inner] of Object.entries(value)) out[key] = rewrite(inner);
-      return out;
-    }
-    return value;
-  };
-
-  return components.map((component) => {
-    // `type` is never an id, and skipping it keeps the walk off the one string
-    // property every component has.
-    const { type, ...rest } = component as unknown as Record<string, unknown>;
-    return { type, ...(rewrite(rest) as object) } as ComponentDoc;
-  });
+  return components.map((component) => registries.components.get(component.type)?.renameEntities(component, rename) ?? component);
 }

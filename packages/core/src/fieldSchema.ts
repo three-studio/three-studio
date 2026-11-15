@@ -619,23 +619,32 @@ function renamedStrings(value: unknown, rename: Rename): unknown {
   return out;
 }
 
+/**
+ * A copy of `value` with its entity fields and candidate strings renamed. An
+ * object's copy holds its fields alone — and a variant's its `kind` — so that
+ * what a caller holds beside them, a component's id and type, is not read as
+ * fields the schema does not have.
+ */
 function renamed(node: Planned, value: unknown, rename: Rename): unknown {
   switch (node.form) {
     case 'leaf':
       return node.reference === 'entity' && isEntityId(value) ? (rename(value) ?? value) : value;
-    case 'object': {
-      if (!(node.holds.entity || node.holds.candidates) || !isRecord(value)) return value;
-      const out: Record<string, unknown> = { ...value };
-      for (const { key, node: field } of node.entries) out[key] = renamed(field, value[key], rename);
-      return out;
-    }
+    case 'object':
+      return renamedObject(node, value, rename, null);
     case 'union': {
-      const variant = node.holds.entity || node.holds.candidates ? activeVariant(node, value) : undefined;
-      return variant === undefined ? value : renamed(variant, value, rename);
+      const variant = activeVariant(node, value);
+      return variant === undefined || !isRecord(value) ? value : renamedObject(variant, value, rename, value['kind']);
     }
     case 'custom':
       return node.candidates ? renamedStrings(value, rename) : value;
   }
+}
+
+function renamedObject(node: PlannedObject, value: unknown, rename: Rename, kind: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const out: Record<string, unknown> = kind === null ? {} : { kind };
+  for (const { key, node: field } of node.entries) out[key] = renamed(field, value[key], rename);
+  return out;
 }
 
 /**

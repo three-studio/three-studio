@@ -1,6 +1,7 @@
 import {
   assertDefined,
   audioListenerType,
+  audioSourceType,
   colliderType,
   createCamera,
   createColliderShape,
@@ -8,10 +9,13 @@ import {
   createLight,
   createLightEntity,
   createMeshComponent,
+  createPrefabInstance,
   fixedId,
   jointType,
+  modelType,
   playerControllerType,
   rigidbodyType,
+  scriptType,
   waterType,
   type ColliderComponent,
   type ColliderShapeKind,
@@ -21,11 +25,13 @@ import {
   type LightKind,
   type WaterComponent,
 } from '@three-studio/core';
-import { describe, expect, it } from 'vitest';
+import { Behaviour, NO_SCRIPTS, type ScriptProperties } from '@three-studio/runtime';
+import { afterEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { isSeparator, type FieldSpec } from '../src/inspector/fields';
 import { paneEntriesFor } from '../src/inspector/panes';
 import { useDocumentStore } from '../src/state/documentStore';
+import { useScriptStore } from '../src/state/scriptStore';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
@@ -40,7 +46,7 @@ const RULES = [
 
 /*
  * The panes of the kernel's types described by their fields, derived, row for
- * row what was written by hand in each type's `inspector.ts` — labels, ranges,
+ * row what each type's pane was when written by hand — labels, ranges,
  * order, rules — and showing the same rows for each kind or mode that changed
  * them. Taken from the hand-written panes before they went, through JSON,
  * which keeps what a row declares and drops its functions.
@@ -666,3 +672,170 @@ function shapeKindOf(kind: string): ColliderShapeKind {
   const kinds: readonly ColliderShapeKind[] = ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'mesh'];
   return assertDefined(kinds.find((known) => known === kind), `the shape ${kind}`);
 }
+
+describe('the model\'s pane', () => {
+  const chair = (nodePath = ''): ComponentDoc => ({ ...modelType.create(), assetId: fixedId('asset', 'chair'), nodePath });
+
+  it('is what was written by hand: no row for its file or its node, and Unpack after its material', () => {
+    expect(rows(chair())).toEqual([
+      { path: ['castShadow'], label: 'Cast shadows' },
+      { path: ['receiveShadow'], label: 'Receive shadows' },
+      { kind: 'separator' },
+      { params: { view: 'asset', assetKind: 'material', emptyLabel: 'From file' }, path: ['materialId'], label: 'Material' },
+      { kind: 'separator' },
+      { kind: 'action', title: 'Unpack Model' },
+    ]);
+  });
+
+  it('offers Unpack on the entity that draws the whole file alone', () => {
+    expect(shown(chair())).toEqual(['Cast shadows', 'Receive shadows', '—', 'Material', '—', 'Unpack Model']);
+    expect(shown(chair('0/1'))).toEqual(['Cast shadows', 'Receive shadows', '—', 'Material', '—']);
+  });
+});
+
+describe('the audio source\'s pane', () => {
+  const POSITIONAL = ['Falloff', 'Full volume within', 'Max distance', 'Rolloff', 'Cone inner', 'Cone outer', 'Outside cone'];
+  const ALWAYS = [
+    'Clip',
+    '▶  Play',
+    '▌▌  Pause',
+    '■  Stop',
+    '—',
+    'Volume',
+    'Pitch',
+    'Detune',
+    'Mute',
+    'Loop',
+    'Play on start',
+    '—',
+    'Start offset',
+    'Delay',
+    'Fade in',
+    'Fade out',
+    'Priority',
+    '—',
+    'Bus',
+    '—',
+    'Spatialize',
+    '2D  ↔  3D',
+  ];
+
+  it('is what was written by hand, its blend a switch and a dial onto the one field', () => {
+    expect(rows(audioSourceType.create())).toEqual([
+      { params: { view: 'asset', assetKind: 'audio' }, path: ['assetId'], label: 'Clip' },
+      { kind: 'action', label: 'Preview', title: '▶  Play' },
+      { kind: 'action', title: '▌▌  Pause' },
+      { kind: 'action', title: '■  Stop' },
+      { kind: 'separator' },
+      { path: ['volume'], label: 'Volume', type: 'number', min: 0, max: 2, step: 0.01 },
+      { path: ['pitch'], label: 'Pitch', type: 'number', min: 0.1, max: 4, step: 0.01 },
+      { path: ['detune'], label: 'Detune', type: 'number', min: -1200, max: 1200, step: 1 },
+      { path: ['mute'], label: 'Mute' },
+      { path: ['loop'], label: 'Loop' },
+      { path: ['playOnStart'], label: 'Play on start' },
+      { kind: 'separator' },
+      { path: ['startOffset'], label: 'Start offset', type: 'number', min: 0, step: 0.01 },
+      { path: ['delay'], label: 'Delay', type: 'number', min: 0, step: 0.01 },
+      { path: ['fadeIn'], label: 'Fade in', type: 'number', min: 0, max: 30, step: 0.01 },
+      { path: ['fadeOut'], label: 'Fade out', type: 'number', min: 0, max: 30, step: 0.01 },
+      { path: ['priority'], label: 'Priority', type: 'number', min: 0, max: 256, step: 1 },
+      { kind: 'separator' },
+      {
+        path: ['bus'],
+        label: 'Bus',
+        type: 'enum',
+        options: [
+          { value: 'master', label: 'Master' },
+          { value: 'music', label: 'Music' },
+          { value: 'sfx', label: 'SFX' },
+          { value: 'ui', label: 'UI' },
+          { value: 'ambience', label: 'Ambience' },
+        ],
+      },
+      { kind: 'separator' },
+      { path: ['spatialBlend'], label: 'Spatialize' },
+      { path: ['spatialBlend'], label: '2D  ↔  3D', type: 'number', min: 0, max: 1, step: 0.01 },
+      {
+        path: ['distanceModel'],
+        label: 'Falloff',
+        type: 'enum',
+        options: [
+          { value: 'inverse', label: 'Inverse' },
+          { value: 'linear', label: 'Linear' },
+          { value: 'exponential', label: 'Exponential' },
+        ],
+      },
+      { path: ['refDistance'], label: 'Full volume within', type: 'number', min: 0.1, max: 100, step: 0.1 },
+      { path: ['maxDistance'], label: 'Max distance', type: 'number', min: 1, max: 2000, step: 1 },
+      { path: ['rolloffFactor'], label: 'Rolloff', type: 'number', min: 0, max: 10, step: 0.1 },
+      { path: ['coneInnerAngle'], label: 'Cone inner', type: 'number', min: 0, max: 360, step: 1 },
+      { path: ['coneOuterAngle'], label: 'Cone outer', type: 'number', min: 0, max: 360, step: 1 },
+      { path: ['coneOuterGain'], label: 'Outside cone', type: 'number', min: 0, max: 1, step: 0.01 },
+    ]);
+  });
+
+  it('shows the falloff for a source that is any part positional', () => {
+    expect(shown(audioSourceType.create())).toEqual([...ALWAYS, ...POSITIONAL]);
+    expect(shown({ ...audioSourceType.create(), spatialBlend: 0 })).toEqual(ALWAYS);
+    expect(shown({ ...audioSourceType.create(), spatialBlend: 0.3 })).toEqual([...ALWAYS, ...POSITIONAL]);
+  });
+
+  it('writes the switch as the two ends of the dial', () => {
+    const spatialize = paneEntriesFor(registries, audioSourceType.create()).entries.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.label === 'Spatialize',
+    );
+
+    expect([0, 0.3, 1].map((blend) => spatialize?.toModel?.(blend))).toEqual([false, true, true]);
+    expect([false, true].map((on) => spatialize?.fromModel?.(on))).toEqual([0, 1]);
+  });
+});
+
+describe('the script\'s pane', () => {
+  const DOOR = fixedId('asset', 'door-script');
+  const door = { ...scriptType.create(), assetId: DOOR };
+
+  /** What a build leaves in the store: the door script, declaring `properties`. */
+  const built = (properties: ScriptProperties): void => {
+    class Door extends Behaviour {
+      static override properties = properties;
+    }
+    useScriptStore.setState({ scripts: new Map([[DOOR, Door]]), revision: useScriptStore.getState().revision + 1 });
+  };
+  afterEach(() => useScriptStore.setState({ scripts: NO_SCRIPTS }));
+
+  it('is its script, as an asset slot, then a row per property the script declares', () => {
+    expect(rows(scriptType.create())).toEqual([{ params: { view: 'asset', assetKind: 'script' }, path: ['assetId'], label: 'Script' }]);
+
+    built({ speed: { type: 'number', min: 0 } });
+    expect(row(door, 'props.speed')).toMatchObject({ path: ['props', 'speed'], label: 'speed', type: 'number', min: 0 });
+  });
+
+  it('follows the script rebuilt, though the script is the same one', () => {
+    built({ speed: { type: 'number', min: 0 } });
+    expect(shown(door)).toEqual(['Script', 'speed']);
+
+    built({ speed: { type: 'number', min: 0 }, open: { type: 'boolean', label: 'Open' } });
+    expect(shown(door)).toEqual(['Script', 'speed', 'Open']);
+  });
+});
+
+describe('the prefab instance\'s pane', () => {
+  it('is what was written by hand: its prefab, then its seven actions', () => {
+    expect(rows(createPrefabInstance(fixedId('asset', 'tree')))).toEqual([
+      { params: { view: 'asset', assetKind: 'prefab' }, path: ['assetId'], label: 'Prefab' },
+      { kind: 'action', title: 'Open Prefab' },
+      { kind: 'action', title: 'Create Variant…' },
+      { kind: 'action', title: 'Show in Project' },
+      { kind: 'action', title: 'Select All Instances' },
+      { kind: 'action', title: 'Apply Overrides' },
+      { kind: 'action', title: 'Revert Overrides' },
+      { kind: 'action', title: 'Unpack' },
+    ]);
+  });
+});
+
+describe('every pane', () => {
+  it('is derived: the registry holds what types add to theirs, never a pane of its own', () => {
+    for (const extension of registries.panes.values()) expect(extension).not.toHaveProperty('fields');
+  });
+});

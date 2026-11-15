@@ -2,11 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { skySunDirection } from '../src/scene/water';
 import { waterType } from '../src/components/water';
 import { createSkySettings } from '../src/scene/defaults';
-import { fillComponent } from '../src/components';
-import type { WaterComponent } from '../src/scene/schema';
-import { builtInRegistries } from './registries';
-
-const registries = builtInRegistries();
 
 /*
  * The sun conversion is pinned here because two places have to agree on it: the
@@ -49,15 +44,14 @@ describe('a fresh water surface', () => {
     expect(water.choppiness).toBe(1.5);
   });
 
-  it('fills the three onto a surface saved before they existed', () => {
+  it('refuses a surface saved before the three existed, naming each', () => {
     const { speed: _s, direction: _d, choppiness: _c, ...older } = waterType.create();
-    const filled = fillComponent(registries, older as WaterComponent) as WaterComponent;
+    const decoded = waterType.decode(older, []);
 
-    expect(filled.speed).toBe(1);
-    expect(filled.direction).toBe(0);
-    expect(filled.choppiness).toBe(1.5);
-    // And the id is the one thing `fill` must never mint again — a prefab
-    // override names a component by it.
-    expect(filled.id).toBe(older.id);
+    expect(decoded.ok ? [] : decoded.diagnostics.map(({ code, path }) => `${code} ${path.join('.')}`)).toEqual([
+      'field.missing speed',
+      'field.missing direction',
+      'field.missing choppiness',
+    ]);
   });
 });

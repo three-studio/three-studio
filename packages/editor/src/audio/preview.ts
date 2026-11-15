@@ -104,11 +104,8 @@ export class AudioPreview {
   /** The asset currently being auditioned, so a UI can light the right row. */
   get assetId(): AssetId | null {
     const state = this.voice?.state;
-    const assetId = this.voice?.assetId;
-    // `''` is the voice of a refused sound, which is never playing.
-    return (state === 'playing' || state === 'paused') && assetId !== undefined && assetId !== ''
-      ? assetId
-      : null;
+    // `null` is the voice of a source with no clip, which is never playing.
+    return state === 'playing' || state === 'paused' ? (this.voice?.assetId ?? null) : null;
   }
 
   /** A clip on its own, flat, at full volume — the Project panel's audition. */

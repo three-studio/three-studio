@@ -23,7 +23,6 @@ import {
   tableIn,
   type ComponentHost,
 } from './components';
-import { fillComponent } from '../components';
 import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
@@ -221,10 +220,10 @@ export function variantBaseOf(prefab: PrefabDoc): AssetId | null {
   // A variant is a single root that is an instance. A prefab that merely
   // *contains* an instance somewhere is a composition, not a variant, and
   // treating the two alike would let "revert to base" wipe a hand-built scene.
-  // An instance that names no prefab (`''`) has no base either.
+  // An instance that names no prefab has no base either.
   const only = prefab.entities.size === 1;
   const instance = prefabInstanceOf(prefab, root.id);
-  return only && instance && instance.assetId !== '' ? instance.assetId : null;
+  return only && instance ? instance.assetId : null;
 }
 
 /**
@@ -297,8 +296,8 @@ export interface PrefabLibrary {
  * The prefab an instance names, or `undefined` for one that names none (`''`) or
  * one the library does not have: both leave the instance an empty entity.
  */
-function prefabNamed(prefabs: PrefabLibrary, assetId: AssetId | ''): PrefabDoc | undefined {
-  return assetId === '' ? undefined : prefabs.get(assetId);
+function prefabNamed(prefabs: PrefabLibrary, assetId: AssetId | null): PrefabDoc | undefined {
+  return assetId === null ? undefined : prefabs.get(assetId);
 }
 
 /**
@@ -370,7 +369,7 @@ export function expandPrefabs(
       continue;
     }
 
-    const produced = instantiate(registries, entityId, prefab, component, prefabs, [component.assetId]);
+    const produced = instantiate(registries, entityId, prefab, component, prefabs, [prefab.id]);
     adopt(produced);
     sources.set(entityId, { component, chain, produced });
   }
@@ -415,10 +414,12 @@ interface InstanceSource {
  * the reuse check run on every sync.
  */
 function chainOf(
-  assetId: AssetId | '',
+  assetId: AssetId | null,
   prefabs: PrefabLibrary,
-  seen = new Set<string>(),
+  seen = new Set<AssetId>(),
 ): (PrefabDoc | undefined)[] {
+  // An instance of nothing reads no prefab, and is placed as one that is missing.
+  if (assetId === null) return [undefined];
   if (seen.has(assetId)) return [];
   seen.add(assetId);
 
@@ -491,7 +492,7 @@ function instantiate(
   prefab: PrefabDoc,
   component: PrefabInstanceComponent,
   prefabs: PrefabLibrary,
-  ancestry: readonly string[],
+  ancestry: readonly AssetId[],
   inherited: readonly OverrideLayer[] = [],
 ): Produced {
   const produced: Produced = { entities: [], components: new Map() };
@@ -524,7 +525,7 @@ function instantiate(
     // `type: 'entity'` — holds an id local to the prefab, which nothing in the
     // expanded scene answers to. Without this a prefab whose script targets its
     // own turret looked up an id that does not exist, once per instance.
-    held = renameEntityReferences(held, (id) =>
+    held = renameEntityReferences(registries, held, (id) =>
       prefab.entities.has(id) ? instancedId(hostId, id) : undefined,
     );
 
@@ -541,7 +542,7 @@ function instantiate(
 
     const innerPrefab = prefabNamed(prefabs, inner.assetId);
     // A prefab that contains itself, however deep, has no finite expansion.
-    if (!innerPrefab || ancestry.includes(inner.assetId)) continue;
+    if (!innerPrefab || ancestry.includes(innerPrefab.id)) continue;
 
     // Every layer gains one path segment rather than being re-keyed, which is
     // what makes this work at any depth without the expansion counting levels.
@@ -551,7 +552,7 @@ function instantiate(
       innerPrefab,
       inner,
       prefabs,
-      [...ancestry, inner.assetId],
+      [...ancestry, innerPrefab.id],
       layers.map((layer) => ({
         overrides: layer.overrides,
         prefix: overrideKey(layer.prefix, local.id),
@@ -596,21 +597,15 @@ export function applyPrefabOverride(
     const properties = Object.hasOwn(named, component.id) ? named[component.id] : undefined;
     if (properties === undefined) return component;
     // An override is stored data too, written against the type as it was, so
-    // a type written as a schema decodes what it makes. One that no longer
+    // the type decodes what it makes. One that no longer
     // fits — a name where a collider's shape lives, a field the type has lost
     // — is not applied, and stays in the document as written, where an author
     // can see it and fix it; applied, the runtime would build nothing from it.
     // The id is never overridable: it is what this very lookup keys on.
-    const decode = registries.components.get(component.type)?.decode;
-    if (decode !== undefined) {
-      const decoded = decode({ ...component, ...properties, id: component.id }, []);
-      return decoded.ok ? decoded.value : component;
-    }
-    // A type still written by hand is filled again once the override is spread.
-    return {
-      ...fillComponent(registries, { ...component, ...properties } as ComponentDoc),
-      id: component.id,
-    };
+    const definition = registries.components.get(component.type);
+    if (definition === undefined) return component;
+    const decoded = definition.decode({ ...component, ...properties, id: component.id }, []);
+    return decoded.ok ? decoded.value : component;
   });
 }
 

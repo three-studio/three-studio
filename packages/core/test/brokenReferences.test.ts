@@ -2,7 +2,7 @@ import {
   assertDefined,
   createEntity,
   createMeshEntity,
-  createModel,
+  modelType,
   findBrokenReferences,
   findComponent,
   fixedId,
@@ -35,7 +35,7 @@ const KNOWN: ReadonlySet<AssetId> = new Set([MODEL, TEXTURE]);
 
 describe('what a scene names and the project does not have', () => {
   it('names the entity and the id, so both ends of the break are reachable', () => {
-    const tree = createEntity('Tree', [{ ...createModel(), assetId: GONE }]);
+    const tree = createEntity('Tree', [{ ...modelType.create(), assetId: GONE }]);
 
     expect(findBrokenReferences(registries, sceneWith([tree]), KNOWN)).toEqual([
       { entityId: tree.entity.id, assetId: GONE },
@@ -43,7 +43,7 @@ describe('what a scene names and the project does not have', () => {
   });
 
   it('says nothing about an id the project holds', () => {
-    const tree = createEntity('Tree', [{ ...createModel(), assetId: MODEL }]);
+    const tree = createEntity('Tree', [{ ...modelType.create(), assetId: MODEL }]);
 
     expect(findBrokenReferences(registries, sceneWith([tree]), KNOWN)).toEqual([]);
   });
@@ -97,8 +97,8 @@ describe('what a scene names and the project does not have', () => {
   });
 
   it('reports every entity separately when several name the same missing asset', () => {
-    const one = createEntity('A', [{ ...createModel(), assetId: GONE }]);
-    const two = createEntity('B', [{ ...createModel(), assetId: GONE }]);
+    const one = createEntity('A', [{ ...modelType.create(), assetId: GONE }]);
+    const two = createEntity('B', [{ ...modelType.create(), assetId: GONE }]);
 
     const broken = findBrokenReferences(registries, sceneWith([one, two]), KNOWN);
     expect(broken.map((entry) => entry.entityId).sort()).toEqual(

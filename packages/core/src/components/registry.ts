@@ -31,7 +31,8 @@ import type { ComponentDoc } from '../scene/schema';
 
 /**
  * What a component type answers about itself: what the core's activation
- * registers.
+ * registers. Made by `defineComponent` alone, from the type's schema, so that
+ * no answer here is written by hand beside the fields it is about.
  *
  * Its functions are methods, and that is what lets one registry hold all
  * fourteen: TypeScript compares a method's parameters both ways, so a
@@ -60,68 +61,33 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
    * whenever they change, so that data written with other fields is refused
    * by name rather than read as if it were this type's.
    */
-  readonly version?: number;
-  /** A blank one, for "Add Component" and for filling a stored one's gaps. */
+  readonly version: number;
+  /** A blank one, for "Add Component": the schema's defaults under a new id. */
   create(): C;
+  /** The type's fields: what its type, its decoder, its references and its pane are derived from. */
+  readonly schema: Schema;
   /**
-   * The type's fields, for a type written as a schema: what its pane is derived
-   * from. A type still written by hand has none, and a pane written by hand.
+   * A stored component, checked field by field against the schema. A scene
+   * holding a component it refuses does not open, and says which field of
+   * which component.
    */
-  readonly schema?: Schema;
+  decode(value: unknown, path: DecodePath): Decoded<C>;
+  /** The asset ids this component names, one per asset field: an id, or `null` for an empty slot. */
+  assets(component: C): readonly (AssetId | null)[];
+  /** The entity ids this component names — a joint its Connected Body — one per entity field. */
+  entities(component: C): readonly (EntityId | null)[];
   /**
-   * A stored component, checked field by field against the schema, for a type
-   * written as one. A scene holding a component it refuses does not open, and
-   * says which field of which component. A type still written by hand is read
-   * through `fill` and checked nowhere.
+   * Strings that may name an asset or an entity, and count only where one
+   * answers to them: what a script's properties and a prefab's overrides hold,
+   * whose meaning only their owner knows.
    */
-  decode?(value: unknown, path: DecodePath): Decoded<C>;
+  candidates(component: C): readonly string[];
   /**
-   * A stored component with everything it lacks filled in — declared **only by
-   * the types the default is wrong for**.
-   *
-   * The default is `{ ...create(), ...stored }`, and it was written out nine
-   * times identically before it was written once. Leaving it out is not a hole
-   * in the definition: the default asks for nothing this table does not
-   * already hold, since it fills from the type's own `create()`. That is also
-   * what keeps it inside the persisted-format rule — a missing field is filled
-   * from the factory for its type, never from a second list.
-   *
-   * What the default cannot do is reach a level deeper, and a **nested object**
-   * is exactly what the two overrides have: `mesh` (its material and its
-   * geometry) and `water` (its geometry). A scene written before a sub-object
-   * gained a field comes back with `undefined` inside it otherwise — the bug
-   * that shipped twice on this project. Each says so in its own module.
-   *
-   * The collider declares one for another reason, which its module gives:
-   * physics data is read against its factory, and what it does not know is
-   * dropped.
+   * The component with each entity it names replaced by `rename`'s answer,
+   * where there is one: what a copy needs, for the references inside the copied
+   * set to name the copies. The component itself when its type names none.
    */
-  fill?(stored: C): C;
-  /**
-   * Asset ids this component points at. Empty for most types. `''` and `null`
-   * are the slots that name none, which the four that say it with `''` hand
-   * over as they hold it.
-   */
-  assets(component: C): readonly (AssetId | '' | null)[];
-  /**
-   * Entity ids this component points at — a joint its Connected Body. Empty
-   * for most types. Asked of every type, as `assets` is, so that a new type
-   * answers in its own module. `''` and `null` are the slots that name none, as
-   * they are for `assets`.
-   */
-  entities(component: C): readonly (EntityId | '' | null)[];
-  /**
-   * Strings that may name an asset, and count only when they do — declared by
-   * the types whose fields do not say which they are.
-   *
-   * A script's properties are its own to declare, in code only the player
-   * runs: a string there may be an asset picked in the inspector, an entity's
-   * id or a line of dialogue, and nothing outside the script can tell. Kept
-   * where a project asset answers to it, which an id made by `createId` does
-   * and a sentence does not. Without it, the texture a script was handed in the
-   * inspector shipped in no build that did not ship the whole project.
-   */
-  assetCandidates?(component: C): readonly string[];
+  renameEntities(component: C, rename: (id: EntityId) => EntityId | undefined): C;
   /**
    * Whether anything builds this type at runtime.
    *
@@ -226,7 +192,11 @@ export function defineComponent<const Id extends string, const S extends Schema>
     },
     assets: (component) => plan.assets(component),
     entities: (component) => plan.entities(component),
-    assetCandidates: (component) => plan.candidates(component),
+    candidates: (component) => plan.candidates(component),
+    renameEntities: (component, rename) => {
+      const renamed = plan.renameEntities(component, rename);
+      return renamed === component ? component : { ...renamed, id: component.id, type };
+    },
     placeable: description.placeable ?? (() => true),
   };
 }

@@ -10,7 +10,7 @@ import {
   playerControllerType,
   createRenderingSettings,
   rigidbodyType,
-  createScript,
+  scriptType,
   type AssetId,
   type BodyType,
   type ColliderComponent,
@@ -283,7 +283,7 @@ export function player(
 export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
   const assetId = createAssetId();
   scriptsOf.set(template, [...(scriptsOf.get(template) ?? []), [assetId, type]]);
-  template.components.push({ ...createScript(), assetId });
+  template.components.push({ ...scriptType.create(), assetId });
   return template;
 }
 

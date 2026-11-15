@@ -4,7 +4,7 @@ import {
   createLightEntity,
   createMaterial,
   createMeshEntity,
-  createModel,
+  modelType,
   createRenderingSettings,
   fixedId,
   type AssetId,
@@ -176,7 +176,7 @@ describe('a material asset shared by several meshes', () => {
  */
 describe('a model that arrives late', () => {
   it('is thrown away when its entity went while it was loading', async () => {
-    const entity = createEntity('Crate', [{ ...createModel(), assetId: fixedId('asset', 'crate') }]);
+    const entity = createEntity('Crate', [{ ...modelType.create(), assetId: fixedId('asset', 'crate') }]);
     const model = new Group();
 
     let land = (): void => {};

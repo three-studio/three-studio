@@ -1,16 +1,13 @@
 import {
   jointType,
   createJointMotion,
-  fillComponent,
   fixedId,
   jointFrame,
+  unwrap,
   type JointComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { close } from './fixtures';
-import { builtInRegistries } from './registries';
-
-const registries = builtInRegistries();
 
 /*
  * A joint holds the entity it names, and the frame its two bodies are held in.
@@ -19,9 +16,9 @@ const registries = builtInRegistries();
 describe('a stored joint', () => {
   it('keeps the entity it names, and the world it is held to', () => {
     const frame = fixedId('entity', 'frame');
-    const named = fillComponent(registries, { ...jointType.create(), connectedEntity: frame }) as JointComponent;
-    expect(named.connectedEntity).toBe(frame);
-    expect((fillComponent(registries, jointType.create()) as JointComponent).connectedEntity).toBeNull();
+    const stored = (joint: JointComponent) => unwrap(jointType.decode(JSON.parse(JSON.stringify(joint)), []), 'joint');
+    expect(stored({ ...jointType.create(), connectedEntity: frame }).connectedEntity).toBe(frame);
+    expect(stored(jointType.create()).connectedEntity).toBeNull();
   });
 });
 

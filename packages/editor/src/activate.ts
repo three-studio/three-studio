@@ -1,35 +1,35 @@
 import { combineDisposables, type Disposable } from '@three-studio/core';
 import { menu as audioListenerMenu } from './components/audioListener/menu';
 import { overlay as audioListenerOverlay } from './components/audioListener/overlay';
-import { pane as audioSourcePane } from './components/audioSource/inspector';
+import { pane as audioSourcePane } from './components/audioSource/pane';
 import { menu as audioSourceMenu } from './components/audioSource/menu';
 import { overlay as audioSourceOverlay } from './components/audioSource/overlay';
 import { menu as cameraMenu } from './components/camera/menu';
 import { overlay as cameraOverlay } from './components/camera/overlay';
-import { pane as colliderPane } from './components/collider/inspector';
+import { pane as colliderPane } from './components/collider/pane';
 import { overlay as colliderOverlay } from './components/collider/overlay';
-import { pane as jointPane } from './components/joint/inspector';
+import { pane as jointPane } from './components/joint/pane';
 import { overlay as jointOverlay } from './components/joint/overlay';
 import { menu as lightMenu } from './components/light/menu';
 import { overlay as lightOverlay } from './components/light/overlay';
-import { pane as meshPane } from './components/mesh/inspector';
+import { pane as meshPane } from './components/mesh/pane';
 import { menu as meshMenu } from './components/mesh/menu';
 import { overlay as meshOverlay } from './components/mesh/overlay';
-import { pane as modelPane } from './components/model/inspector';
+import { pane as modelPane } from './components/model/pane';
 import { overlay as modelOverlay } from './components/model/overlay';
 import { overlay as playerControllerOverlay } from './components/playerController/overlay';
-import { pane as prefabInstancePane } from './components/prefabInstance/inspector';
+import { pane as prefabInstancePane } from './components/prefabInstance/pane';
 import { overlay as prefabInstanceOverlay } from './components/prefabInstance/overlay';
-import { pane as rigidbodyPane } from './components/rigidbody/inspector';
+import { pane as rigidbodyPane } from './components/rigidbody/pane';
 import { overlay as rigidbodyOverlay } from './components/rigidbody/overlay';
-import { pane as scriptPane } from './components/script/inspector';
+import { pane as scriptPane } from './components/script/pane';
 import { overlay as scriptOverlay } from './components/script/overlay';
-import { pane as waterPane } from './components/water/inspector';
+import { pane as waterPane } from './components/water/pane';
 import { menu as waterMenu } from './components/water/menu';
 import { overlay as waterOverlay } from './components/water/overlay';
 import { HIERARCHY_ICONS } from './components/icons';
 import type { AddMenuGroup, EntityOverlay } from './components/registry';
-import type { ComponentPane, PaneExtension } from './inspector/fields';
+import type { PaneExtension } from './inspector/fields';
 import type { EditorRegistries } from './registries';
 
 /*
@@ -42,11 +42,10 @@ import type { EditorRegistries } from './registries';
  */
 
 /**
- * What each kernel type adds to its pane: the extension of a type written as a
- * schema, or the whole pane of a type still written by hand. A type described
- * by its fields that needs nothing more registers nothing.
+ * What each kernel type adds to the pane derived from its fields. A type that
+ * needs nothing more registers nothing.
  */
-const PANES: readonly (ComponentPane | PaneExtension)[] = [
+const PANES: readonly PaneExtension[] = [
   meshPane,
   modelPane,
   rigidbodyPane,

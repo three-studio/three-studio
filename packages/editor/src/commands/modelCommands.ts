@@ -42,7 +42,7 @@ export async function unpackModel(entityId: EntityId): Promise<void> {
   const document = useDocumentStore.getState();
   const host = document.scene.entities.get(entityId);
   const component = findComponent(document.scene, entityId, 'model');
-  if (!host || !component || component.assetId === '') return;
+  if (!host || !component || component.assetId === null) return;
 
   if (component.nodePath !== '') {
     notify({

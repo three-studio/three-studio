@@ -12,7 +12,7 @@ import {
   createMeshEntity,
   createPrefabInstance,
   rigidbodyType,
-  createScript,
+  scriptType,
   deleteComponent,
   deserializePrefab,
   deserializeScene,
@@ -226,8 +226,8 @@ describe('two components of one type on one entity', () => {
   it('survives a round trip through the file', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createScript();
-    const second = createScript();
+    const first = scriptType.create();
+    const second = scriptType.create();
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
@@ -249,7 +249,7 @@ describe('the order an entity lists its components in', () => {
   function crowded(): { scene: SceneDoc; id: EntityId } {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    putComponent(scene, cube.entity.id, createScript());
+    putComponent(scene, cube.entity.id, scriptType.create());
     putComponent(scene, cube.entity.id, createLight('point'));
     putComponent(scene, cube.entity.id, rigidbodyType.create());
     return { scene, id: cube.entity.id };
@@ -461,10 +461,10 @@ describe('the references a component holds to other entities', () => {
   it('asks about what is an id and nothing else, and renames what it is told to', () => {
     const door = fixedId('entity', 'door');
     const copy = fixedId('entity', 'door-copy');
-    const script = { ...createScript(), props: { target: door, empty: '', count: 3 } };
+    const script = { ...scriptType.create(), props: { target: door, empty: '', count: 3 } };
     const asked: string[] = [];
 
-    const [renamed] = renameEntityReferences([script], (id) => {
+    const [renamed] = renameEntityReferences(registries, [script], (id) => {
       asked.push(id);
       return id === door ? copy : undefined;
     });

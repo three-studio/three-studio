@@ -13,24 +13,20 @@ import { shapeOf } from './signature';
 /*
  * The scene pane, and the door onto the field vocabulary.
  *
- * The twelve component panes left for `components/<type>/inspector.ts`, and
- * `components/panes.ts` assembles them. What stays is what is not per-type: the
- * environment's own pane, and a re-export of `fields.ts` so that nothing which
- * writes a field has to know where the vocabulary lives.
+ * A component's pane is derived from its type's fields (`derivePane.ts`), with
+ * what the type's `components/<type>/pane.ts` adds. What stays here is what is
+ * not per-type: the environment's own pane, and a re-export of `fields.ts` so
+ * that nothing which writes a field has to know where the vocabulary lives.
  */
 export {
   ASSET_SLOT,
   asDegrees,
   assetSlot,
   isAction,
-  isGeometrySlot,
   isSeparator,
   type ActionSpec,
   type BoundSpec,
-  type ComponentPane,
   type FieldSpec,
-  type GeometrySlotSpec,
-  type PaneEntry,
   type SeparatorSpec,
 } from './fields';
 
@@ -90,8 +86,8 @@ export function sceneFieldPath(field: SceneField): readonly string[] {
 }
 
 /**
- * One folder of the scene pane. The same shape as a `ComponentPane`, because
- * it is bound by the same code — only the subject differs.
+ * One folder of the scene pane. Rows as a component's pane has, because they
+ * are bound by the same code — only the subject differs.
  */
 export interface SceneSection {
   label: string;

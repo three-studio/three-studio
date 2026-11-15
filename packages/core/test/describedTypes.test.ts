@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AUDIO_BUSES,
   assertDefined,
   audioListenerType,
+  audioSourceType,
   cameraType,
   colliderType,
   componentAssets,
+  componentCandidates,
   componentEntities,
   createCamera,
   createComponentForEntity,
@@ -16,6 +19,7 @@ import {
   createLightEntity,
   createMaterial,
   createMeshComponent,
+  createModelEntity,
   createPhysicsMaterial,
   createPrefabInstance,
   deserializeScene,
@@ -27,10 +31,14 @@ import {
   instancedId,
   jointType,
   lightType,
+  modelType,
   materialAssets,
   meshType,
   playerControllerType,
+  prefabInstanceType,
+  renameEntityReferences,
   rigidbodyType,
+  scriptType,
   serializeScene,
   waterType,
   type ColliderShapeKind,
@@ -40,6 +48,7 @@ import {
   type GeometryKind,
   type JointKind,
   type LightKind,
+  type ScriptPropValue,
   type WaterSun,
 } from '../src/index';
 import { prefabWith, sceneWith } from './fixtures';
@@ -596,3 +605,173 @@ function jointKind(kind: string): JointKind {
   const known = Object.keys(MOTIONS).find((key): key is JointKind => key === kind);
   return assertDefined(known, `the motion ${kind}`);
 }
+
+// ------------------------------------------- model, audio source, script, prefab
+
+describe('a model', () => {
+  it('starts drawing no file, the whole of it, with the file\'s own materials', () => {
+    expect(modelType.create()).toEqual({
+      id: expect.any(String),
+      type: 'model',
+      assetId: null,
+      nodePath: '',
+      nodeName: '',
+      castShadow: true,
+      receiveShadow: true,
+      materialId: null,
+    });
+    const chair = fixedId('asset', 'chair');
+    expect(createModelEntity(chair, 'Chair').components).toEqual([{ ...modelType.create(), id: expect.any(String), assetId: chair }]);
+  });
+
+  it('names its file and its material, and none where a slot is empty', () => {
+    const chair = fixedId('asset', 'chair');
+    const oak = fixedId('asset', 'oak');
+
+    expect(componentAssets(registries, { ...modelType.create(), assetId: chair, materialId: oak })).toEqual([chair, oak]);
+    expect(componentAssets(registries, modelType.create())).toEqual([null, null]);
+  });
+});
+
+describe('an audio source', () => {
+  it('starts as it did, fully positional and on the effects bus, with no clip', () => {
+    expect(audioSourceType.create()).toEqual({
+      id: expect.any(String),
+      type: 'audioSource',
+      assetId: null,
+      volume: 1,
+      pitch: 1,
+      detune: 0,
+      mute: false,
+      loop: false,
+      playOnStart: false,
+      startOffset: 0,
+      delay: 0,
+      fadeIn: 0,
+      fadeOut: 0,
+      priority: 128,
+      bus: 'sfx',
+      spatialBlend: 1,
+      distanceModel: 'inverse',
+      refDistance: 1,
+      maxDistance: 50,
+      rolloffFactor: 1,
+      coneInnerAngle: 360,
+      coneOuterAngle: 360,
+      coneOuterGain: 0,
+    });
+    expect(AUDIO_BUSES).toEqual(['master', 'music', 'sfx', 'ui', 'ambience']);
+  });
+
+  it('refuses a bus this build does not know, naming where', () => {
+    const template = createEntity('Speaker', [audioSourceType.create()]);
+    const file = JSON.parse(serializeScene(registries, sceneWith([template])));
+    const [id] = Object.keys(file.components.audioSource[template.entity.id]);
+    file.components.audioSource[template.entity.id][id ?? ''].bus = 'voice';
+
+    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+      `components.audioSource.${template.entity.id}.${id}.bus: expected one of "master", "music", "sfx", "ui", "ambience"`,
+    );
+  });
+});
+
+describe('a script', () => {
+  it('starts with no script and no property set', () => {
+    expect(scriptType.create()).toEqual({ id: expect.any(String), type: 'script', assetId: null, props: {} });
+  });
+
+  it('keeps each property a script declares, of any kind a property can hold, and refuses one that is none', () => {
+    const props: Record<string, ScriptPropValue> = { speed: 3, name: 'door', open: true, size: [1, 2], aim: [0, 1, 0] };
+    const template = createEntity('Door', [{ ...scriptType.create(), assetId: fixedId('asset', 'door-script'), props }]);
+    const file = JSON.parse(serializeScene(registries, sceneWith([template])));
+
+    expect(findComponent(deserializeScene(registries, JSON.stringify(file)), template.entity.id, 'script')?.props).toEqual(props);
+
+    const [id] = Object.keys(file.components.script[template.entity.id]);
+    file.components.script[template.entity.id][id ?? ''].props.target = { id: 'x' };
+    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+      `components.script.${template.entity.id}.${id}.props.target: expected a number, a string, true or false, or two or three numbers`,
+    );
+  });
+
+  it('counts each string property as a candidate, since only the script knows which name assets', () => {
+    const script = { ...scriptType.create(), props: { speed: 3, texture: 'tex-wood', label: 'hello' } };
+
+    expect(componentCandidates(registries, script)).toEqual(['tex-wood', 'hello']);
+  });
+});
+
+describe('a prefab instance', () => {
+  const LAMP = fixedId('asset', 'lamp');
+
+  it('starts placing the prefab it is given, overriding nothing', () => {
+    expect(createPrefabInstance(LAMP)).toEqual({ id: expect.any(String), type: 'prefabInstance', assetId: LAMP, overrides: {} });
+    expect(prefabInstanceType.create()).toMatchObject({ assetId: null, overrides: {} });
+  });
+
+  it('keeps its overrides through a file, each part an override can hold', () => {
+    const overrides = {
+      bulb: { name: 'Bulb', visible: false, transform: { position: [0, 2, 0] }, components: { glow: { intensity: 4 } } },
+      'inner/shade': { transform: { scale: [2, 2, 2], rotation: [0, 1, 0] } },
+    };
+    const template = createEntity('Lamp', [{ ...createPrefabInstance(LAMP), overrides }]);
+    const json = serializeScene(registries, sceneWith([template]));
+
+    expect(findComponent(deserializeScene(registries, json), template.entity.id, 'prefabInstance')?.overrides).toEqual(overrides);
+  });
+
+  it.each([
+    ['an entity named by no id', { '': { name: 'Nobody' } }, ''],
+    ['a name that is no text', { bulb: { name: 3 } }, 'bulb.name'],
+    ['a visibility that is no flag', { bulb: { visible: 'no' } }, 'bulb.visible'],
+    ['a position of two numbers', { bulb: { transform: { position: [0, 2] } } }, 'bulb.transform.position'],
+    ['a part an override does not hold', { bulb: { colour: 'red' } }, 'bulb.colour'],
+    ['a component named by no id', { bulb: { components: { '': { intensity: 4 } } } }, 'bulb.components.'],
+  ])('refuses %s, naming where', (_what, overrides, where) => {
+    const template = createEntity('Lamp', [createPrefabInstance(LAMP)]);
+    const file = JSON.parse(serializeScene(registries, sceneWith([template])));
+    const [id] = Object.keys(file.components.prefabInstance[template.entity.id]);
+    file.components.prefabInstance[template.entity.id][id ?? ''].overrides = overrides;
+
+    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+      `components.prefabInstance.${template.entity.id}.${id}.overrides.${where}`,
+    );
+  });
+});
+
+describe('the references of every type', () => {
+  it('read `null` as none in each of the four slots that held `\'\'`', () => {
+    for (const component of [modelType.create(), audioSourceType.create(), scriptType.create(), prefabInstanceType.create()]) {
+      expect(componentAssets(registries, component)[0]).toBeNull();
+    }
+  });
+
+  it('are renamed in a copy: a joint\'s body, a script\'s entity property and a water\'s light', () => {
+    const [frame, lamp, copyOfFrame, copyOfLamp] = [
+      fixedId('entity', 'frame'),
+      fixedId('entity', 'lamp'),
+      fixedId('entity', 'frame-copy'),
+      fixedId('entity', 'lamp-copy'),
+    ];
+    const rename = (id: EntityId): EntityId | undefined => (id === frame ? copyOfFrame : id === lamp ? copyOfLamp : undefined);
+    const components: ComponentDoc[] = [
+      { ...jointType.create(), connectedEntity: frame },
+      { ...scriptType.create(), props: { target: lamp, label: 'hello', speed: 2 } },
+      { ...waterType.create(), sun: { kind: 'light', entity: lamp } },
+      { ...createLight('point') },
+    ];
+
+    const renamed = renameEntityReferences(registries, components, rename);
+
+    expect(renamed[0]).toEqual({ ...components[0], connectedEntity: copyOfFrame });
+    expect(renamed[1]).toEqual({ ...components[1], props: { target: copyOfLamp, label: 'hello', speed: 2 } });
+    expect(renamed[2]).toEqual({ ...components[2], sun: { kind: 'light', entity: copyOfLamp } });
+    expect(renamed[3]).toBe(components[3]);
+  });
+
+  it('come, for every type of the kernel, from a schema at version 1', () => {
+    for (const definition of registries.components.values()) {
+      expect([definition.id, definition.version, typeof definition.decode]).toEqual([definition.id, 1, 'function']);
+    }
+  });
+});

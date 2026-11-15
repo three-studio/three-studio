@@ -1,4 +1,4 @@
-import { createAudioSource, createEntity, fixedId } from '@three-studio/core';
+import { audioSourceType, createEntity, fixedId } from '@three-studio/core';
 import { Group } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { AudioEngine } from '../../src/audio/AudioEngine';
@@ -23,7 +23,7 @@ const STEP = fixedId('asset', 'step');
 const GONE = fixedId('asset', 'gone');
 const WEIRD = fixedId('asset', 'weird');
 
-const source = (overrides = {}) => ({ ...createAudioSource(), assetId: STEP, ...overrides });
+const source = (overrides = {}) => ({ ...audioSourceType.create(), assetId: STEP, ...overrides });
 
 function mount(audio: AudioEngine | null, overrides = {}) {
   return audioSourceBehaviour.create(
@@ -203,7 +203,7 @@ describe('nothing here may bring anything down', () => {
     // The normal state of a source that was just added. Warning per frame about
     // a field nobody has filled in yet is how a warning panel stops being read.
     const { engine, warnings } = rig();
-    expect(engine.play({ assetId: '' }).state).toBe('failed');
+    expect(engine.play({ assetId: null }).state).toBe('failed');
     expect(warnings).toEqual([]);
   });
 

@@ -144,18 +144,6 @@ export interface ActionSpec {
   }) => void;
 }
 
-/**
- * Where the primitive's own fields go.
- *
- * They used to be appended after everything else, which put "Segments X" below
- * twenty-odd material rows — present, and effectively unfindable. Declaring the
- * position here keeps ordering a property of the schema rather than of the
- * builder.
- */
-export interface GeometrySlotSpec {
-  kind: 'geometry';
-}
-
 /** A rule, to show where one group of fields ends and the next begins. */
 export interface SeparatorSpec {
   kind: 'separator';
@@ -164,78 +152,34 @@ export interface SeparatorSpec {
    *
    * A rule belongs to the layout, not to a row that can come and go: hiding one
    * would leave two groups running together with nothing between them. Declared
-   * so that this shares a property with the rest of `PaneEntry`, which is what
+   * so that this shares a property with the rest of `PaneRow`, which is what
    * lets `shapeOf` read a whole list of them without a cast.
    */
   visibleWhen?: never;
 }
 
-/** A row of a pane as the Inspector builds it: every slot expanded. */
+/** A row of a pane as the Inspector builds it. */
 export type PaneRow = FieldSpec | ActionSpec | SeparatorSpec;
-
-export type PaneEntry = PaneRow | GeometrySlotSpec;
 
 /**
  * Whether an entry is a field, by the one property only a field has.
  *
  * `kind` cannot answer it any more: `{ type: 'asset', kind: 'audio' }` is a
- * declared field whose `kind` names an asset kind, so the three guards below
+ * declared field whose `kind` names an asset kind, so the two guards below
  * would be reading a word that means something else in that row. `path` is
  * what a field is — it is where the value lives — and nothing that is not a
  * field has one.
  */
-function isField(entry: PaneEntry): entry is FieldSpec {
+function isField(entry: PaneRow): entry is FieldSpec {
   return 'path' in entry;
 }
 
-export function isAction(entry: PaneEntry): entry is ActionSpec {
+export function isAction(entry: PaneRow): entry is ActionSpec {
   return !isField(entry) && entry.kind === 'action';
 }
 
-export function isGeometrySlot(entry: PaneEntry): entry is GeometrySlotSpec {
-  return !isField(entry) && entry.kind === 'geometry';
-}
-
-export function isSeparator(entry: PaneEntry): entry is SeparatorSpec {
+export function isSeparator(entry: PaneRow): entry is SeparatorSpec {
   return !isField(entry) && entry.kind === 'separator';
-}
-
-/**
- * A pane written by hand, for a type whose fields are not yet written as a
- * schema: registered under the type's id, it stands in for the pane a schema
- * would give. Its heading is the type's `label`, which the definition holds.
- */
-export interface ComponentPane {
-  id: ComponentTypeId;
-  fields: readonly PaneEntry[];
-
-  /*
-   * The three facets below are declared only by the types that have them, the
-   * way a runtime system declares a capability. Four panes are not fixed by
-   * the component's type: a mesh's geometry slot expands into the fields of
-   * whichever primitive it is, a collider's into those of its shape's kind, a
-   * joint's into those of its kind, and a script's properties are whatever its
-   * source says today. For those four the *list* changes, not merely which of
-   * a fixed list is visible.
-   */
-
-  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`, `collider` and `joint`. */
-  geometryFields?(component: ComponentDoc): readonly FieldSpec[];
-  /** Rows appended after the declared ones, from the document. Declared by `script`. */
-  extraFields?(component: ComponentDoc): readonly FieldSpec[];
-  /**
-   * What makes this component's row list a *different* list.
-   *
-   * The type alone, unless the two above can change what the list contains — no
-   * arrangement of `visibleWhen` bits could say that, which is what this is for.
-   */
-  paneKey?(component: ComponentDoc): string;
-  /**
-   * Its rows tune the running game during Play, where every other row is
-   * locked. The running world takes the value; the document does not. Declared
-   * by the components the world builds — `rigidbody`, `collider` and `joint`.
-   */
-  live?: true;
 }
 
 /**
@@ -264,7 +208,11 @@ export interface PaneExtension {
   readonly after?: { readonly [key: string]: readonly PaneRow[] | undefined };
   /** What else makes the rows another list, beyond the variants the component holds. */
   readonly paneKey?: (component: ComponentDoc) => string;
-  /** Its rows tune the running game during Play; see `ComponentPane.live`. */
+  /**
+   * Its rows tune the running game during Play, where every other row is
+   * locked. The running world takes the value; the document does not. Declared
+   * by the components the world builds — `rigidbody`, `collider` and `joint`.
+   */
   readonly live?: true;
 }
 
