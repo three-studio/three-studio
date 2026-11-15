@@ -595,14 +595,20 @@ export function applyPrefabOverride(
     // would answer with `Object`.
     const properties = Object.hasOwn(named, component.id) ? named[component.id] : undefined;
     if (properties === undefined) return component;
-    // Filled again once the override is spread: an override is stored data
-    // too, written against the type as it was. One saved by 0.6.0 as
-    // `{ shape: 'sphere', radius: 0.4 }` put a name where a collider's shape
-    // lives now, and the runtime built nothing from it. For every other type,
-    // the fill of a whole component is that same component.
+    // An override is stored data too, written against the type as it was, so
+    // a type written as a schema decodes what it makes. One that no longer
+    // fits — a name where a collider's shape lives, a field the type has lost
+    // — is not applied, and stays in the document as written, where an author
+    // can see it and fix it; applied, the runtime would build nothing from it.
+    // The id is never overridable: it is what this very lookup keys on.
+    const decode = registries.components.get(component.type)?.decode;
+    if (decode !== undefined) {
+      const decoded = decode({ ...component, ...properties, id: component.id }, []);
+      return decoded.ok ? decoded.value : component;
+    }
+    // A type still written by hand is filled again once the override is spread.
     return {
       ...fillComponent(registries, { ...component, ...properties } as ComponentDoc),
-      // Never overridable: it is what this very lookup keys on.
       id: component.id,
     };
   });

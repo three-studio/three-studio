@@ -2,10 +2,10 @@ import {
   colliderGeometry,
   createAudioSourceEntity,
   createCameraEntity,
-  createCollider,
+  colliderType,
   createColliderShape,
   createEntity,
-  createJoint,
+  jointType,
   createJointMotion,
   createLightEntity,
   createMeshComponent,
@@ -601,7 +601,7 @@ function conesOf(root: Object3D | undefined): boolean[] {
 
 /** An entity carrying one collider of this shape. */
 function colliderEntity(shape: ColliderShape, components: ComponentDoc[] = []): EntityTemplate {
-  return createEntity('Collider', [{ ...createCollider(), shape }, ...components]);
+  return createEntity('Collider', [{ ...colliderType.create(), shape }, ...components]);
 }
 
 /** The position attribute of a collider's outline. */
@@ -813,7 +813,7 @@ describe('what a mesh collider is built as', () => {
     const template = createMeshEntity('torus');
     // At the origin, where its axis is the world's z; a new one stands on the ground.
     template.entity.transform.position = [0, 0, 0];
-    template.components.push({ ...createCollider(), shape: { kind: 'mesh', build } }, ...components);
+    template.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build } }, ...components);
     return template;
   };
 
@@ -866,7 +866,7 @@ describe('what a mesh collider is built as', () => {
     // three hands back a sliver of four of a disc's points, drawn as a triangle.
     const disc = (build: MeshBuild): EntityTemplate => {
       const template = createMeshEntity('circle');
-      template.components.push({ ...createCollider(), shape: { kind: 'mesh', build } });
+      template.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build } });
       return template;
     };
     const hull = disc('hull');
@@ -878,7 +878,7 @@ describe('what a mesh collider is built as', () => {
   it('draws its own entity’s meshes, never its children’s', () => {
     const base = createMeshEntity('box');
     base.entity.transform.position = [0, 0, 0];
-    base.components.push({ ...createCollider(), shape: { kind: 'mesh', build: 'hull' } });
+    base.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build: 'hull' } });
     const above = createMeshEntity('box');
     above.entity.transform.position = [0, 3, 0];
     nest(base, above);
@@ -942,7 +942,7 @@ describe('teardown', () => {
 describe('where a joint holds', () => {
   /** An entity carrying one joint of this motion, at this anchor. */
   const jointEntity = (motion: JointMotion, anchor: Vec3 = [0, 0, 0]): EntityTemplate =>
-    createEntity('Joint', [{ ...createJoint(), motion, anchor }]);
+    createEntity('Joint', [{ ...jointType.create(), motion, anchor }]);
 
   /** The world pose physics reads the entity at. */
   function poseOf(binder: SceneBinder, entityId: EntityId) {

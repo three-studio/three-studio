@@ -1,24 +1,25 @@
 import {
   assertDefined,
-  COLLIDER_SHAPE_LABELS,
-  JOINT_KIND_LABELS,
   PROJECT_FORMAT_VERSION,
-  conformColliderShape,
-  conformJointMotion,
+  colliderShapeField,
+  createJointMotion,
+  jointMotionField,
   createAudioSource,
   createBuildProfiles,
-  createCollider,
+  colliderType,
   createColliderShape,
   createComponent,
   createDefaultLayer,
   createEmptyScene,
-  createJoint,
+  jointType,
   createPhysicsSettings,
   createRenderingSettings,
   fieldOptions,
   fixedId,
+  type ColliderShapeKind,
   type ComponentDoc,
   type ComponentType,
+  type JointKind,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { paneEntriesFor, paneFor } from '../src/inspector/panes';
@@ -96,114 +97,29 @@ describe('the Audio Source pane', () => {
 });
 
 /*
- * A collider's rows change with its shape's kind, so the checks below that walk
- * every type's factory walk a collider of every kind too.
+ * A collider's rows change with its shape's kind, and a joint's with its kind,
+ * so the checks below that walk every type's factory walk every kind of both.
+ * Their panes row for row are `describedPanes.test.ts`'s.
  */
-const COLLIDER_KINDS = Object.keys(COLLIDER_SHAPE_LABELS);
+const COLLIDER_KINDS = Object.keys(colliderShapeField.variants).filter(
+  (kind): kind is ColliderShapeKind => Object.hasOwn(colliderShapeField.variants, kind),
+);
 
-function colliderOfKind(kind: string): ComponentDoc {
-  const shape = conformColliderShape({ kind });
-  // The factory box comes back for a kind it does not know, which would test
-  // the box twice and the kind not at all.
-  expect(shape.kind).toBe(kind);
-  return { ...createCollider(), shape };
+function colliderOfKind(kind: ColliderShapeKind): ComponentDoc {
+  return { ...colliderType.create(), shape: createColliderShape(kind) };
 }
 
-/** A joint's rows change with its kind, as a collider's do with its shape. */
-const JOINT_KINDS = Object.keys(JOINT_KIND_LABELS);
+const JOINT_KINDS = Object.keys(jointMotionField.variants).filter(
+  (kind): kind is JointKind => Object.hasOwn(jointMotionField.variants, kind),
+);
 
-function jointOfKind(kind: string): ComponentDoc {
-  const motion = conformJointMotion({ kind });
-  expect(motion.kind).toBe(kind);
-  return { ...createJoint(), motion };
+function jointOfKind(kind: JointKind): ComponentDoc {
+  return { ...jointType.create(), motion: createJointMotion(kind) };
 }
-
-describe('the Joint pane', () => {
-  it.each(JOINT_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(registries, jointOfKind(kind)).key).toBe(`joint:${kind}`);
-  });
-
-  it('shows the world as the choice for no Connected Body, and writes it back as none', () => {
-    const row = paneOf('joint').fields.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'connectedEntity',
-    );
-    if (!row) throw new Error('no Connected Body row');
-    expect(row.toModel?.(null)).toBe('');
-    expect(row.fromModel?.('')).toBeNull();
-    expect(row.fromModel?.('door')).toBe('door');
-    expect(row.optionsProvider?.()).toMatchObject({ World: '' });
-  });
-
-  it("shows a hinge's range with its Limits, and its speed with its Motor, in degrees", () => {
-    const shown = (component: ComponentDoc) =>
-      paneEntriesFor(registries, component)
-        .entries.filter((entry): entry is FieldSpec => 'path' in entry)
-        .filter((entry) => entry.visibleWhen?.(component) ?? true)
-        .map((entry) => entry.label);
-    const hinge = jointOfKind('hinge');
-    expect(shown(hinge)).toEqual(['Type', 'Connected Body', 'Anchor', 'Axis', 'Limits', 'Motor', 'Enable Collision']);
-
-    if (hinge.type !== 'joint' || hinge.motion.kind !== 'hinge') throw new Error('not a hinge');
-    const { limits, motor } = hinge.motion;
-    const both = {
-      ...hinge,
-      motion: { ...hinge.motion, limits: { ...limits, enabled: true }, motor: { ...motor, enabled: true } },
-    };
-    expect(shown(both)).toEqual([
-      'Type',
-      'Connected Body',
-      'Anchor',
-      'Axis',
-      'Limits',
-      'Min',
-      'Max',
-      'Motor',
-      'Speed',
-      'Max Torque',
-      'Enable Collision',
-    ]);
-    const min = paneEntriesFor(registries, both).entries.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.label === 'Min',
-    );
-    expect(min?.toModel?.(-Math.PI / 2)).toBeCloseTo(-90, 9);
-  });
-});
 
 describe('the Collider pane', () => {
-  const shapeRow = (): FieldSpec => {
-    const row = paneOf('collider').fields.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape',
-    );
-    if (!row) throw new Error('no Shape row');
-    return row;
-  };
-
-  it('shows the kind of the shape it reads', () => {
-    expect(shapeRow().toModel?.({ kind: 'capsule', radius: 0.3, height: 1.7 })).toBe('capsule');
-  });
-
-  it("writes a kind as that kind's whole default shape", () => {
-    // A box and a sphere share no measure, so another kind starts from its own.
-    expect(shapeRow().fromModel?.('sphere')).toEqual(createColliderShape('sphere'));
-  });
-
-  it('shows a rotation in degrees and writes it back in radians', () => {
-    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape.rotation',
-    );
-    if (!row) throw new Error('no Rotation row');
-    const shown = row.toModel?.([Math.PI / 2, 0, -Math.PI]);
-    expect(shown).toEqual({ x: expect.closeTo(90, 9), y: 0, z: expect.closeTo(-180, 9) });
-    const written = row.fromModel?.({ x: 90, y: 0, z: 45 });
-    expect(written).toEqual([expect.closeTo(Math.PI / 2, 9), 0, expect.closeTo(Math.PI / 4, 9)]);
-  });
-
-  it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(registries, colliderOfKind(kind)).key).toBe(`collider:${kind}`);
-  });
-
   it("lists the project's layers by name in its Layer row", () => {
-    const row = paneOf('collider').fields.find(
+    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
       (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
     );
     if (!row) throw new Error('no Layer row');

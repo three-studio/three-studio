@@ -39,7 +39,6 @@ import type { Hex, Transform } from './primitives';
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
 export type { CombineRule, PhysicsMaterialDef } from './physicsMaterial';
-export { COMBINE_RULE_LABELS } from './physicsMaterial';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
 
 /*
@@ -71,7 +70,6 @@ export type {
   ColliderShapeOf,
   MeshBuild,
 } from '../components/collider/schema';
-export { COLLIDER_SHAPE_LABELS, MESH_BUILD_LABELS } from '../components/collider/schema';
 export type {
   JointComponent,
   JointKind,
@@ -80,7 +78,6 @@ export type {
   JointMotionOf,
   JointMotor,
 } from '../components/joint/schema';
-export { JOINT_KIND_LABELS } from '../components/joint/schema';
 export type { LightComponent, LightKind, ShadowSettings } from '../components/light/schema';
 export type { MeshComponent } from '../components/mesh/schema';
 export type { ModelComponent } from '../components/model/schema';

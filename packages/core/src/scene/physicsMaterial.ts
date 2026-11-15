@@ -1,4 +1,5 @@
-import { conform, oneOf } from '../conform';
+import { conform } from '../conform';
+import { planFields, type Infer, type Schema } from '../fieldSchema';
 import type { AssetId } from '../ids';
 
 /*
@@ -9,39 +10,52 @@ import type { AssetId } from '../ids';
 
 /**
  * How two touching colliders' values make one. When the two name different
- * rules, the later one here wins — Rapier's order, and Unity's.
+ * rules, the later one here wins — Rapier's order, and Unity's. Average is
+ * Rapier's default and Unity's.
  */
-export type CombineRule = 'average' | 'min' | 'multiply' | 'max';
+const combine = (label: string) =>
+  ({
+    type: 'enum',
+    label,
+    default: 'average',
+    options: [
+      { value: 'average', label: 'Average' },
+      { value: 'min', label: 'Minimum' },
+      { value: 'multiply', label: 'Multiply' },
+      { value: 'max', label: 'Maximum' },
+    ],
+  }) as const;
 
-export const COMBINE_RULE_LABELS: Record<CombineRule, string> = {
-  average: 'Average',
-  min: 'Minimum',
-  multiply: 'Multiply',
-  max: 'Maximum',
-};
+/** A physics material, as its fields. The order is the pane's. */
+export const physicsMaterialFields = {
+  /* 0 slides like ice; 1 and over grips. */
+  friction: { type: 'number', label: 'Friction', default: 0.7, min: 0, max: 2, step: 0.01 },
+  frictionCombine: combine('Friction combine'),
+  /* How much speed a bounce gives back: 0 none, 1 all of it. */
+  restitution: { type: 'number', label: 'Bounciness', default: 0, min: 0, max: 1, step: 0.01 },
+  restitutionCombine: combine('Bounce combine'),
+} as const satisfies Schema;
 
-export interface PhysicsMaterialDef {
-  /** 0 slides like ice; 1 and over grips. */
-  friction: number;
-  /** How much speed a bounce gives back: 0 none, 1 all of it. */
-  restitution: number;
-  frictionCombine: CombineRule;
-  restitutionCombine: CombineRule;
-}
+export type PhysicsMaterialDef = Infer<typeof physicsMaterialFields>;
+export type CombineRule = PhysicsMaterialDef['frictionCombine'];
 
-/** Average is Rapier's default and Unity's. */
+const physicsMaterialPlan = planFields(physicsMaterialFields);
+
+/** A physics material at its defaults. */
 export function createPhysicsMaterial(): PhysicsMaterialDef {
-  return { friction: 0.7, restitution: 0, frictionCombine: 'average', restitutionCombine: 'average' };
+  return { ...physicsMaterialPlan.defaults };
 }
 
 /**
- * A stored physics material, each value kept where it fits and the factory's
- * where it does not; a rule this build does not know reads as the factory's.
+ * A physics material sent by a window, each value kept where it fits and the
+ * factory's where it does not; a rule this build does not know reads as the
+ * factory's, one of the field's own options.
  */
 export function conformPhysicsMaterial(value: unknown): PhysicsMaterialDef {
   const model = createPhysicsMaterial();
   const kept = conform(value, model);
-  const rule = (stored: unknown, fallback: CombineRule) => oneOf(stored, COMBINE_RULE_LABELS, fallback);
+  const rule = (stored: unknown, fallback: CombineRule): CombineRule =>
+    physicsMaterialFields.frictionCombine.options.find((option) => option.value === stored)?.value ?? fallback;
   return {
     ...kept,
     frictionCombine: rule(kept.frictionCombine, model.frictionCombine),

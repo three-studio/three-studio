@@ -5,9 +5,9 @@ import {
   componentsOf,
   componentsOfType,
   audioListenerType,
-  createCollider,
+  colliderType,
   createColliderShape,
-  createJoint,
+  jointType,
   createLightEntity,
   insertEntity,
   createEntity,
@@ -242,31 +242,35 @@ describe('prefab expansion', () => {
     expect(parts.find((c) => c.id === mesh.id)?.type).toBe('mesh');
   });
 
-  it('cannot put a name where a collider’s shape lives, from an override written before scene 11', () => {
+  it('does not apply an override that no longer fits its component, and keeps it as written', () => {
     const prefab = treePrefab();
-    const collider = createCollider();
+    const collider = colliderType.create();
     putComponent(prefab, prefab.root, collider);
 
     const host = instanceOf(prefab);
-    (host.components[0] as PrefabInstanceComponent).overrides = {
+    const [instance] = host.components;
+    if (instance?.type !== 'prefabInstance') throw new Error('no instance on the host');
+    const overrides = {
       [prefab.root]: { components: { [collider.id]: { shape: 'sphere', radius: 0.4, isSensor: true } } },
     };
+    instance.overrides = overrides;
 
     const { scene } = expandPrefabs(registries, sceneWith([host]), library(prefab));
     const built = componentsOf(registries, scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
 
-    // Spread alone, the name sat where the union lives and the runtime built
-    // nothing. Filled, it is the factory box, the sensor kept, `radius` gone.
-    expect(built).toEqual({ ...collider, shape: createColliderShape('box'), isSensor: true });
+    // A name where the shape lives: applied, the runtime would build nothing.
+    // The collider is the prefab's, and the override is still the instance's.
+    expect(built).toEqual(collider);
+    expect(instance.overrides).toBe(overrides);
   });
 
   it('lets a whole shape in an override win', () => {
     const prefab = treePrefab();
-    const collider = createCollider();
+    const collider = colliderType.create();
     putComponent(prefab, prefab.root, collider);
-    const sphere = { kind: 'sphere', radius: 0.4 };
+    const sphere = { ...createColliderShape('sphere'), radius: 0.4 };
 
     const host = instanceOf(prefab);
     (host.components[0] as PrefabInstanceComponent).overrides = {
@@ -277,8 +281,7 @@ describe('prefab expansion', () => {
     const built = componentsOf(registries, scene, instancedId(host.entity.id, prefab.root)).find(
       (c) => c.id === collider.id,
     );
-    // Filled from its own kind, as any stored shape is.
-    expect(built).toEqual({ ...collider, shape: { ...createColliderShape('sphere'), radius: 0.4 } });
+    expect(built).toEqual({ ...collider, shape: sphere });
   });
 
   it('follows the component it names when the prefab is reordered', () => {
@@ -587,7 +590,7 @@ describe('references inside a prefab', () => {
   it('a joint in a prefab names the copy of its Connected Body', () => {
     const frame = createMeshEntity('box');
     frame.entity.name = 'Frame';
-    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
+    const door = createEntity('Door', [{ ...jointType.create(), connectedEntity: frame.entity.id }]);
     frame.entity.children = [door.entity.id];
     door.entity.parent = frame.entity.id;
     const prefab = prefabWith('Doorway', [frame, door], frame.entity.id);

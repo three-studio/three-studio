@@ -1,6 +1,6 @@
 import {
   componentsOf,
-  createCollider,
+  colliderType,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -80,8 +80,8 @@ describe('pairing components across entities', () => {
   });
 
   it('pairs by rank when an entity has two of a type', () => {
-    const a = createEntity('A', [createCollider(), createCollider()]);
-    const b = createEntity('B', [createCollider(), createCollider()]);
+    const a = createEntity('A', [colliderType.create(), colliderType.create()]);
+    const b = createEntity('B', [colliderType.create(), colliderType.create()]);
     addEntity(a);
     addEntity(b);
 

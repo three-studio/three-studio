@@ -3,15 +3,20 @@ import {
   assertDefined,
   audioListenerType,
   cameraType,
+  colliderType,
   componentAssets,
   componentEntities,
   createCamera,
+  createComponentForEntity,
+  createColliderShape,
   createEntity,
   createGeometry,
+  createJointMotion,
   createLight,
   createLightEntity,
   createMaterial,
   createMeshComponent,
+  createPhysicsMaterial,
   createPrefabInstance,
   deserializeScene,
   expandPrefabs,
@@ -20,6 +25,7 @@ import {
   fixedId,
   insertEntity,
   instancedId,
+  jointType,
   lightType,
   materialAssets,
   meshType,
@@ -27,10 +33,12 @@ import {
   rigidbodyType,
   serializeScene,
   waterType,
+  type ColliderShapeKind,
   type ComponentDoc,
   type ComponentType,
   type EntityId,
   type GeometryKind,
+  type JointKind,
   type LightKind,
   type WaterSun,
 } from '../src/index';
@@ -440,4 +448,151 @@ describe('a water surface', () => {
 function isKind(kind: string): GeometryKind {
   const known = Object.keys(PRIMITIVES).find((key): key is GeometryKind => key === kind);
   return assertDefined(known, `the primitive ${kind}`);
+}
+
+// ------------------------------------------------------------ collider and joint
+
+/** Each shape as `createColliderShape` made it, but its kind. */
+const SHAPES = {
+  box: { size: [1, 1, 1], rounding: 0, center: [0, 0, 0], rotation: [0, 0, 0] },
+  sphere: { radius: 0.5, center: [0, 0, 0] },
+  capsule: { radius: 0.5, height: 2, center: [0, 0, 0], rotation: [0, 0, 0] },
+  cylinder: { radius: 0.5, height: 1, rounding: 0, center: [0, 0, 0], rotation: [0, 0, 0] },
+  cone: { radius: 0.5, height: 1, rounding: 0, center: [0, 0, 0], rotation: [0, 0, 0] },
+  mesh: { build: 'triangles' },
+} as const satisfies Record<ColliderShapeKind, object>;
+
+/** Each motion as `createJointMotion` made it, but its kind. */
+const MOTIONS = {
+  fixed: {},
+  hinge: {
+    axis: [0, 1, 0],
+    limits: { enabled: false, min: -Math.PI / 2, max: Math.PI / 2 },
+    motor: { enabled: false, speed: Math.PI / 2, maxForce: 1000 },
+  },
+  slider: { axis: [0, 1, 0], limits: { enabled: false, min: -1, max: 1 }, motor: { enabled: false, speed: 1, maxForce: 1000 } },
+  spring: { stiffness: 100, damping: 5 },
+} as const satisfies Record<JointKind, object>;
+
+describe('a collider', () => {
+  it('starts as a 1 m box of the default material, on the default layer', () => {
+    expect(colliderType.create()).toEqual({
+      id: expect.any(String),
+      type: 'collider',
+      shape: { kind: 'box', ...SHAPES.box },
+      isSensor: false,
+      layer: 'default',
+      materialId: null,
+      material: { friction: 0.7, frictionCombine: 'average', restitution: 0, restitutionCombine: 'average' },
+    });
+    expect(createPhysicsMaterial()).toEqual({ friction: 0.7, frictionCombine: 'average', restitution: 0, restitutionCombine: 'average' });
+  });
+
+  it.each(Object.entries(SHAPES))('has a %s shape at the measures it had', (kind, measures) => {
+    const shape: unknown = { kind, ...measures };
+
+    expect(createColliderShape(shapeKind(kind))).toEqual(shape);
+  });
+
+  it('comes back from a file equal, its shape and its material whole, and names its physics material', () => {
+    const ice = fixedId('asset', 'ice');
+    const collider = {
+      ...colliderType.create(),
+      shape: { ...createColliderShape('capsule'), rotation: [0.5, 0, 0] },
+      materialId: ice,
+      layer: 'ghost',
+      isSensor: true,
+    } satisfies ComponentDoc;
+    const template = createEntity('Pill', [collider]);
+    const json = serializeScene(registries, sceneWith([template]));
+
+    expect(findComponent(deserializeScene(registries, json), template.entity.id, 'collider')).toEqual(collider);
+    expect(componentAssets(registries, collider)).toEqual([ice]);
+  });
+
+  it('refuses a shape this build does not know, a build it does not, and a rule it does not, naming where', () => {
+    const template = createEntity('Box', [colliderType.create()]);
+    const file = JSON.parse(serializeScene(registries, sceneWith([template])));
+    const [id] = Object.keys(file.components.collider[template.entity.id]);
+    const where = `components.collider.${template.entity.id}.${id}`;
+    const stored = file.components.collider[template.entity.id][id ?? ''];
+    stored.shape = { kind: 'torus' };
+    stored.material.frictionCombine = 'sum';
+
+    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    expect(refusal).toThrow(`${where}.shape.kind: expected one of "box", "sphere", "capsule", "cylinder", "cone", "mesh"`);
+    expect(refusal).toThrow(`${where}.material.frictionCombine: expected one of "average", "min", "multiply", "max"`);
+
+    stored.shape = { kind: 'mesh', build: 'voxels' };
+    expect(refusal).toThrow(`${where}.shape.build: expected one of "triangles", "hull", "parts"`);
+  });
+
+  it('is guessed from the primitive it joins, as it was', () => {
+    const guess = (siblings: ComponentDoc[]): unknown => {
+      const made = createComponentForEntity(registries, 'collider', siblings);
+      return made.type === 'collider' ? made.shape : null;
+    };
+    const frustum = { ...createMeshComponent('cylinder'), geometry: { ...createGeometry('cylinder'), radiusTop: 0.2 } };
+
+    expect(guess([createMeshComponent('capsule')])).toEqual({ ...createColliderShape('capsule'), radius: 0.5, height: 2 });
+    expect(guess([frustum])).toEqual({ kind: 'mesh', build: 'hull' });
+    expect(guess([])).toEqual(createColliderShape('box'));
+  });
+});
+
+describe('a joint', () => {
+  it('starts as a hinge held to the world, at its entity\'s middle', () => {
+    expect(jointType.create()).toEqual({
+      id: expect.any(String),
+      type: 'joint',
+      motion: { kind: 'hinge', ...MOTIONS.hinge },
+      connectedEntity: null,
+      anchor: [0, 0, 0],
+      enableCollision: false,
+    });
+  });
+
+  it.each(Object.entries(MOTIONS))('has a %s motion at the settings it had', (kind, settings) => {
+    const motion: unknown = { kind, ...settings };
+
+    expect(createJointMotion(jointKind(kind))).toEqual(motion);
+  });
+
+  it('comes back from a file equal, and names the body it is connected to', () => {
+    const frame = createEntity('Frame');
+    const joint = { ...jointType.create(), motion: createJointMotion('slider'), connectedEntity: frame.entity.id } satisfies ComponentDoc;
+    const door = createEntity('Door', [joint]);
+    const json = serializeScene(registries, sceneWith([frame, door]));
+
+    expect(findComponent(deserializeScene(registries, json), door.entity.id, 'joint')).toEqual(joint);
+    expect(componentEntities(registries, joint)).toEqual([frame.entity.id]);
+  });
+
+  it('refuses a motion this build does not know, and a malformed limit, naming where', () => {
+    const template = createEntity('Door', [jointType.create()]);
+    const file = JSON.parse(serializeScene(registries, sceneWith([template])));
+    const [id] = Object.keys(file.components.joint[template.entity.id]);
+    const where = `components.joint.${template.entity.id}.${id}`;
+    const stored = file.components.joint[template.entity.id][id ?? ''];
+    stored.motion.limits.min = 'low';
+
+    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    expect(refusal).toThrow(`${where}.motion.limits.min: expected a finite number, found "low"`);
+    stored.motion = { kind: 'ball' };
+    expect(refusal).toThrow(`${where}.motion.kind: expected one of "fixed", "hinge", "slider", "spring"`);
+  });
+
+  it('is at version 1, as the collider is', () => {
+    expect([colliderType.version, jointType.version]).toEqual([1, 1]);
+  });
+});
+
+function shapeKind(kind: string): ColliderShapeKind {
+  const known = Object.keys(SHAPES).find((key): key is ColliderShapeKind => key === kind);
+  return assertDefined(known, `the shape ${kind}`);
+}
+
+function jointKind(kind: string): JointKind {
+  const known = Object.keys(MOTIONS).find((key): key is JointKind => key === kind);
+  return assertDefined(known, `the motion ${kind}`);
 }

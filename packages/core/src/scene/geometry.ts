@@ -1,4 +1,4 @@
-import { planFields, type Infer, type Schema } from '../fieldSchema';
+import { variantFactory, type Infer, type Schema } from '../fieldSchema';
 
 /*
  * The geometry vocabulary: the shapes a mesh can be built out of, the factory
@@ -142,19 +142,8 @@ const geometrySchema = { geometry: geometryField } as const satisfies Schema;
 export type GeometryDef = Infer<typeof geometrySchema>['geometry'];
 export type GeometryKind = GeometryDef['kind'];
 
-const geometryPlan = planFields(geometrySchema);
-
-/** Whether a primitive is of `kind`, by the one field that says it. */
-function isOfKind<K extends GeometryKind>(geometry: GeometryDef, kind: K): geometry is Extract<GeometryDef, { kind: K }> {
-  return geometry.kind === kind;
-}
-
 /** A primitive of `kind` at its defaults, typed as that primitive: a new value each time. */
-export function createGeometry<K extends GeometryKind>(kind: K): Extract<GeometryDef, { kind: K }> {
-  const geometry = geometryPlan.createVariant('geometry', kind);
-  if (!isOfKind(geometry, kind)) throw new Error(`The variant "${kind}" came back as "${geometry.kind}"`);
-  return geometry;
-}
+export const createGeometry = variantFactory(geometryField);
 
 /** three builds these in the XY plane, so they face the camera rather than up. */
 export const FLAT_KINDS: ReadonlySet<GeometryKind> = new Set(['plane', 'circle', 'ring']);

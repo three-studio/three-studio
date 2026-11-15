@@ -1,5 +1,5 @@
 import {
-  createCollider,
+  colliderType,
   createColliderShape,
   createEntity,
   createMeshEntity,
@@ -30,7 +30,7 @@ afterAll(takeTheBrowserBack);
 
 /** A collider of this shape, solid unless it is a sensor. */
 function collider(shape: ColliderComponent['shape'], isSensor = false): ColliderComponent {
-  return { ...createCollider(), shape, isSensor };
+  return { ...colliderType.create(), shape, isSensor };
 }
 
 describe('a compound body', () => {

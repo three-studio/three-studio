@@ -3,7 +3,7 @@ import {
   cloneSubtree,
   componentsOf,
   componentsOfType,
-  createCollider,
+  colliderType,
   createColliderShape,
   createCoreRegistries,
   createEmptyScene,
@@ -146,8 +146,8 @@ describe('listing the components of one type on an entity', () => {
   it('answers every one of them, in the order they were added', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createCollider();
-    const second = createCollider();
+    const first = colliderType.create();
+    const second = colliderType.create();
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
@@ -165,8 +165,8 @@ describe('listing the components of one type on an entity', () => {
   it('answers a copy of the list, so a caller may delete while it walks', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    putComponent(scene, cube.entity.id, createCollider());
-    putComponent(scene, cube.entity.id, createCollider());
+    putComponent(scene, cube.entity.id, colliderType.create());
+    putComponent(scene, cube.entity.id, colliderType.create());
 
     for (const collider of findComponents(scene, cube.entity.id, 'collider')) {
       deleteComponent(scene, cube.entity.id, collider.id);
@@ -206,8 +206,8 @@ describe('two components of one type on one entity', () => {
   it('keeps the second one intact when the first is removed', () => {
     const cube = createMeshEntity('box');
     const scene = sceneWith([cube]);
-    const first = createCollider();
-    const second = { ...createCollider(), shape: createColliderShape('sphere') };
+    const first = colliderType.create();
+    const second = { ...colliderType.create(), shape: createColliderShape('sphere') };
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 

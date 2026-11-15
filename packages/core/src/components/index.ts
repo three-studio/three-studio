@@ -119,7 +119,7 @@ export { defineComponent, type ComponentDefinition } from './registry';
  *
  * A `ComponentDoc` and not the type's own: the type is a value read from a
  * menu or a file, and a lookup by a value cannot honestly answer narrower. Code
- * that knows the type it makes calls that type's factory — `createCollider()`.
+ * that knows the type it makes calls that type's factory — `colliderType.create()`.
  *
  * Throws on a type it does not know rather than falling back. The chain this
  * replaced ended in the player controller's factory, so a component from a

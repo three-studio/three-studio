@@ -1,13 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_LAYER_ID,
   SCENE_FORMAT_VERSION,
   Registry,
   combineDisposables,
   componentAssets,
-  conformColliderShape,
   conformPhysicsMaterial,
-  createColliderShape,
   createComponent,
   createComponentForEntity,
   createCoreRegistries,
@@ -186,59 +183,10 @@ describe('fill', () => {
     expect(filled).toMatchObject({ type: 'light', intensity: expect.any(Number) });
   });
 
-  /*
-   * Physics data is the one place a stored field is not kept for its author:
-   * a collider is read against its factory, and its shape against the factory
-   * of the kind it names.
-   */
-  it('reads a collider written before scene 11 as a 1 m box with the default material, keeping its id and sensor', () => {
-    const stored = {
-      id: 'c1',
-      type: 'collider',
-      shape: 'capsule',
-      size: [0.5, 0.5, 0.5],
-      radius: 0.3,
-      halfHeight: 0.55,
-      friction: 0.2,
-      restitution: 0.5,
-      isSensor: true,
-    } as unknown as ComponentDoc;
-
-    // Its old fields dropped: kept, `friction` would sit beside `material` and
-    // read as the collider's to anyone opening the file.
-    expect(fillComponent(registries, stored)).toEqual({
-      id: 'c1',
-      type: 'collider',
-      shape: createColliderShape('box'),
-      material: createPhysicsMaterial(),
-      materialId: null,
-      isSensor: true,
-      layer: DEFAULT_LAYER_ID,
-    });
-  });
-
-  it('fills a shape from its own kind, keeping each measure that fits', () => {
-    const stored = { kind: 'capsule', radius: 0.4, height: 'tall', size: [1, 1, 1] };
-    expect(conformColliderShape(stored)).toEqual({ ...createColliderShape('capsule'), radius: 0.4 });
-  });
-
   it('reads a material naming a rule this build does not know as Average', () => {
     for (const rule of ['sum', 'constructor']) {
       const stored = { friction: 0.3, frictionCombine: rule, restitutionCombine: rule };
       expect(conformPhysicsMaterial(stored)).toEqual({ ...createPhysicsMaterial(), friction: 0.3 });
-    }
-  });
-
-  it('builds a mesh whose build this build does not know from its triangles', () => {
-    expect(conformColliderShape({ kind: 'mesh', build: 'voxels' })).toEqual({
-      kind: 'mesh',
-      build: 'triangles',
-    });
-  });
-
-  it('reads a shape of a kind this build does not know as the factory box, its measures dropped', () => {
-    for (const kind of ['teapot', 'constructor', 7]) {
-      expect(conformColliderShape({ kind, size: [3, 3, 3] })).toEqual(createColliderShape('box'));
     }
   });
 

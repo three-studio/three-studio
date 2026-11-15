@@ -2,7 +2,7 @@ import {
   assertDefined,
   componentsOf,
   createAudioSourceEntity,
-  createCollider,
+  colliderType,
   createColliderShape,
   createEmptyScene,
   createEntity,
@@ -10,7 +10,7 @@ import {
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
-  createJoint,
+  jointType,
   createRenderingSettings,
   rigidbodyType,
   createScript,
@@ -898,7 +898,7 @@ describe('the companions a rigid body brings', () => {
 
   const withCollider = () => {
     const wheel = createMeshEntity('sphere');
-    wheel.components.push(createCollider());
+    wheel.components.push(colliderType.create());
     return wheel;
   };
 
@@ -959,7 +959,7 @@ describe('the companions a joint brings', () => {
 
   it('brings none to a child of a body', () => {
     const door = createMeshEntity('box');
-    door.components.push(rigidbodyType.create(), createCollider());
+    door.components.push(rigidbodyType.create(), colliderType.create());
     const hinge = addEntity(createEntity('Hinge'), addEntity(door));
 
     addComponentWithDependencies(registries, hinge, 'joint');
@@ -986,9 +986,9 @@ describe('references to the entities copied with them', () => {
 
   /** A Frame, and a Door jointed to it. */
   function doorway(): { frame: EntityId; door: EntityId } {
-    const frame = addEntity(createEntity('Frame', [createCollider()]));
+    const frame = addEntity(createEntity('Frame', [colliderType.create()]));
     const door = addEntity(
-      createEntity('Door', [rigidbodyType.create(), { ...createJoint(), connectedEntity: frame }]),
+      createEntity('Door', [rigidbodyType.create(), { ...jointType.create(), connectedEntity: frame }]),
     );
     return { frame, door };
   }
@@ -1035,10 +1035,10 @@ describe('references to the entities copied with them', () => {
   });
 
   it('unpacking a prefab keeps its joint on the entity it named', () => {
-    const frame = createEntity('Frame', [createCollider()]);
+    const frame = createEntity('Frame', [colliderType.create()]);
     const door = createEntity('Door', [
       rigidbodyType.create(),
-      { ...createJoint(), connectedEntity: frame.entity.id },
+      { ...jointType.create(), connectedEntity: frame.entity.id },
     ]);
     frame.entity.children = [door.entity.id];
     door.entity.parent = frame.entity.id;
@@ -1106,7 +1106,7 @@ describe('fitting a collider to its mesh', () => {
     if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
     mesh.geometry = { ...mesh.geometry, radius: 1 };
     const collider: ColliderComponent = {
-      ...createCollider(),
+      ...colliderType.create(),
       shape: createColliderShape('sphere'),
       isSensor: true,
     };
@@ -1157,7 +1157,7 @@ describe('fitting a collider to its mesh', () => {
   });
 
   it('says so, and writes nothing, when the entity draws no mesh of its own', () => {
-    const collider = createCollider();
+    const collider = colliderType.create();
     const entityId = addEntity(createEntity('Shelf', [collider]));
     const { revision } = doc();
 

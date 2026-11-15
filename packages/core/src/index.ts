@@ -166,7 +166,7 @@ export type {
   FieldRow,
 } from './fields';
 /* A type's fields written once, and what reading a value from outside answers. */
-export { conditionHolds, planFields, variantDefaults } from './fieldSchema';
+export { conditionHolds, planFields, variantDefaults, variantFactory } from './fieldSchema';
 export type { FieldPlan, Infer, Schema, SchemaField, ShownWhen } from './fieldSchema';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
@@ -256,13 +256,9 @@ export { AUDIO_BUSES } from './scene/schema';
 export {
   AUDIO_BUS_LABELS,
   BACKGROUND_MODE_LABELS,
-  COLLIDER_SHAPE_LABELS,
-  COMBINE_RULE_LABELS,
   DISTANCE_MODEL_LABELS,
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
-  JOINT_KIND_LABELS,
-  MESH_BUILD_LABELS,
 } from './scene/schema';
 export type {
   BackgroundMode,
@@ -307,6 +303,8 @@ export type { EntityTemplate } from './scene/entity';
  */
 export { audioListenerType } from './components/audioListener';
 export { cameraType } from './components/camera';
+export { colliderType } from './components/collider';
+export { jointType } from './components/joint';
 export { lightType } from './components/light';
 export { meshType } from './components/mesh';
 export { playerControllerType } from './components/playerController';
@@ -316,7 +314,6 @@ export { waterSchema } from './components/water/schema';
 export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCamera, createCameraEntity } from './components/camera/defaults';
-export { createCollider } from './components/collider/defaults';
 export { createLight, createLightEntity } from './components/light/defaults';
 export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
 export { createModel, createModelEntity } from './components/model/defaults';
@@ -360,7 +357,7 @@ export type { ComponentDefinition } from './components';
 export { activateCore, createCoreRegistries } from './registries';
 export type { CoreRegistries } from './registries';
 
-export { conformColliderShape, createColliderShape } from './components/collider/defaults';
+export { colliderShapeField, createColliderShape } from './components/collider/schema';
 /*
  * A collider as physics builds it, and how far it hangs below the entity's
  * origin. Exported because the runtime's physics and its player controller
@@ -369,7 +366,7 @@ export { conformColliderShape, createColliderShape } from './components/collider
  */
 export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
 export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
-export { conformJointMotion, createJoint, createJointMotion } from './components/joint/defaults';
+export { createJointMotion, jointMotionField } from './components/joint/schema';
 /* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
 export { jointFrame } from './components/joint/frame';
 

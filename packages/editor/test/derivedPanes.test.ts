@@ -1,6 +1,6 @@
 import {
   assertDefined,
-  createCollider,
+  colliderType,
   createColliderShape,
   createEntity,
   createLight,
@@ -166,8 +166,8 @@ describe('a union', () => {
     },
     isSensor: { type: 'boolean', label: 'Is sensor', default: false },
   } as const satisfies Schema;
-  const box = createCollider();
-  const sphere: ComponentDoc = { ...createCollider(), shape: createColliderShape('sphere') };
+  const box = colliderType.create();
+  const sphere: ComponentDoc = { ...colliderType.create(), shape: createColliderShape('sphere') };
 
   it('is a selector of its variants, then the rows of the one the component holds', () => {
     expect(written(derivedPane('collider', shaped, undefined, box).entries)).toEqual([
@@ -203,7 +203,7 @@ describe('a union', () => {
   });
 
   it('is derived once per variant: asked again, the same rows', () => {
-    expect(derivedPane('collider', shaped, undefined, box)).toBe(derivedPane('collider', shaped, undefined, createCollider()));
+    expect(derivedPane('collider', shaped, undefined, box)).toBe(derivedPane('collider', shaped, undefined, colliderType.create()));
     expect(derivedPane('collider', shaped, undefined, box)).not.toBe(derivedPane('collider', shaped, undefined, sphere));
   });
 });
@@ -229,7 +229,7 @@ describe('a type\'s extension', () => {
   } as const satisfies Schema;
   const fit = { kind: 'action', title: 'Fit to Mesh', run: () => undefined } as const;
   const save = { kind: 'action', title: 'Save as Asset…', run: () => undefined } as const;
-  const sphere: ComponentDoc = { ...createCollider(), shape: createColliderShape('sphere') };
+  const sphere: ComponentDoc = { ...colliderType.create(), shape: createColliderShape('sphere') };
 
   it('draws rows in place of a field\'s own, and puts entries after a field\'s last row', () => {
     const extension = extendPane('collider', {

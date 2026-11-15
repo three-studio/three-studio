@@ -1,5 +1,5 @@
 import {
-  createCollider,
+  colliderType,
   createColliderShape,
   entitiesFromNodes,
   fixedId,
@@ -151,7 +151,7 @@ describe('entitiesFromNodes', () => {
   });
 
   it('hands the host’s mesh Colliders to every piece that draws, each under an id of its own', () => {
-    const collider = { ...createCollider(), shape: createColliderShape('mesh') };
+    const collider = { ...colliderType.create(), shape: createColliderShape('mesh') };
     const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair', [collider]);
 
     const collidersOf = (name: string) =>

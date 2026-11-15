@@ -20,7 +20,7 @@ import {
   SCENES_DIR,
   assertDefined,
   createBuildProfiles,
-  createCollider,
+  colliderType,
   createDefaultLayer,
   createEntity,
   createMaterial,
@@ -496,7 +496,7 @@ describe('web export', () => {
     const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
     insertEntity(
       scene,
-      createEntity('Cube', [{ ...createCollider(), materialId: fixedId('asset', 'pm-ice') }]),
+      createEntity('Cube', [{ ...colliderType.create(), materialId: fixedId('asset', 'pm-ice') }]),
     );
     await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
 

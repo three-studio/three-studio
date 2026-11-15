@@ -1,9 +1,9 @@
 import {
   createEntity,
-  createJoint,
+  jointType,
   createPrefabInstance,
   createMaterial,
-  createCollider,
+  colliderType,
   createModel,
   createScript,
   createMeshEntity,
@@ -82,7 +82,7 @@ describe('who uses an asset', () => {
 
   it('a physics material is used by the colliders that link it, ships with their scene, and is a broken reference once gone', () => {
     const ice = fixedId('asset', 'ice');
-    const puck = createEntity('Puck', [{ ...createCollider(), materialId: ice }]);
+    const puck = createEntity('Puck', [{ ...colliderType.create(), materialId: ice }]);
     const scene = sceneWith([puck]);
 
     expect(findAssetUsage(registries, ice, scene, new Map(), new Map()).entities).toEqual([puck.entity.id]);
@@ -162,9 +162,9 @@ describe('counting prefab instances', () => {
 describe('who names an entity that is gone', () => {
   it('a joint naming an entity the scene does not have names a missing entity', () => {
     const frame = createEntity('Frame');
-    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: fixedId('entity', 'gone') }]);
-    const free = createEntity('Free', [createJoint()]);
-    const held = createEntity('Held', [{ ...createJoint(), connectedEntity: frame.entity.id }]);
+    const door = createEntity('Door', [{ ...jointType.create(), connectedEntity: fixedId('entity', 'gone') }]);
+    const free = createEntity('Free', [jointType.create()]);
+    const held = createEntity('Held', [{ ...jointType.create(), connectedEntity: frame.entity.id }]);
 
     expect(findMissingEntities(registries, sceneWith([frame, door, free, held]))).toEqual([
       { entityId: door.entity.id, type: 'joint' },
@@ -172,7 +172,7 @@ describe('who names an entity that is gone', () => {
   });
 
   it('reaches what a prefab places, through the expanded scene', () => {
-    const door = createEntity('Door', [{ ...createJoint(), connectedEntity: fixedId('entity', 'gone') }]);
+    const door = createEntity('Door', [{ ...jointType.create(), connectedEntity: fixedId('entity', 'gone') }]);
     const prefab = prefabWith('Door', [door], door.entity.id);
     const host = createEntity('Doorway', [createPrefabInstance(PREFAB)]);
 

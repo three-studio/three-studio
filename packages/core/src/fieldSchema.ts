@@ -451,6 +451,30 @@ function declaredVariant(variants: Variants, kind: string): Record<string, unkno
 /** A union field of a schema. */
 type UnionField = Extract<SchemaField, { readonly type: 'union' }>;
 
+/** The value of a union field: one of its variants, under its `kind`. */
+type UnionValue<F extends UnionField> = Infer<{ readonly variant: F }>['variant'];
+
+/** Whether a variant is of `kind`, by the one field that says it. */
+function isVariant<V, K extends string>(value: V, kind: K): value is Extract<V, { kind: K }> {
+  return isRecord(value) && value['kind'] === kind;
+}
+
+/**
+ * A union field's factory: each variant at its defaults, typed as the variant
+ * asked for — `createGeometry('box')` is a box, whose fields a caller writes
+ * with no cast. Planned once, here; a new value each time.
+ */
+export function variantFactory<const F extends UnionField>(
+  field: F,
+): <K extends VariantName<F>>(kind: K) => Extract<UnionValue<F>, { kind: K }> {
+  const plan = planFields({ variant: field });
+  return (kind) => {
+    const made = plan.createVariant('variant', kind);
+    if (!isVariant(made, kind)) throw new Error(`The variant "${kind}" was made as another`);
+    return made;
+  };
+}
+
 /**
  * A union field's variant at its defaults, under its `kind`: what choosing it
  * in the Inspector's selector writes, as one value, for any schema. A new value

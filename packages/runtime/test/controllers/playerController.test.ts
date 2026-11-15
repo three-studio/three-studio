@@ -1,5 +1,5 @@
 import {
-  createCollider,
+  colliderType,
   createColliderShape,
   createEntity,
   createPhysicsSettings,
@@ -54,7 +54,7 @@ const STANDING_Y = 1;
 /** A capsule 1.70 m tall, so its centre — the entity's origin — is 0.85 m up. */
 function personCapsule(): ColliderComponent {
   return {
-    ...createCollider(),
+    ...colliderType.create(),
     shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
   };
 }
@@ -131,7 +131,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   // a character walking at full speed for a second is still on it — a metre of
   // floor would have turned every movement test into a fall.
   const ground = createEntity('Ground', [
-    { ...createCollider(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   ground.entity.transform.position = [0, -0.5, 0];
 
@@ -311,7 +311,7 @@ describe('PlayerController places the eye above the feet', () => {
   it('measures a box from its half extent', () => {
     // The shape a bare entity used to be given, and the reason the default
     // player's eye sat at 2.2 m on a character one metre tall.
-    const box: ColliderComponent = { ...createCollider() };
+    const box: ColliderComponent = { ...colliderType.create() };
     expect(eyeAbove(0.5, 1.6, box)).toBeCloseTo(1.6, 6);
   });
 

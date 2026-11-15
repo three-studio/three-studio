@@ -1,10 +1,10 @@
 import {
   createAssetId,
-  createCollider,
+  colliderType,
   createColliderShape,
   createComponentForEntity,
   createEntity,
-  createJoint,
+  jointType,
   createMeshEntity,
   createPhysicsSettings,
   playerControllerType,
@@ -215,7 +215,7 @@ export function takeTheBrowserBack(): void {
 export function ground(tiltDegrees = 0): EntityTemplate {
   const tilt = (tiltDegrees * Math.PI) / 180;
   const template = createEntity('Ground', [
-    { ...createCollider(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   // Half its thickness below the surface along the tilted normal, so whatever
   // the tilt the slope passes through the origin, and a body placed above it
@@ -265,7 +265,7 @@ export function player(
   const template = createEntity('Player', [
     { ...playerControllerType.create(), ...controller },
     {
-      ...createCollider(),
+      ...colliderType.create(),
       shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
     },
     { ...rigidbodyType.create(), bodyType },
@@ -297,14 +297,14 @@ export function bundleOf(templates: readonly EntityTemplate[]): ScriptClasses {
  * otherwise. A test names the other side by its template's entity id.
  */
 export function withJoint(template: EntityTemplate, joint?: Partial<JointComponent>): EntityTemplate {
-  template.components.push({ ...createJoint(), ...joint });
+  template.components.push({ ...jointType.create(), ...joint });
   return template;
 }
 
 /** Collider-only level geometry, a step or a wall: a box of this full size. */
 export function block(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Block', [
-    { ...createCollider(), shape: { ...createColliderShape('box'), size } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size } },
   ]);
   template.entity.transform.position = position;
   return template;
@@ -313,7 +313,7 @@ export function block(position: Vec3, size: Vec3): EntityTemplate {
 /** `block`'s sibling that touches nothing: a box of this full size, its Collider *Is sensor*. */
 export function sensor(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Sensor', [
-    { ...createCollider(), shape: { ...createColliderShape('box'), size }, isSensor: true },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size }, isSensor: true },
   ]);
   template.entity.transform.position = position;
   return template;

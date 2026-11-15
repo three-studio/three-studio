@@ -1,16 +1,23 @@
 import {
   assertDefined,
   audioListenerType,
+  colliderType,
   createCamera,
+  createColliderShape,
+  createJointMotion,
   createLight,
   createLightEntity,
   createMeshComponent,
   fixedId,
+  jointType,
   playerControllerType,
   rigidbodyType,
   waterType,
+  type ColliderComponent,
+  type ColliderShapeKind,
   type ComponentDoc,
   type GeometryKind,
+  type JointKind,
   type LightKind,
   type WaterComponent,
 } from '@three-studio/core';
@@ -22,6 +29,14 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
+
+/** A physics material's combine rules, as the pane offers them. */
+const RULES = [
+  { value: 'average', label: 'Average' },
+  { value: 'min', label: 'Minimum' },
+  { value: 'multiply', label: 'Multiply' },
+  { value: 'max', label: 'Maximum' },
+];
 
 /*
  * The panes of the kernel's types described by their fields, derived, row for
@@ -460,4 +475,194 @@ describe('the water\'s pane', () => {
 function kindOf(kind: string): GeometryKind {
   const kinds: readonly GeometryKind[] = ['box', 'sphere', 'plane', 'capsule', 'cylinder', 'circle', 'ring', 'torus', 'torusKnot', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron'];
   return assertDefined(kinds.find((known) => known === kind), `the primitive ${kind}`);
+}
+
+describe('the collider\'s pane', () => {
+  const MATERIAL_ROWS = [
+    { path: ['material', 'friction'], label: 'Friction', type: 'number', min: 0, max: 2, step: 0.01 },
+    { path: ['material', 'frictionCombine'], label: 'Friction combine', type: 'enum', options: RULES },
+    { path: ['material', 'restitution'], label: 'Bounciness', type: 'number', min: 0, max: 1, step: 0.01 },
+    { path: ['material', 'restitutionCombine'], label: 'Bounce combine', type: 'enum', options: RULES },
+  ];
+  const SHAPE_ROWS: Record<ColliderShapeKind, unknown[]> = {
+    box: [
+      { path: ['shape', 'size'], label: 'Size', type: 'vec3', min: 0.01, step: 0.1 },
+      { path: ['shape', 'rounding'], label: 'Rounding', type: 'number', min: 0, step: 0.01 },
+      { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 },
+      { path: ['shape', 'rotation'], label: 'Rotation', type: 'vec3', step: 1 },
+    ],
+    sphere: [
+      { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 },
+    ],
+    capsule: [
+      { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 },
+      { path: ['shape', 'rotation'], label: 'Rotation', type: 'vec3', step: 1 },
+    ],
+    cylinder: [
+      { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'rounding'], label: 'Rounding', type: 'number', min: 0, step: 0.01 },
+      { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 },
+      { path: ['shape', 'rotation'], label: 'Rotation', type: 'vec3', step: 1 },
+    ],
+    cone: [
+      { path: ['shape', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.05 },
+      { path: ['shape', 'rounding'], label: 'Rounding', type: 'number', min: 0, step: 0.01 },
+      { path: ['shape', 'center'], label: 'Center', type: 'vec3', step: 0.05 },
+      { path: ['shape', 'rotation'], label: 'Rotation', type: 'vec3', step: 1 },
+    ],
+    mesh: [
+      {
+        path: ['shape', 'build'],
+        label: 'Build',
+        type: 'enum',
+        options: [{ value: 'triangles', label: 'Triangles' }, { value: 'hull', label: 'Convex hull' }, { value: 'parts', label: 'Convex parts' }],
+      },
+    ],
+  };
+  const collider = (kind: ColliderShapeKind): ColliderComponent => ({ ...colliderType.create(), shape: createColliderShape(kind) });
+
+  it.each(Object.entries(SHAPE_ROWS))('is, for a %s, what was written by hand, keyed by its shape', (kind, shape) => {
+    expect(rows(collider(shapeKindOf(kind)))).toEqual([
+      {
+        path: ['shape'],
+        label: 'Shape',
+        type: 'enum',
+        options: [
+          { value: 'box', label: 'Box' },
+          { value: 'sphere', label: 'Sphere' },
+          { value: 'capsule', label: 'Capsule' },
+          { value: 'cylinder', label: 'Cylinder' },
+          { value: 'cone', label: 'Cone' },
+          { value: 'mesh', label: 'Mesh' },
+        ],
+      },
+      ...shape,
+      { kind: 'action', title: 'Fit to Mesh' },
+      { path: ['isSensor'], label: 'Is sensor' },
+      { path: ['layer'], label: 'Layer' },
+      { kind: 'separator' },
+      { params: { view: 'asset', assetKind: 'physicsMaterial', emptyLabel: 'Embedded' }, path: ['materialId'], label: 'Material' },
+      { kind: 'action', title: 'Save as Asset…' },
+      { kind: 'action', title: 'Make Unique' },
+      ...MATERIAL_ROWS,
+    ]);
+    expect(paneEntriesFor(registries, collider(shapeKindOf(kind))).key).toBe(`collider:${kind}`);
+  });
+
+  const AFTER = ['Is sensor', 'Layer', '—', 'Material'];
+  const PHYSICS = ['Friction', 'Friction combine', 'Bounciness', 'Bounce combine'];
+
+  it('fits a shape to its mesh but a mesh, and saves or unlinks its material by whether it is shared', () => {
+    expect(shown(collider('sphere'))).toEqual(['Shape', 'Radius', 'Center', 'Fit to Mesh', ...AFTER, 'Save as Asset…', ...PHYSICS]);
+    expect(shown(collider('mesh'))).toEqual(['Shape', 'Build', ...AFTER, 'Save as Asset…', ...PHYSICS]);
+    expect(shown({ ...collider('sphere'), materialId: fixedId('asset', 'ice') })).toEqual([
+      'Shape',
+      'Radius',
+      'Center',
+      'Fit to Mesh',
+      ...AFTER,
+      'Make Unique',
+      ...PHYSICS,
+    ]);
+  });
+
+  it('writes another shape whole, at its own defaults, as one value', () => {
+    const shape = row(collider('box'), 'shape');
+
+    expect(shape.toModel?.(createColliderShape('box'))).toBe('box');
+    expect(shape.fromModel?.('sphere')).toEqual(createColliderShape('sphere'));
+  });
+
+  it('shows its rotation in degrees, offers the project\'s layers, and tunes the running game', () => {
+    const rotation = row(collider('box'), 'shape.rotation');
+
+    expect(rotation.toModel?.([Math.PI, 0, Math.PI / 2])).toEqual({ x: 180, y: 0, z: 90 });
+    expect(row(collider('box'), 'layer').optionsProvider?.()).toEqual({ Default: 'default' });
+    expect(paneEntriesFor(registries, collider('box')).live).toBe(true);
+  });
+});
+
+describe('the joint\'s pane', () => {
+  /** The rows every joint shows after its kind's: D44 put a kind's rows right under Type. */
+  const AROUND = [
+    { path: ['connectedEntity'], label: 'Connected Body', type: 'entity' },
+    { path: ['anchor'], label: 'Anchor', type: 'vec3', step: 0.01 },
+    { path: ['enableCollision'], label: 'Enable Collision' },
+  ];
+  const TYPE = {
+    path: ['motion'],
+    label: 'Type',
+    type: 'enum',
+    options: [{ value: 'fixed', label: 'Fixed' }, { value: 'hinge', label: 'Hinge' }, { value: 'slider', label: 'Slider' }, { value: 'spring', label: 'Spring' }],
+  };
+  const MOVING = (min: number | null, step: number, force: string): unknown[] => [
+    { path: ['motion', 'axis'], label: 'Axis', type: 'vec3', step: 0.1 },
+    { path: ['motion', 'limits', 'enabled'], label: 'Limits' },
+    { path: ['motion', 'limits', 'min'], label: 'Min', type: 'number', ...(min === null ? {} : { min }), step },
+    { path: ['motion', 'limits', 'max'], label: 'Max', type: 'number', ...(min === null ? {} : { min }), step },
+    { path: ['motion', 'motor', 'enabled'], label: 'Motor' },
+    { path: ['motion', 'motor', 'speed'], label: 'Speed', type: 'number', step },
+    { path: ['motion', 'motor', 'maxForce'], label: force, type: 'number', min: 0, step: 10 },
+  ];
+  const joint = (kind: JointKind): ComponentDoc => ({ ...jointType.create(), motion: createJointMotion(kind) });
+
+  it.each([
+    ['fixed', []],
+    ['hinge', MOVING(null, 1, 'Max Torque')],
+    ['slider', MOVING(null, 0.1, 'Max Force')],
+    [
+      'spring',
+      [
+        { path: ['motion', 'stiffness'], label: 'Stiffness', type: 'number', min: 0, step: 1 },
+        { path: ['motion', 'damping'], label: 'Damping', type: 'number', min: 0, step: 0.1 },
+      ],
+    ],
+  ] satisfies [JointKind, unknown[]][])('is, for a %s, what was written by hand, its rows under Type', (kind, own) => {
+    expect(rows(joint(kind))).toEqual([TYPE, ...own, ...AROUND]);
+    expect(paneEntriesFor(registries, joint(kind)).key).toBe(`joint:${kind}`);
+  });
+
+  it('shows the limits and the motor\'s settings while each is on', () => {
+    const on = (kind: 'hinge' | 'slider'): ComponentDoc => {
+      const motion = createJointMotion(kind);
+      return { ...jointType.create(), motion: { ...motion, limits: { ...motion.limits, enabled: true }, motor: { ...motion.motor, enabled: true } } };
+    };
+
+    expect(shown(joint('hinge'))).toEqual(['Type', 'Axis', 'Limits', 'Motor', 'Connected Body', 'Anchor', 'Enable Collision']);
+    expect(shown(on('hinge'))).toEqual([
+      'Type',
+      'Axis',
+      'Limits',
+      'Min',
+      'Max',
+      'Motor',
+      'Speed',
+      'Max Torque',
+      'Connected Body',
+      'Anchor',
+      'Enable Collision',
+    ]);
+    expect(shown(on('slider'))).toContain('Max Force');
+  });
+
+  it('writes another kind whole, at its defaults; shows a hinge\'s angles in degrees; joins the World by default', () => {
+    const type = row(joint('hinge'), 'motion');
+
+    expect(type.fromModel?.('spring')).toEqual(createJointMotion('spring'));
+    expect(row(joint('hinge'), 'motion.limits.min').toModel?.(-Math.PI / 2)).toBeCloseTo(-90);
+    expect(row(joint('hinge'), 'motion.motor.speed').fromModel?.(90)).toBeCloseTo(Math.PI / 2);
+    expect(row(joint('slider'), 'motion.limits.min').toModel).toBeUndefined();
+    expect(row(joint('hinge'), 'connectedEntity').optionsProvider?.()).toMatchObject({ World: '' });
+    expect(paneEntriesFor(registries, joint('hinge')).live).toBe(true);
+  });
+});
+
+function shapeKindOf(kind: string): ColliderShapeKind {
+  const kinds: readonly ColliderShapeKind[] = ['box', 'sphere', 'capsule', 'cylinder', 'cone', 'mesh'];
+  return assertDefined(kinds.find((known) => known === kind), `the shape ${kind}`);
 }

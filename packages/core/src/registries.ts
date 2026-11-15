@@ -15,8 +15,8 @@ import { TextureImporter } from './assets/import/importers/TextureImporter';
 import { audioListenerType } from './components/audioListener';
 import { audioSourceComponent } from './components/audioSource';
 import { cameraType } from './components/camera';
-import { colliderComponent } from './components/collider';
-import { jointComponent } from './components/joint';
+import { colliderType } from './components/collider';
+import { jointType } from './components/joint';
 import { lightType } from './components/light';
 import { meshType } from './components/mesh';
 import { modelComponent } from './components/model';
@@ -55,8 +55,8 @@ const COMPONENTS: readonly ComponentDefinition[] = [
   lightType,
   cameraType,
   rigidbodyType,
-  colliderComponent,
-  jointComponent,
+  colliderType,
+  jointType,
   audioSourceComponent,
   audioListenerType,
   scriptComponent,

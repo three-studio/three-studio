@@ -3,7 +3,7 @@ import {
   PROJECT_FORMAT_VERSION,
   assertDefined,
   createBuildProfiles,
-  createCollider,
+  colliderType,
   createEmptyScene,
   createEntity,
   createMeshEntity,
@@ -451,7 +451,7 @@ describe('the problems over the game', () => {
     const ICE = fixedId('asset', 'ice');
     const cube = createMeshEntity('box');
     cube.entity.name = 'Cube';
-    cube.components.push({ ...createCollider(), materialId: ICE });
+    cube.components.push({ ...colliderType.create(), materialId: ICE });
     useDocumentStore.getState().replaceScene(sceneWith([cube]));
     useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
     watching();

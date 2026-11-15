@@ -1,28 +1,23 @@
 import {
   geometryField,
   colliderGeometry,
+  colliderType,
   createColliderShape,
   createMeshEntity,
   createModelEntity,
   createPhysicsMaterial,
-  fillComponent,
   fitColliderShape,
   fixedId,
   linkedPhysicsMaterial,
   originAboveFeet,
   type BodyType,
-  type ColliderComponent,
   type ColliderShape,
-  type ComponentDoc,
   type GeometryKind,
   type MeshBuild,
   type Vec3,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createColliderFor } from '../src/components/collider/defaults';
-import { builtInRegistries } from './registries';
-
-const registries = builtInRegistries();
 
 /*
  * How far a collider hangs below the entity's origin.
@@ -386,15 +381,13 @@ describe('createColliderFor', () => {
 
 describe('a collider’s physics material', () => {
   const ICE = fixedId('asset', 'ice');
-  const stored = (fields: object) => {
-    const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
-    return fillComponent(registries, component) as ColliderComponent;
-  };
+  it('a stored collider keeps the physics material it names, and is refused for anything else', () => {
+    const decode = (materialId: unknown) =>
+      colliderType.decode?.({ ...colliderType.create(), materialId }, ['collider']);
 
-  it('a stored collider keeps the physics material it names, and reads anything else as none', () => {
-    expect(stored({ materialId: ICE }).materialId).toBe(ICE);
-    expect(stored({ materialId: 7 }).materialId).toBeNull();
-    expect(stored({}).materialId).toBeNull();
+    expect(decode(ICE)).toMatchObject({ ok: true, value: { materialId: ICE } });
+    expect(decode(null)).toMatchObject({ ok: true, value: { materialId: null } });
+    expect(decode(7)).toMatchObject({ ok: false, diagnostics: [{ path: ['collider', 'materialId'] }] });
   });
 
   it('a link finds only an asset its library holds as its own', () => {
@@ -403,10 +396,10 @@ describe('a collider’s physics material', () => {
 
     expect(linkedPhysicsMaterial(ICE, library)).toBe(ice);
     expect(linkedPhysicsMaterial(null, library)).toBeNull();
-    // An id is read off a file, which holds any text there: `''` and `constructor`
-    // — what every object answers to — are read as it reads a stored collider.
-    for (const text of ['', 'gone', 'constructor']) {
-      expect(linkedPhysicsMaterial(stored({ materialId: text }).materialId, library)).toBeNull();
+    // An id is read off a file, which holds any text there: one the library
+    // does not hold — `constructor` is what every object answers to — is none.
+    for (const text of [fixedId('asset', 'gone'), fixedId('asset', 'constructor')]) {
+      expect(linkedPhysicsMaterial(text, library)).toBeNull();
     }
   });
 });

@@ -1,9 +1,9 @@
 import {
   bodyOf,
   collidersOfBody,
-  createCollider,
+  colliderType,
   createEntity,
-  createJoint,
+  jointType,
   createPrefabInstance,
   rigidbodyType,
   entitiesWith,
@@ -30,7 +30,7 @@ const registries = builtInRegistries();
  */
 
 const withRigidBody = (name: string) => createEntity(name, [rigidbodyType.create()]);
-const withCollider = (name: string) => createEntity(name, [createCollider()]);
+const withCollider = (name: string) => createEntity(name, [colliderType.create()]);
 const PREFAB = fixedId('asset', 'prefab-1');
 
 /**
@@ -42,7 +42,7 @@ function tree(): Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', EntityTemplate>
     A: withRigidBody('A'),
     B: withCollider('B'),
     C: withCollider('C'),
-    D: createEntity('D', [rigidbodyType.create(), createCollider()]),
+    D: createEntity('D', [rigidbodyType.create(), colliderType.create()]),
     E: withCollider('E'),
     F: withCollider('F'),
     G: withRigidBody('G'),
@@ -160,7 +160,7 @@ describe('jointEnds', () => {
     nest(a, b, c);
     const scene = sceneWith([a, b, c, d, e]);
     const id = (template: EntityTemplate) => template.entity.id;
-    const joint = (connectedEntity: EntityId | null): JointComponent => ({ ...createJoint(), connectedEntity });
+    const joint = (connectedEntity: EntityId | null): JointComponent => ({ ...jointType.create(), connectedEntity });
 
     expect(jointEnds(scene, id(c), joint(null))).toEqual({ holds: true, own: id(a), other: null });
     expect(jointEnds(scene, id(c), joint(id(d)))).toEqual({ holds: true, own: id(a), other: id(d) });

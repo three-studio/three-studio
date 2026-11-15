@@ -1,7 +1,7 @@
 import {
   PROJECT_FORMAT_VERSION,
   createBuildProfiles,
-  createCollider,
+  colliderType,
   createColliderShape,
   createEmptyScene,
   createEntity,
@@ -116,7 +116,7 @@ async function playing(): Promise<Engine> {
 function cube(name = 'Cube'): EntityTemplate {
   const template = createMeshEntity('box');
   template.entity.name = name;
-  template.components.push(rigidbodyType.create(), createCollider());
+  template.components.push(rigidbodyType.create(), colliderType.create());
   return template;
 }
 
@@ -325,7 +325,7 @@ describe('keeping what was tuned', () => {
     const ice = { ...createPhysicsMaterial(), friction: 0.05 };
     const save = vi.fn(async () => {});
     const inside = createMeshEntity('sphere');
-    inside.components.push({ ...createCollider(), shape: createColliderShape('sphere') });
+    inside.components.push({ ...colliderType.create(), shape: createColliderShape('sphere') });
     const BALL = fixedId('asset', 'ball');
     useAssetStore.setState({
       physicsMaterials: new Map([[ICE, ice]]),

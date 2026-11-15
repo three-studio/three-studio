@@ -1,7 +1,7 @@
 import {
   assertDefined,
   componentsOfType,
-  createCollider,
+  colliderType,
   createComponent,
   createEmptyScene,
   createEntity,
@@ -49,8 +49,8 @@ function bothWays(): [SceneDoc, SceneDoc] {
   const meshOnBeta = createMeshComponent('box');
   // Two of one type on one entity: the only object key order in this format
   // that anything ever read back.
-  const hullOne = createCollider();
-  const hullTwo = createCollider();
+  const hullOne = colliderType.create();
+  const hullTwo = colliderType.create();
 
   const rootOrder = [alpha.id, beta.id];
 
@@ -176,7 +176,7 @@ describe('a scene through a file', () => {
    * written as a file.
    */
   function written(): { json: string; unknownOn: string } {
-    const parent = createEntity('Parent', [createMeshComponent('box'), createCollider()]);
+    const parent = createEntity('Parent', [createMeshComponent('box'), colliderType.create()]);
     const child = createEntity('Child', [rigidbodyType.create()]);
     const crate = createEntity('Crate', [createPrefabInstance(fixedId('asset', 'prefab-1'))]);
     const everything = createEntity(

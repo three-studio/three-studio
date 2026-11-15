@@ -1,6 +1,6 @@
 import {
   assertDefined,
-  createCollider,
+  colliderType,
   createEntity,
   createMaterial,
   createMeshComponent,
@@ -9,13 +9,12 @@ import {
   fixedId,
   type AssetId,
   type ColliderComponent,
-  type ComponentType,
   type EntityId,
   type MeshComponent,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
-import { paneFor } from '../src/inspector/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { effectiveComponent, linkedMaterial } from '../src/inspector/buildInspector';
 import { isAction, type ActionSpec } from '../src/inspector/schema';
 import { useAssetStore } from '../src/state/assetStore';
@@ -24,8 +23,6 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
-/** The pane of a type, which every kernel type has: written by hand, or derived from its schema. */
-const paneOf = (type: ComponentType) => assertDefined(paneFor(registries, type), `the pane of ${type}`);
 
 /*
  * A shared asset is edited where it is linked: the Inspector shows the asset's
@@ -74,7 +71,7 @@ afterEach(() => {
 
 /** A Cube whose Collider grips by its own 0.7, linking `materialId`. */
 function cubeLinking(materialId: AssetId | null): EntityId {
-  const cube = createEntity('Cube', [{ ...createCollider(), materialId }]);
+  const cube = createEntity('Cube', [{ ...colliderType.create(), materialId }]);
   doc().replaceScene(sceneWith([cube]));
   return cube.entity.id;
 }
@@ -127,11 +124,11 @@ describe('a linked physics material', () => {
 
 describe('the collider’s two actions', () => {
   const run = (entityId: EntityId, title: string): void => {
-    const action = paneOf('collider').fields.find(
+    const component = colliderOf(entityId);
+    const action = paneEntriesFor(registries, component).entries.find(
       (entry): entry is ActionSpec => isAction(entry) && entry.title === title,
     );
     if (!action) throw new Error(`no ${title} action`);
-    const component = colliderOf(entityId);
     action.run({ registries, entityId, componentId: component.id, component });
   };
 

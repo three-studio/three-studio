@@ -1,5 +1,5 @@
 import {
-  createCollider,
+  colliderType,
   createColliderShape,
   createEntity,
   createDefaultLayer,
@@ -160,7 +160,7 @@ describe('a ray', () => {
     // 120 ticks for a guard watching the player walk straight away, and 27 of
     // 400 rays here, a still capsule missed by Rapier alone. 0.21 misses none.
     const target = createEntity('Target', [
-      { ...createCollider(), shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 } },
+      { ...colliderType.create(), shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 } },
     ]);
     target.entity.transform.position = [0, 0.87, 0];
     const { physics } = await running([target]);
@@ -239,7 +239,7 @@ describe('an overlap', () => {
   it('finds each entity whose collider is in the sphere or touches it, once', async () => {
     const a = withCollider('sphere', [1, 3, 0]);
     const cube = (x: number): ColliderComponent => ({
-      ...createCollider(),
+      ...colliderType.create(),
       shape: { ...createColliderShape('box'), size: [0.4, 0.4, 0.4], center: [x, 0, 0] },
     });
     const twin = createEntity('Twin', [cube(-0.3), cube(0.3)]);

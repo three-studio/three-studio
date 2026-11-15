@@ -1,77 +1,8 @@
-import { conform, isMemberOf, oneOf } from '../../conform';
-import { createComponentId } from '../../ids';
-import { DEFAULT_LAYER_ID } from '../../project/layers';
-import { createPhysicsMaterial } from '../../scene/physicsMaterial';
 import type { GeometryDef } from '../../scene/geometry';
-import type { ComponentBase, Vec3 } from '../../scene/primitives';
+import type { ComponentBase } from '../../scene/primitives';
 import type { MeshComponent } from '../mesh/schema';
-import {
-  COLLIDER_SHAPE_LABELS,
-  MESH_BUILD_LABELS,
-  type ColliderComponent,
-  type ColliderShape,
-  type ColliderShapeKind,
-  type ColliderShapeOf,
-} from './schema';
-
-/**
- * Each kind's default, checked against its own member: a factory that gave a
- * sphere a `size` would not compile.
- */
-const SHAPE_FACTORIES: { readonly [K in ColliderShapeKind]: () => ColliderShapeOf<K> } = {
-  box: () => ({ kind: 'box', size: [1, 1, 1], rounding: 0, ...centred() }),
-  sphere: () => ({ kind: 'sphere', radius: 0.5, center: [0, 0, 0] }),
-  // The Capsule primitive's, caps included.
-  capsule: () => ({ kind: 'capsule', radius: 0.5, height: 2, ...centred() }),
-  // The Cylinder primitive's.
-  cylinder: () => ({ kind: 'cylinder', radius: 0.5, height: 1, rounding: 0, ...centred() }),
-  cone: () => ({ kind: 'cone', radius: 0.5, height: 1, rounding: 0, ...centred() }),
-  mesh: () => ({ kind: 'mesh', build: 'triangles' }),
-};
-
-/** At its entity's middle, turned as its entity is. */
-function centred(): { center: Vec3; rotation: Vec3 } {
-  return { center: [0, 0, 0], rotation: [0, 0, 0] };
-}
-
-/** A shape of this kind, at its defaults. */
-export function createColliderShape<K extends ColliderShapeKind>(kind: K): ColliderShapeOf<K> {
-  return SHAPE_FACTORIES[kind]();
-}
-
-/** A 1 m cube with the default material, which is what a bare entity gets. */
-export function createCollider(): ColliderComponent {
-  return {
-    id: createComponentId(),
-    type: 'collider',
-    shape: createColliderShape('box'),
-    material: createPhysicsMaterial(),
-    materialId: null,
-    isSensor: false,
-    layer: DEFAULT_LAYER_ID,
-  };
-}
-
-/**
- * A stored shape, read against the factory of the kind it names.
- *
- * Against that kind's factory rather than the collider's: the collider's is a
- * box, and the wrong model for a stored sphere. A shape naming no kind this
- * build knows — a later one, or the bare name every collider held before scene
- * 11 — is the factory's box: its measures were written for another shape.
- */
-export function conformColliderShape(value: unknown): ColliderShape {
-  const kind =
-    typeof value === 'object' && value !== null && 'kind' in value ? value.kind : undefined;
-  if (!isMemberOf(kind, COLLIDER_SHAPE_LABELS)) return createColliderShape('box');
-
-  // `conform` keeps the stored `kind`, the one just checked, and takes every
-  // other string as it finds it: `build` is a union, read against its members.
-  const shape = conform(value, createColliderShape(kind));
-  if (shape.kind !== 'mesh') return shape;
-  const build = oneOf(shape.build, MESH_BUILD_LABELS, createColliderShape('mesh').build);
-  return { ...shape, build };
-}
+import { colliderType } from './index';
+import { createColliderShape, type ColliderComponent, type ColliderShape } from './schema';
 
 /**
  * Enough of a sibling to recognise one by.
@@ -100,7 +31,7 @@ type Sibling = ComponentBase & { type: string };
  */
 export function createColliderFor(siblings: readonly Sibling[]): ColliderComponent {
   const mesh = siblings.find((c): c is MeshComponent => c.type === 'mesh');
-  const collider = createCollider();
+  const collider = colliderType.create();
 
   if (!mesh) {
     // A model's real shape is only known once it has loaded, so fall back to
