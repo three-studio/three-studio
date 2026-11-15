@@ -20,15 +20,27 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   reformuler le code est du bruit ; un commentaire qui explique le problème ou l'échec ayant motivé
   le code est utile.
 - **Jusqu'à la 1.0.0, un format persisté change en changeant de version.** Tout changement de format
-  incrémente son numéro de version. Un fichier d'une autre version est refusé avec un diagnostic s'il
-  fait partie du projet (`project.json`, scènes, prefabs, assets et leurs sidecars). S'il fait partie
-  des données de l'application (dispositions des panneaux, raccourcis, disposition du clavier, projets
-  récents, réglages des appareils, certificat), il n'est pas lu : l'éditeur repart des valeurs par
-  défaut et le dit une fois. Pas de code de migration : n'en ajoutez pas, et celui qui reste est appelé
-  à disparaître. Les données d'un type inconnu, comme le composant d'un module absent, restent
-  exactement telles qu'elles ont été trouvées. **À partir de la 1.0.0, la règle additive revient :**
-  ajoutez des champs, n'en supprimez jamais, et remplissez les champs manquants à partir de la factory
-  propre au type, jamais à partir d'une seconde liste.
+  incrémente son numéro de version. `PROJECT_FORMAT_VERSION` bouge avec tout changement de format d'un
+  fichier du projet, et un projet d'une autre version est refusé à l'ouverture, avant qu'une scène soit
+  lue. Un fichier refusé l'est avec ses diagnostics — le fichier, l'endroit, la raison — montrés à
+  l'ouverture ; aucun décodeur ne remplit ni ne convertit ce qu'il lit, et seule la hiérarchie d'une
+  scène est soignée à la lecture. Un fichier d'une autre version est refusé avec un diagnostic s'il fait
+  partie du projet (`project.json`, scènes, prefabs, assets et leurs sidecars). S'il fait partie des
+  données de l'application (dispositions des panneaux, raccourcis, disposition du clavier, projets
+  récents, réglages des appareils, certificat), il n'est pas lu : l'éditeur repart des valeurs par défaut
+  et le dit une fois. Pas de code de migration : n'en ajoutez pas, et celui qui reste est appelé à
+  disparaître. Les données d'un type inconnu, comme le composant d'un module absent, restent exactement
+  telles qu'elles ont été trouvées. **À partir de la 1.0.0, la règle additive revient :** ajoutez des
+  champs, n'en supprimez jamais, et remplissez les champs manquants à partir de la factory propre au
+  type, jamais à partir d'une seconde liste.
+- **Un type de composant se décrit par son schéma.** `defineComponent` en dérive le type TypeScript
+  (`Infer`), la factory, le décodeur, les références et la pane de l'Inspector ; on n'écrit à la main ni
+  interface, ni `fill`, ni liste de références, ni pane. Ce que le schéma ne peut pas dire passe par
+  l'extension de pane du type (`drawers`, `after`). Chaque type porte sa `version`, et chaque fichier de
+  scène ou de prefab enregistre dans `componentVersions` celle de chaque type dont il tient un
+  composant : un type connu à une autre version fait refuser le fichier, un type inconnu garde la sienne
+  telle qu'elle a été trouvée. Changer les champs d'un type du noyau incrémente sa version et
+  `PROJECT_FORMAT_VERSION` ; un module n'incrémente que la version de son type.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
