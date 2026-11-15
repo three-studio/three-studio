@@ -265,7 +265,7 @@ async function project(script?: string): Promise<string> {
 
 /** The window's scene, as the main process has it once the window has sent it: written, then read back. */
 async function snapshot(root: string, exposure = 1): Promise<ReceivedLaunch> {
-  const [entry] = await discoverScenes(root);
+  const [entry] = (await discoverScenes(root)).scenes;
   const { settings } = await readProject(root);
   return conformLaunchSnapshot(
     registries,
@@ -433,7 +433,7 @@ describe('launching', () => {
     const status = await launchOn(devices, root);
 
     expect(status.state).toBe('running');
-    expect(status.launch?.sceneName).toBe((await discoverScenes(root))[0]!.name);
+    expect(status.launch?.sceneName).toBe((await discoverScenes(root)).scenes[0]!.name);
     expect(isPlayer((await get(port, `/${TOKEN}/`)).body)).toBe(true);
   });
 

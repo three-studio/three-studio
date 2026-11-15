@@ -41,8 +41,6 @@ import {
   decodePrefab,
   isAssetId,
   isDeviceId,
-  jsonOf,
-  prefabJsonOf,
   unwrap,
   type BridgeHandlers,
   type PrefabDoc,
@@ -63,7 +61,7 @@ import {
   createPrefabAsset,
   readMaterialAssets,
   readPhysicsMaterialAssets,
-  readPrefabAssets,
+  readPrefabTexts,
   saveMaterialAsset,
   savePhysicsMaterialAsset,
   savePrefabAsset,
@@ -441,8 +439,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // Settings cannot change which scenes exist, but the broadcast carries
       // the whole of what a window holds, so the list has to come along or the
       // other windows would adopt an empty one.
-      const scenes = await discoverScenes(projectPath);
-      return announce({ project: updated, scenes }, event.sender, updated);
+      return announce({ project: updated, ...(await discoverScenes(projectPath)) }, event.sender, updated);
     },
   },
   assets: {
@@ -520,8 +517,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     readPrefabs: async (): Promise<Record<string, string>> => {
-      const prefabs = await readPrefabAssets(deps.registries, requireProject());
-      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefabJsonOf(deps.registries, prefab))]));
+      // Each file as it is: the window decodes it, and names the ones it refuses.
+      const texts = await readPrefabTexts(deps.registries, requireProject());
+      return Object.fromEntries([...texts].map(([id, { text }]) => [id, text]));
     },
 
     createPrefab: (_event, name: string, prefabJson: string, assetId: AssetId): Promise<AssetId> => {

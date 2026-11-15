@@ -6,6 +6,7 @@ import {
   unknownComponentTypes,
   basePathProblem,
   decodeScene,
+  formatDiagnostics,
   jsonOf,
   normalizeBasePath,
   unwrap,
@@ -176,7 +177,7 @@ async function planExport(
 
   report(0.05, 'Reading the project');
   const project = await readProject(projectPath);
-  const known = await discoverScenes(projectPath);
+  const { scenes: known } = await discoverScenes(projectPath);
   // An empty list means the start scene, so a project that never opened the
   // build settings still exports something sensible. Ids, as everything that
   // refers to a scene is.
@@ -242,7 +243,7 @@ async function planExport(
   // sidecars it finds missing or out of date, they also raced: a reader
   // catching a half-written one adopts the asset under a fresh id, and the
   // export ships a scene pointing at an id no longer on disk.
-  const [materials, physicsMaterials, prefabs] = await Promise.all([
+  const [materials, physicsMaterials, { prefabs, refused: refusedPrefabs }] = await Promise.all([
     readMaterialAssets(registries, projectPath, manifest),
     readPhysicsMaterialAssets(registries, projectPath, manifest),
     readPrefabAssets(registries, projectPath, manifest),
@@ -292,6 +293,15 @@ async function planExport(
     report(0.25 + 0.4 * (done / Math.max(total, 1)), 'Reading assets'),
   );
   warnings.push(...assets.warnings);
+
+  // A prefab this build refuses ships nowhere: the instances of one the build
+  // names are empty in it, as they are in the editor, which says so as it says
+  // an unknown type below is not followed.
+  for (const [id, file] of refusedPrefabs) {
+    if (referenced.includes(id)) {
+      warnings.push(formatDiagnostics(`Prefab ${file.path} could not be read, and its instances are empty in this build:`, file.diagnostics));
+    }
+  }
 
   // A plugin's component, or a newer editor's: kept as found, and opaque. What
   // it needs cannot ship, and a scene that works in the editor holding the

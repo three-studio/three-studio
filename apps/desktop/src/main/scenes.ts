@@ -210,7 +210,7 @@ export async function createScene(
   // nothing.
   const from = contents === undefined ? undefined : unwrap(decodeScene(registries, contents), name);
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes } = await discoverScenes(projectPath);
 
   const newName = toSceneName(name);
   requireNameAvailable(scenes, newName);
@@ -224,7 +224,7 @@ export async function createScene(
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
   await writeSceneFile(projectPath, path, serializeScene(registries, document));
 
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 /**
@@ -243,7 +243,7 @@ export async function duplicateScene(
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes } = await discoverScenes(projectPath);
   const source = requireScene(scenes, sceneId);
 
   const copyName = toSceneName(name);
@@ -262,7 +262,7 @@ export async function duplicateScene(
     serializeScene(registries, { ...document, id: scene.id, name: copyName }),
   );
 
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 /**
@@ -283,12 +283,13 @@ export async function renameScene(
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const discovered = await discoverScenes(projectPath);
+  const { scenes } = discovered;
   const current = requireScene(scenes, sceneId);
 
   const newName = toSceneName(name);
   requireNameAvailable(scenes, newName, current.path);
-  if (newName === current.name) return { project, scenes, scene: current };
+  if (newName === current.name) return { project, ...discovered, scene: current };
 
   // Stays in the folder it was in: moving a scene between folders is a thing
   // the Finder does, and giving it a second meaning here would make a rename
@@ -304,14 +305,14 @@ export async function renameScene(
   await rename(resolveInside(projectPath, current.path), resolveInside(projectPath, path));
 
   const scene: SceneEntry = { ...current, name: newName, path };
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 export async function deleteScene(
   projectPath: string,
   sceneId: SceneId,
 ): Promise<ProjectContents> {
-  let remaining: SceneEntry[] = [];
+  let remaining: Pick<ProjectContents, 'scenes' | 'refusedScenes'> = { scenes: [], refusedScenes: [] };
 
   // The whole operation is inside the queue, the refusal below included. That
   // is the difference between this and `setStartScene`, which checks outside:
@@ -320,7 +321,7 @@ export async function deleteScene(
   // it is a project with no scenes at all, which `openProject` cannot open —
   // and two windows each deleting one of the last two would each have seen two.
   const project = await updateProject(projectPath, async (current) => {
-    const scenes = await discoverScenes(projectPath);
+    const { scenes } = await discoverScenes(projectPath);
     const scene = requireScene(scenes, sceneId);
     if (scenes.length <= 1) {
       // The one refusal that survived the registry, and the only one here that
@@ -341,23 +342,23 @@ export async function deleteScene(
     remaining = await discoverScenes(projectPath);
     // Returning `current` unchanged is what stops a delete that did not touch
     // the start scene from writing at all; `updateProject` honours it.
-    return repointStartScene(current, sceneId, remaining);
+    return repointStartScene(current, sceneId, remaining.scenes);
   });
-  return { project, scenes: remaining };
+  return { project, ...remaining };
 }
 
 export async function setStartScene(
   projectPath: string,
   sceneId: SceneId,
 ): Promise<ProjectContents> {
-  const scenes = await discoverScenes(projectPath);
-  requireScene(scenes, sceneId);
+  const discovered = await discoverScenes(projectPath);
+  requireScene(discovered.scenes, sceneId);
 
   const project = await updateProject(projectPath, (current) => ({
     ...current,
     startScene: sceneId,
   }));
-  return { project, scenes };
+  return { project, ...discovered };
 }
 
 /** Whole or not at all, like every other write to a project. See `atomicWrite`. */

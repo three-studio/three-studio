@@ -72,7 +72,7 @@ export async function prepareLaunch(
   }
   const scripts = compiled.scriptCount > 0 ? compiled.code : null;
   const { assets } = await scanAssets(registries, projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes } = await discoverScenes(projectPath);
   // The project's name, not a build profile's title: a launch runs no profile.
   const { name: title } = await readProject(projectPath);
   const manifest = launchManifest(registries, { snapshot, scenes, assets, title, scripts });

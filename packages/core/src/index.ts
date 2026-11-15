@@ -174,14 +174,16 @@ export {
   checks,
   decodeJson,
   formatDiagnostics,
+  invalid,
   listOf,
+  missing,
   nullable,
   oneOf,
   RecordReader,
   unwrap,
   versionRefusal,
 } from './decoded';
-export type { Check, DecodePath, Decoded, Diagnostic, DiagnosticCode, LeafChecks } from './decoded';
+export type { Check, DecodePath, Decoded, Diagnostic, DiagnosticCode, LeafChecks, RefusedFile } from './decoded';
 
 export {
   collectSceneAssets,

@@ -1,8 +1,8 @@
 import {
   decodeScene,
   findScene,
+  formatDiagnostics,
   serializeScene,
-  unwrap,
   type CoreRegistries,
   type OpenProject,
   type ProjectContents,
@@ -15,6 +15,7 @@ import { create } from 'zustand';
 import { peekViewport } from '../viewport/viewportHost';
 import { editorAssetResolver, useAssetStore } from './assetStore';
 import { reportBrokenReferences } from './brokenReport';
+import { reportRefusals } from './refusalReport';
 import { useDocumentStore } from './documentStore';
 import { inPrefabMode, usePrefabModeStore } from './prefabModeStore';
 import { useScriptStore } from './scriptStore';
@@ -96,16 +97,25 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   adopt: (registries, opened) => {
     // Decoded here rather than in the main process keeps the scene format
-    // owned entirely by @three-studio/core, which the web export also uses. A
-    // refusal throws, and the window's page shows it with the file it names.
-    const scene = unwrap(decodeScene(registries, opened.sceneJson), opened.scenePath);
-    useDocumentStore.getState().replaceScene(scene);
-    // Chained rather than fired and forgotten: the report asks what the project
-    // holds, and asking before the manifest lands calls every asset missing.
+    // owned entirely by @three-studio/core, which the web export also uses.
+    const decoded = decodeScene(registries, opened.sceneJson);
+    if (!decoded.ok) {
+      // Nothing of the project is taken on: the window has no scene to show,
+      // and its page says which file, and every fault in it where it sits.
+      set({ error: formatDiagnostics(opened.scenePath, decoded.diagnostics) });
+      return;
+    }
+    useDocumentStore.getState().replaceScene(decoded.value);
+    // Chained rather than fired and forgotten: the reports ask what the project
+    // holds, and asking before the manifest lands calls every asset missing —
+    // and knows of no prefab it refused.
     void useAssetStore
       .getState()
       .refresh(registries)
-      .then(() => reportBrokenReferences(registries));
+      .then(() => {
+        reportBrokenReferences(registries);
+        reportRefusals([...opened.refusedScenes, ...useAssetStore.getState().refusedPrefabs]);
+      });
     // Compiled on open, not only on Play: the inspector reads a script's
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.

@@ -73,8 +73,8 @@ describe('an index that is never a source of truth', () => {
     const second = await scanAssets(registries, root);
     expect(second).toEqual(first);
 
-    const scenes = await discoverScenes(root);
-    expect(await discoverScenes(root)).toEqual(scenes);
+    const scenes = (await discoverScenes(root)).scenes;
+    expect((await discoverScenes(root)).scenes).toEqual(scenes);
   });
 
   /*
@@ -86,13 +86,13 @@ describe('an index that is never a source of truth', () => {
   it('rebuilds everything after .studio is deleted, losing nothing', async () => {
     const root = await projectWith(6, 3);
     const ids = await assetIds(root);
-    const scenes = await discoverScenes(root);
+    const scenes = (await discoverScenes(root)).scenes;
     expect(Object.keys(ids)).toHaveLength(6);
 
     await rm(join(root, CACHE_DIR), { recursive: true, force: true });
 
     expect(await assetIds(root)).toEqual(ids);
-    expect(await discoverScenes(root)).toEqual(scenes);
+    expect((await discoverScenes(root)).scenes).toEqual(scenes);
   });
 
   it('ignores an index it cannot parse, and writes a good one over it', async () => {
@@ -103,7 +103,7 @@ describe('an index that is never a source of truth', () => {
     await writeFile(indexFile(root, 'scenes.index.json'), 'not json at all', 'utf8');
 
     expect(await assetIds(root)).toEqual(ids);
-    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['Level0', 'Level1']);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['Level0', 'Level1']);
     // And it is usable again rather than left broken.
     const written = JSON.parse(await readFile(indexFile(root, 'assets.index.json'), 'utf8')) as {
       entries: Record<string, unknown>;
@@ -194,13 +194,13 @@ describe('what the index declines to answer for', () => {
 
   it('re-reads a scene whose id changed on disk', async () => {
     const root = await projectWith(0, 1);
-    const before = await discoverScenes(root);
+    const before = (await discoverScenes(root)).scenes;
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
 
     const replacement = createEmptyScene('Level0');
     await writeFile(file, serializeScene(registries, replacement), 'utf8');
 
-    const after = await discoverScenes(root);
+    const after = (await discoverScenes(root)).scenes;
     expect(after[0]?.id).toBe(replacement.id);
     expect(after[0]?.id).not.toBe(before[0]?.id);
   });
@@ -212,13 +212,13 @@ describe('what the index declines to answer for', () => {
    */
   it('reads a scene again when what the index holds for it is not an id', async () => {
     const root = await projectWith(0, 1);
-    const before = await discoverScenes(root);
+    const before = (await discoverScenes(root)).scenes;
     const path = indexFile(root, 'scenes.index.json');
     const written = JSON.parse(await readFile(path, 'utf8'));
     for (const entry of Object.values<{ v: unknown }>(written.entries)) entry.v = '';
     await writeFile(path, JSON.stringify(written), 'utf8');
 
-    expect(await discoverScenes(root)).toEqual(before);
+    expect((await discoverScenes(root)).scenes).toEqual(before);
   });
 
   /*
@@ -244,7 +244,7 @@ describe('what the index declines to answer for', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     try {
-      expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['Level0']);
+      expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['Level0']);
     } finally {
       warn.mockRestore();
     }
@@ -261,7 +261,7 @@ describe('what the index declines to answer for', () => {
     const root = await projectWith(0, 1);
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
     // Warms the index, which the replacement below has to get past.
-    await discoverScenes(root);
+    (await discoverScenes(root)).scenes;
     const sizeBefore = (await stat(file)).size;
 
     // The same document under another id of the same length: the file is byte
@@ -271,7 +271,7 @@ describe('what the index declines to answer for', () => {
     await writeFile(file, serializeScene(registries, { ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);
 
-    expect((await discoverScenes(root))[0]?.id).toBe(swapped);
+    expect((await discoverScenes(root)).scenes[0]?.id).toBe(swapped);
   });
 });
 

@@ -23,6 +23,7 @@ import {
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
+  type RefusedFile,
 } from '@three-studio/core';
 import { resolveInside } from './paths';
 import { AssetError, hashFile, uniqueFileName } from './assetFiles';
@@ -81,48 +82,64 @@ const PHYSICS_MATERIALS: MaterialLibrary<PhysicsMaterialDef> = {
 };
 
 /**
- * Every prefab in the project, keyed by asset id.
+ * Every prefab file's text, keyed by its sidecar's asset id — a prefab is an
+ * asset, and the sidecar is where an asset's id lives; the file holds none.
  *
- * Read in one pass for the same reason materials are: the binder expands an
- * instance synchronously, and a prefab fetched per reference would leave a
- * hole in the scene for a frame.
+ * What a window decodes itself, so that a prefab it refuses is one it can name
+ * to its author with why. A file gone by the time it is read is left out.
  *
- * Each is read under its sidecar's id, whatever its own file says: a prefab is
- * an asset, and the sidecar is where an asset's id lives.
- */
-/**
  * @param scanned A manifest the caller already has. A scan walks the tree and
  *   writes any sidecar that is missing or out of date, so running several at
  *   once is both wasteful and a race — see `writeAssetMeta`. Callers that need
  *   more than one of these read the tree once and pass it here.
  */
-export async function readPrefabAssets(
+export async function readPrefabTexts(
   registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Map<AssetId, PrefabDoc>> {
+): Promise<Map<AssetId, { readonly path: string; readonly text: string }>> {
   const manifest = scanned ?? (await scanAssets(registries, projectPath));
-  const prefabs = new Map<AssetId, PrefabDoc>();
-
+  const texts = new Map<AssetId, { readonly path: string; readonly text: string }>();
   await Promise.all(
     manifest.assets
       .filter((asset) => asset.kind === 'prefab' && asset.path.endsWith(PREFAB_EXTENSION))
       .map(async (asset) => {
         try {
-          const text = await readFile(resolveInside(projectPath, asset.path), 'utf8');
-          const decoded = decodePrefab(registries, text, asset.id);
-          // Left out: a prefab that does not decode — of another format, which
-          // nothing converts, or with a field this build cannot read. One must
-          // not cost the others; the instances that point at it render empty
-          // and say so.
-          if (decoded.ok) prefabs.set(asset.id, decoded.value);
+          texts.set(asset.id, { path: asset.path, text: await readFile(resolveInside(projectPath, asset.path), 'utf8') });
         } catch {
-          // Left out too: a file that is gone by the time it is read.
+          // Gone between the scan and the read: nothing to decode or to name.
         }
       }),
   );
+  return texts;
+}
 
-  return prefabs;
+/**
+ * Every prefab in the project, decoded, keyed by asset id — and those it
+ * refuses, with why.
+ *
+ * Read in one pass for the same reason materials are: the binder expands an
+ * instance synchronously, and a prefab fetched per reference would leave a
+ * hole in the scene for a frame. One that does not decode — of another format,
+ * which nothing converts, or with a field this build cannot read — is left
+ * out, and must not cost the others: the instances that point at it render
+ * empty and say so.
+ *
+ * @param scanned See `readPrefabTexts`.
+ */
+export async function readPrefabAssets(
+  registries: CoreRegistries,
+  projectPath: string,
+  scanned?: AssetManifest,
+): Promise<{ prefabs: Map<AssetId, PrefabDoc>; refused: Map<AssetId, RefusedFile> }> {
+  const prefabs = new Map<AssetId, PrefabDoc>();
+  const refused = new Map<AssetId, RefusedFile>();
+  for (const [id, { path, text }] of await readPrefabTexts(registries, projectPath, scanned)) {
+    const decoded = decodePrefab(registries, text, id);
+    if (decoded.ok) prefabs.set(id, decoded.value);
+    else refused.set(id, { path, diagnostics: decoded.diagnostics });
+  }
+  return { prefabs, refused };
 }
 
 /**

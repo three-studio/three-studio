@@ -13,11 +13,15 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  checks,
+  decodeJson,
   decodeProjectFile,
   findScene,
   formatDiagnostics,
+  invalid,
   isRecord,
   isSceneId,
+  missing,
   safeFileName,
   sceneName,
   serializeScene,
@@ -26,6 +30,8 @@ import {
   type ProjectContents,
   type ProjectFile,
   type ProjectSummary,
+  type Decoded,
+  type RefusedFile,
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
@@ -107,7 +113,7 @@ export async function createProject(
   await writeFile(join(projectPath, '.gitignore'), `${CACHE_DIR}/\n`, 'utf8');
   await writeFile(join(projectPath, CACHE_DIR, '.gitignore'), '*\n', 'utf8');
 
-  return finalize(projectPath, { project, scenes: [entry] }, entry, sceneJson);
+  return finalize(projectPath, { project, scenes: [entry], refusedScenes: [] }, entry, sceneJson);
 }
 
 /**
@@ -134,12 +140,14 @@ const SCENE_INDEX_BUILT_BY = `${ENGINE_VERSION}:ids-are-checked`;
  * each; it is keyed on mtime and size, so a scene edited anywhere is read
  * again, and a missing or stale index costs one slow walk.
  *
- * A file that cannot be read or parsed is skipped rather than thrown on: one
- * broken scene must not be a project that will not open. So is one that has no
- * id of its own, which is said in the log (`readSceneId`).
+ * A file that cannot be parsed is not listed rather than thrown on: one broken
+ * scene must not be a project that will not open. Nor is one that has no id of
+ * its own (`readSceneId`). Each is carried beside the list, with why, for the
+ * editor to name when the project opens.
  */
-export async function discoverScenes(projectPath: string): Promise<SceneEntry[]> {
+export async function discoverScenes(projectPath: string): Promise<Pick<ProjectContents, 'scenes' | 'refusedScenes'>> {
   const found: SceneEntry[] = [];
+  const refused: RefusedFile[] = [];
   // Nothing here is repaired or filled in on read, so the id in the file is the
   // whole of what is cached — and it is checked when it is reused, since an
   // index is a file somebody may have edited.
@@ -165,8 +173,12 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
         if (stamp === null) continue;
 
         const cached = index.reuse(path, stamp);
-        const id = isSceneId(cached) ? cached : await readSceneId(child, path);
-        if (id === null) continue;
+        const read: Decoded<SceneId> = isSceneId(cached) ? { ok: true, value: cached } : await readSceneId(child);
+        if (!read.ok) {
+          refused.push({ path, diagnostics: read.diagnostics });
+          continue;
+        }
+        const id = read.value;
         if (id !== cached) index.put(path, stamp, id);
         found.push({ id, name: sceneName(path), path, shadowedBy: null });
       }
@@ -178,7 +190,9 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
   // so "the first one" is a property of the project rather than of the order
   // this file system happened to hand the entries back in — or of the machine
   // reading it.
-  found.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  found.sort(byPath);
+  refused.sort(byPath);
 
   const claimed = new Map<string, string>();
   for (const entry of found) {
@@ -187,34 +201,30 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
     else entry.shadowedBy = winner;
   }
   await index.save();
-  return found;
+  return { scenes: found, refusedScenes: refused };
 }
 
 /**
- * The `SceneDoc.id` in a scene file, or `null` when the scene cannot be listed.
+ * The `SceneDoc.id` in a scene file, or why the scene cannot be listed.
  *
  * Parsed rather than decoded: `decodeScene` reads the whole of a document, and
- * this runs once per file every time a project opens.
+ * this runs once per file every time a project opens. What the rest of the
+ * file holds is said when the scene is opened.
  *
- * A file with no id is not listed, and says so. A hand-written `.scene.json`
- * carries no identity of its own, and addressing it by its path would be a
- * reference that its next move breaks — the start scene, a build profile and a
- * window's URL with it, none of them saying why. A reference is an identifier,
- * never a path, and a file that has none is not one anything can refer to. It
- * is named in the log for now, until the editor reports it to its author.
+ * A file with no id is not listed. A hand-written `.scene.json` carries no
+ * identity of its own, and addressing it by its path would be a reference that
+ * its next move breaks — the start scene, a build profile and a window's URL
+ * with it, none of them saying why. A reference is an identifier, never a
+ * path, and a file that has none is not one anything can refer to.
  */
-async function readSceneId(file: string, path: string): Promise<SceneId | null> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(file, 'utf8'));
-  } catch {
-    return null;
-  }
-  if (!isRecord(parsed)) return null;
-  const id = parsed['id'];
-  if (isSceneId(id)) return id;
-  console.warn(`[scenes] ${path} is not listed: it has no id of its own, and a path is not one.`);
-  return null;
+async function readSceneId(file: string): Promise<Decoded<SceneId>> {
+  const parsed = decodeJson(await readFile(file, 'utf8'));
+  if (!parsed.ok) return parsed;
+  const scene = parsed.value;
+  if (!isRecord(scene)) return { ok: false, diagnostics: [invalid([], 'an object', scene)] };
+  const id = scene['id'];
+  if (isSceneId(id)) return { ok: true, value: id };
+  return { ok: false, diagnostics: [id === undefined ? missing(['id']) : invalid(['id'], checks.sceneId.expected, id)] };
 }
 
 /** Project-relative paths are `/`-separated everywhere; Windows is not. */
@@ -230,7 +240,7 @@ function toPosix(path: string): string {
  */
 export async function openProject(projectPath: string, wanted?: SceneId): Promise<OpenProject> {
   const project = await readProjectFile(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes, refusedScenes } = await discoverScenes(projectPath);
 
   // Both lookups fall through rather than failing. `startScene` names a file
   // that can be deleted in the Finder, and this is the fallback that stops one
@@ -248,7 +258,7 @@ export async function openProject(projectPath: string, wanted?: SceneId): Promis
     throw new ProjectError(`Scene "${entry.name}" is missing from the project.`);
   }
 
-  return finalize(projectPath, { project, scenes }, entry, sceneJson);
+  return finalize(projectPath, { project, scenes, refusedScenes }, entry, sceneJson);
 }
 
 /**

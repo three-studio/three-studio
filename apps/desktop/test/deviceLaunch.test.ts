@@ -69,7 +69,7 @@ async function project(script: string | null = SCRIPT): Promise<string> {
  * written, then read back.
  */
 async function snapshot(root: string): Promise<ReceivedLaunch> {
-  const [entry] = await discoverScenes(root);
+  const [entry] = (await discoverScenes(root)).scenes;
   const scene = unwrap(decodeScene(registries, await readFile(join(root, entry!.path), 'utf8')), 'Scene file');
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
@@ -113,14 +113,14 @@ describe('a launch', () => {
 
     const expected = launchManifest(registries, {
       snapshot: shown.snapshot,
-      scenes: await discoverScenes(root),
+      scenes: (await discoverScenes(root)).scenes,
       assets: (await scanAssets(registries, root)).assets,
       title: 'Races',
       scripts: launch.scripts,
     });
     expect(launch.manifest).toEqual(expected);
     expect(expected.title).toBe('Races');
-    expect(launch.scenes).toEqual(await discoverScenes(root));
+    expect(launch.scenes).toEqual((await discoverScenes(root)).scenes);
   });
 
   it('finds every asset but the scripts by id', async () => {
@@ -161,7 +161,7 @@ describe('a launch', () => {
 
   it('leaves the scene’s file exactly as it was', async () => {
     const root = await project();
-    const [entry] = await discoverScenes(root);
+    const [entry] = (await discoverScenes(root)).scenes;
     const before = await readFile(join(root, entry!.path));
 
     await prepareLaunch(registries, root, await snapshot(root));

@@ -7,7 +7,6 @@ import {
   isAssetId,
   jsonOf,
   prefabJsonOf,
-  unwrap,
   type AssetChange,
   type AssetEntry,
   type AssetId,
@@ -17,6 +16,7 @@ import {
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
+  type RefusedFile,
 } from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime';
 import { create } from 'zustand';
@@ -51,6 +51,12 @@ interface AssetState {
   physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
   /** Every prefab, by asset id. Pushed into the binder the same way. */
   prefabs: ReadonlyMap<AssetId, PrefabDoc>;
+  /**
+   * The prefab files this build refused, each with why: left out of `prefabs`,
+   * so their instances draw empty and are marked as a missing prefab's are,
+   * and kept here to be named when the project opens.
+   */
+  refusedPrefabs: readonly RefusedFile[];
   loading: boolean;
   error: string | null;
 
@@ -173,6 +179,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   materials: new Map(),
   physicsMaterials: new Map(),
   prefabs: new Map(),
+  refusedPrefabs: [],
   revision: 0,
   loading: false,
   error: null,
@@ -195,16 +202,27 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
         window.studio.assets.readPrefabs(),
       ]);
       // Records over the bridge, Maps here: a key read back as an id is checked
-      // as one, and the prefab is read under it, as the main wrote it.
+      // as one, and each file is decoded under it, here, so that a prefab this
+      // build refuses is one the window can name with why.
       const prefabs = new Map<AssetId, PrefabDoc>();
+      const refusedPrefabs: RefusedFile[] = [];
       for (const [id, text] of idMapOf(prefabTexts, isAssetId)) {
-        prefabs.set(id, unwrap(decodePrefab(registries, text, id), `Prefab ${id}`));
+        const decoded = decodePrefab(registries, text, id);
+        if (decoded.ok) prefabs.set(id, decoded.value);
+        else {
+          const path = manifest.assets.find((asset) => asset.id === id)?.path ?? id;
+          refusedPrefabs.push({ path, diagnostics: decoded.diagnostics });
+        }
       }
+      // Named by path, in an order that does not depend on which read the main
+      // process finished first.
+      refusedPrefabs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
       set({
         manifest,
         materials: idMapOf(materialRecord, isAssetId),
         physicsMaterials: idMapOf(physicsMaterialRecord, isAssetId),
         prefabs,
+        refusedPrefabs,
         revision: get().revision + 1,
       });
       useDocumentStore.getState().noteLibraryChange('materials');

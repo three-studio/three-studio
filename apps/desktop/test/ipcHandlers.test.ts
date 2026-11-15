@@ -315,7 +315,7 @@ describe('the guards are reached, not merely written', () => {
 
   it('conforms a launch snapshot before a phone is served it', async () => {
     const root = await project();
-    const [entry] = await discoverScenes(root);
+    const [entry] = (await discoverScenes(root)).scenes;
 
     const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, {
       version: LAUNCH_SNAPSHOT_VERSION,
@@ -346,7 +346,7 @@ describe('the guards are reached, not merely written', () => {
 
   it('serves the entry scene exactly as the window wrote it, and refuses a snapshot from before documents were text', async () => {
     const root = await project();
-    const entry = assertDefined((await discoverScenes(root))[0], 'the project’s scene');
+    const entry = assertDefined((await discoverScenes(root)).scenes[0], 'the project’s scene');
     // Compact, which no writer of ours produces for a file: re-encoded, it would
     // come out indented and key-sorted, and the bytes would say so. Read and
     // written again as JSON, not as a document, whose Maps `JSON.stringify` would
@@ -456,7 +456,12 @@ describe('the guards are reached, not merely written', () => {
     expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(given);
   });
 
-  it('leaves out of the library a prefab its decoder refuses, and reads the others under their sidecars\' ids', async () => {
+  /*
+   * The window decodes each prefab itself, so that one this build refuses is
+   * one it can name with why; the main process hands every file over as it is,
+   * under its sidecar's id.
+   */
+  it('hands every prefab file over as it is, under its sidecar\'s id, refused or not', async () => {
     const root = await project();
     const crate = createMeshEntity('box');
     const crates = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
@@ -467,15 +472,17 @@ describe('the guards are reached, not merely written', () => {
     }
     // A file edited by hand, or written by a build before this one, with an id of its own.
     const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
-    const edited = { ...JSON.parse(await readFile(file, 'utf8')), id: 'a-name-from-the-past' };
-    await writeFile(file, JSON.stringify(edited), 'utf8');
+    const edited = JSON.stringify({ ...JSON.parse(await readFile(file, 'utf8')), id: 'a-name-from-the-past' });
+    await writeFile(file, edited, 'utf8');
 
     const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
 
-    expect(Object.keys(read)).toEqual([barrels.id]);
+    expect(Object.keys(read).sort()).toEqual([barrels.id, crates.id].sort());
+    expect(read[crates.id]).toBe(edited);
     expect(unwrap(decodePrefab(registries, assertDefined(read[barrels.id], 'the barrel read'), barrels.id), 'Prefab file').id).toBe(
       barrels.id,
     );
+    expect(decodePrefab(registries, edited, crates.id).ok).toBe(false);
   });
 
   it('never lets a settings patch choose the token or the version', async () => {
@@ -614,7 +621,7 @@ describe('a device’s screenshot', () => {
 describe('showing a file in the file manager', () => {
   it("shows a file of the project, a scene's as much as an asset's", async () => {
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
     stub.shown.length = 0;
 
     await invoke(IPC_INVOKE.assets.revealInFileManager, 1, scene.path);
@@ -638,7 +645,7 @@ describe('showing a file in the file manager', () => {
     // Revert reads the window's own file back; a game moving on reads the next
     // scene's. Node's `ENOENT` and an absolute path told the person nothing.
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
 
     const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
     expect(unwrap(decodeScene(registries, read), 'Scene file').id).toBe(scene.id);
@@ -675,7 +682,7 @@ describe('a new device link', () => {
 describe('the refusals that exist only at the boundary', () => {
   it('will not delete a scene another window has open, and leaves the file', async () => {
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
     sceneOpenElsewhere = true;
 
     await expect(invoke(IPC_INVOKE.project.deleteScene, 1, scene.id)).rejects.toThrow(

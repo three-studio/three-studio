@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { App } from './App';
+import { ipcErrorMessage } from './commands/ipcError';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
 import { watchLiveReload } from './shell/liveReload';
@@ -76,9 +77,9 @@ function EditorWindow() {
       // scene. Null falls back to that start scene, which is the first open.
       .open(path, window.studio.sceneId)
       .then((opened) => adopt(registries, opened))
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      });
+      // Without the bridge's own words before it: a `project.json` this build
+      // refuses reads as a refused scene does, the file then each fault.
+      .catch((cause: unknown) => setError(ipcErrorMessage(cause)));
   }, [registries, adopt, setError, summary]);
 
   // Another window may add, rename or remove a scene at any moment, and this
@@ -97,12 +98,18 @@ function EditorWindow() {
   // other view into the document.
   useEffect(() => watchUnsaved(), []);
 
+  // What stopped the project opening: its file, or the scene's, and every
+  // fault in it, as the decoder wrote them — kept to their lines, and
+  // selectable, since a refusal is something to copy into an issue.
   if (error !== null && summary === null) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-surface-0 p-8">
-        <p className="max-w-lg text-center text-error" data-selectable>
-          {error}
-        </p>
+        <div className="flex max-w-2xl flex-col gap-3">
+          <h1 className="text-sm font-semibold text-error">This project could not be opened</h1>
+          <pre className="whitespace-pre-wrap break-words font-mono text-2xs text-ink" data-selectable>
+            {error}
+          </pre>
+        </div>
       </div>
     );
   }

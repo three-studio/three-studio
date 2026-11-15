@@ -98,7 +98,7 @@ export async function ipcBytes(
   const libraries = [
     await readMaterialAssets(registries, project, manifest),
     await readPhysicsMaterialAssets(registries, project, manifest),
-    await readPrefabAssets(registries, project, manifest),
+    (await readPrefabAssets(registries, project, manifest)).prefabs,
   ];
   return {
     list: jsonBytes(manifest),

@@ -476,6 +476,32 @@ describe('web export', () => {
     expect(prefabsFromJson(registries, build.prefabs).get(prefabId)?.entities).toBeInstanceOf(Map);
   });
 
+  it('says when a shipped scene places a prefab this build refuses, whose instances are empty in it', async () => {
+    const { projectPath, templateRoot } = await makeProject();
+    const crate = createMeshEntity('box');
+    const prefabId = await createPrefabAsset(
+      registries,
+      projectPath,
+      'Crate',
+      createPrefabDoc('Crate', [crate.entity], crate.entity.id),
+    );
+    const prefabPath = join(projectPath, ASSETS_DIR, 'prefabs', 'Crate.prefab.json');
+    // Written by a build of another format, which nothing converts.
+    await writeFile(prefabPath, JSON.stringify({ ...JSON.parse(await readFile(prefabPath, 'utf8')), version: 1 }), 'utf8');
+    const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
+    const scene = unwrap(decodeScene(registries, await readFile(scenePath, 'utf8')), 'Scene file');
+    insertEntity(scene, createEntity('Crate', [createPrefabInstance(prefabId)]));
+    await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
+    const outputDir = join(projectPath, '..', 'out-refused');
+
+    const result = await exportBuild(registries, projectPath, profile(), outputDir, [templateRoot]);
+
+    expect(result.warnings.join('\n')).toMatch(
+      /Prefab assets\/prefabs\/Crate\.prefab\.json could not be read, and its instances are empty in this build:\nversion: written in format 1/,
+    );
+    expect(manifestOf(await readFile(join(outputDir, ...BUILD_LAYOUT.manifest.split('/')), 'utf8')).prefabs).toEqual({});
+  });
+
   it('carries the physics materials a shipped scene’s colliders link to, and no other', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const folder = join(projectPath, ASSETS_DIR, 'physics-materials');

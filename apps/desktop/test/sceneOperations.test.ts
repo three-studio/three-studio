@@ -86,7 +86,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
 }
 
 async function idOf(root: string, name: string): Promise<SceneId> {
-  const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
+  const entry = (await discoverScenes(root)).scenes.find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
 }
@@ -213,7 +213,7 @@ describe('scene names are unique in a project', () => {
     expect(scene.path).toBe(`${SCENES_DIR}/Boss.scene.json`);
     // The whole point of the fixed point: the name survives the round trip
     // through the file it was written to.
-    expect((await discoverScenes(root)).map((entry) => entry.name)).toContain('Boss');
+    expect((await discoverScenes(root)).scenes.map((entry) => entry.name)).toContain('Boss');
   });
 
   it('refuses a name that is nothing but punctuation', async () => {
@@ -388,7 +388,7 @@ describe('what these operations write', () => {
 
       await createScene(registries, root, 'Main Copy', document);
 
-      const scenes = await discoverScenes(root);
+      const scenes = (await discoverScenes(root)).scenes;
       expect(scenes.map((entry) => entry.name)).toEqual(['Main Copy', 'main']);
       expect(scenes.map((entry) => entry.shadowedBy)).toEqual([null, null]);
       expect(new Set(scenes.map((entry) => entry.id)).size).toBe(2);

@@ -186,7 +186,7 @@ beforeAll(async () => {
   const parent = await mkdtemp(join(tmpdir(), 'studio-routes-'));
   root = (await createProject(registries, 'Races', parent)).summary.path;
   // The project's one scene, before the others below join it.
-  const [main] = await discoverScenes(root);
+  const [main] = (await discoverScenes(root)).scenes;
 
   await writeAsset(`${ASSETS_DIR}/textures/brick.png`, TEX_BRICK, 'texture', 'source bytes');
 
@@ -229,7 +229,7 @@ beforeAll(async () => {
   slashed['id'] = 'levels/Two';
   await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(slashed), 'utf8');
 
-  const scenes = await discoverScenes(root);
+  const scenes = (await discoverScenes(root)).scenes;
   entryId = main!.id;
   slashedId = scenes.find((scene) => scene.path.endsWith('Two.scene.json'))!.id;
   const scene = unwrap(decodeScene(registries, await readFile(join(root, main!.path), 'utf8')), 'Scene file');
@@ -705,7 +705,7 @@ describe('the scenes', () => {
   });
 
   it('answers another scene with its file, byte for byte', async () => {
-    const other = (await discoverScenes(root)).find((scene) => scene.path.endsWith('Other.scene.json'))!;
+    const other = (await discoverScenes(root)).scenes.find((scene) => scene.path.endsWith('Other.scene.json'))!;
 
     const answer = await ask(under(`game/scenes/${encodeURIComponent(other.id)}.json`));
 

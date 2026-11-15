@@ -63,6 +63,16 @@ export interface Diagnostic {
   readonly path: DecodePath;
 }
 
+/**
+ * A file this build would not read, and every fault found in it: what the
+ * editor names to the file's author when a project opens.
+ */
+export interface RefusedFile {
+  /** Where it is, relative to the project. */
+  readonly path: string;
+  readonly diagnostics: readonly Diagnostic[];
+}
+
 /** A value read from outside: the value, or every fault found in it. */
 export type Decoded<T> =
   | { readonly ok: true; readonly value: T }

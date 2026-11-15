@@ -30,7 +30,7 @@ async function project(): Promise<string> {
 }
 
 async function idOf(root: string, name: string): Promise<SceneId> {
-  const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
+  const entry = (await discoverScenes(root)).scenes.find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
 }
@@ -66,7 +66,7 @@ describe('two windows writing the project file at once', () => {
     // again, it has to go through the queue with everything else.
     await Promise.all([renameScene(root, main, 'Level1'), renameScene(root, boss, 'Arena')]);
 
-    const names = (await discoverScenes(root)).map((scene) => scene.name);
+    const names = (await discoverScenes(root)).scenes.map((scene) => scene.name);
     expect(names.sort()).toEqual(['Arena', 'Level1']);
   });
 

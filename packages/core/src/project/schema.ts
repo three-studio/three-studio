@@ -18,7 +18,7 @@
  */
 import { conform, isRecord } from '../conform';
 import { PROJECT_FORMAT_VERSION } from '../constants';
-import { checks, listOf, nullable, oneOf, RecordReader, versionRefusal, type Decoded } from '../decoded';
+import { checks, listOf, nullable, oneOf, RecordReader, versionRefusal, type Decoded, type RefusedFile } from '../decoded';
 import { isSceneId, type SceneId } from '../ids';
 import type { Vec3 } from '../scene/schema';
 import { conformLayers, createDefaultLayer, decodeLayers, type CollisionLayer } from './layers';
@@ -95,6 +95,12 @@ export interface ProjectContents {
   project: ProjectFile;
   /** Every scene found on disk, ordered by path. */
   scenes: SceneEntry[];
+  /**
+   * Every file under `scenes/` that is not listed, ordered by path, and why: not
+   * JSON, not an object, or with no id of its own. The editor names each when
+   * the project opens.
+   */
+  refusedScenes: RefusedFile[];
 }
 
 /**
