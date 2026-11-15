@@ -46,6 +46,11 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   fait refuser le fichier, un type inconnu garde la sienne telle qu'elle a été trouvée. Changer les
   champs d'un type du noyau incrémente sa version et `PROJECT_FORMAT_VERSION` ; un module n'incrémente
   que la version de son type.
+- **Un asset chargé appartient au cache du projet.** Un modèle ou une image se tient (`holdModel`,
+  `holdTexture`, `preload`) et se rend ; celui qui le tient ne le libère jamais : le cache le libère
+  après la dernière prise, au-delà de son budget, à la frame suivante. Ce qu'un monde en cours de jeu
+  peut changer d'un asset — les matériaux d'un modèle — est sa copie ; géométrie et images sont
+  partagées, en lecture seule.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
