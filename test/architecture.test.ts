@@ -540,6 +540,72 @@ function moduleNameProblems(
   return problems;
 }
 
+// ---------------------------------------- the frameworks that read the types
+
+/*
+ * The kernel's frameworks name no component type. What a type requires,
+ * excludes or stacks, what goes with its entity's drawing, which of its fields
+ * tune the running game and which of its objects an asset fills are each
+ * type's to declare, and these files read them through the registries. A type
+ * named here would be a rule kept on its behalf: the next type, or a module's,
+ * could not have one without an edit of the kernel.
+ *
+ * What counts is what holds a name as a value — a string, an object's key —
+ * and not an identifier: a variable called `model` names no type, and a comment
+ * may say "collider".
+ */
+
+/** The files besides the Inspector's own folder that read the types' rules, and name none. */
+const TYPE_BLIND: ReadonlySet<string> = new Set([
+  'packages/editor/src/panels/InspectorPanel.tsx',
+  'packages/editor/src/commands/sceneCommands.ts',
+  'packages/editor/src/state/tuning.ts',
+  'packages/core/src/scene/componentRules.ts',
+]);
+
+/** Unpack Model's files: the model's own operation, which names the model and moves the rest as each type declares. */
+const UNPACK_MODEL: ReadonlySet<string> = new Set([
+  'packages/core/src/scene/modelUnpack.ts',
+  'packages/editor/src/commands/modelCommands.ts',
+]);
+
+/** A prefab instance is the kernel's own, as prefabs are, and any of these files may name it. */
+const KERNEL_OWN_TYPE = 'prefabInstance';
+
+/** The types a file that reads the types' rules may still name; `null` for a file the rule leaves alone. */
+function typesItMayName(path: string): readonly string[] | null {
+  if (path.startsWith('packages/editor/src/inspector/') || TYPE_BLIND.has(path)) return [];
+  if (UNPACK_MODEL.has(path)) return ['model'];
+  return null;
+}
+
+/** The files that name a component type whose rules are its own, a line each. */
+function typeNameProblems(
+  names: ReadonlySet<string>,
+  sources: readonly (readonly [path: string, source: string])[],
+): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    const allowed = typesItMayName(path);
+    if (allowed === null) continue;
+    const named = new Set<string>();
+    const ast = parse(source, { sourceType: 'module', plugins: path.endsWith('.tsx') ? ['typescript', 'jsx'] : ['typescript'] });
+    traverseFast(ast, (node) => {
+      const value =
+        node.type === 'StringLiteral'
+          ? node.value
+          : node.type === 'TemplateElement'
+            ? node.value.raw
+            : (node.type === 'ObjectProperty' || node.type === 'ObjectMethod') && !node.computed && node.key.type === 'Identifier'
+              ? node.key.name
+              : null;
+      if (value !== null && value !== KERNEL_OWN_TYPE && names.has(value) && !allowed.includes(value)) named.add(value);
+    });
+    for (const name of [...named].sort()) problems.push(`${path}: names the component type ${name}, whose rules are its own`);
+  }
+  return problems;
+}
+
 /** The modules on disk, each read from its `package.json`, with what a manifest gets wrong. */
 function modulesOnDisk(): { modules: ModuleManifest[]; problems: string[] } {
   const modules: ModuleManifest[] = [];
@@ -800,6 +866,40 @@ describe('the modules', () => {
     expect(problems).toEqual([]);
     expect(moduleImportProblems(modules, roots, sources)).toEqual([]);
     expect(moduleNameProblems(names, roots, [...sources, ...rootTests])).toEqual([]);
+  });
+});
+
+describe('the frameworks that read the types', () => {
+  const names: ReadonlySet<string> = new Set(['model', 'collider', 'prefabInstance']);
+  const named = (path: string, source: string): string[] => typeNameProblems(names, [[path, source]]);
+
+  it('reports a type named as a value — a string, an object\'s key — where the types\' rules are read', () => {
+    expect(named('packages/editor/src/commands/sceneCommands.ts', "if (component.type === 'collider') fit();")).toEqual([
+      'packages/editor/src/commands/sceneCommands.ts: names the component type collider, whose rules are its own',
+    ]);
+    expect(named('packages/editor/src/inspector/rows.ts', 'const SPECIAL = { collider: true };')).toEqual([
+      'packages/editor/src/inspector/rows.ts: names the component type collider, whose rules are its own',
+    ]);
+  });
+
+  it('reads no identifier and no comment, lets the kernel\'s prefab instance be named, and leaves a type\'s own part alone', () => {
+    expect(named('packages/editor/src/state/tuning.ts', "const model = load(); // a collider's rows\nfind('prefabInstance');")).toEqual([]);
+    expect(named('packages/editor/src/components/collider/pane.ts', "extendPane('collider', {});")).toEqual([]);
+  });
+
+  it('lets Unpack Model name the model it unpacks, and no other type', () => {
+    expect(named('packages/core/src/scene/modelUnpack.ts', "findComponent(scene, id, 'model'); keep('collider');")).toEqual([
+      'packages/core/src/scene/modelUnpack.ts: names the component type collider, whose rules are its own',
+    ]);
+  });
+
+  it('finds none in the tree: the Inspector, the scene commands, the tuning state and the rules read the types', () => {
+    const registries = createCoreRegistries();
+    activateCore(registries);
+    const kernelTypes = new Set<string>(registries.components.values().map(({ id }) => id));
+    const sources = files.map((file) => [show(file), readFileSync(file, 'utf8')] as const);
+
+    expect(typeNameProblems(kernelTypes, sources)).toEqual([]);
   });
 });
 

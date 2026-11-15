@@ -36,7 +36,6 @@ import {
   addEntity,
   duplicateSelection,
   deleteSelection,
-  fitColliderToMesh,
   removeComponent,
   renameEntity,
   reparentEntity,
@@ -44,6 +43,7 @@ import {
   setTransform,
 } from '../src/commands/sceneCommands';
 import { unpackPrefabInstance } from '../src/commands/prefabCommands';
+import { fitColliderToMesh } from '../src/components/collider/fit';
 import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';

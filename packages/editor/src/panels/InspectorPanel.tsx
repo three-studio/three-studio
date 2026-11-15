@@ -110,9 +110,8 @@ export function InspectorPanel() {
    * nowhere — the game keeps the table it started with, and the edit view is
    * behind it — and its undo would wait for Stop with the rest.
    *
-   * But the rows of the panes that tune the running game — a Rigid Body's, a
-   * Collider's, a Joint's —, which write the running world and not the
-   * document (`state/tuning`).
+   * But the rows of the fields a type marks tunable, which write the running
+   * world and not the document (`state/tuning`).
    */
   const locked = useSceneLocked();
   // What was tuned during Play: a kind tuned brings its rows, and a value tuned
@@ -131,12 +130,12 @@ export function InspectorPanel() {
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
   const assetRevision = useAssetStore((s) => s.revision);
-  // So is the project's layer table, which a Collider's Layer row lists by name
-  // when the pane is built: a layer renamed in Project Settings kept its old
-  // name there until something else rebuilt the pane.
-  const layers = useProjectStore((s) =>
-    (s.project?.settings.physics.layers ?? []).map(({ id, name }) => `${id}:${name}`).join('|'),
-  );
+  // And the project's settings, which a pane may list choices from when it is
+  // built — the collision layers — and key itself by: a setting changed asks
+  // for the signature again, and only a pane keyed on it is rebuilt. Without
+  // it, a layer renamed in Project Settings kept its old name in the list
+  // until something else rebuilt the pane.
+  const settings = useProjectStore((s) => s.project?.settings);
   // With nothing selected the pane is the scene's own — Blender's Scene tab —
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
@@ -154,7 +153,7 @@ export function InspectorPanel() {
       return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
     }
     if (entityId !== undefined) {
-      return `${inspectorSignature(registries, entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
+      return `${inspectorSignature(registries, entityId)}#${assetRevision}#${scriptRevision}`;
     }
 
     /*
@@ -165,7 +164,7 @@ export function InspectorPanel() {
      * selecting a different set of the same shapes is a different pane.
      */
     const shapes = selection.map((id) => `${id}:${inspectorSignature(registries, id)}`).join('|');
-    return `${shapes}#${assetRevision}#${scriptRevision}#${layers}`;
+    return `${shapes}#${assetRevision}#${scriptRevision}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
@@ -179,7 +178,7 @@ export function InspectorPanel() {
     entity,
     scriptRevision,
     assetRevision,
-    layers,
+    settings,
     libraries,
     componentRevision,
     tuningRevision,

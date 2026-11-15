@@ -1,13 +1,15 @@
 import {
   createPhysicsSettings,
   linkedPhysicsMaterial,
+  type CollisionLayer,
   type ComponentId,
   type CoreRegistries,
   type EntityId,
   type PhysicsMaterialDef,
 } from '@three-studio/core';
-import { fitColliderToMesh, setComponentNestedField } from '../../commands/sceneCommands';
+import { setComponentNestedField } from '../../commands/sceneCommands';
 import { extendPane } from '../../inspector/fields';
+import { fitColliderToMesh } from './fit';
 import { useAssetStore } from '../../state/assetStore';
 import { askForText } from '../../state/dialogStore';
 import { expandedScene } from '../../state/expansion';
@@ -38,12 +40,21 @@ async function extractPhysicsMaterial(
   setComponentNestedField(registries, entityId, componentId, ['materialId'], assetId);
 }
 
+/** The project's collision layers, or a new project's while none is open. */
+function projectLayers(): readonly CollisionLayer[] {
+  return useProjectStore.getState().project?.settings.physics.layers ?? createPhysicsSettings().layers;
+}
+
 /**
  * A collider's pane is derived from its fields. What it adds: fitting its shape
  * to the meshes it rides, the project's layers to choose its own from, and
  * saving its material as an asset or copying a shared one back in.
  */
 export const pane = extendPane('collider', {
+  // The Layer row lists the project's layers when the pane is built, so the
+  // table is part of what the pane is: a layer renamed in Project Settings is
+  // another list, built again with the new name.
+  paneKey: () => projectLayers().map(({ id, name }) => `${id}:${name}`).join('|'),
   after: {
     shape: [
       {
@@ -88,20 +99,12 @@ export const pane = extendPane('collider', {
   },
   drawers: {
     // Read when the pane is built, which the Inspector does again when the
-    // table changes. A layer the project no longer has is no choice at all: the
-    // list selects nothing, and Play says what it collides as meanwhile.
+    // table changes (`paneKey`). A layer the project no longer has is no choice
+    // at all: the list selects nothing, and Play says what it collides as
+    // meanwhile.
     layer: (row) =>
       row === null
         ? []
-        : [
-            {
-              ...row,
-              optionsProvider: () => {
-                const layers =
-                  useProjectStore.getState().project?.settings.physics.layers ?? createPhysicsSettings().layers;
-                return Object.fromEntries(layers.map((layer) => [layer.name, layer.id]));
-              },
-            },
-          ],
+        : [{ ...row, optionsProvider: () => Object.fromEntries(projectLayers().map((layer) => [layer.name, layer.id])) }],
   },
 });

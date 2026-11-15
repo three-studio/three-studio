@@ -212,7 +212,12 @@ export interface PaneExtension {
   readonly drawers?: { readonly [key: string]: Drawer<ComponentDoc> | undefined };
   /** Entries after a field's last row — an object's or a union's included — keyed by the field. */
   readonly after?: { readonly [key: string]: readonly PaneRow[] | undefined };
-  /** What else makes the rows another list, beyond the variants the component holds. */
+  /**
+   * What else, read when the pane is built, makes its rows another list
+   * beyond the variants the component holds: a script's asset, whose declared
+   * properties are rows; the project's layers, which a Collider's Layer row
+   * lists.
+   */
   readonly paneKey?: (component: ComponentDoc) => string;
 }
 

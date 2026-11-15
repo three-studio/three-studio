@@ -114,12 +114,8 @@ function jointOfKind(kind: JointKind): ComponentDoc {
 }
 
 describe('the Collider pane', () => {
-  it("lists the project's layers by name in its Layer row", () => {
-    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
-    );
-    if (!row) throw new Error('no Layer row');
-
+  /** The project open in the window, holding these layers beside the default one. */
+  const projectWith = (...layers: { id: string; name: string }[]): void => {
     useProjectStore.setState({
       project: {
         version: PROJECT_FORMAT_VERSION,
@@ -131,16 +127,37 @@ describe('the Collider pane', () => {
           rendering: createRenderingSettings(),
           physics: {
             ...createPhysicsSettings(),
-            layers: [createDefaultLayer(), { id: 'p1', name: 'Player', ignores: [] }],
+            layers: [createDefaultLayer(), ...layers.map((layer) => ({ ...layer, ignores: [] }))],
           },
           build: createBuildProfiles('Layers'),
         },
       },
     });
+  };
+
+  it("lists the project's layers by name in its Layer row", () => {
+    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
+    );
+    if (!row) throw new Error('no Layer row');
+
+    projectWith({ id: 'p1', name: 'Player' });
     expect(row.optionsProvider?.()).toEqual({ Default: 'default', Player: 'p1' });
 
     useProjectStore.setState({ project: null });
     expect(row.optionsProvider?.()).toEqual({ Default: 'default' });
+  });
+
+  it('is keyed by those layers: one renamed is another list, which the Inspector builds again', () => {
+    const keyed = () => paneEntriesFor(registries, colliderOfKind('box')).key;
+
+    expect(keyed()).toBe('collider:box:default:Default');
+    projectWith({ id: 'p1', name: 'Player' });
+    expect(keyed()).toBe('collider:box:default:Default|p1:Player');
+    projectWith({ id: 'p1', name: 'Hero' });
+    expect(keyed()).toBe('collider:box:default:Default|p1:Hero');
+
+    useProjectStore.setState({ project: null });
   });
 });
 

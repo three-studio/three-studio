@@ -59,12 +59,12 @@ describe('every component type is measured, not defaulted', () => {
 
   it('names the lists that are not fixed by the type, and only those', () => {
     // A union's variant — a mesh's primitive, a collider's shape, a joint's
-    // kind, a water surface's sun — and a script's declared properties change
-    // the list itself, which no arrangement of bits can express. Everything
-    // else does.
+    // kind, a water surface's sun —, a script's declared properties and the
+    // project's layers a collider lists change the list itself, which no
+    // arrangement of bits can express. Everything else does.
     const keys = TYPES.map((type) => paneEntriesFor(registries, createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
-      'collider:box',
+      'collider:box:default:Default',
       'joint:hinge',
       'mesh:box',
       'script:',

@@ -566,7 +566,8 @@ describe('the collider\'s pane', () => {
       { kind: 'action', title: 'Make Unique' },
       ...MATERIAL_ROWS,
     ]);
-    expect(paneEntriesFor(registries, collider(shapeKindOf(kind))).key).toBe(`collider:${kind}`);
+    // Then the project's layers, which its Layer row lists: a new project's here.
+    expect(paneEntriesFor(registries, collider(shapeKindOf(kind))).key).toBe(`collider:${kind}:default:Default`);
   });
 
   const AFTER = ['Is sensor', 'Layer', '—', 'Material'];
