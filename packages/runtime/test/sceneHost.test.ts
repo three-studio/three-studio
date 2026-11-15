@@ -8,6 +8,7 @@ import {
 } from '@three-studio/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
+import { AssetCache } from '../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import type { SceneApi } from '../src/behaviour/Behaviour';
 import { SceneHost } from '../src/SceneHost';
@@ -58,6 +59,7 @@ function sceneWithWhere(): SceneDoc {
 }
 
 function hostOf(scenes: Record<string, SceneDoc>): SceneHost {
+  const registries = builtInRegistries();
   return new SceneHost({
     source: {
       read: async (name) => {
@@ -66,10 +68,10 @@ function hostOf(scenes: Record<string, SceneDoc>): SceneHost {
         return structuredClone(scene);
       },
     },
-    registries: builtInRegistries(),
+    registries,
     // The bundle the host hands every engine it builds, the script in it.
     scripts: new Map([[WHERE, Where]]),
-    resolver: NULL_ASSET_RESOLVER,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     rendering: createRenderingSettings(),
     domElement: eventTarget as unknown as HTMLElement,
     // Rapier is not what this is about, and it is the one slow thing to load.

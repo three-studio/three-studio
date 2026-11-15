@@ -1,7 +1,18 @@
-import { assertDefined, fixedId, type AssetId } from '@three-studio/core';
+import {
+  assertDefined,
+  createEntity,
+  createRenderingSettings,
+  fixedId,
+  modelType,
+  type AssetId,
+  type EntityId,
+  type SceneDoc,
+} from '@three-studio/core';
 import { Mesh, MeshStandardMaterial, type BufferGeometry, type Object3D, type Texture } from 'three/webgpu';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
+import { SceneBinder } from '../src/SceneBinder';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries } from './registries';
 
@@ -325,5 +336,101 @@ describe('disposing the cache', () => {
     expect(heldFreed()).toEqual(ALL_FREED);
     expect(idleFreed()).toEqual(ALL_FREED);
     expect(cache.stats).toEqual({ entries: 0, held: 0, idleBytes: 0 });
+  });
+});
+
+/*
+ * The edit view and Play are two worlds drawing one project: two binders on
+ * the window's one cache. What a world cannot change of a model — its geometry,
+ * its images — is the project's and shared; what it can — its materials, which
+ * a script reaches through its entity's object — is each world's own copy, so
+ * a tint in Play never lands in the edit view.
+ */
+describe('two worlds on one cache', () => {
+  /** A world drawing a scene, as the edit view's binder or Play's would. */
+  async function world(cache: AssetCache, scene: SceneDoc): Promise<SceneBinder> {
+    const binder = new SceneBinder({
+      registries,
+      assets: cache,
+      rendering: { ...createRenderingSettings(), batching: false },
+    });
+    binder.sync(scene);
+    await binder.whenLoaded();
+    return binder;
+  }
+
+  /** The triangle a world drew for an entity. */
+  function drawnBy(binder: SceneBinder, entityId: EntityId): Parts {
+    return partsOf(binder.getObject(entityId) ?? null);
+  }
+
+  const chair = createEntity('Chair', [{ ...modelType.create(), assetId: CRATE }]);
+  const stool = createEntity('Stool', [{ ...modelType.create(), assetId: CRATE }]);
+
+  it('load the file once, and draw its geometry and images with materials of their own', async () => {
+    stubImages();
+    const server = await serveModels();
+    const cache = cacheOver(server, 0);
+    const scene = sceneWith([chair, stool]);
+
+    const edit = await world(cache, scene);
+    const play = await world(cache, scene);
+
+    expect(server.requests('crate.gltf')).toBe(1);
+    expect(cache.stats).toEqual({ entries: 1, held: 4, idleBytes: 0 });
+    const edited = drawnBy(edit, chair.entity.id);
+    const played = drawnBy(play, chair.entity.id);
+    expect(played.geometry).toBe(edited.geometry);
+    expect(played.texture).toBe(edited.texture);
+    expect(played.material).not.toBe(edited.material);
+    // Two placements in one world share that world's copies.
+    expect(drawnBy(play, stool.entity.id).material).toBe(played.material);
+    expect(drawnBy(edit, stool.entity.id).material).toBe(edited.material);
+
+    // A script tinting the game's chair tints the game's, and the edit view's stays.
+    played.material.color.set('#ff0000');
+    expect(edited.material.color.getHexString()).toBe('ffffff');
+  });
+
+  it('keep the file for the world still drawing it, and give it back with the last', async () => {
+    stubImages();
+    const server = await serveModels();
+    const cache = cacheOver(server, 0);
+    const scene = sceneWith([chair]);
+    const edit = await world(cache, scene);
+    const play = await world(cache, scene);
+    const edited = drawnBy(edit, chair.entity.id);
+    let editCopyFreed = 0;
+    edited.material.addEventListener('dispose', () => void (editCopyFreed += 1));
+    let geometryFreed = 0;
+    edited.geometry.addEventListener('dispose', () => void (geometryFreed += 1));
+
+    // Stop: the game's world goes, its copies with it.
+    play.dispose();
+    cache.beginFrame();
+    expect(cache.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
+    expect(editCopyFreed).toBe(0);
+    expect(geometryFreed).toBe(0);
+
+    edit.dispose();
+    expect(cache.stats.held).toBe(0);
+    cache.beginFrame();
+    expect(editCopyFreed).toBe(1);
+    expect(geometryFreed).toBe(1);
+  });
+
+  it('give the file back when the entity drawing it is deleted', async () => {
+    stubImages();
+    const server = await serveModels();
+    const cache = cacheOver(server, ROOMY);
+    const edit = await world(cache, sceneWith([chair]));
+    expect(cache.stats.held).toBe(1);
+
+    edit.sync(sceneWith([]));
+
+    expect(cache.stats.held).toBe(0);
+    // Kept within the editor's budget, for an undo.
+    expect(cache.stats.entries).toBe(1);
+    edit.dispose();
   });
 });

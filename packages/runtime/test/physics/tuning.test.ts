@@ -18,6 +18,7 @@ import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { JointHandle } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
@@ -512,7 +513,7 @@ describe('a tune the world cannot take', () => {
     const off = await Engine.create({
       scene: sceneWith([ground(), ball]),
       registries,
-      resolver: NULL_ASSET_RESOLVER,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,

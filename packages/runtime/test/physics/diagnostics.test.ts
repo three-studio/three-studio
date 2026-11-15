@@ -11,6 +11,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { builtInRegistries } from '../registries';
 import {
@@ -103,10 +104,11 @@ describe('the physics set-up, with layers', () => {
 
   it('says nothing of layers with physics off', async () => {
     const lost = onLayer(withBody('sphere', [0, 2, 0]), 'gone');
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith([onLayer(player([0, 1, 0]), 'player'), ground(), lost]),
-      registries: builtInRegistries(),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: { ...createPhysicsSettings(), layers: APART },
       domElement: new EventTarget() as unknown as HTMLElement,
@@ -168,10 +170,11 @@ describe('the physics set-up, with joints', () => {
     const rig = await physicsRig([ground(), frame, door]);
     expect(rig.engine.warnings.filter((line) => line.includes('Joint'))).toEqual([]);
 
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith([withJoint(createEntity('Hinge'))]),
-      registries: builtInRegistries(),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,

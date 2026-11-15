@@ -29,7 +29,7 @@ import {
   type Renderer,
 } from 'three/webgpu';
 import { SceneBinder, bindScene } from './SceneBinder';
-import type { AssetResolver } from './assets/AssetResolver';
+import type { AssetCache } from './assets/AssetCache';
 import { AudioEngine } from './audio/AudioEngine';
 import type { AudioClipCache } from './audio/AudioClipCache';
 import type { AudioContextLike } from './audio/AudioContextLike';
@@ -57,7 +57,14 @@ export interface EngineOptions {
    * below never learns that any of them exist.
    */
   registries: RuntimeRegistries;
-  resolver: AssetResolver;
+  /**
+   * The project's loaded files, shared with every other world of the window:
+   * Play draws the models the edit view already holds, with no second parse
+   * and no second copy, and the audio engine reaches the files through its
+   * resolver. The engine holds what it draws and frees nothing; whoever made
+   * the cache begins its frame.
+   */
+  assets: AssetCache;
   /**
    * Shared materials by asset id.
    *
@@ -229,7 +236,7 @@ export class Engine {
     // where it is written down.
     this.binder = bindScene(this.scene, options.scene, {
       registries: options.registries,
-      resolver: options.resolver,
+      assets: options.assets,
       rendering: options.rendering,
       materials: options.materials,
       renderer: options.renderer,
@@ -244,7 +251,7 @@ export class Engine {
         ? null
         : new AudioEngine({
             context: options.audioContext,
-            resolver: options.resolver,
+            resolver: options.assets.resolver,
             cache: options.audioCache,
             onWarning: (message) => this.context.warn(message),
           });
@@ -533,7 +540,12 @@ export class Engine {
     this.world?.tune(entityId, component);
   }
 
-  /** An asset's values, changed during Play, taken by whatever the running game built with that asset. */
+  /**
+   * An asset's values, changed during Play, taken by whatever the running game
+   * built with that asset — never by the asset cache, which holds what loading
+   * made and which no world writes. The tune goes with the world at Stop; Keep
+   * writes the asset's file, which every world then reads through its library.
+   */
   tuneAsset(assetId: AssetId, values: object): void {
     this.world?.tuneAsset(assetId, values);
   }

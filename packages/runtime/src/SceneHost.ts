@@ -9,9 +9,7 @@ import {
 } from '@three-studio/core';
 import { Engine, type EngineOptions } from './Engine';
 import { AudioClipCache } from './audio/AudioClipCache';
-import { AssetCache } from './assets/AssetCache';
 import type { SceneApi } from './behaviour/Behaviour';
-import { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 
 /**
  * Runs one scene at a time, and moves between them.
@@ -79,15 +77,6 @@ export class SceneHost implements SceneApi {
 
   private pending: LoadHandle | null = null;
   private disposed = false;
-  /**
-   * Warms assets before a scene exists to hold them.
-   *
-   * Shared with nothing — each `Engine` builds its own binder and cache — but
-   * the browser's HTTP cache means a file fetched here is not fetched twice.
-   * It keeps nothing: each file is given back once it has arrived, and freed
-   * there and then.
-   */
-  private readonly preloader: AssetCache;
 
   /**
    * Decoded clips, kept across scenes — the one cache that *is* shared.
@@ -101,14 +90,10 @@ export class SceneHost implements SceneApi {
   private readonly clips: AudioClipCache | null;
 
   constructor(private readonly options: SceneHostOptions) {
-    this.preloader = new AssetCache(options.registries, {
-      resolver: options.resolver ?? NULL_ASSET_RESOLVER,
-      idleBudgetBytes: 0,
-    });
     this.clips =
       options.audioContext === undefined
         ? null
-        : new AudioClipCache(options.audioContext, options.resolver ?? NULL_ASSET_RESOLVER);
+        : new AudioClipCache(options.audioContext, options.assets.resolver);
   }
 
   /**
@@ -172,7 +157,6 @@ export class SceneHost implements SceneApi {
     // Cleared here and not in `Engine.dispose`, which is exactly the point of
     // sharing it: the engine goes away between scenes, the host does not.
     this.clips?.clear();
-    this.preloader.dispose();
   }
 
   /** Used by a handle once its assets are in; not part of the public surface. */
@@ -249,17 +233,18 @@ export class SceneHost implements SceneApi {
   }
 
   /**
-   * Fetches one asset ahead of the swap.
+   * Fetches one asset ahead of the swap, through the project's cache.
    *
-   * Through a cache of its own rather than the running engine's: the point is
-   * to have everything in hand *before* the new engine exists, and the old
-   * one's cache goes away with it.
+   * Given back once it has arrived: what nothing holds then stays only while
+   * the cache's budget keeps it — the editor's keeps it for the new engine to
+   * find, a build's frees it, and the browser's HTTP cache answers the
+   * engine's own request.
    */
   async preloadAsset(assetId: AssetId): Promise<void> {
     // A sound goes to the clip cache and nowhere near the asset one, which
     // would silently do nothing with it: `AssetCache.preload` switches on the
     // extension and holds nothing for one it does not load.
-    if (this.clips !== null && this.options.resolver?.settings?.(assetId)?.kind === 'audio') {
+    if (this.clips !== null && this.options.assets.resolver.settings?.(assetId)?.kind === 'audio') {
       const held = this.clips.acquire(assetId);
       await held.clip;
       // Given straight back: preloading means "have it ready", not "hold it
@@ -267,12 +252,9 @@ export class SceneHost implements SceneApi {
       held.release();
       return;
     }
-    const warmed = this.preloader.preload(assetId);
+    const warmed = this.options.assets.preload(assetId);
     await warmed.ready;
     warmed.dispose();
-    // At once rather than at a frame: nothing draws what this cache loads, so
-    // there is no frame in flight to wait for.
-    this.preloader.beginFrame();
   }
 }
 

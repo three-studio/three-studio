@@ -2,6 +2,7 @@ import { createJointMotion, createPhysicsSettings, createRenderingSettings } fro
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { DebugLines } from '../../src/physics/PhysicsWorld';
 import { builtInRegistries } from '../registries';
@@ -67,10 +68,11 @@ describe('the debug view', () => {
   });
 
   it('with physics off, there is nothing to draw', async () => {
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith(scene().entities),
-      registries: builtInRegistries(),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,

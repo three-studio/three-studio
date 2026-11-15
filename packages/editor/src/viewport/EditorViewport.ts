@@ -8,6 +8,7 @@ import {
   type RenderingSettings,
 } from '@three-studio/core';
 import {
+  AssetCache,
   studioTime,
   type Engine,
   type SceneBinder,
@@ -48,6 +49,14 @@ import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
 /** Guards against runaway movement after the window was backgrounded. */
 const MAX_FRAME_DELTA = 0.1;
+/**
+ * What the window's asset cache keeps of the files nothing holds any more.
+ *
+ * An undo of a delete, or Stop then Play again, then finds a common model
+ * where it was, with no reload; a model bigger than this is freed at once, so
+ * that one huge file does not sit in memory for the rest of the session.
+ */
+const EDITOR_IDLE_ASSET_BYTES = 256 * 1024 * 1024;
 /** Reused per frame to keep the selection sync allocation-free. */
 const SCRATCH_SIZE = new Vector3();
 const SCRATCH_DIRECTION = new Vector3();
@@ -88,9 +97,14 @@ export class EditorViewport {
   } | null = null;
 
   /**
-   * Projects the scene document onto three.js objects. The resolver reads the
-   * asset store lazily, so it stays correct as assets are imported.
+   * The project's loaded files, for every world this window draws: the edit
+   * view, and Play, which finds the edit view's models already loaded. Made
+   * here because every world of the window is this viewport's, and a window
+   * opens one project, once; freed with it. Its resolver reads the asset store
+   * lazily, so it stays correct as assets are imported.
    */
+  readonly assets: AssetCache;
+  /** Projects the scene document onto three.js objects. */
   readonly binder: SceneBinder;
   /**
    * Markers on what draws nothing, helpers on what is selected.
@@ -159,6 +173,10 @@ export class EditorViewport {
     readonly registries: EditorRegistries,
   ) {
     this.view = view;
+    this.assets = new AssetCache(registries, {
+      resolver: editorAssetResolver,
+      idleBudgetBytes: EDITOR_IDLE_ASSET_BYTES,
+    });
 
     /*
      * Built here rather than as a field initialiser, because a field
@@ -174,7 +192,7 @@ export class EditorViewport {
     const projection = createEditorProjection({
       scene: expandedScene(registries).scene,
       registries,
-      resolver: editorAssetResolver,
+      assets: this.assets,
       rendering,
       // The one thing the binder cannot do without a device; see `EnvironmentBinder`.
       renderer: view.renderer,
@@ -326,6 +344,9 @@ export class EditorViewport {
     this.overlay.dispose();
     this.physicsDebug.dispose();
     this.binder.dispose();
+    // After every world that held from it, and before the device its buffers
+    // live on.
+    this.assets.dispose();
     // Last, and it takes the loop, the observer, the three canvases and the
     // device with it.
     this.view.dispose();
@@ -551,6 +572,11 @@ export class EditorViewport {
     // free. This used to ride on `sync`, which is neither once per frame nor
     // guaranteed to happen at all.
     this.binder.beginFrame();
+    // The window's cache, once, here: Play's engine begins a frame of its own,
+    // and a second flush within one frame would free what its first half had
+    // just let go of, with no render in between. After the binder's, so the
+    // images its arena gave back go with this boundary.
+    this.assets.beginFrame();
 
     const raw = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
     this.lastFrameTime = time;

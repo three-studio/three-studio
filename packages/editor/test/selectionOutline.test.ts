@@ -5,6 +5,7 @@ import {
   createRenderingSettings,
   type EntityId,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { Vector3 } from 'three/webgpu';
@@ -31,9 +32,10 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
   outline: SelectionOutline;
   binder: SceneBinder;
 } {
+  const registries = builtInRegistries();
   const binder = new SceneBinder({
-    registries: builtInRegistries(),
-    resolver: NULL_ASSET_RESOLVER,
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });

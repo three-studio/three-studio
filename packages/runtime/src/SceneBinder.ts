@@ -25,9 +25,8 @@ import {
   Vector3,
   type Renderer,
 } from 'three/webgpu';
-import type { AssetResolver } from './assets/AssetResolver';
 import { EnvironmentBinder } from './EnvironmentBinder';
-import { AssetCache } from './assets/AssetCache';
+import type { AssetCache } from './assets/AssetCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
 import type { Sun, SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
@@ -82,8 +81,7 @@ const _z = new Vector3();
 export interface SceneBinderOptions {
   /**
    * What the binder reads of the registries: the system that draws each type,
-   * from which each binder builds its own, and the importers, which say what a
-   * file of a model or a texture is called.
+   * from which each binder builds its own, and the order of the types.
    *
    * The core's registries and the systems, rather than the runtime's registries
    * by name: those name the behaviours, whose context holds a binder, and the
@@ -91,7 +89,12 @@ export interface SceneBinderOptions {
    * runtime registries are this, whole.
    */
   registries: CoreRegistries & { readonly systems: Registry<ComponentTypeId, SystemDefinition> };
-  resolver: AssetResolver;
+  /**
+   * The project's loaded files, shared by every world the window draws: the
+   * edit view's binder and Play's hold the same model once. Held through, and
+   * never freed here — the cache is its maker's, and so is its frame.
+   */
+  assets: AssetCache;
   /**
    * The project's rendering settings, whole.
    *
@@ -164,11 +167,7 @@ export class SceneBinder {
   private readonly registries: CoreRegistries;
   private readonly reconciler: Reconciler;
   private readonly arena = new ResourceArena();
-  /**
-   * The files this scene draws, held by its systems and its environment. Its
-   * own, and at a budget of 0: what no entity of the scene holds any more is
-   * freed at the next frame.
-   */
+  /** The project's files, which this scene's systems and environment hold. */
   private readonly assets: AssetCache;
   /** Shared materials by asset id; see `setMaterialLibrary`. */
   private materials: ReadonlyMap<AssetId, MaterialDef> = new Map();
@@ -239,7 +238,7 @@ export class SceneBinder {
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
-    this.assets = new AssetCache(options.registries, { resolver: options.resolver, idleBudgetBytes: 0 });
+    this.assets = options.assets;
     this.shadowMapSize = options.rendering.shadowMapSize;
     this.batcher.enabled = options.rendering.batching;
     // Given the arena rather than one of its own: what it lets go of has to
@@ -351,12 +350,11 @@ export class SceneBinder {
    * whose comment claimed the queue was "a frame old now" — true only if syncs
    * come one per frame, and two paths break that in opposite directions.
    *
-   * The arena first: the texture holds it frees give their images back, and
-   * the cache then frees what that left unheld, in the same boundary.
+   * The asset cache's frame is not begun here: the cache is the window's, and
+   * the edit view's binder and Play's each begin a frame of their own.
    */
   beginFrame(): void {
     this.arena.flush();
-    this.assets.beginFrame();
   }
 
   sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
@@ -533,11 +531,9 @@ export class SceneBinder {
     // retires rather than frees. Nothing is rendering any more, so there is
     // nothing left to wait for.
     this.arena.disposeAll();
-    // Last: every hold has been given back by now, the texture holds the arena
-    // just freed included, so this frees what the scene loaded, textures and
-    // all. A cache that was never freed here is how every Play → Stop cycle
-    // once left the game's copy of every model on the GPU.
-    this.assets.dispose();
+    // Every hold this scene took has been given back by now, the texture holds
+    // the arena just freed included. What nothing else holds, the cache frees
+    // at the window's next frame, or keeps within its budget.
     this.root.clear();
   }
 

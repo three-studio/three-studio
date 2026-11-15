@@ -32,6 +32,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 
 export { nest } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
@@ -119,7 +120,7 @@ async function runningRig(
     scene: sceneWith(entities),
     registries,
     scripts: bundleOf(entities),
-    resolver: NULL_ASSET_RESOLVER,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // Batching off: a batched mesh is drawn by the batch, and the object a test
     // reads would be one the screen never shows.
     rendering: { ...createRenderingSettings(), batching: false },

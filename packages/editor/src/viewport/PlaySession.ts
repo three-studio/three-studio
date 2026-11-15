@@ -13,11 +13,11 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
-import { Engine, SceneHost, type RuntimeRegistries, type SceneSource } from '@three-studio/runtime';
+import { Engine, SceneHost, type AssetCache, type RuntimeRegistries, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
-import { editorAssetResolver, useAssetStore } from '../state/assetStore';
+import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
@@ -40,6 +40,8 @@ import type { Presentation } from './Presentation';
  */
 export interface PlayHost {
   readonly renderer: WebGPURenderer;
+  /** The window's loaded files: Play draws the models the edit view already holds. */
+  readonly assets: AssetCache;
   /** The game's own canvas, on the Viewport's stage; the engine's `Input` listens on it. */
   readonly gameView: Presentation;
   /** The project's rendering settings, as the edit view is already using them. */
@@ -70,10 +72,6 @@ export interface PlayHost {
  * published document in place, and from the press of Play the scene lock holds
  * it still, so Play keeps it as it is. Whoever hands it on copies it — the
  * scene source for the game, the main process across IPC.
- *
- * Here rather than in a module of its own: a module that reads the project
- * store and that this one imports would join the import cycle this file is
- * already part of (see `test/architecture.test.ts`).
  */
 export function readPlayInputs(): LaunchSnapshot {
   const { project, sceneId } = useProjectStore.getState();
@@ -330,7 +328,9 @@ export class PlaySession {
         // moves to runs: the host hands them to each engine it builds.
         scripts: useScriptStore.getState().scripts,
         loadingScene: inputs.loadingScene,
-        resolver: editorAssetResolver,
+        // The window's own: the game holds what the edit view already loaded,
+        // and its materials are copies of its own.
+        assets: this.host.assets,
         physicsSettings: inputs.physics,
         // The viewport's own, not the inputs': Play draws on the viewport's
         // renderer, which was made with these and is not remade when Project

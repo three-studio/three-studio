@@ -14,6 +14,7 @@ import {
   type PrefabDoc,
   type ProjectFile,
 } from '@three-studio/core';
+import { AssetCache, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -140,6 +141,7 @@ describe('what a launch sends while the editor plays', () => {
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
       rendering,
       registries: builtInRegistries(),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       onPlayPressed: () => {},
       onPlayStopped: () => {},
     };

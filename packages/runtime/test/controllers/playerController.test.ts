@@ -15,6 +15,8 @@ import {
 import { Euler, Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
+import { AssetCache } from '../../src/assets/AssetCache';
+import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { PlayerController } from '../../src/controllers/PlayerController';
 import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { SceneBinder } from '../../src/SceneBinder';
@@ -145,9 +147,10 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   player.entity.transform.position = [0, startY, 0];
 
   const scene: SceneDoc = sceneWith([ground, player]);
+  const registries = builtInRegistries();
   const binder = new SceneBinder({
-    registries: builtInRegistries(),
-    resolver: { url: () => null },
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     rendering: { ...createRenderingSettings(), batching: false },
   });
   binder.sync(scene);

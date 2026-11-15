@@ -17,6 +17,7 @@ import {
 import * as particlesCore from '@three-studio/particles/core';
 import * as particlesRuntime from '@three-studio/particles/runtime';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
 import { unlockAudioOnGesture } from './audioGesture';
@@ -54,6 +55,13 @@ import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
 
 /** Where the manifest is, from the page — and, through it, every other file of the game. */
 const MANIFEST_URL = new URL(BUILD_LAYOUT.manifest, document.baseURI);
+
+/**
+ * What the game's asset cache keeps of the files nothing holds any more:
+ * nothing. A game runs on phones too, and a scene left is rarely re-entered at
+ * once.
+ */
+const PLAYER_IDLE_ASSET_BYTES = 0;
 
 /**
  * A path the manifest holds, as the URL to fetch.
@@ -187,6 +195,13 @@ async function boot(): Promise<void> {
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
 
+  // The game's loaded files, for every scene it moves through; its frame is
+  // begun by the loop below.
+  const assets = new AssetCache(registries, {
+    resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
+    idleBudgetBytes: PLAYER_IDLE_ASSET_BYTES,
+  });
+
   // Hosted rather than a single engine: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
@@ -197,7 +212,7 @@ async function boot(): Promise<void> {
     },
     registries,
     scripts,
-    resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
+    assets,
     // Records in the manifest, as a message is, and Maps here: a key read back
     // as an id is checked as one.
     materials: idMapOf(materials, isAssetId),
@@ -252,6 +267,9 @@ async function boot(): Promise<void> {
     last = now;
 
     studioTime.advance(delta);
+    // Once per frame, before the engine's: what a scene let go of last frame
+    // is freed now that the frame that drew it has been submitted.
+    assets.beginFrame();
     host.update(studioTime.delta);
     const engine = host.engine;
     if (engine) void renderer.render(engine.scene, engine.activeCamera);

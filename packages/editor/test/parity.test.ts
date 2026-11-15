@@ -1,9 +1,12 @@
 import {
+  assertDefined,
+  createEntity,
   createLightEntity,
   createMaterial,
   createMeshEntity,
   createRenderingSettings,
   fixedId,
+  modelType,
   type AssetId,
   type LightComponent,
   type MaterialDef,
@@ -11,12 +14,15 @@ import {
   type RenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
-import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
+import { NULL_ASSET_RESOLVER, type AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import { Engine } from '@three-studio/runtime/Engine';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Mesh, type Object3D } from 'three/webgpu';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
+import { serveModels, stubImages } from '../../runtime/test/assetFixtures';
 import { digestProjection, type ProjectionDigest } from '../../runtime/test/sceneDigest';
-import { EDITOR_OVERLAYS, createEditorProjection } from '../src/viewport/editorProjection';
+import { EDITOR_OVERLAYS, createEditorProjection, type EditorProjection } from '../src/viewport/editorProjection';
 import { builtInRegistries } from './registries';
 
 /*
@@ -70,6 +76,11 @@ afterAll(() => {
   Reflect.deleteProperty(globalThis, 'document');
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
 /** Asset id of the shared material the fifth cube is linked to. */
 const BRASS = fixedId('asset', 'material-brass');
 
@@ -121,52 +132,68 @@ function settings(overrides: Partial<RenderingSettings> = {}): RenderingSettings
   return { ...createRenderingSettings(), shadowMapSize: 4096, ...overrides };
 }
 
-/** What the edit view holds, with no canvas and no device under it. */
-async function editView(
-  scene: SceneDoc,
-  rendering: RenderingSettings,
-): Promise<ProjectionDigest> {
-  const projection = createEditorProjection({
-    scene,
-    registries,
-    resolver: NULL_ASSET_RESOLVER,
-    rendering,
-    materials,
-  });
-  // What `Engine.create` awaits on its own side. Nothing in these fixtures
-  // loads, so it settles at once — but the two have to be read at the same
-  // point in their lives, or a fixture that ever gains a model would compare a
+/** The window's loaded files, which the viewport hands to Play as it draws from them itself. */
+function windowAssets(resolver: AssetResolver = NULL_ASSET_RESOLVER): AssetCache {
+  return new AssetCache(registries, { resolver, idleBudgetBytes: 0 });
+}
+
+/** The edit view's projection, with no canvas and no device under it. */
+async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<EditorProjection> {
+  const projection = createEditorProjection({ scene, registries, assets, rendering, materials });
+  // What `Engine.create` awaits on its own side. The two have to be read at the
+  // same point in their lives, or a fixture holding a model would compare a
   // finished scene against one still waiting for a glTF.
   await projection.binder.whenLoaded();
+  return projection;
+}
 
+/** What the edit view holds. */
+async function editView(scene: SceneDoc, rendering: RenderingSettings, assets = windowAssets()): Promise<ProjectionDigest> {
+  const projection = await projected(scene, rendering, assets);
   const digest = digestProjection(projection.scene, projection.binder);
   projection.binder.dispose();
   return digest;
 }
 
-/** What Play holds, from the real `Engine` rather than from a stand-in for it. */
-async function play(scene: SceneDoc, rendering: RenderingSettings): Promise<ProjectionDigest> {
-  const engine = await Engine.create({
+/** The game Play runs: the real `Engine` rather than a stand-in for it. */
+function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<Engine> {
+  return Engine.create({
     scene,
     registries,
-    resolver: NULL_ASSET_RESOLVER,
+    assets,
     rendering,
     materials,
     domElement: eventTarget as unknown as HTMLElement,
     enablePhysics: false,
   });
+}
+
+/** What Play holds. */
+async function play(scene: SceneDoc, rendering: RenderingSettings, assets = windowAssets()): Promise<ProjectionDigest> {
+  const engine = await game(scene, rendering, assets);
   const digest = digestProjection(engine.scene, engine.binder);
   engine.dispose();
   return digest;
+}
+
+/** The first mesh under an entity's container. */
+function meshUnder(object: Object3D | undefined): Mesh {
+  const meshes: Mesh[] = [];
+  object?.traverse((child) => {
+    if (child instanceof Mesh) meshes.push(child);
+  });
+  return assertDefined(meshes[0], 'a mesh');
 }
 
 describe('the edit view and Play project a scene the same way', () => {
   it('differ by the editor overlays and by nothing else', async () => {
     const scene = fixture();
     const rendering = settings();
+    // One cache for both, as the viewport hands its own to Play.
+    const assets = windowAssets();
 
-    const view = await editView(scene, rendering);
-    const running = await play(scene, rendering);
+    const view = await editView(scene, rendering, assets);
+    const running = await play(scene, rendering, assets);
 
     // The overlays are the whole of the editor's addition, and they are stated
     // rather than discovered — that is what `EDITOR_OVERLAYS` is for. In order,
@@ -234,5 +261,33 @@ describe('the edit view and Play project a scene the same way', () => {
     // Against five meshes, each drawing itself.
     expect(running.draws.filter((draw) => draw.batch !== null)).toEqual([]);
     expect(running.draws.filter((draw) => draw.visible)).toHaveLength(5);
+  });
+});
+
+describe('the edit view and Play draw from the window’s one cache', () => {
+  it('hold one model twice, drawing its geometry once and materials of their own', async () => {
+    stubImages();
+    const server = await serveModels();
+    const CHAIR = fixedId('asset', 'chair');
+    const assets = windowAssets({ url: (id) => (id === CHAIR ? server.url('chair.gltf') : null) });
+    const chair = createEntity('Chair', [{ ...modelType.create(), assetId: CHAIR }]);
+    const scene = sceneWith([chair]);
+
+    const projection = await projected(scene, settings(), assets);
+    const engine = await game(scene, settings(), assets);
+
+    // Play parses nothing the edit view already holds …
+    expect(server.requests('chair.gltf')).toBe(1);
+    expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
+    const edited = meshUnder(projection.binder.getObject(chair.entity.id));
+    const played = meshUnder(engine.binder.getObject(chair.entity.id));
+    expect(played.geometry).toBe(edited.geometry);
+    // … and a script tinting the game's materials tints none of the edit view's.
+    expect(played.material).not.toBe(edited.material);
+
+    engine.dispose();
+    expect(assets.stats.held).toBe(1);
+    projection.binder.dispose();
+    expect(assets.stats.held).toBe(0);
   });
 });

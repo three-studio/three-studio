@@ -15,6 +15,7 @@ import {
   defaultSettings,
   decodeScene,
   fixedId,
+  modelType,
   serializeScene,
   type ProjectFile,
   type SceneDoc,
@@ -22,10 +23,11 @@ import {
   type Vec3,
   unwrap,
 } from '@three-studio/core';
-import { Behaviour, NO_SCRIPTS, type Engine } from '@three-studio/runtime';
+import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, type Engine } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
+import { serveModels, stubImages } from '../../runtime/test/assetFixtures';
 import { addEntityInView, placeDroppedAsset } from '../src/commands/placeEntity';
 import { commandById, currentContext } from '../src/commands/registry';
 import { reparentSelection } from '../src/commands/sceneCommands';
@@ -104,6 +106,7 @@ function stubHost(): StubHost {
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
     rendering: createRenderingSettings(),
     registries: builtInRegistries(),
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     onPlayPressed: () => calls.push('pressed'),
     onPlayStopped: () => calls.push('stopped'),
   };
@@ -927,5 +930,49 @@ describe('Save during Play', () => {
 
     expect(selectDirty(doc())).toBe(false);
     expect(doc().scene).toBe(scene);
+  });
+});
+
+describe('the window’s loaded files', () => {
+  beforeAll(() => {
+    standInForTheBrowser();
+  });
+
+  afterAll(takeTheBrowserBack);
+
+  beforeEach(() => {
+    // Compiled, with nothing to import.
+    useScriptStore.setState({ build: async () => true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('are what Play draws: the game holds the edit view’s model while it runs, and gives it back at Stop', async () => {
+    stubImages();
+    const server = await serveModels();
+    const CHAIR = fixedId('asset', 'chair');
+    const assets = new AssetCache(registries, {
+      resolver: { url: (id) => (id === CHAIR ? server.url('chair.gltf') : null) },
+      idleBudgetBytes: 0,
+    });
+    // The edit view's hold, as the viewport's binder takes it.
+    const editView = assets.holdModel(CHAIR, null);
+    await editView.object;
+    useDocumentStore.getState().replaceScene(sceneWith([createEntity('Chair', [{ ...modelType.create(), assetId: CHAIR }])]));
+    const played = new PlaySession({ ...stubHost(), assets });
+    session = played;
+    played.watch();
+
+    play();
+    await until(() => played.playEngine !== null, 'the engine');
+    // Nothing parsed twice: the game draws the file the edit view holds.
+    expect(server.requests('chair.gltf')).toBe(1);
+    expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
+
+    stop();
+    expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
+    editView.dispose();
   });
 });

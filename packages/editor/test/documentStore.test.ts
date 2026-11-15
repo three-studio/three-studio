@@ -27,6 +27,7 @@ import {
   type EntityId,
   type EntityTemplate,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -1126,7 +1127,7 @@ describe('fitting a collider to its mesh', () => {
   function drawnBinder(): SceneBinder {
     const binder = new SceneBinder({
       registries: builtInRegistries(),
-      resolver: NULL_ASSET_RESOLVER,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
     });
     binder.sync(expandedScene(registries).scene);

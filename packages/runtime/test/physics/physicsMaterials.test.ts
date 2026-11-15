@@ -11,6 +11,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { builtInRegistries } from '../registries';
 import {
@@ -116,10 +117,11 @@ describe('a collider linked to a physics material', () => {
     expect(said[0]).toContain('physics material');
 
     // With physics off the line would be about the host, not the scene.
+    const registries = builtInRegistries();
     const off = await Engine.create({
       scene: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
-      registries: builtInRegistries(),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       physicsMaterials: LIBRARY,

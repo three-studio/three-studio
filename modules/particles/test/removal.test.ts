@@ -10,7 +10,7 @@ import {
   unwrap,
 } from '@three-studio/core';
 import { particleEmitterType } from '@three-studio/particles/core';
-import { NULL_ASSET_RESOLVER, activateRuntime, bindScene, createRuntimeRegistries } from '@three-studio/runtime';
+import { AssetCache, NULL_ASSET_RESOLVER, activateRuntime, bindScene, createRuntimeRegistries } from '@three-studio/runtime';
 import { Scene } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../packages/core/test/fixtures';
@@ -71,7 +71,7 @@ describe('a scene holding an emitter, in a build without the module', () => {
 
     const binder = bindScene(new Scene(), doc, {
       registries,
-      resolver: NULL_ASSET_RESOLVER,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
     });
 

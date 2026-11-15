@@ -31,7 +31,7 @@ import {
   type SchemaField,
   type ScriptComponent,
 } from '@three-studio/core';
-import { Behaviour, Engine, NO_SCRIPTS } from '@three-studio/runtime';
+import { AssetCache, Behaviour, Engine, NO_SCRIPTS, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -103,6 +103,7 @@ const host: PlayHost = {
   gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
   rendering: createRenderingSettings(),
   registries: builtInRegistries(),
+  assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
   onPlayPressed: () => {},
   onPlayStopped: () => {},
 };

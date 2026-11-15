@@ -3,6 +3,7 @@ import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle, Collision } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
@@ -178,11 +179,12 @@ describe('a script hearing its colliders', () => {
   it('with no physics, a listening script is quiet', async () => {
     // A host with no physics is about the host, not the scene: nothing to fix there.
     const door = withScript(createEntity('Door'), Log);
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith([door]),
-      registries: builtInRegistries(),
+      registries,
       scripts: bundleOf([door]),
-      resolver: NULL_ASSET_RESOLVER,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
