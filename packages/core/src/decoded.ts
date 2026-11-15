@@ -234,8 +234,13 @@ const ABSENT: unique symbol = Symbol('absent');
  */
 export class RecordReader {
   private readonly held: Readonly<Record<string, unknown>> | null;
-  /** The keys read so far; `null` until the first. */
-  private readKeys: Set<string> | null = null;
+  /**
+   * The keys read so far that the record holds. A list, not a set: a record is
+   * read once per key, and `done` only has to look for one nobody read when
+   * there are fewer of these than keys — a scene reads tens of thousands of
+   * records, and a set apiece was a tenth of its decoding.
+   */
+  private readonly readKeys: string[] = [];
   private readAll = false;
   private readonly children: RecordReader[] = [];
 
@@ -302,18 +307,24 @@ export class RecordReader {
   /** The value at `key`, counted as read; `ABSENT`, its fault recorded, when the record does not hold it. */
   private take(key: string): unknown {
     if (this.held === null) return ABSENT;
-    (this.readKeys ??= new Set()).add(key);
     // Its own keys only: a file may name a key `constructor`, which every
     // object answers to without holding it.
-    if (Object.hasOwn(this.held, key)) return this.held[key];
+    if (Object.hasOwn(this.held, key)) {
+      this.readKeys.push(key);
+      return this.held[key];
+    }
     this.diagnostics.push(missing([...this.path, key]));
     return ABSENT;
   }
 
   private refuseUnread(): void {
     if (this.held !== null && !this.readAll) {
-      for (const key of Object.keys(this.held)) {
-        if (!this.readKeys?.has(key)) this.diagnostics.push(unexpected([...this.path, key]));
+      const keys = Object.keys(this.held);
+      if (keys.length !== this.readKeys.length) {
+        const read = new Set(this.readKeys);
+        for (const key of keys) {
+          if (!read.has(key)) this.diagnostics.push(unexpected([...this.path, key]));
+        }
       }
     }
     for (const child of this.children) child.refuseUnread();

@@ -262,6 +262,15 @@ interface PlannedEntry {
 interface PlannedObject {
   readonly form: 'object';
   readonly entries: readonly PlannedEntry[];
+  /** The entries by key, for reading a stored object in its own key order. */
+  readonly byKey: ReadonlyMap<string, PlannedEntry>;
+  /**
+   * The entries that name an asset or an entity, or hold one that does: what
+   * the walks that list them visit. The Hierarchy asks for every component's
+   * assets each time the scene's structure changes, and a mesh's material is
+   * twenty-six fields of which nine name one.
+   */
+  readonly naming: { readonly [R in Reference]: readonly PlannedEntry[] };
   readonly keys: ReadonlySet<string>;
   readonly holds: Holds;
   /**
@@ -323,10 +332,19 @@ function planObject(fields: Schema, variant = false): PlannedObject {
   return {
     form: 'object',
     entries,
+    byKey: new Map(entries.map((entry) => [entry.key, entry])),
+    naming: { asset: naming(entries, 'asset'), entity: naming(entries, 'entity') },
     keys: new Set(entries.map((entry) => entry.key)),
     holds: holdsOf(entries.map((entry) => entry.node)),
     shape: isRecord(shape) ? shape : {},
   };
+}
+
+/** The entries that name `reference`, or hold an object or a union that does. */
+function naming(entries: readonly PlannedEntry[], reference: Reference): PlannedEntry[] {
+  return entries.filter(({ node }) =>
+    node.form === 'leaf' ? node.reference === reference : node.form !== 'custom' && node.holds[reference],
+  );
 }
 
 function planField(field: SchemaField): Planned {
@@ -409,6 +427,9 @@ function decodeObject(
     faults.push(invalid(path, 'an object', value));
     return undefined;
   }
+  const whole = decodeWhole(node, value, path, kind);
+  if (whole !== undefined) return whole;
+  // Something does not fit: read again field by field, and say where.
   // A copy of the object's shape, filled in: see `PlannedObject.shape`.
   const out: Record<string, unknown> = { ...node.shape };
   if (kind !== null) out['kind'] = kind;
@@ -435,6 +456,42 @@ function decodeObject(
     }
   }
   return out;
+}
+
+/**
+ * An object every field of which fits, read in one pass over its own keys;
+ * `undefined` at the first thing that does not, for `decodeObject` to read it
+ * again and name each fault where it sits. What a file holds almost always
+ * fits, and a scene's ten thousand components are read here once each, with
+ * no path built and no key looked up twice.
+ */
+function decodeWhole(
+  node: PlannedObject,
+  value: Readonly<Record<string, unknown>>,
+  path: DecodePath,
+  kind: string | null,
+): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = { ...node.shape };
+  if (kind !== null) out['kind'] = kind;
+  let found = 0;
+  for (const key in value) {
+    if (!Object.hasOwn(value, key) || (kind !== null && key === 'kind')) continue;
+    const entry = node.byKey.get(key);
+    if (entry === undefined) return undefined;
+    const held = value[key];
+    if (entry.node.form === 'leaf') {
+      if (!entry.node.check.is(held)) return undefined;
+      out[key] = held;
+    } else {
+      // Its faults are thrown away with it: the second reading finds them again, at their paths.
+      const faults: Diagnostic[] = [];
+      const decoded = decodeNode(entry.node, held, path, faults);
+      if (faults.length > 0) return undefined;
+      out[key] = decoded;
+    }
+    found += 1;
+  }
+  return found === node.entries.length ? out : undefined;
 }
 
 // ---------------------------------------------------------------- defaults
@@ -586,8 +643,8 @@ function collectReferences<T>(
       if (node.reference === reference) out.push(is(value) ? value : null);
       return;
     case 'object':
-      if (!node.holds[reference] || !isRecord(value)) return;
-      for (const { key, node: field } of node.entries) collectReferences(field, value[key], reference, is, out);
+      if (!isRecord(value)) return;
+      for (const { key, node: field } of node.naming[reference]) collectReferences(field, value[key], reference, is, out);
       return;
     case 'union': {
       const variant = node.holds[reference] ? activeVariant(node, value) : undefined;
