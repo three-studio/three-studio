@@ -39,6 +39,9 @@ export type DecodePath = readonly (string | number)[];
  * - `format.version`: a file of another format, refused before anything else in it is read;
  * - `field.missing`, `field.invalid`, `field.unexpected`: a field absent, of the wrong kind, or none at all;
  * - `variant.unknown`: a union's `kind` that names none of its variants;
+ * - `type.version`: a component type written at another version than this build's;
+ * - `key.mismatch`: an id that is not the key it is filed under;
+ * - `table.unversioned`: a file's component table with no version recorded, or a version with no table;
  * - `layers.invalid`: a collision layer table no editor writes.
  */
 export type DiagnosticCode =
@@ -47,6 +50,9 @@ export type DiagnosticCode =
   | 'field.invalid'
   | 'field.unexpected'
   | 'variant.unknown'
+  | 'type.version'
+  | 'key.mismatch'
+  | 'table.unversioned'
   | 'layers.invalid';
 
 /** One fault in what was read. */
@@ -305,6 +311,19 @@ export class RecordReader {
 }
 
 // ---------------------------------------------------------------- the refusals
+
+/**
+ * A text read as JSON: the value, or the one fault that it is none, in the
+ * parser's own words. What a file's decoder reads first.
+ */
+export function decodeJson(text: string): Decoded<unknown> {
+  try {
+    return { ok: true, value: JSON.parse(text) };
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    return { ok: false, diagnostics: [{ code: 'field.invalid', message: `is not JSON (${reason})`, path: [] }] };
+  }
+}
 
 /**
  * A file of another format, refused as a whole: one fault, at `version`.

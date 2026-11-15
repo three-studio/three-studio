@@ -5,11 +5,12 @@ import {
   SCENE_FILE_SUFFIX,
   createEmptyScene,
   createSceneId,
-  deserializeScene,
+  decodeScene,
   findScene,
   safeFileName,
   sceneName,
   serializeScene,
+  unwrap,
   type CoreRegistries,
   type ProjectContents,
   type ProjectFile,
@@ -203,11 +204,11 @@ export async function createScene(
   name: string,
   contents?: string,
 ): Promise<SceneChange> {
-  // Read before anything is written, so a document that does not parse leaves
-  // no file behind. Read as Duplicate reads its source: migrated, and with a
-  // component type this build does not know filed away untouched, so the round
-  // trip loses nothing.
-  const from = contents === undefined ? undefined : deserializeScene(registries, contents);
+  // Read before anything is written, so a document that does not decode leaves
+  // no file behind. Read as Duplicate reads its source: with a component type
+  // this build does not know filed away untouched, so the round trip loses
+  // nothing.
+  const from = contents === undefined ? undefined : unwrap(decodeScene(registries, contents), name);
   const project = await readProject(projectPath);
   const scenes = await discoverScenes(projectPath);
 
@@ -250,7 +251,10 @@ export async function duplicateScene(
   const path = scenePathIn(posix.dirname(source.path), copyName);
   await requireFree(projectPath, path);
 
-  const document = deserializeScene(registries, await readFile(resolveInside(projectPath, source.path), 'utf8'));
+  const document = unwrap(
+    decodeScene(registries, await readFile(resolveInside(projectPath, source.path), 'utf8')),
+    source.path,
+  );
   const scene: SceneEntry = { id: createSceneId(), name: copyName, path, shadowedBy: null };
   await writeSceneFile(
     projectPath,

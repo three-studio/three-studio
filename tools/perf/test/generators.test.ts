@@ -5,9 +5,10 @@ import {
   CACHE_DIR,
   componentAssets,
   componentsOf,
-  deserializeScene,
+  decodeScene,
   isAssetId,
   type SceneDoc,
+  unwrap,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readAssetMeta, scanAssets } from '../../../apps/desktop/src/main/assetScan';
@@ -70,7 +71,7 @@ async function references(projectPath: string, scenes: readonly SceneDoc[]): Pro
 
 /** The project's start scene, as the editor reads it. */
 async function startScene(projectPath: string): Promise<SceneDoc> {
-  return deserializeScene(registries, (await openProject(projectPath)).sceneJson);
+  return unwrap(decodeScene(registries, (await openProject(projectPath)).sceneJson), 'Scene file');
 }
 
 describe('the full-size recipes, counted without encoding a byte', () => {
@@ -204,7 +205,7 @@ describe('each recipe at a reduced size, opened by the app', () => {
 
     const scenes = new Map<string, SceneDoc>();
     for (const entry of opened.scenes) {
-      scenes.set(entry.name, deserializeScene(registries, await readSceneFile(path, entry.path)));
+      scenes.set(entry.name, unwrap(decodeScene(registries, await readSceneFile(path, entry.path)), 'Scene file'));
     }
     const counts = Object.fromEntries([...scenes].map(([name, scene]) => [name, entityCount(scene)]));
     // A: the props, a sun, a camera, the Director and one entity per ballast

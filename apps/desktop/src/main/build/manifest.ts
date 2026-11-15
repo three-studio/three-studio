@@ -6,6 +6,7 @@ import {
   type AssetSettings,
   type BuildManifest,
   type BuildScene,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PhysicsSettings,
@@ -63,7 +64,7 @@ export interface ManifestContents {
  * that had not changed. The scenes keep the caller's order, which means
  * something: the first is where the game starts.
  */
-export function assembleManifest(contents: ManifestContents): BuildManifest {
+export function assembleManifest(registries: CoreRegistries, contents: ManifestContents): BuildManifest {
   const assets: Record<string, string> = {};
   /**
    * Only the images whose file name does not already say what they are.
@@ -105,7 +106,7 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     materials: sortedRecord(contents.materials),
     physicsMaterials: sortedRecord(contents.physicsMaterials),
     // Each as its JSON, never the document as it stands: see `prefabJsonOf`.
-    prefabs: sortedRecord(new Map([...contents.prefabs].map(([id, prefab]) => [id, prefabJsonOf(prefab)]))),
+    prefabs: sortedRecord(new Map([...contents.prefabs].map(([id, prefab]) => [id, prefabJsonOf(registries, prefab)]))),
     textureEncodings,
     assetSettings,
     scripts: contents.scripts,

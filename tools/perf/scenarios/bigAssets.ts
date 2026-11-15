@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, entitiesWith, isRecord, type EntityId } from '@three-studio/core';
+import { decodeScene, unwrap, entitiesWith, isRecord, type EntityId } from '@three-studio/core';
 import { scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { exportBuild } from '../../../apps/desktop/src/main/build/exportBuild';
 import { openProject, readProject } from '../../../apps/desktop/src/main/project';
@@ -108,7 +108,7 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map(RECIPES.flatMap((recipe
 
 /** The entity holding the model, read from the start scene with the app's own code. */
 async function modelEntityOf(projectPath: string): Promise<EntityId> {
-  const scene = deserializeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson);
+  const scene = unwrap(decodeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson), projectPath);
   const [entityId] = entitiesWith(scene, 'model');
   if (entityId === undefined) throw new Error('the scene holds no model');
   return entityId;

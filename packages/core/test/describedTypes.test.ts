@@ -22,7 +22,7 @@ import {
   createModelEntity,
   createPhysicsMaterial,
   createPrefabInstance,
-  deserializeScene,
+  decodeScene,
   expandPrefabs,
   findComponent,
   findMissingEntities,
@@ -50,6 +50,7 @@ import {
   type LightKind,
   type ScriptPropValue,
   type WaterSun,
+  unwrap,
 } from '../src/index';
 import { prefabWith, sceneWith } from './fixtures';
 import { builtInRegistries } from './registries';
@@ -192,7 +193,7 @@ function heldScene(): { json: string; held: ComponentDoc[]; entityId: EntityId }
 describe('a component of a type described by its fields, through a file', () => {
   it('comes back equal, each of the five', () => {
     const { json, held, entityId } = heldScene();
-    const scene = deserializeScene(registries, json);
+    const scene = unwrap(decodeScene(registries, json), 'Scene file');
 
     for (const component of held) {
       expect(findComponent(scene, entityId, component.type)).toEqual(component);
@@ -214,7 +215,7 @@ describe('a component of a type described by its fields, through a file', () => 
       const [componentId] = Object.keys(file.components[type][entityId]);
       file.components[type][entityId][componentId ?? ''][field] = value;
 
-      expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+      expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(
         `components.${type}.${entityId}.${componentId}.${field}: expected ${expected}`,
       );
     },
@@ -228,7 +229,7 @@ describe('a component of a type described by its fields, through a file', () => 
     file.components.light[entityId][lightId ?? ''].shadow.bias = 'sharp';
     delete file.components.rigidbody[entityId][bodyId ?? ''].lockRotation.y;
 
-    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    const refusal = (): unknown => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file');
     expect(refusal).toThrow(`components.light.${entityId}.${lightId}.shadow.bias: expected a finite number, found "sharp"`);
     expect(refusal).toThrow(`components.rigidbody.${entityId}.${bodyId}.lockRotation.y: is missing`);
   });
@@ -347,7 +348,7 @@ describe('a mesh', () => {
     const template = createEntity('Knot', [mesh]);
     const json = serializeScene(registries, sceneWith([template]));
 
-    expect(findComponent(deserializeScene(registries, json), template.entity.id, 'mesh')).toEqual(mesh);
+    expect(findComponent(unwrap(decodeScene(registries, json), 'Scene file'), template.entity.id, 'mesh')).toEqual(mesh);
   });
 
   it('refuses a primitive this build does not know, and a malformed material, naming where', () => {
@@ -358,7 +359,7 @@ describe('a mesh', () => {
     stored.geometry = { kind: 'teapot' };
     stored.material.side = 'inside';
 
-    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    const refusal = (): unknown => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file');
     expect(refusal).toThrow(`components.mesh.${template.entity.id}.${id}.geometry.kind: expected one of "box", "sphere"`);
     expect(refusal).toThrow(`components.mesh.${template.entity.id}.${id}.material.side: expected one of "front", "back", "double"`);
   });
@@ -400,7 +401,7 @@ describe('a water surface', () => {
       const pond = createEntity('Pond', [{ ...waterType.create(), sun: structuredClone(sun) }]);
       const json = serializeScene(registries, sceneWith([lamp, pond]));
 
-      expect(findComponent(deserializeScene(registries, json), pond.entity.id, 'water')?.sun).toEqual(sun);
+      expect(findComponent(unwrap(decodeScene(registries, json), 'Scene file'), pond.entity.id, 'water')?.sun).toEqual(sun);
     }
   });
 
@@ -447,9 +448,9 @@ describe('a water surface', () => {
     const where = `components.water.${pond.entity.id}.${id}.sun`;
 
     file.components.water[pond.entity.id][id ?? ''].sun = { kind: 'moon' };
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(`${where}.kind: expected one of "sky", "light", "custom"`);
+    expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(`${where}.kind: expected one of "sky", "light", "custom"`);
     file.components.water[pond.entity.id][id ?? ''].sun = { kind: 'light', entity: '' };
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(`${where}.entity: expected an entity id or null`);
+    expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(`${where}.entity: expected an entity id or null`);
   });
 });
 
@@ -515,7 +516,7 @@ describe('a collider', () => {
     const template = createEntity('Pill', [collider]);
     const json = serializeScene(registries, sceneWith([template]));
 
-    expect(findComponent(deserializeScene(registries, json), template.entity.id, 'collider')).toEqual(collider);
+    expect(findComponent(unwrap(decodeScene(registries, json), 'Scene file'), template.entity.id, 'collider')).toEqual(collider);
     expect(componentAssets(registries, collider)).toEqual([ice]);
   });
 
@@ -528,7 +529,7 @@ describe('a collider', () => {
     stored.shape = { kind: 'torus' };
     stored.material.frictionCombine = 'sum';
 
-    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    const refusal = (): unknown => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file');
     expect(refusal).toThrow(`${where}.shape.kind: expected one of "box", "sphere", "capsule", "cylinder", "cone", "mesh"`);
     expect(refusal).toThrow(`${where}.material.frictionCombine: expected one of "average", "min", "multiply", "max"`);
 
@@ -573,7 +574,7 @@ describe('a joint', () => {
     const door = createEntity('Door', [joint]);
     const json = serializeScene(registries, sceneWith([frame, door]));
 
-    expect(findComponent(deserializeScene(registries, json), door.entity.id, 'joint')).toEqual(joint);
+    expect(findComponent(unwrap(decodeScene(registries, json), 'Scene file'), door.entity.id, 'joint')).toEqual(joint);
     expect(componentEntities(registries, joint)).toEqual([frame.entity.id]);
   });
 
@@ -585,7 +586,7 @@ describe('a joint', () => {
     const stored = file.components.joint[template.entity.id][id ?? ''];
     stored.motion.limits.min = 'low';
 
-    const refusal = (): unknown => deserializeScene(registries, JSON.stringify(file));
+    const refusal = (): unknown => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file');
     expect(refusal).toThrow(`${where}.motion.limits.min: expected a finite number, found "low"`);
     stored.motion = { kind: 'ball' };
     expect(refusal).toThrow(`${where}.motion.kind: expected one of "fixed", "hinge", "slider", "spring"`);
@@ -669,7 +670,7 @@ describe('an audio source', () => {
     const [id] = Object.keys(file.components.audioSource[template.entity.id]);
     file.components.audioSource[template.entity.id][id ?? ''].bus = 'voice';
 
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+    expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(
       `components.audioSource.${template.entity.id}.${id}.bus: expected one of "master", "music", "sfx", "ui", "ambience"`,
     );
   });
@@ -685,11 +686,11 @@ describe('a script', () => {
     const template = createEntity('Door', [{ ...scriptType.create(), assetId: fixedId('asset', 'door-script'), props }]);
     const file = JSON.parse(serializeScene(registries, sceneWith([template])));
 
-    expect(findComponent(deserializeScene(registries, JSON.stringify(file)), template.entity.id, 'script')?.props).toEqual(props);
+    expect(findComponent(unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file'), template.entity.id, 'script')?.props).toEqual(props);
 
     const [id] = Object.keys(file.components.script[template.entity.id]);
     file.components.script[template.entity.id][id ?? ''].props.target = { id: 'x' };
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+    expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(
       `components.script.${template.entity.id}.${id}.props.target: expected a number, a string, true or false, or two or three numbers`,
     );
   });
@@ -717,7 +718,7 @@ describe('a prefab instance', () => {
     const template = createEntity('Lamp', [{ ...createPrefabInstance(LAMP), overrides }]);
     const json = serializeScene(registries, sceneWith([template]));
 
-    expect(findComponent(deserializeScene(registries, json), template.entity.id, 'prefabInstance')?.overrides).toEqual(overrides);
+    expect(findComponent(unwrap(decodeScene(registries, json), 'Scene file'), template.entity.id, 'prefabInstance')?.overrides).toEqual(overrides);
   });
 
   it.each([
@@ -733,7 +734,7 @@ describe('a prefab instance', () => {
     const [id] = Object.keys(file.components.prefabInstance[template.entity.id]);
     file.components.prefabInstance[template.entity.id][id ?? ''].overrides = overrides;
 
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+    expect(() => unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file')).toThrow(
       `components.prefabInstance.${template.entity.id}.${id}.overrides.${where}`,
     );
   });

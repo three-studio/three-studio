@@ -5,7 +5,7 @@ import {
   createMeshEntity,
   cycles,
   collectDescendants,
-  deserializeScene,
+  decodeScene,
   fixedId,
   insertEntity,
   isAncestorOf,
@@ -16,6 +16,7 @@ import {
   unlinkEntity,
   validateHierarchy,
   type EntityTemplate,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from './fixtures';
@@ -319,7 +320,7 @@ describe('walking a document that contains a cycle', () => {
 
     // At load the document is already this shape on disk, so healing is right
     // here and refusing is not: the alternative is a project that will not open.
-    const loaded = deserializeScene(registries, serializeScene(registries, sceneWith([a, b])));
+    const loaded = unwrap(decodeScene(registries, serializeScene(registries, sceneWith([a, b]))), 'Scene file');
 
     expect(validateHierarchy(loaded)).toEqual([]);
     expect(loaded.rootOrder.length).toBeGreaterThan(0);

@@ -1,13 +1,6 @@
-import {
-  BACKGROUND_MODE_LABELS,
-  ENVIRONMENT_MODE_LABELS,
-  FOG_MODE_LABELS,
-  optionsFrom,
-  type EnvironmentDef,
-  type SceneDoc,
-  type SkySettings,
-} from '@three-studio/core';
-import { ASSET_SLOT, asDegrees, type DistributiveOmit, type FieldSpec } from './fields';
+import { environmentSchema, type EnvironmentDef, type SceneDoc, type SkySettings } from '@three-studio/core';
+import { leafRow } from './derivePane';
+import type { DistributiveOmit, FieldSpec } from './fields';
 import { shapeOf } from './signature';
 
 /*
@@ -20,7 +13,6 @@ import { shapeOf } from './signature';
  */
 export {
   ASSET_SLOT,
-  asDegrees,
   assetSlot,
   isAction,
   isSeparator,
@@ -125,26 +117,24 @@ const turnsAnImage = (scene: SceneSubject) =>
   scene.environment.backgroundMode === 'texture' ||
   scene.environment.environmentMode === 'texture';
 
-/** The slot for an equirectangular image, shaped like the material ones. */
-const environmentSlot = (key: keyof EnvironmentDef, label: string): SceneField => ({
-  on: 'environment',
-  key,
-  label,
-  ...ASSET_SLOT,
-});
+/** A key of the environment that holds one value: all but the sky, an object of its own. */
+type EnvironmentKey = Exclude<keyof EnvironmentDef, 'sky'>;
 
 /**
- * One of the sky's uniforms. The range is optional: `Sun Disc` is a checkbox,
- * and Tweakpane builds one from the value's type with nothing else to say.
+ * A row of the environment, its label, range, options and unit read off
+ * `environmentSchema`: those facts are the field's, and the section a row sits
+ * in and the condition it is shown under are this pane's.
  */
-const skyField = (
-  key: keyof SkySettings,
-  label: string,
-  range?: { min: number; max: number; step: number },
-): SceneField =>
-  range === undefined
-    ? { on: 'sky', key, label }
-    : { on: 'sky', key, label, type: 'number', ...range };
+function environmentRow(key: EnvironmentKey, visibleWhen?: (scene: SceneSubject) => boolean): SceneField {
+  const { path: _path, ...row } = leafRow<SceneSubject>(environmentSchema[key], [key]);
+  return { on: 'environment', key, ...row, ...(visibleWhen === undefined ? {} : { visibleWhen }) };
+}
+
+/** One of the sky's uniforms, read as `environmentRow` reads a field of the environment. */
+function skyRow(key: keyof SkySettings): SceneField {
+  const { path: _path, ...row } = leafRow<SceneSubject>(environmentSchema.sky.fields[key], [key]);
+  return { on: 'sky', key, ...row };
+}
 
 /**
  * What the Inspector shows when nothing is selected — Blender's Scene tab.
@@ -168,74 +158,27 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
   {
     label: 'Background',
     fields: [
-      {
-        on: 'environment',
-        key: 'backgroundMode',
-        label: 'Mode',
-        type: 'enum',
-        options: optionsFrom(BACKGROUND_MODE_LABELS),
-      },
-      {
-        on: 'environment',
-        key: 'background',
-        label: 'Colour',
-        visibleWhen: (scene) => scene.environment.backgroundMode === 'color',
-      },
-      { ...environmentSlot('backgroundTexture', 'Texture'), visibleWhen: showsTexture },
-      {
-        on: 'environment',
-        key: 'backgroundIntensity',
-        label: 'Intensity',
-        type: 'number', min: 0, max: 5, step: 0.01,
-        visibleWhen: showsImageBackground,
-      },
-      {
-        on: 'environment',
-        key: 'backgroundBlur',
-        label: 'Blur',
-        // Only the sky, never the reflections — which is the point of having
-        // it: a blurred backdrop behind sharp reflections is how a subject is
-        // put in front of an environment without it reading as a photograph.
-        type: 'number', min: 0, max: 1, step: 0.01,
-        // Texture only, and it loses nothing. Blurring softens a photographed
-        // room behind a subject; an analytic sky is already smooth, has no
-        // detail to lose, and as a mesh has no mip chain to sample.
-        visibleWhen: showsTexture,
-      },
+      environmentRow('backgroundMode'),
+      environmentRow('background', (scene) => scene.environment.backgroundMode === 'color'),
+      environmentRow('backgroundTexture', showsTexture),
+      environmentRow('backgroundIntensity', showsImageBackground),
+      // Only the sky, never the reflections — which is the point of having it:
+      // a blurred backdrop behind sharp reflections is how a subject is put in
+      // front of an environment without it reading as a photograph. Texture
+      // only, and it loses nothing: an analytic sky is already smooth, has no
+      // detail to lose, and as a mesh has no mip chain to sample.
+      environmentRow('backgroundBlur', showsTexture),
     ],
   },
   {
     label: 'Environment',
     fields: [
-      {
-        on: 'environment',
-        key: 'environmentMode',
-        label: 'Source',
-        type: 'enum',
-        options: optionsFrom(ENVIRONMENT_MODE_LABELS),
-      },
-      {
-        ...environmentSlot('environmentTexture', 'Lighting'),
-        visibleWhen: (scene) => scene.environment.environmentMode === 'texture',
-      },
-      {
-        on: 'environment',
-        key: 'environmentIntensity',
-        label: 'Intensity',
-        type: 'number', min: 0, max: 5, step: 0.01,
-        visibleWhen: (scene) => scene.environment.environmentMode !== 'none',
-      },
-      {
-        on: 'environment',
-        key: 'rotation',
-        label: 'Rotation',
-        // Turns the sky and the light it casts together — see `EnvironmentDef`.
-        // Degrees in the panel, radians in the document, like every other
-        // rotation the Inspector shows.
-        ...asDegrees,
-        type: 'number', min: -180, max: 180, step: 1,
-        visibleWhen: turnsAnImage,
-      },
+      environmentRow('environmentMode'),
+      environmentRow('environmentTexture', (scene) => scene.environment.environmentMode === 'texture'),
+      environmentRow('environmentIntensity', (scene) => scene.environment.environmentMode !== 'none'),
+      // Turns the sky and the light it casts together. Degrees in the panel,
+      // radians in the document, like every other rotation the Inspector shows.
+      environmentRow('rotation', turnsAnImage),
     ],
   },
   {
@@ -245,61 +188,34 @@ export const SCENE_SCHEMA: readonly SceneSection[] = [
     // switching away must not lose what was set up.
     visibleWhen: (scene) => scene.environment.backgroundMode === 'sky',
     fields: [
-      skyField('elevation', 'Sun Height', { min: -10, max: 90, step: 0.1 }),
-      skyField('azimuth', 'Sun Angle', { min: -180, max: 180, step: 1 }),
-      skyField('turbidity', 'Haze', { min: 0, max: 20, step: 0.1 }),
-      skyField('rayleigh', 'Blue', { min: 0, max: 4, step: 0.01 }),
-      skyField('mieCoefficient', 'Sun Glow', { min: 0, max: 0.1, step: 0.001 }),
-      skyField('mieDirectionalG', 'Glow Focus', { min: 0, max: 1, step: 0.01 }),
+      skyRow('elevation'),
+      skyRow('azimuth'),
+      skyRow('turbidity'),
+      skyRow('rayleigh'),
+      skyRow('mieCoefficient'),
+      skyRow('mieDirectionalG'),
       // The sky as seen only. The capture that lights the scene never carries
       // the disc, whatever this says — see `ProceduralSky.radiance`.
-      skyField('sunDisc', 'Sun Disc'),
-      skyField('cloudCoverage', 'Cloud Cover', { min: 0, max: 1, step: 0.01 }),
-      skyField('cloudDensity', 'Cloud Density', { min: 0, max: 1, step: 0.01 }),
-      skyField('cloudScale', 'Cloud Scale', { min: 0.00001, max: 0.001, step: 0.00001 }),
-      skyField('cloudElevation', 'Cloud Height', { min: 0, max: 1, step: 0.01 }),
+      skyRow('sunDisc'),
+      skyRow('cloudCoverage'),
+      skyRow('cloudDensity'),
+      skyRow('cloudScale'),
+      skyRow('cloudElevation'),
       // Authored, and inert until three fixes `SkyMesh`: its `time` uniform is
       // never updated, so the clouds hold still at any speed. Not a fault of
       // this application — a plain TSL material animates fine beside it.
-      skyField('cloudSpeed', 'Cloud Drift', { min: 0, max: 0.001, step: 0.00001 }),
+      skyRow('cloudSpeed'),
     ],
   },
   {
     label: 'Fog',
     fields: [
-      { on: 'environment', key: 'fogEnabled', label: 'Enabled' },
-      { on: 'environment', key: 'fogColor', label: 'Colour', visibleWhen: isFogOn },
-      {
-        on: 'environment',
-        key: 'fogMode',
-        label: 'Mode',
-        type: 'enum',
-        options: optionsFrom(FOG_MODE_LABELS),
-        visibleWhen: isFogOn,
-      },
-      {
-        on: 'environment',
-        key: 'fogNear',
-        label: 'Start',
-        type: 'number', min: 0, step: 1,
-        visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear',
-      },
-      {
-        on: 'environment',
-        key: 'fogFar',
-        label: 'End',
-        type: 'number', min: 0, step: 1,
-        visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear',
-      },
-      {
-        on: 'environment',
-        key: 'fogDensity',
-        label: 'Density',
-        // Exponential in effect as well as in name: 0.05 already closes the
-        // horizon at about forty units.
-        type: 'number', min: 0, max: 0.2, step: 0.001,
-        visibleWhen: (scene) => isFogOn(scene) && scene.environment.fogMode === 'exponential',
-      },
+      environmentRow('fogEnabled'),
+      environmentRow('fogColor', isFogOn),
+      environmentRow('fogMode', isFogOn),
+      environmentRow('fogNear', (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear'),
+      environmentRow('fogFar', (scene) => isFogOn(scene) && scene.environment.fogMode === 'linear'),
+      environmentRow('fogDensity', (scene) => isFogOn(scene) && scene.environment.fogMode === 'exponential'),
     ],
   },
 ];

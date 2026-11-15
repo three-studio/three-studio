@@ -12,12 +12,13 @@ import {
   createEntity,
   createPhysicsSettings,
   createRenderingSettings,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   type EntityId,
   type ProjectFile,
   type SceneId,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { discoverScenes, openProject, readProject } from '../src/main/project';
@@ -144,7 +145,7 @@ describe('a scene is addressed by id, never by name or path', () => {
     const root = await projectWith(['main']);
     const { scene } = await createScene(registries, root, 'Arena');
 
-    const document = deserializeScene(registries, await readFile(join(root, scene.path), 'utf8'));
+    const document = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
     expect(document.id).toBe(scene.id);
   });
 });
@@ -324,7 +325,7 @@ describe('what these operations write', () => {
     const root = await projectWith(['main']);
     const { scene } = await createScene(registries, root, 'Arena');
 
-    const document = deserializeScene(registries, await readFile(join(root, scene.path), 'utf8'));
+    const document = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
     expect(document.rootOrder).toEqual([]);
     expect(document.entities.size).toBe(0);
     expect(document.name).toBe('Arena');
@@ -335,11 +336,11 @@ describe('what these operations write', () => {
     const main = await idOf(root, 'main');
     const { scene } = await duplicateScene(registries, root, main, 'Main Copy');
 
-    const original = deserializeScene(
+    const original = unwrap(decodeScene(
       registries,
       await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
-    );
-    const copy = deserializeScene(registries, await readFile(join(root, scene.path), 'utf8'));
+    ), 'Scene file');
+    const copy = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
 
     expect(scene.id).not.toBe(main);
     expect(copy.id).toBe(scene.id);
@@ -355,10 +356,10 @@ describe('what these operations write', () => {
    */
   describe('a scene made from a window’s document', () => {
     async function savedAs(root: string): Promise<{ document: string; wall: EntityId }> {
-      const document = deserializeScene(
+      const document = unwrap(decodeScene(
         registries,
         await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
-      );
+      ), 'Scene file');
       const wall = createEntity('Wall');
       document.entities.set(wall.entity.id, wall.entity);
       document.rootOrder.push(wall.entity.id);
@@ -373,7 +374,7 @@ describe('what these operations write', () => {
 
       const { scene } = await createScene(registries, root, 'Main Copy', document);
 
-      const copy = deserializeScene(registries, await readFile(join(root, scene.path), 'utf8'));
+      const copy = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
       expect(copy.id).toBe(scene.id);
       expect(copy.id).not.toBe(main);
       expect(copy.name).toBe('Main Copy');

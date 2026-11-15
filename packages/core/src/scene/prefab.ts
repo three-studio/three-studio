@@ -1,6 +1,6 @@
-import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
+import { PREFAB_FORMAT_VERSION, PREFAB_ID_SEPARATOR } from '../constants';
 import { isRecord } from '../conform';
-import { formatDiagnostics, versionRefusal } from '../decoded';
+import { checks, decodeJson, RecordReader, unwrap, versionRefusal, type Decoded } from '../decoded';
 import {
   createAssetId,
   idMapOf,
@@ -27,7 +27,7 @@ import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
 import { collectDescendants } from './query';
-import { componentsJsonOf, migrateScene, SceneFormatError } from './serialization';
+import { componentsJsonOf, readHeld, repairHierarchy } from './serialization';
 import type {
   ComponentDoc,
   ComponentTables,
@@ -112,7 +112,9 @@ function componentsFor(host: Required<ComponentHost>, ids: readonly EntityId[]):
   const components: ComponentTables = new Map();
   for (const [type, table] of host.components) components.set(type, lifted(table));
   const unknownComponents: UnknownComponentTables = new Map();
-  for (const [type, table] of host.unknownComponents) unknownComponents.set(type, lifted(table));
+  for (const [type, { version, components: table }] of host.unknownComponents) {
+    unknownComponents.set(type, { version, components: lifted(table) });
+  }
   return { components, unknownComponents };
 }
 
@@ -610,55 +612,41 @@ export function applyPrefabOverride(
 }
 
 /**
- * A parsed prefab file, as a document of this format: its entity table an
- * object keyed by id, which the document keeps in a Map.
+ * A prefab file's text, as a document of this build, under the asset id its
+ * reader knows it by: its sidecar's, or its key in a library. The file holds
+ * no id of its own — a second copy is what a hand edit or a copied file makes
+ * disagree with the first, and the asset's is the one every instance names.
  *
- * A file of any other format is refused before anything else in it is read,
- * as a scene is: nothing converts an older prefab (`PREFAB_FORMAT_VERSION`).
- *
- * It holds `EntityDoc`s, so it is mended as a scene is, by the same walk.
- *
- * @param assetId The id the place that read it knows: its sidecar's, or its key
- *   in a library. A file's own `id` field is what an older build wrote and what
- *   a hand edit may have changed, and the asset's is the one every instance
- *   names, so it wins; the file takes it on its next save. Without one, the
- *   file's own is read, which is the document a window sends before there is a
- *   sidecar to ask.
+ * Read as a scene's file is, by the same reader of entities and tables: a
+ * prefab is a scene without an environment, and two walks are how the two
+ * would drift apart. A file of any other format is refused before anything
+ * else in it is read (`PREFAB_FORMAT_VERSION`).
  */
-export function migratePrefab(registries: CoreRegistries, input: unknown, assetId?: AssetId): PrefabDoc {
-  if (!isRecord(input)) throw new SceneFormatError('Prefab file is not an object.');
-  const version = input['version'];
-  if (version !== PREFAB_FORMAT_VERSION) {
-    throw new SceneFormatError(formatDiagnostics('Prefab file', versionRefusal(version, PREFAB_FORMAT_VERSION).diagnostics));
+export function decodePrefab(registries: CoreRegistries, text: string, assetId: AssetId): Decoded<PrefabDoc> {
+  const parsed = decodeJson(text);
+  return parsed.ok ? decodePrefabValue(registries, parsed.value, assetId) : parsed;
+}
+
+/** A prefab already parsed — what a build's manifest holds, by asset id — read as `decodePrefab` reads a file. */
+export function decodePrefabValue(registries: CoreRegistries, value: unknown, assetId: AssetId): Decoded<PrefabDoc> {
+  if (isRecord(value) && value['version'] !== PREFAB_FORMAT_VERSION) {
+    return versionRefusal(value['version'], PREFAB_FORMAT_VERSION);
   }
-  const id = assetId ?? input['id'];
-  if (!isAssetId(id)) throw new SceneFormatError('Prefab file has no id of its own.');
-  // The entity every other one hangs under. Without an id for it there is no
-  // instance to make: each copy would be parented to an entity named "".
-  const root = input['root'];
-  if (!isEntityId(root)) throw new SceneFormatError('Prefab file has no root entity.');
 
-  // Borrowed wholesale: a prefab is a scene without an environment, and
-  // duplicating the walk is how the two would drift apart.
-  const asScene = migrateScene(registries, {
-    version: SCENE_FORMAT_VERSION,
-    id,
-    name: input['name'],
-    entities: input['entities'],
-    components: input['components'],
-    rootOrder: [root],
-    environment: createEmptyScene().environment,
-  });
-
-  return {
-    version: PREFAB_FORMAT_VERSION,
-    id,
-    name: asScene.name,
-    entities: asScene.entities,
-    components: asScene.components,
-    unknownComponents: asScene.unknownComponents,
-    root,
-  };
+  const file = new RecordReader(value);
+  file.read('version', checks.number);
+  const name = file.read('name', checks.string);
+  const root = file.read('root', checks.entityId);
+  const held = readHeld(registries, file);
+  // The entity every other one hangs under, as the file wrote it — not the
+  // stand-in of one refused already. One that is none of the prefab's is no
+  // instance to make: each copy would hang under an entity named nothing.
+  if (isRecord(value) && value['root'] === root && !held.entities.has(root)) {
+    file.refuse('root', 'field.invalid', 'names no entity of this prefab');
+  }
+  const decoded = file.done<PrefabDoc>({ version: PREFAB_FORMAT_VERSION, id: assetId, name, root, ...held });
+  if (decoded.ok) repairHierarchy({ entities: decoded.value.entities, rootOrder: [decoded.value.root] });
+  return decoded;
 }
 
 /**
@@ -666,52 +654,38 @@ export function migratePrefab(registries: CoreRegistries, input: unknown, assetI
  * reads in a diff.
  */
 export function serializePrefab(registries: CoreRegistries, prefab: PrefabDoc): string {
-  return stableJson({ ...prefabJsonOf(prefab), components: componentsJsonOf(prefab, registries) });
+  return stableJson(prefabJsonOf(registries, prefab));
 }
 
 /**
  * A prefab as JSON holds it, for `jsonOf` to write: the bridge in and out, a
- * build's manifest. One `components` block, as a scene's has, and for the
- * reason `sceneJsonOf` gives. The keys are written out in the order a prefab
- * has always had them, which a manifest keeps.
+ * build's manifest, a device. The tables and their versions as a scene's file
+ * writes them, for the reason `sceneJsonOf` gives, and no id: whoever receives
+ * it files it under the asset id it already knows.
  */
-export function prefabJsonOf(prefab: PrefabDoc): Readonly<Record<string, unknown>> {
+export function prefabJsonOf(registries: CoreRegistries, prefab: PrefabDoc): Readonly<Record<string, unknown>> {
   return {
     version: prefab.version,
-    id: prefab.id,
     name: prefab.name,
     entities: prefab.entities,
-    components: componentsJsonOf(prefab),
+    ...componentsJsonOf(registries, prefab),
     root: prefab.root,
   };
 }
 
-/** A prefab file's text, read as a document of the current format. See `migratePrefab` for the id. */
-export function deserializePrefab(registries: CoreRegistries, json: string, assetId?: AssetId): PrefabDoc {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new SceneFormatError(
-      `Prefab file is not valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
-    );
-  }
-  return migratePrefab(registries, parsed, assetId);
-}
-
 /**
- * The prefabs a build manifest holds, read as documents.
- *
- * The manifest keeps each as the JSON a file holds, keyed by asset id, and a
- * document keeps its entities in a Map, which JSON cannot say: the player reads
- * every one as the editor reads a file, under the id the manifest names it by.
- * A key that is not an id names no prefab.
+ * The prefabs a build manifest holds, read as documents, each under the id the
+ * manifest files it by. The player cannot go on without one: the exporter
+ * ships only prefabs it read, so a refusal here is a damaged build. A key that
+ * is no id names no prefab.
  */
 export function prefabsFromJson(
   registries: CoreRegistries,
   prefabs: Readonly<Record<string, unknown>>,
 ): Map<AssetId, PrefabDoc> {
   const read = new Map<AssetId, PrefabDoc>();
-  for (const [id, prefab] of idMapOf(prefabs, isAssetId)) read.set(id, migratePrefab(registries, prefab, id));
+  for (const [id, prefab] of idMapOf(prefabs, isAssetId)) {
+    read.set(id, unwrap(decodePrefabValue(registries, prefab, id), `Prefab ${id}`));
+  }
   return read;
 }

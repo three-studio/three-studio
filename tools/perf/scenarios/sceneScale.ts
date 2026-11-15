@@ -1,6 +1,6 @@
 import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { deserializeScene, isRecord, serializeScene, type EntityId, type SceneDoc } from '@three-studio/core';
+import { decodeScene, unwrap, isRecord, serializeScene, type EntityId, type SceneDoc } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeLargeProject } from '../generate/projects';
 import { builtInRegistries } from '../registries';
@@ -108,7 +108,7 @@ export function nodeTimings(
   let scene: SceneDoc | null = null;
   for (let n = 0; n < warmups + repetitions; n += 1) {
     const started = performance.now();
-    scene = deserializeScene(registries, text);
+    scene = unwrap(decodeScene(registries, text), 'large');
     if (n >= warmups) decodes.push(performance.now() - started);
   }
   if (scene === null) throw new Error('no repetition ran');
@@ -273,7 +273,7 @@ async function prepare(context: ScenarioContext, folder: string): Promise<Subjec
   const project = await writeLargeProject(folder);
   const opened = await openProject(project);
   const scenePath = join(project, opened.scenePath);
-  const scene = deserializeScene(builtInRegistries(), await readFile(scenePath, 'utf8'));
+  const scene = unwrap(decodeScene(builtInRegistries(), await readFile(scenePath, 'utf8')), scenePath);
   const groups = groupsToSelect(scene, 100);
   const [first] = groups;
   const dragged = first === undefined ? undefined : scene.entities.get(first)?.children[0];

@@ -1,56 +1,41 @@
+import type { ComponentDefinition } from '../components/registry';
 import { SCENE_FORMAT_VERSION } from '../constants';
 import { isRecord } from '../conform';
-import { formatDiagnostics, versionRefusal, type Diagnostic } from '../decoded';
 import {
-  idMapOf,
-  isComponentId,
-  isComponentTypeId,
-  isEntityId,
-  type EntityId,
-} from '../ids';
+  checks,
+  decodeJson,
+  listOf,
+  nullable,
+  RecordReader,
+  shown,
+  versionRefusal,
+  type DecodePath,
+  type Decoded,
+  type Diagnostic,
+} from '../decoded';
+import { isComponentId, isComponentTypeId, isEntityId, type ComponentId, type EntityId } from '../ids';
 import { stableJson } from '../json';
 import type { CoreRegistries } from '../registries';
 import type { ComponentHost } from './components';
-import { createEnvironment } from './defaults';
-import { createEntity } from './entity';
+import { createEnvironment, decodeEnvironment } from './environment';
 import { cycles } from './query';
-import type {
-  ComponentDoc,
-  ComponentTable,
-  ComponentTables,
-  EntityDoc,
-  SceneDoc,
-  UnknownComponentTables,
-} from './schema';
+import type { ComponentDoc, ComponentTables, EntityDoc, SceneDoc, UnknownComponentTables } from './schema';
 
-export class SceneFormatError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SceneFormatError';
-  }
-}
-
-/**
- * A scene as its file writes it: the entity table is an object keyed by entity
- * id, where the document holds the same entities in a Map, and each component
- * table an object by entity id holding an object by component id, where the
- * document holds Maps of Maps.
+/*
+ * A scene as its file holds it, and back.
  *
- * A file has one `components` block, where the document tells the types this
- * build defines from the others (`unknownComponents`): which is which depends on
- * the build that reads the file, and is no fact about the file.
+ * The file writes each table the document holds in a Map as an object keyed by
+ * id: the entities by entity id, each component table by entity id, then by
+ * component id. It has one `components` block, where the document tells the
+ * types this build defines from the others (`unknownComponents`) — which is
+ * which depends on the build that reads the file, and is no fact about it.
+ * Beside it, `componentVersions` records the version of each type the file
+ * holds a component of, once per type: a ten-thousand-entity scene would
+ * otherwise write the mesh's number ten thousand times.
  *
- * The conversion happens here and nowhere else: `migrateScene` reads this shape,
- * and `sceneJsonOf` and `serializeScene` write it. Nothing outside this module sees it, and the cast
- * that claims it stays where it is until a decoder checks the fields.
+ * A message carries the same JSON, unsorted (`sceneJsonOf`): what receives it
+ * decodes it as a file is decoded.
  */
-interface SceneJson extends Omit<SceneDoc, 'entities' | 'components' | 'unknownComponents'> {
-  entities: Record<string, EntityDoc>;
-  /** A type this build does not define has its table here too. */
-  components?: TablesJson;
-}
-
-type TablesJson = Readonly<Record<string, Readonly<Record<string, Readonly<Record<string, ComponentDoc>>>>>>;
 
 /**
  * Indented so a scene file is reviewable in a diff, and key-sorted so there is
@@ -65,189 +50,241 @@ type TablesJson = Readonly<Record<string, Readonly<Record<string, Readonly<Recor
  * agree on which of the two `findComponent` calls the first.
  */
 export function serializeScene(registries: CoreRegistries, scene: SceneDoc): string {
-  return stableJson({ ...sceneJsonOf(scene), components: componentsJsonOf(scene, registries) });
+  return stableJson(sceneJsonOf(registries, scene));
 }
 
 /**
  * A scene as JSON holds it, for `jsonOf` to write into a message: to the main
  * process, to a device. What receives it decodes it, and writes any file itself.
  *
- * A document is never written as it stands. Its components of the types this
+ * A document is never written as it stands: its components of the types this
  * build does not define sit apart in memory and belong in the one `components`
- * block of the JSON; written raw, they would land under a key no reader reads,
- * and be lost by the first save that crossed a process.
+ * block, with the version of every type beside it.
  */
-export function sceneJsonOf(scene: SceneDoc): Readonly<Record<string, unknown>> {
-  const { unknownComponents: _apart, ...rest } = scene;
-  return { ...rest, components: componentsJsonOf(scene) };
+export function sceneJsonOf(registries: CoreRegistries, scene: SceneDoc): Readonly<Record<string, unknown>> {
+  const { components: _components, unknownComponents: _apart, ...rest } = scene;
+  return { ...rest, ...componentsJsonOf(registries, scene) };
 }
 
 /**
- * The `components` block of a scene's or a prefab's JSON: the tables of the
- * types this build does not define, exactly as found, with the tables the
- * document holds. A table of such a type whose every component went with its
- * entity is left out: nothing registers the type, so nothing would ever say
- * why the file still lists it.
+ * The `componentVersions` and `components` blocks of a scene's or a prefab's
+ * JSON: the tables that hold a component, of the types this build defines and
+ * of those it keeps as found, and the version of each — the registered
+ * type's, or the one its file recorded.
  *
- * Given the registries, which is how a **file** is written, a table for every
- * registered type too, `{}` for the ones the document holds nothing of: a file
- * then lists the types of the build that wrote it, and does not gain a line the
- * first time a light is added. A message needs none of them, since a missing
- * table reads as an empty one.
+ * A table that holds nothing is left out with its version: a document keeps a
+ * table once made, even emptied, and a file would otherwise gain a line the
+ * first time a light is added and keep it after the last one went.
  *
  * Through `Object.fromEntries`, which makes an own property of any key: a file
  * may name a table `__proto__`, and an assignment would make it the prototype
  * of the block instead.
  */
 export function componentsJsonOf(
+  registries: CoreRegistries,
   host: Required<ComponentHost>,
-  registries?: CoreRegistries,
-): Readonly<Record<string, unknown>> {
-  const kept = [...host.unknownComponents].filter(([, table]) => table.size > 0);
-  const written = new Map<string, unknown>([...kept, ...host.components]);
-  for (const { id } of registries?.components.values() ?? []) {
-    if (!written.has(id)) written.set(id, {});
+): { readonly componentVersions: Readonly<Record<string, unknown>>; readonly components: Readonly<Record<string, unknown>> } {
+  const versions = new Map<string, unknown>();
+  const tables = new Map<string, unknown>();
+  for (const [type, table] of host.components) {
+    if (!holdsAny(table)) continue;
+    const definition = registries.components.get(type);
+    if (definition === undefined) throw new Error(`A table of the type ${type}, which these registries do not define`);
+    versions.set(type, definition.version);
+    tables.set(type, table);
   }
-  return Object.fromEntries(written);
+  for (const [type, { version, components }] of host.unknownComponents) {
+    if (!holdsAny(components)) continue;
+    versions.set(type, version);
+    tables.set(type, components);
+  }
+  return { componentVersions: Object.fromEntries(versions), components: Object.fromEntries(tables) };
 }
 
-export function deserializeScene(registries: CoreRegistries, json: string): SceneDoc {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new SceneFormatError(`Scene file is not valid JSON: ${(cause as Error).message}`);
-  }
-  return migrateScene(registries, parsed);
+/** Whether a table holds at least one component. */
+function holdsAny(table: ReadonlyMap<EntityId, ReadonlyMap<ComponentId, unknown>>): boolean {
+  for (const held of table.values()) if (held.size > 0) return true;
+  return false;
 }
 
 /**
- * A parsed scene file, as a document of this format.
+ * A scene file's text, as a document of this build: the value, or every fault
+ * found in it, each where it sits.
  *
  * A file of any other format is refused before anything else in it is read:
  * until 1.0.0 nothing converts an older scene, and a newer one holds fields
- * whose meaning this build cannot know (`SCENE_FORMAT_VERSION`).
+ * whose meaning this build cannot know (`SCENE_FORMAT_VERSION`). Then the whole
+ * of it is read, strictly — the shell, each entity, each component by its
+ * type, the environment by its schema: a field missing, of the wrong kind or
+ * that no reader names refuses the scene, and nothing is filled in.
  *
- * A broken hierarchy is healed (`repairHierarchy`), and each component is
- * decoded by its type: one it refuses refuses the scene
- * (`fillMissingFields`).
- *
- * `registries` say which types this build knows: each registered type's
- * components are decoded by its own definition, and any other is kept as
- * found, in `unknownComponents`.
+ * A broken hierarchy that reads is healed (`repairHierarchy`).
  */
-export function migrateScene(registries: CoreRegistries, input: unknown): SceneDoc {
-  if (typeof input !== 'object' || input === null) {
-    throw new SceneFormatError('Scene file is not an object.');
+export function decodeScene(registries: CoreRegistries, text: string): Decoded<SceneDoc> {
+  const parsed = decodeJson(text);
+  if (!parsed.ok) return parsed;
+  const value = parsed.value;
+  if (isRecord(value) && value['version'] !== SCENE_FORMAT_VERSION) {
+    return versionRefusal(value['version'], SCENE_FORMAT_VERSION);
   }
 
-  const doc = input as Partial<SceneJson>;
-  if (doc.version !== SCENE_FORMAT_VERSION) {
-    throw new SceneFormatError(
-      formatDiagnostics('Scene file', versionRefusal(doc.version, SCENE_FORMAT_VERSION).diagnostics),
-    );
-  }
-  // Not a Map, which an object is to `isRecord` and `Object.entries` reads as
-  // empty: a document handed here by mistake would come out as a scene with no
-  // entities, and nothing in the types says it was not a file.
-  if (!isRecord(doc.entities) || doc.entities instanceof Map || !Array.isArray(doc.rootOrder)) {
-    throw new SceneFormatError('Scene file is missing its entity table.');
-  }
+  const file = new RecordReader(value);
+  file.read('version', checks.number);
+  const decoded = file.done<SceneDoc>({
+    version: SCENE_FORMAT_VERSION,
+    id: file.read('id', checks.sceneId),
+    name: file.read('name', checks.string),
+    ...readHeld(registries, file),
+    rootOrder: file.read('rootOrder', ENTITY_LIST),
+    environment: file.decode('environment', decodeEnvironment) ?? createEnvironment(),
+  });
+  if (decoded.ok) repairHierarchy(decoded.value);
+  return decoded;
+}
 
-  const json = input as SceneJson;
-  const scene: SceneDoc = {
-    ...json,
-    entities: idMapOf(json.entities, isEntityId),
-    ...tablesFrom(registries, json.components),
-  };
-  repairHierarchy(scene);
-  fillMissingFields(registries, scene);
-  return scene;
+const ENTITY_LIST = listOf(checks.entityId);
+const ENTITY_OR_NONE = nullable(checks.entityId);
+
+/** A value kept as it was found: what a type this build does not define holds, and its version. */
+const asFound = (value: unknown): Decoded<unknown> => ({ ok: true, value });
+
+/** The fault of an id that is not the key it is filed under. */
+function mismatch(path: DecodePath, found: unknown, key: string): Diagnostic {
+  return { code: 'key.mismatch', message: `is ${shown(found)}, where its key is ${shown(key)}`, path };
 }
 
 /**
- * The component tables of a document, from the one block a file writes.
+ * What a scene's file and a prefab's both hold: the entities, the component
+ * tables, and the version of each type they hold a component of.
  *
- * A table whose type the registries hold is this build's, and goes with the
- * others; any other is kept **exactly as found**, in `unknownComponents`: nothing
- * here knows what is in it, and the next save has to write the author's data and
- * not an invention over it. Both are read the same two levels down, through the
- * checks of the ids they are keyed by — an entity's, then a component's — which
- * is what lets a component of an unknown type follow its entity when it is
- * deleted or copied. A key that fails its check is dropped, and so is a level
- * that is no object.
+ * A table of a type the registries define is read by its type, at its
+ * version: one recorded at another refuses the file in one line, naming the
+ * type and both versions, and its components are not read — a component of
+ * another version is no component of this one. A table of any other type is
+ * kept **exactly as found**, with its version: nothing here knows what it
+ * holds, and the next save has to write the author's data and not an invention
+ * over it. Both are read the same two levels down, by entity id then by
+ * component id, which is what lets a component of an unknown type follow its
+ * entity when it is deleted or copied.
  *
- * A file can carry some types and not others — written by a build without
- * one of this build's modules, or edited by hand — and a type it holds nothing
- * of gets no table: a missing one reads as empty.
+ * A table with no version, or a version with no table, refuses the file: the
+ * one is a type nothing can judge, the other a file that lost what it names.
  */
-function tablesFrom(registries: CoreRegistries, json: TablesJson | undefined): Required<ComponentHost> {
+export function readHeld(
+  registries: CoreRegistries,
+  file: RecordReader,
+): Pick<SceneDoc, 'entities' | 'components' | 'unknownComponents'> {
+  const entities = new Map<EntityId, EntityDoc>();
+  const entityTable = file.record('entities');
+  for (const key of entityTable.keys()) {
+    if (isEntityId(key)) entities.set(key, readEntity(entityTable.record(key), key));
+    else entityTable.refuse(key, 'field.invalid', 'is no entity id');
+  }
+
+  const versions = file.record('componentVersions');
+  const recorded = new Map<string, unknown>();
+  for (const type of versions.keys()) {
+    const version = versions.decode(type, asFound);
+    recorded.set(type, version);
+    const definition = isComponentTypeId(type) ? registries.components.get(type) : undefined;
+    if (definition !== undefined && version !== definition.version) {
+      versions.refuse(
+        type,
+        'type.version',
+        `${type} written at version ${shown(version)}; this build reads version ${definition.version} and does not convert it`,
+      );
+    }
+  }
+
   const components: ComponentTables = new Map();
   const unknownComponents: UnknownComponentTables = new Map();
-  for (const [type, table] of idMapOf(json ?? {}, isComponentTypeId)) {
-    const read: ComponentTable = new Map();
-    for (const [entityId, held] of idMapOf(isRecord(table) ? table : {}, isEntityId)) {
-      if (isRecord(held)) read.set(entityId, idMapOf(held, isComponentId));
-    }
-    if (read.size === 0) continue;
-    const definition = registries.components.get(type);
-    if (definition === undefined) unknownComponents.set(type, read);
-    else components.set(definition.id, read);
-  }
-  return { components, unknownComponents };
-}
-
-/**
- * Fills what an entity and the environment lack from their factories, and
- * decodes each component by its type.
- *
- * Over the document's tables, which are those of the registered types: a table
- * of any other is in `unknownComponents`, where `tablesFrom` kept it as found.
- */
-function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
-  const blank = createEnvironment();
-  // Merged a level deeper for `sky`, because the spread above it is shallow and
-  // a scene written before the analytic sky existed carries no `sky` at all —
-  // or, worse, a `sky` from a build that had only half its fields. It is the
-  // reason `createEnvironment` exists rather than a literal: one factory, one
-  // merge per level, and a property added later is migrated by existing.
-  scene.environment = {
-    ...blank,
-    ...scene.environment,
-    sky: { ...blank.sky, ...scene.environment?.sky },
-  };
-
-  for (const entity of scene.entities.values()) {
-    const blank = createEntity(entity.name ?? 'Entity').entity;
-    entity.transform = {
-      ...blank.transform,
-      ...entity.transform,
-    };
-    entity.visible ??= blank.visible;
-    entity.locked ??= blank.locked;
-    entity.children ??= [];
-  }
-
-  const refused: Diagnostic[] = [];
-  for (const [type, table] of scene.components) {
-    const definition = registries.components.get(type);
-    for (const [entityId, held] of table) {
-      for (const [componentId, component] of held) {
-        // Checked against its type, field by field: a field of the wrong kind,
-        // one missing or one the type does not have refuses the scene. Nothing
-        // is filled in — a field added since the file was written is a format
-        // that moved, and the format's version moved with it.
-        const decoded = definition?.decode(component, ['components', type, entityId, componentId]);
-        if (decoded === undefined) continue;
-        // The key is the identity: an override names the component by it.
-        if (decoded.ok) held.set(componentId, { ...decoded.value, id: componentId });
-        else refused.push(...decoded.diagnostics);
+  const tables = file.record('components');
+  const tabled = new Set<string>();
+  for (const type of tables.keys()) {
+    tabled.add(type);
+    if (!isComponentTypeId(type)) {
+      tables.refuse(type, 'field.invalid', 'is no component type');
+    } else if (!recorded.has(type)) {
+      tables.refuse(type, 'table.unversioned', 'has no version in componentVersions');
+    } else {
+      const definition = registries.components.get(type);
+      if (definition === undefined) {
+        const held = readTable(tables.record(type), asFound);
+        if (held.size > 0) unknownComponents.set(type, { version: recorded.get(type), components: held });
+      } else if (recorded.get(type) === definition.version) {
+        const held = readTable(tables.record(type), componentOf(definition));
+        if (held.size > 0) components.set(definition.id, held);
       }
     }
   }
-  if (refused.length > 0) {
-    throw new SceneFormatError(formatDiagnostics('Scene file holds components this build cannot read.', refused));
+  for (const type of recorded.keys()) {
+    if (!tabled.has(type)) versions.refuse(type, 'table.unversioned', 'names no table in components');
   }
+
+  return { entities, components, unknownComponents };
+}
+
+/** `key` itself, if that is what was found where an id has to be the key it is filed under. */
+function itsKey<K extends string>(value: unknown, path: DecodePath, key: K): Decoded<K> {
+  return value === key ? { ok: true, value: key } : { ok: false, diagnostics: [mismatch(path, value, key)] };
+}
+
+/** An entity, each field checked, its `id` the key it is filed under. */
+function readEntity(entity: RecordReader, key: EntityId): EntityDoc {
+  return {
+    id: entity.decode('id', (value, path) => itsKey(value, path, key)) ?? key,
+    name: entity.read('name', checks.string),
+    parent: entity.read('parent', ENTITY_OR_NONE),
+    children: entity.read('children', ENTITY_LIST),
+    transform: readTransform(entity.record('transform')),
+    visible: entity.read('visible', checks.boolean),
+    locked: entity.read('locked', checks.boolean),
+  };
+}
+
+function readTransform(transform: RecordReader): EntityDoc['transform'] {
+  return {
+    position: transform.read('position', checks.vec3),
+    rotation: transform.read('rotation', checks.vec3),
+    scale: transform.read('scale', checks.vec3),
+  };
+}
+
+/** One type's table, by entity then by component id, each component read by `read`. */
+function readTable<T>(
+  table: RecordReader,
+  read: (value: unknown, path: DecodePath, key: ComponentId) => Decoded<T>,
+): Map<EntityId, Map<ComponentId, T>> {
+  const out = new Map<EntityId, Map<ComponentId, T>>();
+  for (const entityKey of table.keys()) {
+    if (!isEntityId(entityKey)) {
+      table.refuse(entityKey, 'field.invalid', 'is no entity id');
+      continue;
+    }
+    const heldTable = table.record(entityKey);
+    const held = new Map<ComponentId, T>();
+    for (const componentKey of heldTable.keys()) {
+      if (!isComponentId(componentKey)) {
+        heldTable.refuse(componentKey, 'field.invalid', 'is no component id');
+        continue;
+      }
+      const component = heldTable.decode(componentKey, (value, path) => read(value, path, componentKey));
+      if (component !== undefined) held.set(componentKey, component);
+    }
+    out.set(entityKey, held);
+  }
+  return out;
+}
+
+/** A stored component read by its type, its `id` the key it is filed under: an override names it by that key. */
+function componentOf(
+  definition: ComponentDefinition,
+): (value: unknown, path: DecodePath, key: ComponentId) => Decoded<ComponentDoc> {
+  return (value, path, key) => {
+    const decoded = definition.decode(value, path);
+    if (!decoded.ok || decoded.value.id === key) return decoded;
+    return { ok: false, diagnostics: [mismatch([...path, 'id'], decoded.value.id, key)] };
+  };
 }
 
 /**
@@ -262,13 +299,15 @@ function fillMissingFields(registries: CoreRegistries, scene: SceneDoc): void {
  * project. During a session an edit that would break an edge is refused instead,
  * by `scene/graph.ts` — this function stopped being the only guard when that
  * landed.
+ *
+ * A prefab is healed by the same walk, its root its one root.
  */
-function repairHierarchy(scene: SceneDoc): void {
-  const exists = (id: EntityId) => scene.entities.has(id);
+export function repairHierarchy(tree: Pick<SceneDoc, 'entities' | 'rootOrder'>): void {
+  const exists = (id: EntityId) => tree.entities.has(id);
 
-  scene.rootOrder = scene.rootOrder.filter(exists);
+  tree.rootOrder = tree.rootOrder.filter(exists);
 
-  for (const entity of scene.entities.values()) {
+  for (const entity of tree.entities.values()) {
     entity.children = entity.children.filter(exists);
     if (entity.parent !== null && !exists(entity.parent)) entity.parent = null;
   }
@@ -276,24 +315,24 @@ function repairHierarchy(scene: SceneDoc): void {
   // Cut each cycle by rooting the entity that closes it. The filtering above
   // cannot see one: every edge of a cycle points at an entity that exists. The
   // re-homing pass below then puts it in `rootOrder`.
-  for (const chain of cycles(scene)) {
+  for (const chain of cycles(tree)) {
     const first = chain[0];
-    const entity = first === undefined ? undefined : scene.entities.get(first);
+    const entity = first === undefined ? undefined : tree.entities.get(first);
     if (!entity) continue;
-    const parent = entity.parent === null ? undefined : scene.entities.get(entity.parent);
+    const parent = entity.parent === null ? undefined : tree.entities.get(entity.parent);
     if (parent) parent.children = parent.children.filter((child) => child !== entity.id);
     entity.parent = null;
   }
 
   // Re-home anything that lost its parent and is not already a root.
-  const referenced = new Set<EntityId>(scene.rootOrder);
-  for (const entity of scene.entities.values()) {
+  const referenced = new Set<EntityId>(tree.rootOrder);
+  for (const entity of tree.entities.values()) {
     for (const child of entity.children) referenced.add(child);
   }
-  for (const [id, entity] of scene.entities) {
+  for (const [id, entity] of tree.entities) {
     if (!referenced.has(id)) {
       entity.parent = null;
-      scene.rootOrder.push(id);
+      tree.rootOrder.push(id);
     }
   }
 }

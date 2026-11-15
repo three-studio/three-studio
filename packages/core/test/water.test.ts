@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { skySunDirection } from '../src/scene/water';
 import { waterType } from '../src/components/water';
-import { createSkySettings } from '../src/scene/defaults';
+import { createEnvironment } from '../src/scene/environment';
 
 /*
  * The sun conversion is pinned here because two places have to agree on it: the
@@ -11,7 +11,7 @@ import { createSkySettings } from '../src/scene/defaults';
  */
 describe('the sky’s sun', () => {
   it('points straight up at ninety degrees of elevation', () => {
-    const [x, y, z] = skySunDirection({ ...createSkySettings(), elevation: 90, azimuth: 0 });
+    const [x, y, z] = skySunDirection({ ...createEnvironment().sky, elevation: 90, azimuth: 0 });
 
     expect(y).toBeCloseTo(1);
     expect(x).toBeCloseTo(0);
@@ -19,8 +19,8 @@ describe('the sky’s sun', () => {
   });
 
   it('lies on the horizon at zero, and turns with the azimuth', () => {
-    const south = skySunDirection({ ...createSkySettings(), elevation: 0, azimuth: 0 });
-    const east = skySunDirection({ ...createSkySettings(), elevation: 0, azimuth: 90 });
+    const south = skySunDirection({ ...createEnvironment().sky, elevation: 0, azimuth: 0 });
+    const east = skySunDirection({ ...createEnvironment().sky, elevation: 0, azimuth: 90 });
 
     expect(south[1]).toBeCloseTo(0);
     expect(south[2]).toBeCloseTo(1);
@@ -29,7 +29,7 @@ describe('the sky’s sun', () => {
   });
 
   it('is a unit vector, which is what the shader reflects about', () => {
-    const [x, y, z] = skySunDirection({ ...createSkySettings(), elevation: 33, azimuth: 217 });
+    const [x, y, z] = skySunDirection({ ...createEnvironment().sky, elevation: 33, azimuth: 217 });
 
     expect(Math.hypot(x, y, z)).toBeCloseTo(1);
   });

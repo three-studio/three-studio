@@ -75,7 +75,7 @@ export async function prepareLaunch(
   const scenes = await discoverScenes(projectPath);
   // The project's name, not a build profile's title: a launch runs no profile.
   const { name: title } = await readProject(projectPath);
-  const manifest = launchManifest({ snapshot, scenes, assets, title, scripts });
+  const manifest = launchManifest(registries, { snapshot, scenes, assets, title, scripts });
 
   return {
     id: createId(),

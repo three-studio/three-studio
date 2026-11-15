@@ -250,7 +250,7 @@ export function setComponentsOf(
  */
 export function dropComponentsOf(host: ComponentHost, entityId: EntityId): void {
   for (const table of host.components.values()) table.delete(entityId);
-  for (const table of host.unknownComponents?.values() ?? []) table.delete(entityId);
+  for (const { components } of host.unknownComponents?.values() ?? []) components.delete(entityId);
 }
 
 /**
@@ -274,7 +274,9 @@ export function copyComponentsOf(
   clone: <T>(value: T) => T,
 ): void {
   for (const table of host.components.values()) copyEntry(table, fromEntityId, toEntityId, clone);
-  for (const table of host.unknownComponents?.values() ?? []) copyEntry(table, fromEntityId, toEntityId, clone);
+  for (const { components } of host.unknownComponents?.values() ?? []) {
+    copyEntry(components, fromEntityId, toEntityId, clone);
+  }
 }
 
 function copyEntry<Held>(

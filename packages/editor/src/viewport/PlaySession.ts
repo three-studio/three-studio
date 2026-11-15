@@ -2,9 +2,10 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   createPhysicsSettings,
   createRenderingSettings,
-  deserializeScene,
+  decodeScene,
   formatLogArgs,
   resolveScene,
+  unwrap,
   type CoreRegistries,
   type LaunchSnapshot,
   type RenderingSettings,
@@ -136,7 +137,7 @@ export function playSceneSource(
       if (namesEntry(entry, idOrName)) return structuredClone(entry.scene);
       const scene = resolveScene(useProjectStore.getState().scenes, idOrName);
       if (!scene) throw new Error(`No scene "${idOrName}" in this project.`);
-      return deserializeScene(registries, await readFile(scene.path));
+      return unwrap(decodeScene(registries, await readFile(scene.path)), scene.path);
     },
   };
 }
@@ -273,7 +274,7 @@ export class PlaySession {
       // Play means run the game, and a prefab on its own is not one — it usually
       // has no camera and no light, so it would come up black and warn about it.
       // Closing saves the prefab, so nothing is lost by leaving on the way.
-      if (inPrefabMode()) await usePrefabModeStore.getState().exit();
+      if (inPrefabMode()) await usePrefabModeStore.getState().exit(this.host.registries);
       // Stopped while Prefab Mode was being left: `endPlay` has run already, and
       // nothing after it would clear what is taken below — every launch would
       // send a scene the person has since gone on editing.

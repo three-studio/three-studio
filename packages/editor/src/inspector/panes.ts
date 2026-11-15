@@ -27,7 +27,7 @@ export function paneEntriesFor(registries: Panes, component: ComponentDoc): Pane
  */
 export function unknownTypesOn(host: Required<ComponentHost>, entityId: EntityId): string[] {
   return [...host.unknownComponents]
-    .filter(([, table]) => table.has(entityId))
+    .filter(([, { components }]) => components.has(entityId))
     .map(([type]) => type)
     .sort();
 }

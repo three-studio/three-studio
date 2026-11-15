@@ -38,11 +38,14 @@ import {
   conformSettingsPatch,
   conformDeviceSettingsPatch,
   conformLaunchSnapshot,
-  deserializePrefab,
+  decodePrefab,
+  isAssetId,
   isDeviceId,
   jsonOf,
   prefabJsonOf,
+  unwrap,
   type BridgeHandlers,
+  type PrefabDoc,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 
@@ -117,6 +120,16 @@ import {
 function adopt(opened: OpenProject): OpenProject {
   adoptProject(opened.summary.path);
   return opened;
+}
+
+/**
+ * A prefab a window sent, decoded under the asset id it names. The id is the
+ * window's word only, and checked here: a script can call the bridge with one
+ * that is none, and the prefab would be filed under it.
+ */
+function prefabFromWindow(deps: IpcDeps, prefabJson: string, assetId: unknown): PrefabDoc {
+  if (!isAssetId(assetId)) throw new Error('A prefab is written under the asset id it is filed by.');
+  return unwrap(decodePrefab(deps.registries, prefabJson, assetId), 'Prefab');
 }
 
 /**
@@ -508,39 +521,28 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     readPrefabs: async (): Promise<Record<string, string>> => {
       const prefabs = await readPrefabAssets(deps.registries, requireProject());
-      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefabJsonOf(prefab))]));
+      return Object.fromEntries([...prefabs].map(([id, prefab]) => [id, jsonOf(prefabJsonOf(deps.registries, prefab))]));
     },
 
-    createPrefab: (_event, name: string, prefabJson: string, assetId?: AssetId): Promise<AssetId> => {
-      // `deserializePrefab` rather than `conform`, and the difference is who
+    createPrefab: (_event, name: string, prefabJson: string, assetId: AssetId): Promise<AssetId> => {
+      // Decoded as a file rather than conformed, and the difference is who
       // wrote the data. A prefab has been read off the disk, possibly written
       // by a build that knew a component type this one does not, and reading
       // it as a file is what keeps such a type as found instead of inventing
-      // a shape for it. Conforming it would drop the author's work
-      // on the round trip.
+      // a shape for it. Conforming it would drop the author's work on the
+      // round trip.
       //
-      // The id is handed to it as well, which is where a script that calls the
-      // bridge with an `assetId` that is none is refused.
-      return createPrefabAsset(
-        deps.registries,
-        requireProject(),
-        name,
-        deserializePrefab(deps.registries, prefabJson, assetId),
-        assetId,
-      );
+      // Under the id the window gives, checked here: a script can call the
+      // bridge with an `assetId` that is none.
+      return createPrefabAsset(deps.registries, requireProject(), name, prefabFromWindow(deps, prefabJson, assetId));
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
       return saveMaterialAsset(deps.registries, requireProject(), assetPath, conformMaterial(material));
     },
 
-    savePrefab: (_event, assetPath: string, prefabJson: string): Promise<void> => {
-      return savePrefabAsset(
-        deps.registries,
-        requireProject(),
-        assetPath,
-        deserializePrefab(deps.registries, prefabJson),
-      );
+    savePrefab: (_event, assetPath: string, prefabJson: string, assetId: AssetId): Promise<void> => {
+      return savePrefabAsset(deps.registries, requireProject(), assetPath, prefabFromWindow(deps, prefabJson, assetId));
     },
 
     readPhysicsMaterials: async (): Promise<Record<string, PhysicsMaterialDef>> =>

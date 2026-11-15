@@ -83,7 +83,7 @@ describe('assembling build.json', () => {
       [fixedId('asset', 'pre-b'), createPrefabDoc('B', [], fixedId('entity', 'root'))],
     ] as const;
 
-    const one = assembleManifest(
+    const one = assembleManifest(registries, 
       contents({
         assets: [a, b],
         materials: new Map(materials),
@@ -91,7 +91,7 @@ describe('assembling build.json', () => {
         prefabs: new Map(prefabs),
       }),
     );
-    const other = assembleManifest(
+    const other = assembleManifest(registries, 
       contents({
         assets: [b, a],
         materials: new Map([...materials].reverse()),
@@ -118,7 +118,7 @@ describe('assembling build.json', () => {
       { entry: asset(fixedId('asset', 'beep'), 'audio', 'assets/audio/beep.wav'), path: 'audio/beep.3.wav' },
     ];
 
-    const build = assembleManifest(contents({ assets: shipped }));
+    const build = assembleManifest(registries, contents({ assets: shipped }));
 
     expect(build.assets).toEqual({
       brick: 'textures/brick.1.png',
@@ -139,7 +139,7 @@ describe('assembling build.json', () => {
     // `rendering`. This file only ever travels with its own player, so a field
     // kept for an older reader is a field nobody reads.
     const rendering = { ...createRenderingSettings(), forceWebGL: true };
-    const build = assembleManifest(contents({ rendering }));
+    const build = assembleManifest(registries, contents({ rendering }));
     expect(build.rendering).toEqual(rendering);
     expect(Object.keys(build)).not.toContain('forceWebGL');
   });
@@ -152,13 +152,13 @@ describe('assembling build.json', () => {
       { id: fixedId('scene', 'a'), name: 'Level', path: 'scenes/level.1.json' },
       { id: fixedId('scene', 'c'), name: '__proto__', path: 'scenes/proto.3.json' },
     ];
-    const build = assembleManifest(contents({ scenes }));
+    const build = assembleManifest(registries, contents({ scenes }));
     expect(build.scenes).toEqual(scenes);
     expect(Object.keys(build)).not.toContain('sceneNames');
   });
 
   it('passes the rest through, and says which format it is', () => {
-    const build = assembleManifest(
+    const build = assembleManifest(registries, 
       contents({
         title: 'Mine',
         loadingScene: fixedId('scene', 'loading'),

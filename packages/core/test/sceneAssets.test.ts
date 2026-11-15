@@ -5,7 +5,7 @@ import {
   createEmptyScene,
   modelType,
   scriptType,
-  deserializeScene,
+  decodeScene,
   fixedId,
   setComponentsOf,
   serializeScene,
@@ -19,6 +19,7 @@ import {
   type AssetId,
   type EntityTemplate,
   type SceneDoc,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { prefabWith } from './fixtures';
@@ -201,8 +202,9 @@ describe('component types this editor does not know', () => {
     file.components['plugin.flicker'] = {
       [lamp]: { c1: { id: 'c1', type: 'plugin.flicker', sprite: 'tex-flame' } },
     };
+    file.componentVersions['plugin.flicker'] = 1;
 
-    expect(unknownComponentTypes(deserializeScene(registries, JSON.stringify(file)))).toEqual(['plugin.flicker']);
+    expect(unknownComponentTypes(unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file'))).toEqual(['plugin.flicker']);
     expect(unknownComponentTypes(sceneWith([]))).toEqual([]);
   });
 });

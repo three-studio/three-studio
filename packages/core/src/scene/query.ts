@@ -75,7 +75,7 @@ export function isAncestorOf(scene: SceneDoc, ancestorId: EntityId, id: EntityId
  * exists. What gives it away is that a cycle is unreachable from `rootOrder`, so
  * the hierarchy panel simply does not draw the entities caught in it.
  */
-export function cycles(scene: SceneDoc): EntityId[][] {
+export function cycles(scene: Pick<SceneDoc, 'entities'>): EntityId[][] {
   const found: EntityId[][] = [];
   /** Ids already known to reach a root, or to belong to a cycle reported below. */
   const settled = new Set<EntityId>();

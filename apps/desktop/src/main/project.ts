@@ -193,8 +193,8 @@ export async function discoverScenes(projectPath: string): Promise<SceneEntry[]>
 /**
  * The `SceneDoc.id` in a scene file, or `null` when the scene cannot be listed.
  *
- * Parsed rather than deserialized: `deserializeScene` validates and migrates a
- * whole document, and this runs once per file every time a project opens.
+ * Parsed rather than decoded: `decodeScene` reads the whole of a document, and
+ * this runs once per file every time a project opens.
  *
  * A file with no id is not listed, and says so. A hand-written `.scene.json`
  * carries no identity of its own, and addressing it by its path would be a

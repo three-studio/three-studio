@@ -1,4 +1,4 @@
-import type { LaunchSnapshot } from '@three-studio/core';
+import type { CoreRegistries, LaunchSnapshot } from '@three-studio/core';
 import { relaunchOnDevices } from '../commands/deviceCommands';
 import { useAssetStore } from '../state/assetStore';
 import { liveReloadState, useDeviceStore } from '../state/deviceStore';
@@ -185,7 +185,7 @@ function isActive(): boolean {
  *
  * Returns what removes every listener and subscription, and ends the pause.
  */
-export function watchLiveReload(target: EventTarget = window): () => void {
+export function watchLiveReload(registries: CoreRegistries, target: EventTarget = window): () => void {
   const pointers = new Set<number>();
   let dragging = false;
   const held = (): boolean => pointers.size > 0 || dragging;
@@ -196,7 +196,7 @@ export function watchLiveReload(target: EventTarget = window): () => void {
     playing: () => useEditorStore.getState().playState !== 'stopped',
     read: launchSnapshot,
     launched: () => useDeviceStore.getState().ownLaunch?.snapshot ?? null,
-    relaunch: relaunchOnDevices,
+    relaunch: (snapshot) => relaunchOnDevices(registries, snapshot),
   });
 
   /** The release that ends the last hold starts the pause again. */

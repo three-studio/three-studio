@@ -13,13 +13,14 @@ import {
   rigidbodyType,
   scriptType,
   defaultSettings,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   type ProjectFile,
   type SceneDoc,
   type ScriptComponent,
   type Vec3,
+  unwrap,
 } from '@three-studio/core';
 import { Behaviour, NO_SCRIPTS, type Engine } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -759,7 +760,7 @@ describe('the scene the game plays', () => {
   function opened(): SceneDoc {
     const script: ScriptComponent = { ...scriptType.create(), assetId: MOVER, props: { offset: [1, 2, 3] } };
     const scene = sceneWith([createEntity('Mover', [script])]);
-    doc().replaceScene(deserializeScene(registries, serializeScene(registries, scene)));
+    doc().replaceScene(unwrap(decodeScene(registries, serializeScene(registries, scene)), 'Scene file'));
     return structuredClone(doc().scene);
   }
 

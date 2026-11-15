@@ -298,15 +298,16 @@ export interface AssetApi {
    * Every prefab in the project, by asset id, each as the JSON of its document.
    * Read in one go, like materials. Text because a document holds Maps, which
    * Electron does not promise its bridge carries: the window reads each with
-   * `deserializePrefab`.
+   * `decodePrefab`, under its key.
    */
   readPrefabs: () => Promise<Record<string, string>>;
   /**
-   * Writes a new prefab asset from its document's JSON and returns its id: the
-   * one the document carries, or `assetId` when one is given, which is how the
-   * redo of an undone creation gets the id back that the entity already names.
+   * Writes a new prefab asset from its document's JSON under `assetId`, and
+   * returns it: the id the document was made with, or — for the redo of an
+   * undone creation — the one the entity already names. A prefab's JSON holds
+   * no id of its own.
    */
-  createPrefab: (name: string, prefabJson: string, assetId?: AssetId) => Promise<AssetId>;
+  createPrefab: (name: string, prefabJson: string, assetId: AssetId) => Promise<AssetId>;
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   /** Every physics material in the project, by asset id. Read in one go, like materials. */
@@ -315,8 +316,8 @@ export interface AssetApi {
   createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<AssetId>;
   /** Overwrites an existing physics material asset, by project-relative path. */
   savePhysicsMaterial: (assetPath: string, material: PhysicsMaterialDef) => Promise<void>;
-  /** Overwrites an existing prefab asset, by project-relative path, with its document's JSON. */
-  savePrefab: (assetPath: string, prefabJson: string) => Promise<void>;
+  /** Overwrites an existing prefab asset, by project-relative path, with its document's JSON, read under its asset id. */
+  savePrefab: (assetPath: string, prefabJson: string, assetId: AssetId) => Promise<void>;
   /**
    * Opens the containing folder in the OS file browser, the file selected.
    *

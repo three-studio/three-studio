@@ -268,7 +268,7 @@ export async function applyInstanceOverrides(registries: CoreRegistries, entityI
   }
 
   const write = (doc: PrefabDoc) => {
-    void useAssetStore.getState().savePrefab(assetId, doc);
+    void useAssetStore.getState().savePrefab(registries, assetId, doc);
   };
   write(after);
 

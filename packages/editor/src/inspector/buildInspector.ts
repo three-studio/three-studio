@@ -191,7 +191,7 @@ export class InspectorBinding {
                 // is already taken — changes nothing in the document, so
                 // nothing else would pull the field back off the name that was
                 // typed, and the panel would go on showing a name no scene has.
-                if (last) void renameCurrentScene(String(value)).then(() => this.refresh());
+                if (last) void renameCurrentScene(this.registries, String(value)).then(() => this.refresh());
                 return;
               case 'environment':
                 this.binder.edit(() =>

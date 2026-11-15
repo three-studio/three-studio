@@ -2,12 +2,13 @@ import {
   assertDefined,
   componentAssets,
   createEntity,
-  deserializeScene,
+  decodeScene,
   findComponent,
   fixedId,
   serializeScene,
   type AssetId,
   type Vec3,
+  unwrap,
 } from '@three-studio/core';
 import { particleEmitterType, type ParticleEmitterComponent } from '@three-studio/particles/core';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -146,7 +147,7 @@ describe('a scene holding a particle emitter', () => {
   }
 
   it('opens with the emitter as the file holds it', () => {
-    const scene = deserializeScene(registries, file((emitter) => (emitter['count'] = 750)));
+    const scene = unwrap(decodeScene(registries, file((emitter) => (emitter['count'] = 750))), 'Scene file');
     const [entityId] = scene.entities.keys();
 
     expect(findComponent(scene, assertDefined(entityId, 'the entity'), 'particleEmitter')?.count).toBe(750);
@@ -158,7 +159,7 @@ describe('a scene holding a particle emitter', () => {
       emitter['burst'] = 12;
     });
 
-    expect(() => deserializeScene(registries, malformed)).toThrow(
+    expect(() => unwrap(decodeScene(registries, malformed), 'Scene file')).toThrow(
       /components\.particleEmitter\.\w+\.\w+\.radius: expected a finite number, found "wide"[\s\S]*\.burst: is no field this build reads/,
     );
   });
@@ -168,6 +169,6 @@ describe('a scene holding a particle emitter', () => {
     // shape is another version of its type.
     const older = file((emitter) => delete emitter['additive']);
 
-    expect(() => deserializeScene(registries, older)).toThrow(/components\.particleEmitter\.\w+\.\w+\.additive: is missing/);
+    expect(() => unwrap(decodeScene(registries, older), 'Scene file')).toThrow(/components\.particleEmitter\.\w+\.\w+\.additive: is missing/);
   });
 });

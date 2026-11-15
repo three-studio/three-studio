@@ -1,7 +1,8 @@
 import {
-  deserializeScene,
+  decodeScene,
   findScene,
   serializeScene,
+  unwrap,
   type CoreRegistries,
   type OpenProject,
   type ProjectContents,
@@ -94,9 +95,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   adopt: (registries, opened) => {
-    // Parsing here rather than in the main process keeps the scene format
-    // owned entirely by @three-studio/core, which the web export also uses.
-    const scene = deserializeScene(registries, opened.sceneJson);
+    // Decoded here rather than in the main process keeps the scene format
+    // owned entirely by @three-studio/core, which the web export also uses. A
+    // refusal throws, and the window's page shows it with the file it names.
+    const scene = unwrap(decodeScene(registries, opened.sceneJson), opened.scenePath);
     useDocumentStore.getState().replaceScene(scene);
     // Chained rather than fired and forgotten: the report asks what the project
     // holds, and asking before the manifest lands calls every asset missing.
@@ -133,7 +135,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // scene file would replace the level with one barrel — and the scene it
     // replaced is still sitting in the stash, unsaved.
     if (inPrefabMode()) {
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
     }
 
     set({ saving: true, error: null });

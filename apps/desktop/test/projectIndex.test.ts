@@ -10,10 +10,11 @@ import {
   SCENES_DIR,
   createEmptyScene,
   createSceneId,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   type AssetMeta,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it, vi } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
@@ -266,7 +267,7 @@ describe('what the index declines to answer for', () => {
     // The same document under another id of the same length: the file is byte
     // for byte the same size and only the timestamp can tell them apart.
     const swapped = createSceneId();
-    const original = deserializeScene(registries, await readFile(file, 'utf8'));
+    const original = unwrap(decodeScene(registries, await readFile(file, 'utf8')), 'Scene file');
     await writeFile(file, serializeScene(registries, { ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);
 

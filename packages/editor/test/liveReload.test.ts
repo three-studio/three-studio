@@ -13,8 +13,8 @@ import {
   createPrefabInstance,
   createRenderingSettings,
   createStarterScene,
-  deserializePrefab,
-  deserializeScene,
+  decodePrefab,
+  decodeScene,
   fixedId,
   type AssetId,
   type DeviceServerStatus,
@@ -22,6 +22,7 @@ import {
   type LaunchSnapshotJson,
   type PrefabDoc,
   type ProjectFile,
+  unwrap,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -368,7 +369,7 @@ let cube = fixedId('entity', 'cube');
 
 /** The entry scene a relaunch sent, read back from its text. */
 const sentScene = (index: number) =>
-  deserializeScene(registries, assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson);
+  unwrap(decodeScene(registries, assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson), 'Scene file');
 
 /** Every relaunch's callbacks, run. */
 async function settle(): Promise<void> {
@@ -391,7 +392,7 @@ function watch(target: EventTarget = new EventTarget()): EventTarget {
     ownLaunch: { id: 'L1', snapshot: launchSnapshot() },
     liveReloadRefused: null,
   });
-  stops.push(watchLiveReload(target));
+  stops.push(watchLiveReload(registries, target));
   return target;
 }
 
@@ -413,7 +414,7 @@ describe('watching the window', () => {
         },
       },
     });
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
     usePrefabModeStore.setState({ stack: [] });
     useEditorStore.getState().stop();
     useProjectStore.setState({
@@ -429,7 +430,7 @@ describe('watching the window', () => {
       // Filed under its own id, as the main process reads a prefab.
       prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
       // As the store's own does once the file is written: the table takes it.
-      savePrefab: async (assetId: AssetId, prefab: PrefabDoc) => {
+      savePrefab: async (_registries, assetId: AssetId, prefab: PrefabDoc) => {
         useAssetStore.setState((state) => ({ prefabs: new Map(state.prefabs).set(assetId, prefab) }));
       },
     });
@@ -441,7 +442,7 @@ describe('watching the window', () => {
 
   afterEach(async () => {
     for (const stop of stops.splice(0)) stop();
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
     useAssetStore.setState({ savePrefab: realSavePrefab });
     vi.unstubAllGlobals();
   });
@@ -545,7 +546,7 @@ describe('watching the window', () => {
       vi.advanceTimersByTime(5_000);
       expect(sent).toEqual([]);
 
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
       vi.advanceTimersByTime(5_000);
       expect(sent).toEqual([]);
     });
@@ -561,7 +562,10 @@ describe('watching the window', () => {
 
     expect(sent).toHaveLength(1);
     expect(sentScene(0)).toEqual(scene);
-    const prefab = deserializePrefab(registries, assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'));
+    const prefab = unwrap(
+      decodePrefab(registries, assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'), PREFAB_ID),
+      'Prefab file',
+    );
     expect(prefab.entities.get(inside)).toBeDefined();
   });
 

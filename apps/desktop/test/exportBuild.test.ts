@@ -35,7 +35,7 @@ import {
   createRenderingSettings,
   scriptType,
   createStarterScene,
-  deserializeScene,
+  decodeScene,
   fixedId,
   insertEntity,
   prefabsFromJson,
@@ -49,6 +49,7 @@ import {
   type ProjectFile,
   type RenderingSettings,
   type SceneId,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createPrefabAsset, readMaterialAssets, readPhysicsMaterialAssets } from '../src/main/assetLibraries';
@@ -421,7 +422,7 @@ describe('web export', () => {
       'utf8',
     );
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
+    const scene = unwrap(decodeScene(registries, await readFile(scenePath, 'utf8')), 'Scene file');
     for (const held of componentsOfType(scene, 'mesh').values()) {
       for (const mesh of held.values()) {
         if (mesh.type === 'mesh') mesh.materialId = fixedId('asset', 'mat-shared');
@@ -458,7 +459,7 @@ describe('web export', () => {
     const prefabId = await createPrefabAsset(registries, projectPath, 'Crate', prefab);
     // Only what a shipped scene places is shipped.
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
+    const scene = unwrap(decodeScene(registries, await readFile(scenePath, 'utf8')), 'Scene file');
     insertEntity(scene, createEntity('Crate', [createPrefabInstance(prefabId)]));
     await writeFile(scenePath, serializeScene(registries, scene), 'utf8');
 
@@ -493,7 +494,7 @@ describe('web export', () => {
       );
     }
     const scenePath = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(registries, await readFile(scenePath, 'utf8'));
+    const scene = unwrap(decodeScene(registries, await readFile(scenePath, 'utf8')), 'Scene file');
     insertEntity(
       scene,
       createEntity('Cube', [{ ...colliderType.create(), materialId: fixedId('asset', 'pm-ice') }]),
@@ -730,10 +731,10 @@ describe('a profile that names a scene the project no longer has', () => {
   it('warns and ships the scenes that are left', async () => {
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out');
-    const scene = deserializeScene(
+    const scene = unwrap(decodeScene(
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
-    );
+    ), 'Scene file');
 
     const result = await exportBuild(
       registries,
@@ -960,10 +961,10 @@ describe('models that come with other files', () => {
       'utf8',
     );
 
-    const scene = deserializeScene(
+    const scene = unwrap(decodeScene(
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
-    );
+    ), 'Scene file');
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(
@@ -1025,10 +1026,10 @@ describe('models that come with other files', () => {
       }),
       'utf8',
     );
-    const scene = deserializeScene(
+    const scene = unwrap(decodeScene(
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
-    );
+    ), 'Scene file');
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-tri') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
@@ -1051,10 +1052,10 @@ describe('models that come with other files', () => {
       'utf8',
     );
 
-    const scene = deserializeScene(
+    const scene = unwrap(decodeScene(
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
-    );
+    ), 'Scene file');
     const entityId = assertDefined([...scene.entities.keys()][0], 'the first entity');
     putComponent(scene, entityId, { ...modelType.create(), assetId: fixedId('asset', 'model-gone') });
     await writeFile(join(projectPath, SCENES_DIR, 'main.scene.json'), serializeScene(registries, scene), 'utf8');
@@ -1398,7 +1399,7 @@ describe('what a scene needs beyond its slots', () => {
   /** Puts a component on the main scene's first entity. */
   async function addToMainScene(projectPath: string, component: ComponentDoc): Promise<void> {
     const file = join(projectPath, SCENES_DIR, 'main.scene.json');
-    const scene = deserializeScene(registries, await readFile(file, 'utf8'));
+    const scene = unwrap(decodeScene(registries, await readFile(file, 'utf8')), 'Scene file');
     putComponent(scene, assertDefined([...scene.entities.keys()][0], 'the first entity'), component);
     await writeFile(file, serializeScene(registries, scene), 'utf8');
   }
@@ -1415,6 +1416,7 @@ describe('what a scene needs beyond its slots', () => {
     const written = JSON.parse(await readFile(file, 'utf8'));
     const entityId = assertDefined(Object.keys(written.entities)[0], 'the first entity');
     written.components[component.type] = { [entityId]: { [component.id]: component } };
+    written.componentVersions[component.type] = 1;
     await writeFile(file, JSON.stringify(written), 'utf8');
   }
 
@@ -1529,10 +1531,10 @@ describe('a scene whose id is not a name', () => {
     // It is only data now; the file is named after the scene and its content.
     const { projectPath, templateRoot } = await makeProject();
     const outputDir = join(projectPath, '..', 'out-evil');
-    const main = deserializeScene(
+    const main = unwrap(decodeScene(
       registries,
       await readFile(join(projectPath, SCENES_DIR, 'main.scene.json'), 'utf8'),
-    );
+    ), 'Scene file');
     const evil = { ...JSON.parse(serializeScene(registries, createStarterScene())), id: '../../escaped' };
     await writeFile(join(projectPath, SCENES_DIR, 'evil.scene.json'), JSON.stringify(evil), 'utf8');
 

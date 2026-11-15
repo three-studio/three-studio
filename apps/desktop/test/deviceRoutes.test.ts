@@ -13,7 +13,7 @@ import {
   createDeviceLaunchOptions,
   createEmptyScene,
   createMeshEntity,
-  deserializeScene,
+  decodeScene,
   encodeLaunchSnapshot,
   fixedId,
   insertEntity,
@@ -21,6 +21,7 @@ import {
   type BuildManifest,
   type DeviceLaunchOptions,
   type LaunchSnapshot,
+  unwrap,
 } from '@three-studio/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
@@ -231,7 +232,7 @@ beforeAll(async () => {
   const scenes = await discoverScenes(root);
   entryId = main!.id;
   slashedId = scenes.find((scene) => scene.path.endsWith('Two.scene.json'))!.id;
-  const scene = deserializeScene(registries, await readFile(join(root, main!.path), 'utf8'));
+  const scene = unwrap(decodeScene(registries, await readFile(join(root, main!.path), 'utf8')), 'Scene file');
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
@@ -249,7 +250,7 @@ beforeAll(async () => {
   const prepared = await prepareLaunch(
     registries,
     root,
-    conformLaunchSnapshot(registries, encodeLaunchSnapshot(snapshot)),
+    conformLaunchSnapshot(registries, encodeLaunchSnapshot(registries, snapshot)),
   );
 
   // A scaled copy, given by hand: what a device should download in place of

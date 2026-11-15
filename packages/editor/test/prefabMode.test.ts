@@ -40,7 +40,7 @@ function givenAPrefab(): void {
 }
 
 beforeEach(async () => {
-  await usePrefabModeStore.getState().exit();
+  await usePrefabModeStore.getState().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   useDocumentStore.getState().replaceScene(createEmptyScene());
   useEditorStore.getState().clearSelection();
@@ -60,7 +60,7 @@ describe('a round trip through Prefab Mode', () => {
     // taking back a scene edit made ten minutes ago is the surprise this avoids.
     expect(doc().canUndo()).toBe(false);
 
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
 
     expect(doc().past).toHaveLength(depth);
     expect(doc().undoLabel()).toBe('Rename entity');
@@ -75,7 +75,7 @@ describe('a round trip through Prefab Mode', () => {
     expect(dirty()).toBe(true);
 
     await usePrefabModeStore.getState().open(ASSET_ID);
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
 
     // The same thing through the other door: leaving Prefab Mode restores a document, and a
     // restore has no business declaring it saved.
@@ -87,7 +87,7 @@ describe('a round trip through Prefab Mode', () => {
     doc().markClean();
 
     await usePrefabModeStore.getState().open(ASSET_ID);
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
 
     expect(dirty()).toBe(false);
   });
@@ -98,7 +98,7 @@ describe('a round trip through Prefab Mode', () => {
     expect(useEditorStore.getState().selection).toEqual([cube.entity.id]);
 
     await usePrefabModeStore.getState().open(ASSET_ID);
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
 
     expect(useEditorStore.getState().selection).toEqual([cube.entity.id]);
   });
@@ -110,7 +110,7 @@ describe('a round trip through Prefab Mode', () => {
     await usePrefabModeStore.getState().open(ASSET_ID);
     expect(doc().scene.entities.get(cube.entity.id)).toBeUndefined();
 
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
     expect(doc().scene.entities.get(cube.entity.id)).toBeDefined();
   });
 });
@@ -164,7 +164,7 @@ describe('Prefab Mode composed without being left', () => {
   beforeEach(() => {
     saved.length = 0;
     useAssetStore.setState({
-      savePrefab: async (assetId, prefab) => {
+      savePrefab: async (_registries, assetId, prefab) => {
         saved.push([assetId, prefab]);
       },
     });
@@ -221,7 +221,7 @@ describe('Prefab Mode composed without being left', () => {
     expect(saved).toEqual([]);
     expect(composed.scene).toBe(scene);
 
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
 
     // Innermost first, as leaving goes; each one the same as composed.
     expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
@@ -251,7 +251,7 @@ describe('Prefab Mode composed without being left', () => {
       const past = doc().past;
       const selection = useEditorStore.getState().selection;
 
-      await usePrefabModeStore.getState().saveAll();
+      await usePrefabModeStore.getState().saveAll(registries);
 
       expect(saved.map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
       for (const [id, prefab] of saved) expect(prefab).toEqual(composed.prefabs.get(id));
@@ -263,13 +263,13 @@ describe('Prefab Mode composed without being left', () => {
 
     it('leaves unsaved only what it did not save: the scene', async () => {
       await inBothEdited();
-      await usePrefabModeStore.getState().saveAll();
+      await usePrefabModeStore.getState().saveAll(registries);
       expect(windowUnsaved()).toBe(false);
 
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
       addEntity(createMeshEntity('box'));
       await inBothEdited();
-      await usePrefabModeStore.getState().saveAll();
+      await usePrefabModeStore.getState().saveAll(registries);
       expect(windowUnsaved()).toBe(true);
       expect(sceneUnsaved()).toBe(true);
     });
@@ -277,10 +277,10 @@ describe('Prefab Mode composed without being left', () => {
     it('lets leaving afterwards save the same again and give the scene back', async () => {
       const scene = doc().scene;
       await inBothEdited();
-      await usePrefabModeStore.getState().saveAll();
+      await usePrefabModeStore.getState().saveAll(registries);
       const first = saved.map(([, prefab]) => prefab);
 
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
 
       expect(saved.slice(2).map(([id]) => id)).toEqual([ASSET_ID, OUTER_ID]);
       expect(saved.slice(2).map(([, prefab]) => prefab)).toEqual(first);

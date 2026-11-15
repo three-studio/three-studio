@@ -1,23 +1,11 @@
 import { componentAssets, componentCandidates, componentEntities } from '../components';
+import { environmentAssets } from '../scene/environment';
 import { materialAssets } from '../scene/material';
 import { isAssetId, type AssetId, type EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
 import { componentsOfType, type ComponentHost } from '../scene/components';
-import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
+import type { ComponentDoc, ComponentType, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
-
-/**
- * Every asset id the environment points at.
- *
- * Here rather than in the component registry because the environment is not a
- * component — it is a property of the scene, and `eachComponent` will never
- * reach it. Both walks below call this for that exact reason: the sky was
- * invisible to them, so an exported build shipped without it, the loading bar
- * did not count it, and deleting it announced that nothing used it.
- */
-export function environmentAssets(environment: EnvironmentDef): readonly (AssetId | null)[] {
-  return [environment.backgroundTexture, environment.environmentTexture];
-}
 
 /**
  * Who uses an asset.
@@ -144,7 +132,7 @@ function* eachComponent(host: ComponentHost): Generator<[EntityId, ComponentDoc]
  */
 export function unknownComponentTypes(host: Required<ComponentHost>): string[] {
   return [...host.unknownComponents]
-    .filter(([, table]) => table.size > 0)
+    .filter(([, { components }]) => components.size > 0)
     .map(([type]) => type)
     .sort();
 }
@@ -297,7 +285,7 @@ export function collectSceneAssets(
   // megabytes where a prop is kilobytes — which makes it the one asset a loading
   // bar most needs to be counting, and the one an export most obviously misses.
   for (const id of environmentAssets(scene.environment)) {
-    if (id !== null && id !== '') ids.add(id);
+    if (id !== null) ids.add(id);
   }
 
   return [...ids];

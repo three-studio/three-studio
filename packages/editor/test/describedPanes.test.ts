@@ -30,6 +30,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { isSeparator, type FieldSpec } from '../src/inspector/fields';
 import { paneEntriesFor } from '../src/inspector/panes';
+import { SCENE_SCHEMA } from '../src/inspector/schema';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useScriptStore } from '../src/state/scriptStore';
 import { builtInRegistries } from './registries';
@@ -837,5 +838,78 @@ describe('the prefab instance\'s pane', () => {
 describe('every pane', () => {
   it('is derived: the registry holds what types add to theirs, never a pane of its own', () => {
     for (const extension of registries.panes.values()) expect(extension).not.toHaveProperty('fields');
+  });
+});
+
+/*
+ * The scene pane keeps its sections and its conditions, written by hand: the
+ * environment is no component, and has no pane to derive. Each row's label,
+ * range, options and unit are the environment schema's.
+ */
+describe('the scene pane', () => {
+  it('reads its rows off the environment\'s schema, row for row what was written by hand', () => {
+    expect(JSON.parse(JSON.stringify(SCENE_SCHEMA))).toEqual([
+      { label: 'Scene', fields: [
+        { on: 'scene', key: 'name', label: 'Name' },
+      ] },
+      { label: 'Background', fields: [
+        { on: 'environment', key: 'backgroundMode', label: 'Mode', type: 'enum', options: [{ value: 'color', label: 'Colour' }, { value: 'texture', label: 'Texture' }, { value: 'sky', label: 'Sky' }] },
+        { on: 'environment', key: 'background', label: 'Colour' },
+        { on: 'environment', key: 'backgroundTexture', label: 'Texture', params: { view: 'asset', assetKind: 'texture' } },
+        { on: 'environment', key: 'backgroundIntensity', label: 'Intensity', type: 'number', min: 0, max: 5, step: 0.01 },
+        { on: 'environment', key: 'backgroundBlur', label: 'Blur', type: 'number', min: 0, max: 1, step: 0.01 },
+      ] },
+      { label: 'Environment', fields: [
+        { on: 'environment', key: 'environmentMode', label: 'Source', type: 'enum', options: [{ value: 'none', label: 'None' }, { value: 'background', label: 'Background' }, { value: 'texture', label: 'Texture' }] },
+        { on: 'environment', key: 'environmentTexture', label: 'Lighting', params: { view: 'asset', assetKind: 'texture' } },
+        { on: 'environment', key: 'environmentIntensity', label: 'Intensity', type: 'number', min: 0, max: 5, step: 0.01 },
+        { on: 'environment', key: 'rotation', label: 'Rotation', type: 'number', min: -180, max: 180, step: 1 },
+      ] },
+      { label: 'Sky', fields: [
+        { on: 'sky', key: 'elevation', label: 'Sun Height', type: 'number', min: -10, max: 90, step: 0.1 },
+        { on: 'sky', key: 'azimuth', label: 'Sun Angle', type: 'number', min: -180, max: 180, step: 1 },
+        { on: 'sky', key: 'turbidity', label: 'Haze', type: 'number', min: 0, max: 20, step: 0.1 },
+        { on: 'sky', key: 'rayleigh', label: 'Blue', type: 'number', min: 0, max: 4, step: 0.01 },
+        { on: 'sky', key: 'mieCoefficient', label: 'Sun Glow', type: 'number', min: 0, max: 0.1, step: 0.001 },
+        { on: 'sky', key: 'mieDirectionalG', label: 'Glow Focus', type: 'number', min: 0, max: 1, step: 0.01 },
+        { on: 'sky', key: 'sunDisc', label: 'Sun Disc' },
+        { on: 'sky', key: 'cloudCoverage', label: 'Cloud Cover', type: 'number', min: 0, max: 1, step: 0.01 },
+        { on: 'sky', key: 'cloudDensity', label: 'Cloud Density', type: 'number', min: 0, max: 1, step: 0.01 },
+        { on: 'sky', key: 'cloudScale', label: 'Cloud Scale', type: 'number', min: 1e-05, max: 0.001, step: 1e-05 },
+        { on: 'sky', key: 'cloudElevation', label: 'Cloud Height', type: 'number', min: 0, max: 1, step: 0.01 },
+        { on: 'sky', key: 'cloudSpeed', label: 'Cloud Drift', type: 'number', min: 0, max: 0.001, step: 1e-05 },
+      ] },
+      { label: 'Fog', fields: [
+        { on: 'environment', key: 'fogEnabled', label: 'Enabled' },
+        { on: 'environment', key: 'fogColor', label: 'Colour' },
+        { on: 'environment', key: 'fogMode', label: 'Mode', type: 'enum', options: [{ value: 'linear', label: 'Linear' }, { value: 'exponential', label: 'Exponential' }] },
+        { on: 'environment', key: 'fogNear', label: 'Start', type: 'number', min: 0, step: 1 },
+        { on: 'environment', key: 'fogFar', label: 'End', type: 'number', min: 0, step: 1 },
+        { on: 'environment', key: 'fogDensity', label: 'Density', type: 'number', min: 0, max: 0.2, step: 0.001 },
+      ] },
+    ]);
+  });
+
+  it('shows the rotation in degrees and stores it in radians', () => {
+    const rotation = SCENE_SCHEMA.flatMap((section) => section.fields).find((field) => field.key === 'rotation');
+
+    expect(rotation?.toModel?.(Math.PI)).toBeCloseTo(180);
+    expect(rotation?.fromModel?.(90)).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('keeps each condition it had, on the sections and the rows that had one', () => {
+    const conditioned = SCENE_SCHEMA.map((section) => [
+      section.label,
+      section.visibleWhen !== undefined,
+      section.fields.filter((field) => field.visibleWhen !== undefined).map((field) => field.key),
+    ]);
+
+    expect(conditioned).toEqual([
+      ['Scene', true, []],
+      ['Background', false, ['background', 'backgroundTexture', 'backgroundIntensity', 'backgroundBlur']],
+      ['Environment', false, ['environmentTexture', 'environmentIntensity', 'rotation']],
+      ['Sky', true, []],
+      ['Fog', false, ['fogColor', 'fogMode', 'fogNear', 'fogFar', 'fogDensity']],
+    ]);
   });
 });

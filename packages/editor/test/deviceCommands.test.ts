@@ -212,10 +212,10 @@ describe('Launch on Devices', () => {
   it('sends what Play would run, read the way a launch reads it', async () => {
     const bridge = install({ launch: async () => status() });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(bridge.calls.map((call) => call.method)).toEqual(['launch']);
-    expect(bridge.calls[0]!.args[0]).toEqual(encodeLaunchSnapshot(launchSnapshot()));
+    expect(bridge.calls[0]!.args[0]).toEqual(encodeLaunchSnapshot(registries, launchSnapshot()));
   });
 
   it('keeps the launch it made, with the snapshot it sent, once it is current', async () => {
@@ -223,19 +223,19 @@ describe('Launch on Devices', () => {
       launch: async () => status({ launch: { id: 'launch-7', at: 7, sceneName: 'Level' } }),
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     const own = useDeviceStore.getState().ownLaunch;
     expect(own?.id).toBe('launch-7');
     // Kept as the window has it, though it crossed the bridge written as text.
-    expect(own && encodeLaunchSnapshot(own.snapshot)).toEqual(bridge.calls[0]!.args[0]);
+    expect(own && encodeLaunchSnapshot(registries, own.snapshot)).toEqual(bridge.calls[0]!.args[0]);
   });
 
   it('leaves nothing behind when a newer launch or a stop dropped it', async () => {
     // The newer launch reports for itself, and a stop was asked for.
     install({ launch: async () => null });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(toasts()).toEqual([]);
     expect(useConsoleStore.getState().entries).toEqual([]);
@@ -245,7 +245,7 @@ describe('Launch on Devices', () => {
   it('shows the link to type, and keeps every link in the Console', async () => {
     install({ launch: async () => status() });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(toasts()).toHaveLength(1);
     expect(lastToast()).toMatchObject({
@@ -273,7 +273,7 @@ describe('Launch on Devices', () => {
         }),
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(lastToast().title).toBe('Launched “Level” on 2 devices');
     const entry = lastEntry().text;
@@ -285,7 +285,7 @@ describe('Launch on Devices', () => {
   it('says how a phone joins when none was there to restart', async () => {
     install({ launch: async () => status() });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     const hint = 'Open the link on a phone: it restarts on every launch.';
     expect(lastToast().title).toBe('Launched “Level”');
@@ -296,7 +296,7 @@ describe('Launch on Devices', () => {
   it('says a phone accepts the certificate once, under HTTPS', async () => {
     install({ launch: async () => status({ transport: 'https' }) });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     const hint =
       'Open the link on a phone and accept its certificate once: it restarts on every launch.';
@@ -307,7 +307,7 @@ describe('Launch on Devices', () => {
   it('no longer asks for each page to be reloaded', async () => {
     install({ launch: async () => status({ devices: [device()] }) });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(lastToast().details).not.toContain('Reload the page');
     expect(lastEntry().text).not.toContain('Reload the page');
@@ -321,7 +321,7 @@ describe('Launch on Devices', () => {
     const bridge = install({ launch: async () => slid, reclaimPort: async () => status() });
     useDeviceStore.setState({ status: slid });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     const toast = lastToast();
     expect(toast.kind).toBe('warning');
@@ -347,7 +347,7 @@ describe('Launch on Devices', () => {
         status({ port: 7701, portHolder: { pid: 99, program: '/usr/local/bin/node', sameApp: false } }),
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(lastToast().kind).toBe('warning');
     expect(lastToast().description).toContain('node (process 99)');
@@ -359,7 +359,7 @@ describe('Launch on Devices', () => {
   it('gives the Windows command on Windows', async () => {
     install({ launch: async () => status({ port: 7701 }) }, 'win32');
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(lastToast().description).toContain('another program');
     expect(lastEntry().text).toContain('netstat -ano | findstr :7700');
@@ -374,7 +374,7 @@ describe('Launch on Devices', () => {
         }),
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(lastToast().kind).toBe('warning');
     expect(lastToast().description).toBe('No network address — only this computer can reach it.');
@@ -390,7 +390,7 @@ describe('Launch on Devices', () => {
       },
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(toasts()).toHaveLength(1);
     expect(lastToast()).toMatchObject({
@@ -423,7 +423,7 @@ describe('relaunching, for live reload', () => {
     let launches = 1;
     install({ launch: async () => current((launches += 1), PHONES) });
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
 
     expect(toasts()).toEqual([]);
     expect(lastEntry()).toMatchObject({
@@ -433,7 +433,7 @@ describe('relaunching, for live reload', () => {
     });
 
     const second = launchSnapshot();
-    await relaunchOnDevices(second);
+    await relaunchOnDevices(registries, second);
 
     expect(useConsoleStore.getState().entries).toHaveLength(1);
     expect(lastEntry().count).toBe(2);
@@ -444,7 +444,7 @@ describe('relaunching, for live reload', () => {
   it('names no count when no device was there to restart', async () => {
     install({ launch: async () => current(2, []) });
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
 
     expect(lastEntry().text).toBe('Relaunched “Level”');
   });
@@ -454,7 +454,7 @@ describe('relaunching, for live reload', () => {
     useDeviceStore.setState({ ownLaunch: mine });
     install({ launch: async () => null });
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
 
     expect(toasts()).toEqual([]);
     expect(useConsoleStore.getState().entries).toEqual([]);
@@ -474,7 +474,7 @@ describe('relaunching, for live reload', () => {
       ownLaunch: { id: 'launch-1', snapshot: launchSnapshot() },
     });
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
 
     expect(toasts()).toHaveLength(1);
     expect(lastToast()).toMatchObject({
@@ -543,11 +543,11 @@ describe('the Console, one launch at a time', () => {
         }),
     });
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
     appendDeviceLogs(IPHONE_LOGS);
     expect(texts()).toEqual(['Relaunched “Level” on 1 device', 'Shout loaded']);
 
-    await relaunchOnDevices(launchSnapshot());
+    await relaunchOnDevices(registries, launchSnapshot());
 
     expect(useConsoleStore.getState().entries.map(({ text, count }) => [text, count])).toEqual([
       ['Relaunched “Level” on 1 device', 2],
@@ -1465,7 +1465,7 @@ describe('the code, from the launch toast', () => {
   it('is offered with a link a phone can open, and opens the popover', async () => {
     install({ launch: async () => status() });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(labels()).toEqual(['Show QR Code']);
     lastToast().actions![0]!.onClick();
@@ -1475,7 +1475,7 @@ describe('the code, from the launch toast', () => {
   it('is not offered when only this computer can open the page', async () => {
     install({ launch: async () => status(LOCAL_ONLY) });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(labels()).toEqual([]);
   });
@@ -1486,7 +1486,7 @@ describe('the code, from the launch toast', () => {
         status({ port: 7701, portHolder: { pid: 4242, program: null, sameApp: true } }),
     });
 
-    await launchOnDevices();
+    await launchOnDevices(registries);
 
     expect(labels()).toEqual(['Quit the Other Three Studio', 'Show QR Code']);
   });

@@ -9,12 +9,13 @@ import {
   createComponentForEntity,
   createCoreRegistries,
   createEntity,
+  createEnvironment,
   createLight,
   createMeshComponent,
   createMeshEntity,
   createPhysicsMaterial,
   rigidbodyType,
-  deserializeScene,
+  decodeScene,
   fixedId,
   lightType,
   serializeScene,
@@ -22,6 +23,7 @@ import {
   type ComponentDoc,
   type ComponentType,
   type SceneDoc,
+  unwrap,
 } from '../src/index';
 import { componentsOf, setComponentsOf } from '../src/scene/components';
 import { builtInRegistries } from './registries';
@@ -207,7 +209,7 @@ describe('a stored component', () => {
       components: new Map(),
       unknownComponents: new Map(),
       rootOrder: [entity.entity.id],
-      environment: { background: '#000000' } as SceneDoc['environment'],
+      environment: createEnvironment(),
     };
     setComponentsOf(scene, entity.entity.id, entity.components);
     // A type no module here defines cannot be filed by `putComponent`: it
@@ -215,16 +217,18 @@ describe('a stored component', () => {
     const file = JSON.parse(serializeScene(registries, scene));
     const stored = { id: 'c2', type: 'teleporter', target: 'x' };
     file.components['teleporter'] = { [entity.entity.id]: { c2: stored } };
+    file.componentVersions['teleporter'] = 1;
 
-    const loaded = deserializeScene(registries, JSON.stringify(file));
+    const loaded = unwrap(decodeScene(registries, JSON.stringify(file)), 'Scene file');
     const [light] = componentsOf(registries, loaded, entity.entity.id);
     expect(light).toMatchObject({ type: 'light', intensity: expect.any(Number) });
 
     // Kept apart, since no type here claims it — and copied through byte for
     // byte, which is the rule that matters.
-    expect(loaded.unknownComponents.get(fixedId('componentType', 'teleporter'))).toEqual(
-      new Map([[entity.entity.id, new Map([['c2', stored]])]]),
-    );
+    expect(loaded.unknownComponents.get(fixedId('componentType', 'teleporter'))).toEqual({
+      version: 1,
+      components: new Map([[entity.entity.id, new Map([['c2', stored]])]]),
+    });
     expect(JSON.parse(serializeScene(registries, loaded)).components['teleporter']).toEqual({
       [entity.entity.id]: { c2: stored },
     });

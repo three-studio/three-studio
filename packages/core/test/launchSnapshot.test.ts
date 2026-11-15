@@ -7,14 +7,17 @@ import {
   createMaterial,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createEntity,
   createPrefabDoc,
   createRenderingSettings,
   createStarterScene,
   encodeLaunchSnapshot,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   type LaunchSnapshot,
+  type PrefabDoc,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { builtInRegistries } from './registries';
@@ -38,6 +41,13 @@ const CRATE = fixedId('asset', 'crate');
 const TREE = fixedId('asset', 'tree');
 const BROKEN = fixedId('asset', 'broken');
 
+/** A crate whose one entity is its root, under ids that are the same at every call. */
+function crate(): PrefabDoc {
+  const root = createEntity('Crate').entity;
+  root.id = fixedId('entity', 'root');
+  return { ...createPrefabDoc('Crate', [root], root.id), id: CRATE };
+}
+
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
@@ -46,7 +56,7 @@ function snapshot(): LaunchSnapshot {
     physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' }]]),
     // Under the id it is filed by, as a prefab read from a library always is.
     prefabs: new Map([
-      [CRATE, { ...createPrefabDoc('Crate', [], fixedId('entity', 'root')), id: CRATE }],
+      [CRATE, crate()],
     ]),
     rendering: { ...createRenderingSettings(), exposure: 1.5 },
     physics: {
@@ -59,19 +69,19 @@ function snapshot(): LaunchSnapshot {
 }
 
 /** The snapshot as the window sends it. */
-const sent = () => encodeLaunchSnapshot(snapshot());
+const sent = () => encodeLaunchSnapshot(registries, snapshot());
 
 describe('a launch snapshot, as it is sent', () => {
   it('carries its entry scene and each prefab as text, and everything else as it is', () => {
     const original = snapshot();
 
-    const wire = encodeLaunchSnapshot(original);
+    const wire = encodeLaunchSnapshot(registries, original);
 
     expect(wire.version).toBe(LAUNCH_SNAPSHOT_VERSION);
     expect(wire.entry).toEqual({ id: 'scene-1', name: 'Level', sceneJson: expect.any(String) });
     // A message, not a file: what the main process reads back from it is the
     // scene that was sent.
-    expect(serializeScene(registries, deserializeScene(registries, wire.entry.sceneJson))).toBe(
+    expect(serializeScene(registries, unwrap(decodeScene(registries, wire.entry.sceneJson), 'Scene file'))).toBe(
       serializeScene(registries, original.entry.scene),
     );
     expect(wire.prefabs).toEqual({ [CRATE]: expect.any(String) });
@@ -83,7 +93,7 @@ describe('a launch snapshot, as it is sent', () => {
 describe('a launch snapshot, where it arrives', () => {
   it('comes back as it was sent when it is well formed, with the entry scene as it arrived', () => {
     const original = snapshot();
-    const wire = encodeLaunchSnapshot(original);
+    const wire = encodeLaunchSnapshot(registries, original);
 
     const received = conformLaunchSnapshot(registries, structuredClone(wire));
 
@@ -168,14 +178,14 @@ describe('a launch snapshot, where it arrives', () => {
     const older = JSON.stringify({ ...JSON.parse(sent().prefabs[CRATE] ?? '{}'), version: PREFAB_FORMAT_VERSION - 1 });
 
     expect(() => conformLaunchSnapshot(registries, { ...sent(), prefabs: { tree: older } })).toThrow(
-      `Prefab file\nversion: written in format ${PREFAB_FORMAT_VERSION - 1}`,
+      `Prefab tree\nversion: written in format ${PREFAB_FORMAT_VERSION - 1}`,
     );
   });
 
   it('refuses a prefab whose text is not JSON, as it refuses a scene', () => {
     expect(() =>
       conformLaunchSnapshot(registries, { ...sent(), prefabs: { tree: '{ not json' } }),
-    ).toThrow('not valid JSON');
+    ).toThrow('Prefab tree\nis not JSON');
   });
 
   it('drops a field it does not know', () => {

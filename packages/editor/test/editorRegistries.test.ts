@@ -4,11 +4,12 @@ import {
   createLight,
   createLightEntity,
   createMeshEntity,
-  deserializeScene,
+  decodeScene,
   serializeScene,
   stableJson,
   type ComponentDoc,
   type Schema,
+  unwrap,
 } from '@three-studio/core';
 import { Boxes, Camera, Lightbulb, Volume2, Waves } from 'lucide-react';
 import { describe, expect, it } from 'vitest';
@@ -235,7 +236,8 @@ describe('a component of a type this editor does not define', () => {
     const file = JSON.parse(serializeScene(registries, sceneWith([cube, other])));
     file.components['plugin.flicker'] = { [cube.entity.id]: { f1: { id: 'f1', type: 'plugin.flicker', rate: 3 } } };
     file.components['acme.trail'] = { [cube.entity.id]: { t1: { id: 't1', type: 'acme.trail' } } };
-    const scene = deserializeScene(registries, stableJson(file));
+    file.componentVersions = { ...file.componentVersions, 'plugin.flicker': 1, 'acme.trail': 1 };
+    const scene = unwrap(decodeScene(registries, stableJson(file)), 'Scene file');
 
     expect(unknownTypesOn(scene, cube.entity.id)).toEqual(['acme.trail', 'plugin.flicker']);
     expect(unknownTypesOn(scene, other.entity.id)).toEqual([]);
@@ -244,9 +246,10 @@ describe('a component of a type this editor does not define', () => {
   it('is a folder of the Inspector, so the pane is rebuilt when the entity gains or loses one', () => {
     const cube = createMeshEntity('box');
     const file = JSON.parse(serializeScene(registries, sceneWith([cube])));
-    const plain = deserializeScene(registries, stableJson(file));
+    const plain = unwrap(decodeScene(registries, stableJson(file)), 'Scene file');
     file.components['plugin.flicker'] = { [cube.entity.id]: { f1: { id: 'f1', type: 'plugin.flicker' } } };
-    const carrying = deserializeScene(registries, stableJson(file));
+    file.componentVersions['plugin.flicker'] = 1;
+    const carrying = unwrap(decodeScene(registries, stableJson(file)), 'Scene file');
 
     useDocumentStore.getState().replaceScene(plain);
     const without = inspectorSignature(registries, cube.entity.id);

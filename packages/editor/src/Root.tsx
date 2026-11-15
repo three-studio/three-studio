@@ -91,7 +91,7 @@ function EditorWindow() {
 
   // Relaunches the devices a second after each change made here, while live
   // reload is on and the devices run this window's launch.
-  useEffect(() => watchLiveReload(), []);
+  useEffect(() => watchLiveReload(registries), [registries]);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.

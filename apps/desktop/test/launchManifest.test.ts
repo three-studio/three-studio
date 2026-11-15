@@ -109,12 +109,12 @@ describe('the scenes a launch lists', () => {
   const ids = (build: { scenes: { id: string }[] }) => build.scenes.map(({ id }) => id);
 
   it('starts on the entry, under the window’s id and name, at a path that carries its id', () => {
-    const build = launchManifest(contents({ scenes: ON_DISK }));
+    const build = launchManifest(registries, contents({ scenes: ON_DISK }));
     expect(build.scenes[0]).toEqual({ id: 'entry', name: 'Level', path: 'scenes/entry.json' });
   });
 
   it('lists every other scene after it, its own file not twice and a shadowed one not at all', () => {
-    const build = launchManifest(contents({ scenes: ON_DISK }));
+    const build = launchManifest(registries, contents({ scenes: ON_DISK }));
     expect(build.scenes).toEqual([
       { id: 'entry', name: 'Level', path: launchScenePath(ENTRY) },
       { id: 'alpha', name: 'Alpha', path: launchScenePath(ALPHA) },
@@ -126,14 +126,14 @@ describe('the scenes a launch lists', () => {
     // A file removed in the Finder under an open window: the entry is answered
     // from memory, so it needs none.
     const withoutItsFile = ON_DISK.filter(({ id }) => id !== 'entry');
-    const build = launchManifest(contents({ scenes: withoutItsFile }));
+    const build = launchManifest(registries, contents({ scenes: withoutItsFile }));
     expect(ids(build)).toEqual(['entry', 'alpha', 'beta']);
   });
 
   it('lists the entry first when a scene in another folder shares its name', () => {
     // First, so the player — which gives a shared name to the first scene that
     // has it — answers `scenes.current` with the entry, as Play does.
-    const build = launchManifest(
+    const build = launchManifest(registries, 
       contents({
         scenes: [
           ...ON_DISK,
@@ -149,7 +149,7 @@ describe('the scenes a launch lists', () => {
 describe('what else a launch says', () => {
   it('carries the snapshot’s settings, materials, physics materials and prefabs', () => {
     const launched = snapshot();
-    const build = launchManifest(contents({ snapshot: launched }));
+    const build = launchManifest(registries, contents({ snapshot: launched }));
     expect(build.rendering).toEqual(launched.rendering);
     expect(build.physics).toEqual(launched.physics);
     expect(build.loadingScene).toBe('loading');
@@ -157,12 +157,12 @@ describe('what else a launch says', () => {
     expect(build.physicsMaterials).toEqual(Object.fromEntries(launched.physicsMaterials));
     // Each as the JSON a prefab is written as, which is what a device reads.
     expect(build.prefabs).toEqual(
-      Object.fromEntries([...launched.prefabs].map(([id, prefab]) => [id, prefabJsonOf(prefab)])),
+      Object.fromEntries([...launched.prefabs].map(([id, prefab]) => [id, prefabJsonOf(registries, prefab)])),
     );
   });
 
   it('lists every asset but the scripts, under its id and its source’s file name', () => {
-    const build = launchManifest(
+    const build = launchManifest(registries, 
       contents({
         assets: [
           // Served from its scaled copy, named after its source: the source's
@@ -182,12 +182,12 @@ describe('what else a launch says', () => {
   });
 
   it('names the bundle when there is one', () => {
-    expect(launchManifest(contents({ scripts: null })).scripts).toBeNull();
-    expect(launchManifest(contents({ scripts: 'export {};' })).scripts).toBe('scripts.mjs');
+    expect(launchManifest(registries, contents({ scripts: null })).scripts).toBeNull();
+    expect(launchManifest(registries, contents({ scripts: 'export {};' })).scripts).toBe('scripts.mjs');
   });
 
   it('is titled with what it is given, at the current format', () => {
-    const build = launchManifest(contents());
+    const build = launchManifest(registries, contents());
     expect(build.title).toBe('My Game');
     expect(build.formatVersion).toBe(BUILD_FORMAT_VERSION);
     expect(build.formatVersion).toBe(8);

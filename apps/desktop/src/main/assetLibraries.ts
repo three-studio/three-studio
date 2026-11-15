@@ -11,7 +11,7 @@ import {
   createAssetId,
   createMaterial,
   defaultSettings,
-  deserializePrefab,
+  decodePrefab,
   isRecord,
   safeFileName,
   serializePrefab,
@@ -110,11 +110,14 @@ export async function readPrefabAssets(
       .map(async (asset) => {
         try {
           const text = await readFile(resolveInside(projectPath, asset.path), 'utf8');
-          prefabs.set(asset.id, deserializePrefab(registries, text, asset.id));
+          const decoded = decodePrefab(registries, text, asset.id);
+          // Left out: a prefab that does not decode — of another format, which
+          // nothing converts, or with a field this build cannot read. One must
+          // not cost the others; the instances that point at it render empty
+          // and say so.
+          if (decoded.ok) prefabs.set(asset.id, decoded.value);
         } catch {
-          // Left out: a prefab that cannot be read, or one of another format,
-          // which nothing converts. One must not cost the others; the instances
-          // that point at it render empty and say so.
+          // Left out too: a file that is gone by the time it is read.
         }
       }),
   );
@@ -122,18 +125,16 @@ export async function readPrefabAssets(
   return prefabs;
 }
 
-/** Writes a new prefab asset and its sidecar; returns the new asset id. */
+/**
+ * Writes a new prefab asset and its sidecar, under the prefab's own id —
+ * which, for the redo of a creation undo took back, is the one the entity
+ * restored by the undo already names. Returns it.
+ */
 export async function createPrefabAsset(
   registries: CoreRegistries,
   projectPath: string,
   name: string,
   prefab: PrefabDoc,
-  /**
-   * Reuses an id instead of taking the prefab's own, for redoing a creation that
-   * undo took back. A fresh id would leave the entity — restored by the undo
-   * patches — pointing at a prefab that no longer answers to that name.
-   */
-  assetId?: AssetId,
 ): Promise<AssetId> {
   const directory = directoryOf(registries, 'prefab');
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
@@ -146,14 +147,12 @@ export async function createPrefabAsset(
     PREFAB_EXTENSION,
   );
   const file = resolveInside(projectPath, posix.join(directory, fileName));
-  // The sidecar and the file say the same id, which they did not: the document
-  // was minted one and the sidecar another, and only the sidecar's was ever read.
-  const id = assetId ?? prefab.id;
-  await writeFile(file, serializePrefab(registries, { ...prefab, id }), 'utf8');
+  // The file holds no id: the sidecar's is the asset's, and the only one.
+  await writeFile(file, serializePrefab(registries, prefab), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id,
+    id: prefab.id,
     kind: 'prefab',
     importedAt: Date.now(),
     hash: await hashFile(file),

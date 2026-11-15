@@ -255,22 +255,6 @@ export function extendPane<T extends ComponentType>(
   };
 }
 
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
-
-/**
- * Angles are stored in radians and always shown in degrees.
- *
- * A converter pair rather than a declared variant, and the line is worth
- * knowing: a tuple bound as a pad *must* be converted, so `vec2` and `vec3`
- * carry their own conversion, but showing an angle in degrees is a choice —
- * `particleEmitter.velocity` is three numbers that are not an angle at all.
- */
-export const asDegrees: Pick<FieldSpec, 'toModel' | 'fromModel'> = {
-  toModel: (value) => (value as number) * RAD_TO_DEG,
-  fromModel: (value) => (value as number) * DEG_TO_RAD,
-};
-
 /**
  * A slot stores `null` when empty, but the control needs a primitive, so the
  * empty choice round-trips through `''`.

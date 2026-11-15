@@ -5,11 +5,12 @@ import {
   type BuildManifest,
   type TextureEncoding,
   activateCore,
-  deserializeScene,
+  decodeScene,
   encodePath,
   idMapOf,
   isAssetId,
   prefabsFromJson,
+  unwrap,
   type CoreRegistries,
   type SceneDoc,
 } from '@three-studio/core';
@@ -115,7 +116,7 @@ async function readScene(registries: CoreRegistries, build: BuildManifest, named
   // Named, so a missing scene reads as a missing scene. Without it a static
   // server's 404 page is handed to the parser, which reports a syntax error.
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
-  return deserializeScene(registries, await response.text());
+  return unwrap(decodeScene(registries, await response.text()), path);
 }
 
 /** The compiled behaviours' classes, decoded from what the bundle exports; none when it has none, or fails. */

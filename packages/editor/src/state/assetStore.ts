@@ -1,12 +1,13 @@
 import {
   applyAssetChange,
   assetUrl,
-  deserializePrefab,
+  decodePrefab,
   emptyManifest,
   idMapOf,
   isAssetId,
   jsonOf,
   prefabJsonOf,
+  unwrap,
   type AssetChange,
   type AssetEntry,
   type AssetId,
@@ -86,7 +87,8 @@ interface AssetState {
   ) => Promise<AssetId>;
   /** Writes back to a physics material asset, every collider linking it following. */
   savePhysicsMaterial: (assetId: AssetId, material: PhysicsMaterialDef) => Promise<void>;
-  savePrefab: (assetId: AssetId, prefab: PrefabDoc) => Promise<void>;
+  /** Writes a prefab back, its file recording the versions of the types the window's registries define. */
+  savePrefab: (registries: CoreRegistries, assetId: AssetId, prefab: PrefabDoc) => Promise<void>;
   remove: (assetPath: string) => Promise<void>;
   move: (assetPath: string, targetFolder: string) => Promise<void>;
   /**
@@ -196,7 +198,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
       // as one, and the prefab is read under it, as the main wrote it.
       const prefabs = new Map<AssetId, PrefabDoc>();
       for (const [id, text] of idMapOf(prefabTexts, isAssetId)) {
-        prefabs.set(id, deserializePrefab(registries, text, id));
+        prefabs.set(id, unwrap(decodePrefab(registries, text, id), `Prefab ${id}`));
       }
       set({
         manifest,
@@ -210,7 +212,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     }),
 
   createPrefab: async (registries, name, prefab, assetId) => {
-    const created = await window.studio.assets.createPrefab(name, jsonOf(prefabJsonOf(prefab)), assetId);
+    const created = await window.studio.assets.createPrefab(name, jsonOf(prefabJsonOf(registries, prefab)), assetId ?? prefab.id);
     await get().refresh(registries);
     return created;
   },
@@ -246,10 +248,10 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     set({ physicsMaterials: new Map(get().physicsMaterials).set(assetId, material) });
   },
 
-  savePrefab: async (assetId, prefab) => {
+  savePrefab: async (registries, assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
-    await window.studio.assets.savePrefab(entry.path, jsonOf(prefabJsonOf(prefab)));
+    await window.studio.assets.savePrefab(entry.path, jsonOf(prefabJsonOf(registries, prefab)), assetId);
     // Updated in place as well as written: every instance re-expands from this
     // table, and waiting for a re-read would show the old shape in between.
     const prefabs = new Map(get().prefabs).set(assetId, prefab);

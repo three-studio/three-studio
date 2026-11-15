@@ -69,7 +69,7 @@ const realSavePrefab = useAssetStore.getState().savePrefab;
 const realBuild = useScriptStore.getState().build;
 
 beforeEach(async () => {
-  await usePrefabModeStore.getState().exit();
+  await usePrefabModeStore.getState().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   useEditorStore.getState().stop();
   // The document carries an id of its own that is not the window's, which is
@@ -87,7 +87,7 @@ beforeEach(async () => {
     physicsMaterials: new Map([[fixedId('asset', 'ice'), createPhysicsMaterial()]]),
     // Filed under its own id, as the main process reads a prefab.
     prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
-    savePrefab: async (assetId, prefab) => {
+    savePrefab: async (_registries, assetId, prefab) => {
       saved.push([assetId, prefab]);
     },
   });

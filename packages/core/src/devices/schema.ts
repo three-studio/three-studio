@@ -1,5 +1,6 @@
 import { conform, conformPatch, isRecord } from '../conform';
 import { conformMaterial } from '../guards';
+import { unwrap } from '../decoded';
 import { createId, idMapOf, isAssetId, isSceneId, type AssetId, type SceneId } from '../ids';
 import { jsonOf } from '../json';
 import {
@@ -10,9 +11,9 @@ import {
 } from '../project/schema';
 import { conformPhysicsMaterial, type PhysicsMaterialDef } from '../scene/physicsMaterial';
 import type { CoreRegistries } from '../registries';
-import { deserializePrefab, prefabJsonOf, type PrefabDoc } from '../scene/prefab';
+import { decodePrefab, prefabJsonOf, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
-import { deserializeScene, sceneJsonOf } from '../scene/serialization';
+import { decodeScene, sceneJsonOf } from '../scene/serialization';
 import {
   isDeviceTransport,
   type DeviceBackend,
@@ -89,15 +90,15 @@ export interface ReceivedLaunch {
   readonly entryJson: string;
 }
 
-export function encodeLaunchSnapshot(snapshot: LaunchSnapshot): LaunchSnapshotJson {
+export function encodeLaunchSnapshot(registries: CoreRegistries, snapshot: LaunchSnapshot): LaunchSnapshotJson {
   const prefabs: Record<string, string> = {};
-  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefabJsonOf(prefab));
+  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefabJsonOf(registries, prefab));
   return {
     version: snapshot.version,
     entry: {
       id: snapshot.entry.id,
       name: snapshot.entry.name,
-      sceneJson: jsonOf(sceneJsonOf(snapshot.entry.scene)),
+      sceneJson: jsonOf(sceneJsonOf(registries, snapshot.entry.scene)),
     },
     materials: Object.fromEntries(snapshot.materials),
     physicsMaterials: Object.fromEntries(snapshot.physicsMaterials),
@@ -123,14 +124,14 @@ function libraryOf(value: unknown): Map<AssetId, unknown> {
  * anything, and what it sends becomes the files a phone downloads. Each part
  * goes through the reading its kind already has — a scene and a prefab as a
  * file is read, which keeps a component of a type this build does not define
- * as found; a material and the settings against their factories. A field this does not know is dropped:
- * nothing here is kept on disk, and the renderer that sends it ships in the
- * same build.
+ * as found; a material and the settings against their factories, which drop a
+ * field they do not know: nothing here is kept on disk, and the renderer that
+ * sends it ships in the same build.
  *
  * Refused outright when it cannot be read as a launch at all: a version this
  * build does not know, which includes version 1's documents sent as objects; an
- * entry scene with no id and name to serve it under, or that is not the text of
- * a scene.
+ * entry scene with no id and name to serve it under; a scene or a prefab its
+ * decoder refuses.
  */
 export function conformLaunchSnapshot(registries: CoreRegistries, value: unknown): ReceivedLaunch {
   if (!isRecord(value)) {
@@ -158,14 +159,14 @@ export function conformLaunchSnapshot(registries: CoreRegistries, value: unknown
   }
   const prefabs = new Map<AssetId, PrefabDoc>();
   for (const [assetId, text] of libraryOf(value['prefabs'])) {
-    if (typeof text === 'string') prefabs.set(assetId, deserializePrefab(registries, text, assetId));
+    if (typeof text === 'string') prefabs.set(assetId, unwrap(decodePrefab(registries, text, assetId), `Prefab ${assetId}`));
   }
   const loadingScene = value['loadingScene'];
 
   return {
     snapshot: {
       version: LAUNCH_SNAPSHOT_VERSION,
-      entry: { id, name, scene: deserializeScene(registries, sceneJson) },
+      entry: { id, name, scene: unwrap(decodeScene(registries, sceneJson), `Scene ${name}`) },
       materials,
       physicsMaterials,
       prefabs,

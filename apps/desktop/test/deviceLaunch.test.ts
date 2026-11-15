@@ -6,11 +6,12 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   conformLaunchSnapshot,
   createMeshEntity,
-  deserializeScene,
+  decodeScene,
   encodeLaunchSnapshot,
   fixedId,
   insertEntity,
   type ReceivedLaunch,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
@@ -69,14 +70,14 @@ async function project(script: string | null = SCRIPT): Promise<string> {
  */
 async function snapshot(root: string): Promise<ReceivedLaunch> {
   const [entry] = await discoverScenes(root);
-  const scene = deserializeScene(registries, await readFile(join(root, entry!.path), 'utf8'));
+  const scene = unwrap(decodeScene(registries, await readFile(join(root, entry!.path), 'utf8')), 'Scene file');
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
   const { settings } = await readProject(root);
   return conformLaunchSnapshot(
     registries,
-    encodeLaunchSnapshot({
+    encodeLaunchSnapshot(registries, {
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: { id: entry!.id, name: entry!.name, scene },
       materials: new Map(),
@@ -110,7 +111,7 @@ describe('a launch', () => {
 
     const launch = await prepareLaunch(registries, root, shown);
 
-    const expected = launchManifest({
+    const expected = launchManifest(registries, {
       snapshot: shown.snapshot,
       scenes: await discoverScenes(root),
       assets: (await scanAssets(registries, root)).assets,

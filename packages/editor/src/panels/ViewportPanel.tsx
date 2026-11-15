@@ -433,6 +433,7 @@ function PrefabModeBar() {
   const stack = usePrefabModeStore((s) => s.stack);
   const closeTo = usePrefabModeStore((s) => s.closeTo);
   const prefabs = useAssetStore((s) => s.prefabs);
+  const registries = useRegistries();
 
   if (stack.length === 0) return null;
 
@@ -445,7 +446,7 @@ function PrefabModeBar() {
     <div className="absolute inset-x-0 top-0 z-10 flex h-7 items-center gap-1 border-b border-prefab/40 bg-prefab/15 px-2 backdrop-blur-sm">
       <button
         type="button"
-        onClick={() => void closeTo(0)}
+        onClick={() => void closeTo(registries, 0)}
         {...tooltip('Back to the scene — every prefab is saved on the way out')}
         className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
       >
@@ -466,7 +467,7 @@ function PrefabModeBar() {
                 type="button"
                 // Leaving to a frame saves everything below it, so clicking a
                 // crumb is a way back rather than a way to lose work.
-                onClick={() => void closeTo(index + 1)}
+                onClick={() => void closeTo(registries, index + 1)}
                 className="rounded-sm px-1 py-0.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
               >
                 {frame.name}

@@ -12,11 +12,12 @@ import {
   DEVICE_BODY_LIMIT,
   LAUNCH_SNAPSHOT_VERSION,
   conformLaunchSnapshot,
-  deserializeScene,
+  decodeScene,
   encodeLaunchSnapshot,
   type DeviceLogs,
   type DeviceServerStatus,
   type ReceivedLaunch,
+  unwrap,
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeviceServer } from '../src/main/devices/DeviceServer';
@@ -268,12 +269,12 @@ async function snapshot(root: string, exposure = 1): Promise<ReceivedLaunch> {
   const { settings } = await readProject(root);
   return conformLaunchSnapshot(
     registries,
-    encodeLaunchSnapshot({
+    encodeLaunchSnapshot(registries, {
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: {
         id: entry!.id,
         name: entry!.name,
-        scene: deserializeScene(registries, await readFile(join(root, entry!.path), 'utf8')),
+        scene: unwrap(decodeScene(registries, await readFile(join(root, entry!.path), 'utf8')), 'Scene file'),
       },
       materials: new Map(),
       physicsMaterials: new Map(),

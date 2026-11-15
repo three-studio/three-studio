@@ -127,8 +127,8 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefabJson, assetId),
     saveMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
-    savePrefab: (assetPath, prefabJson): Promise<void> =>
-      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefabJson),
+    savePrefab: (assetPath, prefabJson, assetId): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefabJson, assetId),
     readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPhysicsMaterials),
     createPhysicsMaterial: (name, material): Promise<AssetId> =>

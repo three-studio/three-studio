@@ -18,9 +18,8 @@ import {
   createPhysicsSettings,
   createPrefabDoc,
   createRenderingSettings,
-  deserializePrefab,
-  deserializeScene,
-  isAssetId,
+  decodePrefab,
+  decodeScene,
   jsonOf,
   prefabJsonOf,
   serializePrefab,
@@ -30,6 +29,7 @@ import {
   type ProjectContents,
   type ProjectFile,
   type SceneChange,
+  unwrap,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -383,49 +383,63 @@ describe('the guards are reached, not merely written', () => {
     const crate = createMeshEntity('box');
     const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
     // Written as a window writes a message: in the order the document was built.
-    const sent = jsonOf(prefabJsonOf(prefab));
+    const sent = jsonOf(prefabJsonOf(registries, prefab));
     const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
 
-    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', sent);
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', sent, prefab.id);
 
     // The file is the codec's, key-sorted for a diff, whatever order it arrived in.
     const created = await readFile(file, 'utf8');
-    expect(created).toBe(serializePrefab(registries, deserializePrefab(registries, sent)));
+    expect(created).toBe(serializePrefab(registries, unwrap(decodePrefab(registries, sent, prefab.id), 'Prefab file')));
     expect(Object.keys(JSON.parse(created))).toEqual(Object.keys(JSON.parse(created)).sort());
 
-    const renamed = { ...deserializePrefab(registries, sent), name: 'Renamed' };
-    await invoke(IPC_INVOKE.assets.savePrefab, 1, 'assets/prefabs/Crate.prefab.json', jsonOf(renamed));
+    const renamed = { ...unwrap(decodePrefab(registries, sent, prefab.id), 'Prefab file'), name: 'Renamed' };
+    await invoke(
+      IPC_INVOKE.assets.savePrefab,
+      1,
+      'assets/prefabs/Crate.prefab.json',
+      jsonOf(prefabJsonOf(registries, renamed)),
+      prefab.id,
+    );
     expect(await readFile(file, 'utf8')).toBe(serializePrefab(registries, renamed));
 
     const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
     expect(Object.keys(read)).toEqual([id]);
-    expect(deserializePrefab(registries, assertDefined(read[id], 'the prefab read'))).toEqual(renamed);
+    expect(unwrap(decodePrefab(registries, assertDefined(read[id], 'the prefab read'), prefab.id), 'Prefab file')).toEqual(
+      renamed,
+    );
   });
 
-  it('refuses a prefab that is not JSON, and writes nothing', async () => {
+  it('refuses a prefab that is not JSON, or sent under no asset id, and writes nothing', async () => {
     const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
 
-    await expect(invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', '{ not json')).rejects.toThrow(
-      'not valid JSON',
+    await expect(invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', '{ not json', prefab.id)).rejects.toThrow(
+      'is not JSON',
     );
+    await expect(
+      invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), ''),
+    ).rejects.toThrow('asset id');
     await expect(readFile(join(root, 'assets', 'prefabs', 'Crate.prefab.json'), 'utf8')).rejects.toThrow();
   });
 
   /*
    * A prefab is an asset, and an asset's id is the one its sidecar holds. The
    * file used to say another: `createPrefabDoc` made one id for the document
-   * and the sidecar a second, and nothing but the sidecar's was ever read.
+   * and the sidecar a second, and nothing but the sidecar's was ever read. The
+   * file holds none now, and the sidecar the one the window gave.
    */
-  it('writes a prefab under the id of its sidecar, which is the id it was made with', async () => {
+  it('writes a prefab under the id it was made with, held by its sidecar alone', async () => {
     const root = await project();
     const crate = createMeshEntity('box');
     const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
 
-    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(prefab)));
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), prefab.id);
 
     const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
     expect(id).toBe(prefab.id);
-    expect(JSON.parse(await readFile(file, 'utf8')).id).toBe(id);
+    expect(JSON.parse(await readFile(file, 'utf8'))).not.toHaveProperty('id');
     expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(id);
   });
 
@@ -435,30 +449,33 @@ describe('the guards are reached, not merely written', () => {
     const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
     const given = createAssetId();
 
-    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(prefab)), given);
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), given);
 
     const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
     expect(id).toBe(given);
-    expect(JSON.parse(await readFile(file, 'utf8')).id).toBe(given);
     expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(given);
   });
 
-  it('reads each prefab under the id of its sidecar, whatever its own file says', async () => {
+  it('leaves out of the library a prefab its decoder refuses, and reads the others under their sidecars\' ids', async () => {
     const root = await project();
     const crate = createMeshEntity('box');
-    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
-    const id = await invoke<unknown>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(prefab)));
-    if (!isAssetId(id)) throw new Error('createPrefab answered with no asset id');
-    // A file edited by hand, or written by the build before this one.
+    const crates = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+    const barrel = createMeshEntity('cylinder');
+    const barrels = createPrefabDoc('Barrel', [barrel.entity], barrel.entity.id);
+    for (const prefab of [crates, barrels]) {
+      await invoke(IPC_INVOKE.assets.createPrefab, 1, prefab.name, jsonOf(prefabJsonOf(registries, prefab)), prefab.id);
+    }
+    // A file edited by hand, or written by a build before this one, with an id of its own.
     const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
     const edited = { ...JSON.parse(await readFile(file, 'utf8')), id: 'a-name-from-the-past' };
     await writeFile(file, JSON.stringify(edited), 'utf8');
 
     const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
 
-    expect(Object.keys(read)).toEqual([id]);
-    expect(deserializePrefab(registries, assertDefined(read[id], 'the prefab read'), id).id).toBe(id);
-    expect(JSON.parse(assertDefined(read[id], 'the prefab read')).id).toBe(id);
+    expect(Object.keys(read)).toEqual([barrels.id]);
+    expect(unwrap(decodePrefab(registries, assertDefined(read[barrels.id], 'the barrel read'), barrels.id), 'Prefab file').id).toBe(
+      barrels.id,
+    );
   });
 
   it('never lets a settings patch choose the token or the version', async () => {
@@ -624,7 +641,7 @@ describe('showing a file in the file manager', () => {
     const scene = (await discoverScenes(root))[0]!;
 
     const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
-    expect(deserializeScene(registries, read).id).toBe(scene.id);
+    expect(unwrap(decodeScene(registries, read), 'Scene file').id).toBe(scene.id);
     await expect(invoke(IPC_INVOKE.project.readScene, 1, 'scenes/gone.scene.json')).rejects.toThrow(
       'There is no file at scenes/gone.scene.json',
     );

@@ -14,8 +14,8 @@ import {
   rigidbodyType,
   scriptType,
   deleteComponent,
-  deserializePrefab,
-  deserializeScene,
+  decodePrefab,
+  decodeScene,
   entitiesWith,
   expandPrefabs,
   findComponent,
@@ -48,6 +48,7 @@ import {
   type LightComponent,
   type MeshComponent,
   type SceneDoc,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { sceneWith } from './fixtures';
@@ -231,7 +232,7 @@ describe('two components of one type on one entity', () => {
     putComponent(scene, cube.entity.id, first);
     putComponent(scene, cube.entity.id, second);
 
-    const loaded = componentsOf(registries, deserializeScene(registries, serializeScene(registries, scene)), cube.entity.id);
+    const loaded = componentsOf(registries, unwrap(decodeScene(registries, serializeScene(registries, scene)), 'Scene file'), cube.entity.id);
 
     // Registry order across types still holds: the mesh comes before both
     // scripts. Within one type it does not, and `componentsOf` says so — a
@@ -284,18 +285,19 @@ describe('a component of a type this build does not define', () => {
     const cube = createMeshEntity('box');
     const file = JSON.parse(serializeScene(registries, sceneWith([cube])));
     file.components['plugin.flicker'] = { [cube.entity.id]: { f1: flicker } };
+    file.componentVersions['plugin.flicker'] = 1;
     return { json: stableJson(file), cubeId: cube.entity.id };
   }
 
   function opened(): { scene: SceneDoc; cubeId: EntityId } {
     const { json, cubeId } = written();
-    return { scene: deserializeScene(registries, json), cubeId };
+    return { scene: unwrap(decodeScene(registries, json), 'Scene file'), cubeId };
   }
 
   it('is kept exactly as found, apart from the components this build can read', () => {
     const { scene, cubeId } = opened();
 
-    expect(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+    expect(scene.unknownComponents.get(FLICKER)?.components.get(cubeId)?.get(F1)).toEqual(flicker);
     // And handed to no reader of a component: there it would be read as a type
     // it is not.
     expect(scene.components.has(FLICKER)).toBe(false);
@@ -306,19 +308,19 @@ describe('a component of a type this build does not define', () => {
   it('is saved back byte for byte', () => {
     const { json } = written();
 
-    expect(serializeScene(registries, deserializeScene(registries, json))).toBe(json);
+    expect(serializeScene(registries, unwrap(decodeScene(registries, json), 'Scene file'))).toBe(json);
   });
 
   it('crosses a message in the one block a file holds it in', () => {
     const { scene, cubeId } = opened();
 
-    const message = JSON.parse(jsonOf(sceneJsonOf(scene)));
+    const message = JSON.parse(jsonOf(sceneJsonOf(registries, scene)));
 
     // Written raw, the document would put it under a key no reader reads, and
     // the first save that crossed a process would lose it.
     expect(message.components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
     expect(message).not.toHaveProperty('unknownComponents');
-    expect(deserializeScene(registries, JSON.stringify(message)).unknownComponents).toEqual(scene.unknownComponents);
+    expect(unwrap(decodeScene(registries, JSON.stringify(message)), 'Scene file').unknownComponents).toEqual(scene.unknownComponents);
   });
 
   it('is named among the types the document holds and this build does not know', () => {
@@ -335,7 +337,7 @@ describe('a component of a type this build does not define', () => {
 
     // Left behind it would be unreachable and still written out, for a type
     // nothing here could ever draw or delete.
-    expect(scene.unknownComponents.get(FLICKER)?.has(cubeId)).toBe(false);
+    expect(scene.unknownComponents.get(FLICKER)?.components.has(cubeId)).toBe(false);
     expect(unknownComponentTypes(scene)).toEqual([]);
     expect(JSON.parse(serializeScene(registries, scene)).components).not.toHaveProperty('plugin.flicker');
     expect(validateHierarchy(scene)).toEqual([]);
@@ -346,9 +348,9 @@ describe('a component of a type this build does not define', () => {
 
     const copyId = assertDefined(cloneSubtree(scene, cubeId, null), 'the copy of the cube');
 
-    const copy = scene.unknownComponents.get(FLICKER)?.get(copyId)?.get(F1);
+    const copy = scene.unknownComponents.get(FLICKER)?.components.get(copyId)?.get(F1);
     expect(copy).toEqual(flicker);
-    expect(copy).not.toBe(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1));
+    expect(copy).not.toBe(scene.unknownComponents.get(FLICKER)?.components.get(cubeId)?.get(F1));
   });
 
   it('stays when what its entity carries of the known types is replaced', () => {
@@ -357,7 +359,7 @@ describe('a component of a type this build does not define', () => {
     setComponentsOf(scene, cubeId, [createLight('point')]);
 
     expect(componentsOf(registries, scene, cubeId).map((c) => c.type)).toEqual(['light']);
-    expect(scene.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+    expect(scene.unknownComponents.get(FLICKER)?.components.get(cubeId)?.get(F1)).toEqual(flicker);
   });
 
   it('is lifted into a prefab with its entity, through the prefab\'s file and back into a scene', () => {
@@ -365,12 +367,12 @@ describe('a component of a type this build does not define', () => {
 
     const prefab = prefabFromEntities('Lamp', scene, cubeId);
     const text = serializePrefab(registries, prefab);
-    const reread = deserializePrefab(registries, text, prefab.id);
+    const reread = unwrap(decodePrefab(registries, text, prefab.id), 'Prefab file');
 
-    expect(prefab.unknownComponents.get(FLICKER)?.get(cubeId)?.get(F1)).toEqual(flicker);
+    expect(prefab.unknownComponents.get(FLICKER)?.components.get(cubeId)?.get(F1)).toEqual(flicker);
     expect(JSON.parse(text).components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
     expect(reread.unknownComponents).toEqual(prefab.unknownComponents);
-    expect(JSON.parse(jsonOf(prefabJsonOf(prefab))).components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
+    expect(JSON.parse(jsonOf(prefabJsonOf(registries, prefab))).components['plugin.flicker']).toEqual({ [cubeId]: { f1: flicker } });
     // Prefab Mode edits the prefab as a scene, and writes it back.
     const edited = prefabToScene(reread);
     expect(edited.unknownComponents).toEqual(prefab.unknownComponents);
@@ -392,14 +394,23 @@ describe('a component of a type this build does not define', () => {
 });
 
 describe('a scene\'s file', () => {
-  it('lists a table for every registered type, the ones it holds nothing of too, and nothing else', () => {
+  it('lists the tables it holds a component of, each with its type\'s version, and nothing else', () => {
     const file = JSON.parse(serializeScene(registries, createEmptyScene()));
 
-    // As a file has always been written: it does not gain a line the first
-    // time a light is added, and where the document keeps the types this build
-    // does not define is no part of it.
-    expect(file.components).toEqual(Object.fromEntries(registries.components.values().map(({ id }) => [id, {}])));
-    expect(Object.keys(file)).toEqual(['components', 'entities', 'environment', 'id', 'name', 'rootOrder', 'version']);
+    // A table for a type it holds nothing of would be a line that comes and
+    // goes with the first light and the last; where the document keeps the
+    // types this build does not define is no part of it either.
+    expect(file).toMatchObject({ componentVersions: {}, components: {} });
+    expect(Object.keys(file)).toEqual([
+      'componentVersions',
+      'components',
+      'entities',
+      'environment',
+      'id',
+      'name',
+      'rootOrder',
+      'version',
+    ]);
   });
 });
 

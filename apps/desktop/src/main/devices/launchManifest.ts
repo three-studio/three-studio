@@ -2,6 +2,7 @@ import { posix } from 'node:path';
 import type {
   AssetEntry,
   BuildManifest,
+  CoreRegistries,
   LaunchSnapshot,
   SceneEntry,
   SceneId,
@@ -55,10 +56,10 @@ export function launchScenePath(sceneId: SceneId): string {
  * build, the project's name — and this decides what the manifest lists. What
  * the manifest *says* about it is `assembleManifest`'s, as for an export.
  */
-export function launchManifest(contents: LaunchContents): BuildManifest {
+export function launchManifest(registries: CoreRegistries, contents: LaunchContents): BuildManifest {
   const { snapshot, scenes, assets, title, scripts } = contents;
   const { entry } = snapshot;
-  return assembleManifest({
+  return assembleManifest(registries, {
     title,
     rendering: snapshot.rendering,
     physics: snapshot.physics,

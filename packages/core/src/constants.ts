@@ -98,7 +98,18 @@ export const SCRIPT_API_VERSION = 4;
  * field of the type refuses the scene, where it was filled or dropped. A rigid
  * body's locks are named axes, `{ x, y, z }`, where they were a tuple. A water
  * surface's sun is one field, `sun` — the sky, a light by its id, or a sun of
- * its own — where three said it, the light by an id among two keywords.
+ * its own — where three said it, the light by an id among two keywords. The
+ * four asset slots that said "none" with `''` — a model's file, an audio
+ * source's clip, a script's script, a prefab instance's prefab — say it with
+ * `null`, as every other slot does.
+ *
+ * And the rest of the file is decoded whole as well — each entity, the
+ * environment, the shell — so that nothing in it is filled any more. Beside
+ * `components`, `componentVersions` records the version of each type the file
+ * holds a component of: a type this build defines at another version refuses
+ * the file, and a table with no version, or a version with no table, refuses
+ * it too. Only the tables that hold a component are written, where every type
+ * of the build that wrote it had one.
  */
 export const SCENE_FORMAT_VERSION = 12;
 
@@ -115,7 +126,10 @@ export const PREFAB_ID_SEPARATOR = '/';
  * a scene, so it moves with the scene's format, and is refused at any other
  * number and never converted, as a scene is (see `SCENE_FORMAT_VERSION`).
  *
- * 9 — the format of scene 12.
+ * 9 — the format of scene 12, its versions of the types included; and the
+ * file holds no id of its own. A prefab is an asset, filed under its sidecar's
+ * id, and a second copy in the file is what a hand edit or a copied file makes
+ * disagree with the first.
  */
 export const PREFAB_FORMAT_VERSION = 9;
 

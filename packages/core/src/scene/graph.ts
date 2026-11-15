@@ -309,7 +309,8 @@ export function validateHierarchy(scene: SceneDoc): string[] {
   // Components keyed by an entity that is not there. Nothing draws them and
   // nothing lists them, but a save writes them out and every query counts them,
   // so the only way to notice is to ask.
-  for (const [type, table] of [...scene.components, ...scene.unknownComponents]) {
+  const unknown = [...scene.unknownComponents].map(([type, { components }]) => [type, components] as const);
+  for (const [type, table] of [...scene.components, ...unknown]) {
     for (const entityId of table.keys()) {
       if (!scene.entities.has(entityId)) {
         problems.push(`components.${type} holds "${entityId}", which is not in the entity table`);

@@ -7,7 +7,7 @@ import {
   createModelEntity,
   createPhysicsSettings,
   createRenderingSettings,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   type EntityId,
@@ -15,6 +15,7 @@ import {
   type ProjectFile,
   type SceneEntry,
   type SceneId,
+  unwrap,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -206,7 +207,7 @@ const realSavePrefab = useAssetStore.getState().savePrefab;
 const stops: (() => void)[] = [];
 
 beforeEach(async () => {
-  await prefabMode().exit();
+  await prefabMode().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   editor().stop();
 
@@ -229,7 +230,7 @@ beforeEach(async () => {
   crateRoot = root.entity.id;
   useAssetStore.setState({
     prefabs: new Map([[CRATE, { ...prefabWith('Crate', [root], crateRoot), id: CRATE }]]),
-    savePrefab: async (assetId, prefab) => {
+    savePrefab: async (_registries, assetId, prefab) => {
       log.push(['savePrefab', assetId]);
       savedPrefabs.push(prefab);
     },
@@ -266,7 +267,7 @@ describe('back to the scene', () => {
     renameEntity(registries, crateRoot, 'Edited');
     editor().play();
 
-    await backToTheScene({ stopPlay: true });
+    await backToTheScene(registries, { stopPlay: true });
 
     // The order Play itself follows: out of the prefab, then the game. An older
     // Stop put back the scene Play started from into whatever the document
@@ -282,7 +283,7 @@ describe('back to the scene', () => {
     await openCrate();
     editor().play();
 
-    await backToTheScene({ stopPlay: false });
+    await backToTheScene(registries, { stopPlay: false });
 
     expect(log).toEqual([['savePrefab', CRATE]]);
     expect(editor().playState).toBe('playing');
@@ -293,12 +294,12 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
   it('saves the scene as a new file, not the prefab', async () => {
     await openCrate();
 
-    const done = saveSceneAs();
+    const done = saveSceneAs(registries);
     await answerName('Copy');
     await done;
 
     expect(methods()).toEqual(['savePrefab', 'createScene']);
-    const copy = deserializeScene(registries, log[1]![2] as string);
+    const copy = unwrap(decodeScene(registries, log[1]![2] as string), 'Scene file');
     expect(copy.entities.get(wall)).toBeDefined();
     expect(copy.entities.get(crateRoot)).toBeUndefined();
     expect(prefabMode().stack).toEqual([]);
@@ -309,13 +310,13 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
     [
       'the prompt',
       async () => {
-        const done = renameCurrentSceneWithPrompt();
+        const done = renameCurrentSceneWithPrompt(registries);
         await answerName('Renamed');
         await done;
       },
     ],
     // The Inspector's Name field calls it on blur, with no prompt of its own.
-    ['the Inspector', () => renameCurrentScene('Renamed')],
+    ['the Inspector', () => renameCurrentScene(registries, 'Renamed')],
   ])('renames the scene, not the prefab, through %s', async (_, rename) => {
     await openCrate();
 
@@ -339,7 +340,7 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
     stops.push(watchUnsaved());
     log.length = 0;
 
-    const done = deleteCurrentScene();
+    const done = deleteCurrentScene(registries);
     await confirm();
     await done;
 
@@ -354,9 +355,9 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
   });
 
   it.each([
-    ['Save As', () => saveSceneAs()],
-    ['Rename', () => renameCurrentSceneWithPrompt()],
-    ['Delete', () => deleteCurrentScene()],
+    ['Save As', () => saveSceneAs(registries)],
+    ['Rename', () => renameCurrentSceneWithPrompt(registries)],
+    ['Delete', () => deleteCurrentScene(registries)],
   ])('leaves the prefab open and the game running when %s is cancelled', async (_, gesture) => {
     await openCrate();
     editor().play();
@@ -371,9 +372,9 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
   });
 
   it.each([
-    ['Save As', () => saveSceneAs(), () => answerName('Copy')],
-    ['Rename', () => renameCurrentSceneWithPrompt(), () => answerName('Renamed')],
-    ['Delete', () => deleteCurrentScene(), confirm],
+    ['Save As', () => saveSceneAs(registries), () => answerName('Copy')],
+    ['Rename', () => renameCurrentSceneWithPrompt(registries), () => answerName('Renamed')],
+    ['Delete', () => deleteCurrentScene(registries), confirm],
   ])('stops at a prefab that fails to save, before %s asks anything else', async (_, gesture, answer) => {
     useAssetStore.setState({
       savePrefab: async (assetId) => {
@@ -396,9 +397,9 @@ describe('Save As, Rename and Delete from Prefab Mode', () => {
 
 describe('Save As, Rename and Delete during Play', () => {
   it.each([
-    ['Save As', () => saveSceneAs(), () => answerName('Copy'), ['createScene']],
-    ['Rename', () => renameCurrentSceneWithPrompt(), () => answerName('Renamed'), ['renameScene']],
-    ['Delete', () => deleteCurrentScene(), confirm, ['deleteScene', 'switchScene']],
+    ['Save As', () => saveSceneAs(registries), () => answerName('Copy'), ['createScene']],
+    ['Rename', () => renameCurrentSceneWithPrompt(registries), () => answerName('Renamed'), ['renameScene']],
+    ['Delete', () => deleteCurrentScene(registries), confirm, ['deleteScene', 'switchScene']],
   ])('stops the game once %s has its answer', async (_, gesture, answer, calls) => {
     editor().play();
 
@@ -429,7 +430,7 @@ describe('Save As, Rename and Delete during Play', () => {
     );
     editor().play();
 
-    await renameCurrentScene('Played');
+    await renameCurrentScene(registries, 'Played');
 
     expect(editor().playState).toBe('stopped');
     expect(doc().scene.name).toBe('Played');
@@ -446,7 +447,7 @@ describe('Save As, Rename and Delete during Play', () => {
     );
     editor().play();
 
-    const done = saveSceneAs();
+    const done = saveSceneAs(registries);
     await answerName('Copy');
     await done;
 
@@ -470,7 +471,7 @@ describe('Save As makes a scene of its own', () => {
   });
 
   async function saveAs(name: string): Promise<void> {
-    const done = saveSceneAs();
+    const done = saveSceneAs(registries);
     await answerName(name);
     await done;
   }
@@ -486,7 +487,7 @@ describe('Save As makes a scene of its own', () => {
     const [, name, contents] = log[0]!;
     expect(name).toBe('Copy');
     // As it stands, original id included: the main process is what replaces it.
-    const handed = deserializeScene(registries, contents as string);
+    const handed = unwrap(decodeScene(registries, contents as string), 'Scene file');
     expect(handed.id).toBe('a');
     expect(handed.entities.get(wall)?.name).toBe('Edited wall');
 
@@ -508,7 +509,7 @@ describe('Save As makes a scene of its own', () => {
     await useProjectStore.getState().save(registries);
 
     expect(log.at(-2)).toEqual(['saveScene', 'scenes/Copy.scene.json']);
-    const saved = deserializeScene(registries, written[0]!);
+    const saved = unwrap(decodeScene(registries, written[0]!), 'Scene file');
     expect(saved.id).toBe('c');
     expect(saved.name).toBe('Copy');
     expect(saved.entities.get(wall)?.name).toBe('Edited after Save As');
@@ -555,7 +556,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   it('saves the prefab, says the window is clean, then opens the other scene', async () => {
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene(LEVEL_2.id);
+    await openScene(registries, LEVEL_2.id);
 
     expect(log).toEqual([
       ['savePrefab', CRATE],
@@ -571,7 +572,7 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
     renameEntity(registries, wall, 'Edited wall');
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene(LEVEL_2.id);
+    await openScene(registries, LEVEL_2.id);
 
     expect(log).toEqual([
       ['savePrefab', CRATE],
@@ -582,15 +583,15 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   it("does nothing for the window's own scene", async () => {
     await inAnEditedPrefabWhilePlaying();
 
-    await openScene(MAIN.id);
+    await openScene(registries, MAIN.id);
 
     expect(log).toEqual([]);
     expect(prefabMode().stack).toHaveLength(1);
   });
 
   it.each([
-    ['New Scene', () => newScene(), ['createScene', 'Fresh'], 'c'],
-    ['Duplicate', () => duplicateCurrentScene(), ['duplicateScene', 'a', 'Fresh'], 'd'],
+    ['New Scene', () => newScene(registries), ['createScene', 'Fresh'], 'c'],
+    ['Duplicate', () => duplicateCurrentScene(registries), ['duplicateScene', 'a', 'Fresh'], 'd'],
   ])('%s saves the prefab once it has its name', async (_, gesture, call, created) => {
     await inAnEditedPrefabWhilePlaying();
 
@@ -603,8 +604,8 @@ describe('the gestures that reload the window, from Prefab Mode during Play', ()
   });
 
   it.each([
-    ['New Scene', () => newScene()],
-    ['Duplicate', () => duplicateCurrentScene()],
+    ['New Scene', () => newScene(registries)],
+    ['Duplicate', () => duplicateCurrentScene(registries)],
   ])('%s cancelled at its name leaves everything as it was', async (_, gesture) => {
     await inAnEditedPrefabWhilePlaying();
 
@@ -712,7 +713,7 @@ describe('Scene Settings', () => {
     await openCrate();
     const before = requests();
 
-    await showSceneSettings();
+    await showSceneSettings(registries);
 
     expect(log).toEqual([['savePrefab', CRATE]]);
     expect(prefabMode().stack).toEqual([]);
@@ -725,7 +726,7 @@ describe('Scene Settings', () => {
     editor().play();
     const before = requests();
 
-    await showSceneSettings();
+    await showSceneSettings(registries);
 
     expect(log).toEqual([]);
     expect(editor().playState).toBe('playing');
@@ -736,8 +737,8 @@ describe('Scene Settings', () => {
   it('asks again with nothing in the way: a second request is a request', async () => {
     const before = requests();
 
-    await showSceneSettings();
-    await showSceneSettings();
+    await showSceneSettings(registries);
+    await showSceneSettings(registries);
 
     expect(log).toEqual([]);
     expect(requests()).toBe(before + 2);
@@ -754,7 +755,7 @@ describe('Scene Settings', () => {
     const selected = editor().selection;
     const before = requests();
 
-    await showSceneSettings();
+    await showSceneSettings(registries);
 
     expect(prefabMode().stack).toHaveLength(1);
     expect(editor().selection).toEqual(selected);
@@ -934,7 +935,7 @@ describe('Revert Scene', () => {
       'a file holding another scene',
       () =>
         serializeScene(registries, {
-          ...deserializeScene(registries, file as string),
+          ...unwrap(decodeScene(registries, file as string), 'Scene file'),
           id: fixedId('scene', 'z'),
           name: 'Intruder',
         }),
@@ -959,7 +960,7 @@ describe('Revert Scene', () => {
   });
 
   it('loads the file as it is now, changed outside the editor', async () => {
-    const outside = deserializeScene(registries, file as string);
+    const outside = unwrap(decodeScene(registries, file as string), 'Scene file');
     assertDefined(outside.entities.get(wall), 'the wall').name = 'Changed outside';
     file = serializeScene(registries, outside);
     renameEntity(registries, wall, 'Edited wall');
@@ -974,7 +975,7 @@ describe('Revert Scene', () => {
     // A rename moves the file and writes the new name into the document as an
     // edit, which stays unsaved until the next save — so the file still holds
     // the old one. What Cmd+Z of the rename would give, too.
-    await renameCurrentScene('Renamed');
+    await renameCurrentScene(registries, 'Renamed');
     log.length = 0;
 
     await revert();

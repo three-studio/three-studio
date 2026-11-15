@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { deserializeScene, entitiesWith, findComponent, isRecord } from '@three-studio/core';
+import { decodeScene, unwrap, entitiesWith, findComponent, isRecord } from '@three-studio/core';
 import { openProject } from '../../../apps/desktop/src/main/project';
 import { writeRenderProject } from '../generate/projects';
 import { builtInRegistries } from '../registries';
@@ -69,7 +69,7 @@ interface CameraPose {
 
 /** The scene's main camera, read from its file with the app's own code. */
 async function mainCameraPose(projectPath: string): Promise<CameraPose> {
-  const scene = deserializeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson);
+  const scene = unwrap(decodeScene(builtInRegistries(), (await openProject(projectPath)).sceneJson), projectPath);
   for (const entityId of entitiesWith(scene, 'camera')) {
     const camera = findComponent(scene, entityId, 'camera');
     const entity = scene.entities.get(entityId);

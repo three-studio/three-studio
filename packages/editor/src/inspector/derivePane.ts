@@ -74,7 +74,7 @@ const IN_DEGREES = {
     fromModel: (value: unknown) =>
       isRecord(value) ? [toRadians(value['x']), toRadians(value['y']), toRadians(value['z'])] : value,
   },
-} satisfies Record<string, Pick<FieldSpec, 'toModel' | 'fromModel'>>;
+} satisfies Record<string, Pick<FieldSpec<unknown>, 'toModel' | 'fromModel'>>;
 
 /** The bounds a field gives, and only those: an absent bound is not a bound of `undefined`. */
 function bounds(field: { readonly min?: number; readonly max?: number; readonly step?: number }): {
@@ -89,8 +89,14 @@ function bounds(field: { readonly min?: number; readonly max?: number; readonly 
   };
 }
 
-/** A leaf as the row that edits it. */
-function leafRow(field: Exclude<SchemaField, { readonly type: 'object' | 'union' | 'custom' }>, path: readonly string[]): FieldSpec {
+/** A field that holds one value, which one row edits: no object, union or data shaped elsewhere. */
+export type LeafField = Exclude<SchemaField, { readonly type: 'object' | 'union' | 'custom' }>;
+
+/**
+ * A leaf as the row that edits it, for whatever pane it sits in: a
+ * component's, or the scene's, whose rows are the environment schema's.
+ */
+export function leafRow<Subject = ComponentDoc>(field: LeafField, path: readonly string[]): FieldSpec<Subject> {
   const { label } = field;
   switch (field.type) {
     case 'number':

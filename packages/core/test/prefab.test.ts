@@ -15,12 +15,12 @@ import {
   createPrefabInstance,
   rigidbodyType,
   scriptType,
-  deserializePrefab,
+  decodePrefab,
+  decodePrefabValue,
   expandPrefabs,
   findComponent,
   fixedId,
   jsonOf,
-  migratePrefab,
   putComponent,
   instanceOwnerOf,
   instancedId,
@@ -33,8 +33,10 @@ import {
   serializePrefab,
   splitInstancedId,
   stableJson,
+  unwrap,
   variantBaseOf,
   type AssetId,
+  type Decoded,
   type PrefabDoc,
   type PrefabInstanceComponent,
 } from '@three-studio/core';
@@ -88,84 +90,115 @@ function instanceOf(_prefab: PrefabDoc, at: [number, number, number] = [0, 0, 0]
 
 const library = (prefab: PrefabDoc) => ({ get: (id: AssetId) => (id === PREFAB_1 ? prefab : undefined) });
 
+/** A prefab read from its text under the asset id its reader knows, by a reader that cannot go on without it. */
+const readPrefab = (text: string, id: AssetId = TREE): PrefabDoc => unwrap(decodePrefab(registries, text, id), 'Prefab file');
+
+/** Where each fault of a refused prefab sits, by its code and its path. */
+const where = (decoded: Decoded<unknown>): string[] =>
+  decoded.ok ? [] : decoded.diagnostics.map(({ code, path }) => `${code} ${path.join('.')}`);
+
 /*
  * A prefab file is the document as text, written as a scene is: key-sorted, so
  * that it diffs. The same text is what the bridge carries, in and out.
  */
 describe('a prefab as text', () => {
-  it('is written key-sorted, and read back as it was', () => {
-    const prefab = treePrefab();
+  it('is written key-sorted with the tables it holds and their versions, and read back as it was', () => {
+    const prefab = { ...treePrefab(), id: TREE };
 
     const text = serializePrefab(registries, prefab);
 
-    // Sorting it again changes nothing, and it lists a table for every
-    // registered type, as a scene's file does.
+    // Sorting it again changes nothing, and it lists the types it holds a
+    // component of, each with its version, as a scene's file does.
     expect(text).toBe(stableJson(JSON.parse(text)));
-    expect(Object.keys(JSON.parse(text).components)).toEqual(
-      registries.components.values().map(({ id }) => id).sort(),
-    );
-    expect(deserializePrefab(registries, text)).toEqual(prefab);
-    expect(serializePrefab(registries, deserializePrefab(registries, text))).toBe(text);
+    expect(JSON.parse(text).componentVersions).toEqual({ mesh: 1 });
+    expect(Object.keys(JSON.parse(text).components)).toEqual(['mesh']);
+    expect(readPrefab(text)).toEqual(prefab);
+    expect(serializePrefab(registries, readPrefab(text))).toBe(text);
   });
 
   it.each([[8], [10], [undefined]])('is refused at version %j, in one line and nothing converted', (version) => {
-    // Without an id or a root besides, which the refusal does not get as far as saying.
-    const older = jsonOf({ ...prefabJsonOf(treePrefab()), version, id: undefined, root: undefined });
+    // Without a root besides, which the refusal does not get as far as saying.
+    const older = jsonOf({ ...prefabJsonOf(registries, treePrefab()), version, root: undefined });
 
-    expect(() => deserializePrefab(registries, older)).toThrow(
+    expect(() => readPrefab(older)).toThrow(
       new RegExp(`^Prefab file\\nversion: written in .*; this build reads format ${PREFAB_FORMAT_VERSION} and does not convert it$`),
     );
     expect(PREFAB_FORMAT_VERSION).toBe(9);
   });
 
   it('is refused in words when it is not JSON', () => {
-    expect(() => deserializePrefab(registries, '{ not json')).toThrow('Prefab file is not valid JSON');
+    expect(() => readPrefab('{ not json')).toThrow(/^Prefab file\nis not JSON \(/);
   });
 
-  it('is read under the id it is given, whatever its own file says', () => {
+  /*
+   * A prefab is an asset, and the place that read it knows the asset's id: its
+   * sidecar's, or its key in a library. A second copy inside the file is what a
+   * hand edit or a copied file makes disagree with the first.
+   */
+  it('holds no id of its own, and takes the one its reader knows it by', () => {
     const text = serializePrefab(registries, treePrefab());
 
-    // A prefab is an asset, and the place that read it knows the asset's id: its
-    // sidecar's, or its key in a library.
-    expect(deserializePrefab(registries, text, TREE).id).toBe(TREE);
+    expect(JSON.parse(text)).not.toHaveProperty('id');
+    expect(readPrefab(text, TREE).id).toBe(TREE);
+    expect(readPrefab(text, LAMP).id).toBe(LAMP);
   });
 
-  it('is refused when it has no id of its own and none is given', () => {
-    const text = jsonOf({ ...treePrefab(), id: '' });
+  it('refuses a file that still names an id of its own', () => {
+    const text = jsonOf({ ...prefabJsonOf(registries, treePrefab()), id: TREE });
 
-    expect(() => deserializePrefab(registries, text)).toThrow('no id of its own');
-    expect(deserializePrefab(registries, text, TREE).id).toBe(TREE);
+    expect(where(decodePrefab(registries, text, TREE))).toEqual(['field.unexpected id']);
   });
 
-  it('is refused when its root is not an id, where every copy would hang under an entity named nothing', () => {
-    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: '' }))).toThrow('no root entity');
-    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: 7 }))).toThrow('no root entity');
-    expect(() => deserializePrefab(registries, jsonOf({ ...treePrefab(), root: undefined }))).toThrow('no root entity');
+  it('is refused when its root is no entity of it, where every copy would hang under an entity named nothing', () => {
+    const json = prefabJsonOf(registries, treePrefab());
+
+    expect(where(decodePrefab(registries, jsonOf({ ...json, root: '' }), TREE))).toEqual(['field.invalid root']);
+    expect(where(decodePrefab(registries, jsonOf({ ...json, root: 7 }), TREE))).toEqual(['field.invalid root']);
+    expect(where(decodePrefab(registries, jsonOf({ ...json, root: undefined }), TREE))).toEqual(['field.missing root']);
+    expect(where(decodePrefab(registries, jsonOf({ ...json, root: 'nobody' }), TREE))).toEqual(['field.invalid root']);
+  });
+
+  it('refuses a type written at another version, as a scene does', () => {
+    const lamp = createLightEntity('point');
+    const file = JSON.parse(serializePrefab(registries, prefabWith('Lamp', [lamp], lamp.entity.id)));
+    file.componentVersions.light = 2;
+
+    expect(where(decodePrefab(registries, JSON.stringify(file), LAMP))).toEqual(['type.version componentVersions.light']);
+  });
+
+  it('keeps a type no module here defines, at its version, and writes both back byte for byte', () => {
+    const trunk = createMeshEntity('cylinder');
+    const file = JSON.parse(serializePrefab(registries, prefabWith('Tree', [trunk], trunk.entity.id)));
+    file.components['plugin.sway'] = { [trunk.entity.id]: { 'sway-1': { id: 'sway-1', type: 'plugin.sway', gust: 2 } } };
+    file.componentVersions['plugin.sway'] = 4;
+    const text = stableJson(file);
+
+    expect(serializePrefab(registries, readPrefab(text))).toBe(text);
   });
 
   it('holds its entities in a Map once read', () => {
-    const read = deserializePrefab(registries, serializePrefab(registries, treePrefab()));
+    const read = readPrefab(serializePrefab(registries, treePrefab()));
 
     expect(read.entities).toBeInstanceOf(Map);
     expect(read.entities.size).toBe(2);
   });
 
-  it('is read out of the JSON a manifest holds, each one, as the player reads them', () => {
-    // Filed under its own id, as a manifest files each one.
+  it('is read out of the JSON a manifest holds, each one under its key, as the player reads them', () => {
     const tree = { ...treePrefab(), id: TREE };
     // As `build.json` is written, and fetched.
-    const fetched = JSON.parse(jsonOf({ [TREE]: tree }));
+    const fetched = JSON.parse(jsonOf({ [TREE]: prefabJsonOf(registries, tree) }));
 
     const read = prefabsFromJson(registries, fetched);
 
     expect(read.get(TREE)?.entities).toBeInstanceOf(Map);
     expect(read.get(TREE)).toEqual(tree);
+    expect(unwrap(decodePrefabValue(registries, fetched[TREE], TREE), 'Prefab')).toEqual(tree);
   });
 
-  it('refuses a document that already holds a Map, which no file does', () => {
-    // `Object.entries` of a Map is empty: taken for a file's table, it would be
-    // a prefab with no entities, and nothing to say so.
-    expect(() => migratePrefab(registries, treePrefab())).toThrow('missing its entity table');
+  it('refuses a document handed over as it stands, which no file holds', () => {
+    // A document is no file: its tables are Maps, and it carries what a file
+    // writes elsewhere or not at all.
+    expect(decodePrefabValue(registries, treePrefab(), TREE).ok).toBe(false);
   });
 });
 

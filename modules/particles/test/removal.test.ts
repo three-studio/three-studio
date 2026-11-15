@@ -3,10 +3,11 @@ import {
   createMeshEntity,
   collectSceneAssets,
   componentsOf,
-  deserializeScene,
+  decodeScene,
   fixedId,
   serializeScene,
   unknownComponentTypes,
+  unwrap,
 } from '@three-studio/core';
 import { particleEmitterType } from '@three-studio/particles/core';
 import { NULL_ASSET_RESOLVER, activateRuntime, bindScene, createRuntimeRegistries } from '@three-studio/runtime';
@@ -42,7 +43,7 @@ describe('a scene holding an emitter, in a build without the module', () => {
     const { text, emitterId } = written();
     const kernel = kernelRegistries();
 
-    const scene = deserializeScene(kernel, text);
+    const scene = unwrap(decodeScene(kernel, text), 'Scene file');
 
     expect(scene.entities.has(emitterId)).toBe(true);
     expect(componentsOf(kernel, scene, emitterId)).toEqual([]);
@@ -53,20 +54,20 @@ describe('a scene holding an emitter, in a build without the module', () => {
     const { text } = written();
     const kernel = kernelRegistries();
 
-    const saved = serializeScene(kernel, deserializeScene(kernel, text));
+    const saved = serializeScene(kernel, unwrap(decodeScene(kernel, text), 'Scene file'));
 
     // The file differs by nothing the author made: read where the module is
     // installed, both hold the same scene, and write the same bytes.
     const installed = registriesWithParticles();
     expect(JSON.parse(saved).components.particleEmitter).toEqual(JSON.parse(text).components.particleEmitter);
-    expect(serializeScene(installed, deserializeScene(installed, saved))).toBe(text);
+    expect(serializeScene(installed, unwrap(decodeScene(installed, saved), 'Scene file'))).toBe(text);
   });
 
   it('draws nothing for it, and does not throw', () => {
     const { text, emitterId } = written();
     const registries = createRuntimeRegistries();
     activateRuntime(registries);
-    const doc = deserializeScene(registries, text);
+    const doc = unwrap(decodeScene(registries, text), 'Scene file');
 
     const binder = bindScene(new Scene(), doc, {
       registries,
@@ -82,11 +83,11 @@ describe('a scene holding an emitter, in a build without the module', () => {
   it('names no asset for it, which is why an export says the type is unknown', () => {
     const { text } = written();
     const kernel = kernelRegistries();
-    const scene = deserializeScene(kernel, text);
+    const scene = unwrap(decodeScene(kernel, text), 'Scene file');
 
     expect(collectSceneAssets(kernel, scene, new Map(), new Map(), new Set([SPRITE]))).not.toContain(SPRITE);
     const installed = registriesWithParticles();
-    expect(collectSceneAssets(installed, deserializeScene(installed, text), new Map(), new Map(), new Set([SPRITE]))).toContain(
+    expect(collectSceneAssets(installed, unwrap(decodeScene(installed, text), 'Scene file'), new Map(), new Map(), new Set([SPRITE]))).toContain(
       SPRITE,
     );
   });

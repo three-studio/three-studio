@@ -2,28 +2,49 @@ import {
   assertDefined,
   componentsOfType,
   colliderType,
+  createCameraEntity,
   createComponent,
   createEmptyScene,
   createEntity,
+  createEnvironment,
+  createLightEntity,
   createMeshComponent,
+  createMeshEntity,
   createPrefabInstance,
   rigidbodyType,
-  deserializeScene,
+  decodeScene,
   fixedId,
   insertEntity,
   jsonOf,
   putComponent,
   serializeScene,
   stableJson,
+  unwrap,
   SCENE_FORMAT_VERSION,
   type SceneDoc,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { sceneWith } from './fixtures';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
 /** Every type this build knows, in the order it registered them. */
 const TYPES = registries.components.values().map((definition) => definition.id);
+
+/** A scene read from its text, by a reader that cannot go on without it. */
+const read = (text: string): SceneDoc => unwrap(decodeScene(registries, text), 'Scene file');
+
+/** A scene's file as an object, to change before it is read again. */
+const fileOf = (scene: SceneDoc) => JSON.parse(serializeScene(registries, scene));
+
+/** What a refused file says, a line per fault: its code, where it sits, and its words. */
+function faults(file: unknown): string[] {
+  const decoded = decodeScene(registries, typeof file === 'string' ? file : JSON.stringify(file));
+  return decoded.ok ? [] : decoded.diagnostics.map(({ code, path, message }) => `${code} ${path.join('.')}: ${message}`);
+}
+
+/** Where each fault of a refused file sits, by its code and its path alone. */
+const where = (file: unknown): string[] => faults(file).map((fault) => fault.slice(0, fault.indexOf(':')));
 
 /*
  * A scene file has to be the same file on two machines, or a project cannot
@@ -87,11 +108,10 @@ describe('a scene serialises to one file however it was built', () => {
     const [scene] = bothWays();
     const once = serializeScene(registries, scene);
 
-    // The reorganisation happens once, and once only. Reading rebuilds objects
-    // as it fills defaults — `fillMissingFields` reassigns every transform and
-    // every component, and sets `id` last — so this is what says the sort
-    // survives the trip rather than being undone by the migration.
-    expect(serializeScene(registries, deserializeScene(registries, once))).toBe(once);
+    // The reorganisation happens once, and once only. Reading rebuilds every
+    // entity, transform and component as it decodes them, so this is what says
+    // the sort survives the trip rather than being undone by the reader.
+    expect(serializeScene(registries, read(once))).toBe(once);
   });
 
   it('leaves arrays alone, because in this format their order is the meaning', () => {
@@ -190,19 +210,20 @@ describe('a scene through a file', () => {
     insertEntity(scene, everything);
     const file = JSON.parse(serializeScene(registries, scene));
     file.components['plugin.sparkle'] = { [crate.entity.id]: { [SPARKLE.id]: SPARKLE } };
+    file.componentVersions['plugin.sparkle'] = 1;
     return { json: stableJson(file), unknownOn: crate.entity.id };
   }
 
   it('is written back byte for byte', () => {
     const { json } = written();
 
-    expect(serializeScene(registries, deserializeScene(registries, json))).toBe(json);
+    expect(serializeScene(registries, read(json))).toBe(json);
   });
 
   it('holds its entities in a Map, every one of them', () => {
     const { json } = written();
 
-    const scene = deserializeScene(registries, json);
+    const scene = read(json);
 
     expect(scene.entities).toBeInstanceOf(Map);
     expect(scene.entities.size).toBe(Object.keys(JSON.parse(json).entities).length);
@@ -212,7 +233,7 @@ describe('a scene through a file', () => {
   });
 
   it('holds the table of every known type as a Map of Maps, each component under its own id', () => {
-    const scene = deserializeScene(registries, written().json);
+    const scene = read(written().json);
 
     // The fixture carries every type, so no table is missing by accident.
     expect(TYPES.filter((type) => componentsOfType(scene, type).size === 0)).toEqual([]);
@@ -231,8 +252,9 @@ describe('a scene through a file', () => {
   it('reads a type the file has no table for as one that holds nothing, and makes no table for it', () => {
     const file = JSON.parse(serializeScene(registries, createEmptyScene()));
     file.components = {};
+    file.componentVersions = {};
 
-    const scene = deserializeScene(registries, JSON.stringify(file));
+    const scene = read(JSON.stringify(file));
 
     expect(scene.components.size).toBe(0);
     for (const type of TYPES) expect(componentsOfType(scene, type).size, type).toBe(0);
@@ -241,7 +263,7 @@ describe('a scene through a file', () => {
   it('keeps the table of an unknown type exactly as found', () => {
     const { json, unknownOn } = written();
 
-    const out = JSON.parse(serializeScene(registries, deserializeScene(registries, json)));
+    const out = JSON.parse(serializeScene(registries, read(json)));
 
     expect(out.components['plugin.sparkle']).toEqual({ [unknownOn]: { [SPARKLE.id]: SPARKLE } });
   });
@@ -249,21 +271,22 @@ describe('a scene through a file', () => {
   it('keeps it apart from the known tables, read down to each component and no further', () => {
     const { json } = written();
 
-    const scene = deserializeScene(registries, json);
+    const scene = read(json);
     const kept = scene.unknownComponents.get(fixedId('componentType', 'plugin.sparkle'));
 
     // By entity and by component id, which is what lets it follow its entity;
     // the component itself is the object the file held, which nothing reads.
     expect(scene.components.has(fixedId('componentType', 'plugin.sparkle'))).toBe(false);
-    expect([...(kept?.values() ?? [])].flatMap((held) => [...held.values()])).toEqual([SPARKLE]);
+    expect([...(kept?.components.values() ?? [])].flatMap((held) => [...held.values()])).toEqual([SPARKLE]);
   });
 
   it('is not reshaped by a table a file names like a prototype', () => {
     const file = JSON.parse(serializeScene(registries, createEmptyScene()));
     // JSON.parse makes it an own key, which is what a hostile file would write.
     file.components = JSON.parse('{"__proto__": {"mesh": {"x": {"y": {}}}}}');
+    file.componentVersions = JSON.parse('{"__proto__": 1}');
 
-    const scene = deserializeScene(registries, JSON.stringify(file));
+    const scene = read(JSON.stringify(file));
 
     // A table of a type nobody defines, kept under the name the file gave it:
     // a Map takes any key, and nothing is assigned to an object's prototype.
@@ -287,12 +310,149 @@ describe('a scene of another format', () => {
     // Malformed besides, which the refusal does not get as far as saying.
     file.entities = 'none';
 
-    expect(() => deserializeScene(registries, JSON.stringify(file))).toThrow(
+    expect(() => read(JSON.stringify(file))).toThrow(
       new RegExp(`^Scene file\\nversion: written in .*; this build reads format ${SCENE_FORMAT_VERSION} and does not convert it$`),
     );
   });
 
   it('is this build\'s own at 12', () => {
     expect(SCENE_FORMAT_VERSION).toBe(12);
+  });
+});
+
+/*
+ * Beside its tables, a file records the version of each type it holds a
+ * component of: a type's fields move with its version, and a component written
+ * with other fields is refused by name rather than read as if it were this
+ * build's. Once per type, not per component — a ten-thousand-entity scene
+ * would write the mesh's number ten thousand times.
+ */
+describe('the versions a scene records of its types', () => {
+  it('names each type it holds a component of, and no other, in id order', () => {
+    const file = fileOf(sceneWith([createMeshEntity('box'), createLightEntity('point'), createCameraEntity()]));
+
+    expect(file.componentVersions).toEqual({ camera: 1, light: 1, mesh: 1 });
+    expect(Object.keys(file.componentVersions)).toEqual(['camera', 'light', 'mesh']);
+    expect(Object.keys(file.components)).toEqual(['camera', 'light', 'mesh']);
+  });
+
+  it('writes no table and no version for a type it holds nothing of, though the document kept its table', () => {
+    const scene = sceneWith([createLightEntity('point')]);
+    // A table once made stays in the document, even emptied.
+    scene.components.set('mesh', new Map());
+
+    expect(fileOf(scene)).toMatchObject({ componentVersions: { light: 1 }, components: { light: expect.any(Object) } });
+    expect(Object.keys(fileOf(scene).components)).toEqual(['light']);
+    expect(fileOf(createEmptyScene())).toMatchObject({ componentVersions: {}, components: {} });
+  });
+
+  it('refuses a type written at another version, naming it and both versions, before reading its table', () => {
+    const lamp = createLightEntity('point');
+    const file = fileOf(sceneWith([lamp]));
+    file.componentVersions.light = 2;
+    // Not read: a component of another version is no component of this one.
+    const lights = file.components.light[lamp.entity.id];
+    for (const key of Object.keys(lights)) lights[key].intensity = 'bright';
+
+    expect(faults(file)).toEqual([
+      'type.version componentVersions.light: light written at version 2; this build reads version 1 and does not convert it',
+    ]);
+  });
+
+  it('refuses a table it records no version for, and a version it holds no table for', () => {
+    const file = fileOf(sceneWith([createLightEntity('point')]));
+    delete file.componentVersions.light;
+    file.componentVersions.camera = 1;
+
+    expect(faults(file)).toEqual([
+      'table.unversioned components.light: has no version in componentVersions',
+      'table.unversioned componentVersions.camera: names no table in components',
+    ]);
+  });
+
+  it('keeps a type no module here defines at the version its file gives, and writes both back byte for byte', () => {
+    const torch = createEntity('Torch');
+    const file = fileOf(sceneWith([torch, createLightEntity('point')]));
+    const FLICKER = { id: 'flicker-1', type: 'plugin.flicker', rate: 3, nested: { kept: [1, 2] } };
+    file.components['plugin.flicker'] = { [torch.entity.id]: { [FLICKER.id]: FLICKER } };
+    file.componentVersions['plugin.flicker'] = 3;
+    const json = stableJson(file);
+
+    const scene = read(json);
+
+    expect(scene.unknownComponents.get(fixedId('componentType', 'plugin.flicker'))?.version).toBe(3);
+    expect(serializeScene(registries, scene)).toBe(json);
+  });
+});
+
+/*
+ * A scene is read whole: its shell, every entity, every component and its
+ * environment, each field checked, and every fault named where it sits. A file
+ * this build cannot read is refused rather than mended, so that what opens is
+ * what the file says.
+ */
+describe('a scene decoded whole', () => {
+  it('refuses an entity\'s malformed fields where they sit, one fault each', () => {
+    const box = createMeshEntity('box');
+    const file = fileOf(sceneWith([box]));
+    const entity = file.entities[box.entity.id];
+    entity.parent = 42;
+    entity.transform.position = [0, 'up', 0];
+    entity.visible = 'yes';
+    delete entity.locked;
+    entity.colour = 'red';
+    const at = `entities.${box.entity.id}`;
+
+    expect(where(file)).toEqual([
+      `field.invalid ${at}.parent`,
+      `field.invalid ${at}.transform.position`,
+      `field.invalid ${at}.visible`,
+      `field.missing ${at}.locked`,
+      `field.unexpected ${at}.colour`,
+    ]);
+  });
+
+  it('refuses an entity whose id is not its key, and a component whose id or type is not its keys', () => {
+    const lamp = createLightEntity('point');
+    const box = createMeshEntity('box');
+    const file = fileOf(sceneWith([lamp, box]));
+    file.entities[lamp.entity.id].id = 'elsewhere';
+    const [lightKey] = Object.keys(file.components.light[lamp.entity.id]);
+    file.components.light[lamp.entity.id][lightKey ?? ''].id = 'other';
+    const [meshKey] = Object.keys(file.components.mesh[box.entity.id]);
+    file.components.mesh[box.entity.id][meshKey ?? ''].type = 'light';
+
+    expect(faults(file)).toEqual([
+      `key.mismatch entities.${lamp.entity.id}.id: is "elsewhere", where its key is "${lamp.entity.id}"`,
+      `key.mismatch components.light.${lamp.entity.id}.${lightKey}.id: is "other", where its key is "${lightKey}"`,
+      `field.invalid components.mesh.${box.entity.id}.${meshKey}.type: expected "mesh", found "light"`,
+    ]);
+  });
+
+  it.each(Object.keys(createEnvironment()))('refuses an environment whose %s is not one', (key) => {
+    const file = fileOf(createEmptyScene());
+    file.environment[key] = [];
+
+    expect(where(file)).toEqual([`field.invalid environment.${key}`]);
+  });
+
+  it.each(Object.keys(createEnvironment().sky))('refuses a sky whose %s is not one', (key) => {
+    const file = fileOf(createEmptyScene());
+    file.environment.sky[key] = [];
+
+    expect(where(file)).toEqual([`field.invalid environment.sky.${key}`]);
+  });
+
+  it('refuses an environment missing a field, or holding one this build does not read', () => {
+    const file = fileOf(createEmptyScene());
+    delete file.environment.fogDensity;
+    file.environment.sky.rain = 1;
+
+    expect(where(file).sort()).toEqual(['field.missing environment.fogDensity', 'field.unexpected environment.sky.rain']);
+  });
+
+  it('is refused in one line when it is not JSON, or not an object', () => {
+    expect(faults('{ "version": 12,')).toEqual([expect.stringMatching(/^field\.invalid : is not JSON \(.+\)$/)]);
+    expect(faults('[]')).toEqual(['field.invalid : expected an object, found []']);
   });
 });

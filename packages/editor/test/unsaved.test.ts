@@ -44,7 +44,7 @@ const edit = (): void => {
 };
 
 beforeEach(async () => {
-  await prefabMode().exit();
+  await prefabMode().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   doc().replaceScene(createEmptyScene());
   useEditorStore.getState().clearSelection();
@@ -101,7 +101,7 @@ describe('what is unsaved', () => {
     edit();
     await prefabMode().open(CRATE);
     edit();
-    await prefabMode().exit();
+    await prefabMode().exit(registries);
 
     expect(sceneUnsaved()).toBe(true);
     expect(windowUnsaved()).toBe(true);
@@ -165,7 +165,7 @@ describe('the main process, told as the answer changes', () => {
     // process lets close without a word.
     await prefabMode().open(ROOM);
     await prefabMode().open(CRATE);
-    await prefabMode().exit();
+    await prefabMode().exit(registries);
     expect(reports).toEqual([true]);
   });
 });

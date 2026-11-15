@@ -10,6 +10,9 @@ import { addEntity } from '../src/commands/sceneCommands';
 import { useDocumentStore } from '../src/state/documentStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useToastStore } from '../src/state/toastStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The export reads the project off disk and never saves on the author's
@@ -48,7 +51,7 @@ function result(): ExportResult {
 const toast = () => useToastStore.getState().toasts.at(-1)!;
 
 beforeEach(async () => {
-  await usePrefabModeStore.getState().exit();
+  await usePrefabModeStore.getState().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   useDocumentStore.getState().replaceScene(createEmptyScene());
   useToastStore.setState({ toasts: [] });

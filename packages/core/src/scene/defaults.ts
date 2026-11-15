@@ -5,13 +5,13 @@ import { SCENE_FORMAT_VERSION } from '../constants';
 import { createSceneId } from '../ids';
 import { setComponentsOf } from './components';
 import { createEntity } from './entity';
+import { createEnvironment } from './environment';
 import { createGeometry } from './geometry';
 import { createMaterial } from './material';
 
 /*
- * What is left once every component type owns its own factories: the sky and
- * the environment, which belong to a scene rather than to anything in it, and
- * the two ways to make a whole scene.
+ * What is left once every component type owns its own factories, and the
+ * environment its schema: the two ways to make a whole scene.
  *
  * No rule here is about a particular type any more. `createStarterScene` still
  * names three of them, and has to: a starter scene *is* a ground, a sun, a sky
@@ -24,62 +24,7 @@ import { createMaterial } from './material';
  * `index.ts`: an index is the type's definition, and the core's activation list
  * is the one place that imports it.
  */
-import type { EnvironmentDef, SceneDoc, SkySettings } from './schema';
-
-/** three's own `SkyMesh` defaults, which are a clear early morning. */
-export function createSkySettings(): SkySettings {
-  return {
-    elevation: 2,
-    azimuth: 180,
-    turbidity: 2,
-    rayleigh: 1,
-    mieCoefficient: 0.005,
-    mieDirectionalG: 0.8,
-    sunDisc: true,
-    cloudCoverage: 0.4,
-    cloudDensity: 0.4,
-    cloudScale: 0.0002,
-    cloudElevation: 0.5,
-    cloudSpeed: 0.0001,
-  };
-}
-
-/**
- * The environment a scene starts with, and what every migration fills against.
- *
- * A factory rather than a literal inside `createEmptyScene`, so that rule 2 of
- * the persisted-format rules holds by construction: `fillMissingFields` merges
- * `{ ...createEnvironment(), ...stored }`, and a property added here is
- * migrated by existing. Every default is chosen so that filling it into a scene
- * written before it existed changes nothing on screen — which is the only way
- * to add a field to a persisted format without auditing every project.
- */
-export function createEnvironment(): EnvironmentDef {
-  return {
-    backgroundMode: 'color',
-    background: '#2b2f33',
-    backgroundTexture: null,
-    // three's own: no blur, no attenuation.
-    backgroundBlur: 0,
-    backgroundIntensity: 1,
-    // `texture` rather than `background`, because it is what a scene written
-    // before this field did: the lighting came from `environmentTexture` and
-    // from nothing else, whether or not that slot was filled.
-    environmentMode: 'texture',
-    environmentTexture: null,
-    environmentIntensity: 1,
-    rotation: 0,
-    sky: createSkySettings(),
-    fogEnabled: false,
-    fogColor: '#2b2f33',
-    fogMode: 'linear',
-    fogNear: 30,
-    fogFar: 400,
-    // three's own default is 0.00025, which is invisible at the scale a
-    // blockout is built at. Unity's 0.01 puts the horizon around 200 units.
-    fogDensity: 0.01,
-  };
-}
+import type { SceneDoc } from './schema';
 
 /**
  * A scene as the editor creates one: nothing in it but its environment.
@@ -97,8 +42,8 @@ export function createEnvironment(): EnvironmentDef {
  * carry scripts, a script property may name it by id, and nothing could find
  * it but its name.
  *
- * It has to stay empty: the prefab migration borrows it, and a stray entity
- * here would appear inside every prefab.
+ * It has to stay empty: Prefab Mode borrows it, and a stray entity here would
+ * appear inside every prefab.
  */
 export function createEmptyScene(name = 'Main'): SceneDoc {
   return {

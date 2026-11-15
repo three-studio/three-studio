@@ -19,8 +19,9 @@ import {
   activateCore,
   createCoreRegistries,
   createStarterScene,
-  deserializeScene,
+  decodeScene,
   serializeScene,
+  unwrap,
 } from '@three-studio/core';
 
 // The component types a document is read through, made and filled once by the
@@ -29,11 +30,14 @@ const registries = createCoreRegistries();
 activateCore(registries);
 
 const scene = createStarterScene();
-const json = serializeScene(scene);
+const json = serializeScene(registries, scene);
 
-// Takes the text, not a parsed object: reading is where the format is checked,
-// and a document of another format is refused rather than converted.
-const restored = deserializeScene(registries, json);
+// Takes the text, not a parsed object: reading is where the format is checked.
+// A document of another format, or with a field this build cannot read, is
+// refused rather than converted, and each fault is named where it sits.
+const decoded = decodeScene(registries, json);
+// Or the scene, and an `Error` carrying the refusal in words.
+const restored = unwrap(decoded, 'main.scene.json');
 ```
 
 ## What's in it

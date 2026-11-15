@@ -147,7 +147,7 @@ export type {
  * importers, because it stopped belonging to them: a script declares in it too,
  * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
  */
-export { field, fieldOptions, optionsFrom } from './fields';
+export { field, fieldOptions } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
 export { conform, conformPatch, isRecord } from './conform';
 export { assertDefined } from './assert';
@@ -170,13 +170,22 @@ export { conditionHolds, planFields, variantDefaults, variantFactory } from './f
 export type { FieldPlan, Infer, Schema, SchemaField, ShownWhen } from './fieldSchema';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
-export { checks, formatDiagnostics, listOf, nullable, oneOf, RecordReader, unwrap, versionRefusal } from './decoded';
+export {
+  checks,
+  decodeJson,
+  formatDiagnostics,
+  listOf,
+  nullable,
+  oneOf,
+  RecordReader,
+  unwrap,
+  versionRefusal,
+} from './decoded';
 export type { Check, DecodePath, Decoded, Diagnostic, DiagnosticCode, LeafChecks } from './decoded';
 
 export {
   collectSceneAssets,
   unknownComponentTypes,
-  environmentAssets,
   findAssetUsage,
   findBrokenReferences,
   findMissingEntities,
@@ -235,6 +244,7 @@ export type {
   ShadowSettings,
   SkySettings,
   Transform,
+  UnknownComponentTable,
   UnknownComponentTables,
   Vec2,
   Vec3,
@@ -247,17 +257,6 @@ export { skySunDirection } from './scene/water';
 
 export { AUDIO_BUSES } from './scene/schema';
 
-/*
- * A label for each member of a closed union, beside the union it names — see
- * the note in `scene/schema.ts`. Total records, so the compiler is what makes a
- * member without a name impossible; `optionsFrom` turns one into the choices a
- * control offers.
- */
-export {
-  BACKGROUND_MODE_LABELS,
-  ENVIRONMENT_MODE_LABELS,
-  FOG_MODE_LABELS,
-} from './scene/schema';
 export type {
   BackgroundMode,
   BodyType,
@@ -278,12 +277,9 @@ export type {
   TouchControlsMode,
 } from './scene/schema';
 
-export {
-  createEmptyScene,
-  createEnvironment,
-  createSkySettings,
-  createStarterScene,
-} from './scene/defaults';
+export { createEmptyScene, createStarterScene } from './scene/defaults';
+/* What a scene looks like before anything is placed in it, as its fields. */
+export { createEnvironment, decodeEnvironment, environmentAssets, environmentSchema } from './scene/environment';
 export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
 export { createGeometry, geometryField, restingOffsetY } from './scene/geometry';
@@ -370,7 +366,7 @@ export { createJointMotion, jointMotionField } from './components/joint/schema';
 /* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
 export { jointFrame } from './components/joint/frame';
 
-export { deserializeScene, sceneJsonOf, serializeScene } from './scene/serialization';
+export { decodeScene, sceneJsonOf, serializeScene } from './scene/serialization';
 export { jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
@@ -380,11 +376,11 @@ export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 export {
   applyPrefabOverride,
   createPrefabDoc,
-  deserializePrefab,
+  decodePrefab,
+  decodePrefabValue,
   expandPrefabs,
   instanceOwnerOf,
   instancedId,
-  migratePrefab,
   prefabFromEntities,
   prefabInstanceOf,
   prefabToScene,

@@ -2,6 +2,7 @@ import {
   prefabToScene,
   sceneToPrefab,
   type AssetId,
+  type CoreRegistries,
   type EntityId,
   type PrefabDoc,
   type SceneDoc,
@@ -48,12 +49,12 @@ interface PrefabModeState {
 
   /** Opens a prefab on top of whatever is open. */
   open: (assetId: AssetId) => Promise<void>;
-  /** Leaves the deepest one, saving it. */
-  close: () => Promise<void>;
+  /** Leaves the deepest one, saving it through the window's registries, which its file records the versions of. */
+  close: (registries: CoreRegistries) => Promise<void>;
   /** Leaves everything down to `depth` frames, saving each on the way. */
-  closeTo: (depth: number) => Promise<void>;
+  closeTo: (registries: CoreRegistries, depth: number) => Promise<void>;
   /** Back to the scene, however deep. */
-  exit: () => Promise<void>;
+  exit: (registries: CoreRegistries) => Promise<void>;
   /**
    * Saves every open prefab and leaves them all open.
    *
@@ -61,7 +62,7 @@ interface PrefabModeState {
    * leaving first would put the scene back for nothing, and leave it there if
    * the main process's unsaved-changes prompt is cancelled.
    */
-  saveAll: () => Promise<void>;
+  saveAll: (registries: CoreRegistries) => Promise<void>;
 }
 
 export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
@@ -123,9 +124,9 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
     useEditorStore.getState().setSelection([prefab.root]);
   },
 
-  close: () => get().closeTo(get().stack.length - 1),
+  close: (registries) => get().closeTo(registries, get().stack.length - 1),
 
-  closeTo: async (depth) => {
+  closeTo: async (registries, depth) => {
     const target = Math.max(0, depth);
 
     // Innermost first: each frame stashed the document that was open when it
@@ -142,6 +143,7 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
         // save in Prefab Mode, and the alternative — a mode you can leave
         // having silently lost the last ten minutes — is not worth the toggle.
         await assets.savePrefab(
+          registries,
           frame.assetId,
           sceneToPrefab(useDocumentStore.getState().scene, original),
         );
@@ -161,9 +163,9 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
     }
   },
 
-  exit: () => get().closeTo(0),
+  exit: (registries) => get().closeTo(registries, 0),
 
-  saveAll: async () => {
+  saveAll: async (registries) => {
     const composed = composedPrefabMode();
     if (composed === null) return;
     const assets = useAssetStore.getState();
@@ -176,7 +178,7 @@ export const usePrefabModeStore = create<PrefabModeState>()((set, get) => ({
       // the store has lost is not in it.
       const prefab = composed.prefabs.get(frame.assetId);
       if (prefab === undefined) continue;
-      await assets.savePrefab(frame.assetId, prefab);
+      await assets.savePrefab(registries, frame.assetId, prefab);
       saved.add(frame.assetId);
     }
 

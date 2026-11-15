@@ -5,9 +5,10 @@ import {
   findScene,
   unknownComponentTypes,
   basePathProblem,
-  deserializeScene,
+  decodeScene,
   jsonOf,
   normalizeBasePath,
+  unwrap,
   type AssetEntry,
   type AssetId,
   type BuildProfile,
@@ -183,7 +184,7 @@ async function planExport(
 
   const read = async (entry: SceneEntry): Promise<SceneDoc> => {
     try {
-      return deserializeScene(registries, await readFile(resolveInside(projectPath, entry.path), 'utf8'));
+      return unwrap(decodeScene(registries, await readFile(resolveInside(projectPath, entry.path), 'utf8')), entry.path);
     } catch (cause) {
       throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
     }
@@ -321,7 +322,7 @@ async function planExport(
    * beside this one — three more round trips before the first frame, for
    * documents that are small and always needed. See format 4.
    */
-  const build = assembleManifest({
+  const build = assembleManifest(registries, {
     title: profile.title,
     rendering: project.settings.rendering,
     physics: project.settings.physics,
