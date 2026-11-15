@@ -3,13 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   ASSETS_DIR,
-  ASSET_KIND_INFO,
   CACHE_DIR,
   ENGINE_VERSION,
   SCENES_DIR,
+  assetKindInfo,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createProject, readProject, updateProject } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What a brand new project has in it, which is a promise made once and kept
@@ -21,7 +24,7 @@ import { createProject, readProject, updateProject } from '../src/main/project';
 /** A new project in a throwaway parent directory. */
 async function scaffold(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-new-'));
-  return (await createProject('Fresh', parent)).summary.path;
+  return (await createProject(registries, 'Fresh', parent)).summary.path;
 }
 
 describe('the folders a new project starts with', () => {
@@ -33,7 +36,7 @@ describe('the folders a new project starts with', () => {
     // and `audio` had importers and no folder. An importer added with a new
     // `directory` now brings its folder with it, and this fails if anyone types
     // the list back in.
-    const declared = [...new Set(Object.values(ASSET_KIND_INFO).map((it) => it.directory))];
+    const declared = [...new Set([...assetKindInfo(registries).values()].map((it) => it.directory))];
     expect((await readdir(join(root, ASSETS_DIR))).sort()).toEqual(declared.sort());
   });
 

@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import type { PerspectiveCamera } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { useEditorStore } from '../src/state/editorStore';
@@ -14,6 +15,9 @@ import { ViewportInput } from '../src/viewport/ViewportInput';
  * heard on the window, so a click anywhere — the toolbar's Pause included —
  * used to give the camera back to a view the game was starting in.
  */
+
+const WALL = fixedId('entity', 'wall');
+const CRATE = fixedId('entity', 'crate');
 
 beforeAll(() => {
   // The release is heard on the window; nothing on this path reads it back.
@@ -48,7 +52,7 @@ function arbitration(editorInput: boolean): { calls: string[]; canvas: EventTarg
     picker: {
       pick: () => {
         calls.push('pick');
-        return 'crate';
+        return CRATE;
       },
     } as unknown as Picker,
   });
@@ -58,7 +62,7 @@ function arbitration(editorInput: boolean): { calls: string[]; canvas: EventTarg
 }
 
 beforeEach(() => {
-  useEditorStore.getState().setSelection(['wall']);
+  useEditorStore.getState().setSelection([WALL]);
 });
 
 afterEach(() => {
@@ -91,7 +95,7 @@ describe('the view’s pointer, once Play is pressed', () => {
     canvas.dispatchEvent(pointer('pointerup'));
 
     expect(calls).toEqual([]);
-    expect(useEditorStore.getState().selection).toEqual(['wall']);
+    expect(useEditorStore.getState().selection).toEqual([WALL]);
   });
 });
 
@@ -111,6 +115,6 @@ describe('the view’s pointer, while the scene is edited', () => {
     canvas.dispatchEvent(pointer('pointerup'));
 
     expect(calls).toEqual(['camera on', 'pick']);
-    expect(useEditorStore.getState().selection).toEqual(['crate']);
+    expect(useEditorStore.getState().selection).toEqual([CRATE]);
   });
 });

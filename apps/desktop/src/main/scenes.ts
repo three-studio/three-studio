@@ -4,16 +4,19 @@ import {
   SCENES_DIR,
   SCENE_FILE_SUFFIX,
   createEmptyScene,
-  createId,
-  deserializeScene,
+  createSceneId,
+  decodeScene,
   findScene,
   safeFileName,
   sceneName,
   serializeScene,
+  unwrap,
+  type CoreRegistries,
   type ProjectContents,
   type ProjectFile,
   type SceneChange,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
@@ -69,8 +72,8 @@ import { ProjectError, discoverScenes, readProject, updateProject } from './proj
  * than splicing its own result into the list it already had. Splicing means a
  * second copy of the ordering and shadowing rules `discoverScenes` owns, and a
  * second copy of a rule is how two answers come to disagree — which is the
- * whole reason `project.json` stopped holding this list. T-019 is what makes
- * the second walk cheap.
+ * whole reason `project.json` stopped holding this list. `scenes.index.json`,
+ * under `.studio/`, is what makes the second walk cheap.
  */
 
 /**
@@ -142,7 +145,7 @@ async function requireFree(projectPath: string, path: string): Promise<void> {
   throw new ProjectError(`"${path}" already exists in this project.`);
 }
 
-function requireScene(scenes: readonly SceneEntry[], sceneId: string): SceneEntry {
+function requireScene(scenes: readonly SceneEntry[], sceneId: SceneId): SceneEntry {
   const entry = findScene(scenes, sceneId);
   if (!entry) throw new ProjectError(`"${sceneId}" is not a scene of this project.`);
   return entry;
@@ -162,7 +165,7 @@ function requireScene(scenes: readonly SceneEntry[], sceneId: string): SceneEntr
  */
 function repointStartScene(
   project: ProjectFile,
-  sceneId: string,
+  sceneId: SceneId,
   remaining: readonly SceneEntry[],
 ): ProjectFile {
   if (project.startScene !== sceneId) return project;
@@ -170,8 +173,9 @@ function repointStartScene(
   // — so removing one of the two did not remove the scene `startScene` names.
   if (findScene(remaining, sceneId)) return project;
 
-  // `remaining` cannot be empty: deleting the last scene is refused.
-  return { ...project, startScene: remaining[0]?.id ?? '' };
+  // `remaining` cannot be empty: deleting the last scene is refused. Were it
+  // to be, the line keeps the id it had, which `openProject` falls back from.
+  return { ...project, startScene: remaining[0]?.id ?? project.startScene };
 }
 
 /**
@@ -195,17 +199,18 @@ function repointStartScene(
  * refused or fails leaves no empty scene behind in every window's menu.
  */
 export async function createScene(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   contents?: string,
 ): Promise<SceneChange> {
-  // Read before anything is written, so a document that does not parse leaves
-  // no file behind. Read as Duplicate reads its source: migrated, and with a
-  // component type this build does not know filed away untouched, so the round
-  // trip loses nothing.
-  const from = contents === undefined ? undefined : deserializeScene(contents);
+  // Read before anything is written, so a document that does not decode leaves
+  // no file behind. Read as Duplicate reads its source: with a component type
+  // this build does not know filed away untouched, so the round trip loses
+  // nothing.
+  const from = contents === undefined ? undefined : unwrap(decodeScene(registries, contents), name);
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes } = await discoverScenes(projectPath);
 
   const newName = toSceneName(name);
   requireNameAvailable(scenes, newName);
@@ -215,11 +220,11 @@ export async function createScene(
   // The document is authored first so it carries the id, rather than an id
   // being minted beside it that could drift from the one in the file.
   const document =
-    from === undefined ? createEmptyScene(newName) : { ...from, id: createId(), name: newName };
+    from === undefined ? createEmptyScene(newName) : { ...from, id: createSceneId(), name: newName };
   const scene: SceneEntry = { id: document.id, name: newName, path, shadowedBy: null };
-  await writeSceneFile(projectPath, path, serializeScene(document));
+  await writeSceneFile(projectPath, path, serializeScene(registries, document));
 
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 /**
@@ -232,12 +237,13 @@ export async function createScene(
  * which `createScene` gives a fresh id for the same reason.
  */
 export async function duplicateScene(
+  registries: CoreRegistries,
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { scenes } = await discoverScenes(projectPath);
   const source = requireScene(scenes, sceneId);
 
   const copyName = toSceneName(name);
@@ -245,15 +251,18 @@ export async function duplicateScene(
   const path = scenePathIn(posix.dirname(source.path), copyName);
   await requireFree(projectPath, path);
 
-  const document = deserializeScene(await readFile(resolveInside(projectPath, source.path), 'utf8'));
-  const scene: SceneEntry = { id: createId(), name: copyName, path, shadowedBy: null };
+  const document = unwrap(
+    decodeScene(registries, await readFile(resolveInside(projectPath, source.path), 'utf8')),
+    source.path,
+  );
+  const scene: SceneEntry = { id: createSceneId(), name: copyName, path, shadowedBy: null };
   await writeSceneFile(
     projectPath,
     path,
-    serializeScene({ ...document, id: scene.id, name: copyName }),
+    serializeScene(registries, { ...document, id: scene.id, name: copyName }),
   );
 
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 /**
@@ -270,16 +279,17 @@ export async function duplicateScene(
  */
 export async function renameScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
   name: string,
 ): Promise<SceneChange> {
   const project = await readProject(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const discovered = await discoverScenes(projectPath);
+  const { scenes } = discovered;
   const current = requireScene(scenes, sceneId);
 
   const newName = toSceneName(name);
   requireNameAvailable(scenes, newName, current.path);
-  if (newName === current.name) return { project, scenes, scene: current };
+  if (newName === current.name) return { project, ...discovered, scene: current };
 
   // Stays in the folder it was in: moving a scene between folders is a thing
   // the Finder does, and giving it a second meaning here would make a rename
@@ -295,14 +305,14 @@ export async function renameScene(
   await rename(resolveInside(projectPath, current.path), resolveInside(projectPath, path));
 
   const scene: SceneEntry = { ...current, name: newName, path };
-  return { project, scenes: await discoverScenes(projectPath), scene };
+  return { project, ...(await discoverScenes(projectPath)), scene };
 }
 
 export async function deleteScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
 ): Promise<ProjectContents> {
-  let remaining: SceneEntry[] = [];
+  let remaining: Pick<ProjectContents, 'scenes' | 'refusedScenes'> = { scenes: [], refusedScenes: [] };
 
   // The whole operation is inside the queue, the refusal below included. That
   // is the difference between this and `setStartScene`, which checks outside:
@@ -311,7 +321,7 @@ export async function deleteScene(
   // it is a project with no scenes at all, which `openProject` cannot open —
   // and two windows each deleting one of the last two would each have seen two.
   const project = await updateProject(projectPath, async (current) => {
-    const scenes = await discoverScenes(projectPath);
+    const { scenes } = await discoverScenes(projectPath);
     const scene = requireScene(scenes, sceneId);
     if (scenes.length <= 1) {
       // The one refusal that survived the registry, and the only one here that
@@ -332,23 +342,23 @@ export async function deleteScene(
     remaining = await discoverScenes(projectPath);
     // Returning `current` unchanged is what stops a delete that did not touch
     // the start scene from writing at all; `updateProject` honours it.
-    return repointStartScene(current, sceneId, remaining);
+    return repointStartScene(current, sceneId, remaining.scenes);
   });
-  return { project, scenes: remaining };
+  return { project, ...remaining };
 }
 
 export async function setStartScene(
   projectPath: string,
-  sceneId: string,
+  sceneId: SceneId,
 ): Promise<ProjectContents> {
-  const scenes = await discoverScenes(projectPath);
-  requireScene(scenes, sceneId);
+  const discovered = await discoverScenes(projectPath);
+  requireScene(discovered.scenes, sceneId);
 
   const project = await updateProject(projectPath, (current) => ({
     ...current,
     startScene: sceneId,
   }));
-  return { project, scenes };
+  return { project, ...discovered };
 }
 
 /** Whole or not at all, like every other write to a project. See `atomicWrite`. */

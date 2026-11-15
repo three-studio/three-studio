@@ -1,20 +1,15 @@
 import { defineComponent } from '../registry';
-import { createPrefabInstance } from './defaults';
+import { prefabInstanceSchema } from './schema';
 
 /**
- * A placement of a prefab asset.
- *
- * `assets` names the prefab, and the expansion follows it into its contents from
- * there — an instance is one id that arrives with a model and four textures
- * behind it.
+ * A prefab, placed: see `prefabInstanceSchema`. Not offered by Add Component —
+ * it comes from placing a prefab, and an empty one would point at nothing.
  */
-export const prefabInstanceComponent = defineComponent({
-  type: 'prefabInstance',
-  create: () => createPrefabInstance(),
-  assets: (component) => [component.assetId],
-  entities: () => [],
-  icon: 'boxes',
-  placeable: () => true,
+export const prefabInstanceType = defineComponent({
+  id: 'prefabInstance',
+  label: 'Prefab',
+  version: 1,
+  schema: prefabInstanceSchema,
   runtime: true,
   addable: false,
 });

@@ -1,4 +1,4 @@
-import { createId } from '../ids';
+import { createEntityId } from '../ids';
 import type { ComponentDoc, EntityDoc } from './schema';
 import type { Transform } from './primitives';
 
@@ -34,7 +34,7 @@ export interface EntityTemplate {
 export function createEntity(name: string, components: ComponentDoc[] = []): EntityTemplate {
   return {
     entity: {
-      id: createId(),
+      id: createEntityId(),
       name,
       parent: null,
       children: [],

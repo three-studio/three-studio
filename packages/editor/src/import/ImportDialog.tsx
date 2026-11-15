@@ -26,6 +26,7 @@ import type { ImportRow } from './plan';
 import { summarise } from './plan';
 import { describeFacts, formatBytes, formatUnits, hasPreview } from './preview/facts';
 import { previewFor, type PreviewSurface } from './preview/PreviewSurface';
+import { useRegistries } from '../registriesContext';
 import { ImportSettingsPane, type SettingsDraft } from './settingsPane';
 import { tooltip } from '../ui/Tooltip';
 
@@ -60,6 +61,7 @@ export function ImportDialog() {
 }
 
 function ImportDialogBody({ sessionId }: { sessionId: string }) {
+  const registries = useRegistries();
   const rows = useImportStore((state) => state.rows);
   const selectedId = useImportStore((state) => state.selectedId);
   const busy = useImportStore((state) => state.busy);
@@ -108,7 +110,7 @@ function ImportDialogBody({ sessionId }: { sessionId: string }) {
             type="button"
             className={PRIMARY}
             disabled={busy || counts.included === 0}
-            onClick={() => void store.getState().confirm()}
+            onClick={() => void store.getState().confirm(registries)}
           >
             {busy
               ? 'Importing…'
@@ -260,7 +262,8 @@ function Empty() {
 
 /** The right column: the importer's own fields, laid out like the inspector. */
 function SettingsColumn({ row }: { row: ImportRow }) {
-  const fields = useMemo(() => fieldsFor(row), [row.file.id, row.settings === null]);
+  const registries = useRegistries();
+  const fields = useMemo(() => fieldsFor(registries, row), [registries, row.file.id, row.settings === null]);
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
@@ -283,6 +286,7 @@ function SettingsColumn({ row }: { row: ImportRow }) {
  * trying to talk a WebGPU renderer into becoming an `<audio>` element.
  */
 function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
+  const registries = useRegistries();
   const containerRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<PreviewSurface | null>(null);
   const [failed, setFailed] = useState(false);
@@ -293,7 +297,7 @@ function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
 
     let cancelled = false;
     void (async () => {
-      const surface = await previewFor(row.file.kind);
+      const surface = await previewFor(registries, row.file.kind);
       if (surface === null) return;
       if (cancelled) {
         surface.dispose();
@@ -318,7 +322,7 @@ function Preview({ sessionId, row }: { sessionId: string; row: ImportRow }) {
       surfaceRef.current?.dispose();
       surfaceRef.current = null;
     };
-  }, [sessionId, row.file.id, row.file.kind]);
+  }, [registries, sessionId, row.file.id, row.file.kind]);
 
   // Settings change far more often than the file does, so this is a separate
   // effect: reloading a 40 MB FBX on every drag of the scale field is not a

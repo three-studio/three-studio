@@ -3,15 +3,16 @@ import { Boxes, ChevronLeft, MousePointerClick, TriangleAlert } from 'lucide-rea
 import type { IDockviewPanelProps } from 'dockview-react';
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type RefObject } from 'react';
 import { DROPPABLE_KINDS, placeDroppedAsset } from '../commands/placeEntity';
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
 import { shortcutHint } from '../shell/shortcutBindings';
 import { useAssetStore } from '../state/assetStore';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { useViewportStore } from '../state/viewportStore';
+import { useRegistries } from '../registriesContext';
 import { acquireViewport, peekViewport } from '../viewport/viewportHost';
 import { captureHintText, viewState, type GameHold } from '../viewport/viewState';
-import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
+import { assetKindMime, droppedAssetId } from '../assets/assetDrag';
 import { EditToolbar } from './EditToolbar';
 import { PlayBar } from './PlayBar';
 import { tooltip } from '../ui/Tooltip';
@@ -44,16 +45,18 @@ const FULL_SCREEN_HINT_MS = 4000;
  * `Presentation`.
  */
 export function ViewportPanel(props: IDockviewPanelProps) {
+  const registries = useRegistries();
   // What the box cannot say: dockview parks an inactive tab at full size, so a
   // hidden panel goes on being drawn unless something tells the viewport. The
   // dock is the only thing that knows, and it publishes it here, for both of
   // the views this tab holds.
   useEffect(() => {
-    const push = (onScreen: boolean) => void acquireViewport().then((v) => v.setOnScreen(onScreen));
+    const push = (onScreen: boolean) =>
+      void acquireViewport(registries).then((v) => v.setOnScreen(onScreen));
     push(props.api.isVisible);
     const sub = props.api.onDidVisibilityChange((event) => push(event.isVisible));
     return () => sub.dispose();
-  }, [props.api]);
+  }, [props.api, registries]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const editHostRef = useRef<HTMLDivElement>(null);
@@ -75,7 +78,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
   useEffect(() => {
     let cancelled = false;
 
-    void acquireViewport()
+    void acquireViewport(registries)
       .then((viewport) => {
         if (cancelled || !editHostRef.current || !gameHostRef.current) return;
         viewport.attach({ edit: editHostRef.current, game: gameHostRef.current });
@@ -96,7 +99,7 @@ export function ViewportPanel(props: IDockviewPanelProps) {
     // Play state is not in here: both canvases stay on the stage for as long as
     // the panel lives, and Play changes only which one is on top. Nothing is
     // moved, re-parented or resized at the press.
-  }, []);
+  }, [registries]);
 
   // The game has just come on top, and Play gives it the keyboard. A layout
   // effect, so that its host has been made visible: a hidden element takes no
@@ -123,16 +126,16 @@ export function ViewportPanel(props: IDockviewPanelProps) {
    * What it becomes, and whether the game lets it in, is `placeDroppedAsset`'s.
    */
   const onDrop = (event: DragEvent) => {
-    const assetId = event.dataTransfer.getData(ASSET_DRAG_MIME);
+    const assetId = droppedAssetId(event.dataTransfer);
     setDropping(false);
-    if (!assetId) return;
+    if (assetId === null) return;
     event.preventDefault();
 
     const viewport = peekViewport();
     if (!viewport) return;
     // Measured on the edit canvas, which keeps its box on the stage during Play.
     const point = viewport.dropPoint(event.clientX, event.clientY);
-    placeDroppedAsset(assetId, [point.x, point.y, point.z]);
+    placeDroppedAsset(registries, assetId, [point.x, point.y, point.z]);
   };
 
   return (
@@ -247,6 +250,7 @@ function StartingPill() {
  *   reports it. `fullScreen` is what was asked for; this is what happened.
  */
 function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean {
+  const registries = useRegistries();
   const isRunning = useEditorStore((s) => s.playState !== 'stopped');
   const fullScreen = useEditorStore((s) => s.fullScreen);
   const [holdingScreen, setHoldingScreen] = useState(false);
@@ -259,7 +263,9 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
     const onChange = () => {
       const holding = document.fullscreenElement === stage;
       setHoldingScreen(holding);
-      if (!holding && useEditorStore.getState().playState !== 'stopped') commandById('stop').run();
+      if (!holding && useEditorStore.getState().playState !== 'stopped') {
+        commandById('stop').run(currentContext(registries));
+      }
     };
     document.addEventListener('fullscreenchange', onChange);
 
@@ -291,7 +297,7 @@ function usePlayFullScreen(stageRef: RefObject<HTMLDivElement | null>): boolean 
       if (document.fullscreenElement === stage) void document.exitFullscreen();
       setHoldingScreen(false);
     };
-  }, [isRunning, fullScreen, stageRef]);
+  }, [registries, isRunning, fullScreen, stageRef]);
 
   return holdingScreen;
 }
@@ -427,18 +433,20 @@ function PrefabModeBar() {
   const stack = usePrefabModeStore((s) => s.stack);
   const closeTo = usePrefabModeStore((s) => s.closeTo);
   const prefabs = useAssetStore((s) => s.prefabs);
+  const registries = useRegistries();
 
   if (stack.length === 0) return null;
 
   const deepest = stack.at(-1)!;
-  const base = prefabs[deepest.assetId] ? variantBaseOf(prefabs[deepest.assetId]!) : null;
-  const baseName = base ? (prefabs[base]?.name ?? 'a missing prefab') : null;
+  const deepestPrefab = prefabs.get(deepest.assetId);
+  const base = deepestPrefab ? variantBaseOf(deepestPrefab) : null;
+  const baseName = base ? (prefabs.get(base)?.name ?? 'a missing prefab') : null;
 
   return (
     <div className="absolute inset-x-0 top-0 z-10 flex h-7 items-center gap-1 border-b border-prefab/40 bg-prefab/15 px-2 backdrop-blur-sm">
       <button
         type="button"
-        onClick={() => void closeTo(0)}
+        onClick={() => void closeTo(registries, 0)}
         {...tooltip('Back to the scene — every prefab is saved on the way out')}
         className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
       >
@@ -459,7 +467,7 @@ function PrefabModeBar() {
                 type="button"
                 // Leaving to a frame saves everything below it, so clicking a
                 // crumb is a way back rather than a way to lose work.
-                onClick={() => void closeTo(index + 1)}
+                onClick={() => void closeTo(registries, index + 1)}
                 className="rounded-sm px-1 py-0.5 text-2xs text-ink-muted hover:bg-surface-3 hover:text-ink"
               >
                 {frame.name}

@@ -1,5 +1,6 @@
 import type { FbxModelSettings } from '../../schema';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 import { ModelImporter } from './ModelImporter';
 
 /**
@@ -10,7 +11,7 @@ import { ModelImporter } from './ModelImporter';
  * nothing to bring along.
  */
 export class FbxImporter extends ModelImporter<FbxModelSettings> {
-  readonly id = 'model.fbx';
+  readonly id = fixedId('importer', 'model.fbx');
   readonly extensions = ['fbx'];
   override get label(): string {
     return 'FBX';

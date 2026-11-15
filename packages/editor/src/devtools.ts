@@ -1,5 +1,8 @@
 import { studioTime } from '@three-studio/runtime';
+import type { EditorRegistries } from './registries';
+import type { DockviewApi } from 'dockview-react';
 import { audioPreview } from './audio/preview';
+import { dockApi } from './shell/dockApi';
 import { useAssetStore } from './state/assetStore';
 import { openImportDialog, useImportStore } from './import/importStore';
 import { useConsoleStore } from './state/consoleStore';
@@ -10,20 +13,61 @@ import { usePrefabModeStore } from './state/prefabModeStore';
 import { useProjectStore } from './state/projectStore';
 import { useScriptStore } from './state/scriptStore';
 import { useViewportStore } from './state/viewportStore';
+import type { EditorViewport } from './viewport/EditorViewport';
 import { launchSnapshot } from './viewport/PlaySession';
+import { peekViewport } from './viewport/viewportHost';
+
+/** The stores `installDevtools` puts on `window.__studioStores`. */
+export interface StudioDevtools {
+  readonly asset: typeof useAssetStore;
+  readonly console: typeof useConsoleStore;
+  readonly devices: typeof useDeviceStore;
+  readonly document: typeof useDocumentStore;
+  readonly editor: typeof useEditorStore;
+  readonly import: typeof useImportStore & { readonly open: typeof openImportDialog };
+  readonly prefabMode: typeof usePrefabModeStore;
+  readonly project: typeof useProjectStore;
+  readonly script: typeof useScriptStore;
+  readonly viewport: typeof useViewportStore;
+}
+
+/*
+ * Declared rather than cast, so that the writes below need no assertion and a
+ * script reading them — the perf harness's page functions — is typechecked
+ * against the editor's real types: a field renamed here breaks the typecheck,
+ * not a run. Optional, because they exist only once `installDevtools` has run.
+ */
+declare global {
+  interface Window {
+    __studioStores?: StudioDevtools;
+    /** The window's registries, which the store actions that decode or expand take. */
+    __studioRegistries?: EditorRegistries;
+    __studioAudioPreview?: typeof audioPreview;
+    __studioTime?: typeof studioTime;
+    __studioLaunchSnapshot?: typeof launchSnapshot;
+    readonly __studioViewport?: EditorViewport | null;
+    readonly __studioDockApi?: DockviewApi | null;
+  }
+}
 
 /**
- * Exposes the stores on `window.__studioStores` in development.
+ * Exposes the stores, the viewport and the dock on `window`, in development and
+ * in a window the smoke harness drives.
  *
  * Zustand stores are module singletons with no DOM presence, so without this
  * neither the browser devtools console nor the headless smoke check can read or
- * drive editor state. Stripped from production builds by the `import.meta.env`
- * guard.
+ * drive editor state. The harness's window gets them in a production build
+ * too: that build is the one measured, and without them neither draw calls,
+ * GPU memory nor Play can be read there. A production window the harness does
+ * not drive installs nothing.
  */
-export function installDevtools(): void {
-  if (!import.meta.env.DEV) return;
+export function installDevtools(registries: EditorRegistries): void {
+  if (!import.meta.env.DEV && !window.studio.smoke) return;
 
-  (globalThis as unknown as Record<string, unknown>)['__studioStores'] = {
+  // Beside the stores, because a page function driving them needs them: the
+  // actions that read a prefab or a scene — `refresh`, `adopt` — take them.
+  window.__studioRegistries = registries;
+  window.__studioStores = {
     asset: useAssetStore,
     console: useConsoleStore,
     devices: useDeviceStore,
@@ -41,15 +85,25 @@ export function installDevtools(): void {
   // Not a store — an object owning an audio graph — but it is the only way to
   // ask "is the editor making a noise, and about which asset". Without it a
   // headless check can press Play and learn nothing.
-  (globalThis as unknown as Record<string, unknown>)['__studioAudioPreview'] = audioPreview;
+  window.__studioAudioPreview = audioPreview;
 
   // Not a store either, and the same reason: every node material in the document
   // reads this clock, so "is the viewport animating, and at what rate" is a
   // question only it can answer — a screenshot of water cannot.
-  (globalThis as unknown as Record<string, unknown>)['__studioTime'] = studioTime;
+  window.__studioTime = studioTime;
 
   // What a device launch would send, read the way a launch reads it. Nothing
   // else can say whether a launch from Prefab Mode or during Play carries the
   // unsaved edits it should, short of a phone.
-  (globalThis as unknown as Record<string, unknown>)['__studioLaunchSnapshot'] = launchSnapshot;
+  window.__studioLaunchSnapshot = launchSnapshot;
+
+  // The scene graph, otherwise unreachable from outside. A getter, so reading
+  // it never creates the viewport — creation asks for a GPU device — and it
+  // answers null until something has.
+  Object.defineProperty(window, '__studioViewport', { get: peekViewport, configurable: true });
+
+  // Dockview owns the layout imperatively and publishes nothing to React, so
+  // this is the only way to inspect it or to open a panel from a check. Null
+  // until the dock has mounted.
+  Object.defineProperty(window, '__studioDockApi', { get: dockApi, configurable: true });
 }

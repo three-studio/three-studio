@@ -18,7 +18,8 @@ import {
   setLaunchOptions,
   setLiveReload,
 } from '../commands/deviceCommands';
-import { commandById, type CommandId } from '../commands/registry';
+import { commandById, currentContext, type CommandId } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { refreshDevices } from '../state/deviceStore';
 import { Popover } from '../ui/Popover';
 import { QrCode } from '../ui/QrCode';
@@ -168,18 +169,19 @@ function Action({
 }: {
   id: CommandId;
   label: string;
-  title?: string;
+  title?: string | undefined;
   tone?: ButtonTone;
   icon?: LucideIcon;
   className?: string;
 }) {
+  const registries = useRegistries();
   const command = commandById(id);
   return (
     <button
       type="button"
       {...tooltip(title)}
-      disabled={!command.can()}
-      onClick={() => command.run()}
+      disabled={!command.can(currentContext(registries))}
+      onClick={() => command.run(currentContext(registries))}
       className={`${BUTTON_TONES[tone]} ${className}`}
     >
       {Icon !== undefined && <Icon size={11} aria-hidden />}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { App } from './App';
+import { ipcErrorMessage } from './commands/ipcError';
 import { installDevtools } from './devtools';
 import { layoutsLoaded, loadLayoutPreferences } from './shell/layoutStorage';
 import { watchLiveReload } from './shell/liveReload';
@@ -7,27 +8,36 @@ import { loadKeyboardLayout, loadShortcutBindings } from './shell/shortcutBindin
 import { captureConsole } from './state/consoleStore';
 import { watchDevices } from './state/deviceStore';
 import { LauncherApp } from './launcher/LauncherApp';
+import type { EditorRegistries } from './registries';
+import { RegistriesContext, useRegistries } from './registriesContext';
 import { useProjectStore } from './state/projectStore';
 import { watchUnsaved } from './state/unsaved';
 
-// Installed at module scope so nothing logged during start-up is missed.
+// Captured at module scope so nothing logged during start-up is missed.
 captureConsole();
-installDevtools();
 
 /**
- * Renders whichever window this is.
+ * Renders whichever window this is, with the registries its composition root
+ * made and activated.
  *
  * Two windows, not two views of one: a launcher that picks a project and an
  * editor that edits it. The role arrives through the preload before the first
  * render, so neither shell is ever painted in the wrong window — which is what
  * asking for it over IPC would have cost.
  */
-export function Root() {
-  if (window.studio.windowRole === 'launcher') return <LauncherApp />;
-  return <EditorWindow />;
+export function Root({ registries }: { registries: EditorRegistries }) {
+  // Once the registries are in hand, which is here: the devtools publish them
+  // beside the stores, whose actions take them.
+  useEffect(() => installDevtools(registries), [registries]);
+  return (
+    <RegistriesContext.Provider value={registries}>
+      {window.studio.windowRole === 'launcher' ? <LauncherApp /> : <EditorWindow />}
+    </RegistriesContext.Provider>
+  );
 }
 
 function EditorWindow() {
+  const registries = useRegistries();
   const summary = useProjectStore((s) => s.summary);
   const adopt = useProjectStore((s) => s.adopt);
   const adoptContents = useProjectStore((s) => s.adoptContents);
@@ -66,11 +76,11 @@ function EditorWindow() {
       // lands on the one it was asked for rather than on the project's start
       // scene. Null falls back to that start scene, which is the first open.
       .open(path, window.studio.sceneId)
-      .then(adopt)
-      .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : String(cause));
-      });
-  }, [adopt, setError, summary]);
+      .then((opened) => adopt(registries, opened))
+      // Without the bridge's own words before it: a `project.json` this build
+      // refuses reads as a refused scene does, the file then each fault.
+      .catch((cause: unknown) => setError(ipcErrorMessage(cause)));
+  }, [registries, adopt, setError, summary]);
 
   // Another window may add, rename or remove a scene at any moment, and this
   // window holds a copy of the project taken when it opened.
@@ -82,18 +92,24 @@ function EditorWindow() {
 
   // Relaunches the devices a second after each change made here, while live
   // reload is on and the devices run this window's launch.
-  useEffect(() => watchLiveReload(), []);
+  useEffect(() => watchLiveReload(registries), [registries]);
 
   // The main process needs the unsaved state to warn before closing; it has no
   // other view into the document.
   useEffect(() => watchUnsaved(), []);
 
+  // What stopped the project opening: its file, or the scene's, and every
+  // fault in it, as the decoder wrote them — kept to their lines, and
+  // selectable, since a refusal is something to copy into an issue.
   if (error !== null && summary === null) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-surface-0 p-8">
-        <p className="max-w-lg text-center text-error" data-selectable>
-          {error}
-        </p>
+        <div className="flex max-w-2xl flex-col gap-3">
+          <h1 className="text-sm font-semibold text-error">This project could not be opened</h1>
+          <pre className="whitespace-pre-wrap break-words font-mono text-2xs text-ink" data-selectable>
+            {error}
+          </pre>
+        </div>
       </div>
     );
   }

@@ -5,6 +5,7 @@ import { createFolder, deleteFolder, renameFolder } from '../commands/assetComma
 import { childFolders, useAssetStore } from '../state/assetStore';
 import { useImportStore } from './importStore';
 import type { ImportRow } from './plan';
+import { useRegistries } from '../registriesContext';
 import { tooltip } from '../ui/Tooltip';
 
 const ACTION = 'w-5 shrink-0 text-ink-dim opacity-0 group-hover:opacity-100';
@@ -212,6 +213,7 @@ function FolderRow({
 
 /** Says where the files are actually going, Automatic included. */
 function Summary({ rows, folder }: { rows: readonly ImportRow[]; folder: string }) {
+  const registries = useRegistries();
   const included = rows.filter((row) => row.included);
   const bringsCompanions = included.some((row) => row.file.companions.length > 0);
 
@@ -219,7 +221,7 @@ function Summary({ rows, folder }: { rows: readonly ImportRow[]; folder: string 
     folder === ''
       ? [
           ...new Set(
-            included.map((row) => importerForFile(row.file.fileName)?.directory ?? 'assets'),
+            included.map((row) => importerForFile(registries, row.file.fileName)?.directory ?? 'assets'),
           ),
         ].sort()
       : [folder];

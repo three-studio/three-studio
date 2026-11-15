@@ -1,9 +1,13 @@
 import {
   componentsOf,
   findComponentById,
+  findComponents,
   type ComponentDoc,
+  type ComponentId,
   type ComponentType,
+  type CoreRegistries,
   type EntityDoc,
+  type EntityId,
   type SceneDoc,
 } from '@three-studio/core';
 import { removeComponent, setComponentNestedField } from '../commands/sceneCommands';
@@ -91,16 +95,19 @@ export function readPath(source: unknown, path: readonly string[]): unknown {
  * alone leaves the panel blank for anything inside one.
  */
 export class SingleTarget implements EntityTarget {
-  constructor(private readonly entityId: string) {}
+  constructor(
+    private readonly registries: CoreRegistries,
+    private readonly entityId: EntityId,
+  ) {}
 
   private get entity(): EntityDoc | undefined {
-    return expandedScene().scene.entities[this.entityId];
+    return expandedScene(this.registries).scene.entities.get(this.entityId);
   }
 
   components(): readonly ComponentTarget[] {
     if (!this.entity) return [];
-    return componentsOf(expandedScene().scene, this.entityId).map(
-      (component) => new SingleComponentTarget(this.entityId, component.id, component),
+    return componentsOf(this.registries, expandedScene(this.registries).scene, this.entityId).map(
+      (component) => new SingleComponentTarget(this.registries, this.entityId, component.id, component),
     );
   }
 }
@@ -113,17 +120,20 @@ export class SingleTarget implements EntityTarget {
  * first entity's value and writes all of them in one transaction, so editing a
  * field is one undo step however many objects are behind it.
  *
- * `buildInspector` does not know this class exists — it only ever saw
- * `EntityTarget`, which is why phase 4 built that interface before there was
- * anything to put behind it.
+ * `buildInspector` reads it as an `EntityTarget`, which is why that interface
+ * was built before there was anything to put behind it; a field only asks
+ * whether several stand behind it, to read the first one's value.
  */
 export class MultiTarget implements EntityTarget {
-  constructor(private readonly entityIds: readonly string[]) {}
+  constructor(
+    private readonly registries: CoreRegistries,
+    private readonly entityIds: readonly EntityId[],
+  ) {}
 
   private get entities(): EntityDoc[] {
-    const scene = expandedScene().scene;
+    const scene = expandedScene(this.registries).scene;
     return this.entityIds
-      .map((id) => scene.entities[id])
+      .map((id) => scene.entities.get(id))
       .filter((entity): entity is EntityDoc => entity !== undefined);
   }
 
@@ -137,7 +147,7 @@ export class MultiTarget implements EntityTarget {
    * component only survives if every other entity has one to match it.
    */
   components(): readonly ComponentTarget[] {
-    const scene = expandedScene().scene;
+    const scene = expandedScene(this.registries).scene;
     const entities = this.entities;
     const first = entities[0];
     if (first === undefined || entities.length < 2) return [];
@@ -145,7 +155,7 @@ export class MultiTarget implements EntityTarget {
     const rank = new Map<ComponentType, number>();
     const shared: ComponentTarget[] = [];
 
-    for (const component of componentsOf(scene, first.id)) {
+    for (const component of componentsOf(this.registries, scene, first.id)) {
       const nth = rank.get(component.type) ?? 0;
       rank.set(component.type, nth + 1);
 
@@ -156,6 +166,7 @@ export class MultiTarget implements EntityTarget {
 
       shared.push(
         new MultiComponentTarget(
+          this.registries,
           this.entityIds.slice(0, entities.length),
           component.type,
           nth,
@@ -170,20 +181,20 @@ export class MultiTarget implements EntityTarget {
 
 class MultiComponentTarget implements ComponentTarget {
   constructor(
-    private readonly entityIds: readonly string[],
+    private readonly registries: CoreRegistries,
+    private readonly entityIds: readonly EntityId[],
     readonly type: ComponentType,
     private readonly nth: number,
     readonly representative: ComponentDoc,
   ) {}
 
-  private each(): { entityId: string; component: ComponentDoc }[] {
-    const scene = expandedScene().scene;
-    const out: { entityId: string; component: ComponentDoc }[] = [];
+  private each(): { entityId: EntityId; component: ComponentDoc }[] {
+    const scene = expandedScene(this.registries).scene;
+    const out: { entityId: EntityId; component: ComponentDoc }[] = [];
     for (const entityId of this.entityIds) {
-      const component =
-        scene.entities[entityId] === undefined
-          ? undefined
-          : nthOfType(scene, entityId, this.type, this.nth);
+      const component = scene.entities.has(entityId)
+        ? nthOfType(scene, entityId, this.type, this.nth)
+        : undefined;
       if (component) out.push({ entityId, component });
     }
     return out;
@@ -199,12 +210,14 @@ class MultiComponentTarget implements ComponentTarget {
     // Writing the same value to N components lands as N patches in one entry,
     // because `setComponentNestedField` shares the coalesce key.
     for (const { entityId, component } of this.each()) {
-      setComponentNestedField(entityId, component.id, path, value, options);
+      setComponentNestedField(this.registries, entityId, component.id, path, value, options);
     }
   }
 
   tune(path: readonly string[], value: unknown): void {
-    for (const { entityId, component } of this.each()) tuneComponentField(entityId, component.id, path, value);
+    for (const { entityId, component } of this.each()) {
+      tuneComponentField(this.registries, entityId, component.id, path, value);
+    }
   }
 
   remove(): void {
@@ -217,17 +230,18 @@ class MultiComponentTarget implements ComponentTarget {
 /** The `nth` component of a given type on an entity, in the order it is shown. */
 function nthOfType(
   scene: SceneDoc,
-  entityId: string,
+  entityId: EntityId,
   type: ComponentType,
   nth: number,
 ): ComponentDoc | undefined {
-  return Object.values(scene.components[type][entityId] ?? {})[nth] as ComponentDoc | undefined;
+  return findComponents(scene, entityId, type)[nth];
 }
 
 class SingleComponentTarget implements ComponentTarget {
   constructor(
-    private readonly entityId: string,
-    private readonly componentId: string,
+    private readonly registries: CoreRegistries,
+    private readonly entityId: EntityId,
+    private readonly componentId: ComponentId,
     readonly representative: ComponentDoc,
   ) {}
 
@@ -237,7 +251,7 @@ class SingleComponentTarget implements ComponentTarget {
 
   /** Re-read every time: the panel holds this object across many frames. */
   private get live(): ComponentDoc | undefined {
-    return findComponentById(expandedScene().scene, this.entityId, this.componentId);
+    return findComponentById(expandedScene(this.registries).scene, this.entityId, this.componentId);
   }
 
   read(path: readonly string[]): unknown {
@@ -246,11 +260,11 @@ class SingleComponentTarget implements ComponentTarget {
   }
 
   write(path: readonly string[], value: unknown, options?: WriteOptions): void {
-    setComponentNestedField(this.entityId, this.componentId, path, value, options);
+    setComponentNestedField(this.registries, this.entityId, this.componentId, path, value, options);
   }
 
   tune(path: readonly string[], value: unknown): void {
-    tuneComponentField(this.entityId, this.componentId, path, value);
+    tuneComponentField(this.registries, this.entityId, this.componentId, path, value);
   }
 
   remove(): void {

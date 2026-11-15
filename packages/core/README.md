@@ -15,15 +15,29 @@ npm install @three-studio/core
 ## Use
 
 ```ts
-import { createStarterScene, serializeScene, deserializeScene } from '@three-studio/core';
+import {
+  activateCore,
+  createCoreRegistries,
+  createStarterScene,
+  decodeScene,
+  serializeScene,
+  unwrap,
+} from '@three-studio/core';
+
+// The component types a document is read through, made and filled once by the
+// app: nothing registers by being imported.
+const registries = createCoreRegistries();
+activateCore(registries);
 
 const scene = createStarterScene();
-const json = serializeScene(scene);
+const json = serializeScene(registries, scene);
 
-// Takes the text, not a parsed object: reading is where the versioned migrations
-// run, so a document written by an older build loads without losing the fields
-// this build does not know about.
-const restored = deserializeScene(json);
+// Takes the text, not a parsed object: reading is where the format is checked.
+// A document of another format, or with a field this build cannot read, is
+// refused rather than converted, and each fault is named where it sits.
+const decoded = decodeScene(registries, json);
+// Or the scene, and an `Error` carrying the refusal in words.
+const restored = unwrap(decoded, 'main.scene.json');
 ```
 
 ## What's in it
@@ -37,8 +51,9 @@ const restored = deserializeScene(json);
 | **Assets** | the manifest, `.meta.json` sidecars, the importer registry and its per-format settings |
 | **Serialization** | versioned read/write for scenes, prefabs and projects |
 
-Every on-disk format carries a version and migrates forward through its own factory. Unknown fields
-are left untouched rather than dropped.
+Every on-disk format carries a version. Until 1.0.0 a file of another version is refused, with
+diagnostics, and nothing converts it; a component of a type this build does not define is kept
+exactly as found.
 
 ## Status
 

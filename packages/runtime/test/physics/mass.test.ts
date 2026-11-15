@@ -1,4 +1,4 @@
-import { createComponent, createEntity } from '@three-studio/core';
+import { createEntity, rigidbodyType } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
 
@@ -33,7 +33,7 @@ describe('a body’s mass', () => {
   });
 
   it('makes a Rigid Body with nothing to weigh fall all the same', async () => {
-    const empty = createEntity('Empty', [createComponent('rigidbody')]);
+    const empty = createEntity('Empty', [rigidbodyType.create()]);
     empty.entity.transform.position = [0, 3, 0];
     const rig = await physicsRig([empty]);
 

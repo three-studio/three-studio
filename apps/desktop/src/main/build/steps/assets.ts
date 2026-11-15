@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { dirname, posix, relative } from 'node:path';
-import { ASSETS_DIR, BUILD_LAYOUT, type AssetEntry } from '@three-studio/core';
+import { ASSETS_DIR, BUILD_LAYOUT, type AssetEntry, type CoreRegistries } from '@three-studio/core';
 import { toPosix } from '../../assetFiles';
 import { companionsOf } from '../../assetScan';
 import { resolveInside } from '../../paths';
@@ -24,6 +24,7 @@ export interface PlannedAssets {
  *   reads as a hang.
  */
 export async function planAssets(
+  registries: CoreRegistries,
   plan: BuildPlan,
   projectPath: string,
   assets: readonly AssetEntry[],
@@ -70,7 +71,7 @@ export async function planAssets(
      * would leave it is not a missing file, and must not be reported as one.
      */
     const companions: { name: string; from: string; digest: Digest }[] = [];
-    for (const name of await companionsOf(original)) {
+    for (const name of await companionsOf(registries, original)) {
       const from = resolveInside(dirname(original), name);
       try {
         companions.push({ name, from, digest: await digestOfFile(from) });

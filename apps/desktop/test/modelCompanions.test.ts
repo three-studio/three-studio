@@ -6,6 +6,9 @@ import { describe, expect, it } from 'vitest';
 import { moveAsset, removeAsset } from '../src/main/assetMutations';
 import { scanAssets } from '../src/main/assetScan';
 import { ImportSession } from '../src/main/import/ImportSession';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A `.gltf` or `.obj` is not one file, and every operation that treats it as
@@ -20,7 +23,7 @@ import { ImportSession } from '../src/main/import/ImportSession';
  * tests are about, and it happens when the file is staged.
  */
 async function importAssets(root: string, sources: readonly string[]) {
-  const session = await ImportSession.open(root, sources, '');
+  const session = await ImportSession.open(registries, root, sources, '');
   return session.commit(
     session.state().files.map((file) => ({
       fileId: file.id,
@@ -120,7 +123,7 @@ describe('moving and deleting such a model', () => {
     const root = await project();
     const { imported } = await importAssets(root, [await writeGltf(source)]);
 
-    const moved = await moveAsset(root, imported[0]!.path, 'props');
+    const moved = await moveAsset(registries, root, imported[0]!.path, 'props');
 
     // Moving the `.gltf` alone leaves the geometry behind: the model loads to
     // an empty scene, and nothing says why.
@@ -136,7 +139,7 @@ describe('moving and deleting such a model', () => {
     expect(moved.addedFolders).toEqual(['props/Tri']);
 
     // The id travels with the sidecar, so every scene reference still resolves.
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets.find((asset) => asset.kind === 'model')?.id).toBe(imported[0]!.id);
   });
 
@@ -145,7 +148,7 @@ describe('moving and deleting such a model', () => {
     const root = await project();
     const { imported } = await importAssets(root, [await writeGltf(source)]);
 
-    const change = await removeAsset(root, imported[0]!.path);
+    const change = await removeAsset(registries, root, imported[0]!.path);
 
     // Named, not merely deleted: the renderer drops these from its manifest
     // rather than rescanning to find out they are gone.
@@ -155,7 +158,7 @@ describe('moving and deleting such a model', () => {
     // Otherwise a deleted model leaves its buffer and its textures behind, and
     // the textures come back as assets of their own on the next scan.
     expect(await listFiles(join(root, ASSETS_DIR))).toEqual([]);
-    expect((await scanAssets(root)).assets).toEqual([]);
+    expect((await scanAssets(registries, root)).assets).toEqual([]);
   });
 });
 
@@ -189,7 +192,7 @@ describe('a model that names a file outside its own folder', () => {
     const { model } = await writeReachingGltf();
     const root = await project();
 
-    const session = await ImportSession.open(root, [model], '');
+    const session = await ImportSession.open(registries, root, [model], '');
     const staged = session.state().files[0]!;
     expect(staged.companions).toEqual([]);
     // Not served to the preview either, under either spelling.
@@ -213,7 +216,7 @@ describe('what the model imports as', () => {
     // One entry in the browser, as Unity shows one Model asset — the buffer is
     // not something anyone places in a scene.
     expect(imported.map((asset) => asset.name)).toEqual(['Tri']);
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets.filter((asset) => asset.kind === 'model')).toHaveLength(1);
     expect(await readFile(join(root, imported[0]!.path), 'utf8')).toContain('Tri.bin');
   });

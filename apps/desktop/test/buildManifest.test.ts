@@ -2,14 +2,20 @@ import {
   BUILD_FORMAT_VERSION,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabDoc,
   createRenderingSettings,
   defaultSettings,
+  fixedId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
   type AssetSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { assembleManifest, type ManifestContents, type ShippedAsset } from '../src/main/build/manifest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The assembly is what an export and a device launch have in common: two
@@ -18,10 +24,10 @@ import { assembleManifest, type ManifestContents, type ShippedAsset } from '../s
  */
 
 function asset(
-  id: string,
+  id: AssetId,
   kind: AssetKind,
   path: string,
-  settings: AssetSettings = defaultSettings(kind, path),
+  settings: AssetSettings = defaultSettings(registries, kind, path),
 ): AssetEntry {
   const file = path.slice(path.lastIndexOf('/') + 1);
   return {
@@ -44,12 +50,12 @@ function contents(overrides: Partial<ManifestContents> = {}): ManifestContents {
     title: 'Game',
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
-    scenes: [{ id: 'main', name: 'Main', path: 'scenes/main.json' }],
+    scenes: [{ id: fixedId('scene', 'main'), name: 'Main', path: 'scenes/main.json' }],
     loadingScene: null,
     assets: [],
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
+    materials: new Map(),
+    physicsMaterials: new Map(),
+    prefabs: new Map(),
     scripts: null,
     ...overrides,
   };
@@ -60,24 +66,37 @@ describe('assembling build.json', () => {
     // The tables used to follow the order the scan met the files in, which is
     // the order the volume lists a folder in: the same project exported on two
     // machines showed a diff in a build that had not changed.
-    const a = { entry: asset('tex-a', 'texture', 'assets/textures/a.png'), path: 'textures/a.1.png' };
-    const b = { entry: asset('tex-b', 'texture', 'assets/textures/b.png'), path: 'textures/b.2.png' };
+    const a = { entry: asset(fixedId('asset', 'tex-a'), 'texture', 'assets/textures/a.png'), path: 'textures/a.1.png' };
+    const b = { entry: asset(fixedId('asset', 'tex-b'), 'texture', 'assets/textures/b.png'), path: 'textures/b.2.png' };
     const material = (color: string) => ({ color }) as never;
+    // Each library in one order, and in the other: a Map keeps the order it was filled in.
+    const materials = [
+      [fixedId('asset', 'mat-a'), material('#a')],
+      [fixedId('asset', 'mat-b'), material('#b')],
+    ] as const;
+    const physicsMaterials = [
+      [fixedId('asset', 'pm-a'), createPhysicsMaterial()],
+      [fixedId('asset', 'pm-b'), createPhysicsMaterial()],
+    ] as const;
+    const prefabs = [
+      [fixedId('asset', 'pre-a'), createPrefabDoc('A', [], fixedId('entity', 'root'))],
+      [fixedId('asset', 'pre-b'), createPrefabDoc('B', [], fixedId('entity', 'root'))],
+    ] as const;
 
-    const one = assembleManifest(
+    const one = assembleManifest(registries, 
       contents({
         assets: [a, b],
-        materials: { 'mat-a': material('#a'), 'mat-b': material('#b') },
-        physicsMaterials: { 'pm-a': createPhysicsMaterial(), 'pm-b': createPhysicsMaterial() },
-        prefabs: { 'pre-a': {} as never, 'pre-b': {} as never },
+        materials: new Map(materials),
+        physicsMaterials: new Map(physicsMaterials),
+        prefabs: new Map(prefabs),
       }),
     );
-    const other = assembleManifest(
+    const other = assembleManifest(registries, 
       contents({
         assets: [b, a],
-        materials: { 'mat-b': material('#b'), 'mat-a': material('#a') },
-        physicsMaterials: { 'pm-b': createPhysicsMaterial(), 'pm-a': createPhysicsMaterial() },
-        prefabs: { 'pre-b': {} as never, 'pre-a': {} as never },
+        materials: new Map([...materials].reverse()),
+        physicsMaterials: new Map([...physicsMaterials].reverse()),
+        prefabs: new Map([...prefabs].reverse()),
       }),
     );
     expect(JSON.stringify(other)).toBe(JSON.stringify(one));
@@ -85,15 +104,21 @@ describe('assembling build.json', () => {
   });
 
   it('describes each shipped asset at the path it was given', () => {
-    const texture = defaultSettings('texture', 'brick.png');
-    const gain = { ...defaultSettings('texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;
+    const texture = defaultSettings(registries, 'texture', 'brick.png');
+    const gain = { ...defaultSettings(registries, 'texture', 'gain.jpg'), encoding: 'ultrahdr' } as AssetSettings;
     const shipped: ShippedAsset[] = [
-      { entry: asset('brick', 'texture', 'assets/textures/brick.png', texture), path: 'textures/brick.1.png' },
-      { entry: asset('gain', 'texture', 'assets/textures/gain.jpg', gain), path: 'textures/gain.2.jpg' },
-      { entry: asset('beep', 'audio', 'assets/audio/beep.wav'), path: 'audio/beep.3.wav' },
+      {
+        entry: asset(fixedId('asset', 'brick'), 'texture', 'assets/textures/brick.png', texture),
+        path: 'textures/brick.1.png',
+      },
+      {
+        entry: asset(fixedId('asset', 'gain'), 'texture', 'assets/textures/gain.jpg', gain),
+        path: 'textures/gain.2.jpg',
+      },
+      { entry: asset(fixedId('asset', 'beep'), 'audio', 'assets/audio/beep.wav'), path: 'audio/beep.3.wav' },
     ];
 
-    const build = assembleManifest(contents({ assets: shipped }));
+    const build = assembleManifest(registries, contents({ assets: shipped }));
 
     expect(build.assets).toEqual({
       brick: 'textures/brick.1.png',
@@ -114,7 +139,7 @@ describe('assembling build.json', () => {
     // `rendering`. This file only ever travels with its own player, so a field
     // kept for an older reader is a field nobody reads.
     const rendering = { ...createRenderingSettings(), forceWebGL: true };
-    const build = assembleManifest(contents({ rendering }));
+    const build = assembleManifest(registries, contents({ rendering }));
     expect(build.rendering).toEqual(rendering);
     expect(Object.keys(build)).not.toContain('forceWebGL');
   });
@@ -123,18 +148,22 @@ describe('assembling build.json', () => {
     // A name shared with another scene stays in the list: which one answers to
     // it is the player's to decide, and the entry comes first.
     const scenes = [
-      { id: 'b', name: 'Level', path: 'scenes/level.2.json' },
-      { id: 'a', name: 'Level', path: 'scenes/level.1.json' },
-      { id: 'c', name: '__proto__', path: 'scenes/proto.3.json' },
+      { id: fixedId('scene', 'b'), name: 'Level', path: 'scenes/level.2.json' },
+      { id: fixedId('scene', 'a'), name: 'Level', path: 'scenes/level.1.json' },
+      { id: fixedId('scene', 'c'), name: '__proto__', path: 'scenes/proto.3.json' },
     ];
-    const build = assembleManifest(contents({ scenes }));
+    const build = assembleManifest(registries, contents({ scenes }));
     expect(build.scenes).toEqual(scenes);
     expect(Object.keys(build)).not.toContain('sceneNames');
   });
 
   it('passes the rest through, and says which format it is', () => {
-    const build = assembleManifest(
-      contents({ title: 'Mine', loadingScene: 'loading', scripts: 'scripts/bundle.1a2b3c4d.mjs' }),
+    const build = assembleManifest(registries, 
+      contents({
+        title: 'Mine',
+        loadingScene: fixedId('scene', 'loading'),
+        scripts: 'scripts/bundle.1a2b3c4d.mjs',
+      }),
     );
     expect(build.title).toBe('Mine');
     expect(build.loadingScene).toBe('loading');

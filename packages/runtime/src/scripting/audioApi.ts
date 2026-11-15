@@ -1,4 +1,4 @@
-import type { AudioBus } from '@three-studio/core';
+import { isAssetId, isEntityId, type AudioBus, type EntityId } from '@three-studio/core';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { BusState } from '../audio/AudioMixer';
 import type { PlayRequest, VoiceHandle } from '../audio/playback';
@@ -31,9 +31,10 @@ export interface AudioApi {
   /**
    * A clip with no component behind it.
    *
-   * `null` when there is no audio at all — a host that handed over no context.
-   * Every other refusal comes back as a handle in `'failed'`, so a caller that
-   * wants to know when a sound is over can subscribe without a null check.
+   * `null` when there is no audio at all — a host that handed over no context —
+   * and for an `assetId` that is not one. Every other refusal comes back as a
+   * handle in `'failed'`, so a caller that wants to know when a sound is over
+   * can subscribe without a null check.
    */
   playClip(assetId: string, options?: Omit<PlayRequest, 'assetId'>): VoiceHandle | null;
 
@@ -47,12 +48,16 @@ export interface AudioApi {
 }
 
 /** The api for one script, bound to the entity it is attached to. */
-export function audioApiFor(audio: AudioEngine | null, ownEntityId: string): AudioApi {
+export function audioApiFor(audio: AudioEngine | null, ownEntityId: EntityId): AudioApi {
   // Every source on the entity, because two are legal — a door that creaks and
   // slams carries one component each — and a script saying "play" means all of
-  // them rather than whichever happened to be added first.
-  const sourcesOf = (target: string | undefined) =>
-    audio === null ? [] : audioSourcesOn(audio, target ?? ownEntityId);
+  // them rather than whichever happened to be added first. A target is text a
+  // script passes, read as an id: one that is none names no entity, and has no
+  // sources.
+  const sourcesOf = (target: string | undefined) => {
+    const entityId = target ?? ownEntityId;
+    return audio === null || !isEntityId(entityId) ? [] : audioSourcesOn(audio, entityId);
+  };
 
   return {
     play: (target) => {
@@ -88,7 +93,12 @@ export function audioApiFor(audio: AudioEngine | null, ownEntityId: string): Aud
       for (const source of sourcesOf(target)) source.setPitch(pitch, detune);
     },
 
-    playClip: (assetId, options) => audio?.play({ ...options, assetId }) ?? null,
+    playClip: (assetId, options) => {
+      // A script is not typechecked: what it passes is whatever it made of a
+      // value, and it is the engine's id check that says whether it is a clip.
+      if (audio === null || !isAssetId(assetId)) return null;
+      return audio.play({ ...options, assetId });
+    },
 
     bus: (name) => audio?.mixer.state(name),
     setBusVolume: (name, volume) => audio?.mixer.setVolume(name, volume),

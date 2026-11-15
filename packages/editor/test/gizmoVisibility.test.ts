@@ -1,6 +1,9 @@
 import { createEmptyScene, createMeshEntity } from '@three-studio/core';
 import { Box3, Object3D, PerspectiveCamera } from 'three/webgpu';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Whether the transform handles are on screen.
@@ -48,14 +51,14 @@ beforeEach(() => {
 
 /** A controller on a camera and no element — nothing here presses anything. */
 function controller() {
-  return new GizmoController(new PerspectiveCamera(), undefined as unknown as HTMLElement);
+  return new GizmoController(registries, new PerspectiveCamera(), undefined as unknown as HTMLElement);
 }
 
 /** One cube in the document, and a selection holding it. */
 function selected() {
   const cube = createMeshEntity('box');
   addEntity(cube);
-  return Selection.of([cube.entity.id], expandedScene().scene);
+  return Selection.of([cube.entity.id], expandedScene(registries).scene);
 }
 
 /** A frame, as the viewport draws one. */
@@ -101,7 +104,7 @@ describe('whether the handles are drawn', () => {
     const gizmo = controller();
     frame(gizmo, selected());
 
-    const empty = Selection.of([], expandedScene().scene);
+    const empty = Selection.of([], expandedScene(registries).scene);
     gizmo.update(empty, () => undefined, null, 'translate');
 
     expect(gizmo.helper.visible).toBe(false);

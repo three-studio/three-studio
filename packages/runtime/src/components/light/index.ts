@@ -1,4 +1,4 @@
-import { registerSystem } from '../../systems/ComponentSystem';
+import { defineSystem } from '../../systems/ComponentSystem';
 import { LightSystem } from './LightSystem';
 
-registerSystem('light', () => new LightSystem());
+export const lightSystem = defineSystem('light', () => new LightSystem());

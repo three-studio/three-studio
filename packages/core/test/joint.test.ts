@@ -1,55 +1,30 @@
 import {
-  createJoint,
+  jointType,
   createJointMotion,
-  fillComponent,
+  fixedId,
   jointFrame,
-  type ComponentDoc,
+  unwrap,
   type JointComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { close } from './fixtures';
 
 /*
- * A joint, read as physics data is: against its factory, its motion against the
- * factory of the kind it names.
+ * A joint holds the entity it names, and the frame its two bodies are held in.
  */
 
 describe('a stored joint', () => {
-  it('reads a stored joint against its factory, field by field', () => {
-    const stored = {
-      id: 'j1',
-      type: 'joint',
-      motion: { kind: 'slider', axis: [1, 0, 0], stray: 1 },
-      connectedEntity: 7,
-      anchor: [0, 'x', 0],
-      extra: true,
-    } as unknown as ComponentDoc;
-
-    expect(fillComponent(stored)).toEqual({
-      ...createJoint(),
-      id: 'j1',
-      motion: { ...createJointMotion('slider'), axis: [1, 0, 0] },
-    });
-  });
-
-  it('a kind this build does not know reads as a hinge', () => {
-    for (const kind of ['ball', 'constructor', 7]) {
-      const stored = { ...createJoint(), motion: { kind, axis: [1, 0, 0] } } as unknown as ComponentDoc;
-      const filled = fillComponent(stored) as JointComponent;
-      expect(filled.motion).toEqual(createJointMotion('hinge'));
-    }
-  });
-
   it('keeps the entity it names, and the world it is held to', () => {
-    const named = fillComponent({ ...createJoint(), connectedEntity: 'frame' }) as JointComponent;
-    expect(named.connectedEntity).toBe('frame');
-    expect((fillComponent(createJoint()) as JointComponent).connectedEntity).toBeNull();
+    const frame = fixedId('entity', 'frame');
+    const stored = (joint: JointComponent) => unwrap(jointType.decode(JSON.parse(JSON.stringify(joint)), []), 'joint');
+    expect(stored({ ...jointType.create(), connectedEntity: frame }).connectedEntity).toBe(frame);
+    expect(stored(jointType.create()).connectedEntity).toBeNull();
   });
 });
 
 describe('jointFrame', () => {
   const hinge = (axis: [number, number, number]): JointComponent => ({
-    ...createJoint(),
+    ...jointType.create(),
     motion: { ...createJointMotion('hinge'), axis },
   });
 
@@ -66,7 +41,7 @@ describe('jointFrame', () => {
 
   it('turns nothing for a Fixed or a Spring joint, whose frame is up', () => {
     for (const kind of ['fixed', 'spring'] as const) {
-      close(jointFrame({ ...createJoint(), motion: createJointMotion(kind) }, [1, 1, 1]).axis, [0, 1, 0]);
+      close(jointFrame({ ...jointType.create(), motion: createJointMotion(kind) }, [1, 1, 1]).axis, [0, 1, 0]);
     }
   });
 });

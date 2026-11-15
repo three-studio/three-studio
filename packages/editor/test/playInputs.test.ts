@@ -9,10 +9,12 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   createStarterScene,
+  fixedId,
   serializeScene,
   type PrefabDoc,
   type ProjectFile,
 } from '@three-studio/core';
+import { AssetCache, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -31,6 +33,9 @@ import {
   type PlayHost,
 } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What Play runs and what a device launch sends are one reading of the editor's
@@ -40,9 +45,9 @@ import type { Presentation } from '../src/viewport/Presentation';
 
 const doc = () => useDocumentStore.getState();
 
-const SCENE_ID = 'window-scene';
-const PREFAB_ID = 'prefab-under-test';
-const MATERIAL_ID = 'material-under-test';
+const SCENE_ID = fixedId('scene', 'window-scene');
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
+const MATERIAL_ID = fixedId('asset', 'material-under-test');
 
 const rendering = { ...createRenderingSettings(), exposure: 1.5 };
 const physics = { ...createPhysicsSettings(), gravity: [0, -3, 0] as [number, number, number] };
@@ -53,7 +58,7 @@ const project: ProjectFile = {
   engineVersion: '0.1.0',
   startScene: SCENE_ID,
   settings: {
-    loadingScene: 'loading-scene',
+    loadingScene: fixedId('scene', 'loading-scene'),
     rendering,
     physics,
     build: createBuildProfiles('Inputs'),
@@ -65,7 +70,7 @@ const realSavePrefab = useAssetStore.getState().savePrefab;
 const realBuild = useScriptStore.getState().build;
 
 beforeEach(async () => {
-  await usePrefabModeStore.getState().exit();
+  await usePrefabModeStore.getState().exit(registries);
   usePrefabModeStore.setState({ stack: [] });
   useEditorStore.getState().stop();
   // The document carries an id of its own that is not the window's, which is
@@ -79,10 +84,11 @@ beforeEach(async () => {
   const root = createMeshEntity('box');
   root.entity.name = 'Crate';
   useAssetStore.setState({
-    materials: { [MATERIAL_ID]: createMaterial() },
-    physicsMaterials: { ice: createPhysicsMaterial() },
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
-    savePrefab: async (assetId, prefab) => {
+    materials: new Map([[MATERIAL_ID, createMaterial()]]),
+    physicsMaterials: new Map([[fixedId('asset', 'ice'), createPhysicsMaterial()]]),
+    // Filed under its own id, as the main process reads a prefab.
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
+    savePrefab: async (_registries, assetId, prefab) => {
       saved.push([assetId, prefab]);
     },
   });
@@ -122,7 +128,7 @@ describe('what Play runs, read in one place', () => {
     expect(inputs.entry.id).toBe(SCENE_ID);
     expect(inputs.entry.name).toBe('Level One');
     expect(inputs.entry.scene).toBe(scene);
-    expect(inputs.prefabs[PREFAB_ID]!.entities[inside.entity.id]).toBeDefined();
+    expect(inputs.prefabs.get(PREFAB_ID)?.entities.get(inside.entity.id)).toBeDefined();
     expect(saved).toEqual([]);
     expect(usePrefabModeStore.getState().stack).toHaveLength(1);
   });
@@ -134,6 +140,8 @@ describe('what a launch sends while the editor plays', () => {
       renderer: {} as WebGPURenderer,
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
       rendering,
+      registries: builtInRegistries(),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       onPlayPressed: () => {},
       onPlayStopped: () => {},
     };
@@ -167,17 +175,17 @@ describe('what a launch sends while the editor plays', () => {
     // What Play still lets change is the asset tables. A material written now
     // is in what Play would run, and not in what a launch sends, which keeps
     // the table from the press.
-    const LATER = 'material-written-during-play';
+    const LATER = fixedId('asset', 'material-written-during-play');
     useAssetStore.setState((state) => ({
-      materials: { ...state.materials, [LATER]: createMaterial('#ff0000') },
+      materials: new Map(state.materials).set(LATER, createMaterial('#ff0000')),
     }));
-    expect(readPlayInputs().materials[LATER]).toBeDefined();
-    expect(launchSnapshot().materials[LATER]).toBeUndefined();
+    expect(readPlayInputs().materials.get(LATER)).toBeDefined();
+    expect(launchSnapshot().materials.get(LATER)).toBeUndefined();
     expect(launchSnapshot().materials).toBe(atPress.materials);
     expect(launchSnapshot().entry.scene).toBe(atPress.entry.scene);
 
     useEditorStore.getState().stop();
-    expect(launchSnapshot().materials[LATER]).toBeDefined();
+    expect(launchSnapshot().materials.get(LATER)).toBeDefined();
     expect(launchSnapshot().entry.scene).toBe(doc().scene);
 
     finishBuild(false);
@@ -217,7 +225,7 @@ describe('the scenes a running game reaches', () => {
    * edit: the game on screen was the edited scene right up to the moment a
    * script reloaded it.
    */
-  const OTHER = { id: 'other-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+  const OTHER = { id: fixedId('scene', 'other-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
 
   function givenTwoScenes(): { reads: string[]; readFile: (path: string) => Promise<string> } {
     useProjectStore.setState({
@@ -233,7 +241,7 @@ describe('the scenes a running game reaches', () => {
       reads,
       readFile: async (path) => {
         reads.push(path);
-        return serializeScene(boss);
+        return serializeScene(registries, boss);
       },
     };
   }
@@ -243,13 +251,13 @@ describe('the scenes a running game reaches', () => {
     const unsaved = createMeshEntity('box');
     addEntity(unsaved);
     const entry = readPlayInputs().entry;
-    const source = playSceneSource(entry, readFile);
+    const source = playSceneSource(registries, entry, readFile);
 
     const byId = await source.read(SCENE_ID);
     const byName = await source.read('Level One');
 
     for (const scene of [byId, byName]) {
-      expect(scene.entities[unsaved.entity.id]).toBeDefined();
+      expect(scene.entities.get(unsaved.entity.id)).toBeDefined();
       expect(scene).toEqual(entry.scene);
       expect(scene).not.toBe(entry.scene);
     }
@@ -259,7 +267,7 @@ describe('the scenes a running game reaches', () => {
 
   it('reads any other scene from its file, by id or by name', async () => {
     const { reads, readFile } = givenTwoScenes();
-    const source = playSceneSource(readPlayInputs().entry, readFile);
+    const source = playSceneSource(registries, readPlayInputs().entry, readFile);
 
     expect((await source.read('Boss')).name).toBe('Boss');
     expect((await source.read(OTHER.id)).name).toBe('Boss');
@@ -268,7 +276,7 @@ describe('the scenes a running game reaches', () => {
 
   it('refuses a scene the project does not have, and names it', async () => {
     const { readFile } = givenTwoScenes();
-    const source = playSceneSource(readPlayInputs().entry, readFile);
+    const source = playSceneSource(registries, readPlayInputs().entry, readFile);
 
     await expect(source.read('Nowhere')).rejects.toThrow('No scene "Nowhere"');
   });

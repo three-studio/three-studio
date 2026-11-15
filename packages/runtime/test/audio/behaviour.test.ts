@@ -1,22 +1,31 @@
-import { createAudioSource, createComponent, createEntity, type AudioSourceComponent } from '@three-studio/core';
+import {
+  audioListenerType,
+  audioSourceType,
+  createEntity,
+  fixedId,
+  type AudioSourceComponent,
+} from '@three-studio/core';
 import { Group, Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
-import { playRequestFor } from '../../src/behaviour/audio';
-import { behaviourFactoryFor, type BehaviourContext } from '../../src/behaviour/Behaviour';
+import { audioListenerBehaviour, audioSourceBehaviour, playRequestFor } from '../../src/behaviour/audio';
+import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
+import { builtInRegistries } from '../registries';
 import { flush, rig } from './rig';
 
 /*
  * The glue: a component becomes a request, and a request becomes a voice.
  *
  * `Engine` itself is not built here — it wants a DOM element and a Rapier
- * world, neither of which exists under node. The registration is real though,
- * so asking the registry for the factory exercises exactly what the engine
- * would call.
+ * world, neither of which exists under node. The definitions are the ones the
+ * runtime's activation registers, so calling one exercises exactly what the
+ * engine would call.
  */
 
+const STEP = fixedId('asset', 'step');
+
 function source(overrides: Partial<AudioSourceComponent> = {}): AudioSourceComponent {
-  return { ...createAudioSource(), assetId: 'step', ...overrides };
+  return { ...audioSourceType.create(), assetId: STEP, ...overrides };
 }
 
 function at(x: number, y: number, z: number): Object3D {
@@ -73,13 +82,13 @@ describe('playRequestFor', () => {
 
 describe('the audioSource behaviour', () => {
   it('is registered, which is what `runtime: true` claims', () => {
-    expect(behaviourFactoryFor('audioSource')).toBeTypeOf('function');
-    expect(behaviourFactoryFor('audioListener')).toBeTypeOf('function');
+    const registries = builtInRegistries();
+    expect(registries.behaviours.get('audioSource')).toBe(audioSourceBehaviour);
+    expect(registries.behaviours.get('audioListener')).toBe(audioListenerBehaviour);
   });
 
   it('declines to build when the host handed over no audio', () => {
-    const factory = behaviourFactoryFor('audioSource');
-    const built = factory?.(
+    const built = audioSourceBehaviour.create(
       { entity: createEntity('noise').entity, object: at(0, 0, 0), component: source() },
       context(null),
     );
@@ -88,10 +97,9 @@ describe('the audioSource behaviour', () => {
 
   it('plays on start only when the component says so', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    const factory = behaviourFactoryFor('audioSource');
     const entity = createEntity('noise').entity;
 
-    const quiet = factory?.(
+    const quiet = audioSourceBehaviour.create(
       { entity, object: at(0, 0, 0), component: source({ playOnStart: false }) },
       context(engine),
     );
@@ -99,7 +107,7 @@ describe('the audioSource behaviour', () => {
     await flush();
     expect(engine.voices).toHaveLength(0);
 
-    const loud = factory?.(
+    const loud = audioSourceBehaviour.create(
       { entity, object: at(0, 0, 0), component: source({ playOnStart: true }) },
       context(engine),
     );
@@ -111,8 +119,7 @@ describe('the audioSource behaviour', () => {
   it('follows its entity, and does so after physics rather than before', async () => {
     const { context: audioContext, engine } = rig({ step: { duration: 10 } });
     const object = at(0, 0, 0);
-    const factory = behaviourFactoryFor('audioSource');
-    const behaviour = factory?.(
+    const behaviour = audioSourceBehaviour.create(
       { entity: createEntity('noise').entity, object, component: source({ playOnStart: true }) },
       context(engine),
     );
@@ -133,8 +140,7 @@ describe('the audioSource behaviour', () => {
 
   it('stops what it started when the scene is left', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    const factory = behaviourFactoryFor('audioSource');
-    const behaviour = factory?.(
+    const behaviour = audioSourceBehaviour.create(
       {
         entity: createEntity('noise').entity,
         object: at(0, 0, 0),
@@ -155,11 +161,10 @@ describe('the audioSource behaviour', () => {
 describe('the audioListener behaviour', () => {
   it('places the ear where its entity is, and takes the master volume with it', () => {
     const { context: audioContext, engine } = rig();
-    const factory = behaviourFactoryFor('audioListener');
-    const listener = createComponent('audioListener');
+    const listener = audioListenerType.create();
     listener.masterVolume = 0.5;
 
-    const behaviour = factory?.(
+    const behaviour = audioListenerBehaviour.create(
       { entity: createEntity('ear').entity, object: at(2, 3, 4), component: listener },
       context(engine),
     );

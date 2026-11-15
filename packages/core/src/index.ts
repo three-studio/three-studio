@@ -7,7 +7,25 @@ export {
   SCENE_FORMAT_VERSION,
   SCRIPT_API_VERSION,
 } from './constants';
-export { createId } from './ids';
+export {
+  createAssetId,
+  createComponentId,
+  createEntityId,
+  createId,
+  createSceneId,
+  fixedId,
+  idMapOf,
+  isAssetId,
+  isComponentId,
+  isComponentTypeId,
+  isEntityId,
+  isSceneId,
+} from './ids';
+export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId } from './ids';
+/* What every table of definitions is, and what each registration hands back. */
+export { Registry } from './Registry';
+export { combineDisposables } from './disposable';
+export type { Disposable } from './disposable';
 export type {
   Platform,
   ProjectApi,
@@ -38,9 +56,9 @@ export {
   createBuildProfiles,
   createPhysicsSettings,
   createRenderingSettings,
+  decodeProjectFile,
   findScene,
   normalizeBasePath,
-  normalizeBuildProfiles,
   resolveScene,
   sceneName,
 } from './project/schema';
@@ -99,22 +117,23 @@ export type {
 export { ASSET_HOST, ASSET_SCHEME, assetUrl, encodePath, importedAssetPath } from './assets/url';
 
 export {
-  ASSET_KIND_INFO,
   AssetImporter,
   FIT_TO_METRE,
   IMPORT_HOST,
   IMPORT_SCHEME,
-  ImporterRegistry,
   ModelImporter,
   assetDisplayName,
   assetKindForFile,
+  assetKindInfo,
   defaultSettings,
   importerForFile,
+  importerForKind,
   importPreviewUrl,
+  importSuffixes,
   parseImportPreviewUrl,
-  importers,
 } from './assets/import';
 export type {
+  AssetKindInfo,
   ImportConflict,
   ImportPlanItem,
   ImportPreviewRequest,
@@ -128,9 +147,10 @@ export type {
  * importers, because it stopped belonging to them: a script declares in it too,
  * and `ScriptPropertyDef` in the runtime is now an alias of `FieldDef`.
  */
-export { field, fieldOptions, optionsFrom } from './fields';
+export { field, fieldOptions } from './fields';
 /* What the renderer sends, made safe before it reaches the disk. */
 export { conform, conformPatch, isRecord } from './conform';
+export { assertDefined } from './assert';
 export {
   conformAssetSettings,
   conformLayoutPreferences,
@@ -145,11 +165,29 @@ export type {
   FieldOption,
   FieldRow,
 } from './fields';
+/* A type's fields written once, and what reading a value from outside answers. */
+export { conditionHolds, planFields, variantDefaults, variantFactory } from './fieldSchema';
+export type { FieldPlan, Infer, LinkedObject, Schema, SchemaField, ShownWhen } from './fieldSchema';
+/* What a type written as a schema is typed as, in the kernel or in a module. */
+export type { Component } from './scene/primitives';
+export {
+  checks,
+  decodeJson,
+  formatDiagnostics,
+  invalid,
+  listOf,
+  missing,
+  nullable,
+  oneOf,
+  RecordReader,
+  unwrap,
+  versionRefusal,
+} from './decoded';
+export type { Check, DecodePath, Decoded, Diagnostic, DiagnosticCode, LeafChecks, RefusedFile } from './decoded';
 
 export {
   collectSceneAssets,
   unknownComponentTypes,
-  environmentAssets,
   findAssetUsage,
   findBrokenReferences,
   findMissingEntities,
@@ -180,8 +218,11 @@ export type {
   ColliderComponent,
   ComponentDoc,
   ComponentOfType,
+  ComponentTable,
   ComponentTables,
   ComponentType,
+  ComponentTypeId,
+  ComponentTypes,
   EntityDoc,
   EnvironmentDef,
   GeometryDef,
@@ -197,8 +238,6 @@ export type {
   PrefabInstanceComponent,
   PrefabOverride,
   ModelComponent,
-  EmitterShape,
-  ParticleEmitterComponent,
   PlayerControllerComponent,
   RigidBodyComponent,
   SceneDoc,
@@ -207,40 +246,19 @@ export type {
   ShadowSettings,
   SkySettings,
   Transform,
+  UnknownComponentTable,
+  UnknownComponentTables,
+  Vec2,
   Vec3,
   WaterComponent,
-  WaterSunSource,
+  WaterSun,
 } from './scene/schema';
 
 /* Water's sun: which one, and where the sky's is. */
-export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/water';
+export { skySunDirection } from './scene/water';
 
 export { AUDIO_BUSES } from './scene/schema';
 
-/*
- * A label for each member of a closed union, beside the union it names — see
- * the note in `scene/schema.ts`. Total records, so the compiler is what makes a
- * member without a name impossible; `optionsFrom` turns one into the choices a
- * control offers.
- */
-export {
-  AUDIO_BUS_LABELS,
-  BACKGROUND_MODE_LABELS,
-  BODY_TYPE_LABELS,
-  CAMERA_PROJECTION_LABELS,
-  COLLIDER_SHAPE_LABELS,
-  COMBINE_RULE_LABELS,
-  DISTANCE_MODEL_LABELS,
-  EMITTER_SHAPE_LABELS,
-  ENVIRONMENT_MODE_LABELS,
-  FOG_MODE_LABELS,
-  JOINT_KIND_LABELS,
-  MATERIAL_SIDE_LABELS,
-  MESH_BUILD_LABELS,
-  PLAYER_CONTROLLER_MODE_LABELS,
-  TEXTURE_WRAP_LABELS,
-  TOUCH_CONTROLS_LABELS,
-} from './scene/schema';
 export type {
   BackgroundMode,
   BodyType,
@@ -261,50 +279,60 @@ export type {
   TouchControlsMode,
 } from './scene/schema';
 
-export {
-  createEmptyScene,
-  createEnvironment,
-  createSkySettings,
-  createStarterScene,
-} from './scene/defaults';
+export { createEmptyScene, createStarterScene } from './scene/defaults';
+/* What a scene looks like before anything is placed in it, as its fields. */
+export { createEnvironment, decodeEnvironment, environmentAssets, environmentSchema } from './scene/environment';
 export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
-export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
-export { createMaterial } from './scene/material';
+export { createGeometry, geometryField, restingOffsetY } from './scene/geometry';
+export { createMaterial, materialAssets, materialFields } from './scene/material';
 export {
   conformPhysicsMaterial,
   createPhysicsMaterial,
   linkedPhysicsMaterial,
 } from './scene/physicsMaterial';
 export type { EntityTemplate } from './scene/entity';
-/* Each slice's own factories, from the slice that owns them. */
+/*
+ * Each type described by its fields, whose `create()` is its blank component;
+ * then each slice's own factories, from the slice that owns them, for what
+ * knows more than a type's defaults.
+ */
+export { audioListenerType } from './components/audioListener';
+export { cameraType } from './components/camera';
+export { colliderType } from './components/collider';
+export { jointType } from './components/joint';
+export { lightType } from './components/light';
+export { meshType } from './components/mesh';
+export { audioSourceType } from './components/audioSource';
+export { modelType } from './components/model';
+export { playerControllerType } from './components/playerController';
+export { prefabInstanceType } from './components/prefabInstance';
+export { scriptType } from './components/script';
+export { rigidbodyType } from './components/rigidbody';
+export { waterType } from './components/water';
+export { waterSchema } from './components/water/schema';
 export { createAudioListenerEntity } from './components/audioListener/defaults';
-export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
-export { createCameraEntity } from './components/camera/defaults';
-export { createLightEntity, createShadowSettings } from './components/light/defaults';
+export { createAudioSourceEntity } from './components/audioSource/defaults';
+export { createCamera, createCameraEntity } from './components/camera/defaults';
+export { createLight, createLightEntity } from './components/light/defaults';
 export { createMeshComponent, createMeshEntity } from './components/mesh/defaults';
 export { createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
-export { createWater, createWaterEntity } from './components/water/defaults';
-export {
-  createParticleEmitter,
-  createParticleEmitterEntity,
-} from './components/particleEmitter/defaults';
+export { createWaterEntity } from './components/water/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {
-  COMPONENT_TYPES,
   componentsOf,
   componentsOfType,
   copyComponentsOf,
   deleteComponent,
   dropComponentsOf,
-  emptyComponentTables,
   entitiesWith,
   findComponent,
   findComponentById,
+  findComponents,
   hasComponent,
-  isKnownComponentType,
+  isComponentOfType,
   putComponent,
   renameEntityReferences,
   setComponentsOf,
@@ -313,35 +341,36 @@ export type { ComponentHost } from './scene/components';
 
 export {
   addableTypes,
-  componentAssetCandidates,
+  componentCandidates,
   componentAssets,
-  componentDefinition,
-  componentDefinitions,
   componentEntities,
   createComponent,
   createComponentForEntity,
   defineComponent,
-  fillComponent,
   isPlaceable,
   typesWithoutRuntime,
 } from './components';
-export type { ComponentDefinition, ComponentIcon } from './components';
+export type { ComponentDefinition } from './components';
+/* What the core knows by registration, made and filled by each app's composition root. */
+export { createCoreRegistries } from './registries';
+export { activateCore } from './activate';
+export type { CoreRegistries } from './registries';
 
-export { conformColliderShape, createColliderShape } from './components/collider/defaults';
+export { colliderShapeField, createColliderShape } from './components/collider/schema';
 /*
  * A collider as physics builds it, and how far it hangs below the entity's
- * origin. Exported because the runtime builds from the same rules the scene
- * migration measured with, and two of them would put a camera and a capsule in
- * different places.
+ * origin. Exported because the runtime's physics and its player controller
+ * build from the same rules, and two of them would put a camera and a capsule
+ * in different places.
  */
 export { colliderGeometry, fitColliderShape, originAboveFeet } from './components/collider/geometry';
 export type { BuiltShape, ColliderGeometry } from './components/collider/geometry';
-export { conformJointMotion, createJoint, createJointMotion } from './components/joint/defaults';
+export { createJointMotion, jointMotionField } from './components/joint/schema';
 /* Where a joint holds on its entity: physics builds it there, and the gizmo draws it there. */
 export { jointFrame } from './components/joint/frame';
 
-export { deserializeScene, serializeScene } from './scene/serialization';
-export { stableJson } from './json';
+export { decodeScene, sceneJsonOf, serializeScene } from './scene/serialization';
+export { jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */
@@ -350,15 +379,19 @@ export { FORBIDDEN_FILE_NAME_CHARS, safeFileName } from './files';
 export {
   applyPrefabOverride,
   createPrefabDoc,
+  decodePrefab,
+  decodePrefabValue,
   expandPrefabs,
   instanceOwnerOf,
   instancedId,
-  migratePrefab,
   prefabFromEntities,
   prefabInstanceOf,
   prefabToScene,
   prefabVariantOf,
+  prefabsFromJson,
   sceneToPrefab,
+  prefabJsonOf,
+  serializePrefab,
   splitInstancedId,
   variantBaseOf,
 } from './scene/prefab';
@@ -383,6 +416,8 @@ export type { EntityCapability } from './scene/capabilities';
 /* Which body each collider rides: the build, the warnings and the editor ask here. */
 export { bodyOf, collidersOfBody, jointEnds, physicsBodies } from './scene/bodies';
 export type { JointEnds } from './scene/bodies';
+/* What the types on one entity allow each other, as each declares it. */
+export { componentFits, componentsFollowingDrawing, componentsToAdd } from './scene/componentRules';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';
@@ -410,8 +445,8 @@ export {
 } from './scene/graph';
 
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
-export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot } from './devices/schema';
-export type { LaunchSnapshot } from './devices/schema';
+export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot, encodeLaunchSnapshot } from './devices/schema';
+export type { LaunchSnapshot, LaunchSnapshotJson, ReceivedLaunch } from './devices/schema';
 /* The device server's settings: per machine, never in a project. */
 export {
   DEFAULT_DEVICE_PORT,

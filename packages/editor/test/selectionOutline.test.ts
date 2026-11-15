@@ -3,13 +3,16 @@ import {
   createLightEntity,
   createMeshEntity,
   createRenderingSettings,
+  type EntityId,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { SelectionOutline } from '../src/viewport/SelectionOutline';
+import { builtInRegistries } from './registries';
 
 /*
  * What is drawn around a selection, and what is only measured.
@@ -29,8 +32,10 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
   outline: SelectionOutline;
   binder: SceneBinder;
 } {
+  const registries = builtInRegistries();
   const binder = new SceneBinder({
-    resolver: NULL_ASSET_RESOLVER,
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });
@@ -94,7 +99,7 @@ describe('what gets a box', () => {
      */
     const box = createMeshEntity('box');
     const { outline, binder } = outlineFor([box]);
-    const resolve = (id: string) => binder.getObject(id);
+    const resolve = (id: EntityId) => binder.getObject(id);
 
     outline.update([box.entity.id], resolve);
     expect(outline.root.children).toHaveLength(1);

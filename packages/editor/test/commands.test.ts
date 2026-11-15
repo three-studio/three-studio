@@ -6,29 +6,47 @@ import {
   createPhysicsSettings,
   createPrefabInstance,
   createRenderingSettings,
-  emptyComponentTables,
+  findComponent,
+  fixedId,
   putComponent,
+  type EntityDoc,
+  type EntityId,
   type ProjectFile,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { addEntity, groupSelection } from '../src/commands/sceneCommands';
+import { currentContext } from '../src/commands/command';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * One description per gesture, and every caller derives from it.
  *
  * The defect that motivated the registry: two paths to the same gesture that
- * answered the opposite. `useShortcuts` asked `Selection.can('group')` — which a
- * lock refuses — and the Add menu asked `selection.length === 0`, which it does
- * not. A padlock that stopped the shortcut and not the menu, which is the padlock defect in a
- * second costume: phase 4 wired the capability once and three callers out of
- * four used it.
+ * answered the opposite. `useShortcuts` asked `Selection.can('group')` — which
+ * a lock refuses — and the Add menu asked `selection.length === 0`, which it
+ * does not. A padlock that stopped the shortcut and not the menu, which is the
+ * padlock defect in a second costume: the capability was wired once and three
+ * callers out of four used it.
  */
 
+const MAIN = fixedId('scene', 'a');
+const BOSS = fixedId('scene', 'b');
+const LEVEL2 = fixedId('scene', 'c');
+const GONE = fixedId('scene', 'gone');
+const NO_SUCH_ASSET = fixedId('asset', 'gone');
+const TEXTURE = fixedId('asset', 'tex1');
+const PREFAB = fixedId('asset', 'p1');
+
 const doc = () => useDocumentStore.getState();
+/** What a gesture is asked and run against, read at the moment it is: the selection as it stands. */
+const context = () => currentContext(registries);
 
 beforeEach(() => {
   doc().replaceScene(createEmptyScene());
@@ -36,11 +54,11 @@ beforeEach(() => {
 });
 
 /** A locked cube, selected. Everything below is a question about it. */
-function lockedAndSelected(): string {
+function lockedAndSelected(): EntityId {
   const cube = createMeshEntity('box');
   const id = addEntity(cube);
   doc().mutate('Lock', (draft) => {
-    const entity = draft.entities[id];
+    const entity = draft.entities.get(id);
     if (entity) entity.locked = true;
   });
   useEditorStore.getState().setSelection([id]);
@@ -53,15 +71,15 @@ describe('one answer per gesture, whoever asks', () => {
     const { commandById } = await import('../src/commands/registry');
     const group = commandById('group');
 
-    expect(Selection.current().can('group')).toBe(false);
+    expect(Selection.current(registries).can('group')).toBe(false);
     // The menu used to ask a different question — `selection.length === 0` —
     // and let the click through. `run` is the last guard: it asks `can` itself,
     // so a caller that forgets cannot put the divergence back one level down.
-    expect(group.can()).toBe(false);
+    expect(group.can(context())).toBe(false);
     const before = doc().past.length;
-    group.run();
+    group.run(context());
     expect(doc().past.length).toBe(before);
-    expect(doc().scene.entities[id]?.parent).toBeNull();
+    expect(doc().scene.entities.get(id)?.parent).toBeNull();
   });
 
   it('groups an unlocked selection, so the refusal is about the lock', async () => {
@@ -71,11 +89,11 @@ describe('one answer per gesture, whoever asks', () => {
 
     const { commandById } = await import('../src/commands/registry');
     const group = commandById('group');
-    expect(group.can()).toBe(true);
+    expect(group.can(context())).toBe(true);
 
-    group.run();
-    expect(doc().scene.entities[first]?.parent).not.toBeNull();
-    expect(doc().scene.entities[second]?.parent).toBe(doc().scene.entities[first]?.parent);
+    group.run(context());
+    expect(doc().scene.entities.get(first)?.parent).not.toBeNull();
+    expect(doc().scene.entities.get(second)?.parent).toBe(doc().scene.entities.get(first)?.parent);
   });
 
   it('refuses to delete and duplicate a locked entity through the registry', async () => {
@@ -85,8 +103,8 @@ describe('one answer per gesture, whoever asks', () => {
     // Both were decided in three places each — the shortcut, the menu bar and
     // the hierarchy's context menu — with the same predicate written out three
     // times.
-    expect(commandById('delete').can()).toBe(false);
-    expect(commandById('duplicate').can()).toBe(true);
+    expect(commandById('delete').can(context())).toBe(false);
+    expect(commandById('duplicate').can(context())).toBe(true);
   });
 });
 
@@ -99,8 +117,8 @@ describe('the gesture underneath, which is why one caller must own the asking', 
     // structure, and `capabilities.ts` says so at the top. Mixing the two would
     // let a miscomputed capability corrupt a document. So the asking has to
     // happen above, and the point of the registry is that it happens once.
-    groupSelection(Selection.current());
-    expect(doc().scene.entities[id]?.parent).not.toBeNull();
+    groupSelection(Selection.current(registries));
+    expect(doc().scene.entities.get(id)?.parent).not.toBeNull();
   });
 });
 
@@ -111,7 +129,7 @@ describe('the registry itself', () => {
     // Nothing selected: every gesture on a selection is off, and none of them
     // may throw — a menu is built before the user has selected anything.
     for (const id of ['delete', 'duplicate', 'group', 'rename'] as const) {
-      expect(commandById(id).can(), id).toBe(false);
+      expect(commandById(id).can(context()), id).toBe(false);
     }
   });
 
@@ -119,13 +137,13 @@ describe('the registry itself', () => {
     const { commandById } = await import('../src/commands/registry');
     const undo = commandById('undo');
 
-    expect(undo.can()).toBe(false);
-    expect(undo.label()).toBe('Undo');
+    expect(undo.can(context())).toBe(false);
+    expect(undo.label(context())).toBe('Undo');
 
     addEntity(createMeshEntity('box'));
-    expect(undo.can()).toBe(true);
+    expect(undo.can(context())).toBe(true);
     // The label names the gesture it would take back, as every editor does.
-    expect(undo.label()).toContain('Add');
+    expect(undo.label(context())).toContain('Add');
   });
 });
 
@@ -149,9 +167,9 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
     // The list below is the one thing here that has to be kept up to date, and
     // it is meant to be: a family added to the registry and not to this line
     // makes the count wrong, which is the test asking whether the new family
-    // arrived whole. `core`'s component registry checks the same thing against
-    // `COMPONENT_TYPES`; commands have no such canonical union, precisely
-    // because the table *is* the list.
+    // arrived whole. `core`'s component types are checked the same way against
+    // their folders; commands have no such canonical list, precisely because
+    // the table *is* the list.
     const families = [
       EDIT_COMMANDS,
       SCENE_FILE_COMMANDS,
@@ -196,7 +214,7 @@ describe('the table is the list of ids, so nothing can be filed twice', () => {
       'sceneSettings',
       'revealScene',
     ] as const) {
-      expect(commandById(id).can(), id).toBe(false);
+      expect(commandById(id).can(context()), id).toBe(false);
     }
   });
 });
@@ -210,8 +228,8 @@ describe('a gesture aimed at an asset', () => {
     // deleted from another window, and a menu built from the registry has no
     // asset in mind at all.
     for (const id of ['revealAsset', 'deleteAsset'] as const) {
-      expect(commandById(id).can(), `${id}, no target`).toBe(false);
-      expect(commandById(id).can(contextForAsset('gone')), `${id}, missing`).toBe(false);
+      expect(commandById(id).can(context()), `${id}, no target`).toBe(false);
+      expect(commandById(id).can(contextForAsset(registries, NO_SUCH_ASSET)), `${id}, missing`).toBe(false);
     }
   });
 
@@ -220,7 +238,7 @@ describe('a gesture aimed at an asset', () => {
     const { useAssetStore } = await import('../src/state/assetStore');
 
     const asset = {
-      id: 'tex1',
+      id: TEXTURE,
       name: 'brick',
       kind: 'texture',
       path: 'assets/textures/brick.png',
@@ -235,7 +253,7 @@ describe('a gesture aimed at an asset', () => {
       manifest: { version: 1, assets: [asset], folders: ['textures'] },
     } as never);
 
-    const ctx = contextForAsset('tex1');
+    const ctx = contextForAsset(registries, TEXTURE);
     expect(commandById('deleteAsset').can(ctx)).toBe(true);
     // The label names what it would act on, the way `undo` names what it would
     // take back — which is what a command palette shows.
@@ -246,24 +264,28 @@ describe('a gesture aimed at an asset', () => {
 
 describe('the two prefab menus ask one question', () => {
   /** A cube that is an instance of prefab `p1`, selected, with no overrides yet. */
-  async function instanceOfAPrefab(): Promise<string> {
+  async function instanceOfAPrefab(): Promise<EntityId> {
     const { useAssetStore } = await import('../src/state/assetStore');
     const id = addEntity(createMeshEntity('box'));
     doc().mutate('Instance', (draft) => {
-      putComponent(draft, id, createPrefabInstance('p1'));
+      putComponent(draft, id, createPrefabInstance(PREFAB));
     });
     useAssetStore.setState({
-      prefabs: {
-        p1: {
-          version: 1,
-          id: 'p1',
-          name: 'Crate',
-          entities: {},
-          components: emptyComponentTables(),
-          root: '',
-        },
-      },
-    } as never);
+      prefabs: new Map([
+        [
+          PREFAB,
+          {
+            version: 1,
+            id: PREFAB,
+            name: 'Crate',
+            entities: new Map<EntityId, EntityDoc>(),
+            components: new Map(),
+            unknownComponents: new Map(),
+            root: fixedId('entity', 'crate-root'),
+          },
+        ],
+      ]),
+    });
     useEditorStore.getState().setSelection([id]);
     return id;
   }
@@ -274,14 +296,14 @@ describe('the two prefab menus ask one question', () => {
 
     // The hierarchy greyed both of these; the Inspector drew them live and
     // swallowed the click. One `can()` now, and it is the hierarchy's.
-    expect(commandById('applyPrefabOverrides').can()).toBe(false);
-    expect(commandById('revertPrefabOverrides').can()).toBe(false);
+    expect(commandById('applyPrefabOverrides').can(context())).toBe(false);
+    expect(commandById('revertPrefabOverrides').can(context())).toBe(false);
 
     // The gestures that only need an instance are offered on the same row.
-    expect(commandById('unpackPrefab').can()).toBe(true);
-    expect(commandById('selectPrefabInstances').can()).toBe(true);
+    expect(commandById('unpackPrefab').can(context())).toBe(true);
+    expect(commandById('selectPrefabInstances').can(context())).toBe(true);
     // And the label carries the count, which the Inspector's button never had.
-    expect(commandById('selectPrefabInstances').label()).toContain('(1)');
+    expect(commandById('selectPrefabInstances').label(context())).toContain('(1)');
     expect(id).not.toBe('');
   });
 
@@ -289,12 +311,12 @@ describe('the two prefab menus ask one question', () => {
     const { commandById } = await import('../src/commands/registry');
     const id = await instanceOfAPrefab();
     doc().mutate('Override', (draft) => {
-      const component = Object.values(draft.components.prefabInstance[id] ?? {})[0];
-      if (component) component.overrides = { local: { name: 'Renamed' } };
+      const component = findComponent(draft, id, 'prefabInstance');
+      if (component) component.overrides = { [fixedId('entity', 'local')]: { name: 'Renamed' } };
     });
 
-    expect(commandById('applyPrefabOverrides').can()).toBe(true);
-    expect(commandById('revertPrefabOverrides').can()).toBe(true);
+    expect(commandById('applyPrefabOverrides').can(context())).toBe(true);
+    expect(commandById('revertPrefabOverrides').can(context())).toBe(true);
   });
 
   it('offers nothing on an entity that is not an instance', async () => {
@@ -309,10 +331,10 @@ describe('the two prefab menus ask one question', () => {
       'createPrefabVariant',
       'revertEntityOverride',
     ] as const) {
-      expect(commandById(id).can(), id).toBe(false);
+      expect(commandById(id).can(context()), id).toBe(false);
     }
     // Making a prefab out of one, on the other hand, is exactly what it is for.
-    expect(commandById('createPrefab').can()).toBe(true);
+    expect(commandById('createPrefab').can(context())).toBe(true);
   });
 });
 
@@ -320,23 +342,23 @@ describe('hiding is a target and nothing else, which is what makes it a command'
   it('names what it would do, and does it', async () => {
     const { commandById, contextFor } = await import('../src/commands/registry');
 
-    // Nothing selected and no context: a menu is built before anyone has
+    // Nothing selected and no entity named: a menu is built before anyone has
     // clicked, and `can` has to answer rather than throw. Asked before anything
     // is added, because `addEntity` selects what it creates.
-    expect(commandById('toggleVisibility').can()).toBe(false);
+    expect(commandById('toggleVisibility').can(context())).toBe(false);
 
     const id = addEntity(createMeshEntity('box'));
-    const ctx = contextFor([id]);
+    const ctx = contextFor(registries, [id]);
     expect(commandById('toggleVisibility').can(ctx)).toBe(true);
     expect(commandById('toggleVisibility').label(ctx)).toBe('Hide');
 
     commandById('toggleVisibility').run(ctx);
-    expect(doc().scene.entities[id]?.visible).toBe(false);
+    expect(doc().scene.entities.get(id)?.visible).toBe(false);
     // The label follows the state, the way `undo` names what it would take back.
-    expect(commandById('toggleVisibility').label(contextFor([id]))).toBe('Show');
+    expect(commandById('toggleVisibility').label(contextFor(registries, [id]))).toBe('Show');
 
-    commandById('toggleVisibility').run(contextFor([id]));
-    expect(doc().scene.entities[id]?.visible).toBe(true);
+    commandById('toggleVisibility').run(contextFor(registries, [id]));
+    expect(doc().scene.entities.get(id)?.visible).toBe(true);
   });
 
   it('refuses a selection of several, because the gesture is one row', async () => {
@@ -346,7 +368,7 @@ describe('hiding is a target and nothing else, which is what makes it a command'
 
     // Hiding a whole selection would need one `mutate` over all of it; looping
     // would write an undo entry per object. No caller asks for it yet.
-    expect(commandById('toggleVisibility').can(contextFor([first, second]))).toBe(false);
+    expect(commandById('toggleVisibility').can(contextFor(registries, [first, second]))).toBe(false);
   });
 });
 
@@ -368,41 +390,41 @@ describe('a gesture aimed at a scene', () => {
      * winner's name and opened the winner.
      */
     useProjectStore.setState({
-      sceneId: 'a',
+      sceneId: MAIN,
       scenes: [
-        { id: 'b', name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
-        { id: 'b', name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
-        { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
-        { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+        { id: BOSS, name: 'Boss copy', path: 'scenes/Boss copy.scene.json', shadowedBy: null },
+        { id: BOSS, name: 'Boss', path: 'scenes/Boss.scene.json', shadowedBy: 'scenes/Boss copy.scene.json' },
+        { id: LEVEL2, name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+        { id: MAIN, name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
       ],
     } as never);
 
     // `b` names the copy. No context can aim at `scenes/Boss.scene.json`: the
     // Scene menu builds that file's row itself (`sceneMenu.test.ts`).
-    expect(commandById('openScene').can(contextForScene('b'))).toBe(true);
-    expect(commandById('openScene').label(contextForScene('b'))).toBe('Boss copy');
-    expect(commandById('openScene').can(contextForScene('c'))).toBe(true);
+    expect(commandById('openScene').can(contextForScene(registries, BOSS))).toBe(true);
+    expect(commandById('openScene').label(contextForScene(registries, BOSS))).toBe('Boss copy');
+    expect(commandById('openScene').can(contextForScene(registries, LEVEL2))).toBe(true);
     // The label is the scene's name, which is what the menu row shows.
-    expect(commandById('openScene').label(contextForScene('c'))).toBe('Level2');
-    expect(commandById('openScene').can(contextForScene('gone'))).toBe(false);
-    expect(commandById('openScene').can(), 'no target').toBe(false);
+    expect(commandById('openScene').label(contextForScene(registries, LEVEL2))).toBe('Level2');
+    expect(commandById('openScene').can(contextForScene(registries, GONE))).toBe(false);
+    expect(commandById('openScene').can(context()), 'no target').toBe(false);
 
     // A second window on the scene this window already holds is not a second
     // window. The menu said this in a `.filter` and the shadow rule in a
     // `disabled`, in two different sets of words.
-    expect(commandById('openSceneInNewWindow').can(contextForScene('a')), 'current').toBe(false);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('c'))).toBe(true);
-    expect(commandById('openSceneInNewWindow').can(contextForScene('b'))).toBe(true);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(registries, MAIN)), 'current').toBe(false);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(registries, LEVEL2))).toBe(true);
+    expect(commandById('openSceneInNewWindow').can(contextForScene(registries, BOSS))).toBe(true);
   });
 });
 
 describe('Set as Start Scene', () => {
   const SCENES: SceneEntry[] = [
-    { id: 'c', name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
-    { id: 'a', name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
+    { id: LEVEL2, name: 'Level2', path: 'scenes/Level2.scene.json', shadowedBy: null },
+    { id: MAIN, name: 'Main', path: 'scenes/Main.scene.json', shadowedBy: null },
   ];
 
-  const startingOn = (startScene: string): ProjectFile => ({
+  const startingOn = (startScene: SceneId): ProjectFile => ({
     version: PROJECT_FORMAT_VERSION,
     name: 'Races',
     engineVersion: '0.1.0',
@@ -416,9 +438,9 @@ describe('Set as Start Scene', () => {
   });
 
   /** A window on Main, in a project that starts on `startScene`. */
-  async function onMain(startScene: string): Promise<void> {
+  async function onMain(startScene: SceneId): Promise<void> {
     const { useProjectStore } = await import('../src/state/projectStore');
-    useProjectStore.setState({ sceneId: 'a', scenes: SCENES, project: startingOn(startScene) });
+    useProjectStore.setState({ sceneId: MAIN, scenes: SCENES, project: startingOn(startScene) });
   }
 
   afterEach(() => {
@@ -427,42 +449,42 @@ describe('Set as Start Scene', () => {
 
   it("acts on the window's scene when it is aimed at none", async () => {
     const { commandById } = await import('../src/commands/registry');
-    await onMain('c');
+    await onMain(LEVEL2);
 
     // What the menu and the palette ask. The palette used to leave it out —
     // with no scene named, it had nothing to act on.
-    expect(commandById('setStartScene').label()).toBe('Set as Start Scene');
-    expect(commandById('setStartScene').can()).toBe(true);
+    expect(commandById('setStartScene').label(context())).toBe('Set as Start Scene');
+    expect(commandById('setStartScene').can(context())).toBe(true);
   });
 
   it('refuses the scene that already is the start scene', async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
-    await onMain('c');
-    expect(commandById('setStartScene').can(contextForScene('c'))).toBe(false);
+    await onMain(LEVEL2);
+    expect(commandById('setStartScene').can(contextForScene(registries, LEVEL2))).toBe(false);
 
-    await onMain('a');
-    expect(commandById('setStartScene').can()).toBe(false);
+    await onMain(MAIN);
+    expect(commandById('setStartScene').can(context())).toBe(false);
   });
 
   it("refuses a scene that is gone, rather than falling back on the window's", async () => {
     const { commandById, contextForScene } = await import('../src/commands/registry');
-    await onMain('c');
+    await onMain(LEVEL2);
 
     // A radio was clicked for that scene; Main is not what anyone picked.
-    expect(commandById('setStartScene').can(contextForScene('gone'))).toBe(false);
+    expect(commandById('setStartScene').can(contextForScene(registries, GONE))).toBe(false);
   });
 
   it("makes the window's scene the start scene", async () => {
     const { commandById } = await import('../src/commands/registry');
     const { useProjectStore } = await import('../src/state/projectStore');
-    await onMain('c');
-    const setStartScene = vi.fn(async (startScene: string) => ({
+    await onMain(LEVEL2);
+    const setStartScene = vi.fn(async (startScene: SceneId) => ({
       project: startingOn(startScene),
       scenes: SCENES,
     }));
     vi.stubGlobal('window', { studio: { project: { setStartScene } } });
 
-    commandById('setStartScene').run();
+    commandById('setStartScene').run(context());
 
     expect(setStartScene.mock.calls).toEqual([['a']]);
     await vi.waitFor(() => expect(useProjectStore.getState().project?.startScene).toBe('a'));
@@ -481,7 +503,7 @@ describe('rename is a command that finishes', () => {
     // handed, so a right-click outside the selection would have renamed the
     // wrong row. It never surfaced because `run` did nothing at all: the module
     // slot it called was filled by no one.
-    commandById('rename').run(contextFor([clicked]));
+    commandById('rename').run(contextFor(registries, [clicked]));
     expect(useEditorStore.getState().renaming).toBe(clicked);
 
     useEditorStore.getState().endRename();
@@ -493,11 +515,11 @@ describe('rename is a command that finishes', () => {
     const first = addEntity(createMeshEntity('box'));
     const second = addEntity(createMeshEntity('sphere'));
 
-    expect(commandById('rename').can(contextFor([first, second]))).toBe(false);
-    expect(commandById('rename').can(contextFor([first]))).toBe(true);
+    expect(commandById('rename').can(contextFor(registries, [first, second]))).toBe(false);
+    expect(commandById('rename').can(contextFor(registries, [first]))).toBe(true);
 
     // And a refusal leaves nothing half-started: `run` re-checks `can` itself.
-    commandById('rename').run(contextFor([first, second]));
+    commandById('rename').run(contextFor(registries, [first, second]));
     expect(useEditorStore.getState().renaming).toBeNull();
   });
 });
@@ -512,7 +534,7 @@ describe('the palette is a view over the table, not a feature', () => {
     expect(commandForBinding(binding!)).toBe('openCommandPalette');
 
     expect(useEditorStore.getState().paletteOpen).toBe(false);
-    commandById('openCommandPalette').run();
+    commandById('openCommandPalette').run(context());
     expect(useEditorStore.getState().paletteOpen).toBe(true);
     useEditorStore.getState().closePalette();
   });
@@ -526,7 +548,7 @@ describe('the palette is a view over the table, not a feature', () => {
     useEditorStore.getState().clearSelection();
     useProjectStore.setState({ summary: null, sceneId: null, scenes: [] } as never);
 
-    const ctx = currentContext();
+    const ctx = currentContext(registries);
     const offered = commandIds().filter((id) => commandById(id).can(ctx));
 
     // The palette itself always can, and it is the only one here that does not
@@ -570,50 +592,50 @@ describe('transport', () => {
     const store = useEditorStore.getState();
 
     expect(store.playState).toBe('stopped');
-    expect(commandById('play').can()).toBe(true);
-    expect(commandById('stop').can()).toBe(false);
+    expect(commandById('play').can(context())).toBe(true);
+    expect(commandById('stop').can(context())).toBe(false);
 
-    commandById('play').run();
+    commandById('play').run(context());
     expect(useEditorStore.getState().playState).toBe('playing');
-    expect(commandById('play').can()).toBe(false);
-    expect(commandById('stop').can()).toBe(true);
+    expect(commandById('play').can(context())).toBe(false);
+    expect(commandById('stop').can(context())).toBe(true);
 
     // Paused counts as running: it is Stop that gets you out of either.
-    commandById('togglePause').run();
+    commandById('togglePause').run(context());
     expect(useEditorStore.getState().playState).toBe('paused');
-    expect(commandById('play').can()).toBe(false);
-    expect(commandById('stop').can()).toBe(true);
+    expect(commandById('play').can(context())).toBe(false);
+    expect(commandById('stop').can(context())).toBe(true);
 
-    commandById('stop').run();
+    commandById('stop').run(context());
     expect(useEditorStore.getState().playState).toBe('stopped');
   });
 
   it('plays full screen through a command of its own, which Stop ends', async () => {
     const { commandById } = await import('../src/commands/registry');
 
-    expect(commandById('playFullScreen').label()).toBe('Play Full Screen');
-    expect(commandById('playFullScreen').can()).toBe(true);
-    commandById('playFullScreen').run();
+    expect(commandById('playFullScreen').label(context())).toBe('Play Full Screen');
+    expect(commandById('playFullScreen').can(context())).toBe(true);
+    commandById('playFullScreen').run(context());
     expect(useEditorStore.getState()).toMatchObject({ playState: 'playing', fullScreen: true });
     // One session at a time, whichever way it was started.
-    expect(commandById('playFullScreen').can()).toBe(false);
-    expect(commandById('play').can()).toBe(false);
+    expect(commandById('playFullScreen').can(context())).toBe(false);
+    expect(commandById('play').can(context())).toBe(false);
 
-    commandById('stop').run();
+    commandById('stop').run(context());
     expect(useEditorStore.getState()).toMatchObject({ playState: 'stopped', fullScreen: false });
 
     // Play is the panel, not the screen, even right after a full-screen run.
-    commandById('play').run();
+    commandById('play').run(context());
     expect(useEditorStore.getState().fullScreen).toBe(false);
-    commandById('stop').run();
+    commandById('stop').run(context());
   });
 
   it('says the word the toolbar shows', async () => {
     const { commandById } = await import('../src/commands/registry');
     // The toolbar wrote `isStopped ? 'Play' : 'Stop'` for itself; the palette
     // would have written it a second time.
-    expect(commandById('play').label()).toBe('Play');
-    expect(commandById('stop').label()).toBe('Stop');
+    expect(commandById('play').label(context())).toBe('Play');
+    expect(commandById('stop').label(context())).toBe('Stop');
   });
 
   it('pauses and resumes a running game through one command, whose word follows', async () => {
@@ -622,22 +644,22 @@ describe('transport', () => {
     const { commandById } = await import('../src/commands/registry');
     const pause = commandById('togglePause');
 
-    expect(pause.can()).toBe(false);
-    pause.run();
+    expect(pause.can(context())).toBe(false);
+    pause.run(context());
     expect(useEditorStore.getState().playState).toBe('stopped');
 
-    commandById('play').run();
-    expect(pause.can()).toBe(true);
-    expect(pause.label()).toBe('Pause');
-    pause.run();
+    commandById('play').run(context());
+    expect(pause.can(context())).toBe(true);
+    expect(pause.label(context())).toBe('Pause');
+    pause.run(context());
     expect(useEditorStore.getState().playState).toBe('paused');
 
-    expect(pause.can()).toBe(true);
-    expect(pause.label()).toBe('Resume');
-    pause.run();
+    expect(pause.can(context())).toBe(true);
+    expect(pause.label(context())).toBe('Resume');
+    pause.run(context());
     expect(useEditorStore.getState().playState).toBe('playing');
 
-    commandById('stop').run();
+    commandById('stop').run(context());
   });
 
   it('steps one frame only while paused', async () => {
@@ -645,22 +667,22 @@ describe('transport', () => {
     const step = commandById('stepFrame');
     const stepped = () => useEditorStore.getState().consumeStep();
 
-    expect(step.label()).toBe('Step One Frame');
-    expect(step.can()).toBe(false);
-    step.run();
+    expect(step.label(context())).toBe('Step One Frame');
+    expect(step.can(context())).toBe(false);
+    step.run(context());
     expect(stepped()).toBe(false);
 
-    commandById('play').run();
-    expect(step.can()).toBe(false);
-    step.run();
+    commandById('play').run(context());
+    expect(step.can(context())).toBe(false);
+    step.run(context());
     expect(stepped()).toBe(false);
 
-    commandById('togglePause').run();
-    expect(step.can()).toBe(true);
-    step.run();
+    commandById('togglePause').run(context());
+    expect(step.can(context())).toBe(true);
+    step.run(context());
     expect(stepped()).toBe(true);
     expect(stepped()).toBe(false);
 
-    commandById('stop').run();
+    commandById('stop').run(context());
   });
 });

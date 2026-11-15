@@ -1,9 +1,12 @@
 import {
+  colliderType,
   createColliderShape,
-  createComponent,
   createEntity,
   createPhysicsSettings,
+  playerControllerType,
   createRenderingSettings,
+  rigidbodyType,
+  fixedId,
   type ColliderComponent,
   type PlayerControllerComponent,
   type SceneDoc,
@@ -12,12 +15,16 @@ import {
 import { Euler, Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
+import { AssetCache } from '../../src/assets/AssetCache';
+import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { PlayerController } from '../../src/controllers/PlayerController';
 import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { SceneBinder } from '../../src/SceneBinder';
 import { studioTime } from '../../src/time/StudioTime';
 import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import type { Input } from '../../src/input/Input';
+import { NO_SCRIPTS } from '../../src/scripting/scriptBundle';
+import { builtInRegistries } from '../registries';
 
 /*
  * The controller had no tests at all, and the two defects below were both
@@ -49,7 +56,7 @@ const STANDING_Y = 1;
 /** A capsule 1.70 m tall, so its centre — the entity's origin — is 0.85 m up. */
 function personCapsule(): ColliderComponent {
   return {
-    ...createComponent('collider'),
+    ...colliderType.create(),
     shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
   };
 }
@@ -126,22 +133,24 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   // a character walking at full speed for a second is still on it — a metre of
   // floor would have turned every movement test into a fall.
   const ground = createEntity('Ground', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   ground.entity.transform.position = [0, -0.5, 0];
 
   const player = createEntity('Player', [
-    createComponent('playerController'),
+    playerControllerType.create(),
     personCapsule(),
     // What `addComponentWithDependencies` gives a player: the controller writes
     // the transform, so the body must not be solved for.
-    { ...createComponent('rigidbody'), bodyType: 'kinematicPosition' as const },
+    { ...rigidbodyType.create(), bodyType: 'kinematicPosition' as const },
   ]);
   player.entity.transform.position = [0, startY, 0];
 
   const scene: SceneDoc = sceneWith([ground, player]);
+  const registries = builtInRegistries();
   const binder = new SceneBinder({
-    resolver: { url: () => null },
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     rendering: { ...createRenderingSettings(), batching: false },
   });
   binder.sync(scene);
@@ -163,6 +172,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
     time: studioTime,
     scenes: null,
     audio: null,
+    scripts: NO_SCRIPTS,
     warn: () => {},
   } satisfies BehaviourContext;
 
@@ -260,7 +270,7 @@ describe('PlayerController falls at the world it is in', () => {
     // not, and a 1.2 m jump on Mars would carry to nearly 3.2 m.
     const { apex } = await jumpIn(-3.71);
 
-    expect(apex).toBeCloseTo(createComponent('playerController').jumpHeight, 1);
+    expect(apex).toBeCloseTo(playerControllerType.create().jumpHeight, 1);
   });
 
   for (const [name, gravity] of [
@@ -288,8 +298,8 @@ describe('PlayerController places the eye above the feet', () => {
   function eyeAbove(groundY: number, eyeHeight: number, collider?: ColliderComponent): number {
     const object = new Object3D();
     object.position.set(0, groundY, 0);
-    const component = { ...createComponent('playerController'), eyeHeight };
-    const controller = new PlayerController(component, object, null, 'player', collider);
+    const component = { ...playerControllerType.create(), eyeHeight };
+    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), collider);
     controller.postUpdate();
     return controller.camera.position.y;
   }
@@ -304,7 +314,7 @@ describe('PlayerController places the eye above the feet', () => {
   it('measures a box from its half extent', () => {
     // The shape a bare entity used to be given, and the reason the default
     // player's eye sat at 2.2 m on a character one metre tall.
-    const box: ColliderComponent = { ...createComponent('collider') };
+    const box: ColliderComponent = { ...colliderType.create() };
     expect(eyeAbove(0.5, 1.6, box)).toBeCloseTo(1.6, 6);
   });
 
@@ -324,8 +334,8 @@ describe('PlayerController places the eye above the feet', () => {
 
   it('takes the field of view from the component, and follows it', () => {
     const object = new Object3D();
-    const component = { ...createComponent('playerController'), fov: 85 };
-    const controller = new PlayerController(component, object, null, 'player', undefined);
+    const component = { ...playerControllerType.create(), fov: 85 };
+    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), undefined);
 
     expect(controller.camera.fov).toBe(85);
 
@@ -399,7 +409,7 @@ describe('PlayerController driven by the sticks', () => {
     const before = yawOf(rig.controller);
     rig.run(1);
 
-    const speed = createComponent('playerController').touchLookSpeed;
+    const speed = playerControllerType.create().touchLookSpeed;
     expect(before - yawOf(rig.controller)).toBeCloseTo(speed, 1);
   });
 

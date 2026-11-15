@@ -1,9 +1,10 @@
 import type { AssetKind, AudioSettings } from '../../schema';
 import { AssetImporter } from '../AssetImporter';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 
 export class AudioImporter extends AssetImporter<AudioSettings> {
-  readonly id = 'audio';
+  readonly id = fixedId('importer', 'audio');
   readonly kind: AssetKind = 'audio';
   readonly directory = 'audio';
   readonly extensions = ['mp3', 'ogg', 'wav', 'm4a', 'aac', 'flac', 'opus'];

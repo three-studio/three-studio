@@ -1,9 +1,4 @@
-import {
-  commandById,
-  currentContext,
-  type CommandId,
-  type EditorContext,
-} from '../commands/registry';
+import { commandById, type CommandId, type EditorContext } from '../commands/registry';
 import { STOP_TO_EDIT } from '../state/sceneLock';
 import type { MenuItem } from '../ui/Menu';
 import { shortcutHint } from './shortcutBindings';
@@ -16,17 +11,16 @@ import { shortcutHint } from './shortcutBindings';
  * and the Add menu's asked the command three times over, with no context, at
  * three different moments. Every menu row that runs a command is built here now.
  *
- * The context is read once and serves the label, the verdict and the body, so a
- * row cannot say one thing and do another. A caller with no context of its own
- * gets `currentContext()`, the selection as it stands, which is what the menu
- * bar builds in the same render.
+ * The context is read once, by the caller, and serves the label, the verdict and
+ * the body, so a row cannot say one thing and do another. A caller acting on the
+ * selection as it stands passes `currentContext()`, which is what the menu bar
+ * builds in the same render.
  *
  * A `MenuItem` rather than a `MenuEntry`, so a caller can spread it and add what
  * only the caller knows, such as `checked`.
  */
-export function commandEntry(id: CommandId, ctx?: EditorContext): MenuItem {
+export function commandEntry(id: CommandId, context: EditorContext): MenuItem {
   const command = commandById(id);
-  const context = ctx ?? currentContext();
   return {
     label: command.label(context),
     // The table's, not typed in here. `${modKey}Z` used to be written once in

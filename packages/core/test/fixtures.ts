@@ -1,8 +1,9 @@
 import {
   createEmptyScene,
   createPrefabDoc,
-  emptyComponentTables,
+  fixedId,
   setComponentsOf,
+  type EntityId,
   type EntityTemplate,
   type PrefabDoc,
   type SceneDoc,
@@ -32,8 +33,8 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
     ...createEmptyScene(),
     // Fixed rather than generated: a test that prints a scene should print the
     // same thing twice.
-    id: 'scene',
-    entities: Object.fromEntries(entities.map((entity) => [entity.id, entity])),
+    id: fixedId('scene', 'scene'),
+    entities: new Map(entities.map((entity) => [entity.id, entity])),
     rootOrder: entities.filter((entity) => entity.parent === null).map((entity) => entity.id),
   };
   // The components go with them: they are stored beside the entity table now,
@@ -47,27 +48,24 @@ export function sceneWith(templates: readonly EntityTemplate[]): SceneDoc {
 /**
  * A prefab holding exactly these entities, components included.
  *
- * `createPrefabDoc` takes the component tables ready-made, because in
- * production they are lifted from a scene that already has them. A test builds
- * its entities from the factories, so it needs the same assembly `sceneWith`
- * does.
+ * `createPrefabDoc` takes what the entities carry ready-made, because in
+ * production it is lifted from a scene that already has it. A test builds its
+ * entities from the factories, so it needs the same assembly `sceneWith` does.
  */
 export function prefabWith(
   name: string,
   templates: readonly EntityTemplate[],
-  root: string,
+  root: EntityId,
 ): PrefabDoc {
-  const components = emptyComponentTables();
-  const host = { components };
-  for (const template of templates) {
-    setComponentsOf(host, template.entity.id, template.components);
-  }
-  return createPrefabDoc(
+  const prefab = createPrefabDoc(
     name,
     templates.map((template) => template.entity),
-    components,
     root,
   );
+  for (const template of templates) {
+    setComponentsOf(prefab, template.entity.id, template.components);
+  }
+  return prefab;
 }
 
 /** Vector comparison that tolerates the last bits: matrix maths never lands exactly. */

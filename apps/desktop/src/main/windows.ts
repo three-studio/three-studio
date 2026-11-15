@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { BrowserWindow, app, dialog, screen, shell } from 'electron';
-import type { WindowRole } from '@three-studio/core';
+import type { SceneId, WindowRole } from '@three-studio/core';
 import { forgetWindow, isDirty } from './session';
 import {
   isSceneOpenElsewhere as sceneIsOpenElsewhere,
@@ -135,7 +135,7 @@ function smokeTest(): boolean {
 }
 
 /** See `windowPolicy`. Exported here because the IPC layer asks the windows. */
-export function isSceneOpenElsewhere(from: Electron.WebContents, sceneId: string): boolean {
+export function isSceneOpenElsewhere(from: Electron.WebContents, sceneId: SceneId): boolean {
   return sceneIsOpenElsewhere(editors, from.id, sceneId);
 }
 
@@ -158,7 +158,7 @@ export function editorWindows(): readonly BrowserWindow[] {
  * Traced only when the scene changes, so a window reopening on its own scene
  * adds nothing to the log, and one opened on the start scene says which.
  */
-export function noteScene(contents: Electron.WebContents, sceneId: string): void {
+export function noteScene(contents: Electron.WebContents, sceneId: SceneId): void {
   const entry = editorFor(contents);
   if (!entry || entry.sceneId === sceneId) return;
   trace(`editor now on ${sceneId}, was ${entry.sceneId ?? 'the start scene'}`);
@@ -169,7 +169,7 @@ interface WindowOptions {
   role: WindowRole;
   projectPath?: string;
   /** Id of the scene the window opens on; see `sceneQuery`. */
-  sceneId?: string;
+  sceneId?: SceneId | undefined;
   width: number;
   height: number;
   minWidth: number;
@@ -185,11 +185,11 @@ interface WindowOptions {
  * the scene is exactly the thing that changes. A query string survives a reload
  * and can be replaced without one.
  */
-function sceneQuery(sceneId: string | undefined): Record<string, string> {
+function sceneQuery(sceneId: SceneId | undefined): Record<string, string> {
   return sceneId === undefined ? {} : { scene: sceneId };
 }
 
-function loadShell(win: BrowserWindow, sceneId: string | undefined): void {
+function loadShell(win: BrowserWindow, sceneId: SceneId | undefined): void {
   const devServerUrl = process.env['ELECTRON_RENDERER_URL'];
   const query = new URLSearchParams(sceneQuery(sceneId)).toString();
 
@@ -223,15 +223,22 @@ function createWindow(options: WindowOptions): BrowserWindow {
       // Editor state is worthless if the GPU process throttles in the background
       // while a build or a bake is running.
       backgroundThrottling: false,
-      // Read by the preload before the first render; see `WindowRole`.
+      // Read by the preload before the first render; see `WindowRole`. The
+      // harness's switch too (`StudioBridge.smoke`): it is fixed for the life
+      // of the window, which is what argv may carry.
       additionalArguments: [
         `--studio-role=${options.role}`,
         ...(options.projectPath === undefined ? [] : [`--studio-project=${options.projectPath}`]),
+        ...(smokeTest() ? ['--studio-smoke'] : []),
       ],
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  // Under the harness a window comes up without taking the focus. A run opens
+  // dozens of them while the person goes on working: each would take the
+  // keyboard from what they are typing in, and a key landing in the editor runs
+  // its shortcut on the scene being measured.
+  win.once('ready-to-show', () => (smokeTest() ? win.showInactive() : win.show()));
 
   if (isDev) {
     // Renderer logs are invisible from the terminal otherwise, which makes
@@ -308,7 +315,7 @@ export function openLauncher(): BrowserWindow {
  * project is open, so take its windows down first; or there is a window to
  * build.
  */
-export function openEditor(projectPath: string, sceneId?: string): BrowserWindow | null {
+export function openEditor(projectPath: string, sceneId?: SceneId): BrowserWindow | null {
   const plan = planOpenEditor(editors, projectPath, sceneId);
   if (plan.do === 'focus') {
     plan.entry.win.focus();
@@ -328,7 +335,7 @@ export function openEditor(projectPath: string, sceneId?: string): BrowserWindow
  * What "Open in New Window" reaches. Focuses the window that has it rather than
  * building a second one onto the same file.
  */
-export function openSceneWindow(sceneId: string): BrowserWindow | null {
+export function openSceneWindow(sceneId: SceneId): BrowserWindow | null {
   const plan = planSceneWindow(editors, sceneId);
   if (plan.do === 'nothing') return null;
   if (plan.do === 'focus') {
@@ -341,7 +348,7 @@ export function openSceneWindow(sceneId: string): BrowserWindow | null {
 /** The smallest an editor window may be; see `placeBeside`, which keeps to it too. */
 const EDITOR_MINIMUM = { width: 1100, height: 680 };
 
-function createEditor(projectPath: string, sceneId?: string): BrowserWindow {
+function createEditor(projectPath: string, sceneId?: SceneId): BrowserWindow {
   const win = createWindow({
     role: 'editor',
     projectPath,
@@ -435,7 +442,7 @@ function closeAllEditors(): boolean {
  *   thing — the one that asked is the one that moves.
  * @returns `false` when the user cancelled at the unsaved-changes prompt.
  */
-export function switchScene(from: Electron.WebContents, sceneId: string): boolean {
+export function switchScene(from: Electron.WebContents, sceneId: SceneId): boolean {
   const plan = planSwitchScene(editors, from.id, sceneId);
   if (plan.do === 'nothing') return false;
   if (plan.do === 'focus') {

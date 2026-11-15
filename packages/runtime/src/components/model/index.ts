@@ -1,4 +1,4 @@
-import { registerSystem } from '../../systems/ComponentSystem';
+import { defineSystem } from '../../systems/ComponentSystem';
 import { ModelSystem } from './ModelSystem';
 
-registerSystem('model', () => new ModelSystem());
+export const modelSystem = defineSystem('model', () => new ModelSystem());

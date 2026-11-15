@@ -1,11 +1,14 @@
 import { createEmptyScene, createMeshEntity } from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { contextFor } from '../src/commands/registry';
+import { contextFor, currentContext } from '../src/commands/registry';
 import { addEntity } from '../src/commands/sceneCommands';
 import { commandEntry } from '../src/shell/commandEntry';
 import { shortcutHint } from '../src/shell/shortcutBindings';
 import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A menu row is a command seen from a menu: its label, its key, its verdict and
@@ -23,7 +26,7 @@ beforeEach(() => {
 
 describe('a row says what its command says', () => {
   it('follows undo from greyed to the gesture it would take back', () => {
-    const before = commandEntry('undo');
+    const before = commandEntry('undo', currentContext(registries));
     expect(before.label).toBe('Undo');
     expect(before.disabled).toBe(true);
     expect(before.shortcut).toBe(shortcutHint('undo'));
@@ -32,13 +35,13 @@ describe('a row says what its command says', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
 
-    const after = commandEntry('undo');
+    const after = commandEntry('undo', currentContext(registries));
     expect(after.label).toBe(`Undo Add ${cube.entity.name}`);
     expect(after.disabled).toBe(false);
   });
 
   it('gives a command bound to no key no hint', () => {
-    expect(commandEntry('newScene').shortcut).toBeUndefined();
+    expect(commandEntry('newScene', currentContext(registries)).shortcut).toBeUndefined();
   });
 });
 
@@ -49,14 +52,14 @@ describe('the context it is given is the one it acts on', () => {
     // context, the way a right-click outside the selection does.
     useEditorStore.getState().clearSelection();
 
-    const row = commandEntry('toggleVisibility', contextFor([id]));
+    const row = commandEntry('toggleVisibility', contextFor(registries, [id]));
     expect(row.label).toBe('Hide');
     expect(row.disabled).toBe(false);
 
     row.onSelect?.();
-    expect(doc().scene.entities[id]?.visible).toBe(false);
+    expect(doc().scene.entities.get(id)?.visible).toBe(false);
 
     // Without a context the row reads the selection, which is empty.
-    expect(commandEntry('toggleVisibility').disabled).toBe(true);
+    expect(commandEntry('toggleVisibility', currentContext(registries)).disabled).toBe(true);
   });
 });

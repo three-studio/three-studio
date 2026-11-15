@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { commandById, commandIds, currentContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { useEditorStore } from '../state/editorStore';
 import { useOverlay } from '../state/overlayStore';
 import { Floating } from '../ui/Floating';
@@ -8,17 +9,18 @@ import { shortcutHint } from './shortcutBindings';
 /**
  * Every gesture that can act right now, filtered by what has been typed.
  *
- * **This is a view over data, not a feature.** Milestone 8.4 says the palette
- * "falls out of the registry", and it does: the labels are `label(ctx)`, the
- * greying is `can(ctx)`, the keys down the right are the binding table's, and
- * the list is `commandIds()`. There is nothing here about *which* gestures exist
- * — adding one to any family puts it in this list with no change to this file,
- * which is the point of the whole batch.
+ * **This is a view over data, not a feature.** The palette falls out of the
+ * registry: the labels are `label(ctx)`, the greying is `can(ctx)`, the keys
+ * down the right are the binding table's, and the list is `commandIds()`. There
+ * is nothing here about *which* gestures exist — adding one to any family puts
+ * it in this list with no change to this file, which is the point of the
+ * registry.
  *
  * Drawn by `Floating`, scrim included, as `DialogFrame` is: it is a modal, and
  * owns the window while it is open.
  */
 export function CommandPalette() {
+  const registries = useRegistries();
   const open = useEditorStore((s) => s.paletteOpen);
   const close = useEditorStore((s) => s.closePalette);
   const [query, setQuery] = useState('');
@@ -38,7 +40,7 @@ export function CommandPalette() {
    */
   const entries = useMemo(() => {
     if (!open) return [];
-    const ctx = currentContext();
+    const ctx = currentContext(registries);
     return commandIds()
       .map((id) => ({ id, command: commandById(id) }))
       // `can()` decides, exactly as it does for a menu entry. A palette showing
@@ -52,7 +54,7 @@ export function CommandPalette() {
         hint: shortcutHint(id),
         run: () => command.run(ctx),
       }));
-  }, [open]);
+  }, [registries, open]);
 
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();

@@ -3,11 +3,16 @@ import {
   createPhysicsMaterial,
   defaultSettings,
   emptyAssetChange,
+  fixedId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAssetStore } from '../src/state/assetStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A delete is the one asset change this window makes without reading the
@@ -15,7 +20,11 @@ import { useAssetStore } from '../src/state/assetStore';
  * Play, a launch and the Inspector read them.
  */
 
-function asset(id: string, kind: AssetKind, path: string): AssetEntry {
+const RUBBER = fixedId('asset', 'pm-rubber');
+const ICE = fixedId('asset', 'pm-ice');
+const STONE = fixedId('asset', 'mat-stone');
+
+function asset(id: AssetId, kind: AssetKind, path: string): AssetEntry {
   return {
     id,
     name: path.slice(path.lastIndexOf('/') + 1, path.indexOf('.')),
@@ -26,7 +35,7 @@ function asset(id: string, kind: AssetKind, path: string): AssetEntry {
     modifiedAt: 1,
     importedAt: 1,
     hash: 'h',
-    settings: defaultSettings(kind, path),
+    settings: defaultSettings(registries, kind, path),
     importedPath: null,
   };
 }
@@ -38,24 +47,27 @@ afterEach(() => {
 
 describe('deleting an asset', () => {
   it('a deleted asset leaves the table it was read into, so nothing is built with it any more', async () => {
-    const rubber = asset('pm-rubber', 'physicsMaterial', 'assets/physics-materials/Rubber.physics-material.json');
-    const ice = asset('pm-ice', 'physicsMaterial', 'assets/physics-materials/Ice.physics-material.json');
-    const stone = asset('mat-stone', 'material', 'assets/materials/Stone.material.json');
+    const rubber = asset(RUBBER, 'physicsMaterial', 'assets/physics-materials/Rubber.physics-material.json');
+    const ice = asset(ICE, 'physicsMaterial', 'assets/physics-materials/Ice.physics-material.json');
+    const stone = asset(STONE, 'material', 'assets/materials/Stone.material.json');
     useAssetStore.setState({
       manifest: { version: 1, assets: [rubber, ice, stone], folders: ['materials', 'physics-materials'] },
-      materials: { 'mat-stone': createMaterial() },
-      physicsMaterials: { 'pm-rubber': createPhysicsMaterial(), 'pm-ice': createPhysicsMaterial() },
+      materials: new Map([[STONE, createMaterial()]]),
+      physicsMaterials: new Map([
+        [RUBBER, createPhysicsMaterial()],
+        [ICE, createPhysicsMaterial()],
+      ]),
     });
     vi.stubGlobal('window', {
       studio: { assets: { remove: async (path: string) => ({ ...emptyAssetChange(), removed: [path] }) } },
     });
 
     await useAssetStore.getState().remove(rubber.path);
-    expect(useAssetStore.getState().physicsMaterials).toEqual({ 'pm-ice': createPhysicsMaterial() });
-    expect(useAssetStore.getState().materials).toEqual({ 'mat-stone': createMaterial() });
+    expect(useAssetStore.getState().physicsMaterials).toEqual(new Map([[ICE, createPhysicsMaterial()]]));
+    expect(useAssetStore.getState().materials).toEqual(new Map([[STONE, createMaterial()]]));
 
     await useAssetStore.getState().remove(stone.path);
-    expect(useAssetStore.getState().materials).toEqual({});
-    expect(useAssetStore.getState().manifest.assets.map((entry) => entry.id)).toEqual(['pm-ice']);
+    expect(useAssetStore.getState().materials).toEqual(new Map());
+    expect(useAssetStore.getState().manifest.assets.map((entry) => entry.id)).toEqual([ICE]);
   });
 });

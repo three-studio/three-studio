@@ -95,13 +95,13 @@ export const SCENE_FILE_COMMANDS = {
     // one. `sceneId` is not the question here: a project whose scene failed to
     // load can still take a new one.
     can: () => project().summary !== null,
-    run: () => newScene(),
+    run: (ctx) => newScene(ctx.registries),
   }),
 
   saveSceneAs: defineCommand({
     label: () => 'Save Scene As…',
     can: () => project().summary !== null,
-    run: () => saveSceneAs(),
+    run: (ctx) => saveSceneAs(ctx.registries),
   }),
 
   /** The document, put back the way its file has it — after asking. */
@@ -110,19 +110,19 @@ export const SCENE_FILE_COMMANDS = {
     // `sceneUnsaved`, not `windowUnsaved`: an edited prefab is saved on the way
     // out, not reverted, so an untouched scene behind it has nothing to go back to.
     can: () => hasScene() && sceneUnsaved(),
-    run: () => revertCurrentScene(),
+    run: (ctx) => revertCurrentScene(ctx.registries),
   }),
 
   duplicateScene: defineCommand({
     label: () => 'Duplicate Scene…',
     can: hasScene,
-    run: () => duplicateCurrentScene(),
+    run: (ctx) => duplicateCurrentScene(ctx.registries),
   }),
 
   renameScene: defineCommand({
     label: () => 'Rename Scene…',
     can: hasScene,
-    run: () => renameCurrentSceneWithPrompt(),
+    run: (ctx) => renameCurrentSceneWithPrompt(ctx.registries),
   }),
 
   /**
@@ -135,7 +135,7 @@ export const SCENE_FILE_COMMANDS = {
   openScene: defineCommand({
     label: (ctx) => target(ctx)?.name ?? 'Open Scene',
     can: openable,
-    run: (ctx) => (ctx.sceneId === undefined ? undefined : openScene(ctx.sceneId)),
+    run: (ctx) => (ctx.sceneId === undefined ? undefined : openScene(ctx.registries, ctx.sceneId)),
   }),
 
   /** The same scene in a second window; focuses the one that already has it. */
@@ -189,7 +189,7 @@ export const SCENE_FILE_COMMANDS = {
   sceneSettings: defineCommand({
     label: () => 'Scene Settings…',
     can: hasScene,
-    run: () => showSceneSettings(),
+    run: (ctx) => showSceneSettings(ctx.registries),
   }),
 
   /**
@@ -210,6 +210,6 @@ export const SCENE_FILE_COMMANDS = {
      * early enough to grey the entry instead of raising a toast after the click.
      */
     can: () => hasScene() && project().scenes.length > 1,
-    run: () => deleteCurrentScene(),
+    run: (ctx) => deleteCurrentScene(ctx.registries),
   }),
 };

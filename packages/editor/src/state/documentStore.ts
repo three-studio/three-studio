@@ -1,5 +1,11 @@
-import { createEmptyScene, splitInstancedId, validateHierarchy, type SceneDoc } from '@three-studio/core';
-import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
+import {
+  createEmptyScene,
+  splitInstancedId,
+  validateHierarchy,
+  type EntityId,
+  type SceneDoc,
+} from '@three-studio/core';
+import { applyPatches, enableMapSet, enablePatches, produceWithPatches, type Patch } from 'immer';
 import { create } from 'zustand';
 import { useEditorStore } from './editorStore';
 import { pushEdit, type ExternalEdit, type HistoryEntry, type HistoryStash } from './history';
@@ -38,7 +44,7 @@ export interface MutationOptions {
    * Setting the selection *after* `mutate` was the defect: the change was not in
    * the entry, so undo could not take it back.
    */
-  select?: readonly string[] | ((scene: SceneDoc) => readonly string[]);
+  select?: readonly EntityId[] | ((scene: SceneDoc) => readonly EntityId[]);
 }
 
 /**
@@ -51,15 +57,21 @@ export interface MutationOptions {
  * `local` half no longer resolves — coarser, but wrong in the harmless
  * direction, where the alternative clears a selection the user can see.
  */
-export function pruneSelection(scene: SceneDoc, selection: readonly string[]): readonly string[] {
+export function pruneSelection(
+  scene: SceneDoc,
+  selection: readonly EntityId[],
+): readonly EntityId[] {
   const kept = selection.filter((id) => {
     const parts = splitInstancedId(id);
-    return scene.entities[parts === null ? id : parts.owner] !== undefined;
+    return scene.entities.has(parts === null ? id : parts.owner);
   });
   // Same array when nothing went, so subscribers do not see a change.
   return kept.length === selection.length ? selection : kept;
 }
 
+// The document keeps its entities in Maps, which immer drafts, patches and
+// freezes only with this plugin: without it the first edit throws.
+enableMapSet();
 enablePatches();
 
 /**
@@ -98,7 +110,7 @@ function touchesHierarchy(patches: readonly Patch[]): boolean {
  * Development only, and only for a patch set that touched the tree. Both halves
  * were measured rather than assumed: validating every mutation cost 0.8ms of a
  * 13ms frame at 2000 entities, on a drag that cannot break an edge in the first
- * place — see the phase 1 entry in `docs/refonte-scene/JOURNAL.md`.
+ * place.
  */
 function assertHierarchy(scene: SceneDoc, patches: readonly Patch[], label: string): void {
   if (!import.meta.env.DEV || !touchesHierarchy(patches)) return;

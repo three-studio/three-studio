@@ -12,6 +12,9 @@ import {
   type ProjectSettings,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What the renderer sends, before it reaches the disk.
@@ -172,7 +175,7 @@ describe('a material', () => {
 
 describe("an asset's import settings", () => {
   it('is filled from the importer that claims the file', () => {
-    const kept = conformAssetSettings({ kind: 'texture', anisotropy: 'lots' }, 'texture', 'a.png');
+    const kept = conformAssetSettings(registries, { kind: 'texture', anisotropy: 'lots' }, 'texture', 'a.png');
     expect(kept.kind).toBe('texture');
     expect((kept as { anisotropy: number }).anisotropy).toBe(1);
   });
@@ -180,7 +183,7 @@ describe("an asset's import settings", () => {
   it('cannot be made to look like another kind', () => {
     // The kind is the sidecar's, and the payload does not get a vote: a `.png`
     // whose settings said `model` would be built as a mesh on the next load.
-    const kept = conformAssetSettings({ kind: 'model', scale: 1000 }, 'texture', 'a.png');
+    const kept = conformAssetSettings(registries, { kind: 'model', scale: 1000 }, 'texture', 'a.png');
     expect(kept.kind).toBe('texture');
   });
 });

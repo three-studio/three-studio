@@ -21,6 +21,7 @@ import { useScriptStore } from '../state/scriptStore';
 import { audioPreview } from '../audio/preview';
 import { PanelToolbar } from './PanelShell';
 import { browseAndImport, openImportDialog } from '../import/importStore';
+import { useRegistries } from '../registriesContext';
 import { AssetList } from './project/AssetList';
 import { Breadcrumbs } from './project/Breadcrumbs';
 import { KIND_FILTERS, SORT_LABELS } from './project/kinds';
@@ -42,6 +43,7 @@ const VIEW_LABELS = { grid: 'Grid view', list: 'List view' } as const;
  * wake-up and reads as what it is.
  */
 export function ProjectPanel() {
+  const registries = useRegistries();
   const manifest = useAssetStore((s) => s.manifest);
   const query = useAssetStore((s) => s.query);
   const kindFilter = useAssetStore((s) => s.kindFilter);
@@ -66,8 +68,8 @@ export function ProjectPanel() {
   const [previewVolume, setPreviewVolume] = useState(() => audioPreview.volume);
 
   useEffect(() => {
-    void useAssetStore.getState().refresh();
-  }, []);
+    void useAssetStore.getState().refresh(registries);
+  }, [registries]);
 
   const assets = useMemo(
     () => filterAndSortAssets({ manifest, query, kindFilter, folder, sortKey, sortAscending }),
@@ -140,7 +142,7 @@ export function ProjectPanel() {
               if (!name) return;
               void window.studio.scripts
                 .create(name)
-                .then(() => useAssetStore.getState().refresh())
+                .then(() => useAssetStore.getState().refresh(registries))
                 .then(() => useScriptStore.getState().build())
                 .catch((cause: unknown) => {
                   console.error('[scripts] could not create the script:', cause);
@@ -167,7 +169,7 @@ export function ProjectPanel() {
               .then(async (name) => {
                 if (!name) return;
                 const store = useAssetStore.getState();
-                store.reveal(await store.createPhysicsMaterial(name, createPhysicsMaterial()));
+                store.reveal(await store.createPhysicsMaterial(registries, name, createPhysicsMaterial()));
               })
               .catch((cause: unknown) => {
                 console.error('[assets] could not create the physics material:', cause);

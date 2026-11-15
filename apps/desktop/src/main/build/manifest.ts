@@ -1,14 +1,18 @@
 import {
   BUILD_FORMAT_VERSION,
+  prefabJsonOf,
   type AssetEntry,
+  type AssetId,
   type AssetSettings,
   type BuildManifest,
   type BuildScene,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type PrefabDoc,
   type RenderingSettings,
+  type SceneId,
   type TextureEncoding,
 } from '@three-studio/core';
 
@@ -31,11 +35,11 @@ export interface ManifestContents {
   physics: PhysicsSettings;
   /** Entry point first; the rest ship for a script to load later. */
   scenes: readonly BuildScene[];
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   assets: readonly ShippedAsset[];
-  materials: Record<string, MaterialDef>;
-  physicsMaterials: Record<string, PhysicsMaterialDef>;
-  prefabs: Record<string, PrefabDoc>;
+  materials: ReadonlyMap<AssetId, MaterialDef>;
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
   /** The bundle's path relative to `build.json`, or `null` when there are no scripts. */
   scripts: string | null;
 }
@@ -60,7 +64,7 @@ export interface ManifestContents {
  * that had not changed. The scenes keep the caller's order, which means
  * something: the first is where the game starts.
  */
-export function assembleManifest(contents: ManifestContents): BuildManifest {
+export function assembleManifest(registries: CoreRegistries, contents: ManifestContents): BuildManifest {
   const assets: Record<string, string> = {};
   /**
    * Only the images whose file name does not already say what they are.
@@ -101,7 +105,8 @@ export function assembleManifest(contents: ManifestContents): BuildManifest {
     assets,
     materials: sortedRecord(contents.materials),
     physicsMaterials: sortedRecord(contents.physicsMaterials),
-    prefabs: sortedRecord(contents.prefabs),
+    // Each as its JSON, never the document as it stands: see `prefabJsonOf`.
+    prefabs: sortedRecord(new Map([...contents.prefabs].map(([id, prefab]) => [id, prefabJsonOf(registries, prefab)]))),
     textureEncodings,
     assetSettings,
     scripts: contents.scripts,
@@ -114,11 +119,11 @@ function byKey(a: string, b: string): number {
 }
 
 /**
- * A record with its keys in code-unit order.
+ * A library as the record a manifest holds, with its keys in code-unit order.
  *
  * Through `Object.fromEntries`, which defines each key as its own: a material
  * whose id were `__proto__` would otherwise be taken as the object's prototype.
  */
-function sortedRecord<T>(record: Readonly<Record<string, T>>): Record<string, T> {
-  return Object.fromEntries(Object.entries(record).sort(([a], [b]) => byKey(a, b)));
+function sortedRecord<T>(library: ReadonlyMap<AssetId, T>): Record<string, T> {
+  return Object.fromEntries([...library].sort(([a], [b]) => byKey(a, b)));
 }

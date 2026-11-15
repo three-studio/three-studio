@@ -1,5 +1,5 @@
-import { SCENES_DIR, findScene, type SceneEntry } from '@three-studio/core';
-import { contextForScene } from '../commands/registry';
+import { SCENES_DIR, findScene, type SceneEntry, type SceneId } from '@three-studio/core';
+import { contextForScene, type EditorContext } from '../commands/registry';
 import { isStartScene } from '../commands/sceneFiles';
 import type { MenuEntry, MenuItem } from '../ui/Menu';
 import { commandEntry } from './commandEntry';
@@ -24,9 +24,11 @@ export interface SceneMenuInput {
   /** The project's scenes, in path order — `useProjectStore.scenes`. */
   scenes: readonly SceneEntry[];
   /** The window's scene — `useProjectStore.sceneId`. */
-  sceneId: string | null;
+  sceneId: SceneId | null;
   /** The scene a build starts on — `project.startScene`, or `null` with no project open. */
-  startScene: string | null;
+  startScene: SceneId | null;
+  /** What the rows' commands are asked and run against: the selection as the bar read it. */
+  context: EditorContext;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface SceneMenuInput {
  * need the rule (never first, never last, never doubled) enforced in code.
  */
 export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
-  const { scenes, sceneId, startScene } = input;
+  const { scenes, sceneId, startScene, context } = input;
   // The file that wins the window's id, which is the one the title names. A
   // shadowed file carrying the same id is not checked: the id never opens it.
   const current = sceneId === null ? undefined : findScene(scenes, sceneId);
@@ -53,7 +55,7 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
   const elsewhere = sceneRows(input, 'openSceneInNewWindow').filter((row) => !row.disabled);
 
   return [
-    commandEntry('newScene'),
+    commandEntry('newScene', context),
     {
       label: 'Open Scene',
       // One row per file, the window's checked and still offered. A submenu
@@ -70,37 +72,37 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
     // window's.
     ...(elsewhere.length > 0 ? [{ label: 'Open in New Window', submenu: elsewhere }] : []),
     null,
-    commandEntry('save'),
+    commandEntry('save', context),
     // Not `${modKey}${shiftKey}S`: that is Save All in every editor that has
     // both, and this project has no Save All to be confused with yet.
-    commandEntry('saveSceneAs'),
+    commandEntry('saveSceneAs', context),
     // Greyed while the scene has no unsaved work: there is nothing to drop.
-    commandEntry('revertScene'),
+    commandEntry('revertScene', context),
     null,
     // Three entries that used to write their own guards in the menu, or none at
     // all: Duplicate and Rename had no `disabled` while both gestures open with
     // `if (sceneId === null) return`, and Delete carried the last-scene rule in
     // the menu rather than in the gesture. Each one is now the command's own
     // label and the command's own verdict.
-    commandEntry('duplicateScene'),
-    commandEntry('renameScene'),
-    commandEntry('deleteScene'),
+    commandEntry('duplicateScene', context),
+    commandEntry('renameScene', context),
+    commandEntry('deleteScene', context),
     null,
     // Aimed at the window's scene, the one the title names, and checked while
     // it is the start one — greyed then too, by the command: there is nothing
     // to set. Another scene becomes the start one by opening it, or from
     // Project Settings, which lists them all.
     {
-      ...commandEntry('setStartScene'),
+      ...commandEntry('setStartScene', context),
       checked: current !== undefined && isStartScene(current, startScene),
     },
     // Its name, background, environment, sky and fog: the Inspector's pane with
     // nothing selected, which nothing else in the bar leads to.
-    commandEntry('sceneSettings'),
+    commandEntry('sceneSettings', context),
     // The file this window saves to, in the file manager, in the platform's
     // words. Last, because it is the one entry that takes the person out of the
     // editor.
-    commandEntry('revealScene'),
+    commandEntry('revealScene', context),
   ];
 }
 
@@ -112,7 +114,7 @@ export function buildSceneMenu(input: SceneMenuInput): MenuEntry[] {
  * name, and two can share an id — while the gesture still aims at the id.
  */
 function sceneRows(
-  { scenes, startScene }: SceneMenuInput,
+  { scenes, startScene, context }: SceneMenuInput,
   command: 'openScene' | 'openSceneInNewWindow',
 ): MenuItem[] {
   const homonyms = repeatedNames(scenes);
@@ -129,7 +131,7 @@ function sceneRows(
        */
       return { key: entry.path, label: entry.name, detail, disabled: true };
     }
-    return { ...commandEntry(command, contextForScene(entry.id)), key: entry.path, detail };
+    return { ...commandEntry(command, contextForScene(context.registries, entry.id)), key: entry.path, detail };
   });
 }
 
@@ -153,7 +155,7 @@ function repeatedNames(scenes: readonly SceneEntry[]): Set<string> {
  * Then the state: `start` or `duplicate id`, never both, since a shadowed file
  * is never the start scene. So a row says two things at most: `old · start`.
  */
-function rowDetail(entry: SceneEntry, homonym: boolean, startScene: string | null): string | undefined {
+function rowDetail(entry: SceneEntry, homonym: boolean, startScene: SceneId | null): string | undefined {
   const said = [
     homonym ? entry.path.slice(`${SCENES_DIR}/`.length, entry.path.lastIndexOf('/')) : '',
     isStartScene(entry, startScene) ? 'start' : '',

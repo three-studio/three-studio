@@ -13,7 +13,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Numbers that can be written and read back. `NaN` serialises as `null`. */
-function isUsableNumber(value: unknown): value is number {
+export function isUsableNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
@@ -46,13 +46,12 @@ function fits(value: unknown, model: unknown): boolean {
  *
  * Each field of the model is taken from `value` when it is there and fits, and
  * from the model when it is not. A field the model does not name is **dropped**,
- * and that is the one place this parts company with `fillComponent`, which
- * keeps what it does not recognise. The difference is who wrote the data: a
- * scene on disk was written by some version of this editor and its unknown
- * fields are somebody's work, while this arrives from a renderer that shipped
- * in the same binary as the model. There is nothing here that a newer version
- * wrote and this one should preserve. Physics components are read through it
- * too, and drop what they do not know, for the reason their own fills give.
+ * where a scene refuses a component holding one, and keeps a type it does not
+ * know as found. The difference is who wrote the data: a scene on disk was
+ * written by some version of this editor and what it holds is somebody's work,
+ * while this arrives from a renderer that shipped in the same binary as the
+ * model. There is nothing here that a newer version wrote and this one should
+ * preserve.
  *
  * Nested objects recurse; anything else is taken or replaced whole.
  */

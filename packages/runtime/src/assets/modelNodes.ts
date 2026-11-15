@@ -41,8 +41,8 @@ export interface ModelNodeDesc {
    *
    * Itself, not its subtree: a node that draws *and* has children becomes an
    * entity that draws and has child entities, and each of those draws its own
-   * node. `ModelCache.loadNode` clones without descendants for exactly this
-   * reason — cloning the subtree would draw every child twice.
+   * node. `AssetCache.holdModel` clones a node without its descendants for
+   * exactly this reason — cloning the subtree would draw every child twice.
    */
   draws: boolean;
 }

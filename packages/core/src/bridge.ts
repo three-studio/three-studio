@@ -11,8 +11,9 @@ import type {
   DeviceScreenshot,
   DeviceServerStatus,
   DeviceSettingsPatch,
-  LaunchSnapshot,
+  LaunchSnapshotJson,
 } from './devices/schema';
+import type { AssetId, SceneId } from './ids';
 import type { LayoutPreferences, ShortcutPreferences } from './preferences/schema';
 import type {
   OpenProject,
@@ -23,7 +24,6 @@ import type {
   SceneEntry,
 } from './project/schema';
 import type { PhysicsMaterialDef } from './scene/physicsMaterial';
-import type { PrefabDoc } from './scene/prefab';
 import type { MaterialDef } from './scene/schema';
 
 /**
@@ -82,21 +82,21 @@ export interface ProjectApi {
   pickDirectory: () => Promise<string | null>;
   create: (input: { name: string; directory: string }) => Promise<OpenProject>;
   /** @param sceneId A scene of the project, instead of its start scene. */
-  open: (projectPath: string, sceneId?: string | null) => Promise<OpenProject>;
+  open: (projectPath: string, sceneId?: SceneId | null) => Promise<OpenProject>;
   /**
    * Reloads this window on another scene, unsaved-changes prompt included.
    *
    * Resolves `false` when the user cancelled at that prompt. A reload rather
    * than a swap in place: see `switchScene` in `windows.ts`.
    */
-  switchScene: (sceneId: string) => Promise<boolean>;
+  switchScene: (sceneId: SceneId) => Promise<boolean>;
   /**
    * Opens a scene of this project in a window of its own.
    *
    * Focuses the window that already has it rather than showing one scene
    * twice: two documents over one file means whichever saves last wins.
    */
-  openSceneWindow: (sceneId: string) => Promise<void>;
+  openSceneWindow: (sceneId: SceneId) => Promise<void>;
   /** Native file picker scoped to project files, then opens it. */
   browseAndOpen: () => Promise<OpenProject | null>;
   saveScene: (input: {
@@ -131,7 +131,7 @@ export interface ProjectApi {
    */
   createScene: (name: string, contents?: string) => Promise<SceneChange>;
   /** Copies a scene under a new name, with its own document id. */
-  duplicateScene: (sceneId: string, name: string) => Promise<SceneChange>;
+  duplicateScene: (sceneId: SceneId, name: string) => Promise<SceneChange>;
   /**
    * Renames a scene, which moves its file: the file name is the name.
    *
@@ -139,10 +139,10 @@ export interface ProjectApi {
    * the scene has to take the new path out of the result, or its next save
    * would write the file back under the name it had.
    */
-  renameScene: (sceneId: string, name: string) => Promise<SceneChange>;
+  renameScene: (sceneId: SceneId, name: string) => Promise<SceneChange>;
   /** Refused for the last scene: a project without one cannot be opened. */
-  deleteScene: (sceneId: string) => Promise<ProjectContents>;
-  setStartScene: (sceneId: string) => Promise<ProjectContents>;
+  deleteScene: (sceneId: SceneId) => Promise<ProjectContents>;
+  setStartScene: (sceneId: SceneId) => Promise<ProjectContents>;
   /** Drops a project from the recents list without touching the files. */
   forget: (projectPath: string) => Promise<void>;
   /** Clears the main process's notion of the open project. */
@@ -288,24 +288,36 @@ export interface AssetApi {
    *
    * Read in one go rather than per reference: the binder builds a mesh
    * synchronously, so a material it has to await would render untextured for a
-   * frame. They are a few hundred bytes each.
+   * frame. They are a few hundred bytes each. A record, as a message is; the
+   * window reads it into a Map with `idMapOf`.
    */
   readMaterials: () => Promise<Record<string, MaterialDef>>;
   /** Writes a new material asset and returns its id. */
-  createMaterial: (name: string, material: MaterialDef) => Promise<string>;
-  /** Every prefab in the project, by asset id. Read in one go, like materials. */
-  readPrefabs: () => Promise<Record<string, PrefabDoc>>;
-  /** Writes a new prefab asset and returns its id. */
-  createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
+  createMaterial: (name: string, material: MaterialDef) => Promise<AssetId>;
+  /**
+   * Every prefab in the project, by asset id, each as the JSON of its document.
+   * Read in one go, like materials. Text because a document holds Maps, which
+   * Electron does not promise its bridge carries: the window reads each with
+   * `decodePrefab`, under its key.
+   */
+  readPrefabs: () => Promise<Record<string, string>>;
+  /**
+   * Writes a new prefab asset from its document's JSON under `assetId`, and
+   * returns it: the id the document was made with, or — for the redo of an
+   * undone creation — the one the entity already names. A prefab's JSON holds
+   * no id of its own.
+   */
+  createPrefab: (name: string, prefabJson: string, assetId: AssetId) => Promise<AssetId>;
   /** Overwrites an existing material asset, by project-relative path. */
   saveMaterial: (assetPath: string, material: MaterialDef) => Promise<void>;
   /** Every physics material in the project, by asset id. Read in one go, like materials. */
   readPhysicsMaterials: () => Promise<Record<string, PhysicsMaterialDef>>;
   /** Writes a new physics material asset and returns its id. */
-  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<AssetId>;
   /** Overwrites an existing physics material asset, by project-relative path. */
   savePhysicsMaterial: (assetPath: string, material: PhysicsMaterialDef) => Promise<void>;
-  savePrefab: (assetPath: string, prefab: PrefabDoc) => Promise<void>;
+  /** Overwrites an existing prefab asset, by project-relative path, with its document's JSON, read under its asset id. */
+  savePrefab: (assetPath: string, prefabJson: string, assetId: AssetId) => Promise<void>;
   /**
    * Opens the containing folder in the OS file browser, the file selected.
    *
@@ -329,13 +341,6 @@ export interface ScriptBuildResult {
   errors: string[];
   warnings: string[];
   scriptCount: number;
-  /**
-   * No script source changed since the main process last compiled — for
-   * whoever asked: any window, an export, a device launch. It says nothing of
-   * what one window has imported, so the editor compares `code` with the
-   * bundle it imported instead.
-   */
-  unchanged?: boolean;
 }
 
 export interface ScriptApi {
@@ -380,7 +385,7 @@ export interface DevicesApi {
    * prepared. That is how a window knows whether the devices run its launch,
    * which a status of the moment cannot say.
    */
-  launch: (snapshot: LaunchSnapshot) => Promise<DeviceServerStatus | null>;
+  launch: (snapshot: LaunchSnapshotJson) => Promise<DeviceServerStatus | null>;
   /**
    * Writes what the renderer may change — the port, the address a link is made
    * of, the transport, live reload — and moves a running server onto a new
@@ -440,12 +445,21 @@ export interface StudioBridge {
    * editor window that changes. An id rather than a path so that
    * renaming a scene cannot invalidate an open window.
    */
-  readonly sceneId: string | null;
+  readonly sceneId: SceneId | null;
   readonly versions: {
     readonly electron: string;
     readonly chrome: string;
     readonly node: string;
   };
+  /**
+   * The smoke harness drives this window.
+   *
+   * The editor then exposes its stores, its viewport and its dock on `window`
+   * in a production build too, which is the only way to measure a production
+   * build: without them neither draw calls, GPU memory nor Play can be read.
+   * Fixed for the window's life, so it travels in argv like the role.
+   */
+  readonly smoke: boolean;
   readonly project: ProjectApi;
   readonly assets: AssetApi;
   readonly scripts: ScriptApi;
@@ -483,7 +497,7 @@ type Invocable<T> = {
 };
 
 /**
- * The bridge's namespaces: everything on it that is not one of the five values.
+ * The bridge's namespaces: everything on it that is not one of the six values.
  *
  * Named as an exclusion rather than as a shape, and that is not a taste. An
  * `interface` has no implicit index signature, so `ProjectApi extends
@@ -498,7 +512,7 @@ type Invocable<T> = {
  */
 type ApiGroups = Omit<
   StudioBridge,
-  'platform' | 'windowRole' | 'projectPath' | 'sceneId' | 'versions'
+  'platform' | 'windowRole' | 'projectPath' | 'sceneId' | 'versions' | 'smoke'
 >;
 
 /** One channel name per invocable member, and the compiler counts them. */

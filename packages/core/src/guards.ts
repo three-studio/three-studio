@@ -1,9 +1,4 @@
-import {
-  MATERIAL_SIDE_LABELS,
-  TEXTURE_WRAP_LABELS,
-  createMaterial,
-  type MaterialDef,
-} from './scene/material';
+import { createMaterial, materialFields, type MaterialDef } from './scene/material';
 import {
   emptyLayoutPreferences,
   emptyShortcutPreferences,
@@ -18,7 +13,8 @@ import {
 } from './project/schema';
 import { defaultSettings } from './assets/import';
 import type { AssetKind, AssetSettings } from './assets/schema';
-import { conform, conformPatch, isRecord, oneOf } from './conform';
+import { conform, conformPatch, isRecord } from './conform';
+import type { CoreRegistries } from './registries';
 
 /*
  * What the renderer sends, made safe before it reaches the disk.
@@ -29,9 +25,9 @@ import { conform, conformPatch, isRecord, oneOf } from './conform';
  * until now it was spread straight into `project.json`. The same held for asset
  * sidecars, material files and layout preferences.
  *
- * The rule is the repo's own, from `docs/ARCHITECTURE.md`: **defend at the
- * boundary, not at every read site.** One check where the value arrives, so
- * that everything downstream can go on assuming the shape it is declared with.
+ * The rule is the repo's own: **defend at the boundary, not at every read
+ * site.** One check where the value arrives, so that everything downstream can
+ * go on assuming the shape it is declared with.
  *
  * By hand and in `core`, because `core` may not take a dependency — the
  * architecture test says so — and because a schema library would be a second
@@ -108,8 +104,9 @@ export function conformMaterial(value: unknown): MaterialDef {
   const given = (typeof value === 'object' && value !== null ? value : {}) as Partial<MaterialDef>;
   return {
     ...kept,
-    side: oneOf(given.side, MATERIAL_SIDE_LABELS, model.side),
-    wrap: oneOf(given.wrap, TEXTURE_WRAP_LABELS, model.wrap),
+    // One of the field's own options, read off the schema the decoder reads.
+    side: materialFields.side.options.find((option) => option.value === given.side)?.value ?? model.side,
+    wrap: materialFields.wrap.options.find((option) => option.value === given.wrap)?.value ?? model.wrap,
   };
 }
 
@@ -121,11 +118,12 @@ export function conformMaterial(value: unknown): MaterialDef {
  * is defended here the day it exists, without this being told.
  */
 export function conformAssetSettings(
+  registries: CoreRegistries,
   value: unknown,
   kind: AssetKind,
   fileName: string,
 ): AssetSettings {
-  const model = defaultSettings(kind, fileName);
+  const model = defaultSettings(registries, kind, fileName);
   // The discriminant is the caller's, never the payload's, and `conform` alone
   // would let it through: `'model'` is a string exactly as `'texture'` is. A
   // `.png` whose sidecar said `model` would be built as a mesh on the next

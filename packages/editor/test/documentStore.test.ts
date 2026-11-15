@@ -1,21 +1,33 @@
 import {
+  assertDefined,
+  cameraType,
   componentsOf,
   createAudioSourceEntity,
+  colliderType,
   createColliderShape,
-  createComponent,
   createEmptyScene,
   createEntity,
+  createLight,
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
-  createJoint,
+  jointType,
   createRenderingSettings,
+  rigidbodyType,
+  scriptType,
   findComponent,
+  fixedId,
   instancedId,
+  putComponent,
+  serializeScene,
+  waterType,
   type AudioSourceComponent,
   type ColliderComponent,
+  type ComponentId,
+  type EntityId,
   type EntityTemplate,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -25,7 +37,6 @@ import {
   addEntity,
   duplicateSelection,
   deleteSelection,
-  fitColliderToMesh,
   removeComponent,
   renameEntity,
   reparentEntity,
@@ -33,20 +44,27 @@ import {
   setTransform,
 } from '../src/commands/sceneCommands';
 import { unpackPrefabInstance } from '../src/commands/prefabCommands';
+import { fitColliderToMesh } from '../src/components/collider/fit';
 import { useAssetStore } from '../src/state/assetStore';
 import { pruneSelection, selectDirty, useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
 
 const doc = () => useDocumentStore.getState();
 const scene = () => useDocumentStore.getState().scene;
 const dirty = () => selectDirty(useDocumentStore.getState());
 const selection = () => useEditorStore.getState().selection;
+const CLIP = fixedId('asset', 'clip');
+const LID = fixedId('entity', 'lid');
+const GONE = fixedId('entity', 'gone');
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
@@ -72,15 +90,15 @@ describe('what the document refuses to take', () => {
     // so the disposed slider took one more reading from an element no longer in
     // the layout — width zero — and mapped the pointer with a division of zero
     // by zero.
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(CLIP);
     const component = template.components[0] as AudioSourceComponent;
     const entityId = addEntity(template);
 
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], 0);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], 0);
     expect(read(entityId, component.id).spatialBlend).toBe(0);
 
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], Number.NaN);
-    setComponentNestedField(entityId, component.id, ['spatialBlend'], Number.POSITIVE_INFINITY);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], Number.NaN);
+    setComponentNestedField(registries, entityId, component.id, ['spatialBlend'], Number.POSITIVE_INFINITY);
 
     expect(read(entityId, component.id).spatialBlend).toBe(0);
   });
@@ -88,19 +106,19 @@ describe('what the document refuses to take', () => {
   it('leaves every ordinary number alone, including zero and the negatives', () => {
     // The guard must be about *finiteness* and nothing else. A refusal that also
     // caught 0 would make half the fields in the inspector unusable.
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(CLIP);
     const component = template.components[0] as AudioSourceComponent;
     const entityId = addEntity(template);
 
     for (const value of [0, -1200, 0.001, 1]) {
-      setComponentNestedField(entityId, component.id, ['detune'], value);
+      setComponentNestedField(registries, entityId, component.id, ['detune'], value);
       expect(read(entityId, component.id).detune).toBe(value);
     }
   });
 });
 
-function read(entityId: string, componentId: string): AudioSourceComponent {
-  const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+function read(entityId: EntityId, componentId: string): AudioSourceComponent {
+  const found = componentsOf(registries, scene(), entityId).find((c) => c.id === componentId);
   if (found?.type !== 'audioSource') throw new Error('no audio source');
   return found;
 }
@@ -109,15 +127,15 @@ describe('document store', () => {
   it('adds an entity and undoes it', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
-    expect(scene().entities[cube.entity.id]?.name).toBe('Cube');
+    expect(scene().entities.get(cube.entity.id)?.name).toBe('Cube');
     expect(scene().rootOrder).toContain(cube.entity.id);
 
     doc().undo();
-    expect(scene().entities[cube.entity.id]).toBeUndefined();
+    expect(scene().entities.get(cube.entity.id)).toBeUndefined();
     expect(scene().rootOrder).not.toContain(cube.entity.id);
 
     doc().redo();
-    expect(scene().entities[cube.entity.id]?.name).toBe('Cube');
+    expect(scene().entities.get(cube.entity.id)?.name).toBe('Cube');
   });
 
   it('records a label per history entry', () => {
@@ -133,16 +151,16 @@ describe('document store', () => {
     addEntity(parent);
     addEntity(child, parent.entity.id);
 
-    expect(scene().entities[parent.entity.id]?.children).toEqual([child.entity.id]);
+    expect(scene().entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
 
     deleteSelection(sel([parent.entity.id]));
-    expect(scene().entities[parent.entity.id]).toBeUndefined();
+    expect(scene().entities.get(parent.entity.id)).toBeUndefined();
     // A deleted parent must take its descendants with it, not orphan them.
-    expect(scene().entities[child.entity.id]).toBeUndefined();
+    expect(scene().entities.get(child.entity.id)).toBeUndefined();
 
     doc().undo();
-    expect(scene().entities[child.entity.id]?.parent).toBe(parent.entity.id);
-    expect(scene().entities[parent.entity.id]?.children).toEqual([child.entity.id]);
+    expect(scene().entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
+    expect(scene().entities.get(parent.entity.id)?.children).toEqual([child.entity.id]);
   });
 
   it('reparents and unparents', () => {
@@ -152,11 +170,11 @@ describe('document store', () => {
     addEntity(b);
 
     reparentEntity(b.entity.id, a.entity.id);
-    expect(scene().entities[b.entity.id]?.parent).toBe(a.entity.id);
+    expect(scene().entities.get(b.entity.id)?.parent).toBe(a.entity.id);
     expect(scene().rootOrder).toEqual([a.entity.id]);
 
     reparentEntity(b.entity.id, null);
-    expect(scene().entities[b.entity.id]?.parent).toBeNull();
+    expect(scene().entities.get(b.entity.id)?.parent).toBeNull();
     expect(scene().rootOrder).toEqual([a.entity.id, b.entity.id]);
   });
 
@@ -170,8 +188,8 @@ describe('document store', () => {
 
     // The move is rejected outright: allowing it would detach the subtree from
     // the scene with no way to reach it again.
-    expect(scene().entities[parent.entity.id]?.parent).toBeNull();
-    expect(scene().entities[child.entity.id]?.parent).toBe(parent.entity.id);
+    expect(scene().entities.get(parent.entity.id)?.parent).toBeNull();
+    expect(scene().entities.get(child.entity.id)?.parent).toBe(parent.entity.id);
   });
 
   it('collapses a coalesced drag into one undo step', () => {
@@ -180,15 +198,15 @@ describe('document store', () => {
     const historyAfterAdd = doc().past.length;
 
     for (let step = 1; step <= 20; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
     }
 
     expect(doc().past.length).toBe(historyAfterAdd + 1);
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([20, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([20, 0, 0]);
 
     // One undo must return to where the gesture started, not to step 19.
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
   });
 
   it('starts a new history entry when the coalesce key changes', () => {
@@ -196,8 +214,8 @@ describe('document store', () => {
     addEntity(cube);
     const base = doc().past.length;
 
-    setTransform(cube.entity.id, { position: [1, 0, 0] }, { coalesceKey: 'drag:a' });
-    setTransform(cube.entity.id, { position: [2, 0, 0] }, { coalesceKey: 'drag:b' });
+    setTransform(registries, cube.entity.id, { position: [1, 0, 0] }, { coalesceKey: 'drag:a' });
+    setTransform(registries, cube.entity.id, { position: [2, 0, 0] }, { coalesceKey: 'drag:b' });
 
     expect(doc().past.length).toBe(base + 2);
   });
@@ -207,8 +225,8 @@ describe('document store', () => {
     addEntity(cube);
     const seen = doc().changesSince(0).revision;
 
-    renameEntity(cube.entity.id, 'Renamed');
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([cube.entity.id]);
+    renameEntity(registries, cube.entity.id, 'Renamed');
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([cube.entity.id]);
   });
 
   it('duplicates a subtree under a fresh set of ids', () => {
@@ -217,16 +235,75 @@ describe('document store', () => {
     addEntity(parent);
     addEntity(child, parent.entity.id);
 
-    duplicateSelection(sel([parent.entity.id]));
+    duplicateSelection(registries, sel([parent.entity.id]));
 
     const roots = scene().rootOrder;
     expect(roots).toHaveLength(2);
     const copyId = roots.find((id) => id !== parent.entity.id);
-    const copy = copyId === undefined ? undefined : scene().entities[copyId];
+    const copy = copyId === undefined ? undefined : scene().entities.get(copyId);
 
     expect(copy?.name).toBe('Parent (1)');
     expect(copy?.children).toHaveLength(1);
     expect(copy?.children[0]).not.toBe(child.entity.id);
+  });
+
+  it('names the copies of roots called alike one after another', () => {
+    const cubes = [createMeshEntity('box'), createMeshEntity('box'), createMeshEntity('box')].map((cube) =>
+      addEntity(cube),
+    );
+
+    duplicateSelection(registries, sel(cubes));
+
+    expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual([
+      'Cube',
+      'Cube',
+      'Cube',
+      'Cube (1)',
+      'Cube (2)',
+      'Cube (3)',
+    ]);
+  });
+
+  it('takes the Duplicate of several subtrees back exactly with its undo, and redoes it exactly', () => {
+    const parent = createEntity('Parent');
+    const child = createEntity('Child');
+    const lone = createMeshEntity('box');
+    addEntity(parent);
+    addEntity(child, parent.entity.id);
+    addEntity(lone);
+    const before = scene();
+
+    duplicateSelection(registries, sel([parent.entity.id, lone.entity.id]));
+    const after = scene();
+    expect(serializeScene(registries, after)).not.toBe(serializeScene(registries, before));
+
+    doc().undo();
+    expect(scene()).toEqual(before);
+    expect(serializeScene(registries, scene())).toBe(serializeScene(registries, before));
+
+    doc().redo();
+    expect(scene()).toEqual(after);
+    expect(serializeScene(registries, scene())).toBe(serializeScene(registries, after));
+  });
+
+  it('names the copy of a copy by the next name that is free', () => {
+    const cube = addEntity(createMeshEntity('box'));
+    duplicateSelection(registries, sel([cube]));
+    const first = assertDefined(scene().rootOrder[1], 'the first copy');
+
+    duplicateSelection(registries, sel([first]));
+
+    expect(scene().rootOrder.map((id) => scene().entities.get(id)?.name)).toEqual(['Cube', 'Cube (1)', 'Cube (2)']);
+  });
+
+  it('counts the name of an entity nested under another as taken', () => {
+    const cube = addEntity(createEntity('Cube'));
+    addEntity(createEntity('Cube (1)'), cube);
+
+    duplicateSelection(registries, sel([cube]));
+
+    const copy = assertDefined(scene().rootOrder[1], 'the copy');
+    expect(scene().entities.get(copy)?.name).toBe('Cube (2)');
   });
 
   it('clears history when a new document replaces the current one', () => {
@@ -241,8 +318,8 @@ describe('document store', () => {
 
 /*
  * What one user action has to carry: the document change, the selection that
- * goes with it, and what it means for the file on disk. Three independent
- * writes across two stores before phase 2, of which undo took back one.
+ * goes with it, and what it means for the file on disk. It used to be three
+ * independent writes across two stores, of which undo took back one.
  */
 describe('what a transaction carries', () => {
   it('leaves no selection pointing at an entity undo has removed', () => {
@@ -279,7 +356,7 @@ describe('what a transaction carries', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
 
-    duplicateSelection(sel([cube.entity.id]));
+    duplicateSelection(registries, sel([cube.entity.id]));
     const copies = selection();
     expect(copies).toHaveLength(1);
     expect(copies[0]).not.toBe(cube.entity.id);
@@ -305,10 +382,10 @@ describe('what a transaction carries', () => {
   it('keeps a selection made inside a prefab instance', () => {
     const host = createEntity('Host');
     addEntity(host);
-    const produced = `${host.entity.id}/root`;
+    const produced = instancedId(host.entity.id, fixedId('entity', 'root'));
     useEditorStore.getState().setSelection([produced]);
 
-    renameEntity(host.entity.id, 'Renamed');
+    renameEntity(registries, host.entity.id, 'Renamed');
 
     // An expanded id is not in `scene.entities` and pruning against the document
     // alone would clear every selection made inside a prefab.
@@ -321,11 +398,11 @@ describe('what a transaction carries', () => {
     useEditorStore.getState().setSelection([cube.entity.id]);
 
     for (let step = 1; step <= 5; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: `drag:${cube.entity.id}` });
     }
 
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
     expect(selection()).toEqual([cube.entity.id]);
   });
 });
@@ -380,7 +457,7 @@ describe('knowing whether the work is saved', () => {
     const seen = doc().changesSince(0).revision;
     const { past, revision, savedRevision, structureRevision, componentRevision } = doc();
 
-    doc().adoptIdentity({ id: 'c', name: 'Copy' });
+    doc().adoptIdentity({ id: fixedId('scene', 'c'), name: 'Copy' });
 
     expect(scene().id).toBe('c');
     expect(scene().name).toBe('Copy');
@@ -388,12 +465,12 @@ describe('knowing whether the work is saved', () => {
     expect(doc()).toMatchObject({ revision, savedRevision, structureRevision, componentRevision });
     expect(dirty()).toBe(true);
     const changes = doc().changesSince(seen);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(changes.environment).toBe(false);
     expect(changes.revision).toBe(seen);
 
     doc().undo();
-    expect(Object.keys(scene().entities)).toEqual([]);
+    expect([...scene().entities.keys()]).toEqual([]);
     expect(scene().id).toBe('c');
     expect(scene().name).toBe('Copy');
   });
@@ -410,7 +487,7 @@ describe('bounding a coalesced entry', () => {
     addEntity(cube);
 
     for (let step = 1; step <= 100; step++) {
-      setTransform(cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: 'drag' });
+      setTransform(registries, cube.entity.id, { position: [step, 0, 0] }, { coalesceKey: 'drag' });
     }
 
     const entry = doc().past.at(-1);
@@ -418,11 +495,11 @@ describe('bounding a coalesced entry', () => {
     expect(entry?.patches.length).toBeLessThanOrEqual(4);
     expect(entry?.inverse.length).toBeLessThanOrEqual(4);
 
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([100, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([100, 0, 0]);
     doc().undo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([0, 0.5, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([0, 0.5, 0]);
     doc().redo();
-    expect(scene().entities[cube.entity.id]?.transform.position).toEqual([100, 0, 0]);
+    expect(scene().entities.get(cube.entity.id)?.transform.position).toEqual([100, 0, 0]);
   });
 
   it('leaves a patch set that is not all replaces alone', () => {
@@ -437,7 +514,7 @@ describe('bounding a coalesced entry', () => {
       doc().mutate(
         'Insert',
         (draft) => {
-          draft.entities[extra.entity.id] = extra.entity;
+          draft.entities.set(extra.entity.id, extra.entity);
           draft.rootOrder.splice(0, 0, extra.entity.id);
         },
         { coalesceKey: 'insert' },
@@ -464,6 +541,20 @@ describe('bounding a coalesced entry', () => {
  * remounts, was impossible by construction.
  */
 describe('asking what changed since', () => {
+  it('names the entity that gets a type\'s first component, and does not answer with everything', () => {
+    const cube = createMeshEntity('box');
+    const other = createMeshEntity('sphere');
+    addEntity(cube);
+    addEntity(other);
+    const seen = doc().changesSince(0).revision;
+
+    // No light in the document yet, so this adds the lights' table itself. Read
+    // as a replaced table it was a full reconcile of the scene for one light.
+    doc().mutate('Add light', (draft) => putComponent(draft, cube.entity.id, createLight('point')));
+
+    expect(doc().changesSince(seen).entities).toEqual(new Set([cube.entity.id]));
+  });
+
   it('gives two consumers their own delta, independently', () => {
     const a = createMeshEntity('box');
     const b = createMeshEntity('sphere');
@@ -475,16 +566,16 @@ describe('asking what changed since', () => {
     const first = doc().changesSince(0).revision;
     const second = first;
 
-    renameEntity(b.entity.id, 'First change');
+    renameEntity(registries, b.entity.id, 'First change');
     const forFirst = doc().changesSince(first);
-    expect([...(forFirst.entities as ReadonlySet<string>)]).toEqual([b.entity.id]);
+    expect([...(forFirst.entities as ReadonlySet<EntityId>)]).toEqual([b.entity.id]);
 
-    renameEntity(a.entity.id, 'Second change');
+    renameEntity(registries, a.entity.id, 'Second change');
 
     // The consumer that never read is still owed both, and the other one's read
     // took nothing away from it. Under the old drained buffer it would have been
     // owed nothing at all.
-    const ids = doc().changesSince(second).entities as ReadonlySet<string>;
+    const ids = doc().changesSince(second).entities as ReadonlySet<EntityId>;
     expect([...ids].sort()).toEqual([a.entity.id, b.entity.id].sort());
   });
 
@@ -499,7 +590,7 @@ describe('asking what changed since', () => {
 
     const added = createMeshEntity('sphere');
     addEntity(added);
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([added.entity.id]);
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([added.entity.id]);
   });
 
   it('names only what was deleted', () => {
@@ -514,7 +605,7 @@ describe('asking what changed since', () => {
     // `rootOrder` names nothing: it is an ordering, and it decides what the
     // hierarchy lists rather than what is drawn. What left is named by the
     // `entities.<id>` removal in the same mutation.
-    expect([...(doc().changesSince(seen).entities as ReadonlySet<string>)]).toEqual([gone.entity.id]);
+    expect([...(doc().changesSince(seen).entities as ReadonlySet<EntityId>)]).toEqual([gone.entity.id]);
   });
 
   it('reports a pure reorder as structural but touching nothing', () => {
@@ -531,7 +622,7 @@ describe('asking what changed since', () => {
 
     // The hierarchy has to redraw its list; the binder has nothing to do, since
     // the order of `rootOrder` changes nothing about the scene graph.
-    expect((doc().changesSince(seen).entities as ReadonlySet<string>).size).toBe(0);
+    expect((doc().changesSince(seen).entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(doc().structureRevision).toBeGreaterThan(structure);
   });
 
@@ -540,7 +631,7 @@ describe('asking what changed since', () => {
     const seen = doc().changesSince(0).revision;
 
     const again = doc().changesSince(seen);
-    expect((again.entities as ReadonlySet<string>).size).toBe(0);
+    expect((again.entities as ReadonlySet<EntityId>).size).toBe(0);
     expect(again.environment).toBe(false);
     expect(again.materials).toBe(false);
     expect(again.prefabs).toBe(false);
@@ -554,7 +645,7 @@ describe('asking what changed since', () => {
 
     // More than the ring holds. Merging that many deltas costs more than one
     // full reconcile, so the useful answer is "re-read".
-    for (let step = 0; step < 300; step++) renameEntity(cube.entity.id, `Name ${step}`);
+    for (let step = 0; step < 300; step++) renameEntity(registries, cube.entity.id, `Name ${step}`);
 
     expect(doc().changesSince(stale).entities).toBe('*');
   });
@@ -569,7 +660,7 @@ describe('asking what changed since', () => {
 
     const changes = doc().changesSince(seen);
     expect(changes.environment).toBe(true);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
   });
 
   it('reports a library change without naming an entity', () => {
@@ -581,7 +672,7 @@ describe('asking what changed since', () => {
 
     const changes = doc().changesSince(seen);
     expect(changes.materials).toBe(true);
-    expect((changes.entities as ReadonlySet<string>).size).toBe(0);
+    expect((changes.entities as ReadonlySet<EntityId>).size).toBe(0);
   });
 
   it('keeps the two asset tables apart, because they need opposite answers', () => {
@@ -610,7 +701,7 @@ describe('asking what changed since', () => {
   it('carries an undo like any other change', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
-    renameEntity(cube.entity.id, 'Renamed');
+    renameEntity(registries, cube.entity.id, 'Renamed');
     const seen = doc().changesSince(0).revision;
     const marker = doc().revision;
 
@@ -622,7 +713,7 @@ describe('asking what changed since', () => {
     const changes = doc().changesSince(seen);
     expect(changes.revision).toBeGreaterThan(seen);
     expect(doc().revision).toBeLessThan(marker);
-    expect([...(changes.entities as ReadonlySet<string>)]).toEqual([cube.entity.id]);
+    expect([...(changes.entities as ReadonlySet<EntityId>)]).toEqual([cube.entity.id]);
   });
 });
 
@@ -641,8 +732,11 @@ describe('revision counters', () => {
     return { structure: state.structureRevision, component: state.componentRevision };
   };
 
-  const meshComponentId = (entityId: string) =>
-    componentsOf(scene(), entityId).find((component) => component.type === 'mesh')!.id;
+  const meshComponentId = (entityId: EntityId) =>
+    assertDefined(
+      componentsOf(registries, scene(), entityId).find((component) => component.type === 'mesh'),
+      'its mesh',
+    ).id;
 
   it('counts a value written inside a component as a component change only', () => {
     const cube = createMeshEntity('box');
@@ -650,7 +744,7 @@ describe('revision counters', () => {
     const componentId = meshComponentId(cube.entity.id);
     const before = revisions();
 
-    setComponentNestedField(cube.entity.id, componentId, ['material', 'roughness'], 0.3);
+    setComponentNestedField(registries, cube.entity.id, componentId, ['material', 'roughness'], 0.3);
 
     // The hierarchy lists nothing that moved — a roughness is not a row, not an
     // icon and not a name.
@@ -663,7 +757,7 @@ describe('revision counters', () => {
     addEntity(cube);
     const before = revisions();
 
-    addComponentWithDependencies(cube.entity.id, 'light');
+    addComponentWithDependencies(registries, cube.entity.id, 'light');
 
     // Both, and the hierarchy half is earned: `iconFor` picks the row's icon
     // from which components the entity carries.
@@ -688,7 +782,7 @@ describe('revision counters', () => {
     addEntity(cube);
     const before = revisions();
 
-    setTransform(cube.entity.id, { position: [1, 2, 3] });
+    setTransform(registries, cube.entity.id, { position: [1, 2, 3] });
 
     // The one edit that changes nothing anyone lists, which is what makes a
     // gizmo drag free for both panels.
@@ -699,7 +793,7 @@ describe('revision counters', () => {
     const cube = createMeshEntity('box');
     addEntity(cube);
     const componentId = meshComponentId(cube.entity.id);
-    setComponentNestedField(cube.entity.id, componentId, ['material', 'roughness'], 0.3);
+    setComponentNestedField(registries, cube.entity.id, componentId, ['material', 'roughness'], 0.3);
     const before = revisions();
 
     doc().undo();
@@ -712,15 +806,15 @@ describe('revision counters', () => {
 
 describe('components that cannot sit together', () => {
   it('refuses a mesh on an entity already drawing a model', () => {
-    const model = createModelEntity('asset', 'Chair');
+    const model = createModelEntity(fixedId('asset', 'chair'), 'Chair');
     addEntity(model);
 
-    addComponentWithDependencies(model.entity.id, 'mesh');
+    addComponentWithDependencies(registries, model.entity.id, 'mesh');
 
     // Both draw, both hang from the same container, and both get drawn — so
     // "Add Component ▸ Mesh" on an import used to put a grey 1×1×1 box through
     // it, which reads as the model having been duplicated.
-    expect(componentsOf(scene(), model.entity.id).map((c) => c.type)).toEqual(['model']);
+    expect(componentsOf(registries, scene(), model.entity.id).map((c) => c.type)).toEqual(['model']);
   });
 
   it('refuses a model on an entity already drawing a mesh', () => {
@@ -728,9 +822,28 @@ describe('components that cannot sit together', () => {
     addEntity(cube);
 
     // The table is read both ways round, so neither order has to be written out.
-    addComponentWithDependencies(cube.entity.id, 'model');
+    addComponentWithDependencies(registries, cube.entity.id, 'model');
 
-    expect(componentsOf(scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
+    expect(componentsOf(registries, scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
+  });
+
+  it('refuses a second Camera, which only the menu used to refuse', () => {
+    // The menu was one caller: a shortcut or a script reaching the command
+    // could add the second one it never offered.
+    const eye = addEntity(createEntity('Eye', [cameraType.create()]));
+
+    addComponentWithDependencies(registries, eye, 'camera');
+
+    expect(componentsOf(registries, scene(), eye).map((c) => c.type)).toEqual(['camera']);
+  });
+
+  it('adds a second Collider and a second Script, which stack', () => {
+    const crate = addEntity(createEntity('Crate', [colliderType.create(), scriptType.create()]));
+
+    addComponentWithDependencies(registries, crate, 'collider');
+    addComponentWithDependencies(registries, crate, 'script');
+
+    expect(componentsOf(registries, scene(), crate).map((c) => c.type)).toEqual(['collider', 'collider', 'script', 'script']);
   });
 });
 
@@ -749,7 +862,7 @@ describe('the companions a player controller brings', () => {
     const empty = createEntity('Player');
     addEntity(empty);
 
-    addComponentWithDependencies(empty.entity.id, 'playerController');
+    addComponentWithDependencies(registries, empty.entity.id, 'playerController');
 
     const collider = findComponent(scene(), empty.entity.id, 'collider');
     // 1.70 m standing, so the origin sits 0.85 m up and the 1.6 m default eye
@@ -770,7 +883,7 @@ describe('the companions a player controller brings', () => {
     const ball = createMeshEntity('sphere');
     addEntity(ball);
 
-    addComponentWithDependencies(ball.entity.id, 'playerController');
+    addComponentWithDependencies(registries, ball.entity.id, 'playerController');
 
     expect(findComponent(scene(), ball.entity.id, 'collider')).toMatchObject({
       shape: { kind: 'sphere' },
@@ -783,7 +896,7 @@ describe('the companions a player controller brings', () => {
     const empty = createEntity('Player');
     addEntity(empty);
 
-    addComponentWithDependencies(empty.entity.id, 'playerController');
+    addComponentWithDependencies(registries, empty.entity.id, 'playerController');
 
     expect(findComponent(scene(), empty.entity.id, 'rigidbody')).toMatchObject({
       bodyType: 'kinematicPosition',
@@ -796,10 +909,10 @@ describe('the companions a player controller brings', () => {
  * a body whose colliders are on its children has one already: it rides them.
  */
 describe('the companions a rigid body brings', () => {
-  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+  afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** An empty entity "Cart", in the document, with these under it. */
-  function cartOver(...children: ReturnType<typeof createEntity>[]): string {
+  function cartOver(...children: ReturnType<typeof createEntity>[]): EntityId {
     const cart = addEntity(createEntity('Cart'));
     for (const child of children) addEntity(child, cart);
     return cart;
@@ -807,44 +920,47 @@ describe('the companions a rigid body brings', () => {
 
   const withCollider = () => {
     const wheel = createMeshEntity('sphere');
-    wheel.components.push(createComponent('collider'));
+    wheel.components.push(colliderType.create());
     return wheel;
   };
 
   it('brings no Collider to an entity whose children carry them', () => {
     const cart = cartOver(withCollider(), withCollider());
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
 
   it('still brings one to an entity with nothing to collide with', () => {
     const cart = cartOver(createMeshEntity('sphere'));
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
 
   it('counts no child that has a body of its own', () => {
     const trailer = withCollider();
-    trailer.components.push(createComponent('rigidbody'));
+    trailer.components.push(rigidbodyType.create());
     const cart = cartOver(trailer);
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'collider']);
   });
 
   it('sees the colliders inside a prefab placed under it', () => {
     const crate = withCollider();
-    useAssetStore.setState({ prefabs: { crate: prefabWith('Crate', [crate], crate.entity.id) } });
-    const cart = cartOver(createEntity('Crate', [createPrefabInstance('crate')]));
+    const CRATE = fixedId('asset', 'crate');
+    useAssetStore.setState({
+      prefabs: new Map([[CRATE, { ...prefabWith('Crate', [crate], crate.entity.id), id: CRATE }]]),
+    });
+    const cart = cartOver(createEntity('Crate', [createPrefabInstance(CRATE)]));
 
-    addComponentWithDependencies(cart, 'rigidbody');
+    addComponentWithDependencies(registries, cart, 'rigidbody');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody']);
   });
 });
 
@@ -857,28 +973,28 @@ describe('the companions a joint brings', () => {
   it('brings a Rigid Body to a Cube, and that body its Collider', () => {
     const cube = addEntity(createMeshEntity('box'));
 
-    addComponentWithDependencies(cube, 'joint');
+    addComponentWithDependencies(registries, cube, 'joint');
 
-    expect(componentsOf(scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
+    expect(componentsOf(registries, scene(), cube).map((c) => c.type)).toEqual(['mesh', 'rigidbody', 'collider', 'joint']);
     expect(findComponent(scene(), cube, 'rigidbody')?.bodyType).toBe('dynamic');
   });
 
   it('brings none to a child of a body', () => {
     const door = createMeshEntity('box');
-    door.components.push(createComponent('rigidbody'), createComponent('collider'));
+    door.components.push(rigidbodyType.create(), colliderType.create());
     const hinge = addEntity(createEntity('Hinge'), addEntity(door));
 
-    addComponentWithDependencies(hinge, 'joint');
+    addComponentWithDependencies(registries, hinge, 'joint');
 
-    expect(componentsOf(scene(), hinge).map((c) => c.type)).toEqual(['joint']);
+    expect(componentsOf(registries, scene(), hinge).map((c) => c.type)).toEqual(['joint']);
   });
 
   it('brings none to an entity that has a Rigid Body', () => {
-    const cart = addEntity(createEntity('Cart', [createComponent('rigidbody')]));
+    const cart = addEntity(createEntity('Cart', [rigidbodyType.create()]));
 
-    addComponentWithDependencies(cart, 'joint');
+    addComponentWithDependencies(registries, cart, 'joint');
 
-    expect(componentsOf(scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
+    expect(componentsOf(registries, scene(), cart).map((c) => c.type)).toEqual(['rigidbody', 'joint']);
   });
 });
 
@@ -888,70 +1004,93 @@ describe('the companions a joint brings', () => {
  * prefab expansion already does.
  */
 describe('references to the entities copied with them', () => {
-  afterEach(() => useAssetStore.setState({ prefabs: {} }));
+  afterEach(() => useAssetStore.setState({ prefabs: new Map() }));
 
   /** A Frame, and a Door jointed to it. */
-  function doorway(): { frame: string; door: string } {
-    const frame = addEntity(createEntity('Frame', [createComponent('collider')]));
+  function doorway(): { frame: EntityId; door: EntityId } {
+    const frame = addEntity(createEntity('Frame', [colliderType.create()]));
     const door = addEntity(
-      createEntity('Door', [createComponent('rigidbody'), { ...createJoint(), connectedEntity: frame }]),
+      createEntity('Door', [rigidbodyType.create(), { ...jointType.create(), connectedEntity: frame }]),
     );
     return { frame, door };
   }
 
-  const copyOf = (name: string) =>
-    Object.values(scene().entities).find((entity) => entity.name === name)?.id;
+  const copyOf = (name: string): EntityId =>
+    assertDefined(
+      [...scene().entities.values()].find((entity) => entity.name === name)?.id,
+      `the entity called "${name}"`,
+    );
 
   it('duplicating a joint with its Connected Body names the copy; duplicating it alone keeps the original', () => {
     const { frame, door } = doorway();
 
-    duplicateSelection(sel([door, frame]));
+    duplicateSelection(registries, sel([door, frame]));
 
     const copiedFrame = copyOf('Frame (1)');
     expect(copiedFrame).toBeDefined();
-    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(copiedFrame);
+    expect(findComponent(scene(), copyOf('Door (1)'), 'joint')?.connectedEntity).toBe(copiedFrame);
     // The originals keep theirs.
     expect(findComponent(scene(), door, 'joint')?.connectedEntity).toBe(frame);
 
     doc().undo();
-    expect(Object.keys(scene().entities).sort()).toEqual([door, frame].sort());
+    expect([...scene().entities.keys()].sort()).toEqual([door, frame].sort());
 
-    duplicateSelection(sel([door]));
-    expect(findComponent(scene(), copyOf('Door (1)')!, 'joint')?.connectedEntity).toBe(frame);
+    duplicateSelection(registries, sel([door]));
+    expect(findComponent(scene(), copyOf('Door (1)'), 'joint')?.connectedEntity).toBe(frame);
   });
 
   it("a script's entity property follows the copy too", () => {
     const turret = addEntity(createEntity('Turret'));
+    const AIM = fixedId('asset', 'aim');
     const brain = addEntity(
-      createEntity('Brain', [{ ...createComponent('script'), assetId: 'aim', props: { target: turret } }]),
+      createEntity('Brain', [{ ...scriptType.create(), assetId: AIM, props: { target: turret } }]),
       turret,
     );
 
-    duplicateSelection(sel([turret]));
+    duplicateSelection(registries, sel([turret]));
 
-    const copy = copyOf('Turret (1)')!;
-    const copiedBrain = scene().entities[copy]!.children[0]!;
+    const copy = copyOf('Turret (1)');
+    const copiedTurret = assertDefined(scene().entities.get(copy), 'the copied turret');
+    const copiedBrain = assertDefined(copiedTurret.children[0], 'the copied brain');
     expect(copiedBrain).not.toBe(brain);
     expect(findComponent(scene(), copiedBrain, 'script')?.props['target']).toBe(copy);
   });
 
+  it("a water surface's light follows the copy too", () => {
+    const lamp = addEntity(createEntity('Lamp', [createLight('directional')]));
+    const pond = addEntity(createEntity('Pond', [{ ...waterType.create(), sun: { kind: 'light', entity: lamp } }]), lamp);
+
+    duplicateSelection(registries, sel([lamp]));
+
+    const copy = copyOf('Lamp (1)');
+    const copiedPond = assertDefined(scene().entities.get(copy)?.children[0], 'the copied pond');
+    expect(copiedPond).not.toBe(pond);
+    expect(findComponent(scene(), copiedPond, 'water')?.sun).toEqual({ kind: 'light', entity: copy });
+    expect(findComponent(scene(), pond, 'water')?.sun).toEqual({ kind: 'light', entity: lamp });
+  });
+
   it('unpacking a prefab keeps its joint on the entity it named', () => {
-    const frame = createEntity('Frame', [createComponent('collider')]);
+    const frame = createEntity('Frame', [colliderType.create()]);
     const door = createEntity('Door', [
-      createComponent('rigidbody'),
-      { ...createJoint(), connectedEntity: frame.entity.id },
+      rigidbodyType.create(),
+      { ...jointType.create(), connectedEntity: frame.entity.id },
     ]);
     frame.entity.children = [door.entity.id];
     door.entity.parent = frame.entity.id;
-    useAssetStore.setState({ prefabs: { doorway: prefabWith('Doorway', [frame, door], frame.entity.id) } });
-    const host = addEntity(createEntity('Doorway', [createPrefabInstance('doorway')]));
+    const DOORWAY = fixedId('asset', 'doorway');
+    useAssetStore.setState({
+      prefabs: new Map([
+        [DOORWAY, { ...prefabWith('Doorway', [frame, door], frame.entity.id), id: DOORWAY }],
+      ]),
+    });
+    const host = addEntity(createEntity('Doorway', [createPrefabInstance(DOORWAY)]));
 
-    unpackPrefabInstance(host);
+    unpackPrefabInstance(registries, host);
 
     const unpackedFrame = copyOf('Frame');
     expect(unpackedFrame).toBeDefined();
     expect(unpackedFrame).not.toBe(instancedId(host, frame.entity.id));
-    expect(findComponent(scene(), copyOf('Door')!, 'joint')?.connectedEntity).toBe(unpackedFrame);
+    expect(findComponent(scene(), copyOf('Door'), 'joint')?.connectedEntity).toBe(unpackedFrame);
   });
 });
 
@@ -964,7 +1103,7 @@ describe('a selection after a scene swap', () => {
   it("keeps an id whose entity is there, and one whose instance's owner is", () => {
     const wall = addEntity(createEntity('Wall'));
     const crate = addEntity(createEntity('Crate'));
-    const inside = instancedId(crate, 'lid');
+    const inside = instancedId(crate, LID);
 
     expect(pruneSelection(scene(), [wall, inside])).toEqual([wall, inside]);
   });
@@ -972,7 +1111,7 @@ describe('a selection after a scene swap', () => {
   it('drops an id that names nothing', () => {
     const wall = addEntity(createEntity('Wall'));
 
-    expect(pruneSelection(scene(), [wall, 'gone', instancedId('gone', 'lid')])).toEqual([wall]);
+    expect(pruneSelection(scene(), [wall, GONE, instancedId(GONE, LID)])).toEqual([wall]);
   });
 
   it('hands back the same array when nothing went, so no subscriber sees a change', () => {
@@ -986,19 +1125,23 @@ describe('a selection after a scene swap', () => {
 describe('fitting a collider to its mesh', () => {
   /** A binder holding the meshes as the edit view draws them, synced to the document. */
   function drawnBinder(): SceneBinder {
-    const binder = new SceneBinder({ resolver: NULL_ASSET_RESOLVER, rendering: createRenderingSettings() });
-    binder.sync(expandedScene().scene);
+    const binder = new SceneBinder({
+      registries: builtInRegistries(),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+    });
+    binder.sync(expandedScene(registries).scene);
     return binder;
   }
 
   /** A Sphere of radius 1 whose Sphere collider is still 0.5, a sensor gripping at 0.2. */
-  function grownSphere(): { template: EntityTemplate; colliderId: string } {
+  function grownSphere(): { template: EntityTemplate; colliderId: ComponentId } {
     const template = createMeshEntity('sphere');
     const [mesh] = template.components;
     if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'sphere') throw new Error('no sphere');
     mesh.geometry = { ...mesh.geometry, radius: 1 };
     const collider: ColliderComponent = {
-      ...createComponent('collider'),
+      ...colliderType.create(),
       shape: createColliderShape('sphere'),
       isSensor: true,
     };
@@ -1007,8 +1150,8 @@ describe('fitting a collider to its mesh', () => {
     return { template, colliderId: collider.id };
   }
 
-  const colliderOf = (entityId: string, componentId: string): ColliderComponent => {
-    const found = componentsOf(scene(), entityId).find((c) => c.id === componentId);
+  const colliderOf = (entityId: EntityId, componentId: ComponentId): ColliderComponent => {
+    const found = componentsOf(registries, scene(), entityId).find((c) => c.id === componentId);
     if (found?.type !== 'collider') throw new Error('no collider');
     return found;
   };
@@ -1021,7 +1164,7 @@ describe('fitting a collider to its mesh', () => {
     const { template, colliderId } = grownSphere();
     const entityId = addEntity(template);
 
-    fitColliderToMesh(entityId, colliderId, drawnBinder());
+    fitColliderToMesh(registries, entityId, colliderId, drawnBinder());
 
     const fitted = colliderOf(entityId, colliderId);
     if (fitted.shape.kind !== 'sphere') throw new Error('not a sphere');
@@ -1042,18 +1185,18 @@ describe('fitting a collider to its mesh', () => {
     const entityId = addEntity(template);
     addEntity(above, entityId);
 
-    fitColliderToMesh(entityId, colliderId, drawnBinder());
+    fitColliderToMesh(registries, entityId, colliderId, drawnBinder());
 
     const fitted = colliderOf(entityId, colliderId);
     expect(fitted.shape.kind === 'sphere' && Math.abs(fitted.shape.radius - 1)).toBeLessThan(1e-6);
   });
 
   it('says so, and writes nothing, when the entity draws no mesh of its own', () => {
-    const collider = createComponent('collider');
+    const collider = colliderType.create();
     const entityId = addEntity(createEntity('Shelf', [collider]));
     const { revision } = doc();
 
-    fitColliderToMesh(entityId, collider.id, drawnBinder());
+    fitColliderToMesh(registries, entityId, collider.id, drawnBinder());
 
     expect(doc().revision).toBe(revision);
     const warnings = useToastStore.getState().toasts.filter((toast) => toast.kind === 'warning');

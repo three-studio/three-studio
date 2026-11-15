@@ -1,9 +1,10 @@
 import {
   createId,
-  serializeScene,
   type AssetEntry,
+  type AssetId,
   type BuildManifest,
-  type LaunchSnapshot,
+  type CoreRegistries,
+  type ReceivedLaunch,
   type SceneEntry,
 } from '@three-studio/core';
 import { scanAssets } from '../assetScan';
@@ -28,7 +29,7 @@ export interface Launch {
   readonly sceneName: string;
   /** The window's id for the entry scene: the one id answered from memory. */
   readonly entryId: string;
-  /** The scene on screen, serialized once. */
+  /** The scene on screen, as the window sent it. */
   readonly entryJson: string;
   /**
    * As `launchManifest` made it. Kept whole rather than written once: the
@@ -39,7 +40,7 @@ export interface Launch {
   /** The compiled bundle, or `null` when the project has no scripts. */
   readonly scripts: string | null;
   /** Every asset a device may ask for, by id. Scripts are not among them: they ship compiled. */
-  readonly assets: ReadonlyMap<string, AssetEntry>;
+  readonly assets: ReadonlyMap<AssetId, AssetEntry>;
   /** The project's scenes, for every one but the entry, which is read from disk when asked for. */
   readonly scenes: readonly SceneEntry[];
 }
@@ -47,8 +48,8 @@ export interface Launch {
 /**
  * A launch, from the editor's snapshot and the project's files.
  *
- * Saves nothing, and copies nothing: what it writes is what Play writes — the
- * script entry under `.studio/`, and sidecars a scan repairs.
+ * Saves nothing, and copies nothing: what it writes is what Play writes, the
+ * sidecars a scan repairs.
  *
  * One step after the other, never two at once. `buildScripts` scans the assets
  * itself, and a scan writes the sidecars it finds missing or stale: two at once
@@ -60,19 +61,21 @@ export interface Launch {
  * exporter's words.
  */
 export async function prepareLaunch(
+  registries: CoreRegistries,
   projectPath: string,
-  snapshot: LaunchSnapshot,
+  received: ReceivedLaunch,
 ): Promise<Launch> {
-  const compiled = await buildScripts(projectPath);
+  const { snapshot, entryJson } = received;
+  const compiled = await buildScripts(registries, projectPath);
   if (compiled.errors.length > 0) {
     throw new Error(`Scripts did not compile:\n${compiled.errors.join('\n')}`);
   }
   const scripts = compiled.scriptCount > 0 ? compiled.code : null;
-  const { assets } = await scanAssets(projectPath);
-  const scenes = await discoverScenes(projectPath);
+  const { assets } = await scanAssets(registries, projectPath);
+  const { scenes } = await discoverScenes(projectPath);
   // The project's name, not a build profile's title: a launch runs no profile.
   const { name: title } = await readProject(projectPath);
-  const manifest = launchManifest({ snapshot, scenes, assets, title, scripts });
+  const manifest = launchManifest(registries, { snapshot, scenes, assets, title, scripts });
 
   return {
     id: createId(),
@@ -80,7 +83,7 @@ export async function prepareLaunch(
     projectPath,
     sceneName: snapshot.entry.name,
     entryId: snapshot.entry.id,
-    entryJson: serializeScene(snapshot.entry.scene),
+    entryJson,
     manifest,
     scripts,
     assets: new Map(

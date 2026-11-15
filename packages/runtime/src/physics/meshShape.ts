@@ -1,4 +1,4 @@
-import type { BuiltShape, Vec3 } from '@three-studio/core';
+import { isEntityId, type BuiltShape, type Vec3 } from '@three-studio/core';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Matrix4, Mesh, Vector3, type Object3D } from 'three/webgpu';
 import { ENTITY_ID_KEY, resolveEntityId } from '../systems/identity';
@@ -96,7 +96,7 @@ export function ownMeshes(container: Object3D): Mesh[] {
     if (object instanceof Mesh) meshes.push(object);
     for (const child of object.children) {
       const owner: unknown = child.userData[ENTITY_ID_KEY];
-      if (typeof owner === 'string' && owner !== entityId) continue;
+      if (isEntityId(owner) && owner !== entityId) continue;
       visit(child);
     }
   };

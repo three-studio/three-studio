@@ -6,14 +6,19 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createBuildProfiles,
   createEmptyScene,
   createEntity,
   createPhysicsSettings,
   createRenderingSettings,
-  deserializeScene,
+  decodeScene,
+  fixedId,
   serializeScene,
+  type EntityId,
   type ProjectFile,
+  type SceneId,
+  unwrap,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { discoverScenes, openProject, readProject } from '../src/main/project';
@@ -24,6 +29,9 @@ import {
   renameScene,
   setStartScene,
 } from '../src/main/scenes';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The five operations on the scenes of a project, each one a file operation
@@ -42,12 +50,12 @@ async function projectWith(names: readonly string[]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-scenes-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
 
-  const ids: string[] = [];
+  const ids: SceneId[] = [];
   for (const name of names) {
     const document = createEmptyScene(name);
     await writeFile(
       join(root, SCENES_DIR, `${name}.scene.json`),
-      serializeScene(document),
+      serializeScene(registries, document),
       'utf8',
     );
     ids.push(document.id);
@@ -59,7 +67,7 @@ async function projectWith(names: readonly string[]): Promise<string> {
   // The profile does need its scenes filled in, because what a delete does to
   // that list is half of what is pinned below.
   const build = createBuildProfiles('Registry');
-  build.profiles[DEFAULT_BUILD_PROFILE_ID]!.scenes = ids;
+  assertDefined(build.profiles[DEFAULT_BUILD_PROFILE_ID], 'the default build profile').scenes = ids;
 
   const project: ProjectFile = {
     version: PROJECT_FORMAT_VERSION,
@@ -77,8 +85,8 @@ async function projectWith(names: readonly string[]): Promise<string> {
   return root;
 }
 
-async function idOf(root: string, name: string): Promise<string> {
-  const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
+async function idOf(root: string, name: string): Promise<SceneId> {
+  const entry = (await discoverScenes(root)).scenes.find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
 }
@@ -135,9 +143,9 @@ describe('a scene is addressed by id, never by name or path', () => {
 
   it('takes the id from the scene document, so a file says which scene it is', async () => {
     const root = await projectWith(['main']);
-    const { scene } = await createScene(root, 'Arena');
+    const { scene } = await createScene(registries, root, 'Arena');
 
-    const document = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
+    const document = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
     expect(document.id).toBe(scene.id);
   });
 });
@@ -152,7 +160,7 @@ describe('scene names are unique in a project', () => {
   it('refuses a new scene whose name is already taken', async () => {
     const root = await projectWith(['main', 'Boss']);
 
-    await expect(createScene(root, 'Boss')).rejects.toThrow(/already/i);
+    await expect(createScene(registries, root, 'Boss')).rejects.toThrow(/already/i);
     expect(await sceneFiles(root)).toEqual(['Boss.scene.json', 'main.scene.json']);
   });
 
@@ -163,7 +171,7 @@ describe('scene names are unique in a project', () => {
 
   it('compares without case, because two files cannot differ by case alone', async () => {
     const root = await projectWith(['main', 'Boss']);
-    await expect(createScene(root, 'boss')).rejects.toThrow(/already/i);
+    await expect(createScene(registries, root, 'boss')).rejects.toThrow(/already/i);
   });
 
   it('lets a scene keep its own name through a change of case', async () => {
@@ -183,7 +191,7 @@ describe('scene names are unique in a project', () => {
     const root = await projectWith(['main', 'Boss']);
     await renameScene(root, await idOf(root, 'Boss'), 'Arena');
 
-    const { scene } = await createScene(root, 'Boss');
+    const { scene } = await createScene(registries, root, 'Boss');
     expect(scene.name).toBe('Boss');
     expect(scene.path).toBe(`${SCENES_DIR}/Boss.scene.json`);
   });
@@ -200,17 +208,17 @@ describe('scene names are unique in a project', () => {
   it('reduces a name that is already a file name to what it reads back as', async () => {
     const root = await projectWith(['main']);
 
-    const { scene } = await createScene(root, 'Boss.json');
+    const { scene } = await createScene(registries, root, 'Boss.json');
     expect(scene.name).toBe('Boss');
     expect(scene.path).toBe(`${SCENES_DIR}/Boss.scene.json`);
     // The whole point of the fixed point: the name survives the round trip
     // through the file it was written to.
-    expect((await discoverScenes(root)).map((entry) => entry.name)).toContain('Boss');
+    expect((await discoverScenes(root)).scenes.map((entry) => entry.name)).toContain('Boss');
   });
 
   it('refuses a name that is nothing but punctuation', async () => {
     const root = await projectWith(['main']);
-    await expect(createScene(root, '   ')).rejects.toThrow(/name/i);
+    await expect(createScene(registries, root, '   ')).rejects.toThrow(/name/i);
   });
 
   /*
@@ -222,7 +230,7 @@ describe('scene names are unique in a project', () => {
     const root = await projectWith(['main']);
     await writeFile(join(root, SCENES_DIR, 'Arena.scene.json'), '{ not json', 'utf8');
 
-    await expect(createScene(root, 'Arena')).rejects.toThrow(/already exists/i);
+    await expect(createScene(registries, root, 'Arena')).rejects.toThrow(/already exists/i);
     expect(await readFile(join(root, SCENES_DIR, 'Arena.scene.json'), 'utf8')).toBe('{ not json');
   });
 });
@@ -239,7 +247,7 @@ describe('the start scene is always one of the scenes', () => {
 
   it('refuses to start on a scene the project does not have', async () => {
     const root = await projectWith(['main']);
-    await expect(setStartScene(root, 'not-an-id')).rejects.toThrow(/not a scene/i);
+    await expect(setStartScene(root, fixedId('scene', 'not-an-id'))).rejects.toThrow(/not a scene/i);
   });
 });
 
@@ -315,28 +323,29 @@ describe('what these operations write', () => {
    */
   it('gives a new scene no entity, not even one standing for the scene', async () => {
     const root = await projectWith(['main']);
-    const { scene } = await createScene(root, 'Arena');
+    const { scene } = await createScene(registries, root, 'Arena');
 
-    const document = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
+    const document = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
     expect(document.rootOrder).toEqual([]);
-    expect(document.entities).toEqual({});
+    expect(document.entities.size).toBe(0);
     expect(document.name).toBe('Arena');
   });
 
   it('gives a duplicate its own id, so the two are not one scene', async () => {
     const root = await projectWith(['main']);
     const main = await idOf(root, 'main');
-    const { scene } = await duplicateScene(root, main, 'Main Copy');
+    const { scene } = await duplicateScene(registries, root, main, 'Main Copy');
 
-    const original = deserializeScene(
+    const original = unwrap(decodeScene(
+      registries,
       await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
-    );
-    const copy = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
+    ), 'Scene file');
+    const copy = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
 
     expect(scene.id).not.toBe(main);
     expect(copy.id).toBe(scene.id);
     expect(copy.name).toBe('Main Copy');
-    expect(Object.keys(copy.entities)).toHaveLength(Object.keys(original.entities).length);
+    expect(copy.entities.size).toBe(original.entities.size);
   });
 
   /*
@@ -346,14 +355,15 @@ describe('what these operations write', () => {
    * original was the file that went out of reach.
    */
   describe('a scene made from a window’s document', () => {
-    async function savedAs(root: string): Promise<{ document: string; wall: string }> {
-      const document = deserializeScene(
+    async function savedAs(root: string): Promise<{ document: string; wall: EntityId }> {
+      const document = unwrap(decodeScene(
+        registries,
         await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8'),
-      );
+      ), 'Scene file');
       const wall = createEntity('Wall');
-      document.entities[wall.entity.id] = wall.entity;
+      document.entities.set(wall.entity.id, wall.entity);
       document.rootOrder.push(wall.entity.id);
-      return { document: serializeScene(document), wall: wall.entity.id };
+      return { document: serializeScene(registries, document), wall: wall.entity.id };
     }
 
     it('gets its own id and name, and the contents it was handed', async () => {
@@ -362,13 +372,13 @@ describe('what these operations write', () => {
       const before = await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8');
       const { document, wall } = await savedAs(root);
 
-      const { scene } = await createScene(root, 'Main Copy', document);
+      const { scene } = await createScene(registries, root, 'Main Copy', document);
 
-      const copy = deserializeScene(await readFile(join(root, scene.path), 'utf8'));
+      const copy = unwrap(decodeScene(registries, await readFile(join(root, scene.path), 'utf8')), 'Scene file');
       expect(copy.id).toBe(scene.id);
       expect(copy.id).not.toBe(main);
       expect(copy.name).toBe('Main Copy');
-      expect(copy.entities[wall]?.name).toBe('Wall');
+      expect(copy.entities.get(wall)?.name).toBe('Wall');
       expect(await readFile(join(root, `${SCENES_DIR}/main.scene.json`), 'utf8')).toBe(before);
     });
 
@@ -376,9 +386,9 @@ describe('what these operations write', () => {
       const root = await projectWith(['main']);
       const { document } = await savedAs(root);
 
-      await createScene(root, 'Main Copy', document);
+      await createScene(registries, root, 'Main Copy', document);
 
-      const scenes = await discoverScenes(root);
+      const scenes = (await discoverScenes(root)).scenes;
       expect(scenes.map((entry) => entry.name)).toEqual(['Main Copy', 'main']);
       expect(scenes.map((entry) => entry.shadowedBy)).toEqual([null, null]);
       expect(new Set(scenes.map((entry) => entry.id)).size).toBe(2);
@@ -387,7 +397,7 @@ describe('what these operations write', () => {
     it('writes nothing when the document does not read', async () => {
       const root = await projectWith(['main']);
 
-      await expect(createScene(root, 'Broken', '{')).rejects.toThrow();
+      await expect(createScene(registries, root, 'Broken', '{')).rejects.toThrow();
 
       expect(await sceneFiles(root)).toEqual(['main.scene.json']);
     });
@@ -402,7 +412,7 @@ describe('what these operations write', () => {
     const root = await projectWith(['main']);
     const before = await readFile(join(root, PROJECT_FILE_NAME), 'utf8');
 
-    const { project, scenes, scene } = await createScene(root, 'Arena');
+    const { project, scenes, scene } = await createScene(registries, root, 'Arena');
 
     expect(await readFile(join(root, PROJECT_FILE_NAME), 'utf8')).toBe(before);
     expect(project).toEqual(await readProject(root));

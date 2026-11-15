@@ -2,7 +2,9 @@ import {
   assetUrl,
   createId,
   hasImagePreview,
+  isAssetId,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
 } from '@three-studio/core';
 import {
@@ -15,7 +17,7 @@ import {
   type View,
   type ViewProps,
 } from '@tweakpane/core';
-import { ASSET_DRAG_MIME, assetKindMime } from '../assets/assetDrag';
+import { assetKindMime, droppedAssetId } from '../assets/assetDrag';
 import type { AssetSlotParams } from './fields';
 import { useAssetStore } from '../state/assetStore';
 import { useOverlayStore } from '../state/overlayStore';
@@ -67,7 +69,7 @@ export interface AssetFieldActions {
   /** Opens the import dialog; resolves with everything that came in. */
   importAssets: () => Promise<readonly AssetEntry[]>;
   /** Shows an asset where the author can see it. */
-  reveal: (assetId: string) => void;
+  reveal: (assetId: AssetId) => void;
 }
 
 /** Empty selection. `null` in the document; a primitive here, as the DOM needs. */
@@ -93,7 +95,7 @@ function iconButton(document: Document, name: keyof typeof ICONS, title: string)
   // The editor's tooltip, which `ui/Tooltip`'s host reads off any element,
   // React's or not — a `title` would have macOS draw one of its own as well.
   // The label keeps the name the `title` used to give the button.
-  button.dataset.tooltip = title;
+  button.dataset['tooltip'] = title;
   button.setAttribute('aria-label', title);
   button.classList.add('tp-btnv_b');
   button.style.cssText =
@@ -295,7 +297,6 @@ class AssetFieldView implements View {
   readonly locate: HTMLButtonElement;
   readonly clear: HTMLButtonElement;
   readonly preview: HTMLElement;
-  private readonly kind: AssetKind;
   private readonly tooltip = new PreviewTooltip();
 
   constructor(
@@ -304,8 +305,6 @@ class AssetFieldView implements View {
     private readonly emptyLabel: string,
     private readonly viewProps: ViewProps,
   ) {
-    this.kind = kind;
-
     this.element = document.createElement('div');
     this.element.classList.add('tp-asset');
     this.element.style.cssText = 'display:flex;align-items:center;gap:3px;';
@@ -341,7 +340,9 @@ class AssetFieldView implements View {
   }
 
   render(assetId: string): void {
-    const entry = useAssetStore.getState().byId(assetId);
+    // The pane hands over text: an id, or `NONE`, and neither names an entry
+    // unless it is an id.
+    const entry = isAssetId(assetId) ? useAssetStore.getState().byId(assetId) : undefined;
     const empty = assetId === NONE;
 
     this.name.textContent = empty ? this.emptyLabel : (entry?.name ?? '(missing)');
@@ -412,7 +413,10 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
       });
     });
     this.view.browse.addEventListener('click', () => void this.importAndAssign());
-    this.view.locate.addEventListener('click', () => this.actions.reveal(this.value.rawValue));
+    this.view.locate.addEventListener('click', () => {
+      const assetId = this.value.rawValue;
+      if (isAssetId(assetId)) this.actions.reveal(assetId);
+    });
     this.view.clear.addEventListener('click', () => {
       this.value.rawValue = NONE;
     });
@@ -467,8 +471,8 @@ class AssetFieldController implements ValueController<string, AssetFieldView> {
       event.stopPropagation();
       this.view.setDropTarget(false);
 
-      const assetId = event.dataTransfer?.getData(ASSET_DRAG_MIME) ?? '';
-      if (assetId !== '') this.value.rawValue = assetId;
+      const assetId = droppedAssetId(event.dataTransfer);
+      if (assetId !== null) this.value.rawValue = assetId;
     });
   }
 

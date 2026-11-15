@@ -10,7 +10,7 @@ import {
   type Object3D,
 } from 'three/webgpu';
 import { annotation, type ComponentHelper, type HelperHandle } from '../../viewport/overlay/ComponentHelper';
-import type { EntityMarker } from '../registry';
+import type { EntityMarker, EntityOverlay } from '../registry';
 import { jointOutline } from './outline';
 
 /** Apart from the collider's green and the selection's orange. */
@@ -98,13 +98,15 @@ const _unturn = new Quaternion();
 const UNIT = new Vector3(1, 1, 1);
 
 /** A joint holds bodies together; what is drawn is theirs. */
-export const drawsGeometry = false;
+const drawsGeometry = false;
 
 /**
  * No marker. A joint sits on a body, which has a shape to click, or on an
  * empty child at a door's edge, which the hierarchy names; selected, it is
  * drawn where it holds.
  */
-export const marker: EntityMarker | null = null;
+const marker: EntityMarker | null = null;
 
-export const helper = new JointShape();
+const helper = (): ComponentHelper => new JointShape();
+
+export const overlay: EntityOverlay = { id: 'joint', drawsGeometry, marker, helper };

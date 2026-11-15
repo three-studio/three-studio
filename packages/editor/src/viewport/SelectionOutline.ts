@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { Box3, Box3Helper, Color, Group, type LineBasicMaterial, type Object3D } from 'three/webgpu';
 
 const SELECTED_COLOR = new Color('#ff9d3d');
@@ -19,7 +20,7 @@ const SELECTED_COLOR = new Color('#ff9d3d');
 export class SelectionOutline {
   readonly root = new Group();
 
-  private readonly helpers = new Map<string, Box3Helper>();
+  private readonly helpers = new Map<EntityId, Box3Helper>();
   private readonly box = new Box3();
 
   constructor() {
@@ -32,7 +33,7 @@ export class SelectionOutline {
   private lastBounds: Box3 | null = null;
 
   /** Call every frame; cheap while selections stay small. */
-  update(selection: readonly string[], resolve: (id: string) => Object3D | undefined): void {
+  update(selection: readonly EntityId[], resolve: (id: EntityId) => Object3D | undefined): void {
     for (const [id, helper] of this.helpers) {
       if (!selection.includes(id)) {
         helper.removeFromParent();

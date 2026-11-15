@@ -1,3 +1,4 @@
+import type { AssetId } from '@three-studio/core';
 import type { AssetResolver, AudioContextLike, ClipLoader } from '@three-studio/runtime';
 import { editorAssetResolver } from '../state/assetStore';
 import { editorAudioContext } from './context';
@@ -42,7 +43,7 @@ export class ClipPeaks {
    * decode once between them rather than six times, and it means the answer is
    * already there when the same folder is opened again.
    */
-  private readonly entries = new Map<string, Promise<Float32Array | null>>();
+  private readonly entries = new Map<AssetId, Promise<Float32Array | null>>();
   private readonly context: () => AudioContextLike | null;
   private readonly resolver: AssetResolver;
   private readonly load: ClipLoader;
@@ -54,7 +55,7 @@ export class ClipPeaks {
   }
 
   /** `null` for a clip that cannot be read or cannot be decoded, and the caller draws its icon. */
-  peaks(assetId: string): Promise<Float32Array | null> {
+  peaks(assetId: AssetId): Promise<Float32Array | null> {
     const existing = this.entries.get(assetId);
     if (existing) return existing;
     const pending = this.measure(assetId);
@@ -63,11 +64,11 @@ export class ClipPeaks {
   }
 
   /** Forgets one asset, for a file replaced on disk under the id it already had. */
-  invalidate(assetId: string): void {
+  invalidate(assetId: AssetId): void {
     this.entries.delete(assetId);
   }
 
-  private async measure(assetId: string): Promise<Float32Array | null> {
+  private async measure(assetId: AssetId): Promise<Float32Array | null> {
     const context = this.context();
     const url = this.resolver.url(assetId);
     if (context === null || url === null) {

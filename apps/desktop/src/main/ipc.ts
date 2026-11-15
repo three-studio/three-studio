@@ -1,8 +1,9 @@
 import { stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import {
-  ASSET_KIND_INFO,
   PROJECT_FILE_NAME,
+  assetKindInfo,
+  type AssetId,
   type AssetImportResult,
   type AssetManifest,
   type AssetSettings,
@@ -11,21 +12,22 @@ import {
   type ExportResult,
   type MaterialDef,
   type PhysicsMaterialDef,
-  type PrefabDoc,
   type ProjectContents,
   type ProjectFile,
   type ProjectSettings,
   type AssetChange,
+  type CoreRegistries,
   type LayoutPreferences,
   type ShortcutPreferences,
   type DeviceScreenshot,
   type DeviceServerStatus,
   type DeviceSettingsPatch,
-  type LaunchSnapshot,
+  type LaunchSnapshotJson,
   type OpenProject,
   type PortHolder,
   type ProjectSummary,
   type SceneChange,
+  type SceneId,
   type ScriptBuildResult,
   IPC_EVENTS,
   IPC_INVOKE,
@@ -36,9 +38,12 @@ import {
   conformSettingsPatch,
   conformDeviceSettingsPatch,
   conformLaunchSnapshot,
+  decodePrefab,
+  isAssetId,
   isDeviceId,
-  migratePrefab,
+  unwrap,
   type BridgeHandlers,
+  type PrefabDoc,
 } from '@three-studio/core';
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 
@@ -56,7 +61,7 @@ import {
   createPrefabAsset,
   readMaterialAssets,
   readPhysicsMaterialAssets,
-  readPrefabAssets,
+  readPrefabTexts,
   saveMaterialAsset,
   savePhysicsMaterialAsset,
   savePrefabAsset,
@@ -116,13 +121,23 @@ function adopt(opened: OpenProject): OpenProject {
 }
 
 /**
+ * A prefab a window sent, decoded under the asset id it names. The id is the
+ * window's word only, and checked here: a script can call the bridge with one
+ * that is none, and the prefab would be filed under it.
+ */
+function prefabFromWindow(deps: IpcDeps, prefabJson: string, assetId: unknown): PrefabDoc {
+  if (!isAssetId(assetId)) throw new Error('A prefab is written under the asset id it is filed by.');
+  return unwrap(decodePrefab(deps.registries, prefabJson, assetId), 'Prefab');
+}
+
+/**
  * Every capability the renderer has. Handlers are the trust boundary: the
  * renderer is sandboxed and cannot touch the file system on its own, so
  * anything reachable from the page has to be justified here.
  */
 /**
- * What the handlers need from outside themselves: the window layer, and the
- * device server.
+ * What the handlers need from outside themselves: the window layer, the device
+ * server, and the registries the process activated.
  *
  * Injected rather than imported. The cycle this used to avoid is gone —
  * `windows.ts` read `isDirty` from here, and now reads it from `session.ts` —
@@ -139,13 +154,15 @@ export interface IpcDeps {
    * `false` when the user cancelled at the unsaved-changes prompt. The window
    * is passed because with several open there is no such thing as "the editor".
    */
-  switchScene: (from: Electron.WebContents, sceneId: string) => boolean;
+  switchScene: (from: Electron.WebContents, sceneId: SceneId) => boolean;
   /** Opens a scene of the same project in a window of its own. */
-  openSceneWindow: (sceneId: string) => void;
+  openSceneWindow: (sceneId: SceneId) => void;
   /** Records which scene a window's renderer settled on, and after a Save As. */
-  noteScene: (from: Electron.WebContents, sceneId: string) => void;
+  noteScene: (from: Electron.WebContents, sceneId: SceneId) => void;
   /** True when a scene is open in a window other than the one asking. */
-  isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: string) => boolean;
+  isSceneOpenElsewhere: (from: Electron.WebContents, sceneId: SceneId) => boolean;
+  /** Every component type the handlers decode a scene, a prefab or a launch through. */
+  registries: CoreRegistries;
   /** Every editor window, for broadcasting a project that has changed. */
   editorWindows: () => readonly BrowserWindow[];
   devices: DeviceServer;
@@ -296,10 +313,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     create: async (_event, input: { name: string; directory: string }): Promise<OpenProject> => {
-      return adopt(await createProject(input.name, input.directory));
+      return adopt(await createProject(deps.registries, input.name, input.directory));
     },
 
-    open: async (event, projectPath: string, sceneId?: string | null): Promise<OpenProject> => {
+    open: async (event, projectPath: string, sceneId?: SceneId | null): Promise<OpenProject> => {
       const opened = adopt(await openProject(projectPath, sceneId ?? undefined));
       // A window opened without a scene id lands on the start scene, and this
       // is where the main process learns which that was — see `noteScene`.
@@ -352,11 +369,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * renderer asking permission to destroy itself would be asking the thing it
    * is about to destroy.
    */
-    switchScene: (event, sceneId: string): boolean => {
+    switchScene: (event, sceneId: SceneId): boolean => {
       return deps.switchScene(event.sender, sceneId);
     },
 
-    openSceneWindow: (_event, sceneId: string): void => {
+    openSceneWindow: (_event, sceneId: SceneId): void => {
       deps.openSceneWindow(sceneId);
     },
 
@@ -369,7 +386,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
    * to a project it cannot read.
    */
     createScene: async (event, name: string, contents?: string): Promise<SceneChange> => {
-      const change = await createScene(requireProject(), name, contents);
+      const change = await createScene(deps.registries, requireProject(), name, contents);
       // A Save As: the asking window goes on editing this document under the
       // new id. Noted before `announce`, with nothing awaited in between, so no
       // other window hears of the scene while the table says nobody shows it —
@@ -380,17 +397,17 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return announce(change, event.sender, change);
     },
 
-    duplicateScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
-      const change = await duplicateScene(requireProject(), sceneId, name);
+    duplicateScene: async (event, sceneId: SceneId, name: string): Promise<SceneChange> => {
+      const change = await duplicateScene(deps.registries, requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
 
-    renameScene: async (event, sceneId: string, name: string): Promise<SceneChange> => {
+    renameScene: async (event, sceneId: SceneId, name: string): Promise<SceneChange> => {
       const change = await renameScene(requireProject(), sceneId, name);
       return announce(change, event.sender, change);
     },
 
-    deleteScene: async (event, sceneId: string): Promise<ProjectContents> => {
+    deleteScene: async (event, sceneId: SceneId): Promise<ProjectContents> => {
       // Refused rather than left to go wrong later: the file would go, the other
       // window would stay open on it, and its next save would write back a scene
       // the project no longer lists.
@@ -401,7 +418,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return announce(contents, event.sender, contents);
     },
 
-    setStartScene: async (event, sceneId: string): Promise<ProjectContents> => {
+    setStartScene: async (event, sceneId: SceneId): Promise<ProjectContents> => {
       const contents = await setStartScene(requireProject(), sceneId);
       return announce(contents, event.sender, contents);
     },
@@ -422,15 +439,14 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // Settings cannot change which scenes exist, but the broadcast carries
       // the whole of what a window holds, so the list has to come along or the
       // other windows would adopt an empty one.
-      const scenes = await discoverScenes(projectPath);
-      return announce({ project: updated, scenes }, event.sender, updated);
+      return announce({ project: updated, ...(await discoverScenes(projectPath)) }, event.sender, updated);
     },
   },
   assets: {
-    list: (): Promise<AssetManifest> => scanAssets(requireProject()),
+    list: (): Promise<AssetManifest> => scanAssets(deps.registries, requireProject()),
 
     openImport: (_event, sourcePaths: readonly string[], folder?: string): Promise<ImportSessionState> => {
-      return importSessions.start(requireProject(), sourcePaths, folder ?? '');
+      return importSessions.start(deps.registries, requireProject(), sourcePaths, folder ?? '');
     },
 
     browseAndOpenImport: async (event, folder?: string): Promise<ImportSessionState> => {
@@ -441,7 +457,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         // Folders too: dropping one onto the panel already works, and a picker
         // that refused what a drop accepts would be the odd one out.
         properties: ['openFile', 'multiSelections', 'openDirectory'],
-        filters: Object.entries(ASSET_KIND_INFO).map(([kind, info]) => ({
+        filters: [...assetKindInfo(deps.registries)].map(([kind, info]) => ({
           name: `${kind[0]?.toUpperCase()}${kind.slice(1)}s`,
           extensions: [...info.extensions],
         })),
@@ -453,7 +469,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       if (result.canceled || result.filePaths.length === 0) {
         return { sessionId: '', files: [], folder: folder ?? '' };
       }
-      return importSessions.start(projectPath, result.filePaths, folder ?? '');
+      return importSessions.start(deps.registries, projectPath, result.filePaths, folder ?? '');
     },
 
     commitImport: (
@@ -469,11 +485,11 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
 
     remove: (_event, assetPath: string): Promise<AssetChange> => {
-      return removeAsset(requireProject(), assetPath);
+      return removeAsset(deps.registries, requireProject(), assetPath);
     },
 
     move: (_event, assetPath: string, targetFolder: string): Promise<AssetChange> => {
-      return moveAsset(requireProject(), assetPath, targetFolder);
+      return moveAsset(deps.registries, requireProject(), assetPath, targetFolder);
     },
 
     createFolder: (_event, folder: string): Promise<AssetChange> => {
@@ -490,42 +506,51 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     updateSettings: (_event, assetPath: string, settings: AssetSettings): Promise<void> => {
       // Conformed inside, where the sidecar's kind is known; see there.
-      return updateAssetSettings(requireProject(), assetPath, settings);
+      return updateAssetSettings(deps.registries, requireProject(), assetPath, settings);
     },
 
-    readMaterials: (): Promise<Record<string, MaterialDef>> => readMaterialAssets(requireProject()),
+    readMaterials: async (): Promise<Record<string, MaterialDef>> =>
+      Object.fromEntries(await readMaterialAssets(deps.registries, requireProject())),
 
-    createMaterial: (_event, name: string, material: MaterialDef): Promise<string> => {
-      return createMaterialAsset(requireProject(), name, conformMaterial(material));
+    createMaterial: (_event, name: string, material: MaterialDef): Promise<AssetId> => {
+      return createMaterialAsset(deps.registries, requireProject(), name, conformMaterial(material));
     },
 
-    readPrefabs: (): Promise<Record<string, PrefabDoc>> => readPrefabAssets(requireProject()),
+    readPrefabs: async (): Promise<Record<string, string>> => {
+      // Each file as it is: the window decodes it, and names the ones it refuses.
+      const texts = await readPrefabTexts(deps.registries, requireProject());
+      return Object.fromEntries([...texts].map(([id, { text }]) => [id, text]));
+    },
 
-    createPrefab: (_event, name: string, prefab: PrefabDoc, assetId?: string): Promise<string> => {
-      // `migratePrefab` rather than `conform`, and the difference is who wrote
-      // the data. A prefab has been read off the disk, possibly written by a
-      // build that knew a component type this one does not, and the migration
-      // is the one repair that keeps such a type instead of inventing a shape
-      // for it. Conforming it would drop the author's work on the round trip.
-      return createPrefabAsset(requireProject(), name, migratePrefab(prefab), assetId);
+    createPrefab: (_event, name: string, prefabJson: string, assetId: AssetId): Promise<AssetId> => {
+      // Decoded as a file rather than conformed, and the difference is who
+      // wrote the data. A prefab has been read off the disk, possibly written
+      // by a build that knew a component type this one does not, and reading
+      // it as a file is what keeps such a type as found instead of inventing
+      // a shape for it. Conforming it would drop the author's work on the
+      // round trip.
+      //
+      // Under the id the window gives, checked here: a script can call the
+      // bridge with an `assetId` that is none.
+      return createPrefabAsset(deps.registries, requireProject(), name, prefabFromWindow(deps, prefabJson, assetId));
     },
 
     saveMaterial: (_event, assetPath: string, material: MaterialDef): Promise<void> => {
-      return saveMaterialAsset(requireProject(), assetPath, conformMaterial(material));
+      return saveMaterialAsset(deps.registries, requireProject(), assetPath, conformMaterial(material));
     },
 
-    savePrefab: (_event, assetPath: string, prefab: PrefabDoc): Promise<void> => {
-      return savePrefabAsset(requireProject(), assetPath, migratePrefab(prefab));
+    savePrefab: (_event, assetPath: string, prefabJson: string, assetId: AssetId): Promise<void> => {
+      return savePrefabAsset(deps.registries, requireProject(), assetPath, prefabFromWindow(deps, prefabJson, assetId));
     },
 
-    readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
-      readPhysicsMaterialAssets(requireProject()),
+    readPhysicsMaterials: async (): Promise<Record<string, PhysicsMaterialDef>> =>
+      Object.fromEntries(await readPhysicsMaterialAssets(deps.registries, requireProject())),
 
-    createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<string> =>
-      createPhysicsMaterialAsset(requireProject(), name, conformPhysicsMaterial(material)),
+    createPhysicsMaterial: (_event, name: string, material: PhysicsMaterialDef): Promise<AssetId> =>
+      createPhysicsMaterialAsset(deps.registries, requireProject(), name, conformPhysicsMaterial(material)),
 
     savePhysicsMaterial: (_event, path: string, material: PhysicsMaterialDef): Promise<void> =>
-      savePhysicsMaterialAsset(requireProject(), path, conformPhysicsMaterial(material)),
+      savePhysicsMaterialAsset(deps.registries, requireProject(), path, conformPhysicsMaterial(material)),
 
     revealInFileManager: async (_event, assetPath: string): Promise<void> => {
       // `showItemInFolder` takes an absolute path, so the guard still applies.
@@ -542,7 +567,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     },
   },
   scripts: {
-    build: (): Promise<ScriptBuildResult> => buildScripts(requireProject()),
+    build: (): Promise<ScriptBuildResult> => buildScripts(deps.registries, requireProject()),
 
     create: (_event, name: string): Promise<string> => {
       return createScript(requireProject(), name);
@@ -560,6 +585,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // Packaged, the player sits in the app's resources; in development it is
       // the workspace build, found by walking up from the app path.
       const result = await exportBuild(
+        deps.registries,
         projectPath,
         profile,
         outputDir,
@@ -578,7 +604,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       const picked = await dialog.showOpenDialog({
         title: 'Build output folder',
         properties: ['openDirectory', 'createDirectory'],
-        defaultPath: startIn ?? undefined,
+        // Left out, not `undefined`, with nowhere to start in: Electron's type
+        // takes no `undefined` there, and reads a missing key as it always has.
+        ...(typeof startIn === 'string' ? { defaultPath: startIn } : {}),
         buttonLabel: 'Choose',
       });
       return picked.canceled ? null : (picked.filePaths[0] ?? null);
@@ -609,10 +637,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     stop: (): Promise<DeviceServerStatus> => deps.devices.stop(),
 
-    launch: (_event, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> =>
+    launch: (_event, snapshot: LaunchSnapshotJson): Promise<DeviceServerStatus | null> =>
       // Conformed here, where it arrives: it is whatever the renderer sent, and
       // it becomes the files a phone downloads. See `conformLaunchSnapshot`.
-      deps.devices.launch(requireProject(), conformLaunchSnapshot(snapshot)),
+      deps.devices.launch(requireProject(), conformLaunchSnapshot(deps.registries, snapshot)),
 
     saveSettings: (_event, patch: DeviceSettingsPatch): Promise<DeviceServerStatus> =>
       // Never the token: a script that chose it would hold a link it knows.

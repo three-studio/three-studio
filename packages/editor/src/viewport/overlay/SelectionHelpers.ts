@@ -1,10 +1,12 @@
 import {
-  COMPONENT_TYPES,
   componentsOfType,
-  type ComponentType,
+  type ComponentId,
+  type ComponentTypeId,
+  type EntityId,
+  type Registry,
   type SceneDoc,
 } from '@three-studio/core';
-import { OVERLAYS } from '../../components/overlays';
+import type { EntityOverlay } from '../../components/registry';
 import type { SceneBinder } from '@three-studio/runtime';
 import { Group, type Object3D } from 'three/webgpu';
 import type { ComponentHelper, HelperHandle } from './ComponentHelper';
@@ -23,7 +25,7 @@ interface Mounted {
 /** Entity id and component id, which is what identifies one annotation. */
 type Key = string;
 
-const keyOf = (entityId: string, componentId: string): Key => `${entityId}/${componentId}`;
+const keyOf = (entityId: EntityId, componentId: ComponentId): Key => `${entityId}/${componentId}`;
 
 /**
  * Mounts three's helpers on the selection, and takes them down when it changes.
@@ -49,16 +51,17 @@ export class SelectionHelpers {
    * needed to widen the values — `mount` is a method, so TypeScript keeps its
    * parameter bivariant. See `ComponentHelper`.
    */
-  private readonly helpers = new Map<ComponentType, ComponentHelper>(
-    COMPONENT_TYPES.flatMap((type) => {
-      const helper = OVERLAYS[type].helper;
-      return helper === null ? [] : [[type, helper] as const];
-    }),
-  );
+  private readonly helpers: ReadonlyMap<ComponentTypeId, ComponentHelper>;
   private readonly mounted = new Map<Key, Mounted>();
 
-  constructor(private readonly binder: SceneBinder) {
+  constructor(
+    private readonly binder: SceneBinder,
+    overlays: Registry<ComponentTypeId, EntityOverlay>,
+  ) {
     this.root.name = 'SelectionHelpers';
+    this.helpers = new Map(
+      overlays.values().flatMap(({ id, helper }) => (helper === null ? [] : [[id, helper()] as const])),
+    );
   }
 
   /**
@@ -67,16 +70,16 @@ export class SelectionHelpers {
    * Every lookup is against a component table restricted to the selected ids, so
    * the cost is the size of the selection rather than the size of the scene.
    */
-  update(scene: SceneDoc, selection: readonly string[]): void {
+  update(scene: SceneDoc, selection: readonly EntityId[]): void {
     const live = new Set<Key>();
 
     for (const [type, helper] of this.helpers) {
       const table = componentsOfType(scene, type);
       for (const entityId of selection) {
-        const held = table[entityId];
+        const held = table.get(entityId);
         if (!held) continue;
 
-        for (const [componentId, component] of Object.entries(held)) {
+        for (const [componentId, component] of held) {
           const key = keyOf(entityId, componentId);
           live.add(key);
 

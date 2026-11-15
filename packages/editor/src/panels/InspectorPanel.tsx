@@ -1,42 +1,53 @@
-import { addableTypes, componentsOf, splitInstancedId } from '@three-studio/core';
+import {
+  addableTypes,
+  componentFits,
+  componentsOf,
+  splitInstancedId,
+  type AssetId,
+  type EntityId,
+} from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
-import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
+import { addComponentWithDependencies } from '../commands/sceneCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
-import { COMPONENT_PANES } from '../components/panes';
 import type { AssetFieldActions } from '../inspector/assetField';
 import { browseAndImport } from '../import/importStore';
 import { sceneSignature } from '../inspector/schema';
-import { useAssetStore } from '../state/assetStore';
+import { selectLibraries, useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
 import { useEditorStore } from '../state/editorStore';
 import { usePrefabModeStore } from '../state/prefabModeStore';
 import { selectSceneName, useProjectStore } from '../state/projectStore';
+import { useRegistries } from '../registriesContext';
 import { STOP_TO_EDIT, isSceneLocked, useSceneLocked } from '../state/sceneLock';
 import { useScriptStore } from '../state/scriptStore';
 import { useTuningStore } from '../state/tuning';
 import { DropdownMenu } from '../ui/Menu';
 import { tooltip } from '../ui/Tooltip';
 
-/**
- * What the Inspector's asset slots cannot reach for themselves.
- *
- * The panel is where they come from because it is the outermost thing that owns
- * an Inspector: a Tweakpane control reaching into the import store closed an
- * import cycle, and one reaching into the dock decided which panel is in front
- * — neither is a field table's business. Module-level rather than rebuilt per
- * render: nothing here depends on props, and a new object each render would
- * rebuild the pane.
- */
-const ASSET_FIELD_ACTIONS: AssetFieldActions = {
-  importAssets: async () => (await browseAndImport())?.imported ?? [],
-  reveal: (assetId: string) => commandById('revealAsset').run(contextForAsset(assetId)),
-};
-
 export function InspectorPanel() {
+  const registries = useRegistries();
+  /*
+   * What the Inspector's asset slots cannot reach for themselves.
+   *
+   * The panel is where they come from because it is the outermost thing that owns
+   * an Inspector: a Tweakpane control reaching into the import store closed an
+   * import cycle, and one reaching into the dock decided which panel is in front
+   * — neither is a field table's business. Kept for as long as the registries
+   * rather than rebuilt per render: those are the window's and do not change, and
+   * a new object each render would rebuild the pane.
+   */
+  const actions = useMemo<AssetFieldActions>(
+    () => ({
+      importAssets: async () => (await browseAndImport())?.imported ?? [],
+      reveal: (assetId: AssetId) => commandById('revealAsset').run(contextForAsset(registries, assetId)),
+    }),
+    [registries],
+  );
   const selection = useEditorStore((s) => s.selection);
   // The environment alone, not the document: immer keeps the identity of what a
   // mutation did not touch, so moving an entity does not re-key the scene pane.
@@ -52,7 +63,7 @@ export function InspectorPanel() {
   const sceneName = useProjectStore(selectSceneName);
   // Named rather than recomputed: `isSingle` is one of the three cases nobody
   // had a word for, and the panel is where the missing word was most obvious.
-  const selected = Selection.of(selection, expandedScene().scene);
+  const selected = Selection.of(selection, expandedScene(registries).scene);
   const entityId = selected.isSingle ? selected.primary ?? undefined : undefined;
   /*
    * The selected entity, not the whole scene.
@@ -68,24 +79,25 @@ export function InspectorPanel() {
   const watched = useDocumentStore((state) => {
     if (entityId === undefined) return undefined;
     const parts = splitInstancedId(entityId);
-    return state.scene.entities[parts === null ? entityId : parts.owner];
+    return state.scene.entities.get(parts === null ? entityId : parts.owner);
   });
   /*
    * And the components, which the entity above cannot speak for.
    *
-   * Since phase 10 a component lives in `scene.components`, not in its entity,
-   * so **adding, editing or removing one moves nothing in `watched`**. The panel
-   * therefore showed a freshly added component only once something else happened
-   * to wake it — a gizmo drag, a reselection — and undoing an edit to a
-   * component field left the value that had just been taken back on screen.
+   * A component lives in `scene.components`, not in its entity, so **adding,
+   * editing or removing one moves nothing in `watched`**. The panel therefore
+   * showed a freshly added component only once something else happened to wake
+   * it — a gizmo drag, a reselection — and undoing an edit to a component field
+   * left the value that had just been taken back on screen.
    */
   const componentRevision = useDocumentStore((s) => s.componentRevision);
 
-  // Prefab instances are part of the shape here: their contents are selectable
-  // and have to be inspectable, and editing a prefab changes what fields exist
-  // without touching the document.
-  const prefabs = useAssetStore((s) => s.prefabs);
-  const entity = entityId === undefined ? undefined : expandedScene().scene.entities[entityId];
+  // The libraries a pane shows without the document moving. A linked asset's
+  // values: an edit or its undo changes them and no entity, and they decide
+  // which of its rows show. The prefabs: an instance's contents are
+  // selectable, and editing a prefab changes what fields exist.
+  const libraries = useAssetStore(useShallow(selectLibraries));
+  const entity = entityId === undefined ? undefined : expandedScene(registries).scene.entities.get(entityId);
   const instance = entityId === undefined ? null : splitInstancedId(entityId);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,9 +110,8 @@ export function InspectorPanel() {
    * nowhere — the game keeps the table it started with, and the edit view is
    * behind it — and its undo would wait for Stop with the rest.
    *
-   * But the rows of the panes that tune the running game — a Rigid Body's, a
-   * Collider's, a Joint's —, which write the running world and not the
-   * document (`state/tuning`).
+   * But the rows of the fields a type marks tunable, which write the running
+   * world and not the document (`state/tuning`).
    */
   const locked = useSceneLocked();
   // What was tuned during Play: a kind tuned brings its rows, and a value tuned
@@ -115,22 +126,16 @@ export function InspectorPanel() {
   // The script build revision is part of that shape, so recompiling brings new
   // script properties into the panel — see the signature below.
   const scriptRevision = useScriptStore((s) => s.revision);
-  // Editing a shared material changes which fields exist without touching the
-  // document, so the material table is part of the shape too.
-  const materials = useAssetStore((s) => s.materials);
-  // A physics material's values, which a linked Collider's rows show: undoing
-  // an edit of one changes no entity, so only this can refresh them.
-  const physicsMaterials = useAssetStore((s) => s.physicsMaterials);
   // So are the assets themselves: a dropdown's options are computed when the
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
   const assetRevision = useAssetStore((s) => s.revision);
-  // So is the project's layer table, which a Collider's Layer row lists by name
-  // when the pane is built: a layer renamed in Project Settings kept its old
-  // name there until something else rebuilt the pane.
-  const layers = useProjectStore((s) =>
-    (s.project?.settings.physics.layers ?? []).map(({ id, name }) => `${id}:${name}`).join('|'),
-  );
+  // And the project's settings, which a pane may list choices from when it is
+  // built — the collision layers — and key itself by: a setting changed asks
+  // for the signature again, and only a pane keyed on it is rebuilt. Without
+  // it, a layer renamed in Project Settings kept its old name in the list
+  // until something else rebuilt the pane.
+  const settings = useProjectStore((s) => s.project?.settings);
   // With nothing selected the pane is the scene's own — Blender's Scene tab —
   // so the shape that decides a rebuild is the scene's, not an entity's. Both
   // signatures carry what they identify, so one key serves both panes.
@@ -148,7 +153,7 @@ export function InspectorPanel() {
       return `${sceneSignature(environment, prefabOpen)}#${assetRevision}`;
     }
     if (entityId !== undefined) {
-      return `${inspectorSignature(entityId)}#${assetRevision}#${scriptRevision}#${layers}`;
+      return `${inspectorSignature(registries, entityId)}#${assetRevision}#${scriptRevision}`;
     }
 
     /*
@@ -158,13 +163,14 @@ export function InspectorPanel() {
      * when any one of them gains or loses one — and the ids are in it too, since
      * selecting a different set of the same shapes is a different pane.
      */
-    const shapes = selection.map((id) => `${id}:${inspectorSignature(id)}`).join('|');
-    return `${shapes}#${assetRevision}#${scriptRevision}#${layers}`;
+    const shapes = selection.map((id) => `${id}:${inspectorSignature(registries, id)}`).join('|');
+    return `${shapes}#${assetRevision}#${scriptRevision}`;
     // `componentRevision` moves on every write under `components`, including a
     // slider mid-drag. That costs one string rebuild: the value comes out the
     // same, the effect below does not re-run, and only `refresh()` — which is
     // what a drag wants anyway — reaches the pane.
   }, [
+    registries,
     selection,
     entityId,
     environment,
@@ -172,9 +178,8 @@ export function InspectorPanel() {
     entity,
     scriptRevision,
     assetRevision,
-    layers,
-    materials,
-    prefabs,
+    settings,
+    libraries,
     componentRevision,
     tuningRevision,
     locked,
@@ -185,13 +190,14 @@ export function InspectorPanel() {
     if (!container || signature === '') return;
 
     const binding = new InspectorBinding(
+      registries,
       container,
       entityId !== undefined
         ? { kind: 'entity', entityId }
         : selection.length > 1
           ? { kind: 'entities', ids: selection }
           : { kind: 'scene' },
-      ASSET_FIELD_ACTIONS,
+      actions,
     );
     // Read now rather than from `locked`, so that the lock is not one of this
     // effect's dependencies: Play and Stop would rebuild the pane and lose its
@@ -204,11 +210,11 @@ export function InspectorPanel() {
       bindingRef.current = null;
       binding.dispose();
     };
-  }, [signature, entityId, selection]);
+  }, [registries, actions, signature, entityId, selection]);
 
-  // Materials are in here as well as the scene: undoing an edit to a shared
-  // material changes no entity, so without it the panel kept showing the value
-  // that had just been taken back.
+  // The libraries are in here as well as the scene: undoing an edit to a
+  // linked asset changes no entity, so without them the panel kept showing the
+  // value that had just been taken back.
   //
   // And the environment for exactly the same reason. `watched` is the selected
   // entity, and the scene pane is what shows when nothing is selected — so
@@ -225,7 +231,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision, locked]);
+  }, [watched, environment, libraries, componentRevision, sceneName, tuningRevision, locked]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);
@@ -239,12 +245,14 @@ export function InspectorPanel() {
   const existing = new Set(
     entityId === undefined
       ? []
-      : componentsOf(expandedScene().scene, entityId).map((component) => component.type),
+      : componentsOf(registries, expandedScene(registries).scene, entityId).map((component) => component.type),
   );
 
   return (
     <div className="flex h-full w-full flex-col bg-surface-1">
-      {instance &&<PrefabBanner id={entityId!} depth={instance.depth} locked={locked} />}
+      {entityId !== undefined && instance && (
+        <PrefabBanner id={entityId} depth={instance.depth} locked={locked} />
+      )}
       <div ref={containerRef} className="min-h-0 flex-1 overflow-auto p-1.5" />
 
       {/* The scene pane has nothing to add a component to. */}
@@ -268,15 +276,13 @@ export function InspectorPanel() {
               anchor={addButton}
               placement="above"
               onClose={() => setAddOpen(false)}
-              items={addableTypes().map((type) => ({
-                label: COMPONENT_PANES[type].label,
-                // A second mesh or camera on one entity has no meaning here —
-                // and neither does a mesh on something already drawing a
-                // model, which `componentFits` is what answers.
-                disabled:
-                  (existing.has(type) && type !== 'collider' && type !== 'script') ||
-                  !componentFits(type, existing),
-                onSelect: () => addComponentWithDependencies(entity.id, type),
+              items={addableTypes(registries).map((type) => ({
+                label: registries.components.get(type)?.label ?? type,
+                // What the types declare about each other — one of a type at
+                // most unless it stacks, none beside a type it excludes — as
+                // the command that adds it reads them.
+                disabled: !componentFits(registries, type, existing),
+                onSelect: () => addComponentWithDependencies(registries, entity.id, type),
               }))}
             />
           )}
@@ -291,7 +297,8 @@ export function InspectorPanel() {
  * that lands somewhere unexpected — on the instance, not on the prefab — is
  * indistinguishable from one that did nothing.
  */
-function PrefabBanner({ id, depth, locked }: { id: string; depth: number; locked: boolean }) {
+function PrefabBanner({ id, depth, locked }: { id: EntityId; depth: number; locked: boolean }) {
+  const registries = useRegistries();
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-line bg-prefab/10 px-2 py-1.5">
       <Boxes size={12} className="shrink-0 text-prefab" />
@@ -305,7 +312,7 @@ function PrefabBanner({ id, depth, locked }: { id: string; depth: number; locked
           type="button"
           disabled={locked}
           {...tooltip('Revert to the prefab', { hint: locked ? STOP_TO_EDIT : undefined })}
-          onClick={() => commandById('revertEntityOverride').run(contextFor([id]))}
+          onClick={() => commandById('revertEntityOverride').run(contextFor(registries, [id]))}
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1.5 text-2xs text-ink-dim enabled:hover:bg-surface-3 enabled:hover:text-ink disabled:opacity-50"
         >
           <RotateCcw size={11} />

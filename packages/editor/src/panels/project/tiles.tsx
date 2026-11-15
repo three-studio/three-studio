@@ -1,4 +1,4 @@
-import { assetUrl, hasImagePreview, type AssetEntry } from '@three-studio/core';
+import { assetUrl, hasImagePreview, type AssetEntry, type AssetId } from '@three-studio/core';
 import {
   FolderOpen,
   Folder,
@@ -10,6 +10,7 @@ import {
 import { memo, useEffect, useRef, useState } from 'react';
 import { deleteFolder, renameFolder, showAssetFile } from '../../commands/assetCommands';
 import { commandById, contextForAsset } from '../../commands/registry';
+import { useRegistries } from '../../registriesContext';
 import { ASSET_PATH_MIME, setAssetDragPayload } from '../../assets/assetDrag';
 import { clipPeaks } from '../../audio/peaks';
 import { audioPreview } from '../../audio/preview';
@@ -103,7 +104,7 @@ export const FolderTile = memo(function FolderTile({ path }: { path: string }) {
  * for good when there are none: a file this browser cannot decode is not a
  * broken tile.
  */
-function ClipWaveform({ assetId, Icon }: { assetId: string; Icon: LucideIcon }) {
+function ClipWaveform({ assetId, Icon }: { assetId: AssetId; Icon: LucideIcon }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const peaks = useRef<Float32Array | null>(null);
   const [drawn, setDrawn] = useState(false);
@@ -168,7 +169,8 @@ export const AssetTile = memo(function AssetTile({
   asset: AssetEntry;
   revealed: boolean;
 }) {
-  const onRemove = () => commandById('deleteAsset').run(contextForAsset(asset.id));
+  const registries = useRegistries();
+  const onRemove = () => commandById('deleteAsset').run(contextForAsset(registries, asset.id));
   const clearRevealed = useAssetStore((s) => s.clearRevealed);
   // Scrolled to and flashed, then forgotten: a highlight that stayed would
   // still be there next time the panel opened, meaning nothing.

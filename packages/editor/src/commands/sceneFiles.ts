@@ -1,4 +1,13 @@
-import { deserializeScene, findScene, serializeScene, type SceneEntry } from '@three-studio/core';
+import {
+  decodeScene,
+  findScene,
+  jsonOf,
+  sceneJsonOf,
+  unwrap,
+  type CoreRegistries,
+  type SceneEntry,
+  type SceneId,
+} from '@three-studio/core';
 import { reportBrokenReferences } from '../state/brokenReport';
 import { askForText, askToConfirm } from '../state/dialogStore';
 import { pruneSelection, useDocumentStore } from '../state/documentStore';
@@ -54,7 +63,7 @@ export function currentSceneName(): string {
  * One rule for every place that marks or sets the start scene: Project
  * Settings, the Scene menu and Set as Start Scene.
  */
-export function isStartScene(entry: SceneEntry, startScene: string | null): boolean {
+export function isStartScene(entry: SceneEntry, startScene: SceneId | null): boolean {
   return entry.shadowedBy === null && entry.id === startScene;
 }
 
@@ -77,8 +86,8 @@ export function isStartScene(entry: SceneEntry, startScene: string | null): bool
  * The store's `stop`, not the `stop` command: this file importing the registry
  * would close a cycle, since the registry imports the commands built on it.
  */
-export async function backToTheScene(options: { stopPlay: boolean }): Promise<void> {
-  if (inPrefabMode()) await usePrefabModeStore.getState().exit();
+export async function backToTheScene(registries: CoreRegistries, options: { stopPlay: boolean }): Promise<void> {
+  if (inPrefabMode()) await usePrefabModeStore.getState().exit(registries);
   if (options.stopPlay && useEditorStore.getState().playState !== 'stopped') {
     useEditorStore.getState().stop();
   }
@@ -94,11 +103,11 @@ export async function backToTheScene(options: { stopPlay: boolean }): Promise<vo
  * edits, so those are saved where they stand; what is still unsaved then is the
  * scene's work, which is what the prompt is about.
  */
-export async function openScene(sceneId: string): Promise<void> {
+export async function openScene(registries: CoreRegistries, sceneId: SceneId): Promise<void> {
   // The checked row: nothing to open, so nothing to save either.
   if (sceneId === useProjectStore.getState().sceneId) return;
   try {
-    await usePrefabModeStore.getState().saveAll();
+    await usePrefabModeStore.getState().saveAll(registries);
     await window.studio.project.switchScene(sceneId);
   } catch (cause) {
     report(cause);
@@ -106,7 +115,7 @@ export async function openScene(sceneId: string): Promise<void> {
 }
 
 /** The same scene, in a second window. Focuses the window that already has it. */
-export async function openSceneInNewWindow(sceneId: string): Promise<void> {
+export async function openSceneInNewWindow(sceneId: SceneId): Promise<void> {
   try {
     await window.studio.project.openSceneWindow(sceneId);
   } catch (cause) {
@@ -114,7 +123,7 @@ export async function openSceneInNewWindow(sceneId: string): Promise<void> {
   }
 }
 
-export async function newScene(): Promise<void> {
+export async function newScene(registries: CoreRegistries): Promise<void> {
   const name = await askForText({
     title: 'New Scene',
     label: 'Name',
@@ -125,7 +134,7 @@ export async function newScene(): Promise<void> {
 
   try {
     // Saved and left open, as for Open Scene: the reload below ends them.
-    await usePrefabModeStore.getState().saveAll();
+    await usePrefabModeStore.getState().saveAll(registries);
     const { scene } = await window.studio.project.createScene(name);
     // Switched to rather than merely created: an author who asks for a new
     // scene means to start working in it.
@@ -147,7 +156,7 @@ export async function newScene(): Promise<void> {
  * hid one — the original, under the default name, which sorts after the copy —
  * and left this window on an id no file carried.
  */
-export async function saveSceneAs(): Promise<void> {
+export async function saveSceneAs(registries: CoreRegistries): Promise<void> {
   const { summary } = useProjectStore.getState();
   if (!summary) return;
 
@@ -165,10 +174,11 @@ export async function saveSceneAs(): Promise<void> {
     // finds another, so the copy's identity adopted during Play would be taken
     // back — the original's id and name over the copy's, read as saved against
     // a file they do not match.
-    await backToTheScene({ stopPlay: true });
+    await backToTheScene(registries, { stopPlay: true });
     const change = await window.studio.project.createScene(
       name,
-      serializeScene(useDocumentStore.getState().scene),
+      // A message: the main process reads it and writes the copy's file itself.
+      jsonOf(sceneJsonOf(registries, useDocumentStore.getState().scene)),
     );
     // The copy's file holds this document under the copy's id and name; the
     // document has to say so too, or the next save writes the original's back.
@@ -193,7 +203,7 @@ export async function saveSceneAs(): Promise<void> {
  * the window title, and because a scene should say what it is called even when
  * it is read on its own.
  */
-export async function renameCurrentScene(name: string): Promise<void> {
+export async function renameCurrentScene(registries: CoreRegistries, name: string): Promise<void> {
   const sceneId = useProjectStore.getState().sceneId;
   if (sceneId === null) return;
 
@@ -202,7 +212,7 @@ export async function renameCurrentScene(name: string): Promise<void> {
     // over it. And the game stops first: during Play the scene lock refuses the
     // name, and the document would keep the old one while the file took the
     // new.
-    await backToTheScene({ stopPlay: true });
+    await backToTheScene(registries, { stopPlay: true });
     const change = await window.studio.project.renameScene(sceneId, name);
     useProjectStore.getState().retarget(change, change.scene);
     // The name the file settled on, not the one that was typed: it may have
@@ -213,17 +223,17 @@ export async function renameCurrentScene(name: string): Promise<void> {
   }
 }
 
-export async function renameCurrentSceneWithPrompt(): Promise<void> {
+export async function renameCurrentSceneWithPrompt(registries: CoreRegistries): Promise<void> {
   const name = await askForText({
     title: 'Rename Scene',
     label: 'Name',
     defaultValue: currentSceneName(),
     confirmLabel: 'Rename',
   });
-  if (name !== null) await renameCurrentScene(name);
+  if (name !== null) await renameCurrentScene(registries, name);
 }
 
-export async function duplicateCurrentScene(): Promise<void> {
+export async function duplicateCurrentScene(registries: CoreRegistries): Promise<void> {
   const sceneId = useProjectStore.getState().sceneId;
   if (sceneId === null) return;
 
@@ -237,7 +247,7 @@ export async function duplicateCurrentScene(): Promise<void> {
 
   try {
     // Saved and left open, as for Open Scene: the reload below ends them.
-    await usePrefabModeStore.getState().saveAll();
+    await usePrefabModeStore.getState().saveAll(registries);
     const { scene } = await window.studio.project.duplicateScene(sceneId, name);
     await window.studio.project.switchScene(scene.id);
   } catch (cause) {
@@ -251,7 +261,7 @@ export async function duplicateCurrentScene(): Promise<void> {
  * Refused for the last scene by the main process, so the confirmation is about
  * losing a level rather than about breaking the project.
  */
-export async function deleteCurrentScene(): Promise<void> {
+export async function deleteCurrentScene(registries: CoreRegistries): Promise<void> {
   const sceneId = useProjectStore.getState().sceneId;
   if (sceneId === null) return;
 
@@ -270,7 +280,7 @@ export async function deleteCurrentScene(): Promise<void> {
     // game stops too: the reload would end it, but when another window already
     // shows the next scene the switch only brings that one forward, and this
     // one would go on running a deleted scene.
-    await backToTheScene({ stopPlay: true });
+    await backToTheScene(registries, { stopPlay: true });
     const { project, scenes } = await window.studio.project.deleteScene(sceneId);
     // Before the switch, or its guard would offer to save a document whose
     // file has just been removed.
@@ -298,7 +308,7 @@ export async function deleteCurrentScene(): Promise<void> {
  * not read, or that now holds another scene leaves the document, the open
  * prefabs and the game as they were — and Save Scene can still write it.
  */
-export async function revertCurrentScene(): Promise<void> {
+export async function revertCurrentScene(registries: CoreRegistries): Promise<void> {
   const { sceneId, scenePath } = useProjectStore.getState();
   if (sceneId === null || scenePath === null) return;
 
@@ -313,7 +323,7 @@ export async function revertCurrentScene(): Promise<void> {
   if (!confirmed) return;
 
   try {
-    const saved = deserializeScene(await window.studio.project.readScene(scenePath));
+    const saved = unwrap(decodeScene(registries, await window.studio.project.readScene(scenePath)), scenePath);
     // Since Save As writes a scene of its own, a file carries its window's id
     // unless something outside the editor put another scene there. Loading it
     // would leave this window — its URL, the main process's table — on an id
@@ -324,7 +334,7 @@ export async function revertCurrentScene(): Promise<void> {
     // The document is the scene from here on, and the game is stopped: Stop
     // puts back the document Play started from when it finds another, which
     // would bring the dropped work back over the file's.
-    await backToTheScene({ stopPlay: true });
+    await backToTheScene(registries, { stopPlay: true });
     useDocumentStore.getState().replaceScene(saved);
     // After the document, as an edit prunes. A load prunes nothing, and one
     // selected id naming nothing leaves the Inspector blank.
@@ -332,7 +342,7 @@ export async function revertCurrentScene(): Promise<void> {
     setSelection(pruneSelection(saved, selection));
     // Said again: the file can point at what the session had dealt with — an
     // entity removed since, whose asset is gone, comes back with it.
-    reportBrokenReferences();
+    reportBrokenReferences(registries);
   } catch (cause) {
     report(cause, 'Could not revert the scene');
   }
@@ -347,9 +357,9 @@ export async function revertCurrentScene(): Promise<void> {
  * document. The Inspector comes forward through `panelFocus`; this does not
  * reach into the dock.
  */
-export async function showSceneSettings(): Promise<void> {
+export async function showSceneSettings(registries: CoreRegistries): Promise<void> {
   try {
-    await backToTheScene({ stopPlay: false });
+    await backToTheScene(registries, { stopPlay: false });
   } catch (cause) {
     report(cause);
     return;
@@ -361,7 +371,7 @@ export async function showSceneSettings(): Promise<void> {
   editor.requestSceneSettings();
 }
 
-export async function chooseStartScene(sceneId: string): Promise<void> {
+export async function chooseStartScene(sceneId: SceneId): Promise<void> {
   try {
     useProjectStore.getState().adoptContents(await window.studio.project.setStartScene(sceneId));
   } catch (cause) {

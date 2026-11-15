@@ -1,5 +1,7 @@
 import {
   deviceLabel,
+  encodeLaunchSnapshot,
+  type CoreRegistries,
   type DeviceInfo,
   type DeviceLaunchOptions,
   type DeviceServerStatus,
@@ -181,15 +183,17 @@ function launchedNotes(status: DeviceServerStatus): string[] {
 }
 
 /**
- * The one call that launches, by hand or for live reload. A launch that became
- * current is this window's, kept with the snapshot it sent, and lifts a pause
- * of live reload: a launch got through. The devices' lines of the launches
- * before it leave the Console here, before the caller says what happened.
- * `null` — a newer launch, from any window, or a stop dropped it while it was
- * prepared — leaves everything as it was.
+ * The one call that launches, by hand or for live reload. The snapshot crosses
+ * the bridge encoded, its documents as text; what the window keeps is the
+ * snapshot itself, which live reload compares the next one with. A launch that
+ * became current is this window's, kept with the snapshot it sent, and lifts a
+ * pause of live reload: a launch got through. The devices' lines of the
+ * launches before it leave the Console here, before the caller says what
+ * happened. `null` — a newer launch, from any window, or a stop dropped it
+ * while it was prepared — leaves everything as it was.
  */
-async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
-  const status = await window.studio.devices.launch(snapshot);
+async function sendLaunch(registries: CoreRegistries, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
+  const status = await window.studio.devices.launch(encodeLaunchSnapshot(registries, snapshot));
   if (status === null) return null;
   const launch = status.launch;
   if (launch !== null) {
@@ -206,12 +210,12 @@ async function sendLaunch(snapshot: LaunchSnapshot): Promise<DeviceServerStatus 
  * One toast for the whole of it, as an export has: the launch takes a compile
  * and a scan, and the running message becomes the result.
  */
-export async function launchOnDevices(): Promise<void> {
+export async function launchOnDevices(registries: CoreRegistries): Promise<void> {
   const id = useToastStore
     .getState()
     .push({ kind: 'progress', title: 'Launching on devices…', progress: null });
   try {
-    const status = await sendLaunch(launchSnapshot());
+    const status = await sendLaunch(registries, launchSnapshot());
     if (status === null) {
       // Dropped: the newer launch reports for itself, and a stop was asked
       // for. Nothing of this one happened, so nothing is said of it.
@@ -236,10 +240,10 @@ export async function launchOnDevices(): Promise<void> {
  * compile: files, which no change in the editor fixes, so a relaunch on every
  * pause would be refused — and a toast raised — every time.
  */
-export async function relaunchOnDevices(snapshot: LaunchSnapshot): Promise<void> {
+export async function relaunchOnDevices(registries: CoreRegistries, snapshot: LaunchSnapshot): Promise<void> {
   let status: DeviceServerStatus | null;
   try {
-    status = await sendLaunch(snapshot);
+    status = await sendLaunch(registries, snapshot);
   } catch (cause) {
     const message = ipcErrorMessage(cause);
     useDeviceStore.setState({ liveReloadRefused: message });
@@ -250,7 +254,7 @@ export async function relaunchOnDevices(snapshot: LaunchSnapshot): Promise<void>
       progress: undefined,
       details: message,
       detailsOpen: false,
-      actions: [{ label: 'Launch', primary: true, onClick: () => void launchOnDevices() }],
+      actions: [{ label: 'Launch', primary: true, onClick: () => void launchOnDevices(registries) }],
     });
     useConsoleStore
       .getState()
@@ -628,7 +632,7 @@ export const DEVICE_COMMANDS = {
     // What is launched is the open project's: the main process refuses
     // without one, and saying so here greys the entry instead.
     can: () => useProjectStore.getState().summary !== null,
-    run: () => launchOnDevices(),
+    run: (ctx) => launchOnDevices(ctx.registries),
   }),
   stopDeviceServer: defineCommand({
     label: () => 'Stop Device Server',

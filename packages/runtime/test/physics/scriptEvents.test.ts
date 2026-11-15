@@ -3,10 +3,13 @@ import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle, Collision } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 import {
+  bundleOf,
   ground,
   nest,
   physicsRig,
@@ -103,7 +106,7 @@ describe('a script hearing its colliders', () => {
   });
 
   it("a script on a child hears its collider, and its body's script hears it too, once", async () => {
-    const cart = withScript(withBody('box', [0, 3, 0], { lockRotation: [true, true, true] }), Log);
+    const cart = withScript(withBody('box', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } }), Log);
     const wheel = withScript(withCollider('sphere', [0, -1.5, 0]), Log);
     nest(cart, wheel);
     const floor = withScript(ground(), Log);
@@ -175,9 +178,13 @@ describe('a script hearing its colliders', () => {
 
   it('with no physics, a listening script is quiet', async () => {
     // A host with no physics is about the host, not the scene: nothing to fix there.
+    const door = withScript(createEntity('Door'), Log);
+    const registries = builtInRegistries();
     const engine = await Engine.create({
-      scene: sceneWith([withScript(createEntity('Door'), Log)]),
-      resolver: NULL_ASSET_RESOLVER,
+      scene: sceneWith([door]),
+      registries,
+      scripts: bundleOf([door]),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,

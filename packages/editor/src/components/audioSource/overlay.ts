@@ -1,4 +1,4 @@
-import type { EntityMarker } from '../registry';
+import type { EntityMarker, EntityOverlay } from '../registry';
 import type { AudioSourceComponent, ComponentDoc } from '@three-studio/core';
 import {
   BufferAttribute,
@@ -204,12 +204,14 @@ function writeCone(
 }
 
 /** A source draws nothing; what it plays is heard, not seen. */
-export const drawsGeometry = false;
+const drawsGeometry = false;
 
 /**
  * Green, and smaller than a camera's or a light's: a scene has many sources and
  * they are scenery, not the thing being framed.
  */
-export const marker: EntityMarker = { color: 0x6ee7a8, pixels: 9, priority: 3 };
+const marker: EntityMarker = { color: 0x6ee7a8, pixels: 9, priority: 3 };
 
-export const helper = new AudioShape();
+const helper = (): ComponentHelper => new AudioShape();
+
+export const overlay: EntityOverlay = { id: 'audioSource', drawsGeometry, marker, helper };

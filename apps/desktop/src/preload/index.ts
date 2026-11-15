@@ -1,4 +1,5 @@
 import type {
+  AssetId,
   AssetImportResult,
   AssetManifest,
   DeviceLogs,
@@ -13,7 +14,6 @@ import type {
   MaterialDef,
   OpenProject,
   PhysicsMaterialDef,
-  PrefabDoc,
   Platform,
   ProjectContents,
   ProjectFile,
@@ -56,6 +56,7 @@ const bridge: StudioBridge = {
     chrome: process.versions.chrome ?? '',
     node: process.versions.node ?? '',
   },
+  smoke: identity.smoke,
   project: {
     listRecent: (): Promise<ProjectSummary[]> => ipcRenderer.invoke(IPC_INVOKE.project.listRecent),
     pickDirectory: (): Promise<string | null> => ipcRenderer.invoke(IPC_INVOKE.project.pickDirectory),
@@ -118,19 +119,19 @@ const bridge: StudioBridge = {
       ipcRenderer.invoke(IPC_INVOKE.assets.updateSettings, assetPath, settings),
     readMaterials: (): Promise<Record<string, MaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readMaterials),
-    createMaterial: (name, material): Promise<string> =>
+    createMaterial: (name, material): Promise<AssetId> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createMaterial, name, material),
-    readPrefabs: (): Promise<Record<string, PrefabDoc>> =>
+    readPrefabs: (): Promise<Record<string, string>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPrefabs),
-    createPrefab: (name, prefab, assetId): Promise<string> =>
-      ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefab, assetId),
+    createPrefab: (name, prefabJson, assetId): Promise<AssetId> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.createPrefab, name, prefabJson, assetId),
     saveMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.saveMaterial, assetPath, material),
-    savePrefab: (assetPath, prefab): Promise<void> =>
-      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefab),
+    savePrefab: (assetPath, prefabJson, assetId): Promise<void> =>
+      ipcRenderer.invoke(IPC_INVOKE.assets.savePrefab, assetPath, prefabJson, assetId),
     readPhysicsMaterials: (): Promise<Record<string, PhysicsMaterialDef>> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.readPhysicsMaterials),
-    createPhysicsMaterial: (name, material): Promise<string> =>
+    createPhysicsMaterial: (name, material): Promise<AssetId> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.createPhysicsMaterial, name, material),
     savePhysicsMaterial: (assetPath, material): Promise<void> =>
       ipcRenderer.invoke(IPC_INVOKE.assets.savePhysicsMaterial, assetPath, material),

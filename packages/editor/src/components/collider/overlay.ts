@@ -4,6 +4,7 @@ import {
   findComponent,
   type ColliderComponent,
   type ComponentDoc,
+  type EntityId,
   type MeshBuild,
   type SceneDoc,
 } from '@three-studio/core';
@@ -24,7 +25,7 @@ import {
   type Object3D,
 } from 'three/webgpu';
 import { annotation, type ComponentHelper, type HelperHandle } from '../../viewport/overlay/ComponentHelper';
-import type { EntityMarker } from '../registry';
+import type { EntityMarker, EntityOverlay } from '../registry';
 import { outlineOf } from './outline';
 
 /** Unity's collider green, so a collider reads as one in either editor. */
@@ -53,7 +54,7 @@ export class ColliderOutline implements ComponentHelper<'collider'> {
 }
 
 class ColliderLines extends LineSegments<BufferGeometry, LineBasicMaterial> {
-  private readonly entityId: string | undefined;
+  private readonly entityId: EntityId | undefined;
   private positions = new BufferAttribute(new Float32Array(0), 3);
   /**
    * What a mesh collider's lines were drawn from. Rebuilt only when it changes —
@@ -224,13 +225,15 @@ const _offset = new Matrix4();
 const UNIT = new Vector3(1, 1, 1);
 
 /** The shape physics uses is not the shape the author sees. */
-export const drawsGeometry = false;
+const drawsGeometry = false;
 
 /**
  * No marker. A collider is on something already drawn, and the annotation worth
  * having for it is an outline of the shape itself, which `ColliderOutline` draws
  * while it is selected.
  */
-export const marker: EntityMarker | null = null;
+const marker: EntityMarker | null = null;
 
-export const helper = new ColliderOutline();
+const helper = (): ComponentHelper => new ColliderOutline();
+
+export const overlay: EntityOverlay = { id: 'collider', drawsGeometry, marker, helper };

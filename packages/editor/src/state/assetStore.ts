@@ -1,14 +1,24 @@
 import {
   applyAssetChange,
   assetUrl,
+  conformMaterial,
+  conformPhysicsMaterial,
+  decodePrefab,
   emptyManifest,
+  idMapOf,
+  isAssetId,
+  jsonOf,
+  prefabJsonOf,
   type AssetChange,
   type AssetEntry,
+  type AssetId,
   type AssetKind,
   type AssetManifest,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
+  type RefusedFile,
 } from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime';
 import { create } from 'zustand';
@@ -35,14 +45,20 @@ interface AssetState {
    * Held here rather than fetched on demand because the binder builds a mesh
    * synchronously; see `SceneBinder.setMaterialLibrary`.
    */
-  materials: Record<string, MaterialDef>;
+  materials: ReadonlyMap<AssetId, MaterialDef>;
   /**
    * Every physics material, by asset id. Nothing in the edit view reads one:
    * Play, a launch and the Inspector read the table itself.
    */
-  physicsMaterials: Record<string, PhysicsMaterialDef>;
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
   /** Every prefab, by asset id. Pushed into the binder the same way. */
-  prefabs: Record<string, PrefabDoc>;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
+  /**
+   * The prefab files this build refused, each with why: left out of `prefabs`,
+   * so their instances draw empty and are marked as a missing prefab's are,
+   * and kept here to be named when the project opens.
+   */
+  refusedPrefabs: ReadonlyMap<AssetId, RefusedFile>;
   loading: boolean;
   error: string | null;
 
@@ -55,17 +71,32 @@ interface AssetState {
   viewMode: AssetViewMode;
   tileSize: number;
 
-  refresh: () => Promise<void>;
+  /**
+   * Reads the manifest and the libraries again. Given the window's registries,
+   * which every prefab's components are decoded through — and so is every action
+   * below that ends in it.
+   */
+  refresh: (registries: CoreRegistries) => Promise<void>;
   /** Extracts an embedded material into a new asset; returns its id. */
-  createMaterial: (name: string, material: MaterialDef) => Promise<string>;
-  createPrefab: (name: string, prefab: PrefabDoc, assetId?: string) => Promise<string>;
+  createMaterial: (registries: CoreRegistries, name: string, material: MaterialDef) => Promise<AssetId>;
+  createPrefab: (
+    registries: CoreRegistries,
+    name: string,
+    prefab: PrefabDoc,
+    assetId?: AssetId,
+  ) => Promise<AssetId>;
   /** Writes back to a material asset, then re-reads so every user updates. */
-  saveMaterial: (assetId: string, material: MaterialDef) => Promise<void>;
+  saveMaterial: (assetId: AssetId, material: MaterialDef) => Promise<void>;
   /** Writes a new physics material asset; returns its id. */
-  createPhysicsMaterial: (name: string, material: PhysicsMaterialDef) => Promise<string>;
+  createPhysicsMaterial: (
+    registries: CoreRegistries,
+    name: string,
+    material: PhysicsMaterialDef,
+  ) => Promise<AssetId>;
   /** Writes back to a physics material asset, every collider linking it following. */
-  savePhysicsMaterial: (assetId: string, material: PhysicsMaterialDef) => Promise<void>;
-  savePrefab: (assetId: string, prefab: PrefabDoc) => Promise<void>;
+  savePhysicsMaterial: (assetId: AssetId, material: PhysicsMaterialDef) => Promise<void>;
+  /** Writes a prefab back, its file recording the versions of the types the window's registries define. */
+  savePrefab: (registries: CoreRegistries, assetId: AssetId, prefab: PrefabDoc) => Promise<void>;
   remove: (assetPath: string) => Promise<void>;
   move: (assetPath: string, targetFolder: string) => Promise<void>;
   /**
@@ -83,9 +114,9 @@ interface AssetState {
   clear: () => void;
 
   /** Brings an asset into view in the browser and flags it for a moment. */
-  reveal: (assetId: string) => void;
+  reveal: (assetId: AssetId) => void;
   /** Set by `reveal`, cleared by the panel once it has drawn the highlight. */
-  revealed: string | null;
+  revealed: AssetId | null;
   clearRevealed: () => void;
 
   setQuery: (query: string) => void;
@@ -95,7 +126,8 @@ interface AssetState {
   setViewMode: (mode: AssetViewMode) => void;
   setTileSize: (size: number) => void;
 
-  byId: (assetId: string) => AssetEntry | undefined;
+  /** The entry an id names. */
+  byId: (assetId: AssetId) => AssetEntry | undefined;
   byKind: (kind: AssetKind) => AssetEntry[];
 }
 
@@ -146,9 +178,10 @@ function adopt(change: AssetChange): AssetChange {
 
 export const useAssetStore = create<AssetState>()((set, get) => ({
   manifest: emptyManifest(),
-  materials: {},
-  physicsMaterials: {},
-  prefabs: {},
+  materials: new Map(),
+  physicsMaterials: new Map(),
+  prefabs: new Map(),
+  refusedPrefabs: new Map(),
   revision: 0,
   loading: false,
   error: null,
@@ -162,28 +195,49 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   viewMode: 'grid',
   tileSize: 88,
 
-  refresh: () =>
+  refresh: (registries) =>
     guard(set, async () => {
-      const [manifest, materials, physicsMaterials, prefabs] = await Promise.all([
+      const [manifest, materialRecord, physicsMaterialRecord, prefabTexts] = await Promise.all([
         window.studio.assets.list(),
         window.studio.assets.readMaterials(),
         window.studio.assets.readPhysicsMaterials(),
         window.studio.assets.readPrefabs(),
       ]);
-      set({ manifest, materials, physicsMaterials, prefabs, revision: get().revision + 1 });
+      // Records over the bridge, Maps here: a key read back as an id is checked
+      // as one, and each file is decoded under it, here, so that a prefab this
+      // build refuses is one the window can name with why.
+      const prefabs = new Map<AssetId, PrefabDoc>();
+      const refused: [AssetId, RefusedFile][] = [];
+      for (const [id, text] of idMapOf(prefabTexts, isAssetId)) {
+        const decoded = decodePrefab(registries, text, id);
+        if (decoded.ok) prefabs.set(id, decoded.value);
+        else refused.push([id, { path: manifest.assets.find((asset) => asset.id === id)?.path ?? id, diagnostics: decoded.diagnostics }]);
+      }
+      // By path, in an order that does not depend on which read the main
+      // process finished first.
+      refused.sort(([, a], [, b]) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      const refusedPrefabs = new Map(refused);
+      set({
+        manifest,
+        materials: idMapOf(materialRecord, isAssetId),
+        physicsMaterials: idMapOf(physicsMaterialRecord, isAssetId),
+        prefabs,
+        refusedPrefabs,
+        revision: get().revision + 1,
+      });
       useDocumentStore.getState().noteLibraryChange('materials');
       useDocumentStore.getState().noteLibraryChange('prefabs');
     }),
 
-  createPrefab: async (name, prefab, assetId) => {
-    const created = await window.studio.assets.createPrefab(name, prefab, assetId);
-    await get().refresh();
+  createPrefab: async (registries, name, prefab, assetId) => {
+    const created = await window.studio.assets.createPrefab(name, jsonOf(prefabJsonOf(registries, prefab)), assetId ?? prefab.id);
+    await get().refresh(registries);
     return created;
   },
 
-  createMaterial: async (name, material) => {
+  createMaterial: async (registries, name, material) => {
     const assetId = await window.studio.assets.createMaterial(name, material);
-    await get().refresh();
+    await get().refresh(registries);
     return assetId;
   },
 
@@ -193,14 +247,14 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     await window.studio.assets.saveMaterial(entry.path, material);
     // Update in place as well as re-reading: the round trip is a few
     // milliseconds, and a slider that snaps back in between reads as a bug.
-    const materials = { ...get().materials, [assetId]: material };
+    const materials = new Map(get().materials).set(assetId, material);
     set({ materials });
     useDocumentStore.getState().noteLibraryChange('materials');
   },
 
-  createPhysicsMaterial: async (name, material) => {
+  createPhysicsMaterial: async (registries, name, material) => {
     const assetId = await window.studio.assets.createPhysicsMaterial(name, material);
-    await get().refresh();
+    await get().refresh(registries);
     return assetId;
   },
 
@@ -209,16 +263,16 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
     if (!entry) return;
     await window.studio.assets.savePhysicsMaterial(entry.path, material);
     // In place as well, as `saveMaterial` does, so a slider does not snap back.
-    set({ physicsMaterials: { ...get().physicsMaterials, [assetId]: material } });
+    set({ physicsMaterials: new Map(get().physicsMaterials).set(assetId, material) });
   },
 
-  savePrefab: async (assetId, prefab) => {
+  savePrefab: async (registries, assetId, prefab) => {
     const entry = get().byId(assetId);
     if (!entry) return;
-    await window.studio.assets.savePrefab(entry.path, prefab);
+    await window.studio.assets.savePrefab(entry.path, jsonOf(prefabJsonOf(registries, prefab)), assetId);
     // Updated in place as well as written: every instance re-expands from this
     // table, and waiting for a re-read would show the old shape in between.
-    const prefabs = { ...get().prefabs, [assetId]: prefab };
+    const prefabs = new Map(get().prefabs).set(assetId, prefab);
     set({ prefabs, revision: get().revision + 1 });
     useDocumentStore.getState().noteLibraryChange('prefabs');
   },
@@ -234,8 +288,8 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
       // went on bouncing a ball by a physics material the hierarchy called gone,
       // and a deleted material or prefab went on being drawn, where the delete
       // dialog says what linked it shows nothing.
-      const kept = <T,>(table: Record<string, T>) =>
-        Object.fromEntries(Object.entries(table).filter(([id]) => !gone.has(id)));
+      const kept = <T,>(table: ReadonlyMap<AssetId, T>) =>
+        new Map([...table].filter(([id]) => !gone.has(id)));
       const { materials, physicsMaterials, prefabs } = get();
       set({ materials: kept(materials), physicsMaterials: kept(physicsMaterials), prefabs: kept(prefabs) });
       useDocumentStore.getState().noteLibraryChange('materials');
@@ -275,9 +329,9 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   clear: () =>
     set({
       manifest: emptyManifest(),
-      materials: {},
-      physicsMaterials: {},
-      prefabs: {},
+      materials: new Map(),
+      physicsMaterials: new Map(),
+      prefabs: new Map(),
       revision: get().revision + 1,
       error: null,
           folder: '',
@@ -392,6 +446,46 @@ export function childFolders(manifest: AssetManifest, parent: string): string[] 
   }
   return [...children].sort();
 }
+
+/*
+ * The values of the assets an object of a component can be filled by — a
+ * mesh's material, a collider's physics material — through one way in for
+ * every kind: the Inspector shows, edits and tunes them by the kind a schema's
+ * link names, and names no library. The libraries are named here alone, until
+ * asset kinds register their own.
+ */
+
+/** The values of the asset `assetId` names, from its kind's library; `null` for a kind with none, or an id the project lacks. */
+export function assetValues(kind: AssetKind, assetId: AssetId): object | null {
+  const { materials, physicsMaterials } = useAssetStore.getState();
+  switch (kind) {
+    case 'material':
+      return materials.get(assetId) ?? null;
+    case 'physicsMaterial':
+      return physicsMaterials.get(assetId) ?? null;
+    default:
+      return null;
+  }
+}
+
+/** Writes an asset's values to its file, made whole by its kind first; nothing for a kind with no values. */
+export async function saveAssetValues(kind: AssetKind, assetId: AssetId, values: object): Promise<void> {
+  switch (kind) {
+    case 'material':
+      return useAssetStore.getState().saveMaterial(assetId, conformMaterial(values));
+    case 'physicsMaterial':
+      return useAssetStore.getState().savePhysicsMaterial(assetId, conformPhysicsMaterial(values));
+    default:
+      return;
+  }
+}
+
+/**
+ * The libraries whose content a pane shows without the document moving: a
+ * linked asset's values, a prefab's contents. Read with `useShallow`, so that
+ * a change to one of them, and only that, is a change.
+ */
+export const selectLibraries = (state: AssetState) => [state.materials, state.physicsMaterials, state.prefabs] as const;
 
 /**
  * Maps asset ids onto the custom protocol the main process serves.

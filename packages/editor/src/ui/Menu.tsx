@@ -8,7 +8,7 @@ export interface MenuItem {
   label: string;
   /** Drawn before the label, for lists where the rows also appear as buttons. */
   icon?: LucideIcon;
-  shortcut?: string;
+  shortcut?: string | undefined;
   disabled?: boolean;
   checked?: boolean;
   onSelect?: () => void;
@@ -26,7 +26,7 @@ export interface MenuItem {
    */
   key?: string;
   /** Dim text on the right, in the shortcut's column: a state or a reason. */
-  detail?: string;
+  detail?: string | undefined;
 }
 
 /** A `null` entry renders a separator, which keeps menu definitions terse. */
@@ -41,7 +41,7 @@ interface MenuProps {
   /** What the menu hangs from. A press on it is left to it. */
   anchor?: RefObject<HTMLElement | null>;
   /** Horizontal alignment against the box it hangs from. */
-  align?: MenuAlign;
+  align?: MenuAlign | undefined;
   /** Which side of that box the list opens on. */
   placement?: MenuPlacement;
   /** A submenu, drawn inside its parent: the parent listens for both. */
@@ -200,13 +200,13 @@ interface DropdownMenuProps {
   anchor: RefObject<HTMLElement | null>;
   items: readonly MenuEntry[];
   onClose: () => void;
-  align?: MenuAlign;
+  align?: MenuAlign | undefined;
   placement?: MenuPlacement;
   /**
    * For the box the list floats from — its type, say. Drawn inside its anchor,
    * a list took the anchor's; floating, it takes the body's.
    */
-  className?: string;
+  className?: string | undefined;
 }
 
 /**

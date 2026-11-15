@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { create } from 'zustand';
 
 /** What the gizmo does with the current selection. Mirrors Unity's Q/W/E/R. */
@@ -71,16 +72,15 @@ interface EditorState {
    */
   fullScreen: boolean;
   stepRequested: boolean;
-  selection: readonly string[];
+  selection: readonly EntityId[];
   /**
    * The entity a view has been asked to put into inline edit, or `null`.
    *
-   * Here rather than in the panel's own `useState`, and the reason is the whole
-   * of T-063. Renaming is the one gesture a command cannot finish: what it does
-   * is put a *row* into edit mode, and only the hierarchy has rows. That used to
-   * be wired through a mutable module slot in `commands/` — a command registry
-   * containing a callback registry — filled by nobody, so `rename.run()` did
-   * nothing at all.
+   * Here rather than in the panel's own `useState`, because renaming is the one
+   * gesture a command cannot finish: what it does is put a *row* into edit
+   * mode, and only the hierarchy has rows. That used to be wired through a
+   * mutable module slot in `commands/` — a command registry containing a
+   * callback registry — filled by nobody, so `rename.run()` did nothing at all.
    *
    * A field a command writes and a view reads is the same shape `assetStore`
    * already uses for `revealed`, and it is deliberately **not** an event bus: it
@@ -89,14 +89,14 @@ interface EditorState {
    * being edited", which is a question about the editor and not about the panel
    * that happens to draw it.
    */
-  renaming: string | null;
+  renaming: EntityId | null;
   /**
    * Whether the command palette is up.
    *
    * A field a command writes and a view reads, the same shape as `renaming`
    * above: opening it is a gesture, and a gesture reached from a key has to go
    * through the registry or it needs a fourth spelling of "which key does what",
-   * which is exactly what T-064 removed.
+   * which is exactly what the binding table removed.
    */
   paletteOpen: boolean;
   /**
@@ -132,10 +132,10 @@ interface EditorState {
   toggleGrid: () => void;
   toggleStats: () => void;
   togglePhysicsDebug: () => void;
-  setSelection: (ids: readonly string[]) => void;
+  setSelection: (ids: readonly EntityId[]) => void;
   clearSelection: () => void;
   /** Asks whichever view holds this entity to edit its name in place. */
-  beginRename: (entityId: string) => void;
+  beginRename: (entityId: EntityId) => void;
   /** Cleared by the view when the field closes, committed or abandoned. */
   endRename: () => void;
   openPalette: () => void;

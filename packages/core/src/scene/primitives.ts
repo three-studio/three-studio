@@ -15,6 +15,8 @@
  * Everything here must stay JSON-serialisable and structurally cloneable.
  */
 
+import type { ComponentId } from '../ids';
+
 export type Vec2 = [number, number];
 export type Vec3 = [number, number, number];
 /** `#rrggbb`. */
@@ -35,10 +37,15 @@ export interface Transform {
  * component to a prefab slid every override of every instance onto the wrong
  * one, and removing one paired a cube's build with a sphere's component.
  *
- * Opaque. The migration happens to mint `<entityId>:<index>` — see
- * `serialization.ts` for why that particular shape — and nothing may read it
- * back out. An id that can be parsed into a position is a position again.
+ * Opaque: nothing may read anything back out of it. An id that can be parsed
+ * into a position is a position again.
  */
 export interface ComponentBase {
-  id: string;
+  id: ComponentId;
 }
+
+/**
+ * A component of the type `Id`, holding the fields `Data` describes: what a
+ * type written as a schema is typed as, its fields inferred from the schema.
+ */
+export type Component<Id extends string, Data> = ComponentBase & { type: Id } & Data;

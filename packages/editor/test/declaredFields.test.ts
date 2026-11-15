@@ -1,20 +1,29 @@
 import {
+  assertDefined,
   createEmptyScene,
   createEntity,
+  createMeshComponent,
   createMeshEntity,
   emptyManifest,
   field,
+  fixedId,
   importerForFile,
   type AssetEntry,
+  type AssetId,
+  type EntityId,
   type FieldDef,
   type TextureSettings,
 } from '@three-studio/core';
 import type { ScriptProperties } from '@three-studio/runtime';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { declaredControl, entityChoices, specFor, type KeyedField } from '../src/inspector/declaredFields';
-import { GEOMETRY_FIELDS, MATERIAL_FIELDS, type FieldSpec } from '../src/inspector/fields';
+import type { FieldSpec } from '../src/inspector/fields';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The one adapter, exercised by both producers.
@@ -37,6 +46,9 @@ const EVERY_VARIANT: ScriptProperties = {
   target: { type: 'entity', label: 'Follow' },
   clip: { type: 'asset', kind: 'audio' },
 };
+
+const STEP = fixedId('asset', 'a1');
+const BRICK = fixedId('asset', 't1');
 
 const bind = (key: string, def: FieldDef = EVERY_VARIANT[key]!) =>
   specFor({ ...def, key } as KeyedField, ['props', key]);
@@ -111,7 +123,7 @@ describe('a script property, whichever variant it is', () => {
     const crate = createMeshEntity('box');
     crate.entity.name = 'Crate';
     const scene = createEmptyScene();
-    scene.entities[crate.entity.id] = crate.entity;
+    scene.entities.set(crate.entity.id, crate.entity);
     useDocumentStore.setState({ scene });
 
     expect(control('target').optionsProvider?.()).toEqual({ None: '', Crate: crate.entity.id });
@@ -120,11 +132,11 @@ describe('a script property, whichever variant it is', () => {
 
   it('tells apart entities that share a name', () => {
     const scene = createEmptyScene();
-    const add = (name: string, parent: string | null = null): string => {
+    const add = (name: string, parent: EntityId | null = null): EntityId => {
       const { entity } = createEntity(name);
       entity.parent = parent;
-      scene.entities[entity.id] = entity;
-      if (parent) scene.entities[parent]!.children.push(entity.id);
+      scene.entities.set(entity.id, entity);
+      if (parent) assertDefined(scene.entities.get(parent), 'the parent').children.push(entity.id);
       return entity.id;
     };
     const cart = add('Cart');
@@ -147,7 +159,7 @@ describe('a script property, whichever variant it is', () => {
   });
 
   it('lists only the assets of the kind the script asked for', () => {
-    const asset = (id: string, name: string, kind: AssetEntry['kind']): AssetEntry => ({
+    const asset = (id: AssetId, name: string, kind: AssetEntry['kind']): AssetEntry => ({
       id,
       name,
       kind,
@@ -163,22 +175,22 @@ describe('a script property, whichever variant it is', () => {
     useAssetStore.setState({
       manifest: {
         ...emptyManifest(),
-        assets: [asset('a1', 'Step', 'audio'), asset('t1', 'Brick', 'texture')],
+        assets: [asset(STEP, 'Step', 'audio'), asset(BRICK, 'Brick', 'texture')],
       },
     });
 
-    expect(control('clip').optionsProvider?.()).toEqual({ None: '', Step: 'a1' });
+    expect(control('clip').optionsProvider?.()).toEqual({ None: '', Step: STEP });
     expect(control('clip', { type: 'asset' }).optionsProvider?.()).toEqual({
       None: '',
-      Step: 'a1',
-      Brick: 't1',
+      Step: STEP,
+      Brick: BRICK,
     });
   });
 });
 
 describe('an importer declares in the same words', () => {
   it('binds a real importer row through the same adapter', () => {
-    const texture = importerForFile('brick.png')!;
+    const texture = importerForFile(registries, 'brick.png')!;
     const settings = texture.defaultSettings('brick.png') as TextureSettings;
     const group = texture.fields(settings)[0]!;
     if (group.type !== 'group') throw new Error('expected a group');
@@ -208,8 +220,13 @@ describe('an importer declares in the same words', () => {
 });
 
 describe('a component pane declares in the same words', () => {
+  /** A cube's rows, as its pane derives them. */
+  const CUBE = paneEntriesFor(builtInRegistries(), createMeshComponent('box')).entries.filter(
+    (entry): entry is FieldSpec => 'path' in entry,
+  );
+
   it('narrows a number without naming Tweakpane', () => {
-    expect(declaredControl(row(GEOMETRY_FIELDS.box, 'Segments X')).params).toEqual({
+    expect(declaredControl(row(CUBE, 'Segments X')).params).toEqual({
       min: 1,
       max: 256,
       step: 1,
@@ -217,7 +234,7 @@ describe('a component pane declares in the same words', () => {
   });
 
   it('spreads one set of bounds over every axis of a pad', () => {
-    const tiling = row(MATERIAL_FIELDS, 'Tiling');
+    const tiling = row(CUBE, 'Tiling');
     const { params, toModel, fromModel } = declaredControl(tiling);
     expect(params).toEqual({ x: { step: 0.1 }, y: { step: 0.1 } });
     expect(toModel?.([2, 3])).toEqual({ x: 2, y: 3 });
@@ -227,15 +244,15 @@ describe('a component pane declares in the same words', () => {
   it('leaves a row that has nothing to add alone, for Tweakpane to read the value', () => {
     // A colour, a checkbox and a text field all come from the bound value. A
     // declared type would be a restatement of what the document already says.
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Colour'))).toEqual({});
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Transparent'))).toEqual({});
+    expect(declaredControl(row(CUBE, 'Colour'))).toEqual({});
+    expect(declaredControl(row(CUBE, 'Transparent'))).toEqual({});
   });
 
   it('does not fill a missing component value the way it fills a script one', () => {
     // The belt in `PaneBinder`: a field the document has no value for is
     // skipped and said out loud, rather than shown as a zero that would be
     // written back on the first drag.
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Roughness')).toModel).toBeUndefined();
+    expect(declaredControl(row(CUBE, 'Roughness')).toModel).toBeUndefined();
     expect(bind('speed').toModel?.(undefined)).toBe(5);
   });
 });

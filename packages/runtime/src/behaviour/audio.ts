@@ -1,12 +1,12 @@
-import type { AudioListenerComponent, AudioSourceComponent } from '@three-studio/core';
+import type { AudioListenerComponent, AudioSourceComponent, EntityId } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { PlayRequest, Vec3Tuple, VoiceHandle } from '../audio/playback';
-import {
-  registerBehaviour,
-  type Behaviour,
-  type BehaviourContext,
-  type BehaviourTarget,
+import type {
+  Behaviour,
+  BehaviourContext,
+  BehaviourDefinition,
+  BehaviourTarget,
 } from './Behaviour';
 
 /*
@@ -188,18 +188,18 @@ export class AudioSourceBehaviour implements Behaviour {
  * has already been torn down. The same shape `internalContext` uses in
  * `ScriptApi`, and for the same reason.
  */
-const sources = new WeakMap<AudioEngine, Map<string, AudioSourceBehaviour[]>>();
+const sources = new WeakMap<AudioEngine, Map<EntityId, AudioSourceBehaviour[]>>();
 
 /** Every source on an entity. Several is legal — a door can creak and slam. */
 export function audioSourcesOn(
   audio: AudioEngine,
-  entityId: string,
+  entityId: EntityId,
 ): readonly AudioSourceBehaviour[] {
   return sources.get(audio)?.get(entityId) ?? [];
 }
 
-function remember(audio: AudioEngine, entityId: string, behaviour: AudioSourceBehaviour): void {
-  const byEntity = sources.get(audio) ?? new Map<string, AudioSourceBehaviour[]>();
+function remember(audio: AudioEngine, entityId: EntityId, behaviour: AudioSourceBehaviour): void {
+  const byEntity = sources.get(audio) ?? new Map<EntityId, AudioSourceBehaviour[]>();
   sources.set(audio, byEntity);
   byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), behaviour]);
 }
@@ -235,19 +235,25 @@ class AudioListenerBehaviour implements Behaviour {
   }
 }
 
-registerBehaviour('audioSource', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  if (target.component.type !== 'audioSource') return null;
-  // No audio engine at all — a host that never handed one over, or a browser
-  // with no Web Audio. The component is inert rather than broken, and the engine
-  // has already said so once.
-  if (ctx.audio === null) return null;
-  const behaviour = new AudioSourceBehaviour(target.component, target.object, ctx.audio);
-  remember(ctx.audio, target.entity.id, behaviour);
-  return behaviour;
-});
+export const audioSourceBehaviour: BehaviourDefinition = {
+  id: 'audioSource',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    if (target.component.type !== 'audioSource') return null;
+    // No audio engine at all — a host that never handed one over, or a browser
+    // with no Web Audio. The component is inert rather than broken, and the
+    // engine has already said so once.
+    if (ctx.audio === null) return null;
+    const behaviour = new AudioSourceBehaviour(target.component, target.object, ctx.audio);
+    remember(ctx.audio, target.entity.id, behaviour);
+    return behaviour;
+  },
+};
 
-registerBehaviour('audioListener', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  if (target.component.type !== 'audioListener') return null;
-  if (ctx.audio === null) return null;
-  return new AudioListenerBehaviour(target.component, target.object, ctx.audio);
-});
+export const audioListenerBehaviour: BehaviourDefinition = {
+  id: 'audioListener',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    if (target.component.type !== 'audioListener') return null;
+    if (ctx.audio === null) return null;
+    return new AudioListenerBehaviour(target.component, target.object, ctx.audio);
+  },
+};

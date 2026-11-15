@@ -1,46 +1,18 @@
-import type { ScriptComponent } from '@three-studio/core';
-import {
-  registerBehaviour,
-  type Behaviour as RuntimeBehaviour,
-  type BehaviourContext,
-  type BehaviourTarget,
+import type {
+  Behaviour as RuntimeBehaviour,
+  BehaviourContext,
+  BehaviourDefinition,
+  BehaviourTarget,
 } from '../behaviour/Behaviour';
 import type { Collision } from '../physics/PhysicsApi';
 import { audioApiFor } from './audioApi';
+import { isScriptClass } from './scriptBundle';
 import { noBody, scriptPhysicsFor } from './scriptPhysics';
 import {
   Behaviour,
   RESERVED_PROPERTY_NAMES,
   internalContext,
-  type ScriptProperties,
 } from './ScriptApi';
-
-/** Constructor shape a compiled script module must default-export. */
-export interface ScriptClass {
-  new (): Behaviour;
-  properties?: ScriptProperties;
-}
-
-const registry = new Map<string, ScriptClass>();
-
-/**
- * Registers a compiled script under its asset id.
- *
- * The compiled bundle calls this once per script at import time, so the runtime
- * never has to know how scripts were built — the editor bundles them with
- * esbuild, and an exported web build ships the same bundle.
- */
-export function registerScript(assetId: string, scriptClass: ScriptClass): void {
-  registry.set(assetId, scriptClass);
-}
-
-export function scriptClassFor(assetId: string): ScriptClass | undefined {
-  return registry.get(assetId);
-}
-
-export function clearScripts(): void {
-  registry.clear();
-}
 
 /**
  * Adapts a user script to the engine's behaviour interface.
@@ -126,70 +98,76 @@ class ScriptBehaviour implements RuntimeBehaviour {
   }
 }
 
-registerBehaviour('script', (target: BehaviourTarget, ctx: BehaviourContext) => {
-  const component = target.component as ScriptComponent;
-  if (component.assetId === '') return null;
+export const scriptBehaviour: BehaviourDefinition = {
+  id: 'script',
+  create(target: BehaviourTarget, ctx: BehaviourContext) {
+    const { component } = target;
+    if (component.type !== 'script' || component.assetId === null) return null;
 
-  const ScriptType = registry.get(component.assetId);
-  if (!ScriptType) {
-    ctx.warn(`"${target.entity.name}" references a script that is not compiled.`);
-    return null;
-  }
-
-  const instance = new ScriptType();
-  internalContext.set(instance, ctx);
-
-  // Editable values are applied before onStart, so a script sees its configured
-  // values the first time it runs — as in Unity and Unreal. Anything named like
-  // a framework member is refused rather than allowed to overwrite it: a
-  // property called `transform` would replace the object the script is meant to
-  // move, and the failure would be completely silent.
-  const declared = ScriptType.properties ?? {};
-
-  for (const [key, value] of Object.entries(component.props)) {
-    // A value left over from a property the script no longer declares is
-    // ignored rather than assigned: renaming a property would otherwise leave a
-    // stale field on every instance forever.
-    if (!Object.hasOwn(declared, key)) continue;
-    if (RESERVED_PROPERTY_NAMES.has(key)) {
-      ctx.warn(
-        `"${target.entity.name}": script property "${key}" is a reserved name and was ignored.`,
-      );
-      continue;
+    // The classes of the bundle this engine was given, and of no other. Checked
+    // as it is read: the context cannot name the script API without the API
+    // naming the context back, so it holds them as values of no known type.
+    const ScriptType = ctx.scripts.get(component.assetId);
+    if (!isScriptClass(ScriptType)) {
+      ctx.warn(`"${target.entity.name}" references a script that is not compiled.`);
+      return null;
     }
-    (instance as unknown as Record<string, unknown>)[key] = value;
-  }
 
-  const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);
-  Object.assign(instance, {
-    entity: target.entity,
-    transform: target.object,
-    // With physics off — a host that has none, which is a test — the stand-in
-    // is silent: the line would be about the host, not the scene.
-    body:
-      physics.body(target.entity.id) ??
-      noBody(
-        ctx.physics &&
-          (() =>
-            ctx.warn(
-              `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
-            )),
-      ),
-    physics,
-    input: ctx.input,
-    scenes: ctx.scenes,
-    // Bound to this entity, so `this.audio.play()` with no argument means "my
-    // own sound" — the case a script wants ninety per cent of the time and the
-    // one that should be shortest to write.
-    audio: audioApiFor(ctx.audio, target.entity.id),
-  });
+    const instance = new ScriptType();
+    internalContext.set(instance, ctx);
 
-  const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, ctx);
-  // Only `onAwake` here. `onStart` is run by the engine once every behaviour in
-  // the scene exists, so a script can reference another entity's script without
-  // depending on which of them happened to be constructed first.
-  behaviour.awake();
-  return behaviour;
-});
+    // Editable values are applied before onStart, so a script sees its
+    // configured values the first time it runs — as in Unity and Unreal.
+    // Anything named like a framework member is refused rather than allowed to
+    // overwrite it: a property called `transform` would replace the object the
+    // script is meant to move, and the failure would be completely silent.
+    const declared = ScriptType.properties ?? {};
+
+    for (const [key, value] of Object.entries(component.props)) {
+      // A value left over from a property the script no longer declares is
+      // ignored rather than assigned: renaming a property would otherwise leave
+      // a stale field on every instance forever.
+      if (!Object.hasOwn(declared, key)) continue;
+      if (RESERVED_PROPERTY_NAMES.has(key)) {
+        ctx.warn(
+          `"${target.entity.name}": script property "${key}" is a reserved name and was ignored.`,
+        );
+        continue;
+      }
+      Reflect.set(instance, key, value);
+    }
+
+    const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);
+    Object.assign(instance, {
+      entity: target.entity,
+      transform: target.object,
+      // With physics off — a host that has none, which is a test — the
+      // stand-in is silent: the line would be about the host, not the scene.
+      body:
+        physics.body(target.entity.id) ??
+        noBody(
+          ctx.physics &&
+            (() =>
+              ctx.warn(
+                `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
+              )),
+        ),
+      physics,
+      input: ctx.input,
+      scenes: ctx.scenes,
+      // Bound to this entity, so `this.audio.play()` with no argument means "my
+      // own sound" — the case a script wants ninety per cent of the time and the
+      // one that should be shortest to write.
+      audio: audioApiFor(ctx.audio, target.entity.id),
+    });
+
+    const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, ctx);
+    // Only `onAwake` here. `onStart` is run by the engine once every behaviour
+    // in the scene exists, so a script can reference another entity's script
+    // without depending on which of them happened to be constructed first.
+    behaviour.awake();
+    return behaviour;
+  },
+};
 
 export { Behaviour };

@@ -1,10 +1,13 @@
 import {
+  assertDefined,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createPrefabInstance,
   createTransform,
+  fixedId,
   instancedId,
+  type EntityId,
 } from '@three-studio/core';
 import { Matrix4 } from 'three/webgpu';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -21,23 +24,28 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { expandedScene } from '../src/state/expansion';
 import { Selection } from '../src/state/selection';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
- * The gestures, now that phase 4 has handed over `Selection` and its filters.
+ * The gestures that run through `Selection` and its filters.
  * What is tested here is the part that is easy to get wrong: one undo step per
  * gesture, and the filters that stop an entity being moved twice.
  */
 
 const doc = () => useDocumentStore.getState();
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
-const at = (id: string) => doc().scene.entities[id]?.transform.position ?? [];
+const TREE = fixedId('asset', 'tree');
+const INNER = fixedId('entity', 'inner');
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
+const at = (id: EntityId) => doc().scene.entities.get(id)?.transform.position ?? [];
 
 beforeEach(() => {
   useDocumentStore.getState().replaceScene(createEmptyScene());
   useEditorStore.getState().clearSelection();
   // The expansion is memoised on the prefab table as well as the scene, so a
   // file that leaves one behind hands it to the next test.
-  useAssetStore.setState({ prefabs: {} });
+  useAssetStore.setState({ prefabs: new Map() });
 });
 
 function three() {
@@ -54,7 +62,7 @@ describe('moving several objects at once', () => {
     const cubes = three();
     const before = cubes.map((cube) => [...at(cube.entity.id)]);
 
-    transformSelection(sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(0, 3, -1));
+    transformSelection(registries, sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(0, 3, -1));
 
     cubes.forEach((cube, i) => {
       close(at(cube.entity.id), [before[i]![0]!, before[i]![1]! + 3, before[i]![2]! - 1]);
@@ -68,7 +76,7 @@ describe('moving several objects at once', () => {
 
     // Sixty frames of a drag, as the gizmo produces them.
     for (let frame = 1; frame <= 60; frame++) {
-      transformSelection(selection, new Matrix4().makeTranslation(0.1, 0, 0), {
+      transformSelection(registries, selection, new Matrix4().makeTranslation(0.1, 0, 0), {
         coalesceKey: 'gizmo:1',
       });
     }
@@ -88,7 +96,7 @@ describe('moving several objects at once', () => {
     const child = createEntity('Child');
     addEntity(child, parent.entity.id);
 
-    transformSelection(sel([parent.entity.id, child.entity.id]), new Matrix4().makeTranslation(5, 0, 0));
+    transformSelection(registries, sel([parent.entity.id, child.entity.id]), new Matrix4().makeTranslation(5, 0, 0));
 
     // The child rides along under its parent.entity. Moving it on its own account as
     // well would put it at ten.
@@ -99,11 +107,11 @@ describe('moving several objects at once', () => {
   it('refuses the whole gesture when one member is locked', () => {
     const cubes = three();
     doc().mutate('Lock', (draft) => {
-      draft.entities[cubes[1]!.entity.id]!.locked = true;
+      assertDefined(draft.entities.get(cubes[1]!.entity.id), 'the second cube').locked = true;
     });
     const base = doc().past.length;
 
-    transformSelection(sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(9, 0, 0));
+    transformSelection(registries, sel(cubes.map((c) => c.entity.id)), new Matrix4().makeTranslation(9, 0, 0));
 
     // `transformable()` drops the locked one; the others still move, which is
     // what Unity does. What must not happen is a silent partial move recorded as
@@ -125,14 +133,14 @@ describe('reparenting several objects at once', () => {
     reparentSelection(sel(cubes.map((c) => c.entity.id)), parent.entity.id);
 
     expect(doc().past.length).toBe(base + 1);
-    expect(doc().scene.entities[parent.entity.id]?.children).toHaveLength(3);
+    expect(doc().scene.entities.get(parent.entity.id)?.children).toHaveLength(3);
     // Ten units to the left in local terms, so each stays exactly where it was.
     cubes.forEach((cube, i) => {
       close(at(cube.entity.id), [worldBefore[i]![0]! - 10, worldBefore[i]![1]!, worldBefore[i]![2]!]);
     });
 
     doc().undo();
-    expect(doc().scene.entities[parent.entity.id]?.children).toEqual([]);
+    expect(doc().scene.entities.get(parent.entity.id)?.children).toEqual([]);
     cubes.forEach((cube, i) => close(at(cube.entity.id), worldBefore[i]!));
   });
 
@@ -148,7 +156,7 @@ describe('reparenting several objects at once', () => {
   it('leaves a locked entity where it is', () => {
     const [a, b] = three();
     doc().mutate('Lock', (draft) => {
-      draft.entities[b!.entity.id]!.locked = true;
+      assertDefined(draft.entities.get(b!.entity.id), 'the second cube').locked = true;
     });
     const parent = createEntity('Parent');
     addEntity(parent);
@@ -157,7 +165,7 @@ describe('reparenting several objects at once', () => {
 
     // `roots()` keeps it, but `reparentEntity` refuses it — the capability is
     // checked where the edit happens, not only where the menu is greyed.
-    expect(doc().scene.entities[b!.entity.id]?.parent).toBeNull();
+    expect(doc().scene.entities.get(b!.entity.id)?.parent).toBeNull();
   });
 });
 
@@ -168,9 +176,9 @@ describe("a selection mixing the document and a prefab's contents", () => {
 
     // An id the document does not hold: `transformSelection` has to send it down
     // the override path, as a single transform already does.
-    const produced = `${cube.entity.id}/inner`;
+    const produced = instancedId(cube.entity.id, INNER);
     expect(() =>
-      transformSelection(sel([cube.entity.id, produced]), new Matrix4().makeTranslation(1, 0, 0)),
+      transformSelection(registries, sel([cube.entity.id, produced]), new Matrix4().makeTranslation(1, 0, 0)),
     ).not.toThrow();
     close(at(cube.entity.id), [1, 0.5, 0]);
   });
@@ -181,9 +189,9 @@ describe("a selection mixing the document and a prefab's contents", () => {
     const target = createEntity('Target');
     addEntity(target);
 
-    reparentSelection(sel([`${host.entity.id}/inner`]), target.entity.id);
+    reparentSelection(sel([instancedId(host.entity.id, INNER)]), target.entity.id);
     // Nothing to do, and nothing thrown: the next expansion would undo it anyway.
-    expect(doc().scene.entities[target.entity.id]?.children).toEqual([]);
+    expect(doc().scene.entities.get(target.entity.id)?.children).toEqual([]);
   });
 });
 
@@ -210,53 +218,55 @@ describe("moving an entity a prefab produced", () => {
     trunk.entity.children = [branch.entity.id];
     branch.entity.parent = trunk.entity.id;
 
-    return { branch, prefab: prefabWith('Tree', [trunk, branch], trunk.entity.id) };
+    // A prefab carries the id it is filed under, as the main process reads it.
+    return { branch, prefab: { ...prefabWith('Tree', [trunk, branch], trunk.entity.id), id: TREE } };
   }
 
   it('moves it by the delta rather than to it', () => {
     const { branch, prefab } = tree();
-    useAssetStore.setState({ prefabs: { tree: prefab } });
+    useAssetStore.setState({ prefabs: new Map([[TREE, prefab]]) });
 
-    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    const host = createEntity('Tree', [createPrefabInstance(TREE)]);
     host.entity.transform = { ...createTransform(), position: [10, 0, 0] };
     addEntity(host);
 
     const produced = instancedId(host.entity.id, branch.entity.id);
     // Where the branch stands before anything is dragged: the instance at x=10,
     // the trunk a metre up, the branch two above that.
-    close(worldPosition(expandedScene().scene, produced), [10, 3, 0]);
+    close(worldPosition(expandedScene(registries).scene, produced), [10, 3, 0]);
 
-    transformSelection(sel([produced]), new Matrix4().makeTranslation(0, 0, 5));
+    transformSelection(registries, sel([produced]), new Matrix4().makeTranslation(0, 0, 5));
 
-    close(worldPosition(expandedScene().scene, produced), [10, 3, 5]);
+    close(worldPosition(expandedScene(registries).scene, produced), [10, 3, 5]);
   });
 
   it('records the move as an override on the instance, not on the asset', () => {
     const { branch, prefab } = tree();
-    useAssetStore.setState({ prefabs: { tree: prefab } });
+    useAssetStore.setState({ prefabs: new Map([[TREE, prefab]]) });
 
-    const host = createEntity('Tree', [createPrefabInstance('tree')]);
+    const host = createEntity('Tree', [createPrefabInstance(TREE)]);
     addEntity(host);
 
     transformSelection(
+      registries,
       sel([instancedId(host.entity.id, branch.entity.id)]),
       new Matrix4().makeTranslation(0, 0, 5),
     );
 
     // An override that reached back into the asset would move every other
     // placement of the same prefab.
-    close(prefab.entities[branch.entity.id]!.transform.position, [0, 2, 0]);
+    close(assertDefined(prefab.entities.get(branch.entity.id), 'the branch').transform.position, [0, 2, 0]);
   });
 });
 
 describe('a single object still goes through the same path', () => {
   it('matches what setTransform gives', () => {
     const [a] = three();
-    transformSelection(sel([a!.entity.id]), new Matrix4().makeTranslation(0, 2, 0));
+    transformSelection(registries, sel([a!.entity.id]), new Matrix4().makeTranslation(0, 2, 0));
     const viaDelta = [...at(a!.entity.id)];
 
     doc().undo();
-    setTransform(a!.entity.id, { position: [0, 3, 0] });
+    setTransform(registries, a!.entity.id, { position: [0, 3, 0] });
 
     // One code path that handles one object is worth more than two that disagree
     // at the edges.

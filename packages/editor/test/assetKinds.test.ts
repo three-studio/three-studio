@@ -1,7 +1,10 @@
-import { defaultSettings, type AssetEntry, type AssetKind } from '@three-studio/core';
+import { defaultSettings, fixedId, type AssetEntry, type AssetId, type AssetKind } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { assetKindMime } from '../src/assets/assetDrag';
 import { filterAndSortAssets } from '../src/state/assetStore';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A kind is matched against what a browser and a person type, and both lower
@@ -9,7 +12,10 @@ import { filterAndSortAssets } from '../src/state/assetStore';
  * query. Every kind was one lowercase word until `physicsMaterial`.
  */
 
-function asset(id: string, kind: AssetKind, path: string): AssetEntry {
+const ICE = fixedId('asset', 'pm-ice');
+const STONE = fixedId('asset', 'mat-stone');
+
+function asset(id: AssetId, kind: AssetKind, path: string): AssetEntry {
   return {
     id,
     name: path.slice(path.lastIndexOf('/') + 1, path.indexOf('.')),
@@ -20,7 +26,7 @@ function asset(id: string, kind: AssetKind, path: string): AssetEntry {
     modifiedAt: 1,
     importedAt: 1,
     hash: 'h',
-    settings: defaultSettings(kind, path),
+    settings: defaultSettings(registries, kind, path),
     importedPath: null,
   };
 }
@@ -30,8 +36,8 @@ describe('an asset kind of two words', () => {
     const mime = assetKindMime('physicsMaterial');
     expect(mime).toBe(mime.toLowerCase());
 
-    const ice = asset('pm-ice', 'physicsMaterial', 'assets/physics-materials/Ice.physics-material.json');
-    const stone = asset('mat-stone', 'material', 'assets/materials/Stone.material.json');
+    const ice = asset(ICE, 'physicsMaterial', 'assets/physics-materials/Ice.physics-material.json');
+    const stone = asset(STONE, 'material', 'assets/materials/Stone.material.json');
     const found = filterAndSortAssets({
       manifest: { version: 1, assets: [ice, stone], folders: [] },
       query: 't:physicsmaterial',
@@ -41,6 +47,6 @@ describe('an asset kind of two words', () => {
       sortAscending: true,
     });
 
-    expect(found.map((entry) => entry.id)).toEqual(['pm-ice']);
+    expect(found.map((entry) => entry.id)).toEqual([ICE]);
   });
 });

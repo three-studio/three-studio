@@ -531,7 +531,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   const sharing = new Map<number, Set<number>>();
   (json.meshes ?? []).forEach((mesh, index) => {
     for (const primitive of mesh.primitives ?? []) {
-      const at = primitive.attributes?.POSITION;
+      const at = primitive.attributes?.['POSITION'];
       if (at === undefined) continue;
       const found = sharing.get(at);
       if (found) found.add(index);
@@ -568,7 +568,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     for (const primitive of mesh.primitives ?? []) {
       if (primitive.targets !== undefined) return null;
 
-      const at = primitive.attributes?.POSITION;
+      const at = primitive.attributes?.['POSITION'];
       const accessor = at === undefined ? undefined : accessors[at];
       if (at === undefined || accessor === undefined) return null;
       if (accessor.componentType !== FLOAT || accessor.type !== 'VEC3') return null;
@@ -608,7 +608,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
 
       wrapped.set(index, box);
       for (const primitive of mesh.primitives ?? []) {
-        const at = primitive.attributes?.POSITION;
+        const at = primitive.attributes?.['POSITION'];
         if (at !== undefined) boxes.set(at, box);
       }
     });
@@ -681,7 +681,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
         narrowed.add(indices);
       }
 
-      const normal = primitive.attributes?.NORMAL;
+      const normal = primitive.attributes?.['NORMAL'];
       const normals = normal === undefined ? undefined : accessors[normal];
       if (
         options.quantizeNormals &&
@@ -811,10 +811,10 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
   interface Piece {
     origin: number;
     bytes: Buffer;
-    byteStride?: number;
+    byteStride?: number | undefined;
     accessors: { at: number; byteOffset: number }[];
     /** How the encoder would read this piece, when it is one clean stream. */
-    stream?: { size: number; mode: EncodeMode };
+    stream?: { size: number; mode: EncodeMode } | undefined;
   }
 
   /** What one repacked view becomes: one piece per role and element width. */
@@ -822,7 +822,7 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
     const view = views[index] as NonNullable<GltfJson['bufferViews']>[number];
     const start = view.byteOffset ?? 0;
 
-    const groups = new Map<string, { role: Role; byteStride?: number; members: number[] }>();
+    const groups = new Map<string, { role: Role; byteStride?: number | undefined; members: number[] }>();
     for (const at of [...(byView.get(index) ?? [])].sort((left, right) => {
       const gap = (accessors[left]?.byteOffset ?? 0) - (accessors[right]?.byteOffset ?? 0);
       return gap !== 0 ? gap : left - right;
@@ -1054,15 +1054,15 @@ export function rewriteGlb(contents: GlbContents, options: RewriteOptions): GlbC
    * more reasons here: scenes, children, skin joints and every animation
    * channel name a node by its number.
    */
-  const withWrappers = (): GltfJson['nodes'] => {
-    if (wrapped.size === 0) return json.nodes;
-
+  const withWrappers = (): NonNullable<GltfJson['nodes']> => {
     const out = [...(json.nodes ?? [])];
     const before = out.length;
     for (let index = 0; index < before; index++) {
       const node = out[index] as NonNullable<GltfJson['nodes']>[number];
       const box = node.mesh === undefined ? undefined : wrapped.get(node.mesh);
-      if (box === undefined) continue;
+      // Both, though a box implies a mesh: the compiler does not follow one
+      // into the other, and the wrapper below must be given a mesh, not maybe one.
+      if (node.mesh === undefined || box === undefined) continue;
 
       const wrapper = out.length;
       out.push({ mesh: node.mesh, translation: [...box.center], scale: [...box.half] });

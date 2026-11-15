@@ -1,4 +1,4 @@
-import { createSkySettings } from '@three-studio/core';
+import { createEnvironment } from '@three-studio/core';
 import { Group, Mesh, PerspectiveCamera, Scene } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { ProceduralSky } from '../../src/systems/sky';
@@ -15,7 +15,7 @@ import { ProceduralSky } from '../../src/systems/sky';
 /** The sky as it is attached: one mesh, directly on the scene. */
 function attached(): { scene: Scene; mesh: Mesh } {
   const scene = new Scene();
-  new ProceduralSky().attach(scene, createSkySettings(), 1);
+  new ProceduralSky().attach(scene, createEnvironment().sky, 1);
   const mesh = scene.children[0];
   if (!(mesh instanceof Mesh)) throw new Error('the sky did not attach');
   return { scene, mesh };

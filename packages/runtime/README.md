@@ -44,16 +44,29 @@ loop. The host calls `update(delta)` and draws `engine.scene` itself, which is w
 play a scene inside its own viewport while an exported build runs the same code from a bare loop.
 
 ```ts
-import { deserializeScene } from '@three-studio/core';
-import { SceneHost, createRenderer } from '@three-studio/runtime';
+import { activateCore, decodeScene, unwrap } from '@three-studio/core';
+import {
+  SceneHost,
+  activateRuntime,
+  createRenderer,
+  createRuntimeRegistries,
+} from '@three-studio/runtime';
 
 const canvas = document.querySelector('canvas')!;
 const { renderer } = await createRenderer({ canvas });
 
+// What a game is built from — the component types, the system that draws each
+// one, and the behaviour of each type that acts — made and filled once, by the
+// page, the core's layer first.
+const registries = createRuntimeRegistries();
+activateCore(registries);
+activateRuntime(registries);
+
 const host = new SceneHost({
+  registries,
   domElement: canvas,
   renderer,
-  source: { read: async (name) => deserializeScene(await (await fetch(`${name}.json`)).text()) },
+  source: { read: async (name) => unwrap(decodeScene(registries, await (await fetch(`${name}.json`)).text()), name) },
   // Maps an asset id to a URL. Scenes reference ids, never paths, so this is
   // where a build decides where its files actually live.
   resolver: { url: (assetId) => `assets/${assetId}` },
@@ -83,7 +96,7 @@ renderer.setAnimationLoop(() => {
 | **Scenes** | `SceneHost` (load, loading scene, activate, cancel), `SceneBinder` (document → three objects) |
 | **Rendering** | `createRenderer` — WebGPU, falling back to WebGL |
 | **Physics** | `PhysicsWorld` — Rapier rigid bodies, colliders, and a character-style `PlayerController` |
-| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `registerScript` |
+| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the engine that runs them (`scripts`) |
 | **Audio** | 32-voice mixer with priority stealing, a continuous 2D↔3D `spatialBlend`, buses |
 | **Assets** | model loading for glTF / GLB / FBX / OBJ, import settings applied the same way the editor applies them |
 

@@ -1,4 +1,10 @@
-import { createEmptyScene, createEntity, createMeshEntity, serializeScene } from '@three-studio/core';
+import {
+  createEmptyScene,
+  createEntity,
+  createMeshEntity,
+  serializeScene,
+  type EntityId,
+} from '@three-studio/core';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   addEntity,
@@ -14,9 +20,12 @@ import { useDocumentStore } from '../src/state/documentStore';
 import { useEditorStore } from '../src/state/editorStore';
 import { Selection } from '../src/state/selection';
 import { expandedScene } from '../src/state/expansion';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /** A selection over the scene as it is drawn, for commands that take one. */
-const sel = (ids: readonly string[]) => Selection.of(ids, expandedScene().scene);
+const sel = (ids: readonly EntityId[]) => Selection.of(ids, expandedScene(registries).scene);
 
 /*
  * The round-trip property, the measure that pays for itself
@@ -49,7 +58,7 @@ function random(seed: number): () => number {
 /** Everything a user could notice, as one comparable value. */
 function snapshot(): string {
   return JSON.stringify({
-    scene: serializeScene(doc().scene),
+    scene: serializeScene(registries, doc().scene),
     selection: [...useEditorStore.getState().selection],
   });
 }
@@ -64,7 +73,7 @@ const KINDS = ['box', 'sphere', 'cylinder'] as const;
  * an entry for a no-op breaks the count on which the round trip rests.
  */
 function step(pick: () => number): void {
-  const ids = Object.keys(doc().scene.entities);
+  const ids = [...doc().scene.entities.keys()];
   const any = () => ids[Math.floor(pick() * ids.length)];
   const choice = Math.floor(pick() * 8);
 
@@ -88,7 +97,7 @@ function step(pick: () => number): void {
     }
     case 4: {
       const id = any();
-      if (id !== undefined) renameEntity(id, `Renamed ${Math.floor(pick() * 1000)}`);
+      if (id !== undefined) renameEntity(registries, id, `Renamed ${Math.floor(pick() * 1000)}`);
       return;
     }
     case 5: {
@@ -97,12 +106,12 @@ function step(pick: () => number): void {
       // Sometimes coalesced, sometimes not: an entry that absorbs later writes
       // has a different shape, and both must undo to the same place.
       const key = pick() < 0.5 ? { coalesceKey: 'drag' } : undefined;
-      setTransform(id, { position: [pick() * 10, pick() * 10, pick() * 10] }, key);
+      setTransform(registries, id, { position: [pick() * 10, pick() * 10, pick() * 10] }, key);
       return;
     }
     case 6: {
       const id = any();
-      if (id !== undefined) duplicateSelection(sel([id]));
+      if (id !== undefined) duplicateSelection(registries, sel([id]));
       return;
     }
     default: {
@@ -110,9 +119,9 @@ function step(pick: () => number): void {
       if (id === undefined) return;
       if (pick() < 0.5) {
         useEditorStore.getState().setSelection([id]);
-        groupSelection(Selection.current());
+        groupSelection(Selection.current(registries));
       } else {
-        setEntityVisible(id, pick() < 0.5);
+        setEntityVisible(registries, id, pick() < 0.5);
       }
     }
   }

@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   ground,
@@ -62,7 +63,7 @@ describe('a body drawn between ticks', () => {
 
     rig.run(1, 120);
 
-    const height = (id: string) => rig.solved(id).position.y;
+    const height = (id: EntityId) => rig.solved(id).position.y;
     expect(Math.abs(height(smooth.entity.id) - height(stepped.entity.id))).toBeLessThan(1e-9);
   });
 

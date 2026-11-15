@@ -1,11 +1,10 @@
-import type { MaterialDef } from '@three-studio/core';
+import type { AssetId, MaterialDef } from '@three-studio/core';
 import {
   BackSide,
   Color,
   DoubleSide,
   FrontSide,
   LinearSRGBColorSpace,
-  Material,
   MeshStandardNodeMaterial,
   MirroredRepeatWrapping,
   ClampToEdgeWrapping,
@@ -14,7 +13,7 @@ import {
   Vector2,
   type Texture,
 } from 'three/webgpu';
-import type { ModelCache } from '../assets/ModelCache';
+import type { AssetCache, TextureHold } from '../assets/AssetCache';
 
 /*
  * Turning a `MaterialDef` into a three material, and writing a new one onto an
@@ -66,9 +65,11 @@ export function sameTextureSlots(a: MaterialDef, b: MaterialDef): boolean {
 }
 
 /** Writes new values onto a material and its textures, leaving both in place. */
-export function patchMaterial(material: Material, textures: readonly Texture[], def: MaterialDef): void {
-  const standard = material as MeshStandardNodeMaterial;
-
+export function patchMaterial(
+  standard: MeshStandardNodeMaterial,
+  textures: readonly TextureHold[],
+  def: MaterialDef,
+): void {
   standard.color.set(def.color);
   standard.roughness = def.roughness;
   standard.metalness = def.metalness;
@@ -91,7 +92,7 @@ export function patchMaterial(material: Material, textures: readonly Texture[], 
     standard.needsUpdate = true;
   }
 
-  for (const texture of textures) {
+  for (const { texture } of textures) {
     texture.wrapS = WRAPPING[def.wrap];
     texture.wrapT = WRAPPING[def.wrap];
     texture.repeat.set(def.tiling[0], def.tiling[1]);
@@ -99,10 +100,16 @@ export function patchMaterial(material: Material, textures: readonly Texture[], 
   }
 }
 
+/**
+ * A material for a definition, and a hold on the image of each slot it fills.
+ *
+ * The holds are the material's to give back, with it: whoever retires the
+ * material retires them too (`SharedMaterial`).
+ */
 export function buildMaterial(
   def: MaterialDef,
-  models: ModelCache,
-): { material: Material; textures: Texture[] } {
+  assets: AssetCache,
+): { material: MeshStandardNodeMaterial; textures: TextureHold[] } {
   const material = new MeshStandardNodeMaterial({
     color: new Color(def.color),
     roughness: def.roughness,
@@ -115,20 +122,21 @@ export function buildMaterial(
     side: def.side === 'double' ? DoubleSide : def.side === 'back' ? BackSide : FrontSide,
   });
 
-  const textures: Texture[] = [];
+  const textures: TextureHold[] = [];
 
-  /** Each slot gets its own texture instance, which this material then owns. */
-  const slot = (assetId: string | null, key: keyof MaterialDef): Texture | null => {
+  /** Each slot gets its own texture instance, held for this material alone. */
+  const slot = (assetId: AssetId | null, key: keyof MaterialDef): Texture | null => {
     if (assetId === null) return null;
-    const texture = models.instanceTexture(assetId);
-    if (texture === null) return null;
+    const hold = assets.holdTexture(assetId);
+    if (hold === null) return null;
 
+    const { texture } = hold;
     texture.colorSpace = SRGB_SLOTS.has(key) ? SRGBColorSpace : LinearSRGBColorSpace;
     texture.wrapS = WRAPPING[def.wrap];
     texture.wrapT = WRAPPING[def.wrap];
     texture.repeat = new Vector2(def.tiling[0], def.tiling[1]);
     texture.offset = new Vector2(def.offset[0], def.offset[1]);
-    textures.push(texture);
+    textures.push(hold);
     return texture;
   };
 

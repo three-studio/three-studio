@@ -1,4 +1,4 @@
-import type { EnvironmentDef } from '@three-studio/core';
+import type { AssetId, Disposable, EnvironmentDef } from '@three-studio/core';
 import {
   Color,
   EquirectangularReflectionMapping,
@@ -10,16 +10,16 @@ import {
   type Renderer,
   type Texture,
 } from 'three/webgpu';
-import type { ModelCache } from './assets/ModelCache';
-import type { ResourceArena, Disposable } from './systems/ResourceArena';
+import type { AssetCache, TextureHold } from './assets/AssetCache';
+import type { ResourceArena } from './systems/ResourceArena';
 import { ProceduralSky } from './systems/sky';
 
 /** One of the two things an equirectangular image can be: the sky, or the light. */
 type EnvironmentSlot = 'background' | 'environment';
 
-/** An equirectangular image, and how many slots are showing it. */
+/** An equirectangular image, held, and how many slots are showing it. */
 interface EnvironmentMap {
-  texture: Texture;
+  hold: TextureHold;
   /**
    * Zero while the image is loading and no slot has swapped to it yet — see
    * `equirectangular`. An entry that reaches zero, or that never gets claimed,
@@ -56,15 +56,15 @@ export class EnvironmentBinder {
    *   sky is six draw calls and a blur chain, not a transform over data.
    */
   constructor(
-    private readonly models: ModelCache,
+    private readonly assets: AssetCache,
     private readonly arena: ResourceArena,
     private readonly renderer: Renderer | null,
   ) {}
 
   /** Equirectangular images by asset id, shared between the two slots. */
-  private readonly maps = new Map<string, EnvironmentMap>();
+  private readonly maps = new Map<AssetId, EnvironmentMap>();
   /** What each slot is showing right now, by asset id. */
-  private readonly slots = new Map<EnvironmentSlot, string>();
+  private readonly slots = new Map<EnvironmentSlot, AssetId>();
   /**
    * What each slot is waiting to show.
    *
@@ -72,7 +72,7 @@ export class EnvironmentBinder {
    * during that wait has to win: the arrival checks this before swapping
    * anything, and drops what it loaded if nothing wants it any more.
    */
-  private readonly pending = new Map<EnvironmentSlot, string>();
+  private readonly pending = new Map<EnvironmentSlot, AssetId>();
   /**
    * The scene the environment was last applied to.
    *
@@ -109,8 +109,8 @@ export class EnvironmentBinder {
    * a buffer the previous frame drew with hands a destroyed buffer to a pass
    * still being encoded. That is a crash, not a dropped frame.
    *
-   * Two queues would be one too many: the binder kept its own until phase 11,
-   * and `beginFrame` emptied only the other.
+   * Two queues would be one too many: the binder once kept its own, and
+   * `beginFrame` emptied only the other.
    */
   private retire(disposable: Disposable): void {
     this.arena.retire(disposable);
@@ -245,7 +245,7 @@ export class EnvironmentBinder {
    * texture that is not ready poisons itself permanently.
    *
    * `HDRLoader` and `EXRLoader` return a texture immediately and fill it in
-   * later, and the placeholder they return is 1×1 (`ModelCache` documents the
+   * later, and the placeholder they return is 1×1 (`AssetCache` documents the
    * same trap for a different reason). three tests readiness with
    * `image.height > 0` — `CubeMapNode` before converting an equirect to a
    * cubemap for the background, `PMREMNode` before prefiltering one for the
@@ -260,7 +260,7 @@ export class EnvironmentBinder {
    * why the slot is only released once the replacement is up: switching images
    * must not flash the clear colour.
    */
-  private equirectangular(slot: EnvironmentSlot, assetId: string | null): Texture | null {
+  private equirectangular(slot: EnvironmentSlot, assetId: AssetId | null): Texture | null {
     const shown = this.slots.get(slot) ?? null;
     if (shown === assetId) {
       this.pending.delete(slot);
@@ -279,20 +279,20 @@ export class EnvironmentBinder {
     // re-import will fix.
     if (map === null) return this.textureOf(shown);
 
-    if (!this.models.textureReady(assetId)) {
+    if (!this.assets.textureReady(assetId)) {
       this.defer(slot, assetId);
       return this.textureOf(shown);
     }
 
     this.pending.delete(slot);
     this.claim(slot, assetId, map);
-    return map.texture;
+    return map.hold.texture;
   }
 
   /** What a slot is showing, or `null` for an empty slot. */
-  private textureOf(assetId: string | null): Texture | null {
+  private textureOf(assetId: AssetId | null): Texture | null {
     if (assetId === null) return null;
-    return this.maps.get(assetId)?.texture ?? null;
+    return this.maps.get(assetId)?.hold.texture ?? null;
   }
 
   /**
@@ -302,18 +302,19 @@ export class EnvironmentBinder {
    * texture assigned without it is drawn as a rectangle across the screen,
    * which looks like a broken background rather than like a sky.
    */
-  private load(assetId: string): EnvironmentMap | null {
-    const texture = this.models.instanceTexture(assetId);
-    if (texture === null) return null;
+  private load(assetId: AssetId): EnvironmentMap | null {
+    const hold = this.assets.holdTexture(assetId);
+    if (hold === null) return null;
 
+    const { texture } = hold;
     texture.mapping = EquirectangularReflectionMapping;
     // HDR and EXR already hold linear light; a PNG or a JPEG holds sRGB pixels
     // and renders visibly washed out unless it is said so.
-    texture.colorSpace = this.models.isLinearTexture(assetId)
+    texture.colorSpace = this.assets.isLinearTexture(assetId)
       ? LinearSRGBColorSpace
       : SRGBColorSpace;
 
-    const map: EnvironmentMap = { texture, users: 0 };
+    const map: EnvironmentMap = { hold, users: 0 };
     this.maps.set(assetId, map);
     return map;
   }
@@ -321,7 +322,7 @@ export class EnvironmentBinder {
   /** Moves a slot onto an image, letting go of whatever it was showing. */
   private claim(
     slot: EnvironmentSlot,
-    assetId: string,
+    assetId: AssetId,
     map: EnvironmentMap,
   ): void {
     this.releaseSlot(slot);
@@ -330,11 +331,11 @@ export class EnvironmentBinder {
   }
 
   /** Swaps a slot onto its pending image once that image has decoded. */
-  private defer(slot: EnvironmentSlot, assetId: string): void {
+  private defer(slot: EnvironmentSlot, assetId: AssetId): void {
     if (this.pending.get(slot) === assetId) return;
     this.pending.set(slot, assetId);
 
-    void this.models.whenTextureReady(assetId).then(() => {
+    void this.assets.whenTextureReady(assetId).then(() => {
       // Superseded while it decoded: whatever asked for this is no longer
       // asking, and the image it loaded goes back out if nothing else took it.
       if (this.pending.get(slot) !== assetId) {
@@ -348,8 +349,8 @@ export class EnvironmentBinder {
       if (!map || scene === null) return;
 
       this.claim(slot, assetId, map);
-      if (slot === 'background') scene.background = map.texture;
-      else scene.environment = map.texture;
+      if (slot === 'background') scene.background = map.hold.texture;
+      else scene.environment = map.hold.texture;
     });
   }
 
@@ -371,7 +372,7 @@ export class EnvironmentBinder {
   }
 
   /** Frees an image no slot is showing and none is still waiting for. */
-  private dropUnclaimed(assetId: string): void {
+  private dropUnclaimed(assetId: AssetId): void {
     const map = this.maps.get(assetId);
     if (!map || map.users > 0) return;
     for (const pending of this.pending.values()) {
@@ -379,14 +380,14 @@ export class EnvironmentBinder {
     }
 
     this.maps.delete(assetId);
-    this.retire(map.texture);
+    this.retire(map.hold);
   }
 
   /** Every image both slots hold, and anything still waiting on a decode. */
   release(): void {
     this.pending.clear();
     this.slots.clear();
-    for (const map of this.maps.values()) this.retire(map.texture);
+    for (const map of this.maps.values()) this.retire(map.hold);
     this.maps.clear();
     this.scene = null;
   }

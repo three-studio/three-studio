@@ -21,8 +21,8 @@ import {
  * Cmd+G asked `Selection.can('group')`, which a lock refuses; Add ▸ Group
  * Selection asked `selection.length === 0`, which it does not — so the menu
  * grouped the object the shortcut had just refused to touch. A padlock that
- * stops one path and not the other is the padlock defect in a second costume: phase 4 wired the
- * capability once, and three callers out of four used it.
+ * stops one path and not the other is the padlock defect in a second costume:
+ * the capability was wired once, and three callers out of four used it.
  *
  * Counted before the registry was written: nine activation decisions across four
  * files, with `duplicate` written three times and `delete` three times. And two
@@ -72,8 +72,8 @@ export const EDIT_COMMANDS = {
      * Prefab Mode saves the prefabs, then the scene is written.
      */
     can: () => !useProjectStore.getState().saving && windowUnsaved(),
-    run: () => {
-      void useProjectStore.getState().save();
+    run: (ctx) => {
+      void useProjectStore.getState().save(ctx.registries);
     },
   }),
 
@@ -96,7 +96,7 @@ export const EDIT_COMMANDS = {
       ctx.selection.isMultiple ? `Duplicate ${ctx.selection.size} Objects` : 'Duplicate',
     writesScene: true,
     can: (ctx) => ctx.selection.can('duplicate'),
-    run: (ctx) => duplicateSelection(ctx.selection),
+    run: (ctx) => duplicateSelection(ctx.registries, ctx.selection),
   }),
 
   delete: defineCommand({
@@ -124,7 +124,7 @@ export const EDIT_COMMANDS = {
     can: (ctx) => ctx.selection.isSingle && ctx.selection.can('toggleVisible'),
     run: (ctx) => {
       const id = ctx.selection.primary;
-      if (id !== null) setEntityVisible(id, !visibleIn(ctx));
+      if (id !== null) setEntityVisible(ctx.registries, id, !visibleIn(ctx));
     },
   }),
 

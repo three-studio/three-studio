@@ -1,4 +1,4 @@
-import type { AudioBus } from '@three-studio/core';
+import type { AssetId, AudioBus } from '@three-studio/core';
 
 /**
  * A position or a direction, as three plain numbers.
@@ -27,7 +27,8 @@ export interface SpatialRequest {
 }
 
 export interface PlayRequest {
-  assetId: string;
+  /** `null` is a source with no clip chosen yet, which the engine answers with a voice that failed. */
+  assetId: AssetId | null;
   bus?: AudioBus;
   /** Multiplied by the asset's own imported gain, and by the bus chain. */
   volume?: number;
@@ -58,7 +59,7 @@ export type VoiceState = 'pending' | 'playing' | 'paused' | 'stopped' | 'failed'
 
 export interface VoiceHandle {
   readonly id: number;
-  readonly assetId: string;
+  readonly assetId: AssetId | null;
   readonly state: VoiceState;
   /** Seconds advanced through the buffer, loops included. */
   readonly elapsed: number;
@@ -84,7 +85,7 @@ export interface VoiceHandle {
 export type VoiceEvent = 'started' | 'ended' | 'failed';
 
 /** A handle for a sound that was never going to play. */
-export function failedVoice(id: number, assetId: string): VoiceHandle {
+export function failedVoice(id: number, assetId: AssetId | null): VoiceHandle {
   const noop = (): void => {};
   return {
     id,

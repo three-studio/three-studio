@@ -2,24 +2,28 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import {
   ASSETS_DIR,
-  ASSET_KIND_INFO,
   ASSET_META_VERSION,
   MATERIAL_ASSET_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
-  PREFAB_FORMAT_VERSION,
+  assertDefined,
+  assetKindInfo,
   conformPhysicsMaterial,
-  createId,
+  createAssetId,
   createMaterial,
   defaultSettings,
+  decodePrefab,
   isRecord,
   safeFileName,
+  serializePrefab,
   stableJson,
+  type AssetId,
   type AssetManifest,
   type AssetMeta,
-  migratePrefab,
+  type CoreRegistries,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PrefabDoc,
+  type RefusedFile,
 } from '@three-studio/core';
 import { resolveInside } from './paths';
 import { AssetError, hashFile, uniqueFileName } from './assetFiles';
@@ -37,6 +41,11 @@ import { readAssetMeta, scanAssets, writeAssetMeta } from './assetScan';
  */
 
 const PREFAB_EXTENSION = '.prefab.json';
+
+/** Where a kind's files go under `assets/`: its importers' directory, which every kind written here has. */
+function directoryOf(registries: CoreRegistries, kind: 'prefab' | 'material' | 'physicsMaterial'): string {
+  return posix.join(ASSETS_DIR, assertDefined(assetKindInfo(registries).get(kind), `the ${kind} kind`).directory);
+}
 
 /** What tells one `{ version, material }` kind from the other. */
 interface MaterialLibrary<T> {
@@ -73,58 +82,78 @@ const PHYSICS_MATERIALS: MaterialLibrary<PhysicsMaterialDef> = {
 };
 
 /**
- * Every prefab in the project, keyed by asset id.
+ * Every prefab file's text, keyed by its sidecar's asset id — a prefab is an
+ * asset, and the sidecar is where an asset's id lives; the file holds none.
  *
- * Read in one pass for the same reason materials are: the binder expands an
- * instance synchronously, and a prefab fetched per reference would leave a
- * hole in the scene for a frame.
- */
-/**
+ * What a window decodes itself, so that a prefab it refuses is one it can name
+ * to its author with why. A file gone by the time it is read is left out.
+ *
  * @param scanned A manifest the caller already has. A scan walks the tree and
  *   writes any sidecar that is missing or out of date, so running several at
  *   once is both wasteful and a race — see `writeAssetMeta`. Callers that need
  *   more than one of these read the tree once and pass it here.
  */
-export async function readPrefabAssets(
+export async function readPrefabTexts(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, PrefabDoc>> {
-  const manifest = scanned ?? (await scanAssets(projectPath));
-  const prefabs: Record<string, PrefabDoc> = {};
-
+): Promise<Map<AssetId, { readonly path: string; readonly text: string }>> {
+  const manifest = scanned ?? (await scanAssets(registries, projectPath));
+  const texts = new Map<AssetId, { readonly path: string; readonly text: string }>();
   await Promise.all(
     manifest.assets
       .filter((asset) => asset.kind === 'prefab' && asset.path.endsWith(PREFAB_EXTENSION))
       .map(async (asset) => {
         try {
-          const parsed = JSON.parse(
-            await readFile(resolveInside(projectPath, asset.path), 'utf8'),
-          ) as PrefabDoc;
-          if (parsed.version > PREFAB_FORMAT_VERSION) return;
-          prefabs[asset.id] = migratePrefab(parsed);
+          texts.set(asset.id, { path: asset.path, text: await readFile(resolveInside(projectPath, asset.path), 'utf8') });
         } catch {
-          // One unreadable prefab must not cost the others; the instances that
-          // point at it render empty and say so.
+          // Gone between the scan and the read: nothing to decode or to name.
         }
       }),
   );
-
-  return prefabs;
+  return texts;
 }
 
-/** Writes a new prefab asset and its sidecar; returns the new asset id. */
+/**
+ * Every prefab in the project, decoded, keyed by asset id — and those it
+ * refuses, with why.
+ *
+ * Read in one pass for the same reason materials are: the binder expands an
+ * instance synchronously, and a prefab fetched per reference would leave a
+ * hole in the scene for a frame. One that does not decode — of another format,
+ * which nothing converts, or with a field this build cannot read — is left
+ * out, and must not cost the others: the instances that point at it render
+ * empty and say so.
+ *
+ * @param scanned See `readPrefabTexts`.
+ */
+export async function readPrefabAssets(
+  registries: CoreRegistries,
+  projectPath: string,
+  scanned?: AssetManifest,
+): Promise<{ prefabs: Map<AssetId, PrefabDoc>; refused: Map<AssetId, RefusedFile> }> {
+  const prefabs = new Map<AssetId, PrefabDoc>();
+  const refused = new Map<AssetId, RefusedFile>();
+  for (const [id, { path, text }] of await readPrefabTexts(registries, projectPath, scanned)) {
+    const decoded = decodePrefab(registries, text, id);
+    if (decoded.ok) prefabs.set(id, decoded.value);
+    else refused.set(id, { path, diagnostics: decoded.diagnostics });
+  }
+  return { prefabs, refused };
+}
+
+/**
+ * Writes a new prefab asset and its sidecar, under the prefab's own id —
+ * which, for the redo of a creation undo took back, is the one the entity
+ * restored by the undo already names. Returns it.
+ */
 export async function createPrefabAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   prefab: PrefabDoc,
-  /**
-   * Reuses an id instead of minting one, for redoing a creation that undo took
-   * back. A fresh id would leave the entity — restored by the undo patches —
-   * pointing at a prefab that no longer answers to that name.
-   */
-  assetId?: string,
-): Promise<string> {
-  const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO.prefab.directory);
+): Promise<AssetId> {
+  const directory = directoryOf(registries, 'prefab');
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
   const safe = safeFileName(name) || 'Prefab';
@@ -135,15 +164,16 @@ export async function createPrefabAsset(
     PREFAB_EXTENSION,
   );
   const file = resolveInside(projectPath, posix.join(directory, fileName));
-  await writeFile(file, stableJson(prefab), 'utf8');
+  // The file holds no id: the sidecar's is the asset's, and the only one.
+  await writeFile(file, serializePrefab(registries, prefab), 'utf8');
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: assetId ?? createId(),
+    id: prefab.id,
     kind: 'prefab',
     importedAt: Date.now(),
     hash: await hashFile(file),
-    settings: defaultSettings('prefab', fileName),
+    settings: defaultSettings(registries, 'prefab', fileName),
   };
   await writeAssetMeta(file, meta);
   return meta.id;
@@ -157,12 +187,13 @@ export async function createPrefabAsset(
  * scene with a hundred of them would do a hundred round trips.
  */
 async function readLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   scanned: AssetManifest | undefined,
-): Promise<Record<string, T>> {
-  const manifest = scanned ?? (await scanAssets(projectPath));
-  const documents: Record<string, T> = {};
+): Promise<Map<AssetId, T>> {
+  const manifest = scanned ?? (await scanAssets(registries, projectPath));
+  const documents = new Map<AssetId, T>();
 
   await Promise.all(
     manifest.assets
@@ -177,7 +208,7 @@ async function readLibrary<T>(
           // silently drop, so it is left out rather than half-applied.
           const version = file['version'];
           if (typeof version === 'number' && version > library.version) return;
-          documents[asset.id] = library.read(file['material']);
+          documents.set(asset.id, library.read(file['material']));
         } catch {
           // A corrupt file must not stop the others from loading; what links
           // to it falls back to its embedded value.
@@ -190,12 +221,13 @@ async function readLibrary<T>(
 
 /** Writes a new document of a library's kind and its sidecar; returns the new asset id. */
 async function createInLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   name: string,
   material: T,
-): Promise<string> {
-  const directory = posix.join(ASSETS_DIR, ASSET_KIND_INFO[library.kind].directory);
+): Promise<AssetId> {
+  const directory = directoryOf(registries, library.kind);
   await mkdir(resolveInside(projectPath, directory), { recursive: true });
 
   const safe = safeFileName(name) || library.name;
@@ -212,11 +244,11 @@ async function createInLibrary<T>(
   // here rather than left to the next scan to invent.
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: createId(),
+    id: createAssetId(),
     kind: library.kind,
     importedAt: Date.now(),
     hash: await hashFile(file),
-    settings: defaultSettings(library.kind, fileName),
+    settings: defaultSettings(registries, library.kind, fileName),
   };
   await writeAssetMeta(file, meta);
   return meta.id;
@@ -224,6 +256,7 @@ async function createInLibrary<T>(
 
 /** Overwrites an existing document of a library's kind in place, keeping its id. */
 async function saveInLibrary<T>(
+  registries: CoreRegistries,
   library: MaterialLibrary<T>,
   projectPath: string,
   assetPath: string,
@@ -238,7 +271,7 @@ async function saveInLibrary<T>(
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.
-  const meta = await readAssetMeta(file);
+  const meta = await readAssetMeta(registries, file);
   if (meta) await writeAssetMeta(file, { ...meta, hash: await hashFile(file) });
 }
 
@@ -248,26 +281,29 @@ async function saveInLibrary<T>(
  * @param scanned See `readPrefabAssets`.
  */
 export function readMaterialAssets(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, MaterialDef>> {
-  return readLibrary(MATERIALS, projectPath, scanned);
+): Promise<Map<AssetId, MaterialDef>> {
+  return readLibrary(registries, MATERIALS, projectPath, scanned);
 }
 
 export function createMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   material: MaterialDef,
-): Promise<string> {
-  return createInLibrary(MATERIALS, projectPath, name, material);
+): Promise<AssetId> {
+  return createInLibrary(registries, MATERIALS, projectPath, name, material);
 }
 
 export function saveMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   material: MaterialDef,
 ): Promise<void> {
-  return saveInLibrary(MATERIALS, projectPath, assetPath, material);
+  return saveInLibrary(registries, MATERIALS, projectPath, assetPath, material);
 }
 
 /**
@@ -277,26 +313,29 @@ export function saveMaterialAsset(
  * @param scanned See `readPrefabAssets`.
  */
 export function readPhysicsMaterialAssets(
+  registries: CoreRegistries,
   projectPath: string,
   scanned?: AssetManifest,
-): Promise<Record<string, PhysicsMaterialDef>> {
-  return readLibrary(PHYSICS_MATERIALS, projectPath, scanned);
+): Promise<Map<AssetId, PhysicsMaterialDef>> {
+  return readLibrary(registries, PHYSICS_MATERIALS, projectPath, scanned);
 }
 
 export function createPhysicsMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   name: string,
   material: PhysicsMaterialDef,
-): Promise<string> {
-  return createInLibrary(PHYSICS_MATERIALS, projectPath, name, material);
+): Promise<AssetId> {
+  return createInLibrary(registries, PHYSICS_MATERIALS, projectPath, name, material);
 }
 
 export function savePhysicsMaterialAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   material: PhysicsMaterialDef,
 ): Promise<void> {
-  return saveInLibrary(PHYSICS_MATERIALS, projectPath, assetPath, material);
+  return saveInLibrary(registries, PHYSICS_MATERIALS, projectPath, assetPath, material);
 }
 
 /**
@@ -307,6 +346,7 @@ export function savePhysicsMaterialAsset(
  * the edit did not go into.
  */
 export async function savePrefabAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   prefab: PrefabDoc,
@@ -316,11 +356,11 @@ export async function savePrefabAsset(
     throw new AssetError(`${assetPath} is not a prefab asset.`);
   }
 
-  await writeFile(file, stableJson(prefab), 'utf8');
+  await writeFile(file, serializePrefab(registries, prefab), 'utf8');
 
   // The hash names the content, so leaving it stale would make a later
   // duplicate check compare against a file that no longer exists.
-  const meta = await readAssetMeta(file);
+  const meta = await readAssetMeta(registries, file);
   if (meta) await writeAssetMeta(file, { ...meta, hash: await hashFile(file) });
 }
 

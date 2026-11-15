@@ -7,6 +7,7 @@ import {
   emptyAssetChange,
   safeFileName,
   type AssetChange,
+  type CoreRegistries,
 } from '@three-studio/core';
 import { resolveInside } from './paths';
 import { AssetError, toPosix, uniqueFolderName } from './assetFiles';
@@ -68,14 +69,18 @@ async function contentsOf(
   return { files, folders };
 }
 
-export async function removeAsset(projectPath: string, assetPath: string): Promise<AssetChange> {
+export async function removeAsset(
+  registries: CoreRegistries,
+  projectPath: string,
+  assetPath: string,
+): Promise<AssetChange> {
   const target = resolveInside(projectPath, assetPath);
 
   // Read before deleting: the companions are named inside the file, so once it
   // is gone there is nothing left to ask. Otherwise a deleted model leaves its
   // buffer and its textures behind, and the next scan adopts the textures as
   // assets of their own.
-  const companions = await companionsOf(target);
+  const companions = await companionsOf(registries, target);
 
   await rm(target, { force: true });
   await rm(`${target}${ASSET_META_SUFFIX}`, { force: true });
@@ -131,6 +136,7 @@ async function pruneEmptyFolders(projectPath: string, from: string): Promise<str
 
 /** Moves an asset (and its sidecar) into another folder under `assets/`. */
 export async function moveAsset(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   targetFolder: string,
@@ -141,18 +147,18 @@ export async function moveAsset(
   // A model whose companions are named from inside it cannot be separated from
   // them, and they cannot be renamed. It keeps a folder of its own wherever it
   // goes — the same rule the import follows, so the layout stays predictable.
-  const companions = await companionsOf(source);
+  const companions = await companionsOf(registries, source);
   const base = posix.join(ASSETS_DIR, targetFolder);
   let directory = base;
 
   if (companions.length > 0) {
-    const wanted = posix.join(base, assetDisplayName(fileName));
+    const wanted = posix.join(base, assetDisplayName(registries, fileName));
     directory =
       resolveInside(projectPath, wanted) === dirname(source)
         ? wanted
         : posix.join(
             base,
-            await uniqueFolderName(projectPath, base, assetDisplayName(fileName)),
+            await uniqueFolderName(projectPath, base, assetDisplayName(registries, fileName)),
           );
   }
 

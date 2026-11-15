@@ -6,6 +6,7 @@ import {
   createRenderingSettings,
   type SceneDoc,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { PerspectiveCamera } from 'three/webgpu';
@@ -13,6 +14,9 @@ import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { Picker } from '../src/viewport/Picker';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A click on a light has to select the light.
@@ -43,11 +47,12 @@ function stage(
   pickable: (entityId: string) => boolean = () => true,
 ): { picker: Picker; overlay: ViewportOverlay; camera: PerspectiveCamera } {
   const binder = new SceneBinder({
-    resolver: NULL_ASSET_RESOLVER,
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });
-  const overlay = new ViewportOverlay(binder);
+  const overlay = new ViewportOverlay(binder, registries.overlays);
   const camera = new PerspectiveCamera(60, RECT.width / RECT.height, 0.1, 1000);
   camera.position.set(0, 0, 10);
   camera.updateMatrixWorld(true);

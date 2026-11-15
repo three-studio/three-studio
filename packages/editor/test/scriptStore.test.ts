@@ -2,11 +2,8 @@ import type { ScriptBuildResult } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /*
- * What Play imports. The main process keeps one compiled build, shared by
- * every window, the export and the device launches, so the `unchanged` it
- * answers says nothing about what this window has imported: once a launch had
- * compiled an edited script, Play was told `unchanged` and kept running the
- * classes from before the edit.
+ * What Play imports. The main process compiles on every call, and the window
+ * tells a new build from the one it holds by its code alone.
  *
  * An import is counted where the bundle is turned into a URL. The URL handed
  * back is a `data:` module, which Node imports where a `blob:` one cannot be.
@@ -66,17 +63,17 @@ describe('Play’s scripts', () => {
     expect(store.getState().errors).toEqual([]);
   });
 
-  it('does not import the same code again, whatever the build says', async () => {
+  it('does not import the same code again', async () => {
     await run(build('A'));
-    expect(await run(build('A', { unchanged: false }))).toBe(true);
+    expect(await run(build('A'))).toBe(true);
 
     expect(imports).toBe(1);
     expect(store.getState().revision).toBe(1);
   });
 
-  it('imports new code the main process calls unchanged, compiled first for someone else', async () => {
+  it('imports code that differs from what it imported', async () => {
     await run(build('A'));
-    expect(await run(build('B', { unchanged: true }))).toBe(true);
+    expect(await run(build('B'))).toBe(true);
 
     expect(imports).toBe(2);
     expect(store.getState().revision).toBe(2);
@@ -85,7 +82,7 @@ describe('Play’s scripts', () => {
   it('imports the same code again after a failed build dropped its classes', async () => {
     await run(build('A'));
     expect(await run(build('', { errors: ['Fresh.ts: Expected ";"'] }))).toBe(false);
-    expect(await run(build('A', { unchanged: true }))).toBe(true);
+    expect(await run(build('A'))).toBe(true);
 
     expect(imports).toBe(2);
     expect(store.getState().errors).toEqual([]);

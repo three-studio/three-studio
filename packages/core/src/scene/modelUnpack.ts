@@ -1,9 +1,7 @@
-import type { ColliderComponent } from '../components/collider/schema';
-import { createModel } from '../components/model/defaults';
-import { createId } from '../ids';
+import { modelType } from '../components/model';
+import { createComponentId, type AssetId, type EntityId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
-import type { Transform } from './schema';
-
+import type { ComponentDoc, Transform } from './schema';
 
 /*
  * Turning one imported file into one entity per node.
@@ -49,7 +47,7 @@ export interface ModelNode {
 export interface UnpackedEntity {
   template: EntityTemplate;
   /** The entity id of the template above; `null` on the root alone. */
-  parentId: string | null;
+  parentId: EntityId | null;
 }
 
 /** What a node with no name of its own is called in the hierarchy. */
@@ -98,16 +96,15 @@ function isPassThrough(node: ModelNode, childCount: number): boolean {
  *   it, together with its own path.
  * @param rootName What to call the root when the file gave it no name — the
  *   host entity's name, so an unpacked "Chair" is still called "Chair".
- * @param colliders The host's mesh Colliders, a copy of each for every piece
- *   that draws, under an id of its own. A mesh Collider is built from its own
- *   entity's meshes, and the host has none left once it is unpacked: the model
- *   collides as it did, each piece by its own meshes.
+ * @param following The host's components that go with the drawing
+ *   (`componentsFollowingDrawing`), a copy of each for every piece that draws,
+ *   under an id of its own. A group draws nothing, and gets none.
  */
 export function entitiesFromNodes(
   nodes: readonly ModelNode[],
-  assetId: string,
+  assetId: AssetId,
   rootName: string,
-  colliders: readonly ColliderComponent[] = [],
+  following: readonly ComponentDoc[] = [],
 ): readonly UnpackedEntity[] {
   const childCount = new Map<string, number>();
   for (const node of nodes) {
@@ -123,7 +120,7 @@ export function entitiesFromNodes(
    * of its own, which is how its child lands where it did without anyone
    * composing a matrix.
    */
-  const entityOf = new Map<string, string | null>();
+  const entityOf = new Map<string, EntityId | null>();
 
   for (const node of nodes) {
     const parentId = node.parentPath === null ? null : entityOf.get(node.parentPath) ?? null;
@@ -143,8 +140,8 @@ export function entitiesFromNodes(
       // file to produce an empty object.
       node.draws
         ? [
-            { ...createModel(), assetId, nodePath: node.path, nodeName: node.name },
-            ...colliders.map((collider) => ({ ...structuredClone(collider), id: createId() })),
+            { ...modelType.create(), assetId, nodePath: node.path, nodeName: node.name },
+            ...following.map((component) => ({ ...structuredClone(component), id: createComponentId() })),
           ]
         : [],
     );

@@ -5,6 +5,9 @@ import { ASSETS_DIR, ASSET_META_SUFFIX, type ImportPlanItem } from '@three-studi
 import { describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
 import { ImportSession, importSessions } from '../src/main/import/ImportSession';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The buffer, and what it promises: nothing reaches the project until the
@@ -59,6 +62,7 @@ describe('an import session', () => {
     const sources = await sourceFolder({ 'tree.fbx': 'geometry', 'brick.png': 'pixels' });
 
     const session = await ImportSession.open(
+      registries,
       root,
       [join(sources, 'tree.fbx'), join(sources, 'brick.png')],
       '',
@@ -73,7 +77,7 @@ describe('an import session', () => {
   it('leaves nothing behind when it is abandoned', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    await ImportSession.open(root, [join(sources, 'tree.fbx')], '');
+    await ImportSession.open(registries, root, [join(sources, 'tree.fbx')], '');
     // Nothing to undo, because nothing was done — no staged copy, no temporary
     // directory, no half-written sidecar.
     expect(await assetFiles(root)).toEqual([]);
@@ -82,7 +86,7 @@ describe('an import session', () => {
   it('copies the file and its sidecar only once the import is confirmed', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const session = await ImportSession.open(root, [join(sources, 'tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.fbx')], '');
 
     const result = await session.commit(planFor(session.state().files as never[]));
 
@@ -100,7 +104,7 @@ describe('an import session', () => {
   it('honours the folder the plan names, not the importer default', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'brick.png': 'pixels' });
-    const session = await ImportSession.open(root, [join(sources, 'brick.png')], 'props/walls');
+    const session = await ImportSession.open(registries, root, [join(sources, 'brick.png')], 'props/walls');
 
     await session.commit(planFor(session.state().files as never[], 'props/walls'));
     expect(await assetFiles(root)).toContain('props/walls/brick.png');
@@ -109,7 +113,7 @@ describe('an import session', () => {
   it('writes what the author changed rather than what was staged', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const session = await ImportSession.open(root, [join(sources, 'tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.fbx')], '');
     const staged = session.state().files[0]!;
 
     await session.commit([
@@ -123,14 +127,14 @@ describe('an import session', () => {
       },
     ]);
 
-    const asset = (await scanAssets(root)).assets[0]!;
+    const asset = (await scanAssets(registries, root)).assets[0]!;
     expect(asset.settings).toMatchObject({ kind: 'model', scale: 0.01 });
   });
 
   it('refuses settings the plan made up rather than writing them to the sidecar', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const session = await ImportSession.open(root, [join(sources, 'tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.fbx')], '');
     const staged = session.state().files[0]!;
 
     await session.commit([
@@ -144,7 +148,7 @@ describe('an import session', () => {
       },
     ]);
 
-    const asset = (await scanAssets(root)).assets[0]!;
+    const asset = (await scanAssets(registries, root)).assets[0]!;
     // The kind is the importer's, so the file cannot be made to load as
     // something it is not, and a scale that is not a number reads as the one
     // a fresh import would have had.
@@ -161,7 +165,7 @@ describe('an import session', () => {
       'nested/rock.obj': 'o rock\n',
     });
 
-    const session = await ImportSession.open(root, [sources], '');
+    const session = await ImportSession.open(registries, root, [sources], '');
     expect(session.state().files.map((file) => file.fileName).sort()).toEqual([
       'rock.obj',
       'tree.fbx',
@@ -173,7 +177,7 @@ describe('an import session', () => {
     // answer is a row explaining why rather than a silent omission.
     const root = await project();
     const sources = await sourceFolder({ 'notes.txt': 'nothing' });
-    const session = await ImportSession.open(root, [join(sources, 'notes.txt')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'notes.txt')], '');
 
     expect(session.state().files[0]).toMatchObject({
       fileName: 'notes.txt',
@@ -186,11 +190,11 @@ describe('an import session', () => {
   it('reports the bytes the project already has, without refusing them', async () => {
     const root = await project();
     const first = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const opening = await ImportSession.open(root, [join(first, 'tree.fbx')], '');
+    const opening = await ImportSession.open(registries, root, [join(first, 'tree.fbx')], '');
     await opening.commit(planFor(opening.state().files as never[]));
 
     const again = await sourceFolder({ 'copy-of-tree.fbx': 'geometry' });
-    const session = await ImportSession.open(root, [join(again, 'copy-of-tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(again, 'copy-of-tree.fbx')], '');
 
     expect(session.state().files[0]?.conflict).toMatchObject({
       kind: 'duplicate',
@@ -201,11 +205,11 @@ describe('an import session', () => {
   it('reports a name already taken separately from identical bytes', async () => {
     const root = await project();
     const first = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const opening = await ImportSession.open(root, [join(first, 'tree.fbx')], '');
+    const opening = await ImportSession.open(registries, root, [join(first, 'tree.fbx')], '');
     await opening.commit(planFor(opening.state().files as never[]));
 
     const other = await sourceFolder({ 'tree.fbx': 'a different tree entirely' });
-    const session = await ImportSession.open(root, [join(other, 'tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(other, 'tree.fbx')], '');
 
     expect(session.state().files[0]?.conflict).toMatchObject({
       kind: 'name',
@@ -216,11 +220,11 @@ describe('an import session', () => {
   it('never overwrites the file already there', async () => {
     const root = await project();
     const first = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const opening = await ImportSession.open(root, [join(first, 'tree.fbx')], '');
+    const opening = await ImportSession.open(registries, root, [join(first, 'tree.fbx')], '');
     await opening.commit(planFor(opening.state().files as never[]));
 
     const other = await sourceFolder({ 'tree.fbx': 'a different tree entirely' });
-    const session = await ImportSession.open(root, [join(other, 'tree.fbx')], '');
+    const session = await ImportSession.open(registries, root, [join(other, 'tree.fbx')], '');
     await session.commit(planFor(session.state().files as never[]));
 
     expect(await assetFiles(root)).toContain('models/tree-1.fbx');
@@ -234,7 +238,7 @@ describe('an import session', () => {
       'tree.mtl': 'map_Kd bark.png\n',
       'bark.png': 'pixels',
     });
-    const session = await ImportSession.open(root, [join(sources, 'tree.obj')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.obj')], '');
     const staged = session.state().files[0]!;
     expect([...staged.companions].sort()).toEqual(['bark.png', 'tree.mtl']);
 
@@ -259,7 +263,7 @@ describe('what a preview may read', () => {
       'tree.mtl': 'map_Kd bark.png\n',
       'bark.png': 'pixels',
     });
-    const session = await ImportSession.open(root, [join(sources, 'tree.obj')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.obj')], '');
     const staged = session.state().files[0]!;
 
     expect(session.resolvePreview(staged.id, 'tree.obj')).toBe(join(sources, 'tree.obj'));
@@ -271,7 +275,7 @@ describe('what a preview may read', () => {
     // reachable from anything running in the renderer.
     const root = await project();
     const sources = await sourceFolder({ 'tree.obj': 'o tree\n', 'secret.txt': 'private' });
-    const session = await ImportSession.open(root, [join(sources, 'tree.obj')], '');
+    const session = await ImportSession.open(registries, root, [join(sources, 'tree.obj')], '');
     const staged = session.state().files[0]!;
 
     // In the same folder, and still not ours to serve.
@@ -299,7 +303,7 @@ describe('the store the import handler talks to', () => {
   it('spends the session when the import succeeds', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const state = await importSessions.start(root, [join(sources, 'tree.fbx')], '');
+    const state = await importSessions.start(registries, root, [join(sources, 'tree.fbx')], '');
 
     await importSessions.commit(state.sessionId, planFor(state.files as never[]));
     expect(await assetFiles(root)).toContain('models/tree.fbx');
@@ -314,7 +318,7 @@ describe('the store the import handler talks to', () => {
   it('spends it when the import throws, which is the case that used to leak', async () => {
     const root = await project();
     const sources = await sourceFolder({ 'tree.fbx': 'geometry' });
-    const state = await importSessions.start(root, [join(sources, 'tree.fbx')], '');
+    const state = await importSessions.start(registries, root, [join(sources, 'tree.fbx')], '');
     const staged = state.files[0]!;
 
     await expect(

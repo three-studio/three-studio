@@ -1,31 +1,17 @@
-import { createGeometry } from '../../scene/geometry';
-import { createMaterial } from '../../scene/material';
-import { materialAssets } from '../materialAssets';
 import { defineComponent } from '../registry';
-import { createMeshComponent } from './defaults';
+import { meshSchema } from './schema';
 
-/**
- * A renderable primitive and the material it draws with.
- *
- * The one type whose fill is not a shallow spread. Its material and geometry are
- * objects of their own, and a scene written before texture slots existed needs
- * them merged a level deeper — leaving `undefined` where three expects a value is
- * what shipped twice before `fillMissingFields` was written.
- */
-export const meshComponent = defineComponent({
-  type: 'mesh',
-  create: () => createMeshComponent('box'),
-  fill: (stored) => {
-    const filled = { ...createMeshComponent('box'), ...stored };
-    filled.material = { ...createMaterial(), ...filled.material };
-    filled.materialId ??= null;
-    filled.geometry = { ...createGeometry(filled.geometry.kind), ...filled.geometry };
-    return filled;
-  },
-  assets: (component) => [component.materialId, ...materialAssets(component.material)],
-  entities: () => [],
-  icon: 'shapes',
-  placeable: () => true,
+/** A primitive three draws: see `meshSchema`. */
+export const meshType = defineComponent({
+  id: 'mesh',
+  label: 'Mesh',
+  version: 1,
+  schema: meshSchema,
   runtime: true,
   addable: true,
+  // A mesh and a model both draw, from the same container, and both get
+  // drawn: Add Component ▸ Mesh on an imported model put a grey 1×1×1 box
+  // through it, which reads as the model duplicated rather than as a second
+  // component added. Read both ways, so the model need not say it too.
+  excludes: ['model'],
 });

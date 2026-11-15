@@ -1,28 +1,37 @@
 import {
   bodyOf,
   collidersOfBody,
-  createComponent,
+  colliderType,
   createEntity,
-  createJoint,
+  jointType,
   createPrefabInstance,
+  rigidbodyType,
+  entitiesWith,
   entityWorldMatrixPath,
   expandPrefabs,
+  fixedId,
   instancedId,
   jointEnds,
   physicsBodies,
+  type EntityDoc,
+  type EntityId,
   type EntityTemplate,
   type JointComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { nest, prefabWith, sceneWith } from './fixtures';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Which body each collider rides: the nearest Rigid Body up the tree, or, with
  * none above it, a fixed body of its own entity.
  */
 
-const withRigidBody = (name: string) => createEntity(name, [createComponent('rigidbody')]);
-const withCollider = (name: string) => createEntity(name, [createComponent('collider')]);
+const withRigidBody = (name: string) => createEntity(name, [rigidbodyType.create()]);
+const withCollider = (name: string) => createEntity(name, [colliderType.create()]);
+const PREFAB = fixedId('asset', 'prefab-1');
 
 /**
  * A, a body, carrying B and B's child C; under A, D with a body and a collider
@@ -33,7 +42,7 @@ function tree(): Record<'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G', EntityTemplate>
     A: withRigidBody('A'),
     B: withCollider('B'),
     C: withCollider('C'),
-    D: createEntity('D', [createComponent('rigidbody'), createComponent('collider')]),
+    D: createEntity('D', [rigidbodyType.create(), colliderType.create()]),
     E: withCollider('E'),
     F: withCollider('F'),
     G: withRigidBody('G'),
@@ -60,17 +69,15 @@ describe('physicsBodies', () => {
     const crate = withCollider('Crate');
     const prefab = prefabWith('Crate', [crate], crate.entity.id);
     const cart = withRigidBody('Cart');
-    const placed = createEntity('Placed', [createPrefabInstance('prefab-1')]);
+    const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), {
-      get: (id) => (id === 'prefab-1' ? prefab : undefined),
-    });
+    const { scene } = expandPrefabs(registries, sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     // The copy names the entity that placed it as its parent, which does not
     // name it back: a walk down from the cart would miss it.
     const copy = instancedId(placed.entity.id, crate.entity.id);
-    expect(scene.entities[placed.entity.id]?.children).not.toContain(copy);
+    expect(scene.entities.get(placed.entity.id)?.children).not.toContain(copy);
     expect(physicsBodies(scene).get(cart.entity.id)).toEqual([copy]);
   });
 
@@ -78,20 +85,24 @@ describe('physicsBodies', () => {
     const parts = Object.values(tree());
     const props = Array.from({ length: 200 }, (_, i) => createEntity(`Prop ${i}`));
     const scene = sceneWith([...parts, ...props]);
-    const read = new Set<string | symbol>();
+    const read = new Set<EntityId>();
     const watched = {
       ...scene,
-      entities: new Proxy(scene.entities, {
-        get(target, key, receiver) {
-          read.add(key);
-          return Reflect.get(target, key, receiver);
-        },
-      }),
+      entities: new (class extends Map<EntityId, EntityDoc> {
+        override get(id: EntityId) {
+          read.add(id);
+          return super.get(id);
+        }
+        override has(id: EntityId) {
+          read.add(id);
+          return super.has(id);
+        }
+      })(scene.entities),
     };
 
     physicsBodies(watched);
 
-    const colliders = Object.keys(scene.components.collider);
+    const colliders = entitiesWith(scene, 'collider');
     const above = new Set(colliders.flatMap((id) => entityWorldMatrixPath(scene, id)));
     expect(read.size).toBeGreaterThan(0);
     for (const key of read) expect(above).toContain(key);
@@ -116,12 +127,10 @@ describe('bodyOf', () => {
     const crate = withCollider('Crate');
     const prefab = prefabWith('Crate', [crate], crate.entity.id);
     const cart = withRigidBody('Cart');
-    const placed = createEntity('Placed', [createPrefabInstance('prefab-1')]);
+    const placed = createEntity('Placed', [createPrefabInstance(PREFAB)]);
     nest(cart, placed);
 
-    const { scene } = expandPrefabs(sceneWith([cart, placed]), {
-      get: (id) => (id === 'prefab-1' ? prefab : undefined),
-    });
+    const { scene } = expandPrefabs(registries, sceneWith([cart, placed]), new Map([[PREFAB, prefab]]));
 
     expect(bodyOf(scene, instancedId(placed.entity.id, crate.entity.id))).toBe(cart.entity.id);
   });
@@ -151,12 +160,12 @@ describe('jointEnds', () => {
     nest(a, b, c);
     const scene = sceneWith([a, b, c, d, e]);
     const id = (template: EntityTemplate) => template.entity.id;
-    const joint = (connectedEntity: string | null): JointComponent => ({ ...createJoint(), connectedEntity });
+    const joint = (connectedEntity: EntityId | null): JointComponent => ({ ...jointType.create(), connectedEntity });
 
     expect(jointEnds(scene, id(c), joint(null))).toEqual({ holds: true, own: id(a), other: null });
     expect(jointEnds(scene, id(c), joint(id(d)))).toEqual({ holds: true, own: id(a), other: id(d) });
     expect(jointEnds(scene, id(c), joint(id(e)))).toEqual({ holds: false, why: 'otherNoBody' });
-    expect(jointEnds(scene, id(c), joint('gone'))).toEqual({ holds: false, why: 'gone' });
+    expect(jointEnds(scene, id(c), joint(fixedId('entity', 'gone')))).toEqual({ holds: false, why: 'gone' });
     expect(jointEnds(scene, id(e), joint(null))).toEqual({ holds: false, why: 'noBody' });
     expect(jointEnds(scene, id(b), joint(id(a)))).toEqual({ holds: false, why: 'same' });
   });

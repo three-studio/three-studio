@@ -2,6 +2,7 @@ import type { AssetEntry } from '@three-studio/core';
 import { Folder, FolderOpen, Pencil, Trash2 } from 'lucide-react';
 import { deleteFolder, renameFolder, showAssetFile } from '../../commands/assetCommands';
 import { commandById, contextForAsset } from '../../commands/registry';
+import { useRegistries } from '../../registriesContext';
 import { setAssetDragPayload } from '../../assets/assetDrag';
 import { showInFileManagerLabel } from '../../platform';
 import { useAssetStore, type AssetSortKey } from '../../state/assetStore';
@@ -27,10 +28,11 @@ export function AssetList({
   sortKey: AssetSortKey;
   revealed: string | null;
 }) {
+  const registries = useRegistries();
   const onSort = useAssetStore((s) => s.setSort);
   const onOpenFolder = useAssetStore((s) => s.setFolder);
   const onRemove = (asset: AssetEntry) =>
-    commandById('deleteAsset').run(contextForAsset(asset.id));
+    commandById('deleteAsset').run(contextForAsset(registries, asset.id));
   const columns: readonly { key: AssetSortKey; label: string; className: string }[] = [
     { key: 'name', label: 'Name', className: 'flex-1' },
     { key: 'kind', label: 'Type', className: 'w-16' },

@@ -1,3 +1,5 @@
+import type { AssetId, EntityId, SceneId } from '@three-studio/core';
+import type { RuntimeRegistries } from '@three-studio/runtime';
 import { expandedScene } from '../state/expansion';
 import { isSceneLocked, refuseWhileLocked } from '../state/sceneLock';
 import { Selection } from '../state/selection';
@@ -16,12 +18,20 @@ import { Selection } from '../state/selection';
  * What a gesture acts on.
  *
  * Read at the moment it is needed and never kept, which is what stops a command
- * deciding against a stale selection — the defect `CIBLE.md` attributed to the
- * Add menu. It can also be *supplied*: the hierarchy's context menu acts on the
- * row that was right-clicked, which is not always what is selected.
+ * deciding against a stale selection, as the Add menu once did. It can also be
+ * *supplied*: the hierarchy's context menu acts on the row that was
+ * right-clicked, which is not always what is selected.
  */
 export interface EditorContext {
   readonly selection: Selection;
+  /**
+   * The window's registries: what a gesture decodes, expands and creates with.
+   *
+   * In the context because a command is a value in a table, built before any
+   * window exists, and has no other way to them: the composition root made
+   * them, and nothing holds them in a module.
+   */
+  readonly registries: RuntimeRegistries;
   /**
    * The asset a gesture was aimed at, when it was aimed at one.
    *
@@ -34,7 +44,7 @@ export interface EditorContext {
    *
    * Absent for every gesture that acts on the selection, which is most of them.
    */
-  readonly assetId?: string;
+  readonly assetId?: AssetId;
   /**
    * The scene a gesture was aimed at — the Scene menu lists one entry per scene,
    * and each is the same gesture pointed somewhere else.
@@ -47,41 +57,48 @@ export interface EditorContext {
    * named this way: the id names the earlier file. The Scene menu builds that
    * file's row itself.
    */
-  readonly sceneId?: string;
+  readonly sceneId?: SceneId;
 }
 
-export function currentContext(): EditorContext {
-  return { selection: Selection.current() };
+export function currentContext(registries: RuntimeRegistries): EditorContext {
+  return { selection: Selection.current(registries), registries };
 }
 
 /** The context for a specific set of ids — a right-click outside the selection. */
-export function contextFor(ids: readonly string[]): EditorContext {
-  return { selection: Selection.of(ids, expandedScene().scene) };
+export function contextFor(registries: RuntimeRegistries, ids: readonly EntityId[]): EditorContext {
+  return { selection: Selection.of(ids, expandedScene(registries).scene), registries };
 }
 
 /** The context for a gesture aimed at one asset — a tile, a row, an Inspector slot. */
-export function contextForAsset(assetId: string): EditorContext {
-  return { ...currentContext(), assetId };
+export function contextForAsset(registries: RuntimeRegistries, assetId: AssetId): EditorContext {
+  return { ...currentContext(registries), assetId };
 }
 
 /** The context for a gesture aimed at one scene — a row of the Scene menu. */
-export function contextForScene(sceneId: string): EditorContext {
-  return { ...currentContext(), sceneId };
+export function contextForScene(registries: RuntimeRegistries, sceneId: SceneId): EditorContext {
+  return { ...currentContext(registries), sceneId };
 }
 
+/**
+ * A gesture, asked and run against the context its caller read.
+ *
+ * The context is required. A caller acting on the selection as it stands passes
+ * `currentContext()`: read where the gesture is made, by whoever holds what a
+ * context is read from, rather than looked up here for a caller that gave none.
+ */
 export interface Command {
   /** A function, because "Undo Move" names the gesture it would take back. */
-  label(ctx?: EditorContext): string;
+  label(ctx: EditorContext): string;
   /** Blender's `poll()`, Unreal's `CanEditChange`. */
-  can(ctx?: EditorContext): boolean;
-  run(ctx?: EditorContext): void;
+  can(ctx: EditorContext): boolean;
+  run(ctx: EditorContext): void;
   /**
    * Refused only because the game is running: a command that writes the scene,
    * and would act otherwise. A menu says `Stop to edit` beside its greyed row,
    * and `run` says it in the toast — where a command that would not act anyway
    * says nothing, playing or not.
    */
-  waitsForStop(ctx?: EditorContext): boolean;
+  waitsForStop(ctx: EditorContext): boolean;
 }
 
 /** What a gesture is declared as, before `run` is wrapped in its own guard. */
@@ -133,9 +150,9 @@ interface CommandSpec {
 export function defineCommand(spec: CommandSpec): Command {
   const locked = (): boolean => spec.writesScene === true && isSceneLocked();
   return {
-    label: (ctx) => spec.label(ctx ?? currentContext()),
-    can: (ctx) => !locked() && spec.can(ctx ?? currentContext()),
-    waitsForStop: (ctx) => locked() && spec.can(ctx ?? currentContext()),
+    label: (ctx) => spec.label(ctx),
+    can: (ctx) => !locked() && spec.can(ctx),
+    waitsForStop: (ctx) => locked() && spec.can(ctx),
     /**
      * Checked here as well as by the caller.
      *
@@ -149,13 +166,12 @@ export function defineCommand(spec: CommandSpec): Command {
      * otherwise do nothing with nothing to say why.
      */
     run: (ctx) => {
-      const context = ctx ?? currentContext();
-      if (!spec.can(context)) return;
+      if (!spec.can(ctx)) return;
       if (locked()) {
         refuseWhileLocked();
         return;
       }
-      void spec.run(context);
+      void spec.run(ctx);
     },
   };
 }

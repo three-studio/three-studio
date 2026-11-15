@@ -1,6 +1,8 @@
 import { conform, conformPatch, isRecord } from '../conform';
 import { conformMaterial } from '../guards';
-import { createId } from '../ids';
+import { unwrap } from '../decoded';
+import { createId, idMapOf, isAssetId, isSceneId, type AssetId, type SceneId } from '../ids';
+import { jsonOf } from '../json';
 import {
   conformPhysicsSettings,
   createRenderingSettings,
@@ -8,9 +10,10 @@ import {
   type RenderingSettings,
 } from '../project/schema';
 import { conformPhysicsMaterial, type PhysicsMaterialDef } from '../scene/physicsMaterial';
-import { migratePrefab, type PrefabDoc } from '../scene/prefab';
+import type { CoreRegistries } from '../registries';
+import { decodePrefab, prefabJsonOf, type PrefabDoc } from '../scene/prefab';
 import type { MaterialDef, SceneDoc } from '../scene/schema';
-import { migrateScene } from '../scene/serialization';
+import { decodeScene, sceneJsonOf } from '../scene/serialization';
 import {
   isDeviceTransport,
   type DeviceBackend,
@@ -22,7 +25,7 @@ import {
 
 export type { DeviceTransport } from './protocol';
 
-export const LAUNCH_SNAPSHOT_VERSION = 1;
+export const LAUNCH_SNAPSHOT_VERSION = 2;
 
 /**
  * What a device launch runs: the editor's in-memory state, as Play would run it.
@@ -42,23 +45,76 @@ export interface LaunchSnapshot {
    * window's id is what the project's scene list and every reference use, and
    * the entry is always answered from here, so it needs no file on disk.
    */
-  entry: { id: string; name: string; scene: SceneDoc };
+  entry: { id: SceneId; name: string; scene: SceneDoc };
   /** The asset store's, with Prefab Mode's unsaved edits composed in. */
-  materials: Record<string, MaterialDef>;
+  materials: ReadonlyMap<AssetId, MaterialDef>;
   /** The asset store's, by asset id: what a collider linking one is built with. */
-  physicsMaterials: Record<string, PhysicsMaterialDef>;
-  prefabs: Record<string, PrefabDoc>;
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>;
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>;
   /** The project's current settings, as held in memory. */
   rendering: RenderingSettings;
   physics: PhysicsSettings;
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
 }
 
-/** The entries of a record that arrived from elsewhere: none when it is not one. */
-function entriesOf(value: unknown): [string, unknown][] {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? Object.entries(value)
-    : [];
+/**
+ * A launch snapshot as it crosses the bridge: the same, with its two kinds of
+ * document written as text.
+ *
+ * A document holds Maps, and Electron's table of what its context bridge can
+ * carry lists no Map. The window encodes a snapshot as it sends it, with
+ * `jsonOf`, and the main process reads it back; Play, which never leaves the
+ * window, keeps its documents as they are and encodes nothing. The libraries
+ * cross as records keyed by asset id, which the main reads back into Maps.
+ */
+export interface LaunchSnapshotJson {
+  version: typeof LAUNCH_SNAPSHOT_VERSION;
+  entry: { id: SceneId; name: string; sceneJson: string };
+  materials: Record<string, MaterialDef>;
+  physicsMaterials: Record<string, PhysicsMaterialDef>;
+  /** Each prefab's JSON, by asset id. */
+  prefabs: Record<string, string>;
+  rendering: RenderingSettings;
+  physics: PhysicsSettings;
+  loadingScene: SceneId | null;
+}
+
+/** A snapshot as the main process holds it once it has read it. */
+export interface ReceivedLaunch {
+  readonly snapshot: LaunchSnapshot;
+  /**
+   * The entry scene's text as it arrived, which is what a device is served:
+   * reading it proved it is a scene, and writing it out again, key-sorted, would
+   * cost more than reading it did, at every launch and every live reload.
+   */
+  readonly entryJson: string;
+}
+
+export function encodeLaunchSnapshot(registries: CoreRegistries, snapshot: LaunchSnapshot): LaunchSnapshotJson {
+  const prefabs: Record<string, string> = {};
+  for (const [id, prefab] of snapshot.prefabs) prefabs[id] = jsonOf(prefabJsonOf(registries, prefab));
+  return {
+    version: snapshot.version,
+    entry: {
+      id: snapshot.entry.id,
+      name: snapshot.entry.name,
+      sceneJson: jsonOf(sceneJsonOf(registries, snapshot.entry.scene)),
+    },
+    materials: Object.fromEntries(snapshot.materials),
+    physicsMaterials: Object.fromEntries(snapshot.physicsMaterials),
+    prefabs,
+    rendering: snapshot.rendering,
+    physics: snapshot.physics,
+    loadingScene: snapshot.loadingScene,
+  };
+}
+
+/**
+ * A library that arrived from elsewhere, read by asset id: empty when it is not
+ * a record, and without the keys that are no id.
+ */
+function libraryOf(value: unknown): Map<AssetId, unknown> {
+  return idMapOf(isRecord(value) ? value : {}, isAssetId);
 }
 
 /**
@@ -66,55 +122,59 @@ function entriesOf(value: unknown): [string, unknown][] {
  *
  * Whatever the renderer sent: a project's own script can call the bridge with
  * anything, and what it sends becomes the files a phone downloads. Each part
- * goes through the repair its kind already has — a scene and a prefab through
- * their migrations, which keep what a newer editor wrote; a material and the
- * settings against their factories. A field this does not know is dropped:
- * nothing here is kept on disk, and the renderer that sends it ships in the
- * same build.
+ * goes through the reading its kind already has — a scene and a prefab as a
+ * file is read, which keeps a component of a type this build does not define
+ * as found; a material and the settings against their factories, which drop a
+ * field they do not know: nothing here is kept on disk, and the renderer that
+ * sends it ships in the same build.
  *
  * Refused outright when it cannot be read as a launch at all: a version this
- * build does not know, or an entry scene with no id and name to serve it under.
+ * build does not know, which includes version 1's documents sent as objects; an
+ * entry scene with no id and name to serve it under; a scene or a prefab its
+ * decoder refuses.
  */
-export function conformLaunchSnapshot(value: unknown): LaunchSnapshot {
-  if (typeof value !== 'object' || value === null) {
+export function conformLaunchSnapshot(registries: CoreRegistries, value: unknown): ReceivedLaunch {
+  if (!isRecord(value)) {
     throw new Error('A launch snapshot is an object.');
   }
-  const given = value as Record<string, unknown>;
-  if (given['version'] !== LAUNCH_SNAPSHOT_VERSION) {
-    throw new Error(`This build cannot launch a snapshot of version ${String(given['version'])}.`);
+  if (value['version'] !== LAUNCH_SNAPSHOT_VERSION) {
+    throw new Error(`This build cannot launch a snapshot of version ${String(value['version'])}.`);
   }
-  const entry = given['entry'];
-  const { id, name, scene } = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<
-    string,
-    unknown
-  >;
-  if (typeof id !== 'string' || typeof name !== 'string') {
+  const given = value['entry'];
+  const { id, name, sceneJson } = isRecord(given) ? given : {};
+  if (!isSceneId(id) || typeof name !== 'string') {
     throw new Error('A launch snapshot names its entry scene by id and name.');
   }
+  if (typeof sceneJson !== 'string') {
+    throw new Error('A launch snapshot carries its entry scene as text.');
+  }
 
-  const materials: Record<string, MaterialDef> = {};
-  for (const [key, material] of entriesOf(given['materials'])) {
-    materials[key] = conformMaterial(material);
+  const materials = new Map<AssetId, MaterialDef>();
+  for (const [assetId, material] of libraryOf(value['materials'])) {
+    materials.set(assetId, conformMaterial(material));
   }
-  const physicsMaterials: Record<string, PhysicsMaterialDef> = {};
-  for (const [key, material] of entriesOf(given['physicsMaterials'])) {
-    physicsMaterials[key] = conformPhysicsMaterial(material);
+  const physicsMaterials = new Map<AssetId, PhysicsMaterialDef>();
+  for (const [assetId, material] of libraryOf(value['physicsMaterials'])) {
+    physicsMaterials.set(assetId, conformPhysicsMaterial(material));
   }
-  const prefabs: Record<string, PrefabDoc> = {};
-  for (const [key, prefab] of entriesOf(given['prefabs'])) {
-    if (typeof prefab === 'object' && prefab !== null) prefabs[key] = migratePrefab(prefab as PrefabDoc);
+  const prefabs = new Map<AssetId, PrefabDoc>();
+  for (const [assetId, text] of libraryOf(value['prefabs'])) {
+    if (typeof text === 'string') prefabs.set(assetId, unwrap(decodePrefab(registries, text, assetId), `Prefab ${assetId}`));
   }
-  const loadingScene = given['loadingScene'];
+  const loadingScene = value['loadingScene'];
 
   return {
-    version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id, name, scene: migrateScene(scene) },
-    materials,
-    physicsMaterials,
-    prefabs,
-    rendering: conform(given['rendering'], createRenderingSettings()),
-    physics: conformPhysicsSettings(given['physics']),
-    loadingScene: typeof loadingScene === 'string' ? loadingScene : null,
+    snapshot: {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: { id, name, scene: unwrap(decodeScene(registries, sceneJson), `Scene ${name}`) },
+      materials,
+      physicsMaterials,
+      prefabs,
+      rendering: conform(value['rendering'], createRenderingSettings()),
+      physics: conformPhysicsSettings(value['physics']),
+      loadingScene: isSceneId(loadingScene) ? loadingScene : null,
+    },
+    entryJson: sceneJson,
   };
 }
 

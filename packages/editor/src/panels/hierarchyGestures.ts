@@ -1,4 +1,4 @@
-import type { SceneDoc } from '@three-studio/core';
+import { isEntityId, type EntityId, type SceneDoc } from '@three-studio/core';
 import type { Row } from './hierarchyRows';
 
 /*
@@ -43,13 +43,13 @@ export function isBetweenRows(offsetY: number, rowHeight: number): boolean {
  */
 export function insertionAt(
   scene: SceneDoc,
-  entityId: string,
-): { parent: string | null; index: number } | null {
-  const entity = scene.entities[entityId];
+  entityId: EntityId,
+): { parent: EntityId | null; index: number } | null {
+  const entity = scene.entities.get(entityId);
   if (!entity) return null;
 
   const siblings =
-    entity.parent === null ? scene.rootOrder : (scene.entities[entity.parent]?.children ?? []);
+    entity.parent === null ? scene.rootOrder : (scene.entities.get(entity.parent)?.children ?? []);
 
   // Clamped because `indexOf` answers -1 for an entity its own parent does not
   // list — the torn hierarchy the graph module now refuses to create. A drop at
@@ -70,9 +70,9 @@ export function insertionAt(
  */
 export function rangeSelection(
   rows: readonly Row[],
-  anchor: string | null,
-  clicked: string,
-): string[] | null {
+  anchor: EntityId | null,
+  clicked: EntityId,
+): EntityId[] | null {
   const from = rows.findIndex((row) => row.entity.id === (anchor ?? clicked));
   const to = rows.findIndex((row) => row.entity.id === clicked);
   if (from === -1 || to === -1) return null;
@@ -82,4 +82,16 @@ export function rangeSelection(
   // The clicked row goes last, so it stays the primary and the gizmo does not
   // jump to the far end of the range the user just swept.
   return [...span.filter((other) => other !== clicked), clicked];
+}
+
+/**
+ * The entities a drag out of the hierarchy carries, read from its payload.
+ *
+ * The payload is text, ids joined by spaces, and it is read back as text: what
+ * a drop receives came through the browser's drag-and-drop, from whatever
+ * started the drag. Each piece is checked as the id it has to be. `split` makes
+ * an empty piece of a doubled or a trailing space, and that names no entity.
+ */
+export function draggedEntityIds(payload: string): EntityId[] {
+  return payload.split(' ').filter(isEntityId);
 }

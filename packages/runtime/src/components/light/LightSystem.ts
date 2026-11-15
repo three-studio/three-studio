@@ -1,4 +1,4 @@
-import type { LightComponent } from '@three-studio/core';
+import type { EntityId, LightComponent } from '@three-studio/core';
 import {
   AmbientLight,
   Color,
@@ -11,8 +11,8 @@ import {
   RectAreaLight,
   SpotLight,
   type Object3D,
-  type Texture,
 } from 'three/webgpu';
+import type { TextureHold } from '../../assets/AssetCache';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 
@@ -20,12 +20,12 @@ export interface LightHandle extends SystemHandle {
   light: Object3D;
   kind: LightComponent['kind'];
   /**
-   * The projector's cookie. Its own instance, owned by this handle — the model
+   * The projector's cookie: its own texture, held by this handle — the asset
    * cache shares the decoded image, not the `Texture`. `null` for every other
    * kind, and for a projector whose slot is empty or whose asset is missing.
    */
-  texture: Texture | null;
-  /** What `texture` was instanced from, so `patch` can tell a swap from a no-op. */
+  cookie: TextureHold | null;
+  /** What `cookie` was taken from, so `patch` can tell a swap from a no-op. */
   mapId: string | null;
   readonly objects: readonly Object3D[];
 }
@@ -41,10 +41,10 @@ export interface LightHandle extends SystemHandle {
  * one. Sixty a second, none of them freed.
  */
 export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
-  mount(entityId: string, component: LightComponent, ctx: SystemContext): LightHandle {
+  mount(entityId: EntityId, component: LightComponent, ctx: SystemContext): LightHandle {
     const light = buildLight(component);
     applyShadow(light, component, ctx.shadowMapSize);
-    const texture = applyCookie(light, component, ctx, null);
+    const cookie = applyCookie(light, component, ctx, null);
     /*
      * On its entity's origin, and not where three put it.
      *
@@ -74,7 +74,7 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
      */
     if (component.kind !== 'hemisphere') light.position.set(0, 0, 0);
     light.userData[ENTITY_ID_KEY] = entityId;
-    return { light, kind: component.kind, texture, mapId: component.mapId, objects: [light] };
+    return { light, kind: component.kind, cookie, mapId: component.mapId, objects: [light] };
   }
 
   /**
@@ -113,13 +113,13 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
     applyShadow(handle.light, next, ctx.shadowMapSize);
 
     if (handle.mapId === next.mapId) return handle;
-    const texture = applyCookie(handle.light, next, ctx, handle.texture);
-    return { ...handle, texture, mapId: next.mapId };
+    const cookie = applyCookie(handle.light, next, ctx, handle.cookie);
+    return { ...handle, cookie, mapId: next.mapId };
   }
 
   unmount(handle: LightHandle, ctx: SystemContext): void {
     ctx.arena.retire(handle.light as unknown as { dispose(): void });
-    if (handle.texture) ctx.arena.retire(handle.texture);
+    if (handle.cookie) ctx.arena.retire(handle.cookie);
   }
 }
 
@@ -208,25 +208,27 @@ function applyShadow(light: Object3D, def: LightComponent, shadowMapSize: number
 }
 
 /**
- * The projector's cookie, instanced from the shared image and owned by the
- * handle that gets it back.
+ * The projector's cookie, held from the shared image by the handle that gets
+ * it back.
  *
- * `previous` is retired rather than disposed on the spot: a frame already
- * encoding may still sample it. Same contract as a material's texture slots in
- * `material.ts`, and the arena is the one place that knows when it is safe.
+ * `previous` is retired rather than given back on the spot: a frame already
+ * encoding may still sample its texture. Same contract as a material's texture
+ * slots in `material.ts`, and the arena is the one place that knows when it is
+ * safe.
  */
 function applyCookie(
   light: Object3D,
   def: LightComponent,
   ctx: SystemContext,
-  previous: Texture | null,
-): Texture | null {
+  previous: TextureHold | null,
+): TextureHold | null {
   if (!(light instanceof ProjectorLight)) return null;
   if (previous) ctx.arena.retire(previous);
 
   light.aspect = def.aspect > 0 ? def.aspect : null;
-  light.map = def.mapId === null ? null : ctx.models.instanceTexture(def.mapId);
-  return light.map;
+  const cookie = def.mapId === null ? null : ctx.assets.holdTexture(def.mapId);
+  light.map = cookie?.texture ?? null;
+  return cookie;
 }
 
 /**

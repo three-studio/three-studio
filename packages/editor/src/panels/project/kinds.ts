@@ -29,8 +29,7 @@ export const KIND_ICON: Record<AssetKind, LucideIcon> = {
  * Explicit rather than pluralised: naive pluralisation gives "Audios". Total
  * rather than a list, and that is the fix — the list this replaces had lost
  * `prefab`, so prefabs were unfilterable and nothing could say so. A `Record`
- * keyed on the union cannot lose a member without failing to compile, which is
- * the same remedy the permissive lists got in T-005.
+ * keyed on the union cannot lose a member without failing to compile.
  */
 const KIND_LABELS: Record<AssetKind, string> = {
   model: 'Models',

@@ -1,9 +1,6 @@
-import type { BufferGeometry, Material, Texture } from 'three/webgpu';
-
-/** Anything the runtime owns on the GPU and must release when it lets go. */
-export interface Disposable {
-  dispose(): void;
-}
+import type { Disposable } from '@three-studio/core';
+import type { BufferGeometry, MeshStandardNodeMaterial } from 'three/webgpu';
+import type { TextureHold } from '../assets/AssetCache';
 
 /**
  * Resources held by several meshes at once, freed when the last one lets go.
@@ -65,19 +62,20 @@ class SharedPool<T extends Disposable> {
   }
 }
 
-/** A material asset and the textures only it uses, freed together. */
+/** A material and its texture slots' holds, freed together. */
 export class SharedMaterial implements Disposable {
-  readonly material: Material;
-  readonly textures: Texture[];
+  readonly material: MeshStandardNodeMaterial;
+  readonly textures: readonly TextureHold[];
 
-  constructor(built: { material: Material; textures: Texture[] }) {
+  constructor(built: { material: MeshStandardNodeMaterial; textures: readonly TextureHold[] }) {
     this.material = built.material;
     this.textures = built.textures;
   }
 
+  /** Each hold disposes its own texture, then gives the image back to the cache. */
   dispose(): void {
     this.material.dispose();
-    for (const texture of this.textures) texture.dispose();
+    for (const hold of this.textures) hold.dispose();
   }
 }
 

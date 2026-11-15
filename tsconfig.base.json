@@ -10,6 +10,10 @@
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
 
@@ -27,7 +31,10 @@
       "@three-studio/runtime": ["./packages/runtime/src/index.ts"],
       "@three-studio/runtime/*": ["./packages/runtime/src/*"],
       "@three-studio/editor": ["./packages/editor/src/index.ts"],
-      "@three-studio/editor/*": ["./packages/editor/src/*"]
+      "@three-studio/editor/*": ["./packages/editor/src/*"],
+      "@three-studio/*/core": ["./modules/*/src/core/index.ts"],
+      "@three-studio/*/runtime": ["./modules/*/src/runtime/index.ts"],
+      "@three-studio/*/editor": ["./modules/*/src/editor/index.ts"]
     }
   }
 }

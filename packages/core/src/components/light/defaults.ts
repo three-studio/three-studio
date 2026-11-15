@@ -1,6 +1,6 @@
-import { createId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
-import type { LightComponent, LightKind, ShadowSettings } from './schema';
+import { lightType } from './index';
+import type { LightComponent, LightKind } from './schema';
 
 /**
  * three uses physical units, so a sensible default differs by an order of
@@ -27,20 +27,6 @@ const LIGHT_INTENSITY: Record<LightKind, number> = {
   projector: 20,
 };
 
-/** three's own shadow defaults, so filling an older scene changes nothing. */
-export function createShadowSettings(): ShadowSettings {
-  return {
-    bias: 0,
-    normalBias: 0,
-    radius: 1,
-    blurSamples: 8,
-    near: 0.5,
-    far: 500,
-    orthoSize: 5,
-    focus: 1,
-  };
-}
-
 /** Kinds three can cast a shadow from. A rect area light cannot. */
 const SHADOW_CASTERS: ReadonlySet<LightKind> = new Set([
   'directional',
@@ -49,25 +35,13 @@ const SHADOW_CASTERS: ReadonlySet<LightKind> = new Set([
   'projector',
 ]);
 
+/**
+ * A light of `kind`: the schema's defaults, which are a point light's, with the
+ * kind's own intensity and whether it casts a shadow. Those depend on the kind,
+ * so they are a fact of making one, where a default is the same for every kind.
+ */
 export function createLight(kind: LightKind): LightComponent {
-  return {
-    id: createId(),
-    type: 'light',
-    kind,
-    color: '#ffffff',
-    intensity: LIGHT_INTENSITY[kind],
-    groundColor: '#4a4436',
-    distance: 0,
-    decay: 2,
-    angle: Math.PI / 6,
-    penumbra: 0.2,
-    width: 1,
-    height: 1,
-    mapId: null,
-    aspect: 0,
-    castShadow: SHADOW_CASTERS.has(kind),
-    shadow: createShadowSettings(),
-  };
+  return { ...lightType.create(), kind, intensity: LIGHT_INTENSITY[kind], castShadow: SHADOW_CASTERS.has(kind) };
 }
 
 const LIGHT_LABELS: Record<LightKind, string> = {

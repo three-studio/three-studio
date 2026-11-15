@@ -52,7 +52,7 @@ export interface TooltipAttributes {
  */
 export function tooltip(
   text: string | null | undefined,
-  { keys, hint }: { keys?: string; hint?: string } = {},
+  { keys, hint }: { keys?: string | undefined; hint?: string | undefined } = {},
 ): Partial<TooltipAttributes> {
   if (!text) return {};
   return {
@@ -108,12 +108,12 @@ interface Shown {
 }
 
 function contentOf(element: HTMLElement): Shown | null {
-  const text = element.dataset.tooltip;
+  const text = element.dataset['tooltip'];
   if (!text) return null;
   return {
     text,
-    keys: element.dataset.tooltipKeys ?? null,
-    hint: element.dataset.tooltipHint ?? null,
+    keys: element.dataset['tooltipKeys'] ?? null,
+    hint: element.dataset['tooltipHint'] ?? null,
     anchor: element.getBoundingClientRect(),
   };
 }

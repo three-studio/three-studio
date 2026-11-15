@@ -2,22 +2,25 @@ import {
   colliderGeometry,
   createAudioSourceEntity,
   createCameraEntity,
+  colliderType,
   createColliderShape,
-  createComponent,
   createEntity,
-  createJoint,
+  jointType,
   createJointMotion,
   createLightEntity,
   createMeshComponent,
   createMeshEntity,
   createRenderingSettings,
+  rigidbodyType,
   findComponent,
+  fixedId,
   jointFrame,
   putComponent,
   type AudioSourceComponent,
   type BuiltShape,
   type ColliderShape,
   type ComponentDoc,
+  type EntityId,
   type EntityTemplate,
   type JointComponent,
   type JointMotion,
@@ -25,6 +28,7 @@ import {
   type SceneDoc,
   type Vec3,
 } from '@three-studio/core';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
 import { worldPose } from '@three-studio/runtime/physics/PhysicsWorld';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
@@ -49,6 +53,9 @@ import {
 import { describe, expect, it } from 'vitest';
 import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A light, a camera and a bare group build an `Object3D` with no geometry, so
@@ -70,19 +77,20 @@ function mount(scene: SceneDoc): {
   binder: SceneBinder;
   camera: PerspectiveCamera;
   /** Re-runs a frame: the binder, then the overlay, as the viewport does. */
-  frame: (next?: SceneDoc, selection?: readonly string[]) => void;
+  frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
-    resolver: NULL_ASSET_RESOLVER,
+    registries,
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.
     rendering: createRenderingSettings(),
   });
-  const overlay = new ViewportOverlay(binder);
+  const overlay = new ViewportOverlay(binder, registries.overlays);
   const camera = new PerspectiveCamera(60, 1.5, 0.1, 1000);
   camera.position.set(0, 0, 10);
 
   let current = scene;
-  const frame = (next?: SceneDoc, selection: readonly string[] = []): void => {
+  const frame = (next?: SceneDoc, selection: readonly EntityId[] = []): void => {
     current = next ?? current;
     binder.sync(current);
     overlay.sync(current, undefined);
@@ -210,10 +218,7 @@ describe('a marker as a click target', () => {
 
     const hidden: SceneDoc = {
       ...scene,
-      entities: {
-        ...scene.entities,
-        [light.entity.id]: { ...light.entity, visible: false },
-      },
+      entities: new Map(scene.entities).set(light.entity.id, { ...light.entity, visible: false }),
     };
     frame(hidden);
     expect(overlay.markers.children[0]?.visible).toBe(false);
@@ -460,7 +465,7 @@ describe('helpers on the selection', () => {
 
 describe('what a positional sound covers', () => {
   const audio = (edit: (component: AudioSourceComponent) => void = () => {}): EntityTemplate => {
-    const template = createAudioSourceEntity('clip');
+    const template = createAudioSourceEntity(fixedId('asset', 'clip'));
     const component = template.components[0] as AudioSourceComponent;
     edit(component);
     return template;
@@ -597,7 +602,7 @@ function conesOf(root: Object3D | undefined): boolean[] {
 
 /** An entity carrying one collider of this shape. */
 function colliderEntity(shape: ColliderShape, components: ComponentDoc[] = []): EntityTemplate {
-  return createEntity('Collider', [{ ...createComponent('collider'), shape }, ...components]);
+  return createEntity('Collider', [{ ...colliderType.create(), shape }, ...components]);
 }
 
 /** The position attribute of a collider's outline. */
@@ -738,7 +743,7 @@ describe('what a collider is built as', () => {
   });
 
   it('draws a child’s collider at its own entity’s pose', () => {
-    const parent = createEntity('Parent', [createComponent('rigidbody')]);
+    const parent = createEntity('Parent', [rigidbodyType.create()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];
@@ -809,7 +814,7 @@ describe('what a mesh collider is built as', () => {
     const template = createMeshEntity('torus');
     // At the origin, where its axis is the world's z; a new one stands on the ground.
     template.entity.transform.position = [0, 0, 0];
-    template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } }, ...components);
+    template.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build } }, ...components);
     return template;
   };
 
@@ -841,10 +846,10 @@ describe('what a mesh collider is built as', () => {
   });
 
   it('draws Triangles as the hull a dynamic body makes of them, its own or an ancestor’s', () => {
-    const own = torus('triangles', createComponent('rigidbody'));
+    const own = torus('triangles', rigidbodyType.create());
     expect(Math.min(...fromAxis(drawn([own], own)))).toBeGreaterThan(R - 1e-3);
 
-    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const cart = createEntity('Cart', [rigidbodyType.create()]);
     const ridden = torus('triangles');
     nest(cart, ridden);
     expect(Math.min(...fromAxis(drawn([cart, ridden], ridden)))).toBeGreaterThan(R - 1e-3);
@@ -862,7 +867,7 @@ describe('what a mesh collider is built as', () => {
     // three hands back a sliver of four of a disc's points, drawn as a triangle.
     const disc = (build: MeshBuild): EntityTemplate => {
       const template = createMeshEntity('circle');
-      template.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build } });
+      template.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build } });
       return template;
     };
     const hull = disc('hull');
@@ -874,7 +879,7 @@ describe('what a mesh collider is built as', () => {
   it('draws its own entity’s meshes, never its children’s', () => {
     const base = createMeshEntity('box');
     base.entity.transform.position = [0, 0, 0];
-    base.components.push({ ...createComponent('collider'), shape: { kind: 'mesh', build: 'hull' } });
+    base.components.push({ ...colliderType.create(), shape: { kind: 'mesh', build: 'hull' } });
     const above = createMeshEntity('box');
     above.entity.transform.position = [0, 3, 0];
     nest(base, above);
@@ -898,11 +903,14 @@ describe('what a mesh collider is built as', () => {
     expect(Math.abs(reach() - (0.6 + t))).toBeLessThan(1e-3);
     const geometry = outline instanceof LineSegments ? outline.geometry : undefined;
 
-    const entity = scene.entities[ring.entity.id];
+    const entity = scene.entities.get(ring.entity.id);
     if (!entity) throw new Error('no entity');
     const scaled: SceneDoc = {
       ...scene,
-      entities: { ...scene.entities, [entity.id]: { ...entity, transform: { ...entity.transform, scale: [2, 2, 2] } } },
+      entities: new Map(scene.entities).set(entity.id, {
+        ...entity,
+        transform: { ...entity.transform, scale: [2, 2, 2] },
+      }),
     };
     frame(scaled, [ring.entity.id]);
     expect(Math.abs(reach() - 2 * (0.6 + t))).toBeLessThan(1e-3);
@@ -921,7 +929,7 @@ describe('teardown', () => {
   it('leaves both groups empty', () => {
     const scene = sceneWith([createLightEntity('spot'), createCameraEntity()]);
     const { overlay, frame } = mount(scene);
-    frame(scene, Object.keys(scene.entities));
+    frame(scene, [...scene.entities.keys()]);
     expect(overlay.markers.children.length).toBeGreaterThan(0);
     expect(annotations(overlay).length).toBeGreaterThan(0);
 
@@ -935,10 +943,10 @@ describe('teardown', () => {
 describe('where a joint holds', () => {
   /** An entity carrying one joint of this motion, at this anchor. */
   const jointEntity = (motion: JointMotion, anchor: Vec3 = [0, 0, 0]): EntityTemplate =>
-    createEntity('Joint', [{ ...createJoint(), motion, anchor }]);
+    createEntity('Joint', [{ ...jointType.create(), motion, anchor }]);
 
   /** The world pose physics reads the entity at. */
-  function poseOf(binder: SceneBinder, entityId: string) {
+  function poseOf(binder: SceneBinder, entityId: EntityId) {
     const container = binder.containerFor(entityId);
     if (!container) throw new Error('no container');
     const position = new Vector3();
@@ -1034,7 +1042,7 @@ describe('where a joint holds', () => {
   });
 
   it('draws a joint on a child where the child is', () => {
-    const parent = createEntity('Door', [createComponent('rigidbody')]);
+    const parent = createEntity('Door', [rigidbodyType.create()]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
     parent.entity.transform.scale = [2, 2, 2];

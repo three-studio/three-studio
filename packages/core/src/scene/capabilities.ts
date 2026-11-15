@@ -1,4 +1,5 @@
 import { hasComponent } from './components';
+import type { EntityId } from '../ids';
 import { prefabInstanceOf, splitInstancedId } from './prefab';
 import type { SceneDoc } from './schema';
 
@@ -89,8 +90,8 @@ const PRODUCED_DENIES: readonly EntityCapability[] = [
  *   says the entity came out of a prefab, which the entity itself cannot tell
  *   you — expansion produces an ordinary `EntityDoc`.
  */
-export function capabilitiesOf(scene: SceneDoc, id: string): ReadonlySet<EntityCapability> {
-  const entity = scene.entities[id];
+export function capabilitiesOf(scene: SceneDoc, id: EntityId): ReadonlySet<EntityCapability> {
+  const entity = scene.entities.get(id);
   // An id naming nothing can do nothing. Every caller used to ask this
   // separately, and one that forgot would have read `locked` off `undefined`.
   if (!entity) return new Set();

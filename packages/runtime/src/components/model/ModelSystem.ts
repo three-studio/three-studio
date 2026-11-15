@@ -1,5 +1,6 @@
-import type { ModelComponent } from '@three-studio/core';
-import { Mesh, type Material, type Object3D } from 'three/webgpu';
+import type { AssetId, EntityId, ModelComponent } from '@three-studio/core';
+import { Line, Mesh, Points, type Material, type Object3D } from 'three/webgpu';
+import type { ModelHold } from '../../assets/AssetCache';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import { buildMaterial } from '../../systems/material';
@@ -7,7 +8,7 @@ import { SharedMaterial } from '../../systems/ResourceArena';
 import { createMissingModel } from './missingModel';
 
 export interface ModelHandle extends SystemHandle {
-  assetId: string;
+  assetId: AssetId | null;
   /** Which node of the file; `''` is the whole thing. See `ModelComponent`. */
   nodePath: string;
   nodeName: string;
@@ -20,21 +21,37 @@ export interface ModelHandle extends SystemHandle {
    * holding the object instead would leave the count one short for every model
    * that ever named a material.
    */
-  materialKey: string | null;
+  materialKey: AssetId | null;
   /**
    * What each mesh drew before an override was written onto it.
    *
    * Filled on the first override and read when one is taken away. Without it,
    * clearing the material field leaves the last one assigned: the file's own
-   * belongs to `ModelCache` and is still perfectly alive, but this clone no
+   * belongs to the asset cache and is still perfectly alive, but this clone no
    * longer has a reference to it anywhere.
    *
    * Lazily, so a model nobody re-materialled — which is nearly all of them —
    * carries an empty map and nothing else.
    */
   readonly sourceMaterials: Map<Mesh, Material | Material[]>;
+  /**
+   * What keeps the file loaded while this handle draws it, taken at the mount
+   * and given back at the unmount. `null` with no asset, or one the project
+   * lacks.
+   */
+  hold: ModelHold | null;
+  /** This world's copies of the file's materials, which it draws; `null` whenever `hold` is. */
+  copies: WorldCopies | null;
   /** Grows when the load lands. Empty until then, and empty forever if it fails. */
   readonly objects: Object3D[];
+}
+
+/** One model file's materials as one world draws them, and how many of its placements do. */
+interface WorldCopies {
+  readonly assetId: AssetId;
+  holders: number;
+  /** The file's material → this world's copy of it. */
+  readonly copies: Map<Material, Material>;
 }
 
 /**
@@ -53,18 +70,35 @@ export interface ModelHandle extends SystemHandle {
  * a material of its own. That is the arrangement Unity's imported prefab has —
  * a leaf pointing at a sub-asset of the model file — and the reason it is here
  * rather than on `mesh` is that `GeometryDef` is thirteen primitives with no way
- * to name a file, while this system already loads asynchronously and already
- * owns nothing.
+ * to name a file, while this system already loads asynchronously, and owns
+ * nothing of a file but its world's copies of the materials.
  */
 export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   /** In-flight loads, so `whenLoaded()` can wait for a settled scene. */
   private readonly pending = new Set<Promise<void>>();
+  /**
+   * This world's own copies of each model's materials, by asset.
+   *
+   * The geometry and the images of a model are the project's, shared by every
+   * world that draws it — the edit view and Play hold one model, not two. Its
+   * materials are not: a script reaches them through its entity's object, and a
+   * tint, a fade or an emissive pulse is the common case. Shared, that write
+   * would land in the edit view's materials too, unseen during Play — only the
+   * game is drawn then — and still there after Stop. So each world draws copies
+   * of its own, made once per world and per asset, the first time an arrival
+   * meets each material: a material is a few uniforms, cloned in microseconds,
+   * and its copy compiles as it does.
+   *
+   * One system per reconciler, and so per world: two placements in one world
+   * share these, as two clones of one file always shared their materials.
+   */
+  private readonly own = new Map<AssetId, WorldCopies>();
 
-  override materialAsset(handle: ModelHandle): string | null {
+  override materialAsset(handle: ModelHandle): AssetId | null {
     return handle.materialKey;
   }
 
-  mount(entityId: string, component: ModelComponent, ctx: SystemContext): ModelHandle {
+  mount(entityId: EntityId, component: ModelComponent, ctx: SystemContext): ModelHandle {
     const handle: ModelHandle = {
       assetId: component.assetId,
       nodePath: component.nodePath,
@@ -73,6 +107,8 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       receiveShadow: component.receiveShadow,
       materialKey: null,
       sourceMaterials: new Map(),
+      hold: null,
+      copies: null,
       objects: [],
     };
     // Before the load, so the material is in hand when the object arrives: the
@@ -118,16 +154,19 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   }
 
   /**
-   * Frees nothing it did not take.
+   * Gives back what it took, and frees nothing of the file.
    *
-   * A loaded glTF's geometries and materials belong to `ModelCache`, which hands
-   * out clones sharing them and owns their lifetime. Disposing them here would
-   * free buffers every other instance of the same model is still drawing.
-   *
-   * The pooled material is the exception, and the only thing this handle ever
-   * took a reference to.
+   * A loaded file's geometries, materials and images belong to the asset cache,
+   * which hands out clones sharing them: disposing them here would free buffers
+   * every other placement of the same model is still drawing. The hold says
+   * this one is done; the cache frees once no hold is left. The world's copies
+   * of the materials are this system's, and the last placement retires them.
    */
   unmount(handle: ModelHandle, ctx: SystemContext): void {
+    if (handle.copies !== null) this.letGoOfCopies(handle.copies, ctx);
+    handle.copies = null;
+    handle.hold?.dispose();
+    handle.hold = null;
     if (handle.materialKey !== null) ctx.arena.releaseMaterial(handle.materialKey);
     handle.materialKey = null;
     handle.sourceMaterials.clear();
@@ -155,7 +194,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     handle.materialKey = component.materialId;
     if (component.materialId === null) return;
 
-    const definition = ctx.materials[component.materialId];
+    const definition = ctx.materials.get(component.materialId);
     if (definition === undefined) {
       // An id naming a material the project no longer holds. Left on the file's
       // own material rather than blanked, and the key given back so the count
@@ -165,7 +204,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     }
     ctx.arena.material(
       component.materialId,
-      () => new SharedMaterial(buildMaterial(definition, ctx.models)),
+      () => new SharedMaterial(buildMaterial(definition, ctx.assets)),
     );
   }
 
@@ -196,8 +235,8 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
           if (!handle.sourceMaterials.has(child)) {
             handle.sourceMaterials.set(child, child.material);
           }
-          // Assigned, never disposed. The mesh's own material belongs to
-          // `ModelCache`, and every other clone of this file is still drawing
+          // Assigned, never disposed. The mesh's own material belongs to the
+          // asset cache, and every other clone of this file is still drawing
           // it.
           child.material = material;
           return;
@@ -212,8 +251,9 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     }
   }
 
-  private load(entityId: string, handle: ModelHandle, ctx: SystemContext): void {
-    if (handle.assetId === '') return;
+  private load(entityId: EntityId, handle: ModelHandle, ctx: SystemContext): void {
+    const { assetId } = handle;
+    if (assetId === null) return;
 
     // Asked before loading, because it is not a failure. A scene that names a
     // deleted asset is ordinary — the delete dialog says the reference will be
@@ -221,7 +261,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     // reported as a stack trace against an entity that then drew nothing.
     // Nothing is the one thing that cannot be fixed: it is invisible and it
     // cannot be clicked. See `missingModel.ts`.
-    if (!ctx.models.knows(handle.assetId)) {
+    if (!ctx.assets.knows(assetId)) {
       const placeholder = createMissingModel();
       // Deferred, and that is not a stylistic choice. `mount` has not returned
       // this handle yet, so the reconciler does not know it is the one mounted
@@ -244,11 +284,18 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       return;
     }
 
-    const pending = this.fetch(handle, ctx)
+    // Held before anything is awaited: an unmount during the load gives back
+    // what this took, and a remount finds the load already under way.
+    handle.copies = this.copiesOf(assetId);
+    handle.hold = ctx.assets.holdModel(
+      assetId,
+      handle.nodePath === '' ? null : { path: handle.nodePath, name: handle.nodeName },
+    );
+    const pending = handle.hold.object
       .then((object) => {
         if (object === null) {
           console.warn(
-            `[scene] ${handle.assetId} has no node "${handle.nodePath}"${
+            `[scene] ${assetId} has no node "${handle.nodePath}"${
               handle.nodeName === '' ? '' : ` (${handle.nodeName})`
             }; nothing drawn.`,
           );
@@ -258,7 +305,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
         this.place(entityId, handle, ctx, object);
       })
       .catch((error: unknown) => {
-        console.error(`[scene] failed to load model ${handle.assetId}:`, error);
+        console.error(`[scene] failed to load model ${assetId}:`, error);
       })
       .finally(() => {
         this.pending.delete(pending);
@@ -275,14 +322,16 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
    * drew, and `unmount` would have to know about it.
    */
   private place(
-    entityId: string,
+    entityId: EntityId,
     handle: ModelHandle,
     ctx: SystemContext,
     object: Object3D,
   ): void {
+    const { copies } = handle;
     object.userData[ENTITY_ID_KEY] = entityId;
     object.traverse((child) => {
       child.userData[ENTITY_ID_KEY] = entityId;
+      if (copies !== null) drawOwnCopies(child, copies.copies);
     });
 
     if (!ctx.attach(entityId, handle, object)) return;
@@ -290,9 +339,47 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     this.dress(handle, ctx);
   }
 
-  /** The whole file, or the single node this handle names. */
-  private fetch(handle: ModelHandle, ctx: SystemContext): Promise<Object3D | null> {
-    if (handle.nodePath === '') return ctx.models.loadModel(handle.assetId);
-    return ctx.models.loadNode(handle.assetId, handle.nodePath, handle.nodeName);
+  /** This world's copies of a model's materials, counting one more placement that draws them. */
+  private copiesOf(assetId: AssetId): WorldCopies {
+    const found = this.own.get(assetId);
+    if (found !== undefined) {
+      found.holders += 1;
+      return found;
+    }
+    const made: WorldCopies = { assetId, holders: 1, copies: new Map() };
+    this.own.set(assetId, made);
+    return made;
   }
+
+  /**
+   * One placement fewer. The last one in this world retires the copies — the
+   * frame in flight may still be drawing with them — before its hold goes
+   * back to the cache.
+   */
+  private letGoOfCopies(world: WorldCopies, ctx: SystemContext): void {
+    world.holders -= 1;
+    if (world.holders > 0) return;
+    for (const copy of world.copies.values()) ctx.arena.retire(copy);
+    this.own.delete(world.assetId);
+  }
+}
+
+/**
+ * Has a drawable draw this world's copies of its materials, each made the
+ * first time the world meets it.
+ *
+ * A copy shares the file's textures, which the cache owns: `clone` copies a
+ * material's fields, its maps by reference, and retiring the copy frees the
+ * copy alone.
+ */
+function drawOwnCopies(child: Object3D, copies: Map<Material, Material>): void {
+  if (!(child instanceof Mesh || child instanceof Line || child instanceof Points)) return;
+  const own = (material: Material): Material => {
+    const found = copies.get(material);
+    if (found !== undefined) return found;
+    const copy = material.clone();
+    copies.set(material, copy);
+    return copy;
+  };
+  child.material = Array.isArray(child.material) ? child.material.map(own) : own(child.material);
 }

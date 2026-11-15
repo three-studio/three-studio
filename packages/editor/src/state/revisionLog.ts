@@ -1,3 +1,4 @@
+import { isEntityId, type EntityId } from '@three-studio/core';
 import type { Patch } from 'immer';
 
 /*
@@ -21,7 +22,7 @@ const REVISION_LOG_LIMIT = 256;
 interface Change {
   revision: number;
   /** `'*'` means everything: a document was loaded, or the table was replaced. */
-  entities: ReadonlySet<string> | '*';
+  entities: ReadonlySet<EntityId> | '*';
   environment: boolean;
   /**
    * Which asset table moved. No entity did, and yet what is drawn changed.
@@ -36,7 +37,7 @@ interface Change {
 }
 
 export interface Changes {
-  entities: ReadonlySet<string> | '*';
+  entities: ReadonlySet<EntityId> | '*';
   environment: boolean;
   materials: boolean;
   prefabs: boolean;
@@ -51,14 +52,22 @@ export interface Changes {
  * Patch paths look like `['entities', <id>, 'transform', 'position', 1]`, so
  * the affected entity is always at index 1. The binder then re-reads only those
  * entities instead of diffing the whole tree every frame.
+ *
+ * A path is text, and the segment that names an entity is read as the id it has
+ * to be. One that is not names nothing the binder could re-read, and an answer
+ * that left it out would have the binder go on drawing what is no longer there:
+ * it is read as `everything`, as a replaced table is.
  */
 function affectedEntities(patches: readonly Patch[]): {
-  entities: Set<string>;
+  entities: Set<EntityId>;
+  /** Set where no entity can be named: a table was replaced, or a segment is no id. */
+  everything: boolean;
   environment: boolean;
   structural: boolean;
   component: boolean;
 } {
-  const entities = new Set<string>();
+  const entities = new Set<EntityId>();
+  let everything = false;
   let environment = false;
   let structural = false;
   let component = false;
@@ -67,14 +76,28 @@ function affectedEntities(patches: readonly Patch[]): {
     const [root, second, third] = patch.path;
     if (root === 'environment') {
       environment = true;
-    } else if (root === 'components') {
+    } else if (root === 'components' || root === 'unknownComponents') {
       /*
        * `['components', <type>, <entityId>, <componentId>, …]` — the entity is
        * at index **2**, not 1. Reading it from 1 would name a component type and
-       * wake nothing at all.
+       * wake nothing at all. The components of the types this build does not
+       * define sit under a root of their own, by the same three levels.
+       *
+       * One patch stops a segment short and still names its entities: a type's
+       * table **added** whole. The document holds a table only for a type it has
+       * held a component of, so a scene's first light adds the lights' table
+       * with that light in it. Nothing of the type existed before, so the keys
+       * of what was added are all there is to re-read; read as "everything",
+       * Add Component reconciled the whole scene for one entity. A table
+       * replaced or taken out says nothing of what it held, and stays that.
        */
-      if (typeof third === 'string') entities.add(third);
-      else entities.add('*');
+      if (isEntityId(third)) entities.add(third);
+      else if (third === undefined && patch.op === 'add' && patch.value instanceof Map) {
+        for (const entityId of patch.value.keys()) {
+          if (isEntityId(entityId)) entities.add(entityId);
+          else everything = true;
+        }
+      } else everything = true;
       component = true;
       /*
        * Structural only down to the component itself.
@@ -91,7 +114,7 @@ function affectedEntities(patches: readonly Patch[]): {
        * filled texture slots — `componentRevision` gives back.
        */
       if (patch.path.length <= 4) structural = true;
-    } else if (root === 'entities' && typeof second === 'string') {
+    } else if (root === 'entities' && isEntityId(second)) {
       entities.add(second);
       // A transform is the one thing that changes nothing anyone lists: not the
       // hierarchy rows, not the Inspector's set of fields, not a menu. Every
@@ -114,13 +137,14 @@ function affectedEntities(patches: readonly Patch[]): {
        */
       structural = true;
     } else if (root === 'entities') {
-      // A whole-table replacement names nothing: the binder must resync fully.
-      entities.add('*');
+      // A whole-table replacement names nothing, and neither does a key that is
+      // no id: the binder must resync fully.
+      everything = true;
       structural = true;
     }
   }
 
-  return { entities, environment, structural, component };
+  return { entities, everything, environment, structural, component };
 }
 
 /**
@@ -132,8 +156,8 @@ function affectedEntities(patches: readonly Patch[]): {
  * per-frame wake-up this project keeps finding and removing.
  *
  * Its counter is **strictly increasing**, which the store's `revision` is not:
- * that one is the save marker and goes back down on undo (phase 2). Two ideas,
- * two numbers — sharing one would make an undo look like a rewind of the log.
+ * that one is the save marker and goes back down on undo. Two ideas, two
+ * numbers — sharing one would make an undo look like a rewind of the log.
  */
 export const revisionLog = {
   entries: [] as Change[],
@@ -143,8 +167,8 @@ export const revisionLog = {
    * Records what a patch set touched, and answers what the store's own counters
    * need to know.
    *
-   * One call rather than the four-line `append({ entities: touched.entities.has(
-   * '*') ? … })` that `mutate`, `undo` and `redo` each wrote out identically.
+   * One call rather than the four-line `append({ entities: touched.everything
+   * ? '*' : … })` that `mutate`, `undo` and `redo` each wrote out identically.
    * The two flags come back because they are the *store's* — a structural
    * change and a component change each drive a counter a panel subscribes to,
    * and neither is any business of the log.
@@ -152,7 +176,7 @@ export const revisionLog = {
   note(patches: readonly Patch[]): { structural: boolean; component: boolean } {
     const touched = affectedEntities(patches);
     this.append({
-      entities: touched.entities.has('*') ? '*' : touched.entities,
+      entities: touched.everything ? '*' : touched.entities,
       environment: touched.environment,
       materials: false,
       prefabs: false,
@@ -202,7 +226,7 @@ export const revisionLog = {
       return { entities: '*', environment: true, materials: true, prefabs: true, revision: current };
     }
 
-    const entities = new Set<string>();
+    const entities = new Set<EntityId>();
     let everything = false;
     let environment = false;
     let materials = false;

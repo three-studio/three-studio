@@ -1,7 +1,8 @@
-import { createComponent, type EntityTemplate } from '@three-studio/core';
+import { rigidbodyType, type EntityTemplate } from '@three-studio/core';
 import { Euler, Quaternion } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Behaviour, type ScriptClass } from '../../src/scripting/ScriptHost';
+import { Behaviour } from '../../src/scripting/ScriptHost';
+import type { ScriptClass } from '../../src/scripting/scriptBundle';
 import {
   block,
   ground,
@@ -65,7 +66,7 @@ class Respawn extends Behaviour {
 /** An 8 × 0.5 × 8 kinematic platform, its top through the origin, slid by its script. */
 function platform(script: ScriptClass = Slide): EntityTemplate {
   const template = block([0, -0.25, 0], [8, 0.5, 8]);
-  template.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
+  template.components.push({ ...rigidbodyType.create(), bodyType: 'kinematicPosition' });
   return withScript(template, script);
 }
 

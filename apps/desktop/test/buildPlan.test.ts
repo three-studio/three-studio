@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { BuildCollisionError, BuildPlan } from '../src/main/build/buildPlan';
 
@@ -6,13 +7,13 @@ import { BuildCollisionError, BuildPlan } from '../src/main/build/buildPlan';
  * it, a companion and an asset that wanted the same path simply overwrote each
  * other on the disk, and a volume that ignores case made two names one file.
  */
-const roots = new Set(['index.html', 'assets', 'scenes', 'build.json']);
+const roots: ReadonlySet<string> = new Set(['index.html', 'assets', 'scenes', 'build.json']);
 const asset = (assetId: string) => ({ kind: 'asset', assetId, assetKind: 'texture' }) as const;
 
 describe('a build plan', () => {
   it('lists every file once, in the same order on every machine', () => {
     const plan = new BuildPlan(roots);
-    plan.addBytes('scenes/b.json', '{}', { kind: 'scene', sceneId: 'b' });
+    plan.addBytes('scenes/b.json', '{}', { kind: 'scene', sceneId: fixedId('scene', 'b') });
     plan.addBytes('index.html', '<!doctype html>', { kind: 'page' });
     plan.addBytes('assets/a.png', 'a', asset('tex-a'));
 

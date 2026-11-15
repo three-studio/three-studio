@@ -1,13 +1,15 @@
 import type {
+  AssetId,
   ComponentDoc,
   ComponentOfType,
   ComponentType,
+  EntityId,
   Hex,
   MaterialDef,
   Vec3,
 } from '@three-studio/core';
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
-import type { ModelCache } from '../assets/ModelCache';
+import type { AssetCache } from '../assets/AssetCache';
 import type { StudioTime } from '../time/StudioTime';
 import type { ResourceArena } from './ResourceArena';
 
@@ -24,8 +26,8 @@ import type { ResourceArena } from './ResourceArena';
  * What the form buys beyond the split is the **`patch` against `'remount'`
  * contract**. Before it the decision was taken case by case, in three different
  * places, and nobody had noticed they disagreed: materials were patched in
- * place, lights and cameras too since phase 5, and a mesh had its own rules for
- * reusing a geometry. Now each system has to answer the question out loud.
+ * place, lights and cameras too, and a mesh had its own rules for reusing a
+ * geometry. Now each system has to answer the question out loud.
  */
 
 /** A direction to be lit from, and the colour of what is lighting. */
@@ -65,8 +67,12 @@ export interface BatchableHandle extends SystemHandle {
 export interface SystemContext {
   readonly arena: ResourceArena;
   /** Shared material definitions, by asset id. */
-  readonly materials: Readonly<Record<string, MaterialDef>>;
-  readonly models: ModelCache;
+  readonly materials: ReadonlyMap<AssetId, MaterialDef>;
+  /**
+   * The project's loaded files. A system holds what it draws — a model, an
+   * image — and gives it back when it stops; the cache alone frees.
+   */
+  readonly assets: AssetCache;
   /**
    * The one clock. A system that animates reads `time.elapsed` here rather than
    * three's global node, so what it draws obeys Pause and the timescale like
@@ -87,19 +93,16 @@ export interface SystemContext {
    * arrive at the same answer.
    */
   /**
-   * Where a component that shades itself takes its light from.
-   *
-   * `'sky'` is the scene's analytic sun; anything else is a light entity's id.
-   * `null` means "not something this scene can answer" — no such entity, or a
-   * source that is not a reference at all — and the caller falls back to
-   * whatever it holds itself.
+   * Where a component that shades itself takes its light from: a light
+   * entity's, or `null` for the scene's analytic sun. Answers `null` when the
+   * scene cannot say — no such light — and the caller falls back.
    *
    * Pushed in through the context rather than looked up, for the reason
    * `materials` is: it needs the document *and* the world matrices, and the
    * binder is the only thing holding both. A system is handed a component and
    * could not work it out.
    */
-  sunOf(source: string): Sun | null;
+  sunOf(light: EntityId | null): Sun | null;
   invalidate(): void;
   /**
    * Adds an object that only exists now, after the mount that asked for it.
@@ -113,7 +116,7 @@ export interface SystemContext {
    * @returns Whether it was taken. `false` means the arrival is stale and the
    *   system should forget it rather than hold an object nothing draws.
    */
-  attach(entityId: string, handle: SystemHandle, object: Object3D): boolean;
+  attach(entityId: EntityId, handle: SystemHandle, object: Object3D): boolean;
 }
 
 /**
@@ -122,13 +125,13 @@ export interface SystemContext {
  * it, and this repo has one rule for that — a class owns a resource with a
  * lifetime, a free function does not.
  *
- * That is why the registry below registers a **factory of systems** where
- * `registerBehaviour` registers a factory of behaviours. It is the same seam;
+ * That is why its definition below holds a **factory of systems** where a
+ * behaviour's definition holds a factory of behaviours. It is the same seam;
  * what comes out of it is built once per reconciler rather than shared.
  */
 export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHandle> {
   /** Builds what this component draws. Called once, on first sight. */
-  abstract mount(entityId: string, component: T, ctx: SystemContext): H;
+  abstract mount(entityId: EntityId, component: T, ctx: SystemContext): H;
 
   /**
    * Writes a new definition onto what is already there.
@@ -151,9 +154,9 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
    * file written to know about no type in particular, and it knew about two.
    *
    * **Optional, and declaring one is what claims it.** A system that does not
-   * implement `whenLoaded` does not load, which is the question
-   * `entitiesThatLoad` asks; the two that implement `materialAsset` are the two
-   * that can draw with a shared material. Nothing is cast: a system proves its
+   * implement `whenLoaded` does not load, which is what the reconciler waits
+   * on; the two that implement `materialAsset` are the two that can draw with
+   * a shared material. Nothing is cast: a system proves its
    * handle is batchable by handing it back as one.
    */
 
@@ -168,58 +171,53 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
    * file shipped with. Asking only meshes left an edit to a shared material
    * reaching every cube in the scene and none of the imported models using it.
    */
-  materialAsset?(handle: H): string | null;
+  materialAsset?(handle: H): AssetId | null;
 
   /** Resolves once everything this system has in flight has landed or failed. */
   whenLoaded?(): Promise<void>;
 }
 
-// --------------------------------------------------------------- the registry
+// ------------------------------------------------------------- the definition
 
 /**
- * A system with its type parameters erased, so one table can hold all five.
+ * A system with its type parameters erased, so one registry can hold all six.
  *
- * `ComponentSystem<MeshComponent, …>` is genuinely not a
+ * `ComponentSystem<MeshComponent, …>` is not, strictly, a
  * `ComponentSystem<ComponentDoc, …>` — a method taking a mesh is not one taking
- * any component — and the guarantee that makes the erasure safe is the table's
- * own key: a system is only ever handed a component of the type it is filed
- * under. `registerSystem` is where that key and that system meet, so it is the
- * one place the cast is written, and its signature is what ties the two
- * together: a factory building a system written against another type does not
- * compile.
+ * any component. TypeScript compares a method's parameters both ways, so it
+ * passes for one without a cast, and the guarantee that makes that sound is the
+ * registry's own key: a system is only ever handed a component of the type it
+ * is filed under. `defineSystem` is where that key and that system meet, and
+ * its signature is what ties the two together: a factory building a system
+ * written against another type does not compile.
+ *
+ * The members above are methods for that reason. Written as arrow-typed
+ * properties they would be compared one way only, and every definition would
+ * stop compiling, loudly.
  */
 export type AnySystem = ComponentSystem<ComponentDoc, SystemHandle>;
 
-const factories = new Map<ComponentType, () => AnySystem>();
-
-/**
- * Registers the system that draws a component type.
- *
- * The seam `registerBehaviour` already is, for the half of the runtime that
- * draws: a type that has something to show is its own folder under
- * `components/`, and nothing in the reconciler learns that it exists. What
- * replaced a hard-coded table of five is this call made five times, at the
- * imports in `components/index.ts`.
- */
-export function registerSystem<T extends ComponentType, H extends SystemHandle>(
-  type: T,
-  factory: () => ComponentSystem<ComponentOfType<T>, H>,
-): void {
-  factories.set(type, () => factory() as unknown as AnySystem);
-}
-
-/** Whether a type registered a system at all. Read by the check at load. */
-export function systemRegistered(type: ComponentType): boolean {
-  return factories.has(type);
+/** The system that draws a component type: what the runtime's activation registers. */
+export interface SystemDefinition {
+  readonly id: ComponentType;
+  /**
+   * A new system, per reconciler and not shared: a system holds what it built,
+   * and two reconcilers are two scenes.
+   */
+  create(): AnySystem;
 }
 
 /**
- * One system per registered type, freshly built.
+ * The definition of the system that draws `id`.
  *
- * Per call and not shared: a system holds what it built, and two reconcilers
- * are two scenes. This is the line that used to be five `new XSystem()` in a
- * field initialiser.
+ * A type that has something to show is its own folder under `components/`,
+ * whose `index.ts` exports this, and nothing in the reconciler learns that it
+ * exists: the runtime's activation registers it, and each reconciler builds one
+ * from the registry.
  */
-export function buildSystems(): ReadonlyMap<ComponentType, AnySystem> {
-  return new Map([...factories].map(([type, factory]) => [type, factory()]));
+export function defineSystem<T extends ComponentType, H extends SystemHandle>(
+  id: T,
+  create: () => ComponentSystem<ComponentOfType<T>, H>,
+): SystemDefinition {
+  return { id, create };
 }

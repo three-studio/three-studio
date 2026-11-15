@@ -1,9 +1,13 @@
 import {
+  assertDefined,
   createEntity,
   createMeshEntity,
   createModelEntity,
   createPrefabInstance,
+  fixedId,
   instancedId,
+  type AssetId,
+  type EntityId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock, type MockInstance } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -23,6 +27,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { STOP_TO_EDIT, isSceneLocked, sceneLocked } from '../src/state/sceneLock';
 import { useToastStore } from '../src/state/toastStore';
 import { useTuningStore } from '../src/state/tuning';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * From the press of Play until Stop, nothing edits the scene document.
@@ -41,7 +48,7 @@ const play = () => useEditorStore.getState().play();
 const pause = () => useEditorStore.getState().togglePause();
 const stop = () => useEditorStore.getState().stop();
 const playState = () => useEditorStore.getState().playState;
-const x = (id: string) => doc().scene.entities[id]!.transform.position[0];
+const x = (id: EntityId) => assertDefined(doc().scene.entities.get(id), 'the entity').transform.position[0];
 
 interface Spied {
   apply: Mock<() => void>;
@@ -49,7 +56,7 @@ interface Spied {
 }
 const spied = (): Spied => ({ apply: vi.fn(), revert: vi.fn() });
 
-const PREFAB_ID = 'crate-prefab';
+const PREFAB_ID = fixedId('asset', 'crate-prefab');
 const real = (({ savePrefab, saveMaterial, createPrefab, createMaterial }) => ({
   savePrefab,
   saveMaterial,
@@ -57,14 +64,14 @@ const real = (({ savePrefab, saveMaterial, createPrefab, createMaterial }) => ({
   createMaterial,
 }))(useAssetStore.getState());
 
-let first = '';
-let second = '';
+let first: EntityId;
+let second: EntityId;
 /** A prefab instance carrying an override. */
-let crate = '';
+let crate: EntityId;
 /** The entity that instance produces, by its expanded id. */
-let produced = '';
+let produced: EntityId;
 /** A model entity that still draws its whole file. */
-let chair = '';
+let chair: EntityId;
 /** The external edits riding the two entries, the one Undo would take and the one Redo would. */
 let undoable: Spied;
 let redoable: Spied;
@@ -72,8 +79,8 @@ let redoable: Spied;
 let recorded: {
   savePrefab: Mock<() => Promise<void>>;
   saveMaterial: Mock<() => Promise<void>>;
-  createPrefab: Mock<() => Promise<string>>;
-  createMaterial: Mock<() => Promise<string>>;
+  createPrefab: Mock<() => Promise<AssetId>>;
+  createMaterial: Mock<() => Promise<AssetId>>;
 };
 let consoleError: MockInstance<typeof console.error>;
 
@@ -88,11 +95,12 @@ beforeEach(() => {
   recorded = {
     savePrefab: vi.fn(async () => {}),
     saveMaterial: vi.fn(async () => {}),
-    createPrefab: vi.fn(async () => 'new-prefab'),
-    createMaterial: vi.fn(async () => 'new-material'),
+    createPrefab: vi.fn(async () => fixedId('asset', 'new-prefab')),
+    createMaterial: vi.fn(async () => fixedId('asset', 'new-material')),
   };
   useAssetStore.setState({
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [inside], inside.entity.id) },
+    // Filed under its own id, as the main process reads a prefab.
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [inside], inside.entity.id), id: PREFAB_ID }]]),
     ...recorded,
   });
 
@@ -101,7 +109,7 @@ beforeEach(() => {
   const instance = createEntity('Crate', [
     { ...createPrefabInstance(PREFAB_ID), overrides: { [inside.entity.id]: { name: 'Renamed' } } },
   ]);
-  const model = createModelEntity('chair-model', 'Chair');
+  const model = createModelEntity(fixedId('asset', 'chair-model'), 'Chair');
   first = a.entity.id;
   second = b.entity.id;
   crate = instance.entity.id;
@@ -111,12 +119,16 @@ beforeEach(() => {
   // Two edits, the second undone: Undo and Redo both have something to act on.
   undoable = spied();
   redoable = spied();
-  doc().mutate('Move first', (scene) => void (scene.entities[first]!.transform.position[0] = 1), {
-    external: undoable,
-  });
-  doc().mutate('Move second', (scene) => void (scene.entities[second]!.transform.position[0] = 2), {
-    external: redoable,
-  });
+  doc().mutate(
+    'Move first',
+    (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 1),
+    { external: undoable },
+  );
+  doc().mutate(
+    'Move second',
+    (scene) => void (assertDefined(scene.entities.get(second), 'the second entity').transform.position[0] = 2),
+    { external: redoable },
+  );
   doc().undo();
   vi.clearAllMocks();
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -179,12 +191,18 @@ describe('the document while the game runs', () => {
 
   it('takes the same edit once stopped', () => {
     play();
-    doc().mutate('Probe', (scene) => void (scene.entities[first]!.transform.position[0] = 7));
+    doc().mutate(
+      'Probe',
+      (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 7),
+    );
     expect(x(first)).toBe(1);
 
     stop();
     const revision = doc().revision;
-    doc().mutate('Probe', (scene) => void (scene.entities[first]!.transform.position[0] = 7));
+    doc().mutate(
+      'Probe',
+      (scene) => void (assertDefined(scene.entities.get(first), 'the first entity').transform.position[0] = 7),
+    );
 
     expect(x(first)).toBe(7);
     expect(doc().revision).toBe(revision + 1);
@@ -251,7 +269,7 @@ describe('what the lock leaves alone while the game runs', () => {
     doc().restoreHistory({ ...stash, past: [], future: [] });
     expect(doc().past).toEqual([]);
 
-    doc().adoptIdentity({ id: 'copy', name: 'Copy' });
+    doc().adoptIdentity({ id: fixedId('scene', 'copy'), name: 'Copy' });
     expect(doc().scene).toMatchObject({ id: 'copy', name: 'Copy' });
 
     doc().markClean();
@@ -325,23 +343,25 @@ describe('the toast that says it', () => {
 
 /** Each command that writes the scene, in a context of the fixture where it acts. */
 const WRITERS: Readonly<Record<string, () => EditorContext>> = {
-  undo: () => currentContext(),
-  redo: () => currentContext(),
-  duplicate: () => contextFor([first]),
-  delete: () => contextFor([first]),
-  toggleVisibility: () => contextFor([first]),
-  group: () => contextFor([first]),
-  rename: () => contextFor([first]),
-  createPrefab: () => contextFor([first]),
-  applyPrefabOverrides: () => contextFor([crate]),
-  revertPrefabOverrides: () => contextFor([crate]),
-  unpackPrefab: () => contextFor([crate]),
-  revertEntityOverride: () => contextFor([produced]),
-  unpackModel: () => contextFor([chair]),
+  undo: () => currentContext(registries),
+  redo: () => currentContext(registries),
+  duplicate: () => contextFor(registries, [first]),
+  delete: () => contextFor(registries, [first]),
+  toggleVisibility: () => contextFor(registries, [first]),
+  group: () => contextFor(registries, [first]),
+  rename: () => contextFor(registries, [first]),
+  createPrefab: () => contextFor(registries, [first]),
+  applyPrefabOverrides: () => contextFor(registries, [crate]),
+  revertPrefabOverrides: () => contextFor(registries, [crate]),
+  unpackPrefab: () => contextFor(registries, [crate]),
+  revertEntityOverride: () => contextFor(registries, [produced]),
+  unpackModel: () => contextFor(registries, [chair]),
   // With something tuned during Play to keep.
   keepTuning: () => {
-    useTuningStore.setState({ values: [{ entityId: first, componentId: 'any', path: ['castShadow'], value: false }] });
-    return currentContext();
+    useTuningStore.setState({
+      values: [{ entityId: first, componentId: fixedId('component', 'any'), path: ['castShadow'], value: false }],
+    });
+    return currentContext(registries);
   },
 };
 
@@ -428,7 +448,7 @@ describe('the commands that write the scene', () => {
 
   it('say nothing during Play when they would not act anyway', () => {
     play();
-    const nothing = contextFor([]);
+    const nothing = contextFor(registries, []);
     const remove = commandById('delete');
 
     expect(remove.can(nothing)).toBe(false);
@@ -458,7 +478,7 @@ describe('the commands that write the scene', () => {
   });
 
   it('leave every other command as it was, Save offered', () => {
-    const context = () => contextFor([first]);
+    const context = () => contextFor(registries, [first]);
     const stopped = OTHERS.map((id) => commandById(id).can(context()));
 
     play();
@@ -473,12 +493,12 @@ describe('the commands that write the scene', () => {
       'togglePause',
     ]);
     // The document during Play is the one Play started from, and it is unsaved.
-    expect(commandById('save').can()).toBe(true);
+    expect(commandById('save').can(currentContext(registries))).toBe(true);
   });
 
   it('drop out of the palette during Play, which keeps Save and Stop, and offers Pause', () => {
     useEditorStore.getState().setSelection([first]);
-    const palette = () => commandIds().filter((id) => commandById(id).can());
+    const palette = () => commandIds().filter((id) => commandById(id).can(currentContext(registries)));
     expect(palette()).toEqual(expect.arrayContaining(['undo', 'redo', 'duplicate', 'delete', 'save']));
     expect(palette()).not.toContain('togglePause');
 

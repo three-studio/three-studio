@@ -1,11 +1,18 @@
+import type { EditorRegistries } from '../registries';
 import {
   capabilitiesOf,
+  componentsOfType,
   createRenderingSettings,
+  type EntityId,
   type ExpandedScene,
   type RenderingSettings,
-  type SceneDoc,
 } from '@three-studio/core';
-import { studioTime, type Engine, type SceneBinder } from '@three-studio/runtime';
+import {
+  AssetCache,
+  studioTime,
+  type Engine,
+  type SceneBinder,
+} from '@three-studio/runtime';
 import {
   PerspectiveCamera,
   Vector3,
@@ -42,6 +49,14 @@ import type { ViewportOverlay } from './overlay/ViewportOverlay';
 
 /** Guards against runaway movement after the window was backgrounded. */
 const MAX_FRAME_DELTA = 0.1;
+/**
+ * What the window's asset cache keeps of the files nothing holds any more.
+ *
+ * An undo of a delete, or Stop then Play again, then finds a common model
+ * where it was, with no reload; a model bigger than this is freed at once, so
+ * that one huge file does not sit in memory for the rest of the session.
+ */
+const EDITOR_IDLE_ASSET_BYTES = 256 * 1024 * 1024;
 /** Reused per frame to keep the selection sync allocation-free. */
 const SCRATCH_SIZE = new Vector3();
 const SCRATCH_DIRECTION = new Vector3();
@@ -82,9 +97,14 @@ export class EditorViewport {
   } | null = null;
 
   /**
-   * Projects the scene document onto three.js objects. The resolver reads the
-   * asset store lazily, so it stays correct as assets are imported.
+   * The project's loaded files, for every world this window draws: the edit
+   * view, and Play, which finds the edit view's models already loaded. Made
+   * here because every world of the window is this viewport's, and a window
+   * opens one project, once; freed with it. Its resolver reads the asset store
+   * lazily, so it stays correct as assets are imported.
    */
+  readonly assets: AssetCache;
+  /** Projects the scene document onto three.js objects. */
   readonly binder: SceneBinder;
   /**
    * Markers on what draws nothing, helpers on what is selected.
@@ -124,7 +144,7 @@ export class EditorViewport {
   private lastFrameTime = 0;
   private disposed = false;
 
-  static async create(): Promise<EditorViewport> {
+  static async create(registries: EditorRegistries): Promise<EditorViewport> {
     /*
      * The project's own settings, so the viewport shows what a build will —
      * read once, here, and carried from here to everything this viewport
@@ -134,7 +154,7 @@ export class EditorViewport {
      */
     const rendering =
       useProjectStore.getState().project?.settings.rendering ?? createRenderingSettings();
-    return new EditorViewport(await ViewportRenderer.create(rendering), rendering);
+    return new EditorViewport(await ViewportRenderer.create(rendering), rendering, registries);
   }
 
   private constructor(
@@ -146,8 +166,17 @@ export class EditorViewport {
      * apart. Public because `PlayHost` names it.
      */
     readonly rendering: RenderingSettings,
+    /**
+     * The window's registries: what the edit view draws each type with, and
+     * what Play builds its game from. Public because `PlayHost` names it.
+     */
+    readonly registries: EditorRegistries,
   ) {
     this.view = view;
+    this.assets = new AssetCache(registries, {
+      resolver: editorAssetResolver,
+      idleBudgetBytes: EDITOR_IDLE_ASSET_BYTES,
+    });
 
     /*
      * Built here rather than as a field initialiser, because a field
@@ -161,8 +190,9 @@ export class EditorViewport {
      * leave a prefab instance's produced ids unknown to the very next edit.
      */
     const projection = createEditorProjection({
-      scene: expandedScene().scene,
-      resolver: editorAssetResolver,
+      scene: expandedScene(registries).scene,
+      registries,
+      assets: this.assets,
       rendering,
       // The one thing the binder cannot do without a device; see `EnvironmentBinder`.
       renderer: view.renderer,
@@ -193,9 +223,9 @@ export class EditorViewport {
     this.picker = new Picker(
       this.binder,
       (entityId) => {
-        const scene = expandedScene().scene;
+        const scene = expandedScene(registries).scene;
         return (
-          scene.entities[entityId] === undefined ||
+          !scene.entities.has(entityId) ||
           capabilitiesOf(scene, entityId).has('translate')
         );
       },
@@ -203,7 +233,7 @@ export class EditorViewport {
       // their marker. Tested before the scene — see `Picker.pickOverlay`.
       this.overlay.markers,
     );
-    this.gizmo = new GizmoController(this.camera, this.view.editView.canvas);
+    this.gizmo = new GizmoController(registries, this.camera, this.view.editView.canvas);
     // Into the group the projection reserved for it, because `TransformControls`
     // needs a canvas and the projection is built without one. The pivot goes in
     // too: `TransformControls` tracks the world matrix of what it is attached
@@ -314,6 +344,9 @@ export class EditorViewport {
     this.overlay.dispose();
     this.physicsDebug.dispose();
     this.binder.dispose();
+    // After every world that held from it, and before the device its buffers
+    // live on.
+    this.assets.dispose();
     // Last, and it takes the loop, the observer, the three canvases and the
     // device with it.
     this.view.dispose();
@@ -539,6 +572,11 @@ export class EditorViewport {
     // free. This used to ride on `sync`, which is neither once per frame nor
     // guaranteed to happen at all.
     this.binder.beginFrame();
+    // The window's cache, once, here: Play's engine begins a frame of its own,
+    // and a second flush within one frame would free what its first half had
+    // just let go of, with no render in between. After the binder's, so the
+    // images its arena gave back go with this boundary.
+    this.assets.beginFrame();
 
     const raw = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
     this.lastFrameTime = time;
@@ -650,7 +688,7 @@ export class EditorViewport {
 
   private syncSelection(): void {
     const { selection, transformMode, showGizmos, showGrid } = useEditorStore.getState();
-    const resolve = (id: string) => this.binder.getObject(id);
+    const resolve = (id: EntityId) => this.binder.getObject(id);
 
     this.grid.visible = showGrid;
 
@@ -669,7 +707,7 @@ export class EditorViewport {
      * for everyone, which `can('translate')` decides inside the controller from
      * the same rule that greys the menu entry.
      */
-    const current = Selection.of(selection, expandedScene().scene);
+    const current = Selection.of(selection, expandedScene(this.registries).scene);
     // `isNavigating` only covers the fly gesture; `navigating` covers pan and
     // orbit too, and it is what keeps the handles away for the whole press.
     // Never reached during Play: this runs only while the edit view is the one
@@ -683,7 +721,7 @@ export class EditorViewport {
     // camera's aspect was built from, and the two differ for a frame after a
     // dock resize.
     this.overlay.update(
-      expandedScene().scene,
+      expandedScene(this.registries).scene,
       current.ids,
       this.camera,
       this.view.editView.height,
@@ -727,9 +765,9 @@ export class EditorViewport {
    * have to be taken down.
    */
   private expandDirty(
-    dirty: ReadonlySet<string> | undefined,
+    dirty: ReadonlySet<EntityId> | undefined,
     sources: ExpandedScene['sources'],
-  ): ReadonlySet<string> | undefined {
+  ): ReadonlySet<EntityId> | undefined {
     if (dirty === undefined) return undefined;
 
     const expanded = new Set(dirty);
@@ -756,7 +794,7 @@ export class EditorViewport {
     // Expanding here is what keeps them from each needing to know what a prefab
     // is; the shared expansion hands back the same entity objects for anything
     // untouched, so nothing gets rebuilt.
-    const expanded = expandedScene();
+    const expanded = expandedScene(this.registries);
     const scene = expanded.scene;
 
     /*
@@ -782,7 +820,7 @@ export class EditorViewport {
      */
     const invalidated = changes.materials
       ? this.binder.setMaterialLibrary(useAssetStore.getState().materials)
-      : new Set<string>();
+      : new Set<EntityId>();
 
     const dirty = changes.prefabs ? undefined : this.expandDirty(entities, expanded.sources);
     const merged = dirty === undefined ? undefined : new Set([...dirty, ...invalidated]);
@@ -806,7 +844,7 @@ export class EditorViewport {
     // twice.
     // A table lookup: it used to walk every entity and every component of each,
     // once per sync.
-    const hasAuthoredLight = Object.keys(scene.components.light).length > 0;
+    const hasAuthoredLight = componentsOfType(scene, 'light').size > 0;
     this.fallbackLighting.visible = !hasAuthoredLight;
     // And published, because the pair is editor-only: the same document is
     // black in Play and in a build. `Engine.create` says the other half of this

@@ -1,8 +1,8 @@
 import {
   createColliderShape,
-  createComponent,
   createComponentForEntity,
   createMeshEntity,
+  rigidbodyType,
   originAboveFeet,
   type ColliderShape,
   type CombineRule,
@@ -10,6 +10,7 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { builtInRegistries } from '../registries';
 import {
   colliderOf,
   ground,
@@ -18,6 +19,8 @@ import {
   takeTheBrowserBack,
   withBody,
 } from './rig';
+
+const registries = builtInRegistries();
 
 /*
  * A collider rests where what is drawn rests: the shape physics builds is the
@@ -31,7 +34,7 @@ describe('a scaled collider', () => {
   it('rests where its mesh does, a capsule scaled 1.5 × 1 × 1.5', async () => {
     // Drawn 2 m tall and 1.5 m wide. Its radius was scaled by the largest axis,
     // which made the capsule 3 m tall and held it half a metre up.
-    const capsule = withBody('capsule', [0, 3, 0], { lockRotation: [true, true, true] });
+    const capsule = withBody('capsule', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } });
     capsule.entity.transform.scale = [1.5, 1, 1.5];
     const rig = await physicsRig([ground(), capsule]);
 
@@ -41,7 +44,7 @@ describe('a scaled collider', () => {
   });
 
   it('rests on its drawn bottom, a box scaled 2 × 0.5 × 1', async () => {
-    const box = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });
+    const box = withBody('box', [0, 2, 0], { lockRotation: { x: true, y: true, z: true } });
     box.entity.transform.scale = [2, 0.5, 1];
     const rig = await physicsRig([ground(), box]);
 
@@ -53,7 +56,7 @@ describe('a scaled collider', () => {
 
 describe('a rounded collider', () => {
   it('rests a rounded 1 m box at 0.5, its outside the size drawn', async () => {
-    const box = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });
+    const box = withBody('box', [0, 2, 0], { lockRotation: { x: true, y: true, z: true } });
     const collider = colliderOf(box);
     if (collider.shape.kind !== 'box') throw new Error('not a box');
     collider.shape = { ...collider.shape, rounding: 0.1 };
@@ -70,7 +73,7 @@ describe('a collider’s material', () => {
     const slope = ground(30);
     colliderOf(slope).material = { ...colliderOf(slope).material, friction: 0.2 };
     const boxWith = (frictionCombine: CombineRule, z: number) => {
-      const box = withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
+      const box = withBody('box', [0, 1, z], { lockRotation: { x: true, y: true, z: true } });
       colliderOf(box).material = { ...colliderOf(box).material, friction: 1, frictionCombine };
       return box;
     };
@@ -115,7 +118,7 @@ describe('a cylinder and a cone', () => {
   it('rests a cylinder of height 1 at y = 0.5', async () => {
     // Locked, so the old capsule could not tip off its round end and hide the
     // half metre it stood on: the audit measured it resting at 1.0.
-    const cylinder = withBody('cylinder', [0, 2, 0], { lockRotation: [true, true, true] });
+    const cylinder = withBody('cylinder', [0, 2, 0], { lockRotation: { x: true, y: true, z: true } });
     const rig = await physicsRig([ground(), cylinder]);
 
     rig.run(2);
@@ -163,7 +166,7 @@ describe('a collider off its entity’s centre, turned', () => {
   it.each(named)(
     'rests a %s where originAboveFeet puts its bottom',
     async (_kind, shape) => {
-      const body = withBody('box', [0, 2, 0], { lockRotation: [true, true, true] });
+      const body = withBody('box', [0, 2, 0], { lockRotation: { x: true, y: true, z: true } });
       colliderOf(body).shape = shape;
       const rig = await physicsRig([ground(), body]);
 
@@ -233,8 +236,8 @@ function coneBody(position: Vec3): EntityTemplate {
   if (mesh?.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
   mesh.geometry = { ...mesh.geometry, radiusTop: 0 };
   template.components.push(
-    { ...createComponent('rigidbody'), lockRotation: [true, true, true] },
-    createComponentForEntity('collider', template.components),
+    { ...rigidbodyType.create(), lockRotation: { x: true, y: true, z: true } },
+    createComponentForEntity(registries, 'collider', template.components),
   );
   template.entity.transform.position = position;
   return template;

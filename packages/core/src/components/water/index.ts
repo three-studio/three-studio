@@ -1,28 +1,12 @@
 import { defineComponent } from '../registry';
-import { createWater } from './defaults';
+import { waterSchema } from './schema';
 
-/**
- * A flat reflective water surface.
- *
- * `fill` merges the geometry a level deeper for the reason `mesh` does: it owns
- * a nested object, and a shallow spread would hand a scene saved before
- * `heightSegments` existed a plane with `undefined` in it.
- */
-export const waterComponent = defineComponent({
-  type: 'water',
-  create: () => createWater(),
-  fill: (stored) => {
-    const base = createWater();
-    const filled = { ...base, ...stored };
-    filled.geometry = { ...base.geometry, ...filled.geometry };
-    return filled;
-  },
-  // Named so the exporter ships the normal map, the loading bar counts it, and
-  // deleting it does not claim nothing uses it.
-  assets: (component) => [component.normalMapId],
-  entities: () => [],
-  icon: 'waves',
-  placeable: () => true,
+/** A water surface: see `waterSchema`. */
+export const waterType = defineComponent({
+  id: 'water',
+  label: 'Water',
+  version: 1,
+  schema: waterSchema,
   runtime: true,
   addable: true,
 });

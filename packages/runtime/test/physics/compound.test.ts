@@ -1,8 +1,9 @@
 import {
+  colliderType,
   createColliderShape,
-  createComponent,
   createEntity,
   createMeshEntity,
+  rigidbodyType,
   type ColliderComponent,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -29,14 +30,14 @@ afterAll(takeTheBrowserBack);
 
 /** A collider of this shape, solid unless it is a sensor. */
 function collider(shape: ColliderComponent['shape'], isSensor = false): ColliderComponent {
-  return { ...createComponent('collider'), shape, isSensor };
+  return { ...colliderType.create(), shape, isSensor };
 }
 
 describe('a compound body', () => {
   it('carries a child’s collider down with its parent, and leaves nothing in mid-air', async () => {
     // Audit E: the child was a fixed body of its own, and held up what fell on
     // it where nothing was drawn.
-    const parent = withBody('box', [0, 3, 0], { lockRotation: [true, true, true] });
+    const parent = withBody('box', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } });
     const child = withCollider('sphere', [0.8, 0, 0]);
     nest(parent, child);
     const probe = withBody('sphere', [0.8, 6, 0]);
@@ -67,7 +68,7 @@ describe('a compound body', () => {
 
   it('builds a child’s collider where it is drawn, under its parent’s turn and scale', async () => {
     const parent = createEntity('Parent', [
-      { ...createComponent('rigidbody'), lockRotation: [true, true, true] },
+      { ...rigidbodyType.create(), lockRotation: { x: true, y: true, z: true } },
     ]);
     parent.entity.transform.position = [0, 3, 0];
     parent.entity.transform.rotation = [0, 0, Math.PI / 2];
@@ -121,7 +122,7 @@ describe('a compound body', () => {
   });
 
   it('weighs its Rigid Body’s mass however many colliders share it', async () => {
-    const body = createEntity('Body', [{ ...createComponent('rigidbody'), mass: 12 }]);
+    const body = createEntity('Body', [{ ...rigidbodyType.create(), mass: 12 }]);
     const sensor = withCollider('sphere', [0, 2, 0]);
     colliderOf(sensor).isSensor = true;
     const parts = [
@@ -152,7 +153,7 @@ describe('a compound body', () => {
   });
 
   it('builds a Triangles mesh on a child of a dynamic body as its hull, and names the body', async () => {
-    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const cart = createEntity('Cart', [rigidbodyType.create()]);
     cart.entity.transform.position = [0, 0.15, 0];
     const torus = withCollider('torus', [0, 0, 0]);
     torus.entity.transform.rotation = [-Math.PI / 2, 0, 0];

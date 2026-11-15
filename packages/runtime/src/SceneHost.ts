@@ -1,15 +1,17 @@
 import {
   collectSceneAssets,
   expandPrefabs,
+  type AssetId,
+  type Disposable,
   type MaterialDef,
   type PrefabDoc,
   type SceneDoc,
+  type SceneId,
 } from '@three-studio/core';
 import { Engine, type EngineOptions } from './Engine';
+import type { PreloadHold } from './assets/AssetCache';
 import { AudioClipCache } from './audio/AudioClipCache';
-import { ModelCache } from './assets/ModelCache';
 import type { SceneApi } from './behaviour/Behaviour';
-import { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 
 /**
  * Runs one scene at a time, and moves between them.
@@ -34,17 +36,17 @@ export interface SceneSource {
 /** What everything a scene needs, other than the document itself. */
 export interface SceneHostOptions extends Omit<EngineOptions, 'scene'> {
   source: SceneSource;
-  materials?: Readonly<Record<string, MaterialDef>>;
-  prefabs?: Readonly<Record<string, PrefabDoc>>;
+  materials?: ReadonlyMap<AssetId, MaterialDef>;
+  prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
   /**
-   * Shown while another scene loads, by name. `null` swaps straight over.
+   * Shown while another scene loads, by id. `null` swaps straight over.
    *
    * Loaded *single*, replacing what was on screen, and the target loads behind
    * it. That is the original Unity arrangement — the one from before additive
    * loading — and it works because a loading scene is small enough that its own
    * load is not worth showing anything for.
    */
-  loadingScene?: string | null;
+  loadingScene?: SceneId | null;
 }
 
 export interface SceneLoad {
@@ -63,7 +65,10 @@ export interface SceneLoad {
    * not a mistake to report.
    */
   activate(): Promise<void>;
-  /** Drops a load in flight. Its assets stay in the cache. */
+  /**
+   * Drops a load in flight. What it held is given back, and the cache's budget
+   * decides what of it stays.
+   */
   cancel(): void;
 }
 
@@ -77,15 +82,6 @@ export class SceneHost implements SceneApi {
 
   private pending: LoadHandle | null = null;
   private disposed = false;
-  /**
-   * Warms assets before a scene exists to hold them.
-   *
-   * Shared with nothing — each `Engine` builds its own binder and cache — but
-   * the browser's HTTP cache means a file fetched here is not fetched twice.
-   * The alternative, keeping one cache across scenes, would hold every asset
-   * of every level ever visited for the life of the game.
-   */
-  private readonly preloader: ModelCache;
 
   /**
    * Decoded clips, kept across scenes — the one cache that *is* shared.
@@ -99,11 +95,10 @@ export class SceneHost implements SceneApi {
   private readonly clips: AudioClipCache | null;
 
   constructor(private readonly options: SceneHostOptions) {
-    this.preloader = new ModelCache(options.resolver ?? NULL_ASSET_RESOLVER);
     this.clips =
       options.audioContext === undefined
         ? null
-        : new AudioClipCache(options.audioContext, options.resolver ?? NULL_ASSET_RESOLVER);
+        : new AudioClipCache(options.audioContext, options.assets.resolver);
   }
 
   /**
@@ -116,14 +111,18 @@ export class SceneHost implements SceneApi {
     this.pending?.cancel();
     const handle = new LoadHandle(path, this);
     this.pending = handle;
-    handle.begin();
 
-    // Put up first, so the wait has something on screen. Never for the loading
-    // scene itself, which would be a loop.
+    // Put up so the wait has something on screen — never for the loading scene
+    // itself, which would be a loop — but only once the target has read its
+    // scene and holds what it needs. Put up at once, it took the scene being
+    // left down first, and with a build's cache, which keeps nothing nobody
+    // holds, that freed what the target shares with it, to be fetched again.
     const loading = this.options.loadingScene;
-    if (loading != null && loading !== path && this.current !== loading) {
-      void this.showLoadingScene(loading);
-    }
+    handle.begin(
+      loading != null && loading !== path && this.current !== loading
+        ? () => this.showLoadingScene(loading)
+        : null,
+    );
     return handle;
   }
 
@@ -184,7 +183,7 @@ export class SceneHost implements SceneApi {
     // forget, and the symptom is a level that loads with its props missing.
     const engine = await Engine.create({
       ...this.options,
-      scene: expandPrefabs(scene, { get: (id) => this.options.prefabs?.[id] }).scene,
+      scene: expandPrefabs(this.options.registries, scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
       scenes: this.sceneApiFor(path),
       // Handed over rather than built per engine, so the clips outlive the
       // scene that first asked for them.
@@ -233,30 +232,38 @@ export class SceneHost implements SceneApi {
     return this.options.source.read(path);
   }
 
-  assetsOf(scene: SceneDoc): string[] {
-    return collectSceneAssets(scene, this.options.materials ?? {}, this.options.prefabs ?? {});
+  assetsOf(scene: SceneDoc): AssetId[] {
+    return collectSceneAssets(
+      this.options.registries,
+      scene,
+      this.options.materials ?? new Map<AssetId, MaterialDef>(),
+      this.options.prefabs ?? new Map<AssetId, PrefabDoc>(),
+    );
   }
 
   /**
-   * Fetches one asset ahead of the swap.
-   *
-   * Through a cache of its own rather than the running engine's: the point is
-   * to have everything in hand *before* the new engine exists, and the old
-   * one's cache goes away with it.
+   * Holds one asset ahead of the swap: a sound in the clip cache, anything else
+   * in the project's. The load gives the hold back once the new engine holds
+   * what it draws, or when it is cancelled.
    */
-  async preloadAsset(assetId: string): Promise<void> {
-    // A sound goes to the clip cache and nowhere near the model one, which
-    // would silently do nothing with it: `ModelCache.preload` switches on the
-    // extension and an unknown one simply returns.
-    if (this.clips !== null && this.options.resolver?.settings?.(assetId)?.kind === 'audio') {
+  preloadAsset(assetId: AssetId): PreloadHold {
+    // A sound goes to the clip cache and nowhere near the asset one, which
+    // would silently do nothing with it: `AssetCache.preload` switches on the
+    // extension and holds nothing for one it does not load.
+    if (this.clips !== null && this.options.assets.resolver.settings?.(assetId)?.kind === 'audio') {
       const held = this.clips.acquire(assetId);
-      await held.clip;
-      // Given straight back: preloading means "have it ready", not "hold it
-      // forever". The budget decides how long it stays.
-      held.release();
-      return;
+      let holding = true;
+      return {
+        // A clip that failed arrives as `null`: settled, which is all a bar counts.
+        ready: held.clip.then(() => undefined),
+        dispose: () => {
+          if (!holding) return;
+          holding = false;
+          held.release();
+        },
+      };
     }
-    return this.preloader.preload(assetId);
+    return this.options.assets.preload(assetId);
   }
 }
 
@@ -266,9 +273,17 @@ class LoadHandle implements SceneLoad {
   cancelled = false;
   readonly ready: Promise<void>;
 
-  private settle!: () => void;
-  private fail!: (reason: unknown) => void;
+  private settle = (): void => {};
+  private fail = (_reason: unknown): void => {};
   private scene: SceneDoc | null = null;
+  /**
+   * What the scene needs, held from the moment it is read until the new engine
+   * holds it too — so a file the scene being left shares with it never drops to
+   * no holder in between.
+   */
+  private holds: readonly Disposable[] = [];
+  /** Settles once the loading scene is up, or at once when there is none. */
+  private interstitial: Promise<void> = Promise.resolve();
 
   constructor(
     readonly path: string,
@@ -283,32 +298,33 @@ class LoadHandle implements SceneLoad {
     this.ready.catch(() => {});
   }
 
-  begin(): void {
-    void this.run();
+  /** @param showLoading Puts the loading scene up, once this load holds what it needs. */
+  begin(showLoading: (() => Promise<void>) | null): void {
+    void this.run(showLoading);
   }
 
-  private async run(): Promise<void> {
+  private async run(showLoading: (() => Promise<void>) | null): Promise<void> {
     try {
       const scene = await this.host.read(this.path);
       if (this.cancelled) return;
       this.scene = scene;
 
       const ids = this.host.assetsOf(scene);
-      if (ids.length === 0) {
-        this.progress = 1;
-        this.settle();
-        return;
-      }
+      const holds = ids.map((id) => this.host.preloadAsset(id));
+      this.holds = holds;
+      // `activate` waits for it: the loading scene's swap and the target's must
+      // not run at once, nor the loading scene come up over the target.
+      if (showLoading !== null) this.interstitial = showLoading();
 
       // Counted as they land rather than by bytes: a per-file bar is honest
       // about how much is left, and byte totals are not known until the
       // headers arrive anyway.
       let done = 0;
       await Promise.all(
-        ids.map(async (id) => {
-          await this.host.preloadAsset(id);
+        holds.map(async (hold) => {
+          await hold.ready;
           done += 1;
-          if (!this.cancelled) this.progress = done / ids.length;
+          if (!this.cancelled) this.progress = done / holds.length;
         }),
       );
 
@@ -323,14 +339,27 @@ class LoadHandle implements SceneLoad {
   async activate(): Promise<void> {
     if (this.activated || this.cancelled) return;
     await this.ready;
+    await this.interstitial;
     if (this.activated || this.cancelled || this.scene === null) return;
 
     this.activated = true;
-    await this.host.swap(this.path, this.scene);
+    try {
+      await this.host.swap(this.path, this.scene);
+    } finally {
+      // The new engine holds what it draws by now — or failed to be built,
+      // and holds nothing that should stay pinned for it.
+      this.giveBack();
+    }
   }
 
   cancel(): void {
     if (this.activated) return;
     this.cancelled = true;
+    this.giveBack();
+  }
+
+  private giveBack(): void {
+    for (const hold of this.holds) hold.dispose();
+    this.holds = [];
   }
 }

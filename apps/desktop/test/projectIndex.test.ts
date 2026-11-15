@@ -6,15 +6,22 @@ import {
   ASSET_META_SUFFIX,
   ASSET_META_VERSION,
   CACHE_DIR,
+  ENGINE_VERSION,
   SCENES_DIR,
   createEmptyScene,
-  deserializeScene,
+  createSceneId,
+  decodeScene,
+  fixedId,
   serializeScene,
   type AssetMeta,
+  unwrap,
 } from '@three-studio/core';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
 import { discoverScenes } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * `.studio/*.index.json` remembers what a file held so the next walk does not
@@ -38,7 +45,7 @@ async function projectWith(assets: number, scenes: number): Promise<string> {
   for (let i = 0; i < scenes; i++) {
     await writeFile(
       join(root, SCENES_DIR, `Level${i}.scene.json`),
-      serializeScene(createEmptyScene(`Level${i}`)),
+      serializeScene(registries, createEmptyScene(`Level${i}`)),
       'utf8',
     );
   }
@@ -50,7 +57,7 @@ async function projectWith(assets: number, scenes: number): Promise<string> {
 
 /** Ids by asset name, which is what every scene in the project references. */
 async function assetIds(root: string): Promise<Record<string, string>> {
-  const manifest = await scanAssets(root);
+  const manifest = await scanAssets(registries, root);
   return Object.fromEntries(manifest.assets.map((asset) => [asset.name, asset.id]));
 }
 
@@ -62,12 +69,12 @@ describe('an index that is never a source of truth', () => {
   it('gives the same answer warm as it did cold', async () => {
     const root = await projectWith(4, 3);
 
-    const first = await scanAssets(root);
-    const second = await scanAssets(root);
+    const first = await scanAssets(registries, root);
+    const second = await scanAssets(registries, root);
     expect(second).toEqual(first);
 
-    const scenes = await discoverScenes(root);
-    expect(await discoverScenes(root)).toEqual(scenes);
+    const scenes = (await discoverScenes(root)).scenes;
+    expect((await discoverScenes(root)).scenes).toEqual(scenes);
   });
 
   /*
@@ -79,13 +86,13 @@ describe('an index that is never a source of truth', () => {
   it('rebuilds everything after .studio is deleted, losing nothing', async () => {
     const root = await projectWith(6, 3);
     const ids = await assetIds(root);
-    const scenes = await discoverScenes(root);
+    const scenes = (await discoverScenes(root)).scenes;
     expect(Object.keys(ids)).toHaveLength(6);
 
     await rm(join(root, CACHE_DIR), { recursive: true, force: true });
 
     expect(await assetIds(root)).toEqual(ids);
-    expect(await discoverScenes(root)).toEqual(scenes);
+    expect((await discoverScenes(root)).scenes).toEqual(scenes);
   });
 
   it('ignores an index it cannot parse, and writes a good one over it', async () => {
@@ -96,7 +103,7 @@ describe('an index that is never a source of truth', () => {
     await writeFile(indexFile(root, 'scenes.index.json'), 'not json at all', 'utf8');
 
     expect(await assetIds(root)).toEqual(ids);
-    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['Level0', 'Level1']);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['Level0', 'Level1']);
     // And it is usable again rather than left broken.
     const written = JSON.parse(await readFile(indexFile(root, 'assets.index.json'), 'utf8')) as {
       entries: Record<string, unknown>;
@@ -112,7 +119,8 @@ describe('an index that is never a source of truth', () => {
    */
   it('throws away values another build computed', async () => {
     const root = await projectWith(2, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
+    const past = fixedId('asset', 'an-id-from-the-past');
 
     const path = indexFile(root, 'assets.index.json');
     const stale = JSON.parse(await readFile(path, 'utf8')) as {
@@ -121,19 +129,19 @@ describe('an index that is never a source of truth', () => {
     };
     stale.builtBy = 'some-older-build:meta1';
     // Poisoned, so that serving from it would be visible rather than plausible.
-    for (const entry of Object.values(stale.entries)) entry.v = { ...entry.v, id: 'an-id-from-the-past' };
+    for (const entry of Object.values(stale.entries)) entry.v = { ...entry.v, id: past };
     await writeFile(path, JSON.stringify(stale), 'utf8');
 
-    const manifest = await scanAssets(root);
-    expect(manifest.assets.map((asset) => asset.id)).not.toContain('an-id-from-the-past');
+    const manifest = await scanAssets(registries, root);
+    expect(manifest.assets.map((asset) => asset.id)).not.toContain(past);
   });
 
   it('drops a file that is gone rather than remembering it for ever', async () => {
     const root = await projectWith(3, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
     await rm(join(root, ASSETS_DIR, 'textures', 't1.png'), { force: true });
 
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets.map((asset) => asset.name).sort()).toEqual(['t0', 't2']);
     const written = JSON.parse(await readFile(indexFile(root, 'assets.index.json'), 'utf8')) as {
       entries: Record<string, unknown>;
@@ -161,7 +169,7 @@ describe('what the index declines to answer for', () => {
       'utf8',
     );
 
-    await scanAssets(root);
+    await scanAssets(registries, root);
     const meta = JSON.parse(await readFile(`${file}${ASSET_META_SUFFIX}`, 'utf8')) as AssetMeta;
     expect(meta.version).toBe(ASSET_META_VERSION);
     // Upgraded, not replaced: the id is what scenes reference.
@@ -170,7 +178,7 @@ describe('what the index declines to answer for', () => {
 
   it('re-reads a sidecar something else edited', async () => {
     const root = await projectWith(1, 0);
-    await scanAssets(root);
+    await scanAssets(registries, root);
     const file = join(root, ASSETS_DIR, 'textures', 't0.png');
 
     const meta = JSON.parse(await readFile(`${file}${ASSET_META_SUFFIX}`, 'utf8')) as AssetMeta;
@@ -180,21 +188,66 @@ describe('what the index declines to answer for', () => {
       'utf8',
     );
 
-    const manifest = await scanAssets(root);
+    const manifest = await scanAssets(registries, root);
     expect(manifest.assets[0]?.settings).toMatchObject({ srgb: false });
   });
 
   it('re-reads a scene whose id changed on disk', async () => {
     const root = await projectWith(0, 1);
-    const before = await discoverScenes(root);
+    const before = (await discoverScenes(root)).scenes;
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
 
     const replacement = createEmptyScene('Level0');
-    await writeFile(file, serializeScene(replacement), 'utf8');
+    await writeFile(file, serializeScene(registries, replacement), 'utf8');
 
-    const after = await discoverScenes(root);
+    const after = (await discoverScenes(root)).scenes;
     expect(after[0]?.id).toBe(replacement.id);
     expect(after[0]?.id).not.toBe(before[0]?.id);
+  });
+
+  /*
+   * What the index holds for a scene is an id, and it is checked when it is
+   * reused: one that is not — a hand-edited cache, or a value some other build
+   * left — is a read, and not a scene named `''`.
+   */
+  it('reads a scene again when what the index holds for it is not an id', async () => {
+    const root = await projectWith(0, 1);
+    const before = (await discoverScenes(root)).scenes;
+    const path = indexFile(root, 'scenes.index.json');
+    const written = JSON.parse(await readFile(path, 'utf8'));
+    for (const entry of Object.values<{ v: unknown }>(written.entries)) entry.v = '';
+    await writeFile(path, JSON.stringify(written), 'utf8');
+
+    expect((await discoverScenes(root)).scenes).toEqual(before);
+  });
+
+  /*
+   * The build before this one listed a scene file with no id under its path, and
+   * cached the path as its id. Its index says the file is unchanged, and it is:
+   * what changed is that a path is not an id. The index names what built it, so
+   * that one is thrown away, and the file is read again and not listed.
+   */
+  it('does not serve a path as the id of a scene from an index an earlier build wrote', async () => {
+    const root = await projectWith(0, 1);
+    const hand = join(root, SCENES_DIR, 'Hand.scene.json');
+    await writeFile(hand, '{ "name": "Hand" }', 'utf8');
+    const info = await stat(hand);
+    await mkdir(join(root, CACHE_DIR), { recursive: true });
+    await writeFile(
+      indexFile(root, 'scenes.index.json'),
+      JSON.stringify({
+        builtBy: ENGINE_VERSION,
+        entries: { [`${SCENES_DIR}/Hand.scene.json`]: { m: info.mtimeMs, s: info.size, v: `${SCENES_DIR}/Hand.scene.json` } },
+      }),
+      'utf8',
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    try {
+      expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['Level0']);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   /*
@@ -207,17 +260,18 @@ describe('what the index declines to answer for', () => {
   it('sees a replacement of exactly the same size, because the timestamp moves', async () => {
     const root = await projectWith(0, 1);
     const file = join(root, SCENES_DIR, 'Level0.scene.json');
-    const before = await discoverScenes(root);
+    // Warms the index, which the replacement below has to get past.
+    (await discoverScenes(root)).scenes;
     const sizeBefore = (await stat(file)).size;
 
-    // The same document with its id reversed: same length, so the file is byte
+    // The same document under another id of the same length: the file is byte
     // for byte the same size and only the timestamp can tell them apart.
-    const swapped = before[0]!.id.split('').reverse().join('');
-    const original = deserializeScene(await readFile(file, 'utf8'));
-    await writeFile(file, serializeScene({ ...original, id: swapped }), 'utf8');
+    const swapped = createSceneId();
+    const original = unwrap(decodeScene(registries, await readFile(file, 'utf8')), 'Scene file');
+    await writeFile(file, serializeScene(registries, { ...original, id: swapped }), 'utf8');
     expect((await stat(file)).size).toBe(sizeBefore);
 
-    expect((await discoverScenes(root))[0]?.id).toBe(swapped);
+    expect((await discoverScenes(root)).scenes[0]?.id).toBe(swapped);
   });
 });
 
@@ -232,14 +286,22 @@ describe('scanning concurrently with an index', () => {
   it('agrees with itself, warm or cold', async () => {
     const root = await projectWith(12, 0);
 
-    const cold = await Promise.all([scanAssets(root), scanAssets(root), scanAssets(root)]);
+    const cold = await Promise.all([
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+    ]);
     const signature = (manifest: { assets: { name: string; id: string }[] }) =>
       manifest.assets.map((asset) => `${asset.name}:${asset.id}`).sort().join(',');
 
     expect(signature(cold[1])).toBe(signature(cold[0]));
     expect(signature(cold[2])).toBe(signature(cold[0]));
 
-    const warm = await Promise.all([scanAssets(root), scanAssets(root), scanAssets(root)]);
+    const warm = await Promise.all([
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+      scanAssets(registries, root),
+    ]);
     expect(signature(warm[0])).toBe(signature(cold[0]));
     expect(signature(warm[2])).toBe(signature(cold[0]));
   });

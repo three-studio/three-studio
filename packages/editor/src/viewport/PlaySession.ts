@@ -2,19 +2,22 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   createPhysicsSettings,
   createRenderingSettings,
-  deserializeScene,
+  decodeScene,
   formatLogArgs,
   resolveScene,
+  unwrap,
+  type CoreRegistries,
   type LaunchSnapshot,
   type RenderingSettings,
   type SceneDoc,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
-import { Engine, SceneHost, type SceneSource } from '@three-studio/runtime';
+import { Engine, SceneHost, type AssetCache, type RuntimeRegistries, type SceneSource } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
-import { editorAssetResolver, useAssetStore } from '../state/assetStore';
+import { useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { useEditorStore } from '../state/editorStore';
 import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/prefabModeStore';
@@ -37,10 +40,14 @@ import type { Presentation } from './Presentation';
  */
 export interface PlayHost {
   readonly renderer: WebGPURenderer;
+  /** The window's loaded files: Play draws the models the edit view already holds. */
+  readonly assets: AssetCache;
   /** The game's own canvas, on the Viewport's stage; the engine's `Input` listens on it. */
   readonly gameView: Presentation;
   /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
+  /** The window's registries, which the game is built from as the edit view is. */
+  readonly registries: RuntimeRegistries;
   /**
    * Play was pressed. Called before anything is awaited: the start takes as
    * long as the compile and the load, and the view is not the editor's for any
@@ -65,10 +72,6 @@ export interface PlayHost {
  * published document in place, and from the press of Play the scene lock holds
  * it still, so Play keeps it as it is. Whoever hands it on copies it — the
  * scene source for the game, the main process across IPC.
- *
- * Here rather than in a module of its own: a module that reads the project
- * store and that this one imports would join the import cycle this file is
- * already part of (see `test/architecture.test.ts`).
  */
 export function readPlayInputs(): LaunchSnapshot {
   const { project, sceneId } = useProjectStore.getState();
@@ -123,6 +126,7 @@ export function launchSnapshot(): LaunchSnapshot {
  * Every other scene is read from its file, as it always was.
  */
 export function playSceneSource(
+  registries: CoreRegistries,
   entry: LaunchSnapshot['entry'],
   readFile: (path: string) => Promise<string>,
 ): SceneSource {
@@ -131,7 +135,7 @@ export function playSceneSource(
       if (namesEntry(entry, idOrName)) return structuredClone(entry.scene);
       const scene = resolveScene(useProjectStore.getState().scenes, idOrName);
       if (!scene) throw new Error(`No scene "${idOrName}" in this project.`);
-      return deserializeScene(await readFile(scene.path));
+      return unwrap(decodeScene(registries, await readFile(scene.path)), scene.path);
     },
   };
 }
@@ -151,7 +155,7 @@ export function playSceneId(
   entry: LaunchSnapshot['entry'],
   scenes: readonly SceneEntry[],
   idOrName: string,
-): string | null {
+): SceneId | null {
   if (namesEntry(entry, idOrName)) return entry.id;
   return resolveScene(scenes, idOrName)?.id ?? null;
 }
@@ -268,7 +272,7 @@ export class PlaySession {
       // Play means run the game, and a prefab on its own is not one — it usually
       // has no camera and no light, so it would come up black and warn about it.
       // Closing saves the prefab, so nothing is lost by leaving on the way.
-      if (inPrefabMode()) await usePrefabModeStore.getState().exit();
+      if (inPrefabMode()) await usePrefabModeStore.getState().exit(this.host.registries);
       // Stopped while Prefab Mode was being left: `endPlay` has run already, and
       // nothing after it would clear what is taken below — every launch would
       // send a scene the person has since gone on editing.
@@ -314,11 +318,19 @@ export class PlaySession {
       // be testable without exporting a build first. The scene it starts on is
       // the document being edited, not `startScene`: pressing Play means "run
       // what is on screen".
-      const source = playSceneSource(inputs.entry, (path) => window.studio.project.readScene(path));
+      const source = playSceneSource(this.host.registries, inputs.entry, (path) =>
+        window.studio.project.readScene(path),
+      );
       const host = new SceneHost({
         source,
+        registries: this.host.registries,
+        // The classes of the bundle just compiled, which every scene this game
+        // moves to runs: the host hands them to each engine it builds.
+        scripts: useScriptStore.getState().scripts,
         loadingScene: inputs.loadingScene,
-        resolver: editorAssetResolver,
+        // The window's own: the game holds what the edit view already loaded,
+        // and its materials are copies of its own.
+        assets: this.host.assets,
         physicsSettings: inputs.physics,
         // The viewport's own, not the inputs': Play draws on the viewport's
         // renderer, which was made with these and is not remade when Project
@@ -425,12 +437,12 @@ export class PlaySession {
    * next one, whose own were never shown. The exported player says them again
    * at every scene; so does this.
    */
-  private run(engine: Engine, sceneId: string | null): void {
+  private run(engine: Engine, sceneId: SceneId | null): void {
     this.engine = engine;
     useViewportStore.getState().setRunningScene(sceneId);
     // The Inspector tunes the window's scene: another scene's engine is handed
     // nothing, and the window's, restarted or come back to, all of it.
-    tuningEngine(sceneId !== null && sceneId === running?.entry.id ? engine : null);
+    tuningEngine(this.host.registries, sceneId !== null && sceneId === running?.entry.id ? engine : null);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
     engine.onWarning = (warnings) => {
@@ -466,9 +478,9 @@ export class PlaySession {
     this.sceneHost = null;
     this.engine = null;
     running = null;
-    tuningEngine(null);
+    tuningEngine(this.host.registries, null);
     // What the Play tuned, offered back now that the document can take it.
-    offerTuning();
+    offerTuning(this.host.registries);
     this.host.onPlayStopped();
     useViewportStore.getState().setPlayWarnings([]);
     useViewportStore.getState().setGameShown(false);

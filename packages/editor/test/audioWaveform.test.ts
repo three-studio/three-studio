@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import type { AudioBufferLike } from '@three-studio/runtime/audio/AudioContextLike';
 import { describe, expect, it } from 'vitest';
@@ -8,7 +9,7 @@ import { peaksOf } from '../src/audio/waveform';
 // would drift from the first the moment either grew a node.
 import { clipBytes, FakeContext } from '../../runtime/test/audio/fakeContext';
 
-const CLIP = 'clip-1';
+const CLIP = fixedId('asset', 'clip-1');
 
 /** A one-channel buffer written by hand, the style `sceneMigration.test.ts` uses. */
 function bufferOf(samples: number[]): AudioBufferLike {
@@ -97,7 +98,7 @@ describe('ClipPeaks', () => {
 
   it('answers null for an asset the project cannot resolve', async () => {
     const { peaks, reads } = rig();
-    expect(await peaks.peaks('gone')).toBeNull();
+    expect(await peaks.peaks(fixedId('asset', 'gone'))).toBeNull();
     expect(reads).toHaveLength(0);
   });
 

@@ -44,7 +44,7 @@ describe('at start', () => {
       launchOptions: { forceWebGL: false, maxPixelRatio: null, stats: false },
       screenshotFolders: {},
     });
-    expect(isUsableDeviceToken(saved.token)).toBe(true);
+    expect(isUsableDeviceToken(saved['token'])).toBe(true);
   });
 
   it('rewrites a token that will not do, and nothing else', async () => {
@@ -64,7 +64,7 @@ describe('at start', () => {
       transport: 'gopher',
       future: { a: 1 },
     });
-    expect(isUsableDeviceToken(saved.token)).toBe(true);
+    expect(isUsableDeviceToken(saved['token'])).toBe(true);
     // What the server runs on is what it can serve.
     expect(settings.transport).toBe('http');
     expect(settings.port).toBe(7801);

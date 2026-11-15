@@ -8,6 +8,7 @@ import type { AddMenuGroup } from '../registry';
  * muscle memory it had built by then.
  */
 export const menu: AddMenuGroup = {
+  id: 'water',
   label: 'Environment',
   order: 5,
   entries: [{ label: 'Water', create: () => createWaterEntity() }],

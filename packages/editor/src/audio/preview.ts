@@ -1,4 +1,9 @@
-import type { AudioSourceComponent } from '@three-studio/core';
+import type {
+  AssetId,
+  AudioSourceComponent,
+  ComponentId,
+  EntityId,
+} from '@three-studio/core';
 import {
   AudioEngine,
   type AssetResolver,
@@ -20,7 +25,7 @@ import { editorAudioContext } from './context';
  * vitest runs under node, where `AudioContext` and `requestAnimationFrame` are
  * types with no values behind them. Without the seam this whole file is
  * unreachable from a test — and it is the file the frame loop lives in, which is
- * where two of the bugs in phase 7 were.
+ * where two of audio's bugs were.
  */
 export interface AudioPreviewOptions {
   /** `null` where the window has no Web Audio, which the audition tolerates. */
@@ -34,10 +39,10 @@ export interface AudioPreviewOptions {
 /**
  * What the editor plays when nothing is running.
  *
- * A second `AudioEngine` on the same context as play mode, kept apart from it by
- * a root gain each. That separation is the whole requirement of the
- * PRD's §9: stopping the game must not stop an audition, and auditioning a clip
- * must not appear in the game's mix.
+ * A second `AudioEngine` on the same context as play mode, kept apart from it
+ * by a root gain each. That separation is the whole requirement: stopping the
+ * game must not stop an audition, and auditioning a clip must not appear in the
+ * game's mix.
  *
  * One voice at a time, deliberately. Auditioning is a question — "what does this
  * sound like" — and two answers at once is not a better answer.
@@ -52,7 +57,7 @@ export class AudioPreview {
   private voice: VoiceHandle | null = null;
   private frame: number | null = null;
   /** What is being auditioned, when it came from a component rather than a clip. */
-  private source: { entityId: string; componentId: string; object: Object3D | null } | null = null;
+  private source: { entityId: EntityId; componentId: ComponentId; object: Object3D | null } | null = null;
   /** Where the ear last was, for an engine that does not exist yet. */
   private pose: [Vec3Tuple, Vec3Tuple, Vec3Tuple] | null = null;
   /** How loud auditions are, for an engine that does not exist yet either. */
@@ -97,13 +102,14 @@ export class AudioPreview {
   }
 
   /** The asset currently being auditioned, so a UI can light the right row. */
-  get assetId(): string | null {
+  get assetId(): AssetId | null {
     const state = this.voice?.state;
+    // `null` is the voice of a source with no clip, which is never playing.
     return state === 'playing' || state === 'paused' ? (this.voice?.assetId ?? null) : null;
   }
 
   /** A clip on its own, flat, at full volume — the Project panel's audition. */
-  playClip(assetId: string): void {
+  playClip(assetId: AssetId): void {
     this.source = null;
     this.play({ assetId, volume: 1 });
   }
@@ -123,8 +129,8 @@ export class AudioPreview {
    * would answer a question nobody asked.
    */
   playSource(
-    entityId: string,
-    componentId: string,
+    entityId: EntityId,
+    componentId: ComponentId,
     component: AudioSourceComponent,
     object: Object3D | null,
   ): void {

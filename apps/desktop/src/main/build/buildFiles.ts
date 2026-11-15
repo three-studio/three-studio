@@ -1,6 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ASSET_KIND_INFO, BUILD_LAYOUT, type AssetKind, type BuildSize } from '@three-studio/core';
+import {
+  BUILD_LAYOUT,
+  assetKindInfo,
+  type AssetKind,
+  type BuildSize,
+  type CoreRegistries,
+} from '@three-studio/core';
 import { AssetError } from '../assetFiles';
 import { foldKey, toBuildPath } from './buildPath';
 import { digestOfFile, type PlannedFile } from './buildPlan';
@@ -219,9 +225,9 @@ export function parseBuildFileList(value: unknown): BuildFileList {
  * lands in used to be read back as its kind, and an asset kept outside its
  * kind's default folder was counted as part of the player.
  */
-export function sizeOf(files: readonly PlannedFile[]): BuildSize {
+export function sizeOf(registries: CoreRegistries, files: readonly PlannedFile[]): BuildSize {
   const assets = Object.fromEntries(
-    Object.keys(ASSET_KIND_INFO).map((kind) => [kind, 0]),
+    [...assetKindInfo(registries).keys()].map((kind) => [kind, 0]),
   ) as Record<AssetKind, number>;
   const size: BuildSize = { total: 0, player: 0, scenes: 0, scripts: 0, assets };
 

@@ -4,12 +4,21 @@ import {
   type AssetSettings,
   type BuildManifest,
   type TextureEncoding,
-  SCRIPT_API_VERSION,
-  deserializeScene,
+  activateCore,
+  decodeScene,
   encodePath,
+  idMapOf,
+  isAssetId,
+  prefabsFromJson,
+  unwrap,
+  type CoreRegistries,
   type SceneDoc,
 } from '@three-studio/core';
+import * as particlesCore from '@three-studio/particles/core';
+import * as particlesRuntime from '@three-studio/particles/runtime';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
+import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
 import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
@@ -17,9 +26,13 @@ import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { studioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
-import { Behaviour } from '@three-studio/runtime/scripting/ScriptApi';
+import {
+  NO_SCRIPTS,
+  publishScriptApi,
+  scriptClassesOf,
+  type ScriptClasses,
+} from '@three-studio/runtime/scripting/scriptBundle';
 import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
-import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
 
 /**
  * The player an exported build ships.
@@ -44,6 +57,14 @@ import { registerScript } from '@three-studio/runtime/scripting/ScriptHost';
 const MANIFEST_URL = new URL(BUILD_LAYOUT.manifest, document.baseURI);
 
 /**
+ * What the game's asset cache keeps of the files nothing holds any more:
+ * nothing. A game runs on phones too, and a scene left is rarely re-entered at
+ * once — while what two consecutive scenes share, the switch between them
+ * holds across.
+ */
+const PLAYER_IDLE_ASSET_BYTES = 0;
+
+/**
  * A path the manifest holds, as the URL to fetch.
  *
  * Against the manifest rather than the page: the exporter and the device
@@ -63,15 +84,6 @@ const canvas = document.querySelector<HTMLCanvasElement>('#view');
 const overlay = document.querySelector<HTMLElement>('#overlay');
 const message = document.querySelector<HTMLElement>('#message');
 const startButton = document.querySelector<HTMLButtonElement>('#start');
-
-/** Published for the compiled script bundle; see `ScriptHost`. */
-function publishScriptApi(): void {
-  (globalThis as unknown as Record<string, unknown>)['__STUDIO_SCRIPT_API__'] = {
-    version: SCRIPT_API_VERSION,
-    Behaviour,
-    registerScript,
-  };
-}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -107,27 +119,29 @@ function buildResolver(
  * exporter names them by their content, so a path worked out from an id would
  * be a guess.
  */
-async function readScene(build: BuildManifest, named: string): Promise<SceneDoc> {
+async function readScene(registries: CoreRegistries, build: BuildManifest, named: string): Promise<SceneDoc> {
   const { path } = sceneOf(build, named);
   const response = await fetch(resolve(path));
   // Named, so a missing scene reads as a missing scene. Without it a static
   // server's 404 page is handed to the parser, which reports a syntax error.
   if (!response.ok) throw new Error(`${path}: ${response.status} ${response.statusText}`);
-  return deserializeScene(await response.text());
+  return unwrap(decodeScene(registries, await response.text()), path);
 }
 
-async function loadScripts(file: string | null): Promise<void> {
+/** The compiled behaviours' classes, decoded from what the bundle exports; none when it has none, or fails. */
+async function loadScripts(file: string | null): Promise<ScriptClasses> {
   publishScriptApi();
-  if (!file) return; // The build manifest says this project has no scripts.
+  if (!file) return NO_SCRIPTS; // The build manifest says this project has no scripts.
 
   try {
     // Off the manifest, not `import.meta.url`: this module lives in `player/`,
     // and resolving from it asked for `player/scripts.mjs`.
-    await import(/* @vite-ignore */ resolve(file));
+    return scriptClassesOf(await import(/* @vite-ignore */ resolve(file)));
   } catch (cause) {
     // A scene without its behaviours is worth more than a black page: the
     // geometry, lights and camera are all still there to look at.
     console.error('[studio] scripts failed to load; running without them:', cause);
+    return NO_SCRIPTS;
   }
 }
 
@@ -145,6 +159,15 @@ async function boot(): Promise<void> {
     );
   }
 
+  // The page's composition root: what the game is built from, made and filled
+  // once, before the first scene is decoded through it. The device page runs
+  // this same page, so it is that page's root too.
+  const registries = createRuntimeRegistries();
+  activateCore(registries);
+  particlesCore.activate(registries);
+  activateRuntime(registries);
+  particlesRuntime.activate(registries);
+
   /*
    * The entry scene can only be asked for once the manifest has arrived, since
    * the manifest is what names it. It used to be `scene.json` and could go out
@@ -153,11 +176,11 @@ async function boot(): Promise<void> {
    */
   const entry = build.scenes[0];
   if (entry === undefined) throw new Error('This build lists no scene to start on.');
-  const scene = await readScene(build, entry.id);
+  const scene = await readScene(registries, build, entry.id);
 
-  await loadScripts(build.scripts);
+  const scripts = await loadScripts(build.scripts);
 
-  const { rendering, physics, materials, physicsMaterials, prefabs } = build;
+  const { rendering, physics, materials, physicsMaterials } = build;
 
   const { renderer, backend } = await createRenderer({
     canvas,
@@ -173,18 +196,31 @@ async function boot(): Promise<void> {
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
 
+  // The game's loaded files, for every scene it moves through; its frame is
+  // begun by the loop below.
+  const assets = new AssetCache(registries, {
+    resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
+    idleBudgetBytes: PLAYER_IDLE_ASSET_BYTES,
+  });
+
   // Hosted rather than a single engine: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
     source: {
       // By id, or by the name a script held: `sceneOf` finds either, and the
       // manifest says where the file is.
-      read: (named: string) => readScene(build, named),
+      read: (named: string) => readScene(registries, build, named),
     },
-    resolver: buildResolver(build.assets, build.textureEncodings, build.assetSettings),
-    materials,
-    physicsMaterials,
-    prefabs,
+    registries,
+    scripts,
+    assets,
+    // Records in the manifest, as a message is, and Maps here: a key read back
+    // as an id is checked as one.
+    materials: idMapOf(materials, isAssetId),
+    physicsMaterials: idMapOf(physicsMaterials, isAssetId),
+    // The manifest holds each as the JSON of a file, and a document keeps its
+    // entities in a Map: read here, once, as the editor reads a file.
+    prefabs: prefabsFromJson(registries, build.prefabs),
     loadingScene: build.loadingScene,
     rendering,
     physicsSettings: physics,
@@ -232,6 +268,9 @@ async function boot(): Promise<void> {
     last = now;
 
     studioTime.advance(delta);
+    // Once per frame, before the engine's: what a scene let go of last frame
+    // is freed now that the frame that drew it has been submitted.
+    assets.beginFrame();
     host.update(studioTime.delta);
     const engine = host.engine;
     if (engine) void renderer.render(engine.scene, engine.activeCamera);

@@ -17,6 +17,7 @@ import { setDockApi } from './dockApi';
 import { watchPanelFocus } from './panelFocus';
 import { loadLayout, saveLayout } from './layoutStorage';
 import { watchViewportClose } from './viewportClose';
+import { useRegistries } from '../registriesContext';
 
 /**
  * Panel id -> component. Adding a panel to the editor means adding one entry
@@ -119,6 +120,7 @@ export function DockLayout({ resetToken }: DockLayoutProps) {
 }
 
 function DockviewHost() {
+  const registries = useRegistries();
   // What the arrangement does about state: bring the Viewport forward when the
   // game starts, the Project panel when an asset is revealed, the Inspector
   // when Scene Settings… is asked for. It used to be `commands/` calling
@@ -130,7 +132,7 @@ function DockviewHost() {
     // Closing the Viewport during Play stops the game. Once per dock: a remount
     // disposes this one, listeners and all, and the next is watched by its own
     // call.
-    watchViewportClose(event.api);
+    watchViewportClose(registries, event.api);
 
     // Subscribed before the layout is built so the initial arrangement is
     // persisted too, and debounced because dragging a sash emits a change per
@@ -154,7 +156,7 @@ function DockviewHost() {
       }
     }
     applyDefaultLayout(event.api);
-  }, []);
+  }, [registries]);
 
   return (
     // The same gutter around the outside, so the bars above and below are set

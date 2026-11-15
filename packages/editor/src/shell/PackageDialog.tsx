@@ -8,7 +8,8 @@ import {
 } from '@three-studio/core';
 import { Copy, FolderOpen, Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { useProjectStore } from '../state/projectStore';
 import { notify } from '../state/toastStore';
 import { Field, Modal, type ModalSection } from '../ui/Modal';
@@ -52,6 +53,7 @@ const INPUT =
   'w-full rounded-xs border border-line-soft bg-surface-0 px-2 py-1 text-2xs text-ink outline-none focus:border-accent';
 
 export function PackageDialog({ onClose }: { onClose: () => void }) {
+  const registries = useRegistries();
   const project = useProjectStore((s) => s.project);
   // Only the ones a profile can actually name; a file whose id another file
   // claimed first would ship that other file. See `SceneEntry.shadowedBy`.
@@ -107,7 +109,7 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
     void persist({ ...draft, active: activeId })
       .then(() => {
         onClose();
-        commandById('runExport').run();
+        commandById('runExport').run(currentContext(registries));
       })
       .catch((cause: unknown) => {
         notify({

@@ -1,25 +1,32 @@
 import {
   componentsOf,
   findComponentById,
-  linkedPhysicsMaterial,
+  isAssetId,
+  type AssetId,
+  type AssetKind,
   type ComponentDoc,
+  type ComponentId,
+  type CoreRegistries,
   type EntityDoc,
+  type EntityId,
+  type LinkedObject,
   type SceneDoc,
 } from '@three-studio/core';
+import { produce } from 'immer';
 import type { FolderApi } from 'tweakpane';
 import {
   renameEntity,
-  setComponentNestedField,
   setEntityVisible,
   setEnvironmentField,
-  setLinkedMaterialField,
+  setLinkedAssetField,
   setSkyField,
   setTransform,
+  writePath,
 } from '../commands/sceneCommands';
 import { currentSceneName, renameCurrentScene } from '../commands/sceneFiles';
-import { useAssetStore } from '../state/assetStore';
+import { saveAssetValues } from '../state/assetStore';
 import { isSceneLocked } from '../state/sceneLock';
-import { tunePhysicsMaterialField, tunedComponent, tunedPhysicsMaterial } from '../state/tuning';
+import { tuneLinkedAsset, tunedAssetValues, tunedComponent } from '../state/tuning';
 import { assetFieldBundle, type AssetFieldActions } from './assetField';
 import { PaneBinder, numeric, type FieldIO, type Holder } from './PaneBinder';
 import {
@@ -32,9 +39,17 @@ import {
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { inPrefabMode } from '../state/prefabModeStore';
-import { COMPONENT_PANES, paneEntriesFor } from '../components/panes';
+import type { EditorRegistries } from '../registries';
+import { paneEntriesFor, unknownTypesOn } from './panes';
 import { SCENE_SCHEMA, isAction, isSeparator, sceneFieldPath, type FieldSpec } from './schema';
 import { shapeOf } from './signature';
+
+/**
+ * What stands in for the rows of a component whose type no module of this
+ * editor defines. Short lines: Tweakpane's text row does not wrap, and a line
+ * wider than the Inspector's value column was cut off behind a scrollbar.
+ */
+const UNKNOWN_TYPE_NOTICE = 'Module not installed.\nKept with its entity,\nand saved as found.';
 
 const RAD_TO_DEG = 180 / Math.PI;
 const DEG_TO_RAD = Math.PI / 180;
@@ -46,9 +61,9 @@ const DEG_TO_RAD = Math.PI / 180;
  * scene per window rather than tabs.
  */
 export type InspectorTarget =
-  | { kind: 'entity'; entityId: string }
+  | { kind: 'entity'; entityId: EntityId }
   /** Several, edited as one. `ids` are in selection order; the first decides the shape. */
-  | { kind: 'entities'; ids: readonly string[] }
+  | { kind: 'entities'; ids: readonly EntityId[] }
   | { kind: 'scene' };
 
 /**
@@ -63,11 +78,18 @@ export class InspectorBinding {
   private readonly binder: PaneBinder;
 
   /**
+   * @param registries The window's, which the expansion is read through and an
+   *   action is handed.
    * @param actions What the asset slot cannot reach for itself; see
    *   `AssetFieldActions`. Handed down rather than imported, because the edge
    *   from a field control to the import store was an import cycle.
    */
-  constructor(container: HTMLElement, target: InspectorTarget, actions: AssetFieldActions) {
+  constructor(
+    private readonly registries: EditorRegistries,
+    container: HTMLElement,
+    target: InspectorTarget,
+    actions: AssetFieldActions,
+  ) {
     this.binder = new PaneBinder(container, [assetFieldBundle(actions)]);
 
     if (target.kind === 'scene') {
@@ -78,7 +100,7 @@ export class InspectorBinding {
       this.buildMulti(target.ids);
       return;
     }
-    const entity = currentEntity(target.entityId);
+    const entity = currentEntity(registries, target.entityId);
     if (entity) this.build(entity);
   }
 
@@ -102,13 +124,15 @@ export class InspectorBinding {
    * field would put forty objects on top of each other. Unity does the same — the
    * multiple-object inspector starts at the components.
    */
-  private buildMulti(ids: readonly string[]): void {
-    const target = new MultiTarget(ids);
+  private buildMulti(ids: readonly EntityId[]): void {
+    const target = new MultiTarget(this.registries, ids);
     const folder = this.binder.pane.addFolder({ title: `${ids.length} objects selected` });
     folder.addBinding({ value: ids.length }, 'value', { label: 'Objects', readonly: true });
 
+    const first = ids[0];
+    if (first === undefined) return;
     for (const component of target.components()) {
-      this.buildComponent(ids[0] ?? '', component, target);
+      this.buildComponent(first, component, target);
     }
   }
 
@@ -116,11 +140,19 @@ export class InspectorBinding {
     this.buildHeader(entity);
     this.buildTransform(entity.id);
 
-    // Through the target, so this loop does not know whether it is editing one
-    // entity or forty. Phase 8 swaps in a `MultiTarget` and nothing here moves.
-    const target = new SingleTarget(entity.id);
+    // Through the target, so `buildComponent` does not know whether it is
+    // editing one entity or forty: `buildMulti` hands it a `MultiTarget`.
+    const target = new SingleTarget(this.registries, entity.id);
     for (const component of target.components()) {
       this.buildComponent(entity.id, component, target);
+    }
+    // What the entity carries of a type no module here defines: named, so that
+    // the author knows it is there, and not editable, since nothing here can
+    // read it. It goes with the entity, and a save writes it back as found.
+    for (const type of unknownTypesOn(expandedScene(this.registries).scene, entity.id)) {
+      this.binder.pane
+        .addFolder({ title: type })
+        .addBinding({ value: UNKNOWN_TYPE_NOTICE }, 'value', { label: 'Module', readonly: true, multiline: true, rows: 3 });
     }
   }
 
@@ -163,7 +195,7 @@ export class InspectorBinding {
                 // is already taken — changes nothing in the document, so
                 // nothing else would pull the field back off the name that was
                 // typed, and the panel would go on showing a name no scene has.
-                if (last) void renameCurrentScene(String(value)).then(() => this.refresh());
+                if (last) void renameCurrentScene(this.registries, String(value)).then(() => this.refresh());
                 return;
               case 'environment':
                 this.binder.edit(() =>
@@ -192,18 +224,20 @@ export class InspectorBinding {
       .addBinding(name, 'value', { label: 'Name' })
       .on('change', (event) => {
         // Renaming commits on blur rather than per keystroke.
-        if (event.last) this.binder.edit(() => renameEntity(entity.id, String(event.value)));
+        if (event.last) this.binder.edit(() => renameEntity(this.registries, entity.id, String(event.value)));
       });
-    this.binder.track(name, () => currentEntity(entity.id)?.name ?? '');
+    this.binder.track(name, () => currentEntity(this.registries, entity.id)?.name ?? '');
 
     const visible: Holder = { value: entity.visible };
     this.binder.pane
       .addBinding(visible, 'value', { label: 'Visible' })
-      .on('change', (event) => this.binder.edit(() => setEntityVisible(entity.id, Boolean(event.value))));
-    this.binder.track(visible, () => currentEntity(entity.id)?.visible ?? true);
+      .on('change', (event) =>
+        this.binder.edit(() => setEntityVisible(this.registries, entity.id, Boolean(event.value))),
+      );
+    this.binder.track(visible, () => currentEntity(this.registries, entity.id)?.visible ?? true);
   }
 
-  private buildTransform(entityId: string): void {
+  private buildTransform(entityId: EntityId): void {
     const folder = this.binder.pane.addFolder({ title: 'Transform' });
 
     this.bindVector(folder, entityId, 'position', 'Position', 1);
@@ -217,13 +251,13 @@ export class InspectorBinding {
    */
   private bindVector(
     folder: FolderApi,
-    entityId: string,
+    entityId: EntityId,
     key: 'position' | 'rotation' | 'scale',
     label: string,
     scale: number,
   ): void {
     const read = () => {
-      const transform = currentEntity(entityId)?.transform[key] ?? [0, 0, 0];
+      const transform = currentEntity(this.registries, entityId)?.transform[key] ?? [0, 0, 0];
       return { x: transform[0] * scale, y: transform[1] * scale, z: transform[2] * scale };
     };
 
@@ -243,6 +277,7 @@ export class InspectorBinding {
         const inverse = key === 'rotation' ? DEG_TO_RAD : 1;
         this.binder.edit(() =>
           setTransform(
+            this.registries,
             entityId,
             { [key]: [raw.x * inverse, raw.y * inverse, raw.z * inverse] },
             { coalesceKey: `inspector:${entityId}:${key}:${this.binder.generation}` },
@@ -255,23 +290,24 @@ export class InspectorBinding {
   }
 
   private buildComponent(
-    entityId: string,
+    entityId: EntityId,
     target: ComponentTarget,
     owner: EntityTarget,
   ): void {
     const component = target.representative;
     const componentId = component.id;
-    const schema = COMPONENT_PANES[component.type];
-    const folder = this.binder.pane.addFolder({ title: schema.label });
+    const label = this.registries.components.get(component.type)?.label ?? component.type;
+    const folder = this.binder.pane.addFolder({ title: label });
 
-    // Conditional fields read the material the mesh actually renders with, so
-    // a linked material shows the shared values' fields, not the embedded ones'.
-    // And the rows are the tuned kind's during Play: a collider tuned to a
-    // sphere shows a radius.
-    const effective = effectiveComponent(entityId, component);
+    // Conditional rows read what is on screen: an object an asset fills shows
+    // the rows of the asset's values, not of the component's own copy. And the
+    // rows are the tuned kind's during Play: a collider tuned to a sphere shows
+    // a radius.
+    const effective = effectiveComponent(this.registries, entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
-    for (const spec of paneEntriesFor(effective).entries) {
+    const { entries } = paneEntriesFor(this.registries, effective);
+    for (const spec of entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
         continue;
@@ -282,31 +318,39 @@ export class InspectorBinding {
           .addButton({ title: spec.title, label: spec.label ?? '' })
           .on('click', () =>
             spec.run({
+              registries: this.registries,
               entityId,
               componentId,
-              component: currentComponent(entityId, componentId) ?? component,
+              component: currentComponent(this.registries, entityId, componentId) ?? component,
             }),
           );
         continue;
       }
-      this.bindField(folder, entityId, target, spec, owner, schema.live === true);
+      this.bindField(folder, entityId, target, spec, owner);
     }
 
     folder
-      .addButton({ title: `Remove ${schema.label}` })
+      .addButton({ title: `Remove ${label}` })
       .on('click', () => this.binder.edit(() => target.remove()));
   }
 
   private bindField(
     folder: FolderApi,
-    entityId: string,
+    entityId: EntityId,
     target: ComponentTarget,
     spec: FieldSpec,
     owner: EntityTarget,
-    live: boolean,
   ): void {
     const componentId = target.representative.id;
     const multiple = owner instanceof MultiTarget;
+    /** The component as the game runs it during Play, as it is otherwise. */
+    const current = (): ComponentDoc | undefined => {
+      const component = currentComponent(this.registries, entityId, componentId);
+      return component && tunedComponent(entityId, component);
+    };
+    /** The asset this row edits in place of the component, when its object is one an asset fills. */
+    const linkedOf = (component: ComponentDoc | undefined): LinkedAsset | null =>
+      component === undefined ? null : linkedAsset(this.registries, component, spec.path);
     const io: FieldIO = {
       read: () => {
         if (multiple) {
@@ -315,23 +359,20 @@ export class InspectorBinding {
           // throw "No matching controller", so there is nothing else to show.
           return target.read(spec.path);
         }
-        const component = currentComponent(entityId, componentId);
-        return readPath(component && effectiveComponent(entityId, component), spec.path);
+        const component = current();
+        const linked = linkedOf(component);
+        return linked ? readPath(linked.values, linked.path) : readPath(component, spec.path);
       },
       write: (value, { last, generation }) => {
-        // During Play only a live row is enabled, and it tunes the running game:
-        // the world takes the value, `state/tuning` keeps it, and the document
-        // is not written. A linked collider's material rows tune the asset,
-        // every collider linking it, as they edit its file when stopped.
+        // During Play only a tunable row is enabled, and it tunes the running
+        // game: the world takes the value, `state/tuning` keeps it, and the
+        // document is not written. A row of an object an asset fills tunes the
+        // asset, every component linking it, as it edits its file when stopped.
         if (isSceneLocked()) {
-          const component = currentComponent(entityId, componentId);
-          const linked =
-            multiple || !component ? null : linkedMaterial(effectiveComponent(entityId, component), spec.path);
-          const key = spec.path[1];
+          const linked = multiple ? null : linkedOf(current());
           this.binder.edit(() => {
-            if (linked && component?.type === 'collider' && key !== undefined) {
-              tunePhysicsMaterialField(linked.assetId, key, value);
-            } else target.tune(spec.path, value);
+            if (linked) tuneLinkedAsset(linked.kind, linked.assetId, linked.path, value);
+            else target.tune(spec.path, value);
           });
           return;
         }
@@ -344,16 +385,15 @@ export class InspectorBinding {
           );
           return;
         }
-        const current = currentComponent(entityId, componentId);
-        const linked = linkedMaterial(current && effectiveComponent(entityId, current), spec.path);
+        const linked = linkedOf(current());
         if (linked) {
           // The values belong to a shared asset, so the edit goes to the file
           // rather than to this entity — that is the whole point of linking.
           //
           // Only on `last`, which also makes the undo step exact: nothing is
-          // written during the drag, so the stored material is still the value
+          // written during the drag, so the stored asset is still the value
           // the gesture started from.
-          if (last) linked.edit(spec.label, spec.path[1]!, value);
+          if (last) editLinkedAsset(linked, spec.label, value);
           return;
         }
         this.binder.edit(() =>
@@ -363,7 +403,7 @@ export class InspectorBinding {
         );
       },
     };
-    this.binder.bind(folder, spec, io, live);
+    this.binder.bind(folder, spec, io);
   }
 
 }
@@ -376,80 +416,95 @@ function currentScene(): SceneDoc {
   return useDocumentStore.getState().scene;
 }
 
-function currentEntity(entityId: string): EntityDoc | undefined {
+function currentEntity(registries: CoreRegistries, entityId: EntityId): EntityDoc | undefined {
   // The expanded scene, not the document. A prefab instance's contents are
   // drawn and selectable, but the document has never heard of their ids — read
   // from it alone and the panel goes blank for anything inside a prefab.
-  return expandedScene().scene.entities[entityId];
+  return expandedScene(registries).scene.entities.get(entityId);
 }
 
-function currentComponent(entityId: string, componentId: string): ComponentDoc | undefined {
-  return findComponentById(expandedScene().scene, entityId, componentId);
+function currentComponent(
+  registries: CoreRegistries,
+  entityId: EntityId,
+  componentId: ComponentId,
+): ComponentDoc | undefined {
+  return findComponentById(expandedScene(registries).scene, entityId, componentId);
 }
 
 /**
- * The component as it renders: a mesh linked to a material asset reports the
- * shared values, so the panel shows what is on screen rather than the embedded
- * copy it is no longer using. A collider linked to a physics material reports
- * the asset's values, which are what it is built with; one whose link the
- * project cannot answer reports its own, which are what it plays with.
- *
- * During Play, with what was tuned on it and on the asset it links: what the
- * running game is built with.
+ * The component as it is shown: during Play with what was tuned on it, and
+ * each object an asset fills (`linkedBy`) holding that asset's values — what is
+ * on screen, and what the running game is built with, rather than the
+ * component's own copy, which it no longer uses. A link the project cannot
+ * answer leaves the component's own values, which are what it draws or plays
+ * with. The component itself, where nothing replaces anything.
  */
-export function effectiveComponent(entityId: string, component: ComponentDoc): ComponentDoc {
-  const { materials } = useAssetStore.getState();
+export function effectiveComponent(registries: CoreRegistries, entityId: EntityId, component: ComponentDoc): ComponentDoc {
   const tuned = tunedComponent(entityId, component);
-  if (tuned.type === 'mesh' && tuned.materialId !== null) {
-    const shared = materials[tuned.materialId];
-    return shared ? { ...tuned, material: shared } : tuned;
-  }
-  if (tuned.type === 'collider' && tuned.materialId !== null) {
-    const shared = tunedPhysicsMaterial(tuned.materialId);
-    return shared ? { ...tuned, material: shared } : tuned;
-  }
-  return tuned;
+  const filled = (registries.components.get(tuned.type)?.links ?? []).flatMap((link) => {
+    const asset = assetOf(tuned, link);
+    return asset === null ? [] : [{ object: link.object, values: asset.values }];
+  });
+  if (filled.length === 0) return tuned;
+  return produce(tuned, (draft) => {
+    for (const { object, values } of filled) writePath(draft, object, values);
+  });
 }
 
-/** A field whose edits go to a shared asset rather than to the document. */
-export interface LinkedMaterial {
-  assetId: string;
-  /** Writes one of the asset's values, as one undo step named after the field. */
-  edit(label: string, key: string, value: unknown): void;
+/** A row whose edits go to the asset its object is filled by, rather than to the document. */
+export interface LinkedAsset {
+  readonly kind: AssetKind;
+  readonly assetId: AssetId;
+  /** Where the row's value sits in the asset's values. */
+  readonly path: readonly string[];
+  /** The asset's values: the project's, or during Play as tuned. */
+  readonly values: object;
+  /** What an edit of it is called, « Edit material Roughness »: its object's label. */
+  readonly noun: string;
 }
 
-/** Non-null when this field edits a shared material rather than the document. */
-export function linkedMaterial(
-  component: ComponentDoc | undefined,
+/**
+ * The asset a row at `path` edits: when the row lies under an object its type
+ * links (`linkedBy`), and the asset field beside that object names an asset the
+ * project holds. `null` for any other row, which edits the component.
+ */
+export function linkedAsset(
+  registries: CoreRegistries,
+  component: ComponentDoc,
   path: readonly string[],
-): LinkedMaterial | null {
-  if (path[0] !== 'material' || path.length !== 2) return null;
-  const { materials, physicsMaterials } = useAssetStore.getState();
-  if (component?.type === 'mesh' && component.materialId !== null) {
-    const assetId = component.materialId;
-    const shared = materials[assetId];
-    if (!shared) return null;
-    return {
-      assetId,
-      edit: (label, key, value) =>
-        setLinkedMaterialField('material', label, shared, { ...shared, [key]: value }, (material) =>
-          useAssetStore.getState().saveMaterial(assetId, material),
-        ),
-    };
-  }
-  if (component?.type === 'collider' && component.materialId !== null) {
-    const assetId = component.materialId;
-    const shared = linkedPhysicsMaterial(assetId, physicsMaterials);
-    if (!shared) return null;
-    return {
-      assetId,
-      edit: (label, key, value) =>
-        setLinkedMaterialField('physics material', label, shared, { ...shared, [key]: value }, (material) =>
-          useAssetStore.getState().savePhysicsMaterial(assetId, material),
-        ),
-    };
+): LinkedAsset | null {
+  for (const link of registries.components.get(component.type)?.links ?? []) {
+    const under = path.length > link.object.length && link.object.every((key, at) => path[at] === key);
+    if (!under) continue;
+    const asset = assetOf(component, link);
+    if (asset === null) return null;
+    return { kind: link.kind, ...asset, path: path.slice(link.object.length), noun: link.label.toLowerCase() };
   }
   return null;
+}
+
+/**
+ * Writes one of a linked asset's values to its file, as one undo step named
+ * after its object and the row. The document is not written: the values are
+ * the asset's, and every component linking it shows them.
+ */
+export function editLinkedAsset(linked: LinkedAsset, label: string, value: unknown): void {
+  const after = structuredClone(linked.values);
+  writePath(after, linked.path, value);
+  setLinkedAssetField(linked.noun, label, linked.values, after, (values) =>
+    saveAssetValues(linked.kind, linked.assetId, values),
+  );
+}
+
+/** The asset `link` names in `component`, with its values as the game runs them; `null` while it names none the project holds. */
+function assetOf(
+  component: ComponentDoc,
+  link: LinkedObject,
+): { readonly assetId: AssetId; readonly values: object } | null {
+  const assetId = readPath(component, link.by);
+  if (!isAssetId(assetId)) return null;
+  const values = tunedAssetValues(link.kind, assetId);
+  return values === null ? null : { assetId, values };
 }
 
 /**
@@ -465,16 +520,18 @@ export function linkedMaterial(
  * hand-written signature interpolated regardless.
  *
  * `effectiveComponent` is the subject for the same reason the builder uses it:
- * a mesh linked to a shared material shows the shared values' rows, so the
- * predicates have to be asked about the material actually on screen.
+ * an object an asset fills shows the asset's values' rows, so the predicates
+ * have to be asked about the values actually on screen.
  */
-export function inspectorSignature(entityId: string | undefined): string {
-  const scene = expandedScene().scene;
-  if (entityId === undefined || scene.entities[entityId] === undefined) return '';
-  const parts = componentsOf(scene, entityId).map((component) => {
-    const effective = effectiveComponent(entityId, component);
-    const { key, entries } = paneEntriesFor(effective);
+export function inspectorSignature(registries: EditorRegistries, entityId: EntityId | undefined): string {
+  const scene = expandedScene(registries).scene;
+  if (entityId === undefined || !scene.entities.has(entityId)) return '';
+  const parts = componentsOf(registries, scene, entityId).map((component) => {
+    const effective = effectiveComponent(registries, entityId, component);
+    const { key, entries } = paneEntriesFor(registries, effective);
     return `${key}/${shapeOf(entries, effective)}`;
   });
+  // Each of them is a folder, so the pane is rebuilt when one comes or goes.
+  parts.push(...unknownTypesOn(scene, entityId).map((type) => `?${type}`));
   return `${entityId}|${parts.join(',')}`;
 }

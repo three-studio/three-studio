@@ -8,15 +8,20 @@ import {
   CACHE_DIR,
   LAUNCH_SNAPSHOT_VERSION,
   SCENES_DIR,
+  assertDefined,
+  conformLaunchSnapshot,
   createDeviceLaunchOptions,
   createEmptyScene,
   createMeshEntity,
-  deserializeScene,
+  decodeScene,
+  encodeLaunchSnapshot,
+  fixedId,
   insertEntity,
   serializeScene,
   type BuildManifest,
   type DeviceLaunchOptions,
   type LaunchSnapshot,
+  unwrap,
 } from '@three-studio/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { scanAssets } from '../src/main/assetScan';
@@ -27,6 +32,9 @@ import { createDeviceHandler } from '../src/main/devices/routes';
 import { WAITING_PAGE } from '../src/main/devices/waitingPage';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
 import { pngOf } from './png';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The routes, over a real socket: what a phone asks for, and what it is
@@ -39,6 +47,7 @@ const TOKEN = 'abcdefghijKLMNOPQRST01';
 const PLAYER_MODULE = '<script type="module" src="./player/player.js"></script>';
 const TEMPLATE_HTML = `<!doctype html><html><head>${PLAYER_MODULE}</head><body>player</body></html>`;
 const CLIENT_JS = '/* the device client */';
+const TEX_BRICK = fixedId('asset', 'tex-brick');
 
 let server: Server;
 let port = 0;
@@ -175,11 +184,11 @@ async function writeAsset(path: string, id: string, kind: string, contents: stri
 
 beforeAll(async () => {
   const parent = await mkdtemp(join(tmpdir(), 'studio-routes-'));
-  root = (await createProject('Races', parent)).summary.path;
+  root = (await createProject(registries, 'Races', parent)).summary.path;
   // The project's one scene, before the others below join it.
-  const [main] = await discoverScenes(root);
+  const [main] = (await discoverScenes(root)).scenes;
 
-  await writeAsset(`${ASSETS_DIR}/textures/brick.png`, 'tex-brick', 'texture', 'source bytes');
+  await writeAsset(`${ASSETS_DIR}/textures/brick.png`, TEX_BRICK, 'texture', 'source bytes');
 
   // A glTF naming its buffer and an image one folder down, with a space in it,
   // and a file beside it that it does not name.
@@ -210,20 +219,20 @@ beforeAll(async () => {
     'utf8',
   );
 
-  // A second scene, and a hand-written one with no id, which is then
-  // addressed by its path: an id holding slashes.
+  // A second scene, and one whose id holds slashes: an id is any text that is
+  // not empty, and the route has to carry one in a URL a segment at a time.
   const other = createEmptyScene();
-  otherSceneJson = `${serializeScene(other)}\n`;
+  otherSceneJson = `${serializeScene(registries, other)}\n`;
   await writeFile(join(root, SCENES_DIR, 'Other.scene.json'), otherSceneJson, 'utf8');
   await mkdir(join(root, SCENES_DIR, 'levels'), { recursive: true });
-  const withoutId = JSON.parse(serializeScene(createEmptyScene())) as Record<string, unknown>;
-  delete withoutId['id'];
-  await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(withoutId), 'utf8');
+  const slashed = JSON.parse(serializeScene(registries, createEmptyScene())) as Record<string, unknown>;
+  slashed['id'] = 'levels/Two';
+  await writeFile(join(root, SCENES_DIR, 'levels', 'Two.scene.json'), JSON.stringify(slashed), 'utf8');
 
-  const scenes = await discoverScenes(root);
+  const scenes = (await discoverScenes(root)).scenes;
   entryId = main!.id;
   slashedId = scenes.find((scene) => scene.path.endsWith('Two.scene.json'))!.id;
-  const scene = deserializeScene(await readFile(join(root, main!.path), 'utf8'));
+  const scene = unwrap(decodeScene(registries, await readFile(join(root, main!.path), 'utf8')), 'Scene file');
   const crate = createMeshEntity('box');
   crate.entity.name = 'Unsaved Crate';
   insertEntity(scene, crate);
@@ -231,14 +240,18 @@ beforeAll(async () => {
   const snapshot: LaunchSnapshot = {
     version: LAUNCH_SNAPSHOT_VERSION,
     entry: { id: main!.id, name: main!.name, scene },
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
+    materials: new Map(),
+    physicsMaterials: new Map(),
+    prefabs: new Map(),
     rendering: settings.rendering,
     physics: settings.physics,
     loadingScene: null,
   };
-  const prepared = await prepareLaunch(root, snapshot);
+  const prepared = await prepareLaunch(
+    registries,
+    root,
+    conformLaunchSnapshot(registries, encodeLaunchSnapshot(registries, snapshot)),
+  );
 
   // A scaled copy, given by hand: what a device should download in place of
   // the source, under the source's name.
@@ -246,11 +259,11 @@ beforeAll(async () => {
   await mkdir(join(root, CACHE_DIR, 'imported', 'tex-brick'), { recursive: true });
   await writeFile(join(root, copy), 'scaled bytes', 'utf8');
   const assets = new Map(prepared.assets);
-  assets.set('tex-brick', { ...assets.get('tex-brick')!, importedPath: copy });
+  assets.set(TEX_BRICK, { ...assertDefined(assets.get(TEX_BRICK), 'the brick texture'), importedPath: copy });
   launch = { ...prepared, assets };
   modelId = [...assets.values()].find((asset) => asset.path.endsWith('Tri.gltf'))!.id;
   objId = [...assets.values()].find((asset) => asset.path.endsWith('Crate.obj'))!.id;
-  scriptId = (await scanAssets(root)).assets.find((asset) => asset.kind === 'script')!.id;
+  scriptId = (await scanAssets(registries, root)).assets.find((asset) => asset.kind === 'script')!.id;
 
   templateDir = join(parent, 'web-template');
   await mkdir(join(templateDir, 'player'), { recursive: true });
@@ -270,6 +283,7 @@ beforeAll(async () => {
   });
   server = createServer(
     createDeviceHandler({
+      registries,
       token: () => TOKEN,
       templateDir,
       clientDir,
@@ -309,7 +323,7 @@ describe('the token', () => {
     const answer = await ask(`/${TOKEN}`);
 
     expect(answer.status).toBe(308);
-    expect(answer.headers.location).toBe(`/${TOKEN}/`);
+    expect(answer.headers['location']).toBe(`/${TOKEN}/`);
   });
 });
 
@@ -434,14 +448,14 @@ describe('a device’s message', () => {
     });
 
     expect(answer.status).toBe(403);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused past 64 KB, and closes the connection', async () => {
     const answer = await post('hello', Buffer.alloc(64 * 1024 + 1, 0x20));
 
     expect(answer.status).toBe(413);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused when it is not JSON', async () => {
@@ -540,7 +554,7 @@ describe('a device’s frame', () => {
       withheld: 100,
     });
     expect(refused.status).toBe(403);
-    expect(refused.headers.connection).toBe('close');
+    expect(refused.headers['connection']).toBe('close');
 
     expect((await upload(`?request=${request}`)).status).toBe(204);
     await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
@@ -556,7 +570,7 @@ describe('a device’s frame', () => {
 
     const refused = await upload(query, { withheld: 100 });
     expect(refused.status).toBe(400);
-    expect(refused.headers.connection).toBe('close');
+    expect(refused.headers['connection']).toBe('close');
 
     expect((await upload(`?request=${request}`)).status).toBe(204);
     await expect(frame).resolves.toMatchObject({ width: 3, height: 2 });
@@ -567,7 +581,7 @@ describe('a device’s frame', () => {
     const answer = await upload('?request=Ab3dE6gH9jK2mN5p', { withheld: 100 });
 
     expect(answer.status).toBe(409);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
   });
 
   it('is refused, unread, once its request has been answered', async () => {
@@ -578,7 +592,7 @@ describe('a device’s frame', () => {
     const again = await upload(`?request=${request}`, { withheld: 100 });
 
     expect(again.status).toBe(409);
-    expect(again.headers.connection).toBe('close');
+    expect(again.headers['connection']).toBe('close');
     await stream.close();
   });
 
@@ -591,7 +605,7 @@ describe('a device’s frame', () => {
     });
 
     expect(answer.status).toBe(415);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
     await expect(frame).rejects.toThrow('Mac · Safari sent something that is not a PNG.');
     await stream.close();
   });
@@ -602,7 +616,7 @@ describe('a device’s frame', () => {
     const answer = await upload(`?request=${request}`, { withheld: 32 * 1024 * 1024 + 1 });
 
     expect(answer.status).toBe(413);
-    expect(answer.headers.connection).toBe('close');
+    expect(answer.headers['connection']).toBe('close');
     await expect(frame).rejects.toThrow(
       'The frame from Mac · Safari is over 32 MB. Lower the pixel ratio under Launch options.',
     );
@@ -691,7 +705,7 @@ describe('the scenes', () => {
   });
 
   it('answers another scene with its file, byte for byte', async () => {
-    const other = (await discoverScenes(root)).find((scene) => scene.path.endsWith('Other.scene.json'))!;
+    const other = (await discoverScenes(root)).scenes.find((scene) => scene.path.endsWith('Other.scene.json'))!;
 
     const answer = await ask(under(`game/scenes/${encodeURIComponent(other.id)}.json`));
 
@@ -710,6 +724,8 @@ describe('the scenes', () => {
 
   it('answers 404 for a scene the project does not have', async () => {
     expect((await ask(under('game/scenes/nobody.json'))).status).toBe(404);
+    // Nor for the empty name, which is no scene's id.
+    expect((await ask(under('game/scenes/.json'))).status).toBe(404);
   });
 });
 
@@ -721,14 +737,14 @@ describe('the assets', () => {
     expect(answer.body.toString()).toBe('scaled bytes');
     expect(answer.headers['content-type']).toBe('image/png');
     expect(answer.headers['cache-control']).toBe('no-cache');
-    expect(answer.headers.etag).toMatch(/^W\/"/);
+    expect(answer.headers['etag']).toMatch(/^W\/"/);
   });
 
   it('answers 304 with no body when the device’s copy is current', async () => {
     const first = await ask(under('game/assets/tex-brick/brick.png'));
 
     const again = await ask(under('game/assets/tex-brick/brick.png'), {
-      headers: { 'if-none-match': String(first.headers.etag) },
+      headers: { 'if-none-match': String(first.headers['etag']) },
     });
 
     expect(again.status).toBe(304);
@@ -808,7 +824,7 @@ describe('the player', () => {
 
     expect(icon.status).toBe(200);
     expect(icon.headers['content-type']).toBe('image/svg+xml');
-    expect(icon.headers.etag).toMatch(/^W\/"/);
+    expect(icon.headers['etag']).toMatch(/^W\/"/);
   });
 });
 

@@ -1,18 +1,10 @@
-import { createId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
+import { cameraType } from './index';
 import type { CameraComponent, CameraProjection } from './schema';
 
+/** A camera at its defaults, of the projection asked for. */
 export function createCamera(projection: CameraProjection = 'perspective'): CameraComponent {
-  return {
-    id: createId(),
-    type: 'camera',
-    projection,
-    fov: 60,
-    near: 0.1,
-    far: 2000,
-    frustumSize: 10,
-    isMain: false,
-  };
+  return { ...cameraType.create(), projection };
 }
 
 export function createCameraEntity(projection: CameraProjection = 'perspective'): EntityTemplate {

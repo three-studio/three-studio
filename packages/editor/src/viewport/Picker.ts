@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import { SceneBinder, isVisibleInHierarchy } from '@three-studio/runtime';
 import { Raycaster, Vector2, Vector3, type Camera, type Object3D } from 'three/webgpu';
 
@@ -22,7 +23,7 @@ export class Picker {
    */
   constructor(
     private readonly binder: SceneBinder,
-    private readonly pickable: (entityId: string) => boolean = () => true,
+    private readonly pickable: (entityId: EntityId) => boolean = () => true,
     private readonly overlay: Object3D | null = null,
   ) {}
 
@@ -35,7 +36,7 @@ export class Picker {
    * @param y Client-space pointer y.
    * @param rect Bounding rect of the canvas the pointer is over.
    */
-  pick(x: number, y: number, rect: DOMRect, camera: Camera): string | undefined {
+  pick(x: number, y: number, rect: DOMRect, camera: Camera): EntityId | undefined {
     this.aim(x, y, rect, camera);
 
     const marked = this.pickOverlay();
@@ -83,7 +84,7 @@ export class Picker {
    * everything. Sorted with the scene instead, a wall in front of a light would
    * leave an icon that plainly says "here I am" and refuses the click.
    */
-  private pickOverlay(): string | undefined {
+  private pickOverlay(): EntityId | undefined {
     const overlay = this.overlay;
     if (overlay === null) return undefined;
 

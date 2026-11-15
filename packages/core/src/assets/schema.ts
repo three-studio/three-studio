@@ -1,16 +1,10 @@
-import type { PrefabDoc } from '../scene/prefab';
 import type { PhysicsMaterialDef } from '../scene/physicsMaterial';
+import type { AssetId, SceneId } from '../ids';
 import { ASSETS_DIR, type PhysicsSettings, type RenderingSettings } from '../project/schema';
 import type { MaterialDef } from '../scene/schema';
-export type AssetKind =
-  | 'model'
-  | 'texture'
-  | 'material'
-  | 'physicsMaterial'
-  | 'prefab'
-  | 'shader'
-  | 'audio'
-  | 'script';
+import type { AssetKind } from './kind';
+
+export type { AssetKind } from './kind';
 
 export const MATERIAL_ASSET_VERSION = 1;
 
@@ -93,7 +87,7 @@ export const BUILD_LAYOUT = {
 
 /** One scene a build ships. */
 export interface BuildScene {
-  id: string;
+  id: SceneId;
   /**
    * What the author called it: what a script may name it by, and what
    * `scenes.current` answers in the build as it does in Play. An alias, never
@@ -145,7 +139,7 @@ export interface BuildManifest {
    * Id of the scene shown while another loads, or `null`. It ships with the
    * build whether the profile lists it or not.
    */
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   /** Asset id → path, so nothing in a scene is a file name. */
   assets: Record<string, string>;
   /**
@@ -162,8 +156,13 @@ export interface BuildManifest {
   /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
    * engine sees the scene.
+   *
+   * Each one is the JSON of its document, as a file holds it. A document keeps
+   * its entities in a Map, which a manifest cannot say, so a declaration of
+   * `PrefabDoc` here would claim a record to be one: the player reads each
+   * through `prefabsFromJson`.
    */
-  prefabs: Record<string, PrefabDoc>;
+  prefabs: Readonly<Record<string, unknown>>;
   /**
    * Images whose file name does not say how they store light.
    *
@@ -448,7 +447,7 @@ export type AssetSettings =
  */
 export interface AssetMeta {
   version: number;
-  id: string;
+  id: AssetId;
   kind: AssetKind;
   importedAt: number;
   /** SHA-256 of the file at import, for duplicate detection. */
@@ -458,7 +457,7 @@ export interface AssetMeta {
 
 /** An asset as the editor sees it: its sidecar plus facts about the file. */
 export interface AssetEntry {
-  id: string;
+  id: AssetId;
   /** File name without extension. */
   name: string;
   kind: AssetKind;
@@ -603,7 +602,7 @@ export function isTslMaterial(fileName: string): boolean {
  * for one is not a wrong image but a broken one — and a broken tile reads as a
  * failed import rather than as a file the editor simply cannot draw small.
  *
- * An allow list rather than a deny list: a format added to `ASSET_KIND_INFO`
+ * An allow list rather than a deny list: a format an importer claims
  * because some loader handles it is not thereby something an `<img>` handles,
  * and the failure of guessing the other way round is silent.
  *

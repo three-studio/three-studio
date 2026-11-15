@@ -1,21 +1,11 @@
-import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
-import { materialAssets } from '../components/materialAssets';
-import { COMPONENT_TYPES, type ComponentHost } from '../scene/components';
-import type { ComponentDoc, ComponentType, EnvironmentDef, MaterialDef, SceneDoc } from '../scene/schema';
+import { componentAssets, componentCandidates, componentEntities } from '../components';
+import { environmentAssets } from '../scene/environment';
+import { materialAssets } from '../scene/material';
+import { isAssetId, type AssetId, type EntityId } from '../ids';
+import type { CoreRegistries } from '../registries';
+import { componentsOfType, type ComponentHost } from '../scene/components';
+import type { ComponentDoc, ComponentType, MaterialDef, SceneDoc } from '../scene/schema';
 import type { PrefabDoc } from '../scene/prefab';
-
-/**
- * Every asset id the environment points at.
- *
- * Here rather than in the component registry because the environment is not a
- * component — it is a property of the scene, and `eachComponent` will never
- * reach it. Both walks below call this for that exact reason: the sky was
- * invisible to them, so an exported build shipped without it, the loading bar
- * did not count it, and deleting it announced that nothing used it.
- */
-export function environmentAssets(environment: EnvironmentDef): readonly (string | null)[] {
-  return [environment.backgroundTexture, environment.environmentTexture];
-}
 
 /**
  * Who uses an asset.
@@ -28,11 +18,11 @@ export function environmentAssets(environment: EnvironmentDef): readonly (string
  */
 export interface AssetUsage {
   /** Entities in the scene, by id. */
-  entities: string[];
+  entities: EntityId[];
   /** Material assets whose texture slots name it. */
-  materials: string[];
+  materials: AssetId[];
   /** Prefab assets whose contents name it. */
-  prefabs: string[];
+  prefabs: AssetId[];
   /**
    * The scene's own environment names it, as the background or as the light
    * that comes off it. Not a list: there is one environment, and it is not
@@ -62,13 +52,13 @@ export function totalUses(usage: AssetUsage): number {
 /**
  * Every asset id a component points at, directly or through its material.
  *
- * Asked of the component's own type since phase 9. This was a `switch` with four
- * branches of which three were identical, and it is the list that has to agree
- * with what the exporter ships: a slot named in one and not the other is either
- * a texture that does not arrive or a delete that claims nothing uses it.
+ * Asked of the component's own type. This was a `switch` with four branches of
+ * which three were identical, and it is the list that has to agree with what
+ * the exporter ships: a slot named in one and not the other is either a texture
+ * that does not arrive or a delete that claims nothing uses it.
  */
-function componentNames(component: ComponentDoc): readonly (string | null)[] {
-  return componentAssets(component);
+function componentNames(registries: CoreRegistries, component: ComponentDoc): readonly (AssetId | null)[] {
+  return componentAssets(registries, component);
 }
 
 /**
@@ -80,29 +70,29 @@ function componentNames(component: ComponentDoc): readonly (string | null)[] {
  * alternative, reading every scene on every delete, is a round trip per file.
  */
 export function findAssetUsage(
-  assetId: string,
+  registries: CoreRegistries,
+  assetId: AssetId,
   scene: SceneDoc,
-  materials: Readonly<Record<string, MaterialDef>>,
-  prefabs: Readonly<Record<string, PrefabDoc>>,
+  materials: ReadonlyMap<AssetId, MaterialDef>,
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>,
 ): AssetUsage {
   const usage: AssetUsage = { entities: [], materials: [], prefabs: [], environment: false };
-  if (assetId === '') return usage;
 
-  const named = new Set<string>();
+  const named = new Set<EntityId>();
   for (const [entityId, component] of eachComponent(scene)) {
-    if (componentNames(component).includes(assetId)) named.add(entityId);
+    if (componentNames(registries, component).includes(assetId)) named.add(entityId);
   }
   usage.entities.push(...named);
 
   usage.environment = environmentAssets(scene.environment).includes(assetId);
 
-  for (const [id, material] of Object.entries(materials)) {
+  for (const [id, material] of materials) {
     if (materialAssets(material).includes(assetId)) usage.materials.push(id);
   }
 
-  for (const [id, prefab] of Object.entries(prefabs)) {
+  for (const [id, prefab] of prefabs) {
     for (const [, component] of eachComponent(prefab)) {
-      if (componentNames(component).includes(assetId)) {
+      if (componentNames(registries, component).includes(assetId)) {
         usage.prefabs.push(id);
         break;
       }
@@ -120,14 +110,10 @@ export function findAssetUsage(
  * and a prefab — which is what these two functions have to guarantee, since one
  * says an asset ships and the other says nothing references it.
  */
-function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> {
-  for (const type of COMPONENT_TYPES) {
-    // The mapped type gives a union of eleven record types when indexed by a
-    // variable, and `Object.values` of a union widens to `unknown`. Every value
-    // in there is a `ComponentDoc` by construction of the table.
-    const table = host.components[type] as Record<string, Record<string, ComponentDoc>>;
-    for (const [entityId, held] of Object.entries(table)) {
-      for (const component of Object.values(held)) yield [entityId, component];
+function* eachComponent(host: ComponentHost): Generator<[EntityId, ComponentDoc]> {
+  for (const table of host.components.values()) {
+    for (const [entityId, held] of table) {
+      for (const component of held.values()) yield [entityId, component];
     }
   }
 }
@@ -140,11 +126,13 @@ function* eachComponent(host: ComponentHost): Generator<[string, ComponentDoc]> 
  * say which assets one names, and the walks above never visit them. An export
  * cannot ship what they need, and says so rather than shipping a scene that
  * works in the editor that has the plugin and nowhere else.
+ *
+ * A type whose every component went with its entity is no longer held, though
+ * its emptied table stays.
  */
-export function unknownComponentTypes(host: ComponentHost): string[] {
-  const known = new Set<string>(COMPONENT_TYPES);
-  return Object.entries(host.components as Record<string, Record<string, unknown>>)
-    .filter(([type, table]) => !known.has(type) && Object.keys(table).length > 0)
+export function unknownComponentTypes(host: Required<ComponentHost>): string[] {
+  return [...host.unknownComponents]
+    .filter(([, { components }]) => components.size > 0)
     .map(([type]) => type)
     .sort();
 }
@@ -152,8 +140,8 @@ export function unknownComponentTypes(host: ComponentHost): string[] {
 /** An id a document names that nothing in the project answers to. */
 export interface BrokenReference {
   /** The entity whose component names it; `null` for the scene's environment. */
-  entityId: string | null;
-  assetId: string;
+  entityId: EntityId | null;
+  assetId: AssetId;
 }
 
 /**
@@ -176,17 +164,18 @@ export interface BrokenReference {
  * what the hierarchy shows and therefore what it can mark.
  */
 export function findBrokenReferences(
+  registries: CoreRegistries,
   scene: SceneDoc,
-  known: ReadonlySet<string>,
+  known: ReadonlySet<AssetId>,
 ): BrokenReference[] {
   const broken: BrokenReference[] = [];
   const seen = new Set<string>();
 
-  const note = (entityId: string | null, assetId: string | null): void => {
-    // `''` is a slot the author has not filled, which is not the same thing as
-    // one pointing at something gone: an empty Texture field is how a material
-    // says it has no normal map.
-    if (assetId === null || assetId === '' || known.has(assetId)) return;
+  const note = (entityId: EntityId | null, assetId: AssetId | null): void => {
+    // `null` is a slot the author has not filled, which is not the same thing
+    // as one pointing at something gone: an empty Texture field is how a
+    // material says it has no normal map.
+    if (assetId === null || known.has(assetId)) return;
 
     // One entity can name the same missing id from several slots — a material
     // reusing one texture — and that is one broken reference, not four.
@@ -197,7 +186,7 @@ export function findBrokenReferences(
   };
 
   for (const [entityId, component] of eachComponent(scene)) {
-    for (const assetId of componentNames(component)) note(entityId, assetId);
+    for (const assetId of componentNames(registries, component)) note(entityId, assetId);
   }
 
   // Not a component, so the walk cannot reach it — the same blind spot that
@@ -213,14 +202,17 @@ export function findBrokenReferences(
  *
  * Beside `findBrokenReferences`, over the same walk, for the same reason: a
  * reference that answers to nothing must be seen while it is edited, not at
- * Play. `null` and `''` are empty slots, as an asset's are. Give it the
+ * Play. `null` is an empty slot, as an asset's is. Give it the
  * expanded scene to reach what prefab instances place.
  */
-export function findMissingEntities(scene: SceneDoc): { entityId: string; type: ComponentType }[] {
-  const missing: { entityId: string; type: ComponentType }[] = [];
+export function findMissingEntities(
+  registries: CoreRegistries,
+  scene: SceneDoc,
+): { entityId: EntityId; type: ComponentType }[] {
+  const missing: { entityId: EntityId; type: ComponentType }[] = [];
   for (const [entityId, component] of eachComponent(scene)) {
-    const gone = componentEntities(component).some(
-      (id) => id !== null && id !== '' && !Object.hasOwn(scene.entities, id),
+    const gone = componentEntities(registries, component).some(
+      (id) => id !== null && !scene.entities.has(id),
     );
     if (gone) missing.push({ entityId, type: component.type });
   }
@@ -238,31 +230,38 @@ export function findMissingEntities(scene: SceneDoc): { entityId: string; type: 
  * arrives with a model and four textures behind it.
  */
 export function collectSceneAssets(
+  registries: CoreRegistries,
   scene: SceneDoc,
-  materials: Readonly<Record<string, MaterialDef>>,
-  prefabs: Readonly<Record<string, PrefabDoc>>,
+  materials: ReadonlyMap<AssetId, MaterialDef>,
+  prefabs: ReadonlyMap<AssetId, PrefabDoc>,
   /**
    * Every asset id the project holds. Given, the strings a component may hold
    * an asset in — a script's properties — count where one of these answers to
-   * them; see `ComponentDefinition.assetCandidates`. Left out, as a loading bar
+   * them; see `ComponentDefinition.candidates`. Left out, as a loading bar
    * does, only the slots that say they hold an asset are read.
    */
-  knownAssets?: ReadonlySet<string>,
-): string[] {
-  const ids = new Set<string>();
-  const seenPrefabs = new Set<string>();
+  knownAssets?: ReadonlySet<AssetId>,
+): AssetId[] {
+  const ids = new Set<AssetId>();
+  const seenPrefabs = new Set<AssetId>();
 
   const addComponent = (component: ComponentDoc): void => {
+    // A candidate is any string a script holds, so it is checked as the id it
+    // would have to be before the project is asked whether it answers to it.
     const candidates =
       knownAssets === undefined
         ? []
-        : componentAssetCandidates(component).filter((id) => knownAssets.has(id));
-    for (const id of [...componentNames(component), ...candidates]) {
-      if (id === null || id === '') continue;
+        : componentCandidates(registries, component).flatMap((text) =>
+            isAssetId(text) && knownAssets.has(text) ? [text] : [],
+          );
+    for (const id of [...componentNames(registries, component), ...candidates]) {
+      if (id === null) continue;
       ids.add(id);
 
       // A linked material's own textures: nothing else in the scene names them.
-      const material = materials[id];
+      // `''` is skipped though the type says `null`: `conform` lets any string
+      // through a field whose model is `null`, so a file can hold one.
+      const material = materials.get(id);
       if (material) {
         for (const texture of materialAssets(material)) {
           if (texture !== null && texture !== '') ids.add(texture);
@@ -271,7 +270,7 @@ export function collectSceneAssets(
 
       // A prefab that places other prefabs is followed too; `seenPrefabs`
       // stops one that contains itself from looping forever.
-      const prefab = prefabs[id];
+      const prefab = prefabs.get(id);
       if (prefab && !seenPrefabs.has(id)) {
         seenPrefabs.add(id);
         for (const [, inner] of eachComponent(prefab)) addComponent(inner);
@@ -286,7 +285,7 @@ export function collectSceneAssets(
   // megabytes where a prop is kilobytes — which makes it the one asset a loading
   // bar most needs to be counting, and the one an export most obviously misses.
   for (const id of environmentAssets(scene.environment)) {
-    if (id !== null && id !== '') ids.add(id);
+    if (id !== null) ids.add(id);
   }
 
   return [...ids];
@@ -299,10 +298,10 @@ export function collectSceneAssets(
  * "can I delete this" but "how many objects does editing this touch", which is
  * what makes an Apply safe to press.
  */
-export function findPrefabInstances(assetId: string, scene: SceneDoc): string[] {
-  return Object.entries(scene.components.prefabInstance)
+export function findPrefabInstances(assetId: AssetId | null, scene: SceneDoc): EntityId[] {
+  return [...componentsOfType(scene, 'prefabInstance')]
     .filter(([, held]) =>
-      Object.values(held).some((component) => component.assetId === assetId),
+      [...held.values()].some((component) => component.type === 'prefabInstance' && component.assetId === assetId),
     )
     .map(([entityId]) => entityId);
 }

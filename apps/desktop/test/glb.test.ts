@@ -85,7 +85,7 @@ const options = (
 });
 
 /** Stands in for the scaler: shorter bytes, so every offset after it moves. */
-const shrink = (bytes: Buffer, mimeType: string): Buffer | null =>
+const shrink = (_bytes: Buffer, mimeType: string): Buffer | null =>
   mimeType === 'image/jpeg' ? Buffer.from('SM') : null;
 
 describe('reading and writing the container', () => {
@@ -728,8 +728,8 @@ describe('compressing the geometry', () => {
      * length. The encoder would be told a smaller count and would describe the
      * wrong bytes.
      *
-     * The reference model does this 44 times over: T-002's own layout left 46
-     * bytes of padding across its index accessors.
+     * The reference model does this 44 times over: the layout before this one
+     * left 46 bytes of padding across its index accessors.
      */
     const runs = [0, 1, 2, 2, 1, 3, 3, 1, 0, 1, 2, 3];
     const index = Buffer.alloc(runs.length * 4);
@@ -959,7 +959,7 @@ describe('quantising the positions', () => {
   it('gives two nodes carrying one mesh the same wrapper', () => {
     const source = placed(CORNERS);
     source.json.nodes!.push({ mesh: 0, translation: [100, 0, 0] });
-    source.json.scenes = [{ nodes: [0, 1] }];
+    source.json['scenes'] = [{ nodes: [0, 1] }];
     const rewritten = rewriteGlb(source, shortening);
     const nodes = rewritten?.json.nodes ?? [];
 
@@ -1004,7 +1004,7 @@ describe('quantising the positions', () => {
     // wrapper above it would do nothing and the model would be drawn at the
     // size of a unit cube.
     const source = placed(CORNERS, { skin: 0 });
-    source.json.skins = [{ joints: [0] }];
+    source.json['skins'] = [{ joints: [0] }];
 
     expect(rewriteGlb(source, shortening)).toBeNull();
   });

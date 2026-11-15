@@ -1,4 +1,4 @@
-import { BUILD_LAYOUT } from '@three-studio/core';
+import { BUILD_LAYOUT, type CoreRegistries } from '@three-studio/core';
 import { AssetError } from '../../assetFiles';
 import { buildScripts } from '../../scripts';
 import { digestOf, type BuildPlan } from '../buildPlan';
@@ -20,9 +20,13 @@ export interface PlannedScripts {
  * could be served from a visitor's cache beside a newer manifest, registering
  * behaviours the scenes no longer had.
  */
-export async function planScripts(plan: BuildPlan, projectPath: string): Promise<PlannedScripts> {
+export async function planScripts(
+  registries: CoreRegistries,
+  plan: BuildPlan,
+  projectPath: string,
+): Promise<PlannedScripts> {
   // Compiled for strangers: no source map, and no path from the author's disk.
-  const scripts = await buildScripts(projectPath, 'export');
+  const scripts = await buildScripts(registries, projectPath, 'export');
   if (scripts.errors.length > 0) {
     throw new AssetError(`Scripts did not compile:\n${scripts.errors.join('\n')}`);
   }

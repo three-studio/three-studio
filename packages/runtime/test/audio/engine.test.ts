@@ -1,3 +1,4 @@
+import { fixedId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { AudioEngine } from '../../src/audio/AudioEngine';
 import type { AudioContextLike } from '../../src/audio/AudioContextLike';
@@ -16,6 +17,9 @@ import { flush, rig } from './rig';
 type RealContextFits = AudioContext extends AudioContextLike ? true : never;
 const realContextFits: RealContextFits = true;
 
+const STEP = fixedId('asset', 'step');
+const GONE = fixedId('asset', 'gone');
+
 describe('AudioContextLike', () => {
   it('is satisfied by the browser`s own AudioContext', () => {
     expect(realContextFits).toBe(true);
@@ -25,7 +29,7 @@ describe('AudioContextLike', () => {
 describe('AudioEngine', () => {
   it('refuses a source with no clip, quietly', async () => {
     const { engine, warnings } = rig();
-    const voice = engine.play({ assetId: '' });
+    const voice = engine.play({ assetId: null });
     await flush();
 
     expect(voice.state).toBe('failed');
@@ -37,7 +41,7 @@ describe('AudioEngine', () => {
 
   it('says so once when the asset is not in the project', async () => {
     const { engine, warnings } = rig();
-    const voice = engine.play({ assetId: 'gone' });
+    const voice = engine.play({ assetId: GONE });
     await flush();
 
     expect(voice.state).toBe('failed');
@@ -48,7 +52,7 @@ describe('AudioEngine', () => {
   it('tells a failed voice`s listeners it is over, rather than leaving them waiting', async () => {
     const { engine } = rig();
     const seen: string[] = [];
-    const voice = engine.play({ assetId: 'gone' });
+    const voice = engine.play({ assetId: GONE });
     voice.on('ended', () => seen.push('ended'));
     await flush();
 
@@ -134,20 +138,20 @@ describe('AudioEngine', () => {
 
   it('stops everything it owns when it is disposed', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    engine.play({ assetId: 'step' });
+    engine.play({ assetId: STEP });
     await flush();
     expect(engine.voices).toHaveLength(1);
 
     engine.dispose();
     expect(engine.voices).toHaveLength(0);
-    expect(engine.play({ assetId: 'step' }).state).toBe('failed');
+    expect(engine.play({ assetId: STEP }).state).toBe('failed');
   });
 });
 
 describe('the voice ceiling', () => {
   it('admits everything under the ceiling', async () => {
     const { engine } = rig({ step: { duration: 10 } }, { maxVoices: 3 });
-    for (let i = 0; i < 3; i++) engine.play({ assetId: 'step' });
+    for (let i = 0; i < 3; i++) engine.play({ assetId: STEP });
     await flush();
 
     expect(engine.voices).toHaveLength(3);
@@ -155,11 +159,11 @@ describe('the voice ceiling', () => {
 
   it('steals the least important voice when the ceiling is reached', async () => {
     const { engine } = rig({ step: { duration: 10 } }, { maxVoices: 2 });
-    const important = engine.play({ assetId: 'step', priority: 0 });
-    const throwaway = engine.play({ assetId: 'step', priority: 200 });
+    const important = engine.play({ assetId: STEP, priority: 0 });
+    const throwaway = engine.play({ assetId: STEP, priority: 200 });
     await flush();
 
-    const newcomer = engine.play({ assetId: 'step', priority: 10 });
+    const newcomer = engine.play({ assetId: STEP, priority: 10 });
     await flush();
 
     expect(throwaway.state).toBe('stopped');
@@ -170,11 +174,11 @@ describe('the voice ceiling', () => {
 
   it('refuses a newcomer that matters less than everything already playing', async () => {
     const { engine } = rig({ step: { duration: 10 } }, { maxVoices: 2 });
-    engine.play({ assetId: 'step', priority: 0 });
-    engine.play({ assetId: 'step', priority: 0 });
+    engine.play({ assetId: STEP, priority: 0 });
+    engine.play({ assetId: STEP, priority: 0 });
     await flush();
 
-    const refused = engine.play({ assetId: 'step', priority: 100 });
+    const refused = engine.play({ assetId: STEP, priority: 100 });
     await flush();
 
     expect(refused.state).toBe('failed');
@@ -183,13 +187,13 @@ describe('the voice ceiling', () => {
 
   it('takes the oldest of two voices that matter the same', async () => {
     const { context, engine } = rig({ step: { duration: 10 } }, { maxVoices: 2 });
-    const first = engine.play({ assetId: 'step', priority: 50 });
+    const first = engine.play({ assetId: STEP, priority: 50 });
     await flush();
     context.advance(1);
-    const second = engine.play({ assetId: 'step', priority: 50 });
+    const second = engine.play({ assetId: STEP, priority: 50 });
     await flush();
 
-    engine.play({ assetId: 'step', priority: 50 });
+    engine.play({ assetId: STEP, priority: 50 });
     await flush();
 
     expect(first.state).toBe('stopped');
@@ -198,11 +202,11 @@ describe('the voice ceiling', () => {
 
   it('costs nothing at all when it refuses', async () => {
     const { context, engine } = rig({ step: { duration: 10 } }, { maxVoices: 1 });
-    engine.play({ assetId: 'step', priority: 0 });
+    engine.play({ assetId: STEP, priority: 0 });
     await flush();
     const sourcesBefore = context.sources.length;
 
-    engine.play({ assetId: 'step', priority: 99 });
+    engine.play({ assetId: STEP, priority: 99 });
     await flush();
 
     expect(context.sources).toHaveLength(sourcesBefore);

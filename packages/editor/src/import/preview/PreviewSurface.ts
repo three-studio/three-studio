@@ -1,4 +1,5 @@
 import type { AssetKind, AssetSettings } from '@three-studio/core';
+import type { EditorRegistries } from '../../registries';
 import type { AssetFacts } from './facts';
 
 /**
@@ -28,11 +29,17 @@ export interface PreviewSurface {
  * Chosen lazily so the cost of each lands only on the kind that needs it: the
  * model preview pulls in a renderer and the loaders, which is not something a
  * dialog full of PNGs should pay for.
+ *
+ * `registries` for the model preview, which may be the first to need the
+ * window's viewport and so the one that makes it.
  */
-export async function previewFor(kind: AssetKind | null): Promise<PreviewSurface | null> {
+export async function previewFor(
+  registries: EditorRegistries,
+  kind: AssetKind | null,
+): Promise<PreviewSurface | null> {
   switch (kind) {
     case 'model':
-      return new (await import('./ModelPreview')).ModelPreview();
+      return new (await import('./ModelPreview')).ModelPreview(registries);
     case 'texture':
       return new (await import('./ImagePreview')).ImagePreview();
     case 'audio':

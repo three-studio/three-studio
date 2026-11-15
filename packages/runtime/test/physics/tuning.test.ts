@@ -3,8 +3,10 @@ import {
   createDefaultLayer,
   createJointMotion,
   createPhysicsMaterial,
+  createLight,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   type CollisionLayer,
   type EntityTemplate,
   type JointLimits,
@@ -15,17 +17,18 @@ import {
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { registerBehaviour } from '../../src/behaviour/Behaviour';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { JointHandle } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { builtInRegistries } from '../registries';
 import {
   block,
   colliderOf,
   componentOf,
   ground,
-  physicsRig,
+  physicsRigOn,
   player,
   standInForTheBrowser,
   takeTheBrowserBack,
@@ -51,16 +54,23 @@ type Hook = 'onCollisionEnter' | 'onCollisionExit' | 'onTriggerEnter' | 'onTrigg
 /** What each entity's collider heard, in order, by entity id. */
 const heard = new Map<string, [Hook, string][]>();
 
-// An Ear on every Collider, as F8's events file has.
-registerBehaviour('collider', ({ entity }) => {
-  const record = (hook: Hook, other: string) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), [hook, other]]);
-  return {
-    onCollisionEnter: ({ other }) => record('onCollisionEnter', other),
-    onCollisionExit: (other) => record('onCollisionExit', other),
-    onTriggerEnter: (other) => record('onTriggerEnter', other),
-    onTriggerExit: (other) => record('onTriggerExit', other),
-  };
+// An Ear on every Collider, as `events.test.ts` has, in registries of this
+// file's own.
+const registries = builtInRegistries();
+registries.behaviours.register({
+  id: 'collider',
+  create: ({ entity }) => {
+    const record = (hook: Hook, other: string) =>
+      heard.set(entity.id, [...(heard.get(entity.id) ?? []), [hook, other]]);
+    return {
+      onCollisionEnter: ({ other }) => record('onCollisionEnter', other),
+      onCollisionExit: (other) => record('onCollisionExit', other),
+      onTriggerEnter: (other) => record('onTriggerEnter', other),
+      onTriggerExit: (other) => record('onTriggerExit', other),
+    };
+  },
 });
+const physicsRig = physicsRigOn(registries);
 
 beforeEach(() => heard.clear());
 
@@ -86,7 +96,7 @@ function meshSlope(): EntityTemplate {
 
 /** A box that cannot turn, placed to land on the slope. */
 function boxOnSlope(z: number): EntityTemplate {
-  return withBody('box', [0, 1, z], { lockRotation: [true, true, true] });
+  return withBody('box', [0, 1, z], { lockRotation: { x: true, y: true, z: true } });
 }
 
 /** A hinge on this axis, its limits as given and otherwise as made. */
@@ -103,9 +113,9 @@ const spring = (stiffness: number, damping: number): JointMotion => ({
 const degrees = (angle: number) => (angle * Math.PI) / 180;
 
 /**
- * F12's pendulum: a 1 m box hinged to the world on z at (0, 2, 0), level to
- * start with. Slowed by a linear damping, so that it comes to hang: an angular
- * one barely slows a body turning about a pivot rather than about itself.
+ * `joints.test.ts`'s pendulum: a 1 m box hinged to the world on z at (0, 2, 0),
+ * level to start with. Slowed by a linear damping, so that it comes to hang: an
+ * angular one barely slows a body turning about a pivot rather than about itself.
  */
 function pendulum(): EntityTemplate {
   return withJoint(withBody('box', [1, 2, 0], { interpolate: false, linearDamping: 2 }), {
@@ -117,6 +127,7 @@ function pendulum(): EntityTemplate {
 /** The template's joint, as a behaviour reaches it. */
 const jointOf = (rig: PhysicsRig, template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id) ?? null;
 
+const GRIP = fixedId('asset', 'grip');
 const grip: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' };
 const ice: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' };
 
@@ -209,7 +220,7 @@ describe('a body tuned while running', () => {
     const rig = await physicsRig([ball]);
     rig.run(0.5);
 
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: [false, true, false] });
+    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: { x: false, y: true, z: false } });
     const held = rig.solved(ball.entity.id).position.y;
     rig.run(1);
 
@@ -285,12 +296,12 @@ describe('a collider tuned while running', () => {
 
   it('a physics material tuned while running changes every collider that links it', async () => {
     const boxes = [boxOnSlope(1.5), boxOnSlope(-1.5)];
-    for (const box of boxes) colliderOf(box).materialId = 'grip';
-    const rig = await physicsRig([slope(), ...boxes], undefined, { grip });
+    for (const box of boxes) colliderOf(box).materialId = GRIP;
+    const rig = await physicsRig([slope(), ...boxes], undefined, new Map([[GRIP, grip]]));
     rig.run(2);
     const rested = boxes.map((box) => rig.solved(box.entity.id).position);
 
-    rig.engine.tunePhysicsMaterial('grip', ice);
+    rig.engine.tuneAsset(GRIP, ice);
     rig.run(1);
 
     boxes.forEach((box, i) => {
@@ -402,7 +413,7 @@ describe('a joint tuned while running', () => {
     const hook = block([0, 3, 0], [0.2, 0.2, 0.2]);
     const box = withJoint(withBody('box', [0, 2, 0], { interpolate: false, linearDamping: 2 }), {
       anchor: [0, 1, 0],
-      connectedEntity: 'gone',
+      connectedEntity: fixedId('entity', 'gone'),
       motion: hinge([0, 0, 1]),
     });
     const rig = await physicsRig([hook, box]);
@@ -456,7 +467,8 @@ describe('a joint tuned while running', () => {
   });
 
   it('a hinge tuned to a slider slides along its axis', async () => {
-    // F12's slider, built as a hinge about the box's own centre: it holds still.
+    // `joints.test.ts`'s slider, built as a hinge about the box's own centre: it
+    // holds still.
     const rail = block([0, 3, 0], [0.5, 0.5, 0.5]);
     rail.entity.transform.rotation = [degrees(20), 0, 0];
     const box = withJoint(withBody('box', [2, 3, 1], { interpolate: false }), {
@@ -490,9 +502,9 @@ describe('a tune the world cannot take', () => {
 
     // A collider whose id the entity does not carry; a Rigid Body on level
     // geometry, which has none; an entity the scene does not have.
-    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: 'gone', isSensor: true });
+    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: fixedId('component', 'gone'), isSensor: true });
     rig.engine.tune(floor.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'dynamic' });
-    rig.engine.tune('nobody', { ...colliderOf(floor), isSensor: true });
+    rig.engine.tune(fixedId('entity', 'nobody'), { ...colliderOf(floor), isSensor: true });
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);
@@ -500,7 +512,8 @@ describe('a tune the world cannot take', () => {
 
     const off = await Engine.create({
       scene: sceneWith([ground(), ball]),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,
@@ -508,7 +521,41 @@ describe('a tune the world cannot take', () => {
     });
     onTestFinished(() => off.dispose());
     off.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
-    off.tunePhysicsMaterial('grip', ice);
+    off.tuneAsset(GRIP, ice);
     expect(off.physicsDebug()).toBeNull();
+  });
+
+  it('a component it builds nothing from, and an asset it was not built with, change nothing and throw nothing', async () => {
+    const floor = ground();
+    const box = boxOnSlope(0);
+    colliderOf(box).materialId = GRIP;
+    const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
+    rig.run(2);
+    const rested = rig.solved(box.entity.id).position;
+
+    rig.engine.tune(floor.entity.id, createLight('point'));
+    rig.engine.tuneAsset(fixedId('asset', 'stranger'), ice);
+    rig.run(1);
+
+    expect(rig.solved(box.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);
+  });
+
+  it('an asset’s values it cannot use are read as the factory’s, as a build reads them', async () => {
+    /** Where a box on the slope, gripping by GRIP, is a second after GRIP is tuned to `values`. */
+    const after = async (values: object): Promise<Vector3> => {
+      const box = boxOnSlope(0);
+      colliderOf(box).materialId = GRIP;
+      const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
+      rig.run(1);
+      rig.engine.tuneAsset(GRIP, values);
+      rig.run(1);
+      return rig.solved(box.entity.id).position;
+    };
+
+    // The factory's 0.7, averaged with the slope's 0.2, holds nothing on a 30°
+    // slope (tan 30° is 0.58), where GRIP's 1 at its max held the box.
+    const unusable = await after({ friction: 'none', frictionCombine: 'sideways' });
+    expect(unusable.distanceTo(await after(createPhysicsMaterial()))).toBeLessThan(1e-6);
+    expect(unusable.distanceTo(await after(grip))).toBeGreaterThan(0.5);
   });
 });

@@ -83,7 +83,7 @@ export class LauncherScene {
    * ring pattern is legible in one band across the middle. Without convergence
    * every block is the same size wherever it stands, the rings stay circular
    * from edge to edge, and the whole thing reads as a drawing rather than as a
-   * photograph — which is the "classe" the brief asked for.
+   * photograph, which is the look the launcher was designed to have.
    */
   private readonly camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   private readonly root = new Group();

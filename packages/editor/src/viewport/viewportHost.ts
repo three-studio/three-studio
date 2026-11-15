@@ -1,3 +1,4 @@
+import type { EditorRegistries } from '../registries';
 import type { EditorViewport } from './EditorViewport';
 import { EditorViewport as Viewport } from './EditorViewport';
 
@@ -11,15 +12,14 @@ let current: EditorViewport | null = null;
  * of the editor wants it — the Viewport, the import dialog's preview, the
  * commands that place or frame — so the instance is memoised here rather than
  * owned by whichever React component happened to mount first.
+ *
+ * Every caller hands over the window's registries, since any of them may be
+ * the one that creates it; there is one such object per window, so the first
+ * caller's is everyone's.
  */
-export function acquireViewport(): Promise<EditorViewport> {
-  pending ??= Viewport.create().then((viewport) => {
+export function acquireViewport(registries: EditorRegistries): Promise<EditorViewport> {
+  pending ??= Viewport.create(registries).then((viewport) => {
     current = viewport;
-    // Dev-only handle: the scene graph is otherwise unreachable from devtools
-    // and from the headless smoke check.
-    if (import.meta.env.DEV) {
-      (globalThis as unknown as Record<string, unknown>)['__studioViewport'] = viewport;
-    }
     return viewport;
   });
   return pending;

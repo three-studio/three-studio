@@ -1,5 +1,12 @@
 import { posix } from 'node:path';
-import type { AssetEntry, BuildManifest, LaunchSnapshot, SceneEntry } from '@three-studio/core';
+import type {
+  AssetEntry,
+  BuildManifest,
+  CoreRegistries,
+  LaunchSnapshot,
+  SceneEntry,
+  SceneId,
+} from '@three-studio/core';
 import { assembleManifest } from '../build/manifest';
 
 /** What a launch is made of: the editor's memory, and what was read from disk for it. */
@@ -38,7 +45,7 @@ export function launchAssetPath(entry: AssetEntry): string {
  * served `no-store` and its entry is not a file at all, so a content name would
  * buy nothing here.
  */
-export function launchScenePath(sceneId: string): string {
+export function launchScenePath(sceneId: SceneId): string {
   return `scenes/${sceneId}.json`;
 }
 
@@ -49,10 +56,10 @@ export function launchScenePath(sceneId: string): string {
  * build, the project's name — and this decides what the manifest lists. What
  * the manifest *says* about it is `assembleManifest`'s, as for an export.
  */
-export function launchManifest(contents: LaunchContents): BuildManifest {
+export function launchManifest(registries: CoreRegistries, contents: LaunchContents): BuildManifest {
   const { snapshot, scenes, assets, title, scripts } = contents;
   const { entry } = snapshot;
-  return assembleManifest({
+  return assembleManifest(registries, {
     title,
     rendering: snapshot.rendering,
     physics: snapshot.physics,

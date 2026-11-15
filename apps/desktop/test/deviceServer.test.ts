@@ -11,15 +11,21 @@ import {
   ASSETS_DIR,
   DEVICE_BODY_LIMIT,
   LAUNCH_SNAPSHOT_VERSION,
-  deserializeScene,
+  conformLaunchSnapshot,
+  decodeScene,
+  encodeLaunchSnapshot,
   type DeviceLogs,
   type DeviceServerStatus,
-  type LaunchSnapshot,
+  type ReceivedLaunch,
+  unwrap,
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DeviceServer } from '../src/main/devices/DeviceServer';
 import { createProject, discoverScenes, readProject } from '../src/main/project';
 import { pngOf } from './png';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The device server, started and stopped for real on loopback: the port it
@@ -115,6 +121,7 @@ function server(
   certificateFile = certificateFileOf(file),
 ): DeviceServer {
   const made = new DeviceServer({
+    registries,
     settingsFile: file,
     certificateFile,
     templateRoots: [templateRoot],
@@ -239,7 +246,7 @@ const launchLine = (id: string | undefined): string => `"type":"launch","launch"
 async function launchOn(
   devices: DeviceServer,
   root: string,
-  launch?: LaunchSnapshot,
+  launch?: ReceivedLaunch,
 ): Promise<DeviceServerStatus> {
   const status = await devices.launch(root, launch ?? (await snapshot(root)));
   if (status === null) throw new Error('the launch was dropped');
@@ -248,7 +255,7 @@ async function launchOn(
 
 async function project(script?: string): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-server-project-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   if (script !== undefined) {
     await mkdir(join(root, ASSETS_DIR, 'scripts'), { recursive: true });
     await writeFile(join(root, ASSETS_DIR, 'scripts', 'Spin.ts'), script, 'utf8');
@@ -256,23 +263,27 @@ async function project(script?: string): Promise<string> {
   return root;
 }
 
-async function snapshot(root: string, exposure = 1): Promise<LaunchSnapshot> {
-  const [entry] = await discoverScenes(root);
+/** The window's scene, as the main process has it once the window has sent it: written, then read back. */
+async function snapshot(root: string, exposure = 1): Promise<ReceivedLaunch> {
+  const [entry] = (await discoverScenes(root)).scenes;
   const { settings } = await readProject(root);
-  return {
-    version: LAUNCH_SNAPSHOT_VERSION,
-    entry: {
-      id: entry!.id,
-      name: entry!.name,
-      scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
-    },
-    materials: {},
-    physicsMaterials: {},
-    prefabs: {},
-    rendering: { ...settings.rendering, exposure },
-    physics: settings.physics,
-    loadingScene: null,
-  };
+  return conformLaunchSnapshot(
+    registries,
+    encodeLaunchSnapshot(registries, {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: {
+        id: entry!.id,
+        name: entry!.name,
+        scene: unwrap(decodeScene(registries, await readFile(join(root, entry!.path), 'utf8')), 'Scene file'),
+      },
+      materials: new Map(),
+      physicsMaterials: new Map(),
+      prefabs: new Map(),
+      rendering: { ...settings.rendering, exposure },
+      physics: settings.physics,
+      loadingScene: null,
+    }),
+  );
 }
 
 describe('a server that is stopped', () => {
@@ -422,7 +433,7 @@ describe('launching', () => {
     const status = await launchOn(devices, root);
 
     expect(status.state).toBe('running');
-    expect(status.launch?.sceneName).toBe((await discoverScenes(root))[0]!.name);
+    expect(status.launch?.sceneName).toBe((await discoverScenes(root)).scenes[0]!.name);
     expect(isPlayer((await get(port, `/${TOKEN}/`)).body)).toBe(true);
   });
 
@@ -1062,6 +1073,7 @@ describe('a device’s lines', () => {
     const file = await settingsFile({ version: 1, port, token: TOKEN, transport: 'http' });
     const handed: DeviceLogs[] = [];
     const devices = new DeviceServer({
+      registries,
       settingsFile: file,
       certificateFile: certificateFileOf(file),
       templateRoots: [await template()],

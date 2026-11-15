@@ -56,8 +56,8 @@ export interface DeviceLinkOptions {
   /** A row changed: a device came, went, or said something new. */
   onChange: () => void;
   /** A device's lines, with its name and browser as they are when the lines arrive. */
-  onLog?: (logs: DeviceLogs) => void;
-  trace?: (line: string) => void;
+  onLog?: ((logs: DeviceLogs) => void) | undefined;
+  trace?: ((line: string) => void) | undefined;
   now?: () => number;
 }
 

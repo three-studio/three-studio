@@ -1,4 +1,4 @@
-import type { AssetSettings, TextureEncoding } from '@three-studio/core';
+import type { AssetId, AssetSettings, TextureEncoding } from '@three-studio/core';
 
 /**
  * Turns an asset id into a URL the loaders can fetch.
@@ -10,7 +10,7 @@ import type { AssetSettings, TextureEncoding } from '@three-studio/core';
  */
 export interface AssetResolver {
   /** `null` when the asset is unknown — a scene referencing a deleted file. */
-  url: (assetId: string) => string | null;
+  url: (assetId: AssetId) => string | null;
   /**
    * How an image stores light, when its name cannot say.
    *
@@ -21,10 +21,10 @@ export interface AssetResolver {
    * find out what it is and once to decode it.
    *
    * Optional so a resolver that does not know can say so by leaving it out;
-   * `ModelCache` falls back to the extension, which is right for everything
+   * `AssetCache` falls back to the extension, which is right for everything
    * except the one format that needs this.
    */
-  encoding?: (assetId: string) => TextureEncoding | null;
+  encoding?: (assetId: AssetId) => TextureEncoding | null;
   /**
    * What the author chose when the file was imported.
    *
@@ -37,7 +37,7 @@ export interface AssetResolver {
    * Optional, like `encoding`: a resolver that has no sidecars to read leaves it
    * out, and every consumer falls back to the format's defaults.
    */
-  settings?: (assetId: string) => AssetSettings | null;
+  settings?: (assetId: AssetId) => AssetSettings | null;
 }
 
 /** Used when no project is open; every lookup misses. */

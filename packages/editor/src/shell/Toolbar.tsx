@@ -1,6 +1,7 @@
 import { ChevronDown, MonitorPlay, Pause, Play, SkipForward, Square } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
-import { commandById } from '../commands/registry';
+import { commandById, currentContext } from '../commands/registry';
+import { useRegistries } from '../registriesContext';
 import { useEditorStore } from '../state/editorStore';
 import { MenuTrigger } from '../ui/Menu';
 import { ToolButton } from '../ui/ToolButton';
@@ -39,6 +40,10 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
   const fullScreen = commandById('playFullScreen');
   const pause = commandById('togglePause');
   const step = commandById('stepFrame');
+  // The words and verdicts of this render; a click reads its own context, as a
+  // gesture is read at the moment it is made.
+  const registries = useRegistries();
+  const context = currentContext(registries);
 
   return (
     <div className="relative flex shrink-0 items-center gap-0.5 bg-surface-0 px-2">
@@ -49,18 +54,18 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
         <div className="pointer-events-auto relative flex items-center gap-0.5">
           {/* One button, and it still picks its own icon — an icon is not
               something the registry carries. What it no longer decides is the
-              word and the gesture: `transport.label()` and `transport.run()`
+              word and the gesture: `transport.label(…)` and `transport.run(…)`
               are the command's, and a palette says the same word. The key
               in its tooltip is the binding table's, the one the menus print:
               Stop says ⇧Esc, and a rebound key moves with it. */}
           <ToolButton
             icon={isStopped ? Play : Square}
-            label={transport.label()}
+            label={transport.label(context)}
             shortcut={shortcutHint(transportId)}
             active={!isStopped}
             activeClassName="bg-play/15 text-play"
             takesNoFocus
-            onClick={() => transport.run()}
+            onClick={() => transport.run(currentContext(registries))}
           />
           {/*
             Three slots, filled differently stopped and running, and always
@@ -74,10 +79,10 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
             <>
               <ToolButton
                 icon={MonitorPlay}
-                label={fullScreen.label()}
+                label={fullScreen.label(context)}
                 shortcut={shortcutHint('playFullScreen')}
                 takesNoFocus
-                onClick={() => fullScreen.run()}
+                onClick={() => fullScreen.run(currentContext(registries))}
               />
               <span aria-hidden className="h-7 w-7" />
             </>
@@ -87,20 +92,20 @@ export function Toolbar({ onResetLayout, menuSlot, statusSlot }: ToolbarProps) {
                   Resume while paused, and stays lit. */}
               <ToolButton
                 icon={Pause}
-                label={pause.label()}
+                label={pause.label(context)}
                 shortcut={shortcutHint('togglePause')}
                 active={playState === 'paused'}
                 takesNoFocus
-                onClick={() => pause.run()}
+                onClick={() => pause.run(currentContext(registries))}
               />
               <ToolButton
                 icon={SkipForward}
-                label={step.label()}
+                label={step.label(context)}
                 shortcut={shortcutHint('stepFrame')}
-                hint={step.can() ? undefined : 'Pause first'}
-                disabled={!step.can()}
+                hint={step.can(context) ? undefined : 'Pause first'}
+                disabled={!step.can(context)}
                 takesNoFocus
-                onClick={() => step.run()}
+                onClick={() => step.run(currentContext(registries))}
               />
             </>
           )}

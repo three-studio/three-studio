@@ -1,28 +1,35 @@
 import {
   ASSET_MANIFEST_VERSION,
   PROJECT_FORMAT_VERSION,
+  assertDefined,
   createBuildProfiles,
-  createComponent,
+  colliderType,
   createEmptyScene,
   createEntity,
   createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
   createRenderingSettings,
+  rigidbodyType,
+  scriptType,
   defaultSettings,
-  deserializeScene,
+  decodeScene,
+  fixedId,
+  modelType,
   serializeScene,
   type ProjectFile,
   type SceneDoc,
   type ScriptComponent,
   type Vec3,
+  unwrap,
 } from '@three-studio/core';
-import { Behaviour, clearScripts, registerScript, type Engine } from '@three-studio/runtime';
+import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, type Engine } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
+import { serveModels, stubImages } from '../../runtime/test/assetFixtures';
 import { addEntityInView, placeDroppedAsset } from '../src/commands/placeEntity';
-import { commandById } from '../src/commands/registry';
+import { commandById, currentContext } from '../src/commands/registry';
 import { reparentSelection } from '../src/commands/sceneCommands';
 import { useAssetStore } from '../src/state/assetStore';
 import { selectDirty, useDocumentStore } from '../src/state/documentStore';
@@ -36,6 +43,9 @@ import { useToastStore } from '../src/state/toastStore';
 import { useViewportStore } from '../src/state/viewportStore';
 import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What pressing Play does, and what Stop undoes — above all when the game never
@@ -44,8 +54,8 @@ import type { Presentation } from '../src/viewport/Presentation';
  * looking at the scene with nothing to say what had happened.
  */
 
-const SCENE_ID = 'window-scene';
-const PREFAB_ID = 'prefab-under-test';
+const SCENE_ID = fixedId('scene', 'window-scene');
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
 
 const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,
@@ -95,6 +105,8 @@ function stubHost(): StubHost {
     renderer: null as unknown as WebGPURenderer,
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
     rendering: createRenderingSettings(),
+    registries: builtInRegistries(),
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     onPlayPressed: () => calls.push('pressed'),
     onPlayStopped: () => calls.push('stopped'),
   };
@@ -146,8 +158,8 @@ beforeEach(() => {
   });
   const root = createMeshEntity('box');
   useAssetStore.setState({
-    physicsMaterials: {},
-    prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
+    physicsMaterials: new Map(),
+    prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
     savePrefab: async () => {},
   });
   useViewportStore.setState({ rendererError: null, playWarnings: [] });
@@ -336,12 +348,12 @@ function takeTheBrowserBack(): void {
 }
 
 // The window answers the one scene a script reads from its file.
-const BOSS = { id: 'boss-scene', name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
-const GO_TO_BOSS = 'script-go-to-boss';
+const BOSS = { id: fixedId('scene', 'boss-scene'), name: 'Boss', path: 'scenes/boss.scene.json', shadowedBy: null };
+const GO_TO_BOSS = fixedId('asset', 'script-go-to-boss');
 
 /** A body nothing can touch: its own problem, which the first scene does not have. */
 function bossScene() {
-  const scene = sceneWith([createEntity('Crate', [createComponent('rigidbody')])]);
+  const scene = sceneWith([createEntity('Crate', [rigidbodyType.create()])]);
   scene.name = 'Boss';
   return scene;
 }
@@ -370,7 +382,7 @@ function withBoss(): string[] {
   beforeAll(() => {
     const readScene = async (path: string) => {
       reads.push(path);
-      return serializeScene(bossScene());
+      return serializeScene(registries, bossScene());
     };
     standInForTheBrowser({ project: { readScene } });
   });
@@ -381,13 +393,13 @@ function withBoss(): string[] {
     useProjectStore.setState({
       scenes: [{ id: SCENE_ID, name: 'Level One', path: 'scenes/level-one.scene.json', shadowedBy: null }, BOSS],
     });
-    // Compiled, with nothing to import: the classes are registered here.
+    // Compiled, with nothing to import: a test puts its classes in the store.
     useScriptStore.setState({ build: async () => true });
     reads.length = 0;
   });
 
   afterEach(() => {
-    clearScripts();
+    useScriptStore.setState({ scripts: NO_SCRIPTS });
     GoToBoss.target = 'Boss';
   });
 
@@ -396,8 +408,8 @@ function withBoss(): string[] {
 
 /** The document becomes one entity whose script moves to Boss from its first frame. */
 function directedToBoss(): void {
-  registerScript(GO_TO_BOSS, GoToBoss);
-  const director: ScriptComponent = { ...createComponent('script'), assetId: GO_TO_BOSS };
+  useScriptStore.setState({ scripts: new Map([[GO_TO_BOSS, GoToBoss]]) });
+  const director: ScriptComponent = { ...scriptType.create(), assetId: GO_TO_BOSS };
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
 
@@ -440,11 +452,12 @@ describe('the problems over the game', () => {
   });
 
   it('plays a collider with the physics material it links, and does not call it missing', async () => {
+    const ICE = fixedId('asset', 'ice');
     const cube = createMeshEntity('box');
     cube.entity.name = 'Cube';
-    cube.components.push({ ...createComponent('collider'), materialId: 'ice' });
+    cube.components.push({ ...colliderType.create(), materialId: ICE });
     useDocumentStore.getState().replaceScene(sceneWith([cube]));
-    useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
+    useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
     watching();
 
     play();
@@ -543,7 +556,12 @@ describe('the id of the scene a running game asked for', () => {
   it('is the entry’s for its name, as the source answers from the entry, with another file of that name first', () => {
     // Two folders under `scenes/` can each hold a file of one name; the source
     // reads the entry for it all the same.
-    const elsewhere = { id: 'elsewhere', name: 'Level One', path: 'scenes/old/level-one.scene.json', shadowedBy: null };
+    const elsewhere = {
+      id: fixedId('scene', 'elsewhere'),
+      name: 'Level One',
+      path: 'scenes/old/level-one.scene.json',
+      shadowedBy: null,
+    };
 
     expect(playSceneId(entry, [elsewhere, LEVEL_ONE, BOSS], 'Level One')).toBe(SCENE_ID);
   });
@@ -707,7 +725,7 @@ describe('the scene the game plays', () => {
    * that disabled the script once immer had frozen it, where the same script
    * works in the exported player.
    */
-  const MOVER = 'script-mover';
+  const MOVER = fixedId('asset', 'script-mover');
   /** What the script saw itself do. */
   const record = { started: false, name: '', frames: 0, offset: [] as number[] };
 
@@ -733,20 +751,19 @@ describe('the scene the game plays', () => {
   afterAll(takeTheBrowserBack);
 
   beforeEach(() => {
-    useScriptStore.setState({ build: async () => true });
-    registerScript(MOVER, Mover);
+    useScriptStore.setState({ build: async () => true, scripts: new Map([[MOVER, Mover]]) });
     Object.assign(record, { started: false, name: '', frames: 0, offset: [] });
   });
 
   afterEach(() => {
-    clearScripts();
+    useScriptStore.setState({ scripts: NO_SCRIPTS });
   });
 
   /** The scene as a file opens it — read, so never produced by immer and not frozen — and a copy of it. */
   function opened(): SceneDoc {
-    const script: ScriptComponent = { ...createComponent('script'), assetId: MOVER, props: { offset: [1, 2, 3] } };
+    const script: ScriptComponent = { ...scriptType.create(), assetId: MOVER, props: { offset: [1, 2, 3] } };
     const scene = sceneWith([createEntity('Mover', [script])]);
-    doc().replaceScene(deserializeScene(serializeScene(scene)));
+    doc().replaceScene(unwrap(decodeScene(registries, serializeScene(registries, scene)), 'Scene file'));
     return structuredClone(doc().scene);
   }
 
@@ -778,15 +795,18 @@ describe('the scene the game plays', () => {
 
   it('is a copy a script can write, even of a document immer has frozen', async () => {
     opened();
-    const [id] = Object.keys(doc().scene.entities);
-    doc().mutate('Move', (draft) => void (draft.entities[id!]!.transform.position[0] = 5));
-    expect(Object.isFrozen(doc().scene.entities[id!])).toBe(true);
+    const id = assertDefined([...doc().scene.entities.keys()][0], 'the mover');
+    doc().mutate(
+      'Move',
+      (draft) => void (assertDefined(draft.entities.get(id), 'the mover').transform.position[0] = 5),
+    );
+    expect(Object.isFrozen(doc().scene.entities.get(id))).toBe(true);
 
     await playThreeFrames();
 
     expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
     expect(useViewportStore.getState().playWarnings.some((warning) => warning.includes('failed in'))).toBe(false);
-    expect(doc().scene.entities[id!]!.name).toBe('Mover');
+    expect(doc().scene.entities.get(id)?.name).toBe('Mover');
   });
 });
 
@@ -809,7 +829,10 @@ describe('an edit tried during Play, then Stop', () => {
     const a = createMeshEntity('box');
     const b = createMeshEntity('sphere');
     doc().replaceScene(sceneWith([a, b]));
-    doc().mutate('Move', (draft) => void (draft.entities[a.entity.id]!.transform.position[0] = 3));
+    doc().mutate(
+      'Move',
+      (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').transform.position[0] = 3),
+    );
     useEditorStore.getState().setSelection([a.entity.id]);
     useAssetStore.setState({
       manifest: {
@@ -826,7 +849,7 @@ describe('an edit tried during Play, then Stop', () => {
             modifiedAt: 0,
             importedAt: 0,
             hash: '',
-            settings: defaultSettings('prefab'),
+            settings: defaultSettings(registries, 'prefab'),
             importedPath: null,
           },
         ],
@@ -837,13 +860,13 @@ describe('an edit tried during Play, then Stop', () => {
     watching();
 
     play();
-    commandById('delete').run();
-    commandById('duplicate').run();
-    commandById('undo').run();
-    doc().mutate('Probe', (draft) => void (draft.entities[a.entity.id]!.name = 'Probed'));
-    addEntityInView(createMeshEntity('box'));
-    placeDroppedAsset(PREFAB_ID, [0, 0, 0]);
-    reparentSelection(Selection.of([b.entity.id], expandedScene().scene), a.entity.id);
+    commandById('delete').run(currentContext(registries));
+    commandById('duplicate').run(currentContext(registries));
+    commandById('undo').run(currentContext(registries));
+    doc().mutate('Probe', (draft) => void (assertDefined(draft.entities.get(a.entity.id), 'the box').name = 'Probed'));
+    addEntityInView(registries, createMeshEntity('box'));
+    placeDroppedAsset(registries, PREFAB_ID, [0, 0, 0]);
+    reparentSelection(Selection.of([b.entity.id], expandedScene(registries).scene), a.entity.id);
     expect(toasts().map((toast) => toast.title)).toEqual(['Stop the game to edit the scene']);
 
     stop();
@@ -858,9 +881,9 @@ describe('an edit tried during Play, then Stop', () => {
     expect(toasts()).toEqual([]);
 
     doc().undo();
-    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(0);
+    expect(doc().scene.entities.get(a.entity.id)?.transform.position[0]).toBe(0);
     doc().redo();
-    expect(doc().scene.entities[a.entity.id]!.transform.position[0]).toBe(3);
+    expect(doc().scene.entities.get(a.entity.id)?.transform.position[0]).toBe(3);
   });
 });
 
@@ -897,15 +920,59 @@ describe('Save during Play', () => {
     watching();
 
     play();
-    commandById('save').run();
+    commandById('save').run(currentContext(registries));
     await until(() => written.length === 1 && !useProjectStore.getState().saving, 'the save');
 
-    expect(written).toEqual([serializeScene(scene)]);
+    expect(written).toEqual([serializeScene(registries, scene)]);
 
     stop();
     await compiles.finish(0, false);
 
     expect(selectDirty(doc())).toBe(false);
     expect(doc().scene).toBe(scene);
+  });
+});
+
+describe('the window’s loaded files', () => {
+  beforeAll(() => {
+    standInForTheBrowser();
+  });
+
+  afterAll(takeTheBrowserBack);
+
+  beforeEach(() => {
+    // Compiled, with nothing to import.
+    useScriptStore.setState({ build: async () => true });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('are what Play draws: the game holds the edit view’s model while it runs, and gives it back at Stop', async () => {
+    stubImages();
+    const server = await serveModels();
+    const CHAIR = fixedId('asset', 'chair');
+    const assets = new AssetCache(registries, {
+      resolver: { url: (id) => (id === CHAIR ? server.url('chair.gltf') : null) },
+      idleBudgetBytes: 0,
+    });
+    // The edit view's hold, as the viewport's binder takes it.
+    const editView = assets.holdModel(CHAIR, null);
+    await editView.object;
+    useDocumentStore.getState().replaceScene(sceneWith([createEntity('Chair', [{ ...modelType.create(), assetId: CHAIR }])]));
+    const played = new PlaySession({ ...stubHost(), assets });
+    session = played;
+    played.watch();
+
+    play();
+    await until(() => played.playEngine !== null, 'the engine');
+    // Nothing parsed twice: the game draws the file the edit view holds.
+    expect(server.requests('chair.gltf')).toBe(1);
+    expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
+
+    stop();
+    expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
+    editView.dispose();
   });
 });

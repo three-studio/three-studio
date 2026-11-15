@@ -1,3 +1,4 @@
+import type { CoreRegistries, EntityId } from '@three-studio/core';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { Box3, Matrix4, Object3D, Quaternion, Vector3, type PerspectiveCamera } from 'three/webgpu';
 import { transformSelection } from '../commands/sceneCommands';
@@ -134,7 +135,11 @@ export class GizmoController {
   private snapEnabled = false;
   private attached = false;
 
-  constructor(camera: PerspectiveCamera, dom: HTMLElement) {
+  constructor(
+    private readonly registries: CoreRegistries,
+    camera: PerspectiveCamera,
+    dom: HTMLElement,
+  ) {
     this.camera = camera;
     this.controls = new TransformControls(camera, dom);
     this.controls.size = 0.85;
@@ -214,7 +219,7 @@ export class GizmoController {
    */
   update(
     selection: Selection,
-    resolve: (id: string) => Object3D | undefined,
+    resolve: (id: EntityId) => Object3D | undefined,
     bounds: Box3 | null,
     mode: TransformMode,
   ): void {
@@ -365,7 +370,7 @@ export class GizmoController {
     const delta = this.pivot.matrixWorld.clone().multiply(this.previous.clone().invert());
     this.previous.copy(this.pivot.matrixWorld);
 
-    transformSelection(selection, delta, {
+    transformSelection(this.registries, selection, delta, {
       coalesceKey: `gizmo:${this.dragGeneration}`,
     });
   }

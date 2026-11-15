@@ -9,21 +9,33 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
+  assertDefined,
+  createAssetId,
   createEmptyScene,
   createMaterial,
+  createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
+  createPrefabDoc,
   createRenderingSettings,
-  deserializeScene,
+  decodePrefab,
+  decodeScene,
+  jsonOf,
+  prefabJsonOf,
+  serializePrefab,
   serializeScene,
   type AssetManifest,
   type DeviceServerStatus,
   type ProjectContents,
   type ProjectFile,
   type SceneChange,
+  unwrap,
 } from '@three-studio/core';
 import type { BrowserWindow } from 'electron';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The handler table, driven.
@@ -141,6 +153,7 @@ beforeAll(async () => {
   });
   await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   devices = new DeviceServer({
+    registries,
     settingsFile: devicesFile.path,
     certificateFile: join(stub.userData, 'device-certificate.json'),
     templateRoots: [templateRoot],
@@ -152,6 +165,7 @@ beforeAll(async () => {
     openSceneWindow: () => undefined,
     noteScene: (from, sceneId) => void timeline.push(['noted', from.id, sceneId]),
     isSceneOpenElsewhere: () => sceneOpenElsewhere,
+    registries,
     editorWindows: () => windows as unknown as BrowserWindow[],
     devices,
   });
@@ -171,7 +185,7 @@ beforeEach(() => {
 /** A project with one scene, open, as every handler below assumes. */
 async function project(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-ipc-'));
-  const root = (await createProject('Races', parent)).summary.path;
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
   adoptProject(root);
   return root;
 }
@@ -213,15 +227,15 @@ describe('the guards are reached, not merely written', () => {
 
     // Read back through the channel that reads the file, so what is checked is
     // what a scene will be given, not what the handler was handed.
-    const written = (await invoke<Record<string, Record<string, unknown>>>(
-      IPC_INVOKE.assets.readMaterials,
-      1,
-    ))[id]!;
+    const written = assertDefined(
+      (await invoke<Record<string, Record<string, unknown>>>(IPC_INVOKE.assets.readMaterials, 1))[id],
+      'the material written',
+    );
     // `side` is a closed union, so a member nobody declared falls back to the
     // factory's; `roughness` is a number and a string does not fit; and a field
     // the model does not name is dropped rather than carried into the file.
-    expect(written.side).toBe('front');
-    expect(written.roughness).toBe(0.75);
+    expect(written['side']).toBe('front');
+    expect(written['roughness']).toBe(0.75);
     expect(written).not.toHaveProperty('trap');
   });
 
@@ -234,7 +248,10 @@ describe('the guards are reached, not merely written', () => {
       createMaterial(),
     );
     const manifest = await invoke<AssetManifest>(IPC_INVOKE.assets.list, 1);
-    const entry = manifest.assets.find((asset) => asset.id === id)!;
+    const entry = assertDefined(
+      manifest.assets.find((asset) => asset.id === id),
+      'the material in the manifest',
+    );
 
     await invoke(IPC_INVOKE.assets.saveMaterial, 1, entry.path, {
       ...createMaterial('#ff0000'),
@@ -242,12 +259,12 @@ describe('the guards are reached, not merely written', () => {
       trap: 1,
     });
 
-    const written = (await invoke<Record<string, Record<string, unknown>>>(
-      IPC_INVOKE.assets.readMaterials,
-      1,
-    ))[id]!;
-    expect(written.color).toBe('#ff0000');
-    expect(written.wrap).toBe(createMaterial().wrap);
+    const written = assertDefined(
+      (await invoke<Record<string, Record<string, unknown>>>(IPC_INVOKE.assets.readMaterials, 1))[id],
+      'the material read back',
+    );
+    expect(written['color']).toBe('#ff0000');
+    expect(written['wrap']).toBe(createMaterial().wrap);
     expect(written).not.toHaveProperty('trap');
   });
 
@@ -275,7 +292,7 @@ describe('the guards are reached, not merely written', () => {
       restitutionCombine: 'sum',
       trap: 1,
     });
-    expect((await stored()).material).toEqual({ ...createPhysicsMaterial(), friction: 0.05 });
+    expect((await stored())['material']).toEqual({ ...createPhysicsMaterial(), friction: 0.05 });
 
     await invoke(IPC_INVOKE.assets.createMaterial, 1, 'Brick', createMaterial());
     await expect(
@@ -298,14 +315,14 @@ describe('the guards are reached, not merely written', () => {
 
   it('conforms a launch snapshot before a phone is served it', async () => {
     const root = await project();
-    const [entry] = await discoverScenes(root);
+    const [entry] = (await discoverScenes(root)).scenes;
 
     const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, {
       version: LAUNCH_SNAPSHOT_VERSION,
       entry: {
         id: entry!.id,
         name: entry!.name,
-        scene: deserializeScene(await readFile(join(root, entry!.path), 'utf8')),
+        sceneJson: await readFile(join(root, entry!.path), 'utf8'),
       },
       materials: { stone: { ...createMaterial(), side: 'sideways', trap: 1 } },
       prefabs: {},
@@ -322,8 +339,150 @@ describe('the guards are reached, not merely written', () => {
     const build = (await (await fetch(manifest)).json()) as {
       materials: Record<string, Record<string, unknown>>;
     };
-    expect(build.materials['stone']!.side).toBe('front');
+    const stone = assertDefined(build.materials['stone'], 'the stone material');
+    expect(stone['side']).toBe('front');
     expect(build.materials['stone']).not.toHaveProperty('trap');
+  });
+
+  it('serves the entry scene exactly as the window wrote it, and refuses a snapshot from before documents were text', async () => {
+    const root = await project();
+    const entry = assertDefined((await discoverScenes(root)).scenes[0], 'the project’s scene');
+    // Compact, which no writer of ours produces for a file: re-encoded, it would
+    // come out indented and key-sorted, and the bytes would say so. Read and
+    // written again as JSON, not as a document, whose Maps `JSON.stringify` would
+    // write as `{}`.
+    const sceneJson = JSON.stringify(JSON.parse(await readFile(join(root, entry.path), 'utf8')));
+    const snapshot = {
+      version: LAUNCH_SNAPSHOT_VERSION,
+      entry: { id: entry.id, name: entry.name, sceneJson },
+      materials: {},
+      physicsMaterials: {},
+      prefabs: {},
+      rendering: createRenderingSettings(),
+      physics: createPhysicsSettings(),
+      loadingScene: null,
+    };
+
+    const status = await invoke<DeviceServerStatus>(IPC_INVOKE.devices.launch, 1, snapshot);
+
+    const local = assertDefined(
+      status.urls.find((url) => url.address === 'localhost'),
+      'the address of this computer',
+    ).url.replace('localhost', '127.0.0.1');
+    const manifestUrl = `${local}${BUILD_LAYOUT.manifest}`;
+    const build = await (await fetch(manifestUrl)).json();
+    const served = await (await fetch(new URL(build.scenes[0].path, manifestUrl))).text();
+    expect(served).toBe(sceneJson);
+
+    const before = { ...snapshot, version: 1, entry: { id: entry.id, name: entry.name, scene: {} } };
+    await expect(invoke(IPC_INVOKE.devices.launch, 1, before)).rejects.toThrow('version 1');
+  });
+
+  it('takes a prefab as text, writes the codec’s bytes, and reads it back equal', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+    // Written as a window writes a message: in the order the document was built.
+    const sent = jsonOf(prefabJsonOf(registries, prefab));
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', sent, prefab.id);
+
+    // The file is the codec's, key-sorted for a diff, whatever order it arrived in.
+    const created = await readFile(file, 'utf8');
+    expect(created).toBe(serializePrefab(registries, unwrap(decodePrefab(registries, sent, prefab.id), 'Prefab file')));
+    expect(Object.keys(JSON.parse(created))).toEqual(Object.keys(JSON.parse(created)).sort());
+
+    const renamed = { ...unwrap(decodePrefab(registries, sent, prefab.id), 'Prefab file'), name: 'Renamed' };
+    await invoke(
+      IPC_INVOKE.assets.savePrefab,
+      1,
+      'assets/prefabs/Crate.prefab.json',
+      jsonOf(prefabJsonOf(registries, renamed)),
+      prefab.id,
+    );
+    expect(await readFile(file, 'utf8')).toBe(serializePrefab(registries, renamed));
+
+    const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
+    expect(Object.keys(read)).toEqual([id]);
+    expect(unwrap(decodePrefab(registries, assertDefined(read[id], 'the prefab read'), prefab.id), 'Prefab file')).toEqual(
+      renamed,
+    );
+  });
+
+  it('refuses a prefab that is not JSON, or sent under no asset id, and writes nothing', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+
+    await expect(invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', '{ not json', prefab.id)).rejects.toThrow(
+      'is not JSON',
+    );
+    await expect(
+      invoke(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), ''),
+    ).rejects.toThrow('asset id');
+    await expect(readFile(join(root, 'assets', 'prefabs', 'Crate.prefab.json'), 'utf8')).rejects.toThrow();
+  });
+
+  /*
+   * A prefab is an asset, and an asset's id is the one its sidecar holds. The
+   * file used to say another: `createPrefabDoc` made one id for the document
+   * and the sidecar a second, and nothing but the sidecar's was ever read. The
+   * file holds none now, and the sidecar the one the window gave.
+   */
+  it('writes a prefab under the id it was made with, held by its sidecar alone', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), prefab.id);
+
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    expect(id).toBe(prefab.id);
+    expect(JSON.parse(await readFile(file, 'utf8'))).not.toHaveProperty('id');
+    expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(id);
+  });
+
+  it('writes a prefab again under the id it was given, for the redo of an undone creation', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const prefab = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+    const given = createAssetId();
+
+    const id = await invoke<string>(IPC_INVOKE.assets.createPrefab, 1, 'Crate', jsonOf(prefabJsonOf(registries, prefab)), given);
+
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    expect(id).toBe(given);
+    expect(JSON.parse(await readFile(`${file}.meta.json`, 'utf8')).id).toBe(given);
+  });
+
+  /*
+   * The window decodes each prefab itself, so that one this build refuses is
+   * one it can name with why; the main process hands every file over as it is,
+   * under its sidecar's id.
+   */
+  it('hands every prefab file over as it is, under its sidecar\'s id, refused or not', async () => {
+    const root = await project();
+    const crate = createMeshEntity('box');
+    const crates = createPrefabDoc('Crate', [crate.entity], crate.entity.id);
+    const barrel = createMeshEntity('cylinder');
+    const barrels = createPrefabDoc('Barrel', [barrel.entity], barrel.entity.id);
+    for (const prefab of [crates, barrels]) {
+      await invoke(IPC_INVOKE.assets.createPrefab, 1, prefab.name, jsonOf(prefabJsonOf(registries, prefab)), prefab.id);
+    }
+    // A file edited by hand, or written by a build before this one, with an id of its own.
+    const file = join(root, 'assets', 'prefabs', 'Crate.prefab.json');
+    const edited = JSON.stringify({ ...JSON.parse(await readFile(file, 'utf8')), id: 'a-name-from-the-past' });
+    await writeFile(file, edited, 'utf8');
+
+    const read = await invoke<Record<string, string>>(IPC_INVOKE.assets.readPrefabs, 1);
+
+    expect(Object.keys(read).sort()).toEqual([barrels.id, crates.id].sort());
+    expect(read[crates.id]).toBe(edited);
+    expect(unwrap(decodePrefab(registries, assertDefined(read[barrels.id], 'the barrel read'), barrels.id), 'Prefab file').id).toBe(
+      barrels.id,
+    );
+    expect(decodePrefab(registries, edited, crates.id).ok).toBe(false);
   });
 
   it('never lets a settings patch choose the token or the version', async () => {
@@ -416,8 +575,8 @@ describe('the guards are reached, not merely written', () => {
     ) as Record<string, unknown>;
     // These are handed straight back to dockview on the next launch, so the
     // shapes it cannot read have to be gone before they are stored.
-    expect(written.working).toBeNull();
-    expect(written.templates).toEqual([]);
+    expect(written['working']).toBeNull();
+    expect(written['templates']).toEqual([]);
     expect(written).not.toHaveProperty('trap');
   });
 });
@@ -462,7 +621,7 @@ describe('a device’s screenshot', () => {
 describe('showing a file in the file manager', () => {
   it("shows a file of the project, a scene's as much as an asset's", async () => {
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
     stub.shown.length = 0;
 
     await invoke(IPC_INVOKE.assets.revealInFileManager, 1, scene.path);
@@ -486,10 +645,10 @@ describe('showing a file in the file manager', () => {
     // Revert reads the window's own file back; a game moving on reads the next
     // scene's. Node's `ENOENT` and an absolute path told the person nothing.
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
 
     const read = await invoke<string>(IPC_INVOKE.project.readScene, 1, scene.path);
-    expect(deserializeScene(read).id).toBe(scene.id);
+    expect(unwrap(decodeScene(registries, read), 'Scene file').id).toBe(scene.id);
     await expect(invoke(IPC_INVOKE.project.readScene, 1, 'scenes/gone.scene.json')).rejects.toThrow(
       'There is no file at scenes/gone.scene.json',
     );
@@ -513,8 +672,8 @@ describe('a new device link', () => {
     await invoke(IPC_INVOKE.devices.regenerateToken, 1);
 
     const written = JSON.parse(await readFile(devicesFile.path, 'utf8')) as Record<string, unknown>;
-    expect(written.token).not.toBe(found.token);
-    expect(written).toEqual({ ...found, token: written.token });
+    expect(written['token']).not.toBe(found['token']);
+    expect(written).toEqual({ ...found, token: written['token'] });
     // Put back, so that every other test here finds the file it was given.
     await writeFile(devicesFile.path, devicesFile.contents, 'utf8');
   });
@@ -523,7 +682,7 @@ describe('a new device link', () => {
 describe('the refusals that exist only at the boundary', () => {
   it('will not delete a scene another window has open, and leaves the file', async () => {
     const root = await project();
-    const scene = (await discoverScenes(root))[0]!;
+    const scene = (await discoverScenes(root)).scenes[0]!;
     sceneOpenElsewhere = true;
 
     await expect(invoke(IPC_INVOKE.project.deleteScene, 1, scene.id)).rejects.toThrow(
@@ -577,7 +736,7 @@ describe('what the other windows are told', () => {
       IPC_INVOKE.project.createScene,
       1,
       'Copy',
-      serializeScene(createEmptyScene('Races')),
+      serializeScene(registries, createEmptyScene('Races')),
     );
 
     // Told first, window 2 could open the copy while the table says nobody

@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'node:path';
 import {
   createDeviceToken,
   deviceLabel,
+  type CoreRegistries,
   type DeviceInfo,
   type DeviceLaunchOptions,
   type DeviceLogs,
@@ -12,8 +13,8 @@ import {
   type DeviceServerStatus,
   type DeviceSettings,
   type DeviceSettingsPatch,
-  type LaunchSnapshot,
   type PortHolder,
+  type ReceivedLaunch,
 } from '@three-studio/core';
 import { atomicWrite } from '../atomicWrite';
 import { findDeviceClient, findTemplate } from '../prebuilt';
@@ -41,6 +42,11 @@ import {
 import { createDeviceListener } from './transport';
 
 export interface DeviceServerOptions {
+  /**
+   * The process's: what a launch scans the project through, and a model's side
+   * files are read through.
+   */
+  registries: CoreRegistries;
   /** `devices.json`, in the app's data directory. */
   settingsFile: string;
   /** `device-certificate.json`, beside it: the certificate HTTPS is served under, and its key. */
@@ -55,10 +61,10 @@ export interface DeviceServerOptions {
    */
   listenHost?: string;
   /** Every new status, in the order they happened. */
-  onChange?: (status: DeviceServerStatus) => void;
+  onChange?: ((status: DeviceServerStatus) => void) | undefined;
   /** A device's lines, as they arrive: for every editor window's Console. */
   onLog?: (logs: DeviceLogs) => void;
-  trace?: (line: string) => void;
+  trace?: ((line: string) => void) | undefined;
 }
 
 /**
@@ -230,10 +236,10 @@ export class DeviceServer {
    * the launch it made, to know whether the devices still run its scene,
    * would take another window's for its own.
    */
-  async launch(projectPath: string, snapshot: LaunchSnapshot): Promise<DeviceServerStatus | null> {
+  async launch(projectPath: string, received: ReceivedLaunch): Promise<DeviceServerStatus | null> {
     const ticket = (this.ticket += 1);
     this.overtakenBy = 'launch';
-    const prepared = await prepareLaunch(projectPath, snapshot);
+    const prepared = await prepareLaunch(this.options.registries, projectPath, received);
     if (ticket !== this.ticket) return this.dropped();
     await this.start();
     if (ticket !== this.ticket) return this.dropped();
@@ -379,6 +385,7 @@ export class DeviceServer {
         trace: this.options.trace,
       });
       const handler = createDeviceHandler({
+        registries: this.options.registries,
         token: () => this.listening?.settings.token ?? settings.token,
         templateDir,
         clientDir,

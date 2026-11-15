@@ -1,17 +1,20 @@
 import {
   createAudioListenerEntity,
   createAudioSourceEntity,
-  createBoxGeometry,
   createCameraEntity,
   createEntity,
   createGeometry,
   createLightEntity,
   createMeshEntity,
+  fixedId,
   isPlaceable,
   restingOffsetY,
   type GeometryKind,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * What a fresh entity's default transform means.
@@ -50,7 +53,7 @@ describe('what holds a primitive off its support', () => {
   it('reads the dimensions rather than the kind', () => {
     // The offset has to follow an author who resizes the geometry, which the
     // old constant could not do.
-    expect(restingOffsetY({ ...createBoxGeometry(), height: 4 })).toBe(2);
+    expect(restingOffsetY({ ...createGeometry('box'), height: 4 })).toBe(2);
   });
 
   it('puts the offset on the entity a factory hands back', () => {
@@ -64,22 +67,23 @@ describe('what holds a primitive off its support', () => {
 
 describe('an entity made of a sound', () => {
   it('carries the clip it was made from, and wears its name', () => {
-    const template = createAudioSourceEntity('clip-7', 'footstep');
+    const clip = fixedId('asset', 'clip-7');
+    const template = createAudioSourceEntity(clip, 'footstep');
     expect(template.entity.name).toBe('footstep');
-    expect(template.components[0]).toMatchObject({ type: 'audioSource', assetId: 'clip-7' });
+    expect(template.components[0]).toMatchObject({ type: 'audioSource', assetId: clip });
   });
 
   it('is a plain Audio Source when nothing was dropped on it', () => {
     const template = createAudioSourceEntity();
     expect(template.entity.name).toBe('Audio Source');
-    expect(template.components[0]).toMatchObject({ assetId: '' });
+    expect(template.components[0]).toMatchObject({ assetId: null });
   });
 
   it('places like anything else, because a sound is somewhere', () => {
     // The falloff is the whole point of a positional source; an entity that
     // ignored where it was dropped would put every clip at the origin.
-    expect(isPlaceable(createAudioSourceEntity())).toBe(true);
-    expect(isPlaceable(createAudioListenerEntity())).toBe(true);
+    expect(isPlaceable(registries, createAudioSourceEntity())).toBe(true);
+    expect(isPlaceable(registries, createAudioListenerEntity())).toBe(true);
   });
 
   it('gives the ear its own entity, for a scene that wants it off the camera', () => {
@@ -92,22 +96,22 @@ describe('an entity made of a sound', () => {
 
 describe('whose position means something', () => {
   it('places anything that stands somewhere', () => {
-    expect(isPlaceable(createMeshEntity('box'))).toBe(true);
-    expect(isPlaceable(createCameraEntity())).toBe(true);
-    expect(isPlaceable(createLightEntity('point'))).toBe(true);
-    expect(isPlaceable(createLightEntity('directional'))).toBe(true);
-    expect(isPlaceable(createLightEntity('spot'))).toBe(true);
+    expect(isPlaceable(registries, createMeshEntity('box'))).toBe(true);
+    expect(isPlaceable(registries, createCameraEntity())).toBe(true);
+    expect(isPlaceable(registries, createLightEntity('point'))).toBe(true);
+    expect(isPlaceable(registries, createLightEntity('directional'))).toBe(true);
+    expect(isPlaceable(registries, createLightEntity('spot'))).toBe(true);
   });
 
   it('leaves the lights that light everything alone', () => {
-    expect(isPlaceable(createLightEntity('ambient'))).toBe(false);
-    expect(isPlaceable(createLightEntity('hemisphere'))).toBe(false);
+    expect(isPlaceable(registries, createLightEntity('ambient'))).toBe(false);
+    expect(isPlaceable(registries, createLightEntity('hemisphere'))).toBe(false);
   });
 
   it('places an empty, which carries no components at all', () => {
     // `every` over nothing is true, so the obvious spelling of the rule above
     // answers "not placeable" here — and the group would land at the origin
     // while everything the author put in it landed in front of the camera.
-    expect(isPlaceable(createEntity('Empty'))).toBe(true);
+    expect(isPlaceable(registries, createEntity('Empty'))).toBe(true);
   });
 });

@@ -3,6 +3,9 @@ import {
   prefabInstanceOf,
   splitInstancedId,
   type ComponentDoc,
+  type ComponentId,
+  type CoreRegistries,
+  type EntityId,
   type PrefabOverride,
   type SceneDoc,
 } from '@three-studio/core';
@@ -19,8 +22,9 @@ import { expandedScene } from '../state/expansion';
  * as a fallback when their own lookup misses.
  */
 export function editInstance(
+  registries: CoreRegistries,
   scene: SceneDoc,
-  id: string,
+  id: EntityId,
   apply: (override: PrefabOverride, current: readonly ComponentDoc[]) => void,
 ): void {
   const parts = splitInstancedId(id);
@@ -30,17 +34,17 @@ export function editInstance(
   // `inner/lampRoot` for a lamp the room placed — and the expansion looks the
   // override up by exactly that. There is no component in the scene for the
   // room's own placement of the lamp, so the scene's instance is where it goes.
-  if (scene.entities[parts.owner] === undefined) return;
+  if (!scene.entities.has(parts.owner)) return;
   const component = prefabInstanceOf(scene, parts.owner);
   if (!component) return;
 
   // The entity as it is drawn, overrides already applied — which is what the
   // caller needs to build the next one from.
-  const expanded = expandedScene().scene;
-  if (expanded.entities[id] === undefined) return;
+  const expanded = expandedScene(registries).scene;
+  if (!expanded.entities.has(id)) return;
 
   const override: PrefabOverride = component.overrides[parts.local] ?? {};
-  apply(override, componentsOf(expanded, id));
+  apply(override, componentsOf(registries, expanded, id));
   component.overrides[parts.local] = override;
 }
 
@@ -54,7 +58,7 @@ export function editInstance(
 export function overrideComponentPath(
   override: PrefabOverride,
   current: readonly ComponentDoc[],
-  componentId: string,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
 ): void {

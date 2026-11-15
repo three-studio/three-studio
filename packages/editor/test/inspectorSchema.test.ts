@@ -1,28 +1,42 @@
 import {
-  COLLIDER_SHAPE_LABELS,
-  COMPONENT_TYPES,
-  JOINT_KIND_LABELS,
   PROJECT_FORMAT_VERSION,
-  conformColliderShape,
-  conformJointMotion,
-  createAudioSource,
+  colliderShapeField,
+  createJointMotion,
+  jointMotionField,
+  audioSourceType,
   createBuildProfiles,
+  colliderType,
   createColliderShape,
   createComponent,
   createDefaultLayer,
   createEmptyScene,
+  jointType,
   createPhysicsSettings,
   createRenderingSettings,
   fieldOptions,
+  fixedId,
+  type ColliderShapeKind,
   type ComponentDoc,
-  type ComponentType,
+  type JointKind,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { COMPONENT_PANES, paneEntriesFor } from '../src/components/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { useProjectStore } from '../src/state/projectStore';
 import { declaredControl } from '../src/inspector/declaredFields';
-import { SCENE_SCHEMA, sceneFieldPath, isAction, isSeparator, type FieldSpec } from '../src/inspector/schema';
+import {
+  SCENE_SCHEMA,
+  sceneFieldPath,
+  isAction,
+  isSeparator,
+  type BoundSpec,
+  type FieldSpec,
+} from '../src/inspector/schema';
 import { readPath } from '../src/inspector/target';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
+/** Every type the window knows, in the order it registered them. */
+const TYPES = registries.components.values().map((definition) => definition.id);
 
 /*
  * The pane declarations, checked where they carry logic of their own.
@@ -33,33 +47,33 @@ import { readPath } from '../src/inspector/target';
  * correctly and writes nonsense.
  */
 
-function fields(type: 'audioSource'): FieldSpec[] {
-  return COMPONENT_PANES[type].fields.filter(
+function fields(): FieldSpec[] {
+  return paneEntriesFor(registries, audioSourceType.create()).entries.filter(
     (entry): entry is FieldSpec => !isSeparator(entry) && !isAction(entry) && 'path' in entry,
   );
 }
 
-function field(type: 'audioSource', label: string): FieldSpec {
-  const found = fields(type).find((spec) => spec.label === label);
+function field(label: string): FieldSpec {
+  const found = fields().find((spec) => spec.label === label);
   if (!found) throw new Error(`no field labelled ${label}`);
   return found;
 }
 
 describe('the Audio Source pane', () => {
   it('offers the blend as a switch and as a dial, both onto the one field', () => {
-    const onBlend = fields('audioSource').filter((spec) => spec.path[0] === 'spatialBlend');
+    const onBlend = fields().filter((spec) => spec.path[0] === 'spatialBlend');
     expect(onBlend.map((spec) => spec.label)).toEqual(['Spatialize', '2D  ↔  3D']);
   });
 
   it('shows Spatialize ticked for anything that is not fully flat', () => {
-    const { toModel } = field('audioSource', 'Spatialize');
+    const { toModel } = field('Spatialize');
     expect(toModel?.(0)).toBe(false);
     expect(toModel?.(0.6)).toBe(true);
     expect(toModel?.(1)).toBe(true);
   });
 
   it('writes the two ends of the dial, and nothing in between', () => {
-    const { fromModel } = field('audioSource', 'Spatialize');
+    const { fromModel } = field('Spatialize');
     expect(fromModel?.(true)).toBe(1);
     expect(fromModel?.(false)).toBe(0);
   });
@@ -67,151 +81,83 @@ describe('the Audio Source pane', () => {
   it('starts a new source spatialized, which is what the switch will show', () => {
     // The default is `1`, and the switch has to agree with it or a source added
     // from the Add menu reads as flat in a pane that is about to prove it is not.
-    const { toModel } = field('audioSource', 'Spatialize');
-    expect(toModel?.(createAudioSource().spatialBlend)).toBe(true);
+    const { toModel } = field('Spatialize');
+    expect(toModel?.(audioSourceType.create().spatialBlend)).toBe(true);
   });
 
   it('leaves the dial always reachable, so a blend can be dialled back up', () => {
     // The falloff rows are conditional; this one must not be, or unticking the
     // switch would take away the only control that can undo it by degrees.
-    expect(field('audioSource', '2D  ↔  3D').visibleWhen).toBeUndefined();
+    expect(field('2D  ↔  3D').visibleWhen).toBeUndefined();
   });
 });
 
 /*
- * A collider's rows change with its shape's kind, so the checks below that walk
- * every type's factory walk a collider of every kind too.
+ * A collider's rows change with its shape's kind, and a joint's with its kind,
+ * so the checks below that walk every type's factory walk every kind of both.
+ * Their panes row for row are `describedPanes.test.ts`'s.
  */
-const COLLIDER_KINDS = Object.keys(COLLIDER_SHAPE_LABELS);
+const COLLIDER_KINDS = Object.keys(colliderShapeField.variants).filter(
+  (kind): kind is ColliderShapeKind => Object.hasOwn(colliderShapeField.variants, kind),
+);
 
-function colliderOfKind(kind: string): ComponentDoc {
-  const shape = conformColliderShape({ kind });
-  // The factory box comes back for a kind it does not know, which would test
-  // the box twice and the kind not at all.
-  expect(shape.kind).toBe(kind);
-  return { ...createComponent('collider'), shape };
+function colliderOfKind(kind: ColliderShapeKind): ComponentDoc {
+  return { ...colliderType.create(), shape: createColliderShape(kind) };
 }
 
-/** A joint's rows change with its kind, as a collider's do with its shape. */
-const JOINT_KINDS = Object.keys(JOINT_KIND_LABELS);
+const JOINT_KINDS = Object.keys(jointMotionField.variants).filter(
+  (kind): kind is JointKind => Object.hasOwn(jointMotionField.variants, kind),
+);
 
-function jointOfKind(kind: string): ComponentDoc {
-  const motion = conformJointMotion({ kind });
-  expect(motion.kind).toBe(kind);
-  return { ...createComponent('joint'), motion };
+function jointOfKind(kind: JointKind): ComponentDoc {
+  return { ...jointType.create(), motion: createJointMotion(kind) };
 }
-
-describe('the Joint pane', () => {
-  it.each(JOINT_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(jointOfKind(kind)).key).toBe(`joint:${kind}`);
-  });
-
-  it('shows the world as the choice for no Connected Body, and writes it back as none', () => {
-    const row = COMPONENT_PANES.joint.fields.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'connectedEntity',
-    );
-    if (!row) throw new Error('no Connected Body row');
-    expect(row.toModel?.(null)).toBe('');
-    expect(row.fromModel?.('')).toBeNull();
-    expect(row.fromModel?.('door')).toBe('door');
-    expect(row.optionsProvider?.()).toMatchObject({ World: '' });
-  });
-
-  it("shows a hinge's range with its Limits, and its speed with its Motor, in degrees", () => {
-    const shown = (component: ComponentDoc) =>
-      paneEntriesFor(component)
-        .entries.filter((entry): entry is FieldSpec => 'path' in entry)
-        .filter((entry) => entry.visibleWhen?.(component) ?? true)
-        .map((entry) => entry.label);
-    const hinge = jointOfKind('hinge');
-    expect(shown(hinge)).toEqual(['Type', 'Connected Body', 'Anchor', 'Axis', 'Limits', 'Motor', 'Enable Collision']);
-
-    if (hinge.type !== 'joint' || hinge.motion.kind !== 'hinge') throw new Error('not a hinge');
-    const { limits, motor } = hinge.motion;
-    const both = {
-      ...hinge,
-      motion: { ...hinge.motion, limits: { ...limits, enabled: true }, motor: { ...motor, enabled: true } },
-    };
-    expect(shown(both)).toEqual([
-      'Type',
-      'Connected Body',
-      'Anchor',
-      'Axis',
-      'Limits',
-      'Min',
-      'Max',
-      'Motor',
-      'Speed',
-      'Max Torque',
-      'Enable Collision',
-    ]);
-    const min = paneEntriesFor(both).entries.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.label === 'Min',
-    );
-    expect(min?.toModel?.(-Math.PI / 2)).toBeCloseTo(-90, 9);
-  });
-});
 
 describe('the Collider pane', () => {
-  const shapeRow = (): FieldSpec => {
-    const row = COMPONENT_PANES.collider.fields.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape',
-    );
-    if (!row) throw new Error('no Shape row');
-    return row;
-  };
-
-  it('shows the kind of the shape it reads', () => {
-    expect(shapeRow().toModel?.({ kind: 'capsule', radius: 0.3, height: 1.7 })).toBe('capsule');
-  });
-
-  it("writes a kind as that kind's whole default shape", () => {
-    // A box and a sphere share no measure, so another kind starts from its own.
-    expect(shapeRow().fromModel?.('sphere')).toEqual(createColliderShape('sphere'));
-  });
-
-  it('shows a rotation in degrees and writes it back in radians', () => {
-    const row = paneEntriesFor(colliderOfKind('box')).entries.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'shape.rotation',
-    );
-    if (!row) throw new Error('no Rotation row');
-    const shown = row.toModel?.([Math.PI / 2, 0, -Math.PI]);
-    expect(shown).toEqual({ x: expect.closeTo(90, 9), y: 0, z: expect.closeTo(-180, 9) });
-    const written = row.fromModel?.({ x: 90, y: 0, z: 45 });
-    expect(written).toEqual([expect.closeTo(Math.PI / 2, 9), 0, expect.closeTo(Math.PI / 4, 9)]);
-  });
-
-  it.each(COLLIDER_KINDS)('is a pane of its own for a %s', (kind) => {
-    expect(paneEntriesFor(colliderOfKind(kind)).key).toBe(`collider:${kind}`);
-  });
-
-  it("lists the project's layers by name in its Layer row", () => {
-    const row = COMPONENT_PANES.collider.fields.find(
-      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
-    );
-    if (!row) throw new Error('no Layer row');
-
+  /** The project open in the window, holding these layers beside the default one. */
+  const projectWith = (...layers: { id: string; name: string }[]): void => {
     useProjectStore.setState({
       project: {
         version: PROJECT_FORMAT_VERSION,
         name: 'Layers',
         engineVersion: '0.6.0',
-        startScene: 'scene-1',
+        startScene: fixedId('scene', 'scene-1'),
         settings: {
           loadingScene: null,
           rendering: createRenderingSettings(),
           physics: {
             ...createPhysicsSettings(),
-            layers: [createDefaultLayer(), { id: 'p1', name: 'Player', ignores: [] }],
+            layers: [createDefaultLayer(), ...layers.map((layer) => ({ ...layer, ignores: [] }))],
           },
           build: createBuildProfiles('Layers'),
         },
       },
     });
+  };
+
+  it("lists the project's layers by name in its Layer row", () => {
+    const row = paneEntriesFor(registries, colliderOfKind('box')).entries.find(
+      (entry): entry is FieldSpec => 'path' in entry && entry.path.join('.') === 'layer',
+    );
+    if (!row) throw new Error('no Layer row');
+
+    projectWith({ id: 'p1', name: 'Player' });
     expect(row.optionsProvider?.()).toEqual({ Default: 'default', Player: 'p1' });
 
     useProjectStore.setState({ project: null });
     expect(row.optionsProvider?.()).toEqual({ Default: 'default' });
+  });
+
+  it('is keyed by those layers: one renamed is another list, which the Inspector builds again', () => {
+    const keyed = () => paneEntriesFor(registries, colliderOfKind('box')).key;
+
+    expect(keyed()).toBe('collider:box:default:Default');
+    projectWith({ id: 'p1', name: 'Player' });
+    expect(keyed()).toBe('collider:box:default:Default|p1:Player');
+    projectWith({ id: 'p1', name: 'Hero' });
+    expect(keyed()).toBe('collider:box:default:Default|p1:Hero');
+
+    useProjectStore.setState({ project: null });
   });
 });
 
@@ -227,7 +173,7 @@ describe('the Collider pane', () => {
  */
 describe('every row that reads a tuple says so', () => {
   const rowsOf = (component: ComponentDoc): FieldSpec[] =>
-    paneEntriesFor(component).entries.filter((entry): entry is FieldSpec => 'path' in entry);
+    paneEntriesFor(registries, component).entries.filter((entry): entry is FieldSpec => 'path' in entry);
 
   const axesOf = (spec: FieldSpec): number | null =>
     spec.type === 'vec2' ? 2 : spec.type === 'vec3' ? 3 : null;
@@ -255,8 +201,8 @@ describe('every row that reads a tuple says so', () => {
     }
   }
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
-    checkTuples(type, createComponent(type));
+  it.each(TYPES)('%s', (type) => {
+    checkTuples(type, createComponent(registries, type));
   });
 
   it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
@@ -308,8 +254,8 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
     ...spec.params,
   });
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
-    for (const spec of paneEntriesFor(createComponent(type)).entries) {
+  it.each(TYPES)('%s', (type) => {
+    for (const spec of paneEntriesFor(registries, createComponent(registries, type)).entries) {
       if (!('path' in spec)) continue;
       const unknown = Object.keys(paramsOf(spec as FieldSpec<never>)).filter(
         (key) => !KNOWN.has(key),
@@ -350,9 +296,9 @@ describe('a declaration reaches Tweakpane only as parameters it knows', () => {
  */
 describe('a declared control fits the value it is bound to', () => {
   /** Rows that answer for themselves: a converter, or a control of its own. */
-  const declaresItsOwn = (spec: FieldSpec) => spec.toModel !== undefined || spec.params !== undefined;
+  const declaresItsOwn = (spec: BoundSpec) => spec.toModel !== undefined || spec.params !== undefined;
 
-  function check(where: string, spec: FieldSpec, value: unknown): void {
+  function check(where: string, spec: BoundSpec, value: unknown): void {
     if (declaresItsOwn(spec)) return;
     const at = `${where}.${spec.path.join('.')}`;
 
@@ -375,9 +321,9 @@ describe('a declared control fits the value it is bound to', () => {
     }
   }
 
-  it.each(COMPONENT_TYPES)('%s', (type) => {
-    const component = createComponent(type);
-    for (const spec of paneEntriesFor(component).entries) {
+  it.each(TYPES)('%s', (type) => {
+    const component = createComponent(registries, type);
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(type, spec, readPath(component, spec.path));
     }
@@ -385,7 +331,7 @@ describe('a declared control fits the value it is bound to', () => {
 
   it.each(COLLIDER_KINDS)('a collider of kind %s', (kind) => {
     const component = colliderOfKind(kind);
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(`collider:${kind}`, spec, readPath(component, spec.path));
     }
@@ -393,7 +339,7 @@ describe('a declared control fits the value it is bound to', () => {
 
   it.each(JOINT_KINDS)('a joint of kind %s', (kind) => {
     const component = jointOfKind(kind);
-    for (const spec of paneEntriesFor(component).entries) {
+    for (const spec of paneEntriesFor(registries, component).entries) {
       if (!('path' in spec)) continue;
       check(`joint:${kind}`, spec, readPath(component, spec.path));
     }
@@ -403,7 +349,7 @@ describe('a declared control fits the value it is bound to', () => {
     const scene = createEmptyScene();
     for (const section of SCENE_SCHEMA) {
       for (const field of section.fields) {
-        const spec = { ...field, path: sceneFieldPath(field) } as FieldSpec;
+        const spec = { ...field, path: sceneFieldPath(field) };
         check(field.on, spec, readPath(scene, spec.path));
       }
     }

@@ -1,6 +1,7 @@
 import {
   createEntity,
   createJointMotion,
+  type EntityId,
   type EntityTemplate,
   type JointLimits,
   type JointMotion,
@@ -10,11 +11,11 @@ import {
 } from '@three-studio/core';
 import { Euler, Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { registerBehaviour } from '../../src/behaviour/Behaviour';
+import { builtInRegistries } from '../registries';
 import {
   block,
   nest,
-  physicsRig,
+  physicsRigOn,
   standInForTheBrowser,
   takeTheBrowserBack,
   withBody,
@@ -33,11 +34,16 @@ afterAll(takeTheBrowserBack);
 /** Whom each entity's collider heard start touching, by entity id. */
 const heard = new Map<string, string[]>();
 
-// An Ear on every Collider, as F8's events file has: a plugin hears collisions
-// by being a behaviour on the entity.
-registerBehaviour('collider', ({ entity }) => ({
-  onCollisionEnter: ({ other }) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), other]),
-}));
+// An Ear on every Collider, as `events.test.ts` has: a plugin hears collisions
+// by being a behaviour on the entity. In registries of this file's own.
+const registries = builtInRegistries();
+registries.behaviours.register({
+  id: 'collider',
+  create: ({ entity }) => ({
+    onCollisionEnter: ({ other }) => heard.set(entity.id, [...(heard.get(entity.id) ?? []), other]),
+  }),
+});
+const physicsRig = physicsRigOn(registries);
 
 beforeEach(() => heard.clear());
 
@@ -66,7 +72,7 @@ function pendulum(limits?: Partial<JointLimits>, body?: Partial<RigidBodyCompone
 }
 
 /** How far a body has turned about z, right-handed, from where it was built level. */
-function turnAboutZ(rig: PhysicsRig, entityId: string): number {
+function turnAboutZ(rig: PhysicsRig, entityId: EntityId): number {
   const { quaternion } = rig.solved(entityId);
   return 2 * Math.atan2(quaternion.z, quaternion.w);
 }
@@ -84,7 +90,7 @@ function wheel(motor?: Partial<JointMotor>): EntityTemplate {
  * of its frame ever came off `pivot`, how far it ever left the plane z = 0, and
  * the lowest its centre went.
  */
-function swing(rig: PhysicsRig, entityId: string, anchor: Vector3, pivot: Vector3, seconds: number) {
+function swing(rig: PhysicsRig, entityId: EntityId, anchor: Vector3, pivot: Vector3, seconds: number) {
   let farthest = 0;
   let offPlane = 0;
   let lowest = Number.POSITIVE_INFINITY;

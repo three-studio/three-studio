@@ -76,7 +76,7 @@ export function Floating({ layer, className = '', ...props }: FloatingProps) {
  */
 export function floatElement(element: HTMLElement, layer: FloatingLayer): void {
   element.classList.add(...floatingClass(layer).split(' '));
-  element.dataset.layer = layer;
+  element.dataset['layer'] = layer;
   document.body.appendChild(element);
 }
 

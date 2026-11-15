@@ -5,15 +5,21 @@ import {
   PROJECT_FILE_NAME,
   PROJECT_FORMAT_VERSION,
   SCENES_DIR,
+  assertDefined,
   createBuildProfiles,
   createEmptyScene,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   serializeScene,
   type ProjectFile,
+  type SceneId,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { ProjectError, discoverScenes, openProject } from '../src/main/project';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * `scenes/` is the list of scenes. `project.json` used to hold a copy of it,
@@ -33,11 +39,11 @@ async function projectWith(paths: readonly string[]): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'studio-discover-'));
   await mkdir(join(root, SCENES_DIR), { recursive: true });
 
-  const ids: string[] = [];
+  const ids: SceneId[] = [];
   for (const path of paths) {
     const document = createEmptyScene(path);
     await mkdir(join(root, SCENES_DIR, ...path.split('/').slice(0, -1)), { recursive: true });
-    await writeFile(join(root, SCENES_DIR, `${path}.scene.json`), serializeScene(document), 'utf8');
+    await writeFile(join(root, SCENES_DIR, `${path}.scene.json`), serializeScene(registries, document), 'utf8');
     ids.push(document.id);
   }
 
@@ -45,7 +51,7 @@ async function projectWith(paths: readonly string[]): Promise<string> {
     version: PROJECT_FORMAT_VERSION,
     name: 'Discovery',
     engineVersion: '0.1.0',
-    startScene: ids[0] ?? '',
+    startScene: assertDefined(ids[0], 'the first scene'),
     settings: {
       loadingScene: null,
       rendering: createRenderingSettings(),
@@ -70,16 +76,16 @@ describe('the scenes of a project are the files under scenes/', () => {
     // the case pinned further down.
     await writeFile(
       join(root, SCENES_DIR, 'Arena.scene.json'),
-      serializeScene(createEmptyScene('Arena')),
+      serializeScene(registries, createEmptyScene('Arena')),
       'utf8',
     );
 
-    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['Arena', 'main']);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['Arena', 'main']);
   });
 
   it('finds scenes in folders under scenes/, named by their file', async () => {
     const root = await projectWith(['main', 'levels/Boss']);
-    const scenes = await discoverScenes(root);
+    const { scenes } = await discoverScenes(root);
 
     expect(scenes.map((scene) => scene.path)).toEqual([
       `${SCENES_DIR}/levels/Boss.scene.json`,
@@ -95,7 +101,7 @@ describe('the scenes of a project are the files under scenes/', () => {
     // the target under an id of its own, and a crash is the one way one stays.
     await writeFile(join(root, SCENES_DIR, 'main.scene.json.a1b2c3d4.tmp'), '{}', 'utf8');
 
-    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['main']);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['main']);
   });
 
   /*
@@ -106,28 +112,56 @@ describe('the scenes of a project are the files under scenes/', () => {
     const root = await projectWith(['main', 'Boss']);
     await writeFile(join(root, SCENES_DIR, 'Boss.scene.json'), '{ half a file', 'utf8');
 
-    expect((await discoverScenes(root)).map((scene) => scene.name)).toEqual(['main']);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['main']);
     expect((await openProject(root)).sceneId).toBeTruthy();
   });
 
   /*
-   * A hand-written `.scene.json` carries no identity, so it is addressed by
-   * where it is — a reference its next move will break, which is the truth
-   * about it, and better than a file the editor refuses to list.
+   * A hand-written `.scene.json` carries no identity, and a path is not one: it
+   * is what its next move breaks, and every reference to it — the start scene,
+   * a build profile, the window's URL — would break with it, with nothing to say
+   * why. It used to be listed under its path, which hid that; it is not listed
+   * now, and the main says so, naming the file.
    */
-  it('addresses a scene with no id of its own by its path', async () => {
+  it('does not list a scene with no id of its own', async () => {
     const root = await projectWith(['main']);
     await writeFile(join(root, SCENES_DIR, 'Hand.scene.json'), '{ "name": "Hand" }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Empty.scene.json'), '{ "id": "" }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Number.scene.json'), '{ "id": 7 }', 'utf8');
 
-    const entry = (await discoverScenes(root)).find((scene) => scene.name === 'Hand');
-    expect(entry?.id).toBe(`${SCENES_DIR}/Hand.scene.json`);
+    expect((await discoverScenes(root)).scenes.map((scene) => scene.name)).toEqual(['main']);
+  });
+
+  /*
+   * Not listed, and not lost either: each is carried beside the list, with
+   * every fault where it sits, for the editor to name when the project opens.
+   */
+  it('carries each file it did not list, and why, beside the list', async () => {
+    const root = await projectWith(['main']);
+    await writeFile(join(root, SCENES_DIR, 'Hand.scene.json'), '{ "name": "Hand" }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Number.scene.json'), '{ "id": 7 }', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'Boss.scene.json'), '{ half a file', 'utf8');
+    await writeFile(join(root, SCENES_DIR, 'List.scene.json'), '[]', 'utf8');
+
+    const { scenes, refusedScenes } = await discoverScenes(root);
+
+    expect(scenes.map((scene) => scene.name)).toEqual(['main']);
+    expect(
+      refusedScenes.map(({ path, diagnostics }) => [path, diagnostics.map(({ code, path: at }) => `${code} ${at.join('.')}`)]),
+    ).toEqual([
+      [`${SCENES_DIR}/Boss.scene.json`, ['field.invalid ']],
+      [`${SCENES_DIR}/Hand.scene.json`, ['field.missing id']],
+      [`${SCENES_DIR}/List.scene.json`, ['field.invalid ']],
+      [`${SCENES_DIR}/Number.scene.json`, ['field.invalid id']],
+    ]);
+    expect((await openProject(root)).refusedScenes).toEqual(refusedScenes);
   });
 });
 
 describe('opening a project whose scenes moved without it', () => {
   it('opens on the first scene when the start scene has been deleted', async () => {
     const root = await projectWith(['Boss', 'main']);
-    const scenes = await discoverScenes(root);
+    const { scenes } = await discoverScenes(root);
     // `startScene` names `Boss`, which is also first by path; delete it and the
     // project must fall back rather than refuse.
     await rm(join(root, SCENES_DIR, 'Boss.scene.json'));
@@ -140,8 +174,8 @@ describe('opening a project whose scenes moved without it', () => {
   it('ignores a wanted scene that is no longer on disk', async () => {
     const root = await projectWith(['main']);
     // A window reopening on a URL from before the scene was deleted.
-    const opened = await openProject(root, 'an-id-nothing-has');
-    expect(opened.sceneId).toBe((await discoverScenes(root))[0]!.id);
+    const opened = await openProject(root, fixedId('scene', 'an-id-nothing-has'));
+    expect(opened.sceneId).toBe((await discoverScenes(root)).scenes[0]!.id);
   });
 
   it('refuses only when there is no scene at all', async () => {
@@ -169,7 +203,7 @@ describe('two files claiming one id', () => {
   }
 
   it('keeps both files and says which one lost', async () => {
-    const scenes = await discoverScenes(await withDuplicate());
+    const { scenes } = await discoverScenes(await withDuplicate());
 
     expect(scenes.map((scene) => scene.name)).toEqual(['Boss copy', 'Boss']);
     // Path order, not the order the file system listed them: `Boss copy` sorts
@@ -181,7 +215,7 @@ describe('two files claiming one id', () => {
 
   it('opens the winner when the shared id is asked for', async () => {
     const root = await withDuplicate();
-    const scenes = await discoverScenes(root);
+    const { scenes } = await discoverScenes(root);
 
     const opened = await openProject(root, scenes[0]!.id);
     expect(opened.scenePath).toBe(`${SCENES_DIR}/Boss copy.scene.json`);

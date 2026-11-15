@@ -4,6 +4,8 @@ import {
   isUsed,
   totalUses,
   type AssetEntry,
+  type AssetId,
+  type CoreRegistries,
 } from '@three-studio/core';
 import { defineCommand } from './command';
 import { ipcErrorMessage } from './ipcError';
@@ -23,9 +25,10 @@ import { notify } from '../state/toastStore';
  *
  * Not exported, for the reason `revealAsset` is not: one door.
  */
-async function deleteAsset(asset: AssetEntry): Promise<void> {
+async function deleteAsset(registries: CoreRegistries, asset: AssetEntry): Promise<void> {
   const store = useAssetStore.getState();
   const usage = findAssetUsage(
+    registries,
     asset.id,
     useDocumentStore.getState().scene,
     store.materials,
@@ -66,8 +69,8 @@ async function deleteAsset(asset: AssetEntry): Promise<void> {
  * for, dispatched by a menu, a key or a palette — none of which is in a position
  * to do anything with a return value.
  *
- * Recorded in `RESTES.md`, because a command palette (milestone 8.4) would
- * plausibly want "New Folder", and that is the day to reopen it.
+ * The command palette would plausibly want "New Folder" one day, and that is
+ * the day to reopen this.
  */
 
 /** Everything under a folder, itself included. */
@@ -214,13 +217,13 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
   const lines: string[] = [];
 
   for (const id of usage.entities.slice(0, 12)) {
-    lines.push(`Object · ${scene.entities[id]?.name ?? id}`);
+    lines.push(`Object · ${scene.entities.get(id)?.name ?? id}`);
   }
   for (const id of usage.materials.slice(0, 6)) {
     lines.push(`Material · ${store.byId(id)?.name ?? id}`);
   }
   for (const id of usage.prefabs.slice(0, 6)) {
-    lines.push(`Prefab · ${store.prefabs[id]?.name ?? id}`);
+    lines.push(`Prefab · ${store.prefabs.get(id)?.name ?? id}`);
   }
   // Never truncated, because there is only ever one of it — and because it is
   // the use nothing in the viewport points at: an entity that loses a texture
@@ -247,20 +250,19 @@ function describe(usage: ReturnType<typeof findAssetUsage>): string[] {
  * **Neither removes a divergence, and that is worth saying plainly.** The Edit
  * and scene-file families each found callers guarding in their own words and
  * getting it wrong; here the three call sites already went through one function
- * and asked nothing. What the table buys is what T-062 is for — a gesture with
- * an id, a label and a verdict is one a command palette can list (8.4) and a
- * script can name — and the target-carrying context these two need is the same
- * one the remaining families will use.
+ * and asked nothing. What the table buys is that a gesture with an id, a label
+ * and a verdict is one the command palette can list and a script can name — and
+ * the target-carrying context these two need is the same one the remaining
+ * families will use.
  *
- * **`revealAsset` brings a panel forward, and that is not milestone 8.5.** That
- * one is about `playCommands` reaching into the dock *as a side effect* of
- * starting the game. Here, putting the Project panel in front **is** the
- * gesture: "show me this asset" with the panel left behind whatever is on top of
- * it has not happened.
+ * **`revealAsset` brings a panel forward, and that is not what Play once did.**
+ * Play reached into the dock *as a side effect* of starting the game. Here,
+ * putting the Project panel in front **is** the gesture: "show me this asset"
+ * with the panel left behind whatever is on top of it has not happened.
  */
 
 /** The asset this context names, or `undefined` if it names none or it is gone. */
-function target(assetId: string | undefined) {
+function target(assetId: AssetId | undefined) {
   return assetId === undefined ? undefined : useAssetStore.getState().byId(assetId);
 }
 
@@ -297,7 +299,7 @@ export const ASSET_COMMANDS = {
     can: (ctx) => target(ctx.assetId) !== undefined,
     run: async (ctx) => {
       const asset = target(ctx.assetId);
-      if (asset) await deleteAsset(asset);
+      if (asset) await deleteAsset(ctx.registries, asset);
     },
   }),
 };

@@ -1,10 +1,13 @@
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PROJECT_FILE_NAME } from '@three-studio/core';
+import { PROJECT_FILE_NAME, fixedId, type SceneId } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { createProject, discoverScenes, readProject, updateProject } from '../src/main/project';
 import { createScene, renameScene, setStartScene } from '../src/main/scenes';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * A project has one editor window per open scene, and every one of them can
@@ -21,13 +24,13 @@ import { createScene, renameScene, setStartScene } from '../src/main/scenes';
 /** A project with two scenes, `main` and `Boss`. */
 async function project(): Promise<string> {
   const parent = await mkdtemp(join(tmpdir(), 'studio-writes-'));
-  const root = (await createProject('Races', parent)).summary.path;
-  await createScene(root, 'Boss');
+  const root = (await createProject(registries, 'Races', parent)).summary.path;
+  await createScene(registries, root, 'Boss');
   return root;
 }
 
-async function idOf(root: string, name: string): Promise<string> {
-  const entry = (await discoverScenes(root)).find((scene) => scene.name === name);
+async function idOf(root: string, name: string): Promise<SceneId> {
+  const entry = (await discoverScenes(root)).scenes.find((scene) => scene.name === name);
   if (!entry) throw new Error(`no scene called ${name}`);
   return entry.id;
 }
@@ -44,7 +47,7 @@ describe('two windows writing the project file at once', () => {
       setStartScene(root, boss),
       updateProject(root, (current) => ({
         ...current,
-        settings: { ...current.settings, loadingScene: 'splash' },
+        settings: { ...current.settings, loadingScene: fixedId('scene', 'splash') },
       })),
     ]);
 
@@ -63,7 +66,7 @@ describe('two windows writing the project file at once', () => {
     // again, it has to go through the queue with everything else.
     await Promise.all([renameScene(root, main, 'Level1'), renameScene(root, boss, 'Arena')]);
 
-    const names = (await discoverScenes(root)).map((scene) => scene.name);
+    const names = (await discoverScenes(root)).scenes.map((scene) => scene.name);
     expect(names.sort()).toEqual(['Arena', 'Level1']);
   });
 

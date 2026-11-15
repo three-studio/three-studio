@@ -1,8 +1,24 @@
-import { createEntity, expandPrefabs, type EntityTemplate } from '@three-studio/core';
+import {
+  assertDefined,
+  createEntity,
+  expandPrefabs,
+  fixedId,
+  type EntityId,
+  type EntityTemplate,
+} from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
-import { BETWEEN_ROWS_BAND, insertionAt, isBetweenRows, rangeSelection } from '../src/panels/hierarchyGestures';
+import {
+  BETWEEN_ROWS_BAND,
+  draggedEntityIds,
+  insertionAt,
+  isBetweenRows,
+  rangeSelection,
+} from '../src/panels/hierarchyGestures';
 import { buildRows } from '../src/panels/hierarchyRows';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The last two rules that were written inside `HierarchyPanel.tsx`.
@@ -13,7 +29,7 @@ import { buildRows } from '../src/panels/hierarchyRows';
  * `.tsx` is a rule that is only ever executed by a person with a mouse.
  */
 
-const NONE: ReadonlySet<string> = new Set();
+const NONE: ReadonlySet<EntityId> = new Set();
 
 /** A chain of entities, each the child of the one before it. */
 function chain(names: string[]): EntityTemplate[] {
@@ -31,7 +47,7 @@ function siblings(names: string[]): EntityTemplate[] {
 }
 
 const rowsOf = (templates: EntityTemplate[]) =>
-  buildRows(expandPrefabs(sceneWith(templates), { get: () => undefined }), NONE, '');
+  buildRows(expandPrefabs(registries, sceneWith(templates), { get: () => undefined }), NONE, '');
 
 describe('the top band of a row', () => {
   it('means "between rows" above the band and "onto the row" below it', () => {
@@ -78,7 +94,7 @@ describe('where a between-rows drop lands', () => {
     // An instanced row — `owner/local` — is not in `scene.entities`. The panel
     // already refuses to drop between them; this is the same answer, given
     // where the arithmetic is instead of where the pointer is.
-    expect(insertionAt(sceneWith(siblings(['One'])), 'nobody')).toBeNull();
+    expect(insertionAt(sceneWith(siblings(['One'])), fixedId('entity', 'nobody'))).toBeNull();
   });
 
   it('clamps to the start when a parent does not list the child it claims', () => {
@@ -87,7 +103,7 @@ describe('where a between-rows drop lands', () => {
     // A tear: the child points up, the parent lists nothing. `indexOf` answers
     // -1 here, and -1 handed to an insert counts from the far end — the drop
     // would land at the bottom of a list the user was reordering the top of.
-    scene.entities[made[0]!.entity.id]!.children = [];
+    assertDefined(scene.entities.get(made[0]!.entity.id), 'the parent').children = [];
 
     expect(insertionAt(scene, made[1]!.entity.id)?.index).toBe(0);
   });
@@ -143,6 +159,21 @@ describe('a shift-click', () => {
     const made = siblings(['One', 'Two']);
     const rows = rowsOf(made);
 
-    expect(rangeSelection(rows, 'gone', made[0]!.entity.id)).toBeNull();
+    expect(rangeSelection(rows, fixedId('entity', 'gone'), made[0]!.entity.id)).toBeNull();
+  });
+});
+
+describe('the entities a hierarchy drag carries', () => {
+  it('are the ids of its payload, in the order the rows were selected', () => {
+    expect(draggedEntityIds('a b c')).toEqual(['a', 'b', 'c']);
+  });
+
+  it('are only the ids when the payload has empty segments', () => {
+    // A payload is text the browser hands over on drop, and a drag can come from
+    // another window: whatever is not an id moves nothing, and the ids beside it
+    // still do.
+    expect(draggedEntityIds(' a  b ')).toEqual(['a', 'b']);
+    expect(draggedEntityIds('  ')).toEqual([]);
+    expect(draggedEntityIds('')).toEqual([]);
   });
 });

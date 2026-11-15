@@ -6,7 +6,7 @@
  *   project.json            this file
  *   .gitignore              keeps `.studio/` out of the author's repository
  *   scenes/main.scene.json  SceneDoc documents
- *   assets/                 one folder per directory in `ASSET_KIND_INFO`
+ *   assets/                 one folder per directory in `assetKindInfo`
  *   .studio/                caches and build output — safe to delete
  * ```
  *
@@ -17,8 +17,11 @@
  * points at instead.
  */
 import { conform, isRecord } from '../conform';
+import { PROJECT_FORMAT_VERSION } from '../constants';
+import { checks, listOf, nullable, oneOf, RecordReader, versionRefusal, type Decoded, type RefusedFile } from '../decoded';
+import { isSceneId, type SceneId } from '../ids';
 import type { Vec3 } from '../scene/schema';
-import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers';
+import { conformLayers, createDefaultLayer, decodeLayers, type CollisionLayer } from './layers';
 
 /**
  * One scene of a project, as it was found on disk.
@@ -41,7 +44,7 @@ import { conformLayers, createDefaultLayer, type CollisionLayer } from './layers
  * moves with it, because no reference is a name.
  */
 export interface SceneEntry {
-  id: string;
+  id: SceneId;
   name: string;
   /** Relative to the project root, with `/` separators on every platform. */
   path: string;
@@ -76,7 +79,7 @@ export interface ProjectFile {
    * the Finder. `openProject` falls back to the first scene rather than
    * refusing, so one stale line here never costs a project.
    */
-  startScene: string;
+  startScene: SceneId;
   settings: ProjectSettings;
 }
 
@@ -92,6 +95,12 @@ export interface ProjectContents {
   project: ProjectFile;
   /** Every scene found on disk, ordered by path. */
   scenes: SceneEntry[];
+  /**
+   * Every file under `scenes/` that is not listed, ordered by path, and why: not
+   * JSON, not an object, or with no id of its own. The editor names each when
+   * the project opens.
+   */
+  refusedScenes: RefusedFile[];
 }
 
 /**
@@ -101,7 +110,7 @@ export interface ProjectContents {
  */
 export function findScene(
   scenes: readonly SceneEntry[],
-  id: string,
+  id: SceneId,
 ): SceneEntry | undefined {
   return scenes.find((entry) => entry.id === id);
 }
@@ -119,7 +128,10 @@ export function resolveScene(
   scenes: readonly SceneEntry[],
   idOrName: string,
 ): SceneEntry | undefined {
-  return findScene(scenes, idOrName) ?? scenes.find((entry) => entry.name === idOrName);
+  return (
+    (isSceneId(idOrName) ? findScene(scenes, idOrName) : undefined) ??
+    scenes.find((entry) => entry.name === idOrName)
+  );
 }
 
 /**
@@ -158,7 +170,7 @@ export interface ProjectSettings {
    * the same tools as a level. It loads first and the target loads behind it —
    * the classic Unity arrangement, which needs no additive loading at all.
    */
-  loadingScene: string | null;
+  loadingScene: SceneId | null;
   rendering: RenderingSettings;
   physics: PhysicsSettings;
   /** Named build configurations, keyed by id; see `BuildProfile`. */
@@ -245,9 +257,9 @@ export function createPhysicsSettings(): PhysicsSettings {
 }
 
 /**
- * Physics settings that arrived from elsewhere — a project file, a settings
- * patch, a launch — read against a model: the factory, or for a patch the
- * project's current settings, so a table the patch leaves out keeps its value.
+ * Physics settings that arrived from elsewhere — a settings patch, a launch —
+ * read against a model: the factory, or for a patch the project's current
+ * settings, so a table the patch leaves out keeps its value.
  *
  * `conform` reads gravity and the step; the layer table is read entry by entry
  * (`conformLayers`), since `conform` takes an array as a tuple.
@@ -280,7 +292,7 @@ export interface BuildProfile {
    * Scene **ids** to ship. The first is the entry point, as in Unity's Scenes
    * In Build. Empty means "the start scene only".
    */
-  scenes: string[];
+  scenes: SceneId[];
   /** Last folder exported to, so the next export can offer it again. */
   outputDir: string | null;
   /**
@@ -328,30 +340,6 @@ export function createBuildProfiles(projectName: string): BuildProfiles {
         basePath: '',
       },
     },
-  };
-}
-
-/**
- * Fills profiles read off disk with the fields that did not exist when they
- * were written.
- *
- * The same shape as the settings sections above: through the type's own
- * factory, so adding a build option stays a change to `createBuildProfiles`
- * rather than a migration. A profile from before `basePath` gets `''`, which is
- * exactly the behaviour it was exported against.
- */
-export function normalizeBuildProfiles(
-  build: BuildProfiles | undefined,
-  projectName: string,
-): BuildProfiles {
-  const fresh = createBuildProfiles(projectName);
-  if (!build) return fresh;
-  const defaults = fresh.profiles[DEFAULT_BUILD_PROFILE_ID]!;
-  return {
-    active: build.active,
-    profiles: Object.fromEntries(
-      Object.entries(build.profiles).map(([id, profile]) => [id, { ...defaults, ...profile }]),
-    ),
   };
 }
 
@@ -408,7 +396,7 @@ export interface OpenProject extends ProjectContents {
   /** Path of the loaded scene, relative to the project root. */
   scenePath: string;
   /** Id of the loaded scene — what the window and every reference use. */
-  sceneId: string;
+  sceneId: SceneId;
   /** Serialized `SceneDoc`; the renderer parses it so `core` owns the format. */
   sceneJson: string;
 }
@@ -425,3 +413,82 @@ export const SCENES_DIR = 'scenes';
 export const SCENE_FILE_SUFFIX = '.scene.json';
 export const ASSETS_DIR = 'assets';
 export const CACHE_DIR = '.studio';
+
+/**
+ * `project.json`, decoded: every field the interfaces above name, of the kind
+ * they name, and nothing else.
+ *
+ * The version first, and alone: a project of another format is refused in one
+ * line, before anything else in it is read, so that an older project reads as
+ * older and not as broken in thirty places. Nothing is filled in and nothing
+ * converted — a setting added since the file was written is a field it lacks,
+ * and the format's version moved with it.
+ *
+ * Written by hand rather than as a schema: the settings are sections each with
+ * a page of their own in Project Settings, and the profiles a record keyed by
+ * id, which no field kind describes. Each section is read into a literal of its
+ * interface, so a setting added to an interface and not read here does not
+ * compile.
+ */
+export function decodeProjectFile(value: unknown): Decoded<ProjectFile> {
+  if (isRecord(value) && value['version'] !== PROJECT_FORMAT_VERSION) {
+    return versionRefusal(value['version'], PROJECT_FORMAT_VERSION);
+  }
+  const file = new RecordReader(value);
+  return file.done({
+    version: file.read('version', checks.number),
+    name: file.read('name', checks.string),
+    engineVersion: file.read('engineVersion', checks.string),
+    startScene: file.read('startScene', checks.sceneId),
+    settings: readSettings(file.record('settings')),
+  });
+}
+
+function readSettings(settings: RecordReader): ProjectSettings {
+  return {
+    loadingScene: settings.read('loadingScene', nullable(checks.sceneId)),
+    rendering: readRendering(settings.record('rendering')),
+    physics: readPhysics(settings.record('physics')),
+    build: readBuildProfiles(settings.record('build')),
+  };
+}
+
+function readRendering(rendering: RecordReader): RenderingSettings {
+  return {
+    forceWebGL: rendering.read('forceWebGL', checks.boolean),
+    antialias: rendering.read('antialias', checks.boolean),
+    maxPixelRatio: rendering.read('maxPixelRatio', checks.number),
+    shadows: rendering.read('shadows', checks.boolean),
+    shadowMapSize: rendering.read('shadowMapSize', checks.number),
+    exposure: rendering.read('exposure', checks.number),
+    batching: rendering.read('batching', checks.boolean),
+  };
+}
+
+function readPhysics(physics: RecordReader): PhysicsSettings {
+  return {
+    gravity: physics.read('gravity', checks.vec3),
+    fixedTimestep: physics.read('fixedTimestep', checks.number),
+    maxSubsteps: physics.read('maxSubsteps', checks.number),
+    layers: physics.decode('layers', decodeLayers) ?? [],
+  };
+}
+
+function readBuildProfiles(build: RecordReader): BuildProfiles {
+  const active = build.read('active', checks.string);
+  const profiles = build.record('profiles');
+  const read: Record<string, BuildProfile> = {};
+  for (const id of profiles.keys()) {
+    const profile = profiles.record(id);
+    read[id] = {
+      name: profile.read('name', checks.string),
+      target: profile.read('target', oneOf(['web'])),
+      scenes: profile.read('scenes', listOf(checks.sceneId)),
+      outputDir: profile.read('outputDir', nullable(checks.string)),
+      includeAllAssets: profile.read('includeAllAssets', checks.boolean),
+      title: profile.read('title', checks.string),
+      basePath: profile.read('basePath', checks.string),
+    };
+  }
+  return { active, profiles: read };
+}

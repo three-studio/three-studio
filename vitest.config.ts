@@ -7,7 +7,13 @@ export default defineConfig({
   // copy of the library. See `workspace-aliases.ts`.
   resolve: { alias: [...workspaceAliases, threeWebgpuAlias] },
   test: {
-    include: ['test/**/*.test.ts', 'packages/*/test/**/*.test.ts', 'apps/*/test/**/*.test.ts'],
+    include: [
+      'test/**/*.test.ts',
+      'packages/*/test/**/*.test.ts',
+      'modules/*/test/**/*.test.ts',
+      'apps/*/test/**/*.test.ts',
+      'tools/*/test/**/*.test.ts',
+    ],
     environment: 'node',
   },
 });

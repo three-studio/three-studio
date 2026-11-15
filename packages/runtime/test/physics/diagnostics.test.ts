@@ -1,7 +1,8 @@
 import {
-  createComponent,
   createDefaultLayer,
   createEntity,
+  rigidbodyType,
+  fixedId,
   type EntityTemplate,
   createPhysicsSettings,
   createRenderingSettings,
@@ -10,7 +11,9 @@ import {
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import { builtInRegistries } from '../registries';
 import {
   block,
   ground,
@@ -35,7 +38,7 @@ afterAll(takeTheBrowserBack);
 
 describe('the physics set-up', () => {
   it('says nothing of a Rigid Body whose colliders are on its children', async () => {
-    const cart = createEntity('Cart', [createComponent('rigidbody')]);
+    const cart = createEntity('Cart', [rigidbodyType.create()]);
     const wheel = withCollider('sphere', [0.5, 0, 0]);
     nest(cart, wheel);
     const rig = await physicsRig([ground(), cart, wheel]);
@@ -44,7 +47,7 @@ describe('the physics set-up', () => {
   });
 
   it('says where a Collider may go for a Rigid Body with none anywhere', async () => {
-    const rig = await physicsRig([ground(), createEntity('Cart', [createComponent('rigidbody')])]);
+    const rig = await physicsRig([ground(), createEntity('Cart', [rigidbodyType.create()])]);
 
     expect(rig.engine.warnings).toContain(
       '"Cart" has a Rigid Body but no Collider, on it or on a child without a body of its own, so nothing can touch it. Add a Collider.',
@@ -101,9 +104,11 @@ describe('the physics set-up, with layers', () => {
 
   it('says nothing of layers with physics off', async () => {
     const lost = onLayer(withBody('sphere', [0, 2, 0]), 'gone');
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith([onLayer(player([0, 1, 0]), 'player'), ground(), lost]),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: { ...createPhysicsSettings(), layers: APART },
       domElement: new EventTarget() as unknown as HTMLElement,
@@ -130,7 +135,7 @@ describe('the physics set-up, with joints', () => {
   };
 
   it('says so of a joint whose Connected Body is gone', async () => {
-    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: 'gone' }), 'Door');
+    const door = named(withJoint(withBody('box', [0, 1, 0]), { connectedEntity: fixedId('entity', 'gone') }), 'Door');
     await saidOf('Door', [door], 'Connected Body');
   });
 
@@ -165,9 +170,11 @@ describe('the physics set-up, with joints', () => {
     const rig = await physicsRig([ground(), frame, door]);
     expect(rig.engine.warnings.filter((line) => line.includes('Joint'))).toEqual([]);
 
+    const registries = builtInRegistries();
     const engine = await Engine.create({
       scene: sceneWith([withJoint(createEntity('Hinge'))]),
-      resolver: NULL_ASSET_RESOLVER,
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       domElement: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,

@@ -13,14 +13,17 @@
  * this file exists.
  */
 import {
-  MATERIAL_SIDE_LABELS,
-  TEXTURE_WRAP_LABELS,
-  optionsFrom,
+  isComponentOfType,
   type AssetKind,
   type ComponentDoc,
+  type ComponentId,
+  type ComponentOfType,
+  type ComponentType,
+  type ComponentTypeId,
+  type EntityId,
   type FieldDef,
-  type GeometryKind,
 } from '@three-studio/core';
+import type { RuntimeRegistries } from '@three-studio/runtime';
 
 /**
  * `Omit` that survives a union.
@@ -66,7 +69,7 @@ type EachWith<D, E> = D extends unknown ? D & E : never;
  * declared variant. `FieldDef` does have an `asset` variant, but it means the
  * plain dropdown a script property gets today; the two are one idea with two
  * controls, and making them one is a change to what a designer sees rather
- * than to how a pane is written. See `docs/chantier`.
+ * than to how a pane is written.
  */
 export interface AssetSlotParams {
   view: 'asset';
@@ -112,6 +115,12 @@ interface FieldPlacement<Subject> {
   toModel?: (value: unknown) => unknown;
   /** Value bound by Tweakpane -> document value. Overrides the variant's own. */
   fromModel?: (value: unknown) => unknown;
+  /**
+   * The row of a field its type marks `tunable`: left enabled while the game
+   * runs, when every other row is locked, and written to the running game
+   * rather than to the document. Set by derivation, never by hand.
+   */
+  tunable?: true;
 }
 
 /** A field as the builder binds it, once `visibleWhen` has already been settled. */
@@ -132,19 +141,13 @@ export interface ActionSpec {
    */
   label?: string;
   visibleWhen?: (component: ComponentDoc) => boolean;
-  run: (context: { entityId: string; componentId: string; component: ComponentDoc }) => void;
-}
-
-/**
- * Where the primitive's own fields go.
- *
- * They used to be appended after everything else, which put "Segments X" below
- * twenty-odd material rows — present, and effectively unfindable. Declaring the
- * position here keeps ordering a property of the schema rather than of the
- * builder.
- */
-export interface GeometrySlotSpec {
-  kind: 'geometry';
+  /** Given the window's registries with the component, for what the action expands, creates or asks. */
+  run: (context: {
+    registries: RuntimeRegistries;
+    entityId: EntityId;
+    componentId: ComponentId;
+    component: ComponentDoc;
+  }) => void;
 }
 
 /** A rule, to show where one group of fields ends and the next begins. */
@@ -155,229 +158,104 @@ export interface SeparatorSpec {
    *
    * A rule belongs to the layout, not to a row that can come and go: hiding one
    * would leave two groups running together with nothing between them. Declared
-   * so that this shares a property with the rest of `PaneEntry`, which is what
+   * so that this shares a property with the rest of `PaneRow`, which is what
    * lets `shapeOf` read a whole list of them without a cast.
    */
   visibleWhen?: never;
 }
 
-export type PaneEntry = FieldSpec | ActionSpec | GeometrySlotSpec | SeparatorSpec;
+/** A row of a pane as the Inspector builds it. */
+export type PaneRow = FieldSpec | ActionSpec | SeparatorSpec;
 
 /**
  * Whether an entry is a field, by the one property only a field has.
  *
  * `kind` cannot answer it any more: `{ type: 'asset', kind: 'audio' }` is a
- * declared field whose `kind` names an asset kind, so the three guards below
+ * declared field whose `kind` names an asset kind, so the two guards below
  * would be reading a word that means something else in that row. `path` is
  * what a field is — it is where the value lives — and nothing that is not a
  * field has one.
  */
-function isField(entry: PaneEntry): entry is FieldSpec {
+function isField(entry: PaneRow): entry is FieldSpec {
   return 'path' in entry;
 }
 
-export function isAction(entry: PaneEntry): entry is ActionSpec {
+export function isAction(entry: PaneRow): entry is ActionSpec {
   return !isField(entry) && entry.kind === 'action';
 }
 
-export function isGeometrySlot(entry: PaneEntry): entry is GeometrySlotSpec {
-  return !isField(entry) && entry.kind === 'geometry';
-}
-
-export function isSeparator(entry: PaneEntry): entry is SeparatorSpec {
+export function isSeparator(entry: PaneRow): entry is SeparatorSpec {
   return !isField(entry) && entry.kind === 'separator';
 }
 
-export interface ComponentSchema {
-  label: string;
-  fields: readonly PaneEntry[];
-
-  /*
-   * The three facets below are declared only by the types that have them, the
-   * way a runtime system declares a capability. Four panes are not fixed by
-   * the component's type: a mesh's geometry slot expands into the fields of
-   * whichever primitive it is, a collider's into those of its shape's kind, a
-   * joint's into those of its kind, and a script's properties are whatever its
-   * source says today. For those four the *list* changes, not merely which of
-   * a fixed list is visible.
-   */
-
-  /** What a `{ kind: 'geometry' }` slot expands into. Declared by `mesh`, `collider` and `joint`. */
-  geometryFields?(component: ComponentDoc): readonly FieldSpec[];
-  /** Rows appended after the declared ones, from the document. Declared by `script`. */
-  extraFields?(component: ComponentDoc): readonly FieldSpec[];
+/**
+ * What a type written as a schema adds to the pane derived from it: what the
+ * schema cannot say. A handful of buttons, a choice the project or the scene
+ * supplies, one value shown as two rows, a script's declared properties.
+ *
+ * An extension and not a pane of its own: every row a schema can say is
+ * derived, and a type that wanted one button more would otherwise copy its
+ * whole pane to add it — the second list a schema exists to remove.
+ *
+ * Erased to `ComponentDoc` so that one registry holds every type's; a type's
+ * editor part writes one with `extendPane`, typed by its own component.
+ */
+export interface PaneExtension {
+  readonly id: ComponentTypeId;
   /**
-   * What makes this component's row list a *different* list.
-   *
-   * The type alone, unless the two above can change what the list contains — no
-   * arrangement of `visibleWhen` bits could say that, which is what this is for.
+   * Rows in place of a field's own row — a leaf's, a union's selector — keyed
+   * by the field. The rows the field holds follow: a union's variant, an
+   * object's fields. Handed the row derivation gave, or `null` where it gives
+   * none. Asked once per pane key: rows that depend on more than the variants
+   * the component holds say what with `paneKey`.
    */
-  paneKey?(component: ComponentDoc): string;
+  readonly drawers?: { readonly [key: string]: Drawer<ComponentDoc> | undefined };
+  /** Entries after a field's last row — an object's or a union's included — keyed by the field. */
+  readonly after?: { readonly [key: string]: readonly PaneRow[] | undefined };
   /**
-   * Its rows tune the running game during Play, where every other row is
-   * locked. The running world takes the value; the document does not. Declared
-   * by the components the world builds — `rigidbody`, `collider` and `joint`.
+   * What else, read when the pane is built, makes its rows another list
+   * beyond the variants the component holds: a script's asset, whose declared
+   * properties are rows; the project's layers, which a Collider's Layer row
+   * lists.
    */
-  live?: true;
+  readonly paneKey?: (component: ComponentDoc) => string;
 }
 
-const RAD_TO_DEG = 180 / Math.PI;
-const DEG_TO_RAD = Math.PI / 180;
+/** Rows in place of a field's own; see `PaneExtension.drawers`. */
+type Drawer<C> = (row: FieldSpec | null, component: C) => readonly PaneRow[];
+
+/** A type's own fields: what an extension's drawers and entries are keyed by. */
+type FieldKey<C> = Exclude<keyof C & string, 'id' | 'type'>;
 
 /**
- * Angles are stored in radians and always shown in degrees.
- *
- * A converter pair rather than a declared variant, and the line is worth
- * knowing: a tuple bound as a pad *must* be converted, so `vec2` and `vec3`
- * carry their own conversion, but showing an angle in degrees is a choice —
- * `particleEmitter.velocity` is three numbers that are not an angle at all.
+ * A type's pane extension, written against its own component, so that a
+ * misspelt field does not compile and a drawer reads the type's fields with no
+ * cast. Each callback is asked of the type's own components alone.
  */
-export const asDegrees: Pick<FieldSpec, 'toModel' | 'fromModel'> = {
-  toModel: (value) => (value as number) * RAD_TO_DEG,
-  fromModel: (value) => (value as number) * DEG_TO_RAD,
-};
-
-/**
- * Keyed by `GeometryKind`, so adding a primitive to the union without giving it
- * inspector fields is a compile error rather than an empty panel.
- */
-export const GEOMETRY_FIELDS: Record<GeometryKind, readonly FieldSpec[]> = {
-  box: [
-    { path: ['geometry', 'width'], label: 'Width', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'depth'], label: 'Depth', type: 'number', min: 0.01, step: 0.1 },
-    // Displacement moves vertices, so a one-segment face cannot show any of it.
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments X',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments Y',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-    {
-      path: ['geometry', 'depthSegments'],
-      label: 'Segments Z',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-  ],
-  sphere: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments V',
-      type: 'number', min: 2, max: 64, step: 1,
-    },
-  ],
-  plane: [
-    { path: ['geometry', 'width'], label: 'Width', type: 'number', min: 0.01, step: 0.5 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.5 },
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments X',
-      type: 'number', min: 1, max: 512, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments Y',
-      type: 'number', min: 1, max: 512, step: 1,
-    },
-  ],
-  capsule: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-  ],
-  cylinder: [
-    { path: ['geometry', 'radiusTop'], label: 'Radius top', type: 'number', min: 0, step: 0.1 },
-    {
-      path: ['geometry', 'radiusBottom'],
-      label: 'Radius bottom',
-      type: 'number', min: 0, step: 0.1,
-    },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-  ],
-  circle: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'segments'],
-      label: 'Segments',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-  ],
-  ring: [
-    {
-      path: ['geometry', 'innerRadius'],
-      label: 'Inner radius',
-      type: 'number', min: 0, step: 0.05,
-    },
-    {
-      path: ['geometry', 'outerRadius'],
-      label: 'Outer radius',
-      type: 'number', min: 0.01, step: 0.05,
-    },
-    {
-      path: ['geometry', 'thetaSegments'],
-      label: 'Segments',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-  ],
-  torus: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['geometry', 'tube'], label: 'Tube', type: 'number', min: 0.01, step: 0.02 },
-    {
-      path: ['geometry', 'radialSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 64, step: 1,
-    },
-    {
-      path: ['geometry', 'tubularSegments'],
-      label: 'Segments V',
-      type: 'number', min: 3, max: 256, step: 1,
-    },
-  ],
-  torusKnot: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['geometry', 'tube'], label: 'Tube', type: 'number', min: 0.01, step: 0.02 },
-    { path: ['geometry', 'p'], label: 'Winding P', type: 'number', min: 1, max: 20, step: 1 },
-    { path: ['geometry', 'q'], label: 'Winding Q', type: 'number', min: 1, max: 20, step: 1 },
-    {
-      path: ['geometry', 'radialSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 64, step: 1,
-    },
-    {
-      path: ['geometry', 'tubularSegments'],
-      label: 'Segments V',
-      type: 'number', min: 3, max: 512, step: 1,
-    },
-  ],
-  ...polyhedronFields('tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron'),
-};
-
-/**
- * The four solids take the same two arguments in three, so they take the same
- * two fields here. `detail` is capped low on purpose: it is exponential, and 5
- * already puts a single solid past a hundred thousand triangles.
- */
-function polyhedronFields<K extends GeometryKind>(
-  ...kinds: readonly K[]
-): Record<K, readonly FieldSpec[]> {
-  const fields: readonly FieldSpec[] = [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'detail'],
-      label: 'Subdivisions',
-      type: 'number', min: 0, max: 5, step: 1,
-    },
-  ];
-  return Object.fromEntries(kinds.map((kind) => [kind, fields])) as Record<K, readonly FieldSpec[]>;
+export function extendPane<T extends ComponentType>(
+  id: T,
+  extension: {
+    readonly drawers?: { readonly [K in FieldKey<ComponentOfType<T>>]?: Drawer<ComponentOfType<T>> };
+    readonly after?: { readonly [K in FieldKey<ComponentOfType<T>>]?: readonly PaneRow[] };
+    readonly paneKey?: (component: ComponentOfType<T>) => string;
+  },
+): PaneExtension {
+  const { drawers, after, paneKey } = extension;
+  const drawn: Record<string, Drawer<ComponentDoc>> = {};
+  // Read through an index signature, which the mapped type of the type's keys
+  // is assignable to: a loop over its own keys cannot be typed by them.
+  const typed: { readonly [key: string]: Drawer<ComponentOfType<T>> | undefined } = drawers ?? {};
+  for (const [key, draw] of Object.entries(typed)) {
+    if (draw !== undefined) drawn[key] = (row, component) => (isComponentOfType(component, id) ? draw(row, component) : []);
+  }
+  return {
+    id,
+    ...(drawers === undefined ? {} : { drawers: drawn }),
+    ...(after === undefined ? {} : { after }),
+    ...(paneKey === undefined
+      ? {}
+      : { paneKey: (component: ComponentDoc) => (isComponentOfType(component, id) ? paneKey(component) : '') }),
+  };
 }
 
 /**
@@ -421,89 +299,3 @@ export const assetSlot = <Subject,>(
   label,
   params: { view: 'asset', assetKind, ...(emptyLabel === undefined ? {} : { emptyLabel }) },
 });
-
-export const textureSlot = (key: string, label: string): FieldSpec =>
-  assetSlot(['material', key], label);
-
-export const MATERIAL_FIELDS: readonly FieldSpec[] = [
-  { path: ['material', 'color'], label: 'Colour' },
-  {
-    path: ['material', 'roughness'],
-    label: 'Roughness',
-    type: 'number', min: 0, max: 1, step: 0.01,
-  },
-  {
-    path: ['material', 'metalness'],
-    label: 'Metalness',
-    type: 'number', min: 0, max: 1, step: 0.01,
-  },
-  { path: ['material', 'emissive'], label: 'Emissive' },
-  {
-    path: ['material', 'emissiveIntensity'],
-    label: 'Emissive power',
-    type: 'number', min: 0, max: 20, step: 0.1,
-  },
-  { path: ['material', 'opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
-  { path: ['material', 'transparent'], label: 'Transparent' },
-  { path: ['material', 'wireframe'], label: 'Wireframe' },
-  {
-    path: ['material', 'side'],
-    label: 'Side',
-    type: 'enum',
-    options: optionsFrom(MATERIAL_SIDE_LABELS),
-  },
-
-  textureSlot('colorMap', 'Base colour map'),
-  textureSlot('normalMap', 'Normal map'),
-  {
-    path: ['material', 'normalScale'],
-    label: 'Normal strength',
-    type: 'number', min: 0, max: 4, step: 0.05,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.normalMap !== null,
-  },
-  textureSlot('bumpMap', 'Bump map'),
-  {
-    path: ['material', 'bumpScale'],
-    label: 'Bump strength',
-    type: 'number', min: 0, max: 4, step: 0.05,
-    // Tied to the bump slot alone. It has no effect while a normal map is also
-    // set — three picks one — but hiding the strength of a map that is visibly
-    // assigned would read as the field being broken.
-    visibleWhen: (c) => c.type === 'mesh' && c.material.bumpMap !== null,
-  },
-  textureSlot('roughnessMap', 'Roughness map'),
-  textureSlot('metalnessMap', 'Metalness map'),
-  textureSlot('emissiveMap', 'Emissive map'),
-  textureSlot('aoMap', 'Occlusion map'),
-  {
-    path: ['material', 'aoIntensity'],
-    label: 'Occlusion strength',
-    type: 'number', min: 0, max: 1, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.aoMap !== null,
-  },
-  textureSlot('alphaMap', 'Alpha map'),
-  textureSlot('displacementMap', 'Displacement map'),
-  {
-    path: ['material', 'displacementScale'],
-    label: 'Displacement',
-    type: 'number', min: -2, max: 2, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.displacementMap !== null,
-  },
-  {
-    path: ['material', 'displacementBias'],
-    label: 'Displacement bias',
-    type: 'number', min: -1, max: 1, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.displacementMap !== null,
-  },
-
-  // The UV transform belongs to the three `Texture`, but it reads as a property
-  // of the material here because it applies to every slot at once.
-  { path: ['material', 'tiling'], label: 'Tiling', type: 'vec2', step: 0.1 },
-  { path: ['material', 'offset'], label: 'Offset', type: 'vec2', step: 0.01 },
-  {
-    path: ['material', 'wrap'],
-    label: 'Wrap',
-    type: 'enum',
-    options: optionsFrom(TEXTURE_WRAP_LABELS),
-  },
-];

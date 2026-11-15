@@ -8,14 +8,17 @@ import {
   assetKindForFile,
   assetDisplayName,
   conformAssetSettings,
+  createAssetId,
   createId,
   defaultSettings,
   emptyManifest,
   importerForFile,
+  isAssetId,
   type TextReader,
   type AssetManifest,
   type AssetMeta,
   type AssetSettings,
+  type CoreRegistries,
   type TextureEncoding,
 } from '@three-studio/core';
 import { atomicWrite } from './atomicWrite';
@@ -49,8 +52,11 @@ import { ensureImported } from './importedAssets';
  * cached — so a file needing work goes down the same path it always did, and
  * `ASSET_META_VERSION` is named in the index's `builtBy` so that a bump throws
  * every cached value away rather than hiding the upgrade it demands.
+ *
+ * What a file is — whether it is an asset, of which kind, under which name — is
+ * the registered importers' answer, asked of the registries it is given.
  */
-export async function scanAssets(projectPath: string): Promise<AssetManifest> {
+export async function scanAssets(registries: CoreRegistries, projectPath: string): Promise<AssetManifest> {
   const assetsRoot = join(projectPath, ASSETS_DIR);
   const manifest = emptyManifest();
   const index = await FileIndex.open<AssetMeta>(
@@ -84,7 +90,7 @@ export async function scanAssets(projectPath: string): Promise<AssetManifest> {
         continue;
       }
 
-      const kind = assetKindForFile(entry.name);
+      const kind = assetKindForFile(registries, entry.name);
       if (kind === undefined) continue;
 
       const metaFile = `${full}${ASSET_META_SUFFIX}`;
@@ -98,7 +104,7 @@ export async function scanAssets(projectPath: string): Promise<AssetManifest> {
 
       let meta = stamp === null ? undefined : index.reuse(key, stamp);
       if (!meta) {
-        meta = await readOrCreateMeta(full, kind);
+        meta = await readOrCreateMeta(registries, full, kind);
         // Stamped after the fact rather than before: `readOrCreateMeta` may
         // have just written this file, and on a first scan of hand-dropped
         // files it may have adopted a sidecar another scan won the race to
@@ -110,7 +116,7 @@ export async function scanAssets(projectPath: string): Promise<AssetManifest> {
       const relativePath = toPosix(relative(projectPath, full));
       manifest.assets.push({
         id: meta.id,
-        name: assetDisplayName(entry.name),
+        name: assetDisplayName(registries, entry.name),
         kind: meta.kind,
         path: relativePath,
         folder: toPosix(relative(assetsRoot, directory)),
@@ -141,11 +147,11 @@ export async function scanAssets(projectPath: string): Promise<AssetManifest> {
   return manifest;
 }
 
-export async function readAssetMeta(assetFile: string): Promise<AssetMeta | null> {
+export async function readAssetMeta(registries: CoreRegistries, assetFile: string): Promise<AssetMeta | null> {
   try {
     const raw = await readFile(`${assetFile}${ASSET_META_SUFFIX}`, 'utf8');
     const parsed = JSON.parse(raw) as AssetMeta;
-    if (typeof parsed.id !== 'string' || parsed.id === '') return null;
+    if (!isAssetId(parsed.id)) return null;
     if (parsed.version > ASSET_META_VERSION) return null;
     // Filled the same way scenes and materials are: a sidecar written before a
     // kind gained a setting would otherwise hand `undefined` to whatever reads
@@ -154,7 +160,7 @@ export async function readAssetMeta(assetFile: string): Promise<AssetMeta | null
     return {
       ...parsed,
       settings: {
-        ...defaultSettings(parsed.kind, basename(assetFile)),
+        ...defaultSettings(registries, parsed.kind, basename(assetFile)),
         ...parsed.settings,
       } as AssetSettings,
     };
@@ -199,7 +205,7 @@ function isAlreadyExists(error: unknown): boolean {
  *
  * @returns What is on disk afterwards, which may be someone else's.
  */
-async function claimAssetMeta(assetFile: string, meta: AssetMeta): Promise<AssetMeta> {
+async function claimAssetMeta(registries: CoreRegistries, assetFile: string, meta: AssetMeta): Promise<AssetMeta> {
   const target = `${assetFile}${ASSET_META_SUFFIX}`;
   const staging = `${target}.${createId()}.tmp`;
   try {
@@ -207,7 +213,7 @@ async function claimAssetMeta(assetFile: string, meta: AssetMeta): Promise<Asset
     await link(staging, target);
     return meta;
   } catch (cause) {
-    if (isAlreadyExists(cause)) return (await readAssetMeta(assetFile)) ?? meta;
+    if (isAlreadyExists(cause)) return (await readAssetMeta(registries, assetFile)) ?? meta;
     // Hard links are not available on every volume — exFAT and some network
     // mounts refuse them. Losing the race is far less likely than losing the
     // asset, so fall back to the plain write rather than leave the file with no
@@ -278,11 +284,12 @@ async function sniffTextureEncoding(assetFile: string): Promise<TextureEncoding 
  * `defaultSettings` is synchronous and sees a name; this is the other half.
  */
 export async function settingsFor(
+  registries: CoreRegistries,
   assetFile: string,
   kind: AssetMeta['kind'],
   stored?: AssetSettings,
 ): Promise<AssetSettings> {
-  const settings = stored ?? defaultSettings(kind, basename(assetFile));
+  const settings = stored ?? defaultSettings(registries, kind, basename(assetFile));
   if (settings.kind !== 'texture') return settings;
 
   const encoding = await sniffTextureEncoding(assetFile);
@@ -300,17 +307,21 @@ export async function settingsFor(
  * author; a sidecar is read on every scan, and the field format 2 added costs a
  * file read to work out. Paying that once per file is the point of the bump.
  */
-async function readOrCreateMeta(assetFile: string, kind: AssetMeta['kind']): Promise<AssetMeta> {
-  const existing = await readAssetMeta(assetFile);
+async function readOrCreateMeta(
+  registries: CoreRegistries,
+  assetFile: string,
+  kind: AssetMeta['kind'],
+): Promise<AssetMeta> {
+  const existing = await readAssetMeta(registries, assetFile);
   if (existing && existing.version === ASSET_META_VERSION) return existing;
 
   const meta: AssetMeta = {
     version: ASSET_META_VERSION,
-    id: existing?.id ?? createId(),
+    id: existing?.id ?? createAssetId(),
     kind,
     importedAt: existing?.importedAt ?? Date.now(),
     hash: existing?.hash ?? (await hashFile(assetFile)),
-    settings: await settingsFor(assetFile, kind, existing?.settings),
+    settings: await settingsFor(registries, assetFile, kind, existing?.settings),
   };
 
   // Claimed when the file has never had a sidecar, because then the id is newly
@@ -321,22 +332,23 @@ async function readOrCreateMeta(assetFile: string, kind: AssetMeta['kind']): Pro
     await writeAssetMeta(assetFile, meta);
     return meta;
   }
-  return claimAssetMeta(assetFile, meta);
+  return claimAssetMeta(registries, assetFile, meta);
 }
 
 export async function updateAssetSettings(
+  registries: CoreRegistries,
   projectPath: string,
   assetPath: string,
   settings: AssetSettings,
 ): Promise<void> {
   const assetFile = resolveInside(projectPath, assetPath);
-  const meta = await readAssetMeta(assetFile);
+  const meta = await readAssetMeta(registries, assetFile);
   if (!meta) throw new AssetError(`No metadata for ${assetPath}.`);
   // Conformed here rather than at the IPC handler, because this is where the
   // kind is known: the **sidecar's**, never the payload's. A renderer that
   // could choose the kind could have a `.png`'s settings filled from the model
   // importer's defaults, and the next load would build a mesh out of an image.
-  const kept = conformAssetSettings(settings, meta.kind, basename(assetFile));
+  const kept = conformAssetSettings(registries, settings, meta.kind, basename(assetFile));
   await writeAssetMeta(assetFile, { ...meta, settings: kept });
 }
 
@@ -374,9 +386,9 @@ function readerBeside(source: string): TextReader {
  * Paths come back relative to the model, so a `textures/wood.png` reference
  * lands in a `textures/` folder next to it and resolves exactly as it did.
  */
-export async function companionsOf(source: string): Promise<string[]> {
+export async function companionsOf(registries: CoreRegistries, source: string): Promise<string[]> {
   const fileName = basename(source);
-  const importer = importerForFile(fileName);
+  const importer = importerForFile(registries, fileName);
   if (importer === undefined) return [];
   return [...(await importer.companions(fileName, readerBeside(source)))];
 }

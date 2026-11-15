@@ -3,26 +3,21 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { ASSET_KIND_INFO } from '@three-studio/core';
 import {
   FileLoader,
   Group,
+  Line,
   LoaderUtils,
   LoadingManager,
+  Mesh,
+  Points,
+  Texture,
   TextureLoader,
   type AnimationClip,
+  type BufferGeometry,
+  type Material,
   type Object3D,
 } from 'three/webgpu';
-
-/**
- * What `loadModelFromUrl` knows how to open. Read from the URL.
- *
- * The importers' list rather than one of its own: a model importer exists
- * because a loader below can open the format, so writing the four out again
- * here was a second list that could only ever be wrong. The `default` case
- * below is what happens if one ever is.
- */
-export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(ASSET_KIND_INFO.model.extensions);
 
 /** The extension of a URL, lowercased, with any query or fragment dropped. */
 export function extensionOf(url: string): string {
@@ -196,4 +191,55 @@ export async function loadModelFromUrl(
       console.warn(`[assets] no loader for ${path}; placing an empty object.`);
       return { object: new Group(), animations: [] };
   }
+}
+
+/** What a loaded model holds on the GPU, each piece once. */
+export interface ModelResources {
+  readonly geometries: ReadonlySet<BufferGeometry>;
+  readonly materials: ReadonlySet<Material>;
+  readonly textures: ReadonlySet<Texture>;
+}
+
+/**
+ * Every geometry, material and texture a tree draws with, each once.
+ *
+ * Meshes, lines and points are the objects that carry a geometry and a
+ * material, and `instanceof` lets three's own types say what each holds. A
+ * texture is any field of a material that holds one, read off the material
+ * rather than from a list of slot names: three keeps no such list, and a loader
+ * is free to fill a slot a list would miss.
+ */
+export function modelResources(object: Object3D): ModelResources {
+  const geometries = new Set<BufferGeometry>();
+  const materials = new Set<Material>();
+  object.traverse((child) => {
+    if (!(child instanceof Mesh || child instanceof Line || child instanceof Points)) return;
+    geometries.add(child.geometry);
+    for (const material of [child.material].flat()) materials.add(material);
+  });
+
+  const textures = new Set<Texture>();
+  for (const material of materials) {
+    const fields: readonly unknown[] = Object.values(material);
+    for (const field of fields) {
+      if (field instanceof Texture) textures.add(field);
+    }
+  }
+  return { geometries, materials, textures };
+}
+
+/**
+ * Frees a loaded model: every geometry, material and texture of the tree.
+ *
+ * The textures by name, because nothing else frees them: `Material.dispose`
+ * leaves its maps alone (three's rule, since a texture may be shared), so a
+ * model freed by its geometries and materials alone left every image it carried
+ * on the GPU — each Stop kept Play's copy of every model texture, and the import
+ * dialog's preview kept its own.
+ */
+export function disposeModel(object: Object3D): void {
+  const { geometries, materials, textures } = modelResources(object);
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
+  for (const texture of textures) texture.dispose();
 }

@@ -1,17 +1,20 @@
 import {
-  deserializeScene,
+  decodeScene,
   findScene,
+  formatDiagnostics,
   serializeScene,
+  type CoreRegistries,
   type OpenProject,
   type ProjectContents,
   type ProjectFile,
   type ProjectSummary,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { create } from 'zustand';
-import { peekViewport } from '../viewport/viewportHost';
-import { editorAssetResolver, useAssetStore } from './assetStore';
+import { useAssetStore } from './assetStore';
 import { reportBrokenReferences } from './brokenReport';
+import { reportRefusals } from './refusalReport';
 import { useDocumentStore } from './documentStore';
 import { inPrefabMode, usePrefabModeStore } from './prefabModeStore';
 import { useScriptStore } from './scriptStore';
@@ -30,14 +33,15 @@ interface ProjectState {
    */
   scenes: SceneEntry[];
   /** Id of the scene this window edits — what every reference uses. */
-  sceneId: string | null;
+  sceneId: SceneId | null;
   /** Where its file is: what Save writes, Revert reads and Show in Finder shows. */
   scenePath: string | null;
   /** Set while a save is in flight, and after a save that failed. */
   saving: boolean;
   error: string | null;
 
-  adopt: (opened: OpenProject) => void;
+  /** Given the window's registries, which the scene's components are decoded through. */
+  adopt: (registries: CoreRegistries, opened: OpenProject) => void;
   /** Replaces the project file after its settings were written back. */
   adoptProject: (project: ProjectFile) => void;
   /**
@@ -65,7 +69,8 @@ interface ProjectState {
    */
   retarget: (contents: ProjectContents, scene: SceneEntry) => void;
   close: () => void;
-  save: () => Promise<void>;
+  /** Given the window's registries: the file lists a table for every type they hold. */
+  save: (registries: CoreRegistries) => Promise<void>;
   setError: (error: string | null) => void;
 }
 
@@ -89,22 +94,31 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ project, scenes, sceneId: scene.id, scenePath: scene.path });
   },
 
-  adopt: (opened) => {
-    // Parsing here rather than in the main process keeps the scene format
+  adopt: (registries, opened) => {
+    // Decoded here rather than in the main process keeps the scene format
     // owned entirely by @three-studio/core, which the web export also uses.
-    const scene = deserializeScene(opened.sceneJson);
-    useDocumentStore.getState().replaceScene(scene);
-    // Chained rather than fired and forgotten: the report asks what the project
-    // holds, and asking before the manifest lands calls every asset missing.
+    const decoded = decodeScene(registries, opened.sceneJson);
+    if (!decoded.ok) {
+      // Nothing of the project is taken on: the window has no scene to show,
+      // and its page says which file, and every fault in it where it sits.
+      set({ error: formatDiagnostics(opened.scenePath, decoded.diagnostics) });
+      return;
+    }
+    useDocumentStore.getState().replaceScene(decoded.value);
+    // Chained rather than fired and forgotten: the reports ask what the project
+    // holds, and asking before the manifest lands calls every asset missing —
+    // and knows of no prefab it refused.
     void useAssetStore
       .getState()
-      .refresh()
-      .then(() => reportBrokenReferences());
+      .refresh(registries)
+      .then(() => {
+        reportBrokenReferences(registries);
+        reportRefusals([...opened.refusedScenes, ...useAssetStore.getState().refusedPrefabs.values()]);
+      });
     // Compiled on open, not only on Play: the inspector reads a script's
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.
     void useScriptStore.getState().build();
-    peekViewport()?.binder.setAssetResolver(editorAssetResolver);
     set({
       summary: opened.summary,
       project: opened.project,
@@ -121,7 +135,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     set({ summary: null, project: null, scenes: [], sceneId: null, scenePath: null, error: null });
   },
 
-  save: async () => {
+  save: async (registries) => {
     const { summary, scenePath } = get();
     if (!summary || scenePath === null) return;
 
@@ -129,7 +143,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // scene file would replace the level with one barrel — and the scene it
     // replaced is still sitting in the stash, unsaved.
     if (inPrefabMode()) {
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
     }
 
     set({ saving: true, error: null });
@@ -137,7 +151,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       await window.studio.project.saveScene({
         projectPath: summary.path,
         scenePath,
-        contents: serializeScene(useDocumentStore.getState().scene),
+        contents: serializeScene(registries, useDocumentStore.getState().scene),
       });
       useDocumentStore.getState().markClean();
     } catch (cause) {

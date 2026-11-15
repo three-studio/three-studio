@@ -1,18 +1,25 @@
 import {
-  COMPONENT_TYPES,
-  SUN_CUSTOM,
-  SUN_FROM_SKY,
   createComponent,
   createEnvironment,
+  createLight,
+  modelType,
+  fixedId,
+  waterType,
   type ComponentDoc,
   type LightComponent,
   type LightKind,
   type WaterComponent,
+  type WaterSun,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { paneEntriesFor } from '../src/components/panes';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { SCENE_SCHEMA, sceneSignature } from '../src/inspector/schema';
 import { shapeOf } from '../src/inspector/signature';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
+/** Every type the window knows, in the order it registered them. */
+const TYPES = registries.components.values().map((definition) => definition.id);
 
 /*
  * What decides whether the Inspector is rebuilt or merely refreshed.
@@ -27,16 +34,16 @@ import { shapeOf } from '../src/inspector/signature';
 
 /** The shape a component's pane would take, as the panel computes it. */
 function shape(component: ComponentDoc): string {
-  const { key, entries } = paneEntriesFor(component);
+  const { key, entries } = paneEntriesFor(registries, component);
   return `${key}/${shapeOf(entries, component)}`;
 }
 
 function light(kind: LightKind, castShadow = false): LightComponent {
-  return { ...createComponent('light'), kind, castShadow };
+  return { ...createLight('point'), kind, castShadow };
 }
 
-function water(sunSource: WaterComponent['sunSource']): WaterComponent {
-  return { ...createComponent('water'), sunSource };
+function water(sun: WaterSun): WaterComponent {
+  return { ...waterType.create(), sun };
 }
 
 describe('every component type is measured, not defaulted', () => {
@@ -44,22 +51,24 @@ describe('every component type is measured, not defaulted', () => {
     // The `default:` arm returned the bare type name, so a type it did not know
     // had a shape that could never change. Every type now answers with as many
     // bits as it has rows, which is the shape being read rather than guessed.
-    for (const type of COMPONENT_TYPES) {
-      const { entries } = paneEntriesFor(createComponent(type));
-      expect(shapeOf(entries, createComponent(type))).toHaveLength(entries.length);
+    for (const type of TYPES) {
+      const { entries } = paneEntriesFor(registries, createComponent(registries, type));
+      expect(shapeOf(entries, createComponent(registries, type))).toHaveLength(entries.length);
     }
   });
 
-  it('names the four lists that are not fixed by the type, and only those', () => {
-    // A mesh's, a collider's and a joint's geometry slot and a script's
-    // declared properties change the list itself, which no arrangement of bits
-    // can express. Everything else does.
-    const keys = COMPONENT_TYPES.map((type) => paneEntriesFor(createComponent(type)).key);
+  it('names the lists that are not fixed by the type, and only those', () => {
+    // A union's variant — a mesh's primitive, a collider's shape, a joint's
+    // kind, a water surface's sun —, a script's declared properties and the
+    // project's layers a collider lists change the list itself, which no
+    // arrangement of bits can express. Everything else does.
+    const keys = TYPES.map((type) => paneEntriesFor(registries, createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
-      'collider:box',
+      'collider:box:default:Default',
       'joint:hinge',
       'mesh:box',
       'script:',
+      'water:sky',
     ]);
   });
 });
@@ -93,7 +102,7 @@ describe('a light', () => {
      * answer depends on the kind — and that is the whole difference between
      * restating a declaration and reading it.
      */
-    const tick = paneEntriesFor(light('rectArea')).entries.find(
+    const tick = paneEntriesFor(registries, light('rectArea')).entries.find(
       (entry) => 'path' in entry && entry.path[0] === 'castShadow',
     );
     expect(tick?.visibleWhen?.(light('rectArea'))).toBe(false);
@@ -113,15 +122,15 @@ describe('a model', () => {
      * moved no row and still threw the pane away and rebuilt it. Now it
      * refreshes, which is what keeps focus and drag state.
      */
-    const linked: ComponentDoc = { ...createComponent('model'), materialId: 'mat-1' };
-    expect(shape(linked)).toBe(shape(createComponent('model')));
+    const linked: ComponentDoc = { ...modelType.create(), materialId: fixedId('asset', 'mat-1') };
+    expect(shape(linked)).toBe(shape(modelType.create()));
   });
 });
 
 describe('water', () => {
   it('changes shape when the sun becomes a custom one', () => {
     // Choosing a sun decides whether the two manual fields exist at all.
-    expect(shape(water(SUN_CUSTOM))).not.toBe(shape(water(SUN_FROM_SKY)));
+    expect(shape(water({ kind: 'custom', direction: [0, 1, 0], color: '#ffffff' }))).not.toBe(shape(water({ kind: 'sky' })));
   });
 });
 

@@ -1,0 +1,13 @@
+{
+  "name": "@three-studio/particles",
+  "version": "0.6.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Particle emitters for Three Studio: the component type, the system that draws it, and what the editor shows of it.",
+  "//peerDependencies": "What its parts import beside the kernel: three in the runtime part, the icon set in the editor part. Peers, so the module draws with the one copy of each the app loads.",
+  "peerDependencies": {
+    "lucide-react": "^1.28.0",
+    "three": "^0.185.0"
+  }
+}

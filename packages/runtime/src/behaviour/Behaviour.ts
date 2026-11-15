@@ -1,4 +1,4 @@
-import type { ComponentDoc, ComponentType, EntityDoc, SceneDoc } from '@three-studio/core';
+import type { AssetId, ComponentDoc, ComponentType, EntityDoc, SceneDoc } from '@three-studio/core';
 import type { Camera, Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
 import type { SceneBinder } from '../SceneBinder';
@@ -74,6 +74,15 @@ export interface BehaviourContext {
    * declines, so the component is inert rather than throwing once a frame.
    */
   readonly audio: AudioEngine | null;
+  /**
+   * The classes of the script bundle this engine runs, by script asset id: its
+   * own, never another engine's.
+   *
+   * Values of no known type here. Naming the script API would close an import
+   * cycle, since the API names this context, so the `script` behaviour checks
+   * each class as it reads it; the engine's options are where they are typed.
+   */
+  readonly scripts: ReadonlyMap<AssetId, unknown>;
   /** Surfaces a problem in the editor, laid over the game in the Viewport. */
   warn: (message: string) => void;
 }
@@ -139,37 +148,22 @@ export interface BehaviourTarget {
   readonly component: ComponentDoc;
 }
 
-export type BehaviourFactory = (
-  target: BehaviourTarget,
-  ctx: BehaviourContext,
-) => Behaviour | null;
-
-const factories = new Map<ComponentType, BehaviourFactory>();
-
 /**
- * Registers the runtime behaviour for a component type.
+ * The runtime behaviour of a component type: what the runtime's activation
+ * registers.
  *
  * This is the seam that makes features into blocks: a vehicle controller, an
  * animator, an audio source and a user script are all "a component type plus a
  * factory", and none of them requires the engine loop to know they exist.
  */
-export function registerBehaviour(type: ComponentType, factory: BehaviourFactory): void {
-  factories.set(type, factory);
-}
-
-export function behaviourFactoryFor(type: ComponentType): BehaviourFactory | undefined {
-  return factories.get(type);
-}
-
-/**
- * Every type that has a behaviour, so the engine can start from the component
- * tables rather than from the entity table.
- *
- * Two or three types out of eleven have one, and a scene has two thousand
- * entities: asking the registry which types matter and then reading those
- * tables visits the components that exist instead of every entity that might
- * have one.
- */
-export function typesWithBehaviour(): readonly ComponentType[] {
-  return [...factories.keys()];
+export interface BehaviourDefinition {
+  readonly id: ComponentType;
+  /**
+   * The behaviour for one component of the type, or `null` for one that
+   * declines — an audio source with no audio engine to play through.
+   *
+   * Handed every component the engine finds under `id`, and nothing else, so it
+   * narrows `target.component` by its `type` and owes no cast.
+   */
+  create(target: BehaviourTarget, ctx: BehaviourContext): Behaviour | null;
 }

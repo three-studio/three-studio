@@ -1,25 +1,22 @@
-import { type GeometryDef } from '../../scene/geometry';
-import { type MaterialDef } from '../../scene/material';
-import type { ComponentBase, Hex } from '../../scene/primitives';
+import type { Infer, Schema } from '../../fieldSchema';
+import { geometryField } from '../../scene/geometry';
+import { materialFields } from '../../scene/material';
+import type { Component } from '../../scene/primitives';
 
-export interface MeshComponent extends ComponentBase {
-  type: 'mesh';
-  geometry: GeometryDef;
-  /**
-   * The embedded material, used while `materialId` is null.
-   *
-   * Godot's model rather than Unity's: a material starts embedded, and only
-   * becomes a shared asset when the author asks for one. Unity and Unreal are
-   * asset-first — a new object gets a read-only default and any change forces
-   * you to create an asset — which buys consistency at the price of a file per
-   * tinted cube.
+/** A primitive three draws, as its fields. The order is the pane's. */
+export const meshSchema = {
+  castShadow: { type: 'boolean', label: 'Cast shadows', default: true },
+  receiveShadow: { type: 'boolean', label: 'Receive shadows', default: true },
+  // Shape first: it is what the object is, and a displacement map is useless
+  // without the segment counts that live here.
+  geometry: { ...geometryField, separatorBefore: true },
+  /*
+   * A material asset it draws with, shared with every mesh linking it; none,
+   * and it draws with its own, below. Linked, the rows below show and edit the
+   * asset's values.
    */
-  material: MaterialDef;
-  /**
-   * Asset id of a shared material. When set it wins over `material`, and the
-   * embedded value is left untouched so detaching can fall back to it.
-   */
-  materialId: string | null;
-  castShadow: boolean;
-  receiveShadow: boolean;
-}
+  materialId: { type: 'asset', label: 'Material', kind: 'material', separatorBefore: true },
+  material: { type: 'object', label: 'Material', linkedBy: 'materialId', fields: materialFields },
+} as const satisfies Schema;
+
+export type MeshComponent = Component<'mesh', Infer<typeof meshSchema>>;

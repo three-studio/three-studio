@@ -1,4 +1,4 @@
-import type { SceneDoc, Transform } from '@three-studio/core';
+import type { EntityId, SceneDoc, Transform } from '@three-studio/core';
 import { Euler, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 
 /*
@@ -28,10 +28,10 @@ function localMatrix(transform: Transform): Matrix4 {
 }
 
 /** Where an entity sits in the world, by walking its chain of parents. */
-export function worldMatrix(scene: SceneDoc, id: string | null): Matrix4 {
+export function worldMatrix(scene: SceneDoc, id: EntityId | null): Matrix4 {
   if (id === null) return new Matrix4();
 
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   if (!entity) return new Matrix4();
 
   return worldMatrix(scene, entity.parent).multiply(localMatrix(entity.transform));
@@ -47,8 +47,8 @@ export function worldMatrix(scene: SceneDoc, id: string | null): Matrix4 {
  */
 export function localTransformUnder(
   scene: SceneDoc,
-  id: string,
-  parentId: string | null,
+  id: EntityId,
+  parentId: EntityId | null,
 ): Transform {
   const world = worldMatrix(scene, id);
   const local = worldMatrix(scene, parentId).invert().multiply(world);
@@ -80,11 +80,11 @@ export function transformFromMatrix(matrix: Matrix4): Transform {
  */
 export function localTransformAfterDelta(
   scene: SceneDoc,
-  id: string,
+  id: EntityId,
   delta: Matrix4,
 ): Transform {
   const world = delta.clone().multiply(worldMatrix(scene, id));
-  const entity = scene.entities[id];
+  const entity = scene.entities.get(id);
   const local = worldMatrix(scene, entity?.parent ?? null).invert().multiply(world);
   return transformFromMatrix(local);
 }
@@ -95,7 +95,7 @@ export function translationMatrix(at: readonly [number, number, number]): Matrix
 }
 
 /** Where an entity stands in the world, ignoring how it got there. */
-export function worldPosition(scene: SceneDoc, id: string): [number, number, number] {
+export function worldPosition(scene: SceneDoc, id: EntityId): [number, number, number] {
   const elements = worldMatrix(scene, id).elements;
   return [elements[12] ?? 0, elements[13] ?? 0, elements[14] ?? 0];
 }

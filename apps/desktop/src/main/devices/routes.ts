@@ -11,7 +11,11 @@ import {
   findScene,
   isDeviceId,
   isRequestId,
+  isAssetId,
+  isSceneId,
+  jsonOf,
   type AssetEntry,
+  type CoreRegistries,
   type DeviceLaunchOptions,
   type DeviceTransport,
 } from '@three-studio/core';
@@ -51,6 +55,8 @@ import { WAITING_PAGE } from './waitingPage';
 
 /** What the handler answers from, read on every request. */
 export interface DeviceRoutes {
+  /** What a model's side files are read through: the process's registries. */
+  registries: CoreRegistries;
   /**
    * The first segment of every URL answered. Read on every request rather than
    * once, so that a new link refuses the old one at once — on a connection a
@@ -76,7 +82,7 @@ export interface DeviceRoutes {
   isOwnHost: (host: string | undefined) => boolean;
   /** Called for every request, with the address it came from, before any check. */
   onRequest: (remoteAddress: string | undefined) => void;
-  trace?: (line: string) => void;
+  trace?: ((line: string) => void) | undefined;
 }
 
 export type DeviceRequestHandler = (request: IncomingMessage, response: ServerResponse) => void;
@@ -252,7 +258,7 @@ export function createDeviceHandler(routes: DeviceRoutes): DeviceRequestHandler 
     if (list === undefined) {
       // A model that cannot be read names nothing, rather than failing every
       // request for its side files.
-      list = companionsOf(resolveInside(launch.projectPath, entry.path)).catch(() => []);
+      list = companionsOf(routes.registries, resolveInside(launch.projectPath, entry.path)).catch(() => []);
       lists.set(entry.id, list);
     }
     return list;
@@ -392,7 +398,7 @@ async function answer(
   if (`${head}/${part}` === BUILD_LAYOUT.manifest && within.length === 0) {
     trace(200);
     const manifest = applyLaunchOptions(launch.manifest, routes.launchOptions());
-    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', JSON.stringify(manifest));
+    send(request, response, 200, 'no-store', 'application/json; charset=utf-8', jsonOf(manifest));
     return;
   }
   if (part === 'scripts.mjs' && within.length === 0) {
@@ -404,6 +410,8 @@ async function answer(
     const name = within.join('/');
     if (!name.endsWith('.json')) return notFound();
     const id = name.slice(0, -'.json'.length);
+    // A name out of a URL: it is a scene's id, or it is nothing this serves.
+    if (!isSceneId(id)) return notFound();
     // The entry is the scene on screen, unsaved edits and all, every time it
     // is asked for: the first load, and a script that restarts the level.
     if (id === launch.entryId) {
@@ -416,7 +424,9 @@ async function answer(
     return;
   }
   if (part === 'assets' && within.length > 1) {
-    const [assetId = '', ...named] = within;
+    const [assetId, ...named] = within;
+    // A name out of a URL: it is an asset's id, or it is nothing this serves.
+    if (!isAssetId(assetId)) return notFound();
     const entry = launch.assets.get(assetId);
     if (entry === undefined) return notFound();
     const wanted = named.join('/');

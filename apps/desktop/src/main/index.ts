@@ -1,9 +1,11 @@
 import { join } from 'node:path';
-import { IPC_EVENTS } from '@three-studio/core';
+import { IPC_EVENTS, activateCore, createCoreRegistries } from '@three-studio/core';
+import * as particlesCore from '@three-studio/particles/core';
 import { BrowserWindow, app, session } from 'electron';
 import { DeviceServer } from './devices/DeviceServer';
 import { registerIpcHandlers } from './ipc';
 import { handleAssetProtocol, handleImportProtocol, registerAssetScheme } from './protocol';
+import { esbuildBinaryPath } from './scripts';
 import { applyContentSecurityPolicy } from './security';
 import { followWithSmokeDevice, runSmokeTest } from './smoke';
 import {
@@ -45,10 +47,27 @@ if (process.env['STUDIO_SMOKE_SOFTWARE_GPU']) {
 
 const isDev = !app.isPackaged;
 
+// esbuild's binary, which a packaged app must name for it (`esbuildBinaryPath`).
+// Set before the first build loads esbuild; a path the environment already
+// gives is kept.
+if (app.isPackaged) {
+  process.env['ESBUILD_BINARY_PATH'] ??= esbuildBinaryPath(
+    join(process.resourcesPath, 'app.asar.unpacked', 'node_modules'),
+  );
+}
+
 void app.whenReady().then(() => {
   applyContentSecurityPolicy(session.defaultSession, isDev);
   handleAssetProtocol();
   handleImportProtocol();
+
+  // The process's own, for as long as it runs: core alone, since what the main
+  // process does with a component is decode it, and none of it runs a game.
+  const registries = createCoreRegistries();
+  activateCore(registries);
+  // The modules' core parts too: the main process decodes scenes, and reads
+  // which assets each component names for an export.
+  particlesCore.activate(registries);
 
   // A hidden window standing in for a phone, for the smoke harness. See
   // `followWithSmokeDevice`.
@@ -65,6 +84,7 @@ void app.whenReady().then(() => {
   // One per process, and idle until something asks it to serve: it listens on
   // every interface, so it must never be listening without someone knowing.
   const devices = new DeviceServer({
+    registries,
     settingsFile: join(app.getPath('userData'), 'devices.json'),
     certificateFile: join(app.getPath('userData'), 'device-certificate.json'),
     // Where the exporter looks for the player: packaged, the app's resources;
@@ -85,6 +105,7 @@ void app.whenReady().then(() => {
     openSceneWindow,
     noteScene,
     isSceneOpenElsewhere,
+    registries,
     editorWindows,
     devices,
   });

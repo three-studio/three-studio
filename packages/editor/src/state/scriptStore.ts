@@ -1,9 +1,9 @@
-import { SCRIPT_API_VERSION } from '@three-studio/core';
+import { isAssetId } from '@three-studio/core';
 import {
-  Behaviour,
-  clearScripts,
-  registerScript,
-  scriptClassFor,
+  NO_SCRIPTS,
+  publishScriptApi,
+  scriptClassesOf,
+  type ScriptClasses,
   type ScriptPropertyDef,
 } from '@three-studio/runtime';
 import { create } from 'zustand';
@@ -14,68 +14,58 @@ interface ScriptState {
   warnings: string[];
   /** Bumped after each successful build so the inspector re-reads properties. */
   revision: number;
+  /**
+   * The classes of the bundle imported now, which Play hands to the game it
+   * runs. None before the first import, and once a failed build has dropped
+   * them.
+   */
+  scripts: ScriptClasses;
 
   build: () => Promise<boolean>;
   propertiesFor: (assetId: string) => Record<string, ScriptPropertyDef>;
   displayName: (assetId: string) => string | null;
 }
 
-/**
- * The surface a compiled script bundle is allowed to reach.
- *
- * Published on a global rather than imported, because the bundle must not pull
- * its own copy of the runtime — that would mean a second three.js in memory and
- * `instanceof` failing across the boundary. The build aliases `@three-studio/runtime`
- * to a shim that reads this.
- */
 /** Kept alive so stack traces from the running bundle stay resolvable. */
 let previousBundleUrl: string | null = null;
 
 /**
- * The bundle whose classes are registered now — `null` before the first import
- * and once a failed build has dropped them. A build handing back this same code
+ * The bundle whose classes are held now — `null` before the first import and
+ * once a failed build has dropped them. A build handing back this same code
  * needs no import.
  */
 let importedCode: string | null = null;
-
-function publishScriptApi(): void {
-  (globalThis as unknown as Record<string, unknown>)['__STUDIO_SCRIPT_API__'] = {
-    version: SCRIPT_API_VERSION,
-    Behaviour,
-    registerScript,
-  };
-}
 
 export const useScriptStore = create<ScriptState>()((set, get) => ({
   building: false,
   errors: [],
   warnings: [],
   revision: 0,
+  scripts: NO_SCRIPTS,
 
   build: async () => {
     set({ building: true, errors: [], warnings: [] });
     try {
       const result = await window.studio.scripts.build();
       if (result.errors.length > 0) {
-        // Dropped even on failure. Leaving them registered meant a typo in a
+        // Dropped even on failure. Leaving them in place meant a typo in a
         // script silently ran the *previous* version, which looks like the edit
         // simply had no effect.
-        clearScripts();
         importedCode = null;
-        set({ errors: result.errors, warnings: result.warnings, revision: get().revision + 1 });
+        set({
+          scripts: NO_SCRIPTS,
+          errors: result.errors,
+          warnings: result.warnings,
+          revision: get().revision + 1,
+        });
         for (const error of result.errors) console.error(`[script build] ${error}`);
         return false;
       }
 
-      // The code already imported is the code on disk, so the classes
-      // registered match the source. Re-importing would discard live state for
-      // no reason.
-      // The code itself is compared, not the build's `unchanged`: that flag is
-      // measured against the main process's last build, which every window,
-      // the export and each device launch share. Once a launch had compiled an
-      // edited script, Play's own build answered `unchanged`, and Play ran the
-      // classes from before the edit. After a reload, nothing has been
-      // imported yet, whatever the main process has cached.
+      // The main process compiles on every call, so code equal to what was
+      // imported means the sources did not change, and the classes held
+      // match them. Importing it again would discard live state for nothing,
+      // and hold a second copy of the same bundle.
       if (result.code === importedCode) {
         set({ warnings: result.warnings });
         return true;
@@ -83,7 +73,7 @@ export const useScriptStore = create<ScriptState>()((set, get) => ({
 
       publishScriptApi();
       // Previous classes are dropped first so a deleted script stops resolving.
-      clearScripts();
+      set({ scripts: NO_SCRIPTS });
       importedCode = null;
 
       // A blob URL rather than a data URL: sourcemaps resolve, and the CSP
@@ -95,11 +85,12 @@ export const useScriptStore = create<ScriptState>()((set, get) => ({
       // script's stack trace, which is the moment it is most wanted.
       if (previousBundleUrl) URL.revokeObjectURL(previousBundleUrl);
       previousBundleUrl = url;
-      await import(/* @vite-ignore */ url);
+      // What the bundle exports, decoded: it is a build of the author's code.
+      const scripts = scriptClassesOf(await import(/* @vite-ignore */ url));
       importedCode = result.code;
 
       for (const warning of result.warnings) console.warn(`[script build] ${warning}`);
-      set({ warnings: result.warnings, revision: get().revision + 1 });
+      set({ scripts, warnings: result.warnings, revision: get().revision + 1 });
       return true;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
@@ -111,6 +102,6 @@ export const useScriptStore = create<ScriptState>()((set, get) => ({
     }
   },
 
-  propertiesFor: (assetId) => scriptClassFor(assetId)?.properties ?? {},
-  displayName: (assetId) => scriptClassFor(assetId)?.name ?? null,
+  propertiesFor: (assetId) => (isAssetId(assetId) ? get().scripts.get(assetId)?.properties : undefined) ?? {},
+  displayName: (assetId) => (isAssetId(assetId) ? get().scripts.get(assetId)?.name : undefined) ?? null,
 }));

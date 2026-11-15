@@ -1,29 +1,26 @@
 import {
   cloneSubtree,
-  bodyOf,
-  collidersOfBody,
   componentsOf,
+  componentsToAdd,
   splitInstancedId,
-  createColliderShape,
-  createComponentForEntity,
   createEntity,
   deleteComponent,
   findComponentById,
-  fitColliderShape,
   insertEntity,
-  isAncestorOf,
   putComponent,
   removeSubtree,
   renameEntityReferences,
   reparentEntity as reparentInScene,
   setComponentsOf,
   type ComponentDoc,
-  type ComponentType,
+  type ComponentId,
+  type ComponentTypeId,
+  type CoreRegistries,
+  type EntityId,
   type EntityTemplate,
   type SceneDoc,
   type Transform,
 } from '@three-studio/core';
-import { collectVertices, type SceneBinder } from '@three-studio/runtime';
 import type { Matrix4 } from 'three/webgpu';
 import { useDocumentStore, type MutationOptions } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
@@ -65,7 +62,7 @@ import {
  * `addComponentWithDependencies` stay functions, as does everything the gizmo
  * and the Tweakpane Inspector drive — `setTransform`, `transformSelection`,
  * `setComponentNestedField`, `setEnvironmentField`, `setSkyField`,
- * `setLinkedMaterialField`, several of them sixty times a second during a drag.
+ * `setLinkedAssetField`, several of them sixty times a second during a drag.
  * `setEntityVisible` is the exception, because "hide it" needs a target and
  * nothing else, and it is behind `toggleVisibility` in `editCommands.ts`.
  */
@@ -83,7 +80,7 @@ const mutate = (
   useDocumentStore.getState().mutate(label, recipe, options);
 };
 
-export function addEntity(template: EntityTemplate, parentId: string | null = null): string {
+export function addEntity(template: EntityTemplate, parentId: EntityId | null = null): EntityId {
   const { entity } = template;
   mutate(
     `Add ${entity.name}`,
@@ -137,36 +134,37 @@ export function deleteSelection(selection: Selection): void {
   );
 }
 
-export function renameEntity(id: string, name: string): void {
+export function renameEntity(registries: CoreRegistries, id: EntityId, name: string): void {
   const trimmed = name.trim();
   if (trimmed === '') return;
   mutate('Rename entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.name = trimmed;
-    else editInstance(scene, id, (override) => void (override.name = trimmed));
+    else editInstance(registries, scene, id, (override) => void (override.name = trimmed));
   });
 }
 
-export function setEntityVisible(id: string, visible: boolean): void {
+export function setEntityVisible(registries: CoreRegistries, id: EntityId, visible: boolean): void {
   mutate(visible ? 'Show entity' : 'Hide entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.visible = visible;
-    else editInstance(scene, id, (override) => void (override.visible = visible));
+    else editInstance(registries, scene, id, (override) => void (override.visible = visible));
   });
 }
 
 /**
- * No caller yet: phase 4 gives it one, in `capabilitiesOf`. Kept rather than
- * deleted and rewritten — the padlock in the hierarchy is meant to reach it.
+ * No caller yet: the lock already works — `capabilitiesOf` refuses what a
+ * locked entity may not do — but nothing in the interface sets it. Kept rather
+ * than deleted and rewritten — the padlock in the hierarchy is meant to reach it.
  */
-export function setEntityLocked(id: string, locked: boolean): void {
+export function setEntityLocked(id: EntityId, locked: boolean): void {
   mutate(locked ? 'Lock entity' : 'Unlock entity', (scene) => {
-    const entity = scene.entities[id];
+    const entity = scene.entities.get(id);
     if (entity) entity.locked = locked;
   });
 }
 
-export function reparentEntity(id: string, parentId: string | null, index?: number): void {
+export function reparentEntity(id: EntityId, parentId: EntityId | null, index?: number): void {
   const scene = useDocumentStore.getState().scene;
 
   // Said out loud, like `removeEntities` does, because it is a drop the
@@ -194,7 +192,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
     // the document does not hold — a hierarchy row a prefab produced, which is
     // the defect — leaves the entity exactly where it was rather than in no list at all.
     if (!reparentInScene(draft, id, parentId, index)) return;
-    const entity = draft.entities[id];
+    const entity = draft.entities.get(id);
     if (entity) entity.transform = transform;
   });
 }
@@ -207,7 +205,7 @@ export function reparentEntity(id: string, parentId: string | null, index?: numb
  * same thing: making the parent is the easy half, and moving five objects into
  * it one drag at a time is the half nobody wants to do.
  */
-export function groupSelection(selection: Selection): string | null {
+export function groupSelection(selection: Selection): EntityId | null {
   const scene = useDocumentStore.getState().scene;
 
   // `roots()` is the filter that used to live here and nowhere else, though the
@@ -216,7 +214,7 @@ export function groupSelection(selection: Selection): string | null {
   // no edge of its own to move.
   const roots = selection
     .roots()
-    .filter((id) => splitInstancedId(id) === null && scene.entities[id] !== undefined);
+    .filter((id) => splitInstancedId(id) === null && scene.entities.has(id));
   if (roots.length === 0) return null;
 
   // The group is born where its contents already are, so its own gizmo lands
@@ -231,7 +229,7 @@ export function groupSelection(selection: Selection): string | null {
 
   // Under the parent they share, if they share one — grouping siblings should
   // not lift them out of the branch they were in.
-  const parents = new Set(roots.map((id) => scene.entities[id]?.parent ?? null));
+  const parents = new Set(roots.map((id) => scene.entities.get(id)?.parent ?? null));
   const parentId = parents.size === 1 ? ([...parents][0] ?? null) : null;
 
   // Built from matrices rather than through `localTransformUnder`, because the
@@ -255,7 +253,7 @@ export function groupSelection(selection: Selection): string | null {
 
       for (const id of roots) {
         if (!reparentInScene(draft, id, group.entity.id)) continue;
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         const local = locals.get(id);
         if (entity && local) entity.transform = local;
       }
@@ -272,12 +270,13 @@ export function groupSelection(selection: Selection): string | null {
  * One transaction, and one coalesce key for the whole gesture, so a drag of
  * thirty objects is a single undo step rather than thirty times sixty of them.
  *
- * `transformable()` is the filter phase 4 wrote and tested: it drops locked
- * entities and — the part that is easy to get wrong — the members of the
- * selection that are descendants of another member, which would otherwise be
- * moved twice, once on their own and once under their parent.
+ * `transformable()` is `Selection`'s tested filter: it drops locked entities
+ * and — the part that is easy to get wrong — the members of the selection that
+ * are descendants of another member, which would otherwise be moved twice, once
+ * on their own and once under their parent.
  */
 export function transformSelection(
+  registries: CoreRegistries,
   selection: Selection,
   delta: Matrix4,
   options?: { coalesceKey?: string },
@@ -304,21 +303,21 @@ export function transformSelection(
    * Read before the mutation whichever scene it is: reading it inside the recipe
    * would compound each target's own move into the next one's.
    */
-  const scene = expandedScene().scene;
+  const scene = expandedScene(registries).scene;
   const poses = new Map(targets.map((id) => [id, localTransformAfterDelta(scene, id, delta)]));
 
   mutate(
     targets.length === 1 ? 'Transform' : `Transform ${targets.length} objects`,
     (draft) => {
       for (const [id, pose] of poses) {
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         if (entity) {
           entity.transform = pose;
           continue;
         }
         // An id the document does not hold names an instance's contents, and the
         // move becomes an override — the same path a single transform takes.
-        editInstance(draft, id, (override) => {
+        editInstance(registries, draft, id, (override) => {
           override.transform = { ...override.transform, ...pose };
         });
       }
@@ -337,7 +336,7 @@ export function transformSelection(
  */
 export function reparentSelection(
   selection: Selection,
-  parentId: string | null,
+  parentId: EntityId | null,
   index?: number,
 ): void {
   const scene = useDocumentStore.getState().scene;
@@ -366,7 +365,7 @@ export function reparentSelection(
       const ordered = index === undefined ? targets : [...targets].reverse();
       for (const id of ordered) {
         if (!reparentInScene(draft, id, parentId, index)) continue;
-        const entity = draft.entities[id];
+        const entity = draft.entities.get(id);
         const local = locals.get(id);
         if (entity && local) entity.transform = local;
       }
@@ -376,14 +375,15 @@ export function reparentSelection(
 }
 
 export function setTransform(
-  id: string,
+  registries: CoreRegistries,
+  id: EntityId,
   patch: Partial<Transform>,
   options?: { coalesceKey?: string },
 ): void {
   mutate(
     'Transform',
     (scene) => {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) {
         if (patch.position) entity.transform.position = [...patch.position];
         if (patch.rotation) entity.transform.rotation = [...patch.rotation];
@@ -396,7 +396,7 @@ export function setTransform(
       // differ from the next. Only what was patched is stored, so a later change
       // to the prefab's rotation still reaches an instance whose position was
       // nudged.
-      editInstance(scene, id, (override) => {
+      editInstance(registries, scene, id, (override) => {
         override.transform = { ...override.transform, ...patch };
       });
     },
@@ -405,111 +405,31 @@ export function setTransform(
 }
 
 /**
- * Components a type cannot work without.
- *
- * A player controller with no collider silently degrades to flying, and a rigid
- * body with no collider passes through the world. Both are easy to hit and hard
- * to diagnose, so the pieces are added together — the same bargain Unity makes
- * when a CharacterController brings its own capsule.
- *
- * A body's colliders may be on its children, which ride it: a Rigid Body added
- * over them brings none of its own. A player's must be its own, since its
- * character sweeps that one.
- *
- * A joint holds the body its entity moves with, so on an entity that moves
- * with none it brings a Rigid Body, as Unity's joints require one, and that
- * body its Collider; on a child of a body it brings neither. On level geometry
- * meant to stay put, set the new Rigid Body to Fixed, or put the joint on the
- * side that moves.
+ * Adds a component and the companions its type requires, as one undo step:
+ * what each type declares, read by `componentsToAdd`. Refused here as well as
+ * greyed out in the menu: the menu is one caller, and a shortcut or a script
+ * reaching this directly must not build a pairing the editor cannot show.
  */
-const REQUIRED_COMPANIONS: Partial<Record<ComponentType, readonly ComponentType[]>> = {
-  playerController: ['collider', 'rigidbody'],
-  rigidbody: ['collider'],
-  joint: ['rigidbody', 'collider'],
-};
-
-/**
- * Components a type cannot sit beside.
- *
- * One entry, and it is the one that sent someone looking for a bug: `mesh` and
- * `model` both draw, both hang from the same container, and both get drawn. So
- * "Add Component ▸ Mesh" on an imported model put a grey 1×1×1 box through it —
- * which reads as the model having been duplicated, not as a second component
- * having been added.
- *
- * Read by the command *and* by the menu that offers it, so the entry cannot be
- * disabled in one place and allowed in the other. The same shape as
- * `REQUIRED_COMPANIONS` above, and symmetric by construction — `excludes()`
- * looks both ways rather than asking anyone to write the pair twice.
- */
-const MUTUALLY_EXCLUSIVE: Partial<Record<ComponentType, readonly ComponentType[]>> = {
-  mesh: ['model'],
-};
-
-/** Whether `type` may be added to an entity that already carries `present`. */
-export function componentFits(type: ComponentType, present: ReadonlySet<ComponentType>): boolean {
-  for (const other of MUTUALLY_EXCLUSIVE[type] ?? []) {
-    if (present.has(other)) return false;
-  }
-  for (const [declared, excluded] of Object.entries(MUTUALLY_EXCLUSIVE)) {
-    if (!present.has(declared as ComponentType)) continue;
-    if (excluded?.includes(type)) return false;
-  }
-  return true;
-}
-
-/** Adds a component along with anything it needs, as one undo step. */
-export function addComponentWithDependencies(id: string, type: ComponentType): void {
+export function addComponentWithDependencies(registries: CoreRegistries, id: EntityId, type: ComponentTypeId): void {
   const scene = useDocumentStore.getState().scene;
-  if (!scene.entities[id]) return;
+  if (!scene.entities.has(id)) return;
 
-  const siblings = componentsOf(scene, id);
-  const present = new Set(siblings.map((component) => component.type));
-  // Refused here as well as greyed out in the menu: the menu is one caller, and
-  // a shortcut or a script reaching this directly must not be able to build a
-  // pairing the editor cannot show.
-  if (!componentFits(type, present)) return;
-
-  const toAdd: ComponentType[] = [type];
-  for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
-    if (present.has(companion)) continue;
-    // Over the expanded scene, so the contents of a prefab placed under it count.
-    if (type === 'joint' && bodyOf(expandedScene().scene, id) !== null) continue;
-    const carries = (type === 'rigidbody' || type === 'joint') && companion === 'collider'
-      && collidersOfBody(expandedScene().scene, id).length > 0;
-    if (!carries) toAdd.push(companion);
-  }
+  const components = componentsToAdd(registries, {
+    // Expanded, so that what a prefab placed under the entity holds counts.
+    scene: expandedScene(registries).scene,
+    entityId: id,
+    type,
+    held: componentsOf(registries, scene, id),
+  });
+  if (components === null) return;
 
   mutate(`Add ${type}`, (draft) => {
-    if (!draft.entities[id]) return;
-
-    // Whether `createColliderFor` had anything to shape a collider from. With a
-    // mesh or a model to measure, its guess is about the object the author can
-    // see and is the better answer; with neither, it falls back to a 1 m box.
-    const guessable = present.has('mesh') || present.has('model');
-
-    for (const kind of toAdd) {
-      const component = createComponentForEntity(kind, siblings);
-      // A character is moved by the controller, not by forces, so its body has
-      // to be kinematic or physics would fight the input.
-      if (component.type === 'rigidbody' && type === 'playerController') {
-        component.bodyType = 'kinematicPosition';
-      }
-      // A person, rather than the 1 m box a bare entity would otherwise get.
-      // That box is what made the default player incoherent: centred on the
-      // origin, it put a 1.6 m eye at 2.1 m above the floor on a character one
-      // metre tall, and nothing on screen said where the extra half metre came
-      // from. 1.70 m standing is what `eyeHeight` is chosen against — see
-      // `createPlayerController`.
-      if (component.type === 'collider' && type === 'playerController' && !guessable) {
-        component.shape = { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 };
-      }
-      putComponent(draft, id, component);
-    }
+    if (!draft.entities.has(id)) return;
+    for (const component of components) putComponent(draft, id, component);
   });
 }
 
-export function removeComponent(id: string, componentId: string): void {
+export function removeComponent(id: EntityId, componentId: ComponentId): void {
   mutate('Remove component', (scene) => {
     deleteComponent(scene, id, componentId);
   });
@@ -522,9 +442,9 @@ export function removeComponent(id: string, componentId: string): void {
  * the swap they name nothing. Dropped and said out loud, rather than kept as
  * entries that quietly never apply again.
  *
- * Lived inside `setComponentField` until phase 3, which has no callers — so the
- * guard was unreachable, and the Inspector, which goes through
- * `setComponentNestedField`, swapped a prefab without it ever running.
+ * It lived inside `setComponentField`, which had no callers — so the guard was
+ * unreachable, and the Inspector, which goes through `setComponentNestedField`,
+ * swapped a prefab without it ever running.
  */
 function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly string[], value: unknown): void {
   if (component.type !== 'prefabInstance') return;
@@ -561,8 +481,9 @@ function dropOverridesOnPrefabSwap(component: ComponentDoc, path: readonly strin
  */
 /** Nested update for material and geometry blocks inside a mesh component. */
 export function setComponentNestedField(
-  id: string,
-  componentId: string,
+  registries: CoreRegistries,
+  id: EntityId,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
   options?: { coalesceKey?: string },
@@ -570,7 +491,7 @@ export function setComponentNestedField(
   if (typeof value === 'number' && !Number.isFinite(value)) return;
   mutate(
     'Edit component',
-    (scene) => writeComponentPath(scene, id, componentId, path, value),
+    (scene) => writeComponentPath(registries, scene, id, componentId, path, value),
     options?.coalesceKey === undefined ? undefined : { coalesceKey: options.coalesceKey },
   );
 }
@@ -581,15 +502,16 @@ export function setComponentNestedField(
  * scene no longer has.
  */
 export function writeComponentPath(
+  registries: CoreRegistries,
   scene: SceneDoc,
-  entityId: string,
-  componentId: string,
+  entityId: EntityId,
+  componentId: ComponentId,
   path: readonly string[],
   value: unknown,
 ): void {
   const component = findComponentById(scene, entityId, componentId);
   if (!component) {
-    editInstance(scene, entityId, (override, current) => {
+    editInstance(registries, scene, entityId, (override, current) => {
       overrideComponentPath(override, current, componentId, path, value);
     });
     return;
@@ -618,35 +540,6 @@ export function writePath(target: object, path: readonly string[], value: unknow
   if (last !== undefined && typeof current === 'object' && current !== null) {
     Reflect.set(current, last, structuredClone(value));
   }
-}
-
-/**
- * Fits a collider around its entity's meshes, keeping its kind, rotation and
- * rounding, as one undo step: Unity's Reset. A collider's size was copied from
- * its mesh once, when it was added, and kept nothing in step afterwards.
- *
- * Read from the expanded scene, so an instance's inner collider fits too, and
- * from the entity's own meshes, as physics builds a mesh collider from them:
- * its children's are theirs. The binder is the edit view's, which holds those
- * meshes as they are drawn, a model loaded through its cache included.
- */
-export function fitColliderToMesh(id: string, componentId: string, binder: SceneBinder): void {
-  const { scene } = expandedScene();
-  const collider = findComponentById(scene, id, componentId);
-  if (collider?.type !== 'collider') return;
-
-  const container = binder.containerFor(id);
-  const vertices = container ? collectVertices(container, [1, 1, 1]) : null;
-  if (!vertices) {
-    const name = scene.entities[id]?.name ?? id;
-    notify({
-      kind: 'warning',
-      title: 'Nothing to fit to',
-      description: `"${name}" draws no mesh of its own. A Collider fits its own entity's meshes, not its children's.`,
-    });
-    return;
-  }
-  setComponentNestedField(id, componentId, ['shape'], fitColliderShape(collider.shape, vertices.positions));
 }
 
 /*
@@ -716,31 +609,42 @@ export function setSceneName(name: string): void {
   });
 }
 
-export function duplicateSelection(selection: Selection): void {
+export function duplicateSelection(registries: CoreRegistries, selection: Selection): void {
   // Same reason as `deleteSelection`: a copy of something a prefab produced has
   // nowhere in the document to live.
   const ids = selection.documentOnly();
   if (ids.length === 0) return;
-  const created: string[] = [];
+  const created: EntityId[] = [];
+  // The names in use, read once from the document itself. Every root used to
+  // ask for them again through the immer draft, whose proxy makes each read of
+  // an entity several times dearer than a plain object's: a hundred roots of a
+  // 10 003-entity scene made a million of them, and most of what Duplicate cost.
+  const taken = new Set([...useDocumentStore.getState().scene.entities.values()].map((entity) => entity.name));
 
   mutate(
     ids.length === 1 ? 'Duplicate entity' : `Duplicate ${ids.length} entities`,
     (scene) => {
-      const renamed = new Map<string, string>();
+      const renamed = new Map<EntityId, EntityId>();
       for (const id of ids) {
-        const source = scene.entities[id];
+        const source = scene.entities.get(id);
         if (!source) continue;
         // The name is worked out here and only for the copy's root: descendants
-        // keep theirs, which is what Unity and Blender do. It was computed per
-        // cloned node before, which is one of the O(N) costs phase 7 collects.
-        const copyId = cloneSubtree(scene, id, source.parent, nextCopyName(scene, source.name), renamed);
-        if (copyId) created.push(copyId);
+        // keep theirs, which is what Unity and Blender do.
+        const name = nextCopyName(taken, source.name);
+        const copyId = cloneSubtree(scene, id, source.parent, name, renamed);
+        if (copyId) {
+          created.push(copyId);
+          // Only a copy that exists takes its name: the next root must not skip a number.
+          taken.add(name);
+        }
       }
       // What the copies name among what was copied, the copy: a car and its
       // trailer duplicated together left the new trailer hitched to the old car.
       // What was not copied keeps the original, as Unity's Duplicate does.
       for (const copyId of renamed.values()) {
-        const components = renameEntityReferences(componentsOf(scene, copyId), (id) => renamed.get(id));
+        const components = renameEntityReferences(registries, componentsOf(registries, scene, copyId), (id) =>
+          renamed.get(id),
+        );
         setComponentsOf(scene, copyId, components);
       }
     },
@@ -751,9 +655,8 @@ export function duplicateSelection(selection: Selection): void {
 }
 
 /** `Cube` -> `Cube (1)` -> `Cube (2)`, matching what Unity and Blender do. */
-function nextCopyName(scene: SceneDoc, name: string): string {
+function nextCopyName(taken: ReadonlySet<string>, name: string): string {
   const base = name.replace(/ \(\d+\)$/, '');
-  const taken = new Set(Object.values(scene.entities).map((entity) => entity.name));
   for (let index = 1; index < 1000; index++) {
     const candidate = `${base} (${index})`;
     if (!taken.has(candidate)) return candidate;
@@ -770,16 +673,16 @@ export function redo(): void {
 }
 
 /**
- * Edits a shared material asset as one undo step: a mesh's material or a
- * collider's physics material, `save` writing the asset's kind and `noun`
- * naming it in the entry.
+ * Edits the values of an asset an object is filled by as one undo step — a
+ * mesh's material, a collider's physics material —, `save` writing the asset
+ * and `noun` naming it in the entry.
  *
  * The write goes to a file rather than to the document, so there are no immer
  * patches to invert — the step carries the before and after values instead and
  * replays them by writing again. Without this, editing a linked material was
  * the one thing in the editor Cmd+Z could not take back.
  */
-export function setLinkedMaterialField<T>(
+export function setLinkedAssetField<T>(
   noun: string,
   label: string,
   before: T,

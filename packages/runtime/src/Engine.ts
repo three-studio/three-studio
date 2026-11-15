@@ -4,11 +4,15 @@ import {
   createPhysicsSettings,
   entitiesWith,
   findComponent,
+  findComponents,
   hasComponent,
   jointEnds,
   layersTouch,
   linkedPhysicsMaterial,
   physicsBodies,
+  type AssetId,
+  type ComponentDoc,
+  type EntityId,
   type JointComponent,
   type MaterialDef,
   type PhysicsMaterialDef,
@@ -25,38 +29,42 @@ import {
   type Renderer,
 } from 'three/webgpu';
 import { SceneBinder, bindScene } from './SceneBinder';
-import type { AssetResolver } from './assets/AssetResolver';
+import type { AssetCache } from './assets/AssetCache';
 import { AudioEngine } from './audio/AudioEngine';
 import type { AudioClipCache } from './audio/AudioClipCache';
 import type { AudioContextLike } from './audio/AudioContextLike';
-import {
-  behaviourFactoryFor,
-  typesWithBehaviour,
-  type Behaviour,
-  type BehaviourContext,
-} from './behaviour/Behaviour';
-// Importing a controller registers it. Adding a vehicle, an animator or an
-// audio source is one more import here plus its own `registerBehaviour` call —
-// the loop below never learns that any of them exist.
-import './behaviour/audio';
-import './controllers/PlayerController';
-import './scripting/ScriptHost';
+import type { Behaviour, BehaviourContext } from './behaviour/Behaviour';
 import { Input, type InputOptions } from './input/Input';
 import type { PhysicsApi } from './physics/PhysicsApi';
 import {
   PhysicsWorld,
   type ColliderOwner,
   type DebugLines,
-  type PhysicsComponent,
   type PhysicsEvent,
 } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
+import type { RuntimeRegistries } from './registries';
+import { NO_SCRIPTS, type ScriptClasses } from './scripting/scriptBundle';
 import { studioTime } from './time/StudioTime';
 import type { SceneApi } from './behaviour/Behaviour';
 
 export interface EngineOptions {
   scene: SceneDoc;
-  resolver: AssetResolver;
+  /**
+   * What the game is built from: the system that draws each type and the
+   * behaviour of each type that acts. Handed in by whoever hosts the engine, so
+   * a vehicle, an animator or an audio source is a registration and the loop
+   * below never learns that any of them exist.
+   */
+  registries: RuntimeRegistries;
+  /**
+   * The project's loaded files, shared with every other world of the window:
+   * Play draws the models the edit view already holds, with no second parse
+   * and no second copy, and the audio engine reaches the files through its
+   * resolver. The engine holds what it draws and frees nothing; whoever made
+   * the cache begins its frame.
+   */
+  assets: AssetCache;
   /**
    * Shared materials by asset id.
    *
@@ -65,13 +73,13 @@ export interface EngineOptions {
    * Omitting this makes every linked material fall back to the embedded one —
    * which is exactly what play mode was doing before it was passed.
    */
-  materials?: Readonly<Record<string, MaterialDef>>;
+  materials?: ReadonlyMap<AssetId, MaterialDef> | undefined;
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
    * engine says so.
    */
-  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>;
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
@@ -91,14 +99,14 @@ export interface EngineOptions {
    * sound. Omitting it is a game with no audio, which is what a test wants and
    * what a browser without Web Audio gets.
    */
-  audioContext?: AudioContextLike;
+  audioContext?: AudioContextLike | undefined;
   /**
    * A decoded-clip cache to share with the engines that come after this one.
    *
    * `SceneHost` owns it, so a sound the last level used is still in hand when
    * the next one asks for it.
    */
-  audioCache?: AudioClipCache;
+  audioCache?: AudioClipCache | undefined;
   /**
    * The device an analytic sky is captured on.
    *
@@ -126,6 +134,12 @@ export interface EngineOptions {
    * engine; an engine built on its own does not have a next scene to go to.
    */
   scenes?: SceneApi | null;
+  /**
+   * The classes of the compiled script bundle this engine runs, decoded by
+   * `scriptClassesOf`. Left out, none: a scene's scripts say they are not
+   * compiled.
+   */
+  scripts?: ScriptClasses;
 }
 
 /**
@@ -200,7 +214,7 @@ export class Engine {
   /** Exposed for diagnostics; drive them through `update`, not directly. */
   readonly behaviours: Behaviour[] = [];
   /** The behaviours that hear what colliders touch, by the entity each sits on. */
-  private readonly listeners = new Map<string, Behaviour[]>();
+  private readonly listeners = new Map<EntityId, Behaviour[]>();
 
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private readonly world: PhysicsWorld | null;
@@ -221,7 +235,8 @@ export class Engine {
     // the device the host already has. The order of the rest is `bindScene`'s,
     // where it is written down.
     this.binder = bindScene(this.scene, options.scene, {
-      resolver: options.resolver,
+      registries: options.registries,
+      assets: options.assets,
       rendering: options.rendering,
       materials: options.materials,
       renderer: options.renderer,
@@ -236,7 +251,7 @@ export class Engine {
         ? null
         : new AudioEngine({
             context: options.audioContext,
-            resolver: options.resolver,
+            resolver: options.assets.resolver,
             cache: options.audioCache,
             onWarning: (message) => this.context.warn(message),
           });
@@ -249,6 +264,7 @@ export class Engine {
       time: studioTime,
       scenes: options.scenes ?? null,
       audio: this.audio,
+      scripts: options.scripts ?? NO_SCRIPTS,
       warn: (message) => {
         // Repeats are dropped: a warning raised per frame would otherwise fill
         // the panel with one line per tick.
@@ -271,14 +287,14 @@ export class Engine {
   private checkPhysicsSetup(
     scene: SceneDoc,
     settings: PhysicsSettings,
-    physicsMaterials: Readonly<Record<string, PhysicsMaterialDef>>,
+    physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef>,
   ): void {
     // Over the bodies the world builds, so the two cannot disagree: a body
     // whose colliders are on its children was warned about as having none.
     const bodies = physicsBodies(scene);
     const players = new Set(entitiesWith(scene, 'playerController'));
     // Which body each collider rides: the one whose type it is built for.
-    const riding = new Map<string, string>();
+    const riding = new Map<EntityId, EntityId>();
     for (const [body, carried] of bodies) {
       for (const entityId of carried) riding.set(entityId, body);
     }
@@ -291,9 +307,9 @@ export class Engine {
     // That is fixed, but a model that fails to load reaches the same place,
     // and silently.
     for (const [entityId, bodyId] of riding) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity) continue;
-      const meshes = Object.values(scene.components.collider[entityId] ?? {}).filter(
+      const meshes = findComponents(scene, entityId, 'collider').filter(
         (component) => component.shape.kind === 'mesh',
       );
       if (meshes.length === 0) continue;
@@ -308,7 +324,7 @@ export class Engine {
       });
       if (hulled) {
         const body =
-          bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities[bodyId]?.name}"`;
+          bodyId === entityId ? 'its Rigid Body' : `the Rigid Body of "${scene.entities.get(bodyId)?.name}"`;
         warn(
           `"${entity.name}" moves with physics, so its mesh Collider is built as its convex hull rather than from its triangles: holes and hollows are filled in. Choose Convex parts to keep them, Convex hull to say so, or make ${body} Kinematic or Fixed.`,
         );
@@ -328,7 +344,7 @@ export class Engine {
     // list is a Rigid Body's, level geometry being a collider's own; a player
     // is said by what it lacks itself.
     for (const [entityId, carried] of bodies) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || carried.length > 0 || players.has(entityId)) continue;
       warn(
         `"${entity.name}" has a Rigid Body but no Collider, on it or on a child without a body of its own, so nothing can touch it. Add a Collider.`,
@@ -337,7 +353,7 @@ export class Engine {
     // Its own: a character sweeps its entity's collider, never one riding its
     // body from a child.
     for (const entityId of players) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || hasComponent(scene, entityId, 'collider')) continue;
       warn(
         `"${entity.name}" has a Player Controller but no Collider, so it flies instead of walking. Add a Collider.`,
@@ -358,14 +374,14 @@ export class Engine {
       // through. Unticking a pair while trying the matrix out is the quickest
       // way to a player that falls for ever, and nothing else says why.
       const solid = [...riding].flatMap(([entityId, body]) =>
-        Object.values(scene.components.collider[entityId] ?? {})
+        findComponents(scene, entityId, 'collider')
           .filter((collider) => !collider.isSensor)
           .map(({ layer }) => ({ body, layer })),
       );
       for (const entityId of players) {
-        const entity = scene.entities[entityId];
+        const entity = scene.entities.get(entityId);
         // The collider its character sweeps.
-        const own = Object.values(scene.components.collider[entityId] ?? {})[0];
+        const own = findComponent(scene, entityId, 'collider');
         if (!entity || !own) continue;
         const stands = solid.some(
           ({ body, layer }) => body !== entityId && layersTouch(settings.layers, own.layer, layer),
@@ -383,8 +399,8 @@ export class Engine {
     // scene: the others are on disk.
     const layerIds = new Set(settings.layers.map((layer) => layer.id));
     for (const entityId of this.world ? riding.keys() : []) {
-      const entity = scene.entities[entityId];
-      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      const entity = scene.entities.get(entityId);
+      const colliders = findComponents(scene, entityId, 'collider');
       if (!entity || colliders.every((collider) => layerIds.has(collider.layer))) continue;
       warn(
         `"${entity.name}" has a Collider on a layer this project no longer has, so it collides as Default. Choose its Layer again.`,
@@ -396,8 +412,8 @@ export class Engine {
     // no hierarchy, and a puck that grips where it was made to slide gives no
     // reason. `''` is a slot left empty, not a link.
     for (const entityId of this.world ? riding.keys() : []) {
-      const entity = scene.entities[entityId];
-      const colliders = Object.values(scene.components.collider[entityId] ?? {});
+      const entity = scene.entities.get(entityId);
+      const colliders = findComponents(scene, entityId, 'collider');
       const lost = colliders.some(
         ({ materialId }) => !!materialId && linkedPhysicsMaterial(materialId, physicsMaterials) === null,
       );
@@ -411,9 +427,9 @@ export class Engine {
     // the solver moves is built and does nothing: a door falls off its hinge,
     // or a gate on a Kinematic body never swings, and nothing else says why.
     // Read through the rule the build reads.
-    for (const [entityId, held] of this.world ? Object.entries(componentsOfType(scene, 'joint')) : []) {
-      for (const joint of Object.values(held)) {
-        const problem = jointProblem(scene, entityId, joint);
+    for (const [entityId, held] of this.world ? componentsOfType(scene, 'joint') : []) {
+      for (const joint of held.values()) {
+        const problem = joint.type === 'joint' ? jointProblem(scene, entityId, joint) : null;
         if (problem) warn(problem);
       }
     }
@@ -424,7 +440,7 @@ export class Engine {
     // said above. With physics off the line would be about the host, not the
     // scene.
     for (const entityId of this.world ? this.listeners.keys() : []) {
-      const entity = scene.entities[entityId];
+      const entity = scene.entities.get(entityId);
       if (!entity || hasComponent(scene, entityId, 'collider') || hasComponent(scene, entityId, 'rigidbody')) {
         continue;
       }
@@ -467,9 +483,9 @@ export class Engine {
     //   physics   a behaviour looks its rigid body up when it is constructed,
     //             so a controller built earlier would find none and fly.
     await engine.binder.whenLoaded();
-    const physicsMaterials = options.physicsMaterials ?? {};
+    const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
     physics?.build(options.scene, engine.binder, physicsMaterials);
-    engine.buildBehaviours(options.scene);
+    engine.buildBehaviours(options.scene, options.registries);
     engine.pickCamera(options.scene);
     engine.checkPhysicsSetup(options.scene, physicsSettings, physicsMaterials);
     engine.checkAudioSetup(options.scene);
@@ -511,18 +527,27 @@ export class Engine {
   }
 
   /**
-   * A physics component's values applied to the running world at once, as it
-   * would have built them: the editor's live tuning. The host's, as
-   * `physicsDebug` is: retuning the world's components is no behaviour's
-   * business. Nothing with physics off.
+   * A component's values, changed during Play, taken at once by what the
+   * running game built from it, as if built with them; a component it built
+   * nothing from changes nothing. The host's — the editor's live tuning — as
+   * `physicsDebug` is: retuning the world is no behaviour's business.
+   *
+   * The physics world, the one part of the game built here that takes a tune,
+   * is handed every component and keeps what it built from, so that the editor
+   * names no type it tunes.
    */
-  tune(entityId: string, component: PhysicsComponent): void {
+  tune(entityId: EntityId, component: ComponentDoc): void {
     this.world?.tune(entityId, component);
   }
 
-  /** The same for a physics material asset: every collider that links it takes its values. */
-  tunePhysicsMaterial(assetId: string, material: PhysicsMaterialDef): void {
-    this.world?.tunePhysicsMaterial(assetId, material);
+  /**
+   * An asset's values, changed during Play, taken by whatever the running game
+   * built with that asset — never by the asset cache, which holds what loading
+   * made and which no world writes. The tune goes with the world at Stop; Keep
+   * writes the asset's file, which every world then reads through its library.
+   */
+  tuneAsset(assetId: AssetId, values: object): void {
+    this.world?.tuneAsset(assetId, values);
   }
 
   update(delta: number): void {
@@ -641,23 +666,20 @@ export class Engine {
    * The engine deliberately does not name any component type here. A new kind
    * of controller is a registration, not an edit to this loop.
    */
-  private buildBehaviours(scene: SceneDoc): void {
+  private buildBehaviours(scene: SceneDoc, registries: RuntimeRegistries): void {
     let cameraOwners = 0;
 
     // Driven by the registry and then by the tables of the types it names: a
     // scene of two thousand props with one player controller in it visits one
     // entity. It used to walk them all, and every component of each.
-    for (const type of typesWithBehaviour()) {
-      const factory = behaviourFactoryFor(type);
-      if (!factory) continue;
-
-      for (const [entityId, held] of Object.entries(componentsOfType(scene, type))) {
-        const entity = scene.entities[entityId];
+    for (const definition of registries.behaviours.values()) {
+      for (const [entityId, held] of componentsOfType(scene, definition.id)) {
+        const entity = scene.entities.get(entityId);
         const object = this.binder.getObject(entityId);
         if (!entity || !object) continue;
 
-        for (const component of Object.values(held)) {
-          const behaviour = factory({ entity, object, component }, this.context);
+        for (const component of held.values()) {
+          const behaviour = definition.create({ entity, object, component }, this.context);
           if (!behaviour) continue;
 
           this.behaviours.push(behaviour);
@@ -699,7 +721,7 @@ export class Engine {
    *
    * Unguarded, as `update` is: a script's hook is guarded by its own behaviour.
    */
-  private tell(event: PhysicsEvent, side: ColliderOwner, other: string, sign: 1 | -1): void {
+  private tell(event: PhysicsEvent, side: ColliderOwner, other: EntityId, sign: 1 | -1): void {
     const listening = [
       ...(this.listeners.get(side.entity) ?? []),
       ...(side.body === side.entity ? [] : (this.listeners.get(side.body) ?? [])),
@@ -776,9 +798,9 @@ function unit(x: number, y: number, z: number): [number, number, number] {
 }
 
 /** What keeps a joint from doing its work, said as `checkPhysicsSetup` says it, or `null`. */
-function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent): string | null {
-  const name = scene.entities[entityId]?.name;
-  const other = joint.connectedEntity === null ? undefined : scene.entities[joint.connectedEntity]?.name;
+function jointProblem(scene: SceneDoc, entityId: EntityId, joint: JointComponent): string | null {
+  const name = scene.entities.get(entityId)?.name;
+  const other = joint.connectedEntity === null ? undefined : scene.entities.get(joint.connectedEntity)?.name;
   const ends = jointEnds(scene, entityId, joint);
   if (!ends.holds) {
     switch (ends.why) {
@@ -793,8 +815,8 @@ function jointProblem(scene: SceneDoc, entityId: string, joint: JointComponent):
     }
   }
   // The world is not Dynamic, and two Fixed bodies joined are harmless to build.
-  const dynamic = (bodyId: string | null) =>
+  const dynamic = (bodyId: EntityId | null) =>
     bodyId !== null && findComponent(scene, bodyId, 'rigidbody')?.bodyType === 'dynamic';
   if (dynamic(ends.own) || dynamic(ends.other)) return null;
-  return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities[ends.own]?.name}" or of what it is connected to Dynamic.`;
+  return `"${name}"'s Joint holds no Dynamic body, so it moves nothing. Make the Rigid Body of "${scene.entities.get(ends.own)?.name}" or of what it is connected to Dynamic.`;
 }

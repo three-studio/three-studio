@@ -1,18 +1,14 @@
 import { defineComponent } from '../registry';
-import { createScript } from './defaults';
+import { scriptSchema } from './schema';
 
-/** A user script and its declared properties. */
-export const scriptComponent = defineComponent({
-  type: 'script',
-  create: createScript,
-  assets: (component) => [component.assetId],
-  // Every string property, since only the script knows which hold assets.
-  assetCandidates: (component) =>
-    Object.values(component.props).filter((value): value is string => typeof value === 'string'),
-  // A property may hold an entity's id, and only the script knows which.
-  entities: () => [],
-  icon: 'file-code',
-  placeable: () => true,
+/** A user script and its declared properties: see `scriptSchema`. */
+export const scriptType = defineComponent({
+  id: 'script',
+  label: 'Script',
+  version: 1,
+  schema: scriptSchema,
   runtime: true,
   addable: true,
+  // Each script is a behaviour of its own, and an entity may run several.
+  multiple: true,
 });

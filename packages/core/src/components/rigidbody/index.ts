@@ -1,34 +1,21 @@
-import { conform, oneOf } from '../../conform';
+import { collidersOfBody } from '../../scene/bodies';
 import { defineComponent } from '../registry';
-import { createRigidBody } from './defaults';
-import { BODY_TYPE_LABELS } from './schema';
+import { rigidbodySchema } from './schema';
 
-/**
- * Physics motion for an entity, and for the colliders of its descendants that
- * have no body of their own.
- *
- * Read field by field against its factory, as the collider is, and what it does
- * not know is dropped. Its type decides how every collider riding it is built,
- * and Play threw on one this build does not know: that reads as Dynamic. Its
- * mass is shared out among its colliders by volume, and one not above zero sank
- * the body through the floor: that reads as the factory's.
- */
-export const rigidbodyComponent = defineComponent({
-  type: 'rigidbody',
-  create: () => createRigidBody(),
-  fill: (stored) => {
-    const model = createRigidBody();
-    const body = conform(stored, model);
-    return {
-      ...body,
-      bodyType: oneOf(stored.bodyType, BODY_TYPE_LABELS, model.bodyType),
-      mass: body.mass > 0 ? body.mass : model.mass,
-    };
-  },
-  assets: () => [],
-  entities: () => [],
-  icon: 'weight',
-  placeable: () => true,
+/** A body physics moves: see `rigidbodySchema`. */
+export const rigidbodyType = defineComponent({
+  id: 'rigidbody',
+  label: 'Rigid Body',
+  version: 1,
+  schema: rigidbodySchema,
   runtime: true,
   addable: true,
+  requires: [
+    {
+      // A body with no collider passes through the world. Its colliders may be
+      // on its children, which ride it, and then it brings none of its own.
+      type: 'collider',
+      metElsewhere: (scene, entityId) => collidersOfBody(scene, entityId).length > 0,
+    },
+  ],
 });

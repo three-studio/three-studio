@@ -1,4 +1,9 @@
-import { createAudioSourceEntity, createEmptyScene, type AudioSourceComponent } from '@three-studio/core';
+import {
+  createAudioSourceEntity,
+  createEmptyScene,
+  fixedId,
+  type AudioSourceComponent,
+} from '@three-studio/core';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AudioPreview } from '../src/audio/preview';
@@ -13,6 +18,9 @@ import {
   type FakeGain,
   type FakeParam,
 } from '../../runtime/test/audio/fakeContext';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * The editor's audition, driven by hand.
@@ -28,7 +36,7 @@ import {
  * So both are parameters now, and the loop is driven a frame at a time below.
  */
 
-const CLIP = 'clip-1';
+const CLIP = fixedId('asset', 'clip-1');
 const DURATION = 4;
 
 /**
@@ -148,8 +156,8 @@ describe('the editor audition', () => {
   /*
    * `setMasterVolume` clamps with `Math.max(0, v)`, and `Math.max(0, NaN)` is
    * `NaN`. A root gain at `NaN` silences everything while every comparison
-   * against it answers `false` — the property that made `spatialBlend: NaN` so
-   * expensive to find in phase 7. Refused at the boundary, as there.
+   * against it answers `false` — the property that once made `spatialBlend: NaN`
+   * so expensive to find. Refused at the boundary, as that one was.
    */
   it('refuses a level that is not a number', async () => {
     const { context, preview } = harness();
@@ -227,7 +235,7 @@ describe('the editor audition', () => {
     await flush();
     frames.run(1);
 
-    setComponentNestedField(entityId, component.id, ['volume'], 0.25);
+    setComponentNestedField(registries, entityId, component.id, ['volume'], 0.25);
     frames.run(1);
 
     // The voice's own gain, which the mixer's six come before — the same index

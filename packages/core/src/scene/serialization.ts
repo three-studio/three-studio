@@ -1,25 +1,41 @@
-import { PREFAB_ID_SEPARATOR, SCENE_FORMAT_VERSION } from '../constants';
-import { fillComponent } from '../components';
-import { originAboveFeet } from '../components/collider/geometry';
-import { stableJson } from '../json';
+import type { ComponentDefinition } from '../components/registry';
+import { SCENE_FORMAT_VERSION } from '../constants';
+import { isRecord } from '../conform';
 import {
-  COMPONENT_TYPES,
-  emptyComponentTables,
-  findComponent,
-  isKnownComponentType,
-  putComponent,
-} from './components';
-import { createEnvironment } from './defaults';
-import { createEntity } from './entity';
+  checks,
+  decodeJson,
+  listOf,
+  nullable,
+  RecordReader,
+  shown,
+  versionRefusal,
+  type DecodePath,
+  type Decoded,
+  type Diagnostic,
+} from '../decoded';
+import { isComponentId, isComponentTypeId, isEntityId, type ComponentId, type EntityId } from '../ids';
+import { stableJson } from '../json';
+import type { CoreRegistries } from '../registries';
+import type { ComponentHost } from './components';
+import { createEnvironment, decodeEnvironment } from './environment';
 import { cycles } from './query';
-import type { ComponentDoc, ComponentTables, EntityDoc, SceneDoc } from './schema';
+import type { ComponentDoc, ComponentTables, EntityDoc, SceneDoc, UnknownComponentTables } from './schema';
 
-export class SceneFormatError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'SceneFormatError';
-  }
-}
+/*
+ * A scene as its file holds it, and back.
+ *
+ * The file writes each table the document holds in a Map as an object keyed by
+ * id: the entities by entity id, each component table by entity id, then by
+ * component id. It has one `components` block, where the document tells the
+ * types this build defines from the others (`unknownComponents`) — which is
+ * which depends on the build that reads the file, and is no fact about it.
+ * Beside it, `componentVersions` records the version of each type the file
+ * holds a component of, once per type: a ten-thousand-entity scene would
+ * otherwise write the mesh's number ten thousand times.
+ *
+ * A message carries the same JSON, unsorted (`sceneJsonOf`): what receives it
+ * decodes it as a file is decoded.
+ */
 
 /**
  * Indented so a scene file is reviewable in a diff, and key-sorted so there is
@@ -33,289 +49,242 @@ export class SceneFormatError extends Error {
  * file. Nothing reads that order for meaning; what it buys is that two machines
  * agree on which of the two `findComponent` calls the first.
  */
-export function serializeScene(scene: SceneDoc): string {
-  return stableJson(scene);
-}
-
-export function deserializeScene(json: string): SceneDoc {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (cause) {
-    throw new SceneFormatError(`Scene file is not valid JSON: ${(cause as Error).message}`);
-  }
-  return migrateScene(parsed);
+export function serializeScene(registries: CoreRegistries, scene: SceneDoc): string {
+  return stableJson(sceneJsonOf(registries, scene));
 }
 
 /**
- * Accepts any previously written document version and returns the current one.
+ * A scene as JSON holds it, for `jsonOf` to write into a message: to the main
+ * process, to a device. What receives it decodes it, and writes any file itself.
  *
- * Nearly all of it is version-blind on purpose: `fillMissingFields` merges each
- * component from its own factory and `adoptComponentTables` reads the data, so
- * a field added at any point in the past arrives filled without anyone writing
- * a case for it. That is what has kept this function from becoming a ladder.
- *
- * `raiseEyeHeightToFeet` is the first pass that cannot work that way, and the
- * difference is worth naming: it changes what a number **means** rather than
- * supplying one that is absent, and no amount of looking at `1.7` says which of
- * the two meanings it was written under. So it is gated on the version, and the
- * incoming number has to be read before the stamp at the bottom overwrites it.
- *
- * The gate is also why `migratePrefab` may not pass `SCENE_FORMAT_VERSION`: see
- * the note there.
+ * A document is never written as it stands: its components of the types this
+ * build does not define sit apart in memory and belong in the one `components`
+ * block, with the version of every type beside it.
  */
-export function migrateScene(input: unknown): SceneDoc {
-  if (typeof input !== 'object' || input === null) {
-    throw new SceneFormatError('Scene file is not an object.');
-  }
-
-  const doc = input as Partial<SceneDoc>;
-  if (typeof doc.version !== 'number') {
-    throw new SceneFormatError('Scene file has no format version.');
-  }
-  if (doc.version > SCENE_FORMAT_VERSION) {
-    throw new SceneFormatError(
-      `Scene was written by a newer version of the editor (format ${doc.version}, this build reads up to ${SCENE_FORMAT_VERSION}).`,
-    );
-  }
-  if (typeof doc.entities !== 'object' || doc.entities === null || !Array.isArray(doc.rootOrder)) {
-    throw new SceneFormatError('Scene file is missing its entity table.');
-  }
-
-  const writtenAs = doc.version;
-  const scene = input as SceneDoc;
-  repairHierarchy(scene);
-  adoptComponentTables(scene);
-  fillMissingFields(scene);
-  // After the fill, not before: a collider written before one of its fields
-  // existed carries `undefined` there until the fill has run, and the offset
-  // would come out `NaN` — which would travel into the camera silently.
-  if (writtenAs < EYE_HEIGHT_FROM_FEET) raiseEyeHeightToFeet(scene);
-  // Stamped, so the document says which format it now conforms to. Without
-  // this a migrated scene was saved back under its original number and the
-  // "written by a newer editor" guard could never fire, however many formats
-  // came later.
-  scene.version = SCENE_FORMAT_VERSION;
-  return scene;
+export function sceneJsonOf(registries: CoreRegistries, scene: SceneDoc): Readonly<Record<string, unknown>> {
+  const { components: _components, unknownComponents: _apart, ...rest } = scene;
+  return { ...rest, ...componentsJsonOf(registries, scene) };
 }
 
 /**
- * The format in which `eyeHeight` changed meaning.
+ * The `componentVersions` and `components` blocks of a scene's or a prefab's
+ * JSON: the tables that hold a component, of the types this build defines and
+ * of those it keeps as found, and the version of each — the registered
+ * type's, or the one its file recorded.
  *
- * A literal rather than `SCENE_FORMAT_VERSION`, and that is the whole point: it
- * names the document that *already* holds feet-relative values, so it must stay
- * at 10 while the current version goes on moving. Writing the current version
- * here would make the pass run again on every later format and raise a camera
- * by another collider each time.
+ * A table that holds nothing is left out with its version: a document keeps a
+ * table once made, even emptied, and a file would otherwise gain a line the
+ * first time a light is added and keep it after the last one went.
+ *
+ * Through `Object.fromEntries`, which makes an own property of any key: a file
+ * may name a table `__proto__`, and an assignment would make it the prototype
+ * of the block instead.
  */
-const EYE_HEIGHT_FROM_FEET = 10;
-
-/**
- * Format 9 → 10: `eyeHeight` stops being measured from the entity's origin and
- * starts being measured from the character's feet.
- *
- * Raising each stored value by how far its collider reaches below the origin
- * is what makes the change invisible: the camera comes out at the height its
- * author put it, and the number now means what it says. An entity with no collider is left alone,
- * because with nothing centred on the origin the origin already *was* the
- * reference — which is also exactly what fly mode does.
- *
- * **One case this cannot reach**, and it is better said than discovered: a
- * prefab instance that overrides `eyeHeight`. The override lives in the scene,
- * but the collider it would have to be measured against lives inside the prefab
- * document, which this function does not have and must not go looking for —
- * a scene migration that read other files would be a scene that fails to open
- * because an asset is missing. Such an instance moves by its collider's half
- * height, which is visible, is one number, and is fixable in the Inspector.
- * Dropping the override instead would silently discard what its author wrote,
- * which is the worse of the two.
- */
-function raiseEyeHeightToFeet(scene: SceneDoc): void {
-  for (const [entityId, held] of Object.entries(scene.components.playerController)) {
-    const collider = findComponent(scene, entityId, 'collider');
-    if (collider === undefined) continue;
-
-    // The same collider the physics builds and the same one the controller
-    // measures from: all three go through `findComponent`, so an entity
-    // carrying two cannot have them disagree about which one is the body.
-    //
-    // Already filled, so always a shape this build reads. Every collider that
-    // reaches here was written before scene 11 and reads as the factory's 1 m
-    // box, its old shape not converted: the eye moves by that box's half, 0.5,
-    // rather than by the capsule it may have been — a finite number, where the
-    // shape read as written would have made it `NaN`.
-    const below = originAboveFeet(collider.shape);
-    for (const controller of Object.values(held)) controller.eyeHeight += below;
+export function componentsJsonOf(
+  registries: CoreRegistries,
+  host: Required<ComponentHost>,
+): { readonly componentVersions: Readonly<Record<string, unknown>>; readonly components: Readonly<Record<string, unknown>> } {
+  const versions = new Map<string, unknown>();
+  const tables = new Map<string, unknown>();
+  for (const [type, table] of host.components) {
+    if (!holdsAny(table)) continue;
+    const definition = registries.components.get(type);
+    if (definition === undefined) throw new Error(`A table of the type ${type}, which these registries do not define`);
+    versions.set(type, definition.version);
+    tables.set(type, table);
   }
+  for (const [type, { version, components }] of host.unknownComponents) {
+    if (!holdsAny(components)) continue;
+    versions.set(type, version);
+    tables.set(type, components);
+  }
+  return { componentVersions: Object.fromEntries(versions), components: Object.fromEntries(tables) };
+}
+
+/** Whether a table holds at least one component. */
+function holdsAny(table: ReadonlyMap<EntityId, ReadonlyMap<ComponentId, unknown>>): boolean {
+  for (const held of table.values()) if (held.size > 0) return true;
+  return false;
 }
 
 /**
- * Fills in everything added since a scene was written.
+ * A scene file's text, as a document of this build: the value, or every fault
+ * found in it, each where it sits.
  *
- * Against each type's own factory rather than a list kept by hand, so a
- * property added to a component is migrated by existing: keeping a second
- * list in step with the first is a promise nobody keeps, and this exact
- * omission has already shipped twice — texture slots and then geometry
- * segments both reached three as `undefined` on scenes a fortnight old.
+ * A file of any other format is refused before anything else in it is read:
+ * until 1.0.0 nothing converts an older scene, and a newer one holds fields
+ * whose meaning this build cannot know (`SCENE_FORMAT_VERSION`). Then the whole
+ * of it is read, strictly — the shell, each entity, each component by its
+ * type, the environment by its schema: a field missing, of the wrong kind or
+ * that no reader names refuses the scene, and nothing is filled in.
  *
- * The alternative is defending at every read site. The binder proved why that
- * is worse: it threw once per frame, and a slider bound to `undefined` took
- * the whole Inspector down. Defaults are cheap; a scene that cannot open is
- * not.
+ * A broken hierarchy that reads is healed (`repairHierarchy`).
  */
-function fillMissingFields(scene: SceneDoc): void {
-  const blank = createEnvironment();
-  // Merged a level deeper for `sky`, because the spread above it is shallow and
-  // a scene written before the analytic sky existed carries no `sky` at all —
-  // or, worse, a `sky` from a build that had only half its fields. This is the
-  // same second level `lightComponent.fill` merges for `shadow`, and it is the
-  // reason `createEnvironment` exists rather than a literal: one factory, one
-  // merge per level, and a property added later is migrated by existing.
-  scene.environment = {
-    ...blank,
-    ...scene.environment,
-    sky: { ...blank.sky, ...scene.environment?.sky },
-  };
-
-  for (const entity of Object.values(scene.entities)) {
-    const blank = createEntity(entity.name ?? 'Entity').entity;
-    entity.transform = {
-      ...blank.transform,
-      ...entity.transform,
-    };
-    entity.visible ??= blank.visible;
-    entity.locked ??= blank.locked;
-    entity.children ??= [];
+export function decodeScene(registries: CoreRegistries, text: string): Decoded<SceneDoc> {
+  const parsed = decodeJson(text);
+  if (!parsed.ok) return parsed;
+  const value = parsed.value;
+  if (isRecord(value) && value['version'] !== SCENE_FORMAT_VERSION) {
+    return versionRefusal(value['version'], SCENE_FORMAT_VERSION);
   }
 
-  for (const type of COMPONENT_TYPES) {
-    // Indexed by a variable the mapped type is a union of eleven records, which
-    // `Object.values` widens to `unknown`. The table's construction is what says
-    // these are components.
-    const table = scene.components[type] as Record<string, Record<string, ComponentDoc>>;
-    for (const held of Object.values(table)) {
-      for (const [componentId, component] of Object.entries(held)) {
-        // Each type fills itself. Shallow is right for the flat ones; `mesh` owns
-        // a material and a geometry that have to be merged a level deeper, and
-        // that knowledge lives with `mesh` rather than as a special case here.
-        const filled = fillComponent(component) as ComponentDoc;
-        // The key is the identity; a `fill` that handed back a fresh id would
-        // orphan every override naming it.
-        filled.id = componentId;
-        held[componentId] = filled as never;
-      }
+  const file = new RecordReader(value);
+  file.read('version', checks.number);
+  const decoded = file.done<SceneDoc>({
+    version: SCENE_FORMAT_VERSION,
+    id: file.read('id', checks.sceneId),
+    name: file.read('name', checks.string),
+    ...readHeld(registries, file),
+    rootOrder: file.read('rootOrder', ENTITY_LIST),
+    environment: file.decode('environment', decodeEnvironment) ?? createEnvironment(),
+  });
+  if (decoded.ok) repairHierarchy(decoded.value);
+  return decoded;
+}
+
+const ENTITY_LIST = listOf(checks.entityId);
+const ENTITY_OR_NONE = nullable(checks.entityId);
+
+/** A value kept as it was found: what a type this build does not define holds, and its version. */
+const asFound = (value: unknown): Decoded<unknown> => ({ ok: true, value });
+
+/** The fault of an id that is not the key it is filed under. */
+function mismatch(path: DecodePath, found: unknown, key: string): Diagnostic {
+  return { code: 'key.mismatch', message: `is ${shown(found)}, where its key is ${shown(key)}`, path };
+}
+
+/**
+ * What a scene's file and a prefab's both hold: the entities, the component
+ * tables, and the version of each type they hold a component of.
+ *
+ * A table of a type the registries define is read by its type, at its
+ * version: one recorded at another refuses the file in one line, naming the
+ * type and both versions, and its components are not read — a component of
+ * another version is no component of this one. A table of any other type is
+ * kept **exactly as found**, with its version: nothing here knows what it
+ * holds, and the next save has to write the author's data and not an invention
+ * over it. Both are read the same two levels down, by entity id then by
+ * component id, which is what lets a component of an unknown type follow its
+ * entity when it is deleted or copied.
+ *
+ * A table with no version, or a version with no table, refuses the file: the
+ * one is a type nothing can judge, the other a file that lost what it names.
+ */
+export function readHeld(
+  registries: CoreRegistries,
+  file: RecordReader,
+): Pick<SceneDoc, 'entities' | 'components' | 'unknownComponents'> {
+  const entities = new Map<EntityId, EntityDoc>();
+  const entityTable = file.record('entities');
+  for (const key of entityTable.keys()) {
+    if (isEntityId(key)) entities.set(key, readEntity(entityTable.record(key), key));
+    else entityTable.refuse(key, 'field.invalid', 'is no entity id');
+  }
+
+  const versions = file.record('componentVersions');
+  const recorded = new Map<string, unknown>();
+  for (const type of versions.keys()) {
+    const version = versions.decode(type, asFound);
+    recorded.set(type, version);
+    const definition = isComponentTypeId(type) ? registries.components.get(type) : undefined;
+    if (definition !== undefined && version !== definition.version) {
+      versions.refuse(
+        type,
+        'type.version',
+        `${type} written at version ${shown(version)}; this build reads version ${definition.version} and does not convert it`,
+      );
     }
   }
 
-  rekeyOverrides(scene);
+  const components: ComponentTables = new Map();
+  const unknownComponents: UnknownComponentTables = new Map();
+  const tables = file.record('components');
+  const tabled = new Set<string>();
+  for (const type of tables.keys()) {
+    tabled.add(type);
+    if (!isComponentTypeId(type)) {
+      tables.refuse(type, 'field.invalid', 'is no component type');
+    } else if (!recorded.has(type)) {
+      tables.refuse(type, 'table.unversioned', 'has no version in componentVersions');
+    } else {
+      const definition = registries.components.get(type);
+      if (definition === undefined) {
+        const held = readTable(tables.record(type), asFound);
+        if (held.size > 0) unknownComponents.set(type, { version: recorded.get(type), components: held });
+      } else if (recorded.get(type) === definition.version) {
+        const held = readTable(tables.record(type), componentOf(definition));
+        if (held.size > 0) components.set(definition.id, held);
+      }
+    }
+  }
+  for (const type of recorded.keys()) {
+    if (!tabled.has(type)) versions.refuse(type, 'table.unversioned', 'names no table in components');
+  }
+
+  return { entities, components, unknownComponents };
 }
 
-/**
- * Moves components out of the entities and into the tables — format 3 → 4.
- *
- * Reads the array's **order** while it still means something: a document
- * written before phase 3 has no component ids, and the only way to give it the
- * same ones the prefab it points at will get is to derive them from where the
- * components already are. See `componentIdAt`.
- *
- * The legacy array is **deleted**, not left in place. Keeping it would be the
- * "add fields, never remove them" rule applied where it does the opposite of
- * what it is for: two copies of the same components, the stale one re-imported
- * on the next load and quietly overwriting every edit made since. And it would
- * help nobody — an editor that only reads format 3 refuses a format 4 document
- * on the version guard, whatever else is in the file.
- *
- * Gated on the **data** rather than on the version number, like `rekeyOverrides`
- * above: an entity that still holds an array is one that has not been through
- * here, and a document that has been through here has none. That also lets a
- * prefab borrow this pass without the two format numbers having to be mapped
- * onto each other.
- */
-function adoptComponentTables(scene: SceneDoc): void {
-  const tables = (scene.components ?? emptyComponentTables()) as ComponentTables;
-  // A file could carry some tables and not others — a type added since it was
-  // written, or one hand-edited out.
-  for (const type of COMPONENT_TYPES) tables[type] ??= {};
-  scene.components = tables;
+/** `key` itself, if that is what was found where an id has to be the key it is filed under. */
+function itsKey<K extends string>(value: unknown, path: DecodePath, key: K): Decoded<K> {
+  return value === key ? { ok: true, value: key } : { ok: false, diagnostics: [mismatch(path, value, key)] };
+}
 
-  for (const entity of Object.values(scene.entities)) {
-    const legacy = (entity as EntityDoc & { components?: ComponentDoc[] }).components;
-    delete (entity as EntityDoc & { components?: ComponentDoc[] }).components;
-    if (!Array.isArray(legacy)) continue;
+/** An entity, each field checked, its `id` the key it is filed under. */
+function readEntity(entity: RecordReader, key: EntityId): EntityDoc {
+  return {
+    id: entity.decode('id', (value, path) => itsKey(value, path, key)) ?? key,
+    name: entity.read('name', checks.string),
+    parent: entity.read('parent', ENTITY_OR_NONE),
+    children: entity.read('children', ENTITY_LIST),
+    transform: readTransform(entity.record('transform')),
+    visible: entity.read('visible', checks.boolean),
+    locked: entity.read('locked', checks.boolean),
+  };
+}
 
-    for (const [index, component] of legacy.entries()) {
-      const id = component.id ?? componentIdAt(entity.id, index);
-      if (isKnownComponentType(component.type)) {
-        putComponent(scene, entity.id, { ...component, id });
+function readTransform(transform: RecordReader): EntityDoc['transform'] {
+  return {
+    position: transform.read('position', checks.vec3),
+    rotation: transform.read('rotation', checks.vec3),
+    scale: transform.read('scale', checks.vec3),
+  };
+}
+
+/** One type's table, by entity then by component id, each component read by `read`. */
+function readTable<T>(
+  table: RecordReader,
+  read: (value: unknown, path: DecodePath, key: ComponentId) => Decoded<T>,
+): Map<EntityId, Map<ComponentId, T>> {
+  const out = new Map<EntityId, Map<ComponentId, T>>();
+  for (const entityKey of table.keys()) {
+    if (!isEntityId(entityKey)) {
+      table.refuse(entityKey, 'field.invalid', 'is no entity id');
+      continue;
+    }
+    const heldTable = table.record(entityKey);
+    const held = new Map<ComponentId, T>();
+    for (const componentKey of heldTable.keys()) {
+      if (!isComponentId(componentKey)) {
+        heldTable.refuse(componentKey, 'field.invalid', 'is no component id');
         continue;
       }
-      // A type this build has never heard of is filed under a table of its own,
-      // keyed by the id its position gives it — and its **body is not touched**,
-      // not even to add that id. Filling it against a type we do not have would
-      // invent a shape, and the next save would write that invention over the
-      // author's data. A field is deprecated, never lost.
-      const unknown = scene.components as unknown as Record<
-        string,
-        Record<string, Record<string, ComponentDoc>>
-      >;
-      const table = (unknown[component.type] ??= {});
-      (table[entity.id] ??= {})[id] = component;
+      const component = heldTable.decode(componentKey, (value, path) => read(value, path, componentKey));
+      if (component !== undefined) held.set(componentKey, component);
     }
+    out.set(entityKey, held);
   }
+  return out;
 }
 
-/**
- * The id a component written before ids gets, from where it already is.
- *
- * The whole migration turns on this being **derivable on both sides of a file
- * boundary**. An override lives in the scene, on the instance component; the
- * component it names lives in the prefab, a different file migrated at a
- * different time by code holding only one of the two. Neither can look the other
- * up — but both know the entity id and the index, so both compute the same
- * string and meet in the middle.
- *
- * The result is opaque from the moment it is written. Nothing may parse an index
- * back out of it: an id that can be turned into a position is a position, and a
- * position is the bug this replaces.
- */
-function componentIdAt(entityId: string, index: number): string {
-  return `${entityId}:${index}`;
-}
-
-/**
- * Moves prefab overrides from naming a component by position to naming it by id.
- *
- * `components` was `Record<number, …>`, so inserting a component into a
- * prefab slid every override of every instance one place along — mass landed on
- * the collider, and the override that had been last landed on nothing.
- *
- * Runs once, at the boundary, and only on keys that are still integers, so a
- * document that has already been through here is left alone. That matters more
- * than it looks: re-running it against indices that no longer mean anything is
- * exactly how the data would be lost.
- */
-function rekeyOverrides(scene: SceneDoc): void {
-  for (const held of Object.values(scene.components.prefabInstance)) {
-    for (const component of Object.values(held)) {
-      for (const [path, override] of Object.entries(component.overrides)) {
-        if (!override.components) continue;
-
-        // The override key is a path through nested prefabs — `lampRoot`, or
-        // `inner/lampRoot`. Its last segment is the entity id inside the prefab
-        // that actually holds the component, which is what that prefab used to
-        // build its own ids.
-        const localEntityId = path.split(PREFAB_ID_SEPARATOR).at(-1) ?? path;
-
-        const rekeyed: Record<string, Record<string, unknown>> = {};
-        for (const [key, properties] of Object.entries(override.components)) {
-          const index = Number(key);
-          rekeyed[Number.isInteger(index) && key === String(index) ? componentIdAt(localEntityId, index) : key] =
-            properties;
-        }
-        override.components = rekeyed;
-      }
-    }
-  }
+/** A stored component read by its type, its `id` the key it is filed under: an override names it by that key. */
+function componentOf(
+  definition: ComponentDefinition,
+): (value: unknown, path: DecodePath, key: ComponentId) => Decoded<ComponentDoc> {
+  return (value, path, key) => {
+    const decoded = definition.decode(value, path);
+    if (!decoded.ok || decoded.value.id === key) return decoded;
+    return { ok: false, diagnostics: [mismatch([...path, 'id'], decoded.value.id, key)] };
+  };
 }
 
 /**
@@ -330,13 +299,15 @@ function rekeyOverrides(scene: SceneDoc): void {
  * project. During a session an edit that would break an edge is refused instead,
  * by `scene/graph.ts` — this function stopped being the only guard when that
  * landed.
+ *
+ * A prefab is healed by the same walk, its root its one root.
  */
-function repairHierarchy(scene: SceneDoc): void {
-  const exists = (id: string) => Object.hasOwn(scene.entities, id);
+export function repairHierarchy(tree: Pick<SceneDoc, 'entities' | 'rootOrder'>): void {
+  const exists = (id: EntityId) => tree.entities.has(id);
 
-  scene.rootOrder = scene.rootOrder.filter(exists);
+  tree.rootOrder = tree.rootOrder.filter(exists);
 
-  for (const entity of Object.values(scene.entities)) {
+  for (const entity of tree.entities.values()) {
     entity.children = entity.children.filter(exists);
     if (entity.parent !== null && !exists(entity.parent)) entity.parent = null;
   }
@@ -344,24 +315,24 @@ function repairHierarchy(scene: SceneDoc): void {
   // Cut each cycle by rooting the entity that closes it. The filtering above
   // cannot see one: every edge of a cycle points at an entity that exists. The
   // re-homing pass below then puts it in `rootOrder`.
-  for (const chain of cycles(scene)) {
-    const entity = scene.entities[chain[0] ?? ''];
+  for (const chain of cycles(tree)) {
+    const first = chain[0];
+    const entity = first === undefined ? undefined : tree.entities.get(first);
     if (!entity) continue;
-    const parent = scene.entities[entity.parent ?? ''];
+    const parent = entity.parent === null ? undefined : tree.entities.get(entity.parent);
     if (parent) parent.children = parent.children.filter((child) => child !== entity.id);
     entity.parent = null;
   }
 
   // Re-home anything that lost its parent and is not already a root.
-  const referenced = new Set<string>(scene.rootOrder);
-  for (const entity of Object.values(scene.entities)) {
+  const referenced = new Set<EntityId>(tree.rootOrder);
+  for (const entity of tree.entities.values()) {
     for (const child of entity.children) referenced.add(child);
   }
-  for (const id of Object.keys(scene.entities)) {
+  for (const [id, entity] of tree.entities) {
     if (!referenced.has(id)) {
-      const entity = scene.entities[id];
-      if (entity) entity.parent = null;
-      scene.rootOrder.push(id);
+      entity.parent = null;
+      tree.rootOrder.push(id);
     }
   }
 }

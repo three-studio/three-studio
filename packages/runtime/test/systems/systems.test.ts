@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, createComponent, createLightEntity, createMaterial, createMeshComponent, createWater, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { createCamera, createEnvironment, createLightEntity, createMaterial, createMeshComponent, modelType, fixedId, waterType, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -10,11 +10,13 @@ import {
   PerspectiveCamera,
   ProjectorLight,
   RectAreaLight,
-  Texture,
+  Scene,
   type Object3D,
 } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
-import { ModelCache } from '../../src/assets/ModelCache';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AssetCache } from '../../src/assets/AssetCache';
+import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import { EnvironmentBinder } from '../../src/EnvironmentBinder';
 import { CameraSystem } from '../../src/components/camera/CameraSystem';
 import type { SystemContext } from '../../src/systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../src/systems/identity';
@@ -24,19 +26,35 @@ import { ModelSystem } from '../../src/components/model/ModelSystem';
 import { ResourceArena } from '../../src/systems/ResourceArena';
 import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
+import { serveModels, stubImages } from '../assetFixtures';
+import { builtInRegistries } from '../registries';
+
+const registries = builtInRegistries();
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 /*
  * One class per component type that draws something, testable on its own —
  * which is the point of the split, and something the 1 564-line binder could
  * not offer: fourteen tests covered it, and not one of them could name a piece.
  *
- * The contract they all pin is `patch` against `'remount'`. Before phase 11 the
+ * The contract they all pin is `patch` against `'remount'`. Before the split the
  * decision was taken in three separate places that had never been compared:
  * materials patched in place, lights and cameras too, and a mesh with rules of
  * its own. Now each system has to answer out loud, and a test can ask.
  */
 
-function context(materials: Record<string, ReturnType<typeof createMaterial>> = {}): {
+/**
+ * @param assets Knows no file unless a test gives it one: what a system loads
+ *   is its own test's business.
+ */
+function context(
+  materials: ReadonlyMap<AssetId, ReturnType<typeof createMaterial>> = new Map(),
+  assets = new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+): {
   ctx: SystemContext;
   arena: ResourceArena;
   time: StudioTime;
@@ -51,7 +69,7 @@ function context(materials: Record<string, ReturnType<typeof createMaterial>> = 
   const ctx: SystemContext = {
     arena,
     materials,
-    models: new ModelCache({ url: () => null }),
+    assets,
     time,
     shadowMapSize: 1024,
     // No scene here, so nothing to resolve: a water component falls back to the
@@ -63,13 +81,30 @@ function context(materials: Record<string, ReturnType<typeof createMaterial>> = 
   return { ctx, arena, time, invalidated: () => invalidated };
 }
 
+const MAT_1 = fixedId('asset', 'mat-1');
+
+/** The entities these tests mount on, by the name each is called by. */
+const CUBE = fixedId('entity', 'cube');
+const CUBE_1 = fixedId('entity', 'cube-1');
+const ENTITY_A = fixedId('entity', 'a');
+const ENTITY_B = fixedId('entity', 'b');
+const SUN = fixedId('entity', 'sun');
+const SKY = fixedId('entity', 'sky');
+const CASTER = fixedId('entity', 'caster');
+const WINDOW = fixedId('entity', 'window');
+const PROJECTOR = fixedId('entity', 'projector');
+const CAM = fixedId('entity', 'cam');
+const CHAIR_ENTITY = fixedId('entity', 'chair');
+const LAKE = fixedId('entity', 'lake');
+const POND = fixedId('entity', 'pond');
+
 describe('the mesh system', () => {
   it('keeps the geometry, the material and the mesh across an edit that touches none', () => {
     const { ctx, arena } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
 
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
     const next: MeshComponent = { ...component, castShadow: false };
     const second = system.patch(first, component, next, ctx);
 
@@ -86,7 +121,7 @@ describe('the mesh system', () => {
     const { ctx, arena } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = { ...component, geometry: { ...component.geometry, width: 4 } as MeshComponent['geometry'] };
     const second = system.patch(first, component, next, ctx);
@@ -104,7 +139,7 @@ describe('the mesh system', () => {
     const { ctx } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = {
       ...component,
@@ -122,11 +157,11 @@ describe('the mesh system', () => {
     const { ctx } = context();
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     const next: MeshComponent = {
       ...component,
-      material: { ...component.material, normalMap: 'tex-1' },
+      material: { ...component.material, normalMap: fixedId('asset', 'tex-1') },
     };
     const second = system.patch(first, component, next, ctx);
 
@@ -134,12 +169,12 @@ describe('the mesh system', () => {
   });
 
   it('shares one material between every mesh naming the same asset', () => {
-    const { ctx, arena } = context({ 'mat-1': createMaterial('#00ff00') });
+    const { ctx, arena } = context(new Map([[MAT_1, createMaterial('#00ff00')]]));
     const system = new MeshSystem();
-    const component: MeshComponent = { ...createMeshComponent('box'), materialId: 'mat-1' };
+    const component: MeshComponent = { ...createMeshComponent('box'), materialId: MAT_1 };
 
-    const one = system.mount('a', component, ctx);
-    const two = system.mount('b', { ...component, id: 'other' }, ctx);
+    const one = system.mount(ENTITY_A, component, ctx);
+    const two = system.mount(ENTITY_B, { ...component, id: fixedId('component', 'other') }, ctx);
 
     expect(two.material).toBe(one.material);
     expect(arena.sizes.materials).toBe(1);
@@ -151,15 +186,15 @@ describe('the mesh system', () => {
   });
 
   it('hands its private material over when the mesh is linked to an asset', () => {
-    const { ctx, arena } = context({ 'mat-1': createMaterial('#00ff00') });
+    const { ctx, arena } = context(new Map([[MAT_1, createMaterial('#00ff00')]]));
     const system = new MeshSystem();
     const component = createMeshComponent('box');
-    const first = system.mount('cube', component, ctx);
+    const first = system.mount(CUBE, component, ctx);
 
     let disposed = 0;
     first.material.dispose = () => void (disposed += 1);
 
-    const linked: MeshComponent = { ...component, materialId: 'mat-1' };
+    const linked: MeshComponent = { ...component, materialId: MAT_1 };
     system.patch(first, component, linked, ctx);
     arena.flush();
 
@@ -173,11 +208,11 @@ describe('the mesh system', () => {
     const system = new MeshSystem();
     const component = createMeshComponent('box');
 
-    const handle = system.mount('cube-1', component, ctx);
-    expect(handle.mesh.userData[ENTITY_ID_KEY]).toBe('cube-1');
+    const handle = system.mount(CUBE_1, component, ctx);
+    expect(handle.mesh.userData[ENTITY_ID_KEY]).toBe(CUBE_1);
 
     const patched = system.patch(handle, component, { ...component, castShadow: false }, ctx);
-    expect(patched.mesh.userData[ENTITY_ID_KEY]).toBe('cube-1');
+    expect(patched.mesh.userData[ENTITY_ID_KEY]).toBe(CUBE_1);
   });
 });
 
@@ -216,7 +251,7 @@ describe('the light system', () => {
        * moved the shadow camera, which is centred on the light's position.
        */
       const { ctx } = context();
-      const handle = new LightSystem().mount('sun', light(kind), ctx);
+      const handle = new LightSystem().mount(SUN, light(kind), ctx);
 
       expect(handle.light.position.toArray()).toEqual([0, 0, 0]);
     },
@@ -236,7 +271,7 @@ describe('the light system', () => {
      * light "fixed the lighting".
      */
     const { ctx } = context();
-    const handle = new LightSystem().mount('sky', light('hemisphere'), ctx);
+    const handle = new LightSystem().mount(SKY, light('hemisphere'), ctx);
 
     expect(handle.light.position.toArray()).toEqual([0, 1, 0]);
     expect(handle.light.position.length()).toBeGreaterThan(0);
@@ -246,7 +281,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     const patched = system.patch(handle, component, { ...component, intensity: 9 }, ctx);
 
@@ -262,19 +297,19 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     expect(system.patch(handle, component, light('hemisphere'), ctx)).toBe('remount');
     expect(handle.light).toBeInstanceOf(DirectionalLight);
 
-    const remounted = system.mount('sun', light('hemisphere'), ctx);
+    const remounted = system.mount(SUN, light('hemisphere'), ctx);
     expect(remounted.light).toBeInstanceOf(HemisphereLight);
   });
 
   it('retires the light rather than disposing it where it stands', () => {
     const { ctx, arena } = context();
     const system = new LightSystem();
-    const handle = system.mount('sun', light('point'), ctx);
+    const handle = system.mount(SUN, light('point'), ctx);
 
     let disposed = 0;
     (handle.light as unknown as { dispose: () => void }).dispose = () => void (disposed += 1);
@@ -296,7 +331,7 @@ describe('the light system', () => {
     const system = new LightSystem();
     for (const kind of ['directional', 'point', 'spot', 'projector'] as const) {
       const { ctx } = context();
-      const handle = system.mount('caster', light(kind), ctx);
+      const handle = system.mount(CASTER, light(kind), ctx);
       const shadow = (handle.light as DirectionalLight).shadow;
 
       expect(shadow.mapSize.toArray(), kind).toEqual([1024, 1024]);
@@ -310,7 +345,7 @@ describe('the light system', () => {
     // it no shadow path at all. `applyShadow` tests for the object rather than
     // listing kinds, so this is what stops it writing onto `undefined`.
     const { ctx } = context();
-    const handle = new LightSystem().mount('window', light('rectArea'), ctx);
+    const handle = new LightSystem().mount(WINDOW, light('rectArea'), ctx);
 
     expect(handle.light).toBeInstanceOf(RectAreaLight);
     expect((handle.light as RectAreaLight & { shadow?: unknown }).shadow).toBeUndefined();
@@ -320,7 +355,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = { ...light('rectArea'), width: 4, height: 2 };
-    const handle = system.mount('window', component, ctx);
+    const handle = system.mount(WINDOW, component, ctx);
     expect((handle.light as RectAreaLight).width).toBe(4);
 
     const patched = system.patch(handle, component, { ...component, height: 7 }, ctx);
@@ -339,7 +374,7 @@ describe('the light system', () => {
     const { ctx } = context();
     const system = new LightSystem();
     const component = light('directional');
-    const handle = system.mount('sun', component, ctx);
+    const handle = system.mount(SUN, component, ctx);
 
     const next = { ...component, shadow: { ...component.shadow, bias: -0.0004, orthoSize: 40 } };
     const patched = system.patch(handle, component, next, ctx);
@@ -354,29 +389,33 @@ describe('the light system', () => {
   });
 
   it('swaps a projector cookie in place, and retires the one it replaces', () => {
-    const { ctx, arena } = context();
-    // `ModelCache.instanceTexture` goes through `TextureLoader`, which needs a
-    // DOM to decode an image. What is under test is the ownership, not the
-    // decode, so the cache hands back bare textures here.
-    (ctx as { models: unknown }).models = { instanceTexture: () => new Texture() };
+    stubImages();
+    const GOBO_A = fixedId('asset', 'gobo-a');
+    const GOBO_B = fixedId('asset', 'gobo-b');
+    const urls = new Map([
+      [GOBO_A, 'http://127.0.0.1/gobo-a.png'],
+      [GOBO_B, 'http://127.0.0.1/gobo-b.png'],
+    ]);
+    const assets = new AssetCache(registries, { resolver: { url: (id) => urls.get(id) ?? null }, idleBudgetBytes: 0 });
+    const { ctx, arena } = context(new Map(), assets);
 
     const system = new LightSystem();
-    const component = { ...light('projector'), mapId: 'gobo-a' };
-    const handle = system.mount('projector', component, ctx);
+    const component = { ...light('projector'), mapId: GOBO_A };
+    const handle = system.mount(PROJECTOR, component, ctx);
 
-    const first = (handle.light as ProjectorLight).map;
+    const first = projectorOf(handle.light).map;
     expect(first).not.toBeNull();
-    expect(handle.texture).toBe(first);
+    expect(handle.cookie?.texture).toBe(first);
 
     let disposed = 0;
-    if (first) first.dispose = () => void (disposed += 1);
+    first?.addEventListener('dispose', () => void (disposed += 1));
 
-    const patched = system.patch(handle, component, { ...component, mapId: 'gobo-b' }, ctx);
+    const patched = system.patch(handle, component, { ...component, mapId: GOBO_B }, ctx);
 
     // Not a remount: a light's shadow map costs far more than a texture, and
     // changing which picture it throws should not cost one.
     expect(patched).not.toBe('remount');
-    expect((handle.light as ProjectorLight).map).not.toBe(first);
+    expect(projectorOf(handle.light).map).not.toBe(first);
     // Retired, not disposed where it stands — a frame already encoding may still
     // be sampling it.
     expect(disposed).toBe(0);
@@ -386,19 +425,25 @@ describe('the light system', () => {
 
   it('gives a projector no cookie when its slot is empty', () => {
     const { ctx } = context();
-    const handle = new LightSystem().mount('projector', light('projector'), ctx);
+    const handle = new LightSystem().mount(PROJECTOR, light('projector'), ctx);
 
-    expect((handle.light as ProjectorLight).map).toBeNull();
-    expect(handle.texture).toBeNull();
+    expect(projectorOf(handle.light).map).toBeNull();
+    expect(handle.cookie).toBeNull();
     // `null` rather than `0`: three reads the aspect off the texture when it is
     // not set, and `0` would be an aspect of zero.
-    expect((handle.light as ProjectorLight).aspect).toBeNull();
+    expect(projectorOf(handle.light).aspect).toBeNull();
   });
 });
 
+/** The light a projector component built. */
+function projectorOf(light: Object3D): ProjectorLight {
+  if (!(light instanceof ProjectorLight)) throw new Error('not a projector');
+  return light;
+}
+
 describe('the camera system', () => {
   const camera = (projection: CameraComponent['projection']): CameraComponent => ({
-    ...(createComponent('camera') as CameraComponent),
+    ...createCamera(),
     projection,
   });
 
@@ -406,7 +451,7 @@ describe('the camera system', () => {
     const { ctx } = context();
     const system = new CameraSystem();
     const component = camera('perspective');
-    const handle = system.mount('cam', component, ctx);
+    const handle = system.mount(CAM, component, ctx);
 
     const patched = system.patch(handle, component, { ...component, fov: 30 }, ctx);
     expect(patched).not.toBe('remount');
@@ -417,10 +462,10 @@ describe('the camera system', () => {
     const { ctx } = context();
     const system = new CameraSystem();
     const component = camera('perspective');
-    const handle = system.mount('cam', component, ctx);
+    const handle = system.mount(CAM, component, ctx);
 
     expect(system.patch(handle, component, camera('orthographic'), ctx)).toBe('remount');
-    expect(system.mount('cam', camera('orthographic'), ctx).camera).toBeInstanceOf(
+    expect(system.mount(CAM, camera('orthographic'), ctx).camera).toBeInstanceOf(
       OrthographicCamera,
     );
   });
@@ -428,7 +473,7 @@ describe('the camera system', () => {
   it('frees nothing, because a camera has no dispose', () => {
     const { ctx, arena } = context();
     const system = new CameraSystem();
-    const handle = system.mount('cam', camera('perspective'), ctx);
+    const handle = system.mount(CAM, camera('perspective'), ctx);
 
     // Adding a camera to the disposables alongside the lights threw
     // `disposable.dispose is not a function` on the first Stop.
@@ -438,69 +483,67 @@ describe('the camera system', () => {
 });
 
 /*
- * A stand-in for the model cache, so a system that loads files can be tested
- * without one.
+ * The asset cache's loads stood in for, so a system that loads files can be
+ * tested without a file.
  *
  * It records what was asked for, which is half of what these tests check: a
- * component naming a node must reach `loadNode` and not `loadModel`, because
- * `loadModel` clones the whole tree and an unpacked file would clone itself
- * once per part.
+ * component naming a node must ask for that node and not the whole file,
+ * because the whole file is a deep clone of the tree, and an unpacked file
+ * would clone itself once per part.
  */
-function stubCache(knows = true): { models: ModelCache; asked: string[] } {
+function stubModels(knows = true): { assets: AssetCache; asked: string[] } {
   const asked: string[] = [];
   const node = () => {
     const mesh = new Mesh(new BoxGeometry(), new MeshBasicNodeMaterial());
     mesh.name = 'Seat';
     return mesh;
   };
-  const models = {
-    // A cache that holds the file, which is what these tests are about. `false`
-    // is the scene naming an asset that has been deleted, and the system then
-    // draws a placeholder without asking for anything.
-    knows: () => knows,
-    loadModel: (assetId: string) => {
-      asked.push(`whole:${assetId}`);
-      const group = new Group();
-      group.add(node());
-      return Promise.resolve(group);
-    },
-    loadNode: (assetId: string, path: string) => {
-      asked.push(`node:${assetId}:${path}`);
-      return Promise.resolve(node());
-    },
-  };
-  return { models: models as unknown as ModelCache, asked };
+  const assets = new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 });
+  // A cache that holds the file, which is what these tests are about. `false`
+  // is the scene naming an asset that has been deleted, and the system then
+  // draws a placeholder without asking for anything.
+  vi.spyOn(assets, 'knows').mockReturnValue(knows);
+  vi.spyOn(assets, 'holdModel').mockImplementation((assetId, at) => {
+    asked.push(at === null ? `whole:${assetId}` : `node:${assetId}:${at.path}`);
+    const group = new Group();
+    group.add(node());
+    return { object: Promise.resolve(at === null ? group : node()), dispose: () => {} };
+  });
+  return { assets, asked };
 }
 
+const CHAIR = fixedId('asset', 'chair');
+const SHARED = fixedId('asset', 'shared');
+
 const modelComponent = (partial: Partial<ModelComponent> = {}): ModelComponent => ({
-  ...createComponent('model'),
-  assetId: 'chair',
+  ...modelType.create(),
+  assetId: CHAIR,
   ...partial,
 });
 
 describe('the model system', () => {
   it('asks for one node when the component names one', async () => {
     const { ctx } = context();
-    const { models, asked } = stubCache();
+    const { assets, asked } = stubModels();
     const system = new ModelSystem();
 
-    system.mount('chair', modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' }), {
+    system.mount(CHAIR_ENTITY, modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' }), {
       ...ctx,
-      models,
+      assets,
     });
     await system.whenLoaded();
 
-    // Not `loadModel`: that clones the whole tree, so a two-hundred-node model
-    // unpacked would deep-clone the entire file two hundred times.
+    // Not the whole file: that clones the whole tree, so a two-hundred-node
+    // model unpacked would deep-clone the entire file two hundred times.
     expect(asked).toEqual(['node:chair:0.0.1']);
   });
 
   it('asks for the whole file when it names no node', async () => {
     const { ctx } = context();
-    const { models, asked } = stubCache();
+    const { assets, asked } = stubModels();
     const system = new ModelSystem();
 
-    system.mount('chair', modelComponent(), { ...ctx, models });
+    system.mount(CHAIR_ENTITY, modelComponent(), { ...ctx, assets });
     await system.whenLoaded();
 
     expect(asked).toEqual(['whole:chair']);
@@ -508,13 +551,13 @@ describe('the model system', () => {
 
   it('draws a placeholder for an asset the project no longer holds', async () => {
     const { ctx } = context();
-    const { models, asked } = stubCache(false);
+    const { assets, asked } = stubModels(false);
     const system = new ModelSystem();
     const attached: Object3D[] = [];
 
-    const handle = system.mount('chair', modelComponent(), {
+    const handle = system.mount(CHAIR_ENTITY, modelComponent(), {
       ...ctx,
-      models,
+      assets,
       attach: (_entityId, _handle, object: Object3D) => {
         attached.push(object);
         return true;
@@ -537,10 +580,10 @@ describe('the model system', () => {
 
   it('gives the placeholder the entity id, so it can be clicked and repaired', async () => {
     const { ctx } = context();
-    const { models } = stubCache(false);
+    const { assets } = stubModels(false);
     const system = new ModelSystem();
 
-    const handle = system.mount('chair', modelComponent(), { ...ctx, models });
+    const handle = system.mount(CHAIR_ENTITY, modelComponent(), { ...ctx, assets });
     await system.whenLoaded();
 
     // The whole point of drawing a box: the picker reads this off whatever the
@@ -550,12 +593,12 @@ describe('the model system', () => {
 
   it('remounts for a different node, and not for a shadow flag', () => {
     const { ctx } = context();
-    const { models } = stubCache();
+    const { assets } = stubModels();
     const system = new ModelSystem();
-    const ctxWith = { ...ctx, models };
+    const ctxWith = { ...ctx, assets };
     const component = modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' });
 
-    const handle = system.mount('chair', component, ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, component, ctxWith);
 
     // A different node is a different object; a checkbox is not worth a network
     // fetch and a parse.
@@ -569,15 +612,15 @@ describe('the model system', () => {
 
   it('takes exactly one pooled reference for a material, and gives it back', async () => {
     const material = createMaterial();
-    const { ctx, arena } = context({ shared: material });
-    const { models } = stubCache();
+    const { ctx, arena } = context(new Map([[SHARED, material]]));
+    const { assets } = stubModels();
     const system = new ModelSystem();
-    const ctxWith = { ...ctx, models };
+    const ctxWith = { ...ctx, assets };
     // A single node, so the object the handle holds is the mesh itself.
     const plain = modelComponent({ nodePath: '0.0.1', nodeName: 'Seat' });
-    const linked = { ...plain, materialId: 'shared' };
+    const linked = { ...plain, materialId: SHARED };
 
-    const handle = system.mount('chair', linked, ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, linked, ctxWith);
     await system.whenLoaded();
     expect(arena.sizes.materials).toBe(1);
 
@@ -585,7 +628,7 @@ describe('the model system', () => {
     // clearing the field puts it back rather than leaving the last override on.
     const drawn = handle.objects[0] as Mesh;
     const override = drawn.material;
-    expect(handle.materialKey).toBe('shared');
+    expect(handle.materialKey).toBe(SHARED);
 
     const back = system.patch(handle, linked, plain, ctxWith);
     expect(back).not.toBe('remount');
@@ -594,18 +637,18 @@ describe('the model system', () => {
   });
 
   it('gives its material back on unmount, whatever else it frees', async () => {
-    const { ctx, arena } = context({ shared: createMaterial() });
-    const { models } = stubCache();
+    const { ctx, arena } = context(new Map([[SHARED, createMaterial()]]));
+    const { assets } = stubModels();
     const system = new ModelSystem();
-    const ctxWith = { ...ctx, models };
+    const ctxWith = { ...ctx, assets };
 
-    const handle = system.mount('chair', modelComponent({ materialId: 'shared' }), ctxWith);
+    const handle = system.mount(CHAIR_ENTITY, modelComponent({ materialId: SHARED }), ctxWith);
     await system.whenLoaded();
     system.unmount(handle, ctxWith);
 
-    // Everything else it holds belongs to `ModelCache` — the geometries and
+    // Everything else it draws belongs to the asset cache — the geometries and
     // materials of the file, which every other clone is still drawing. The
-    // pooled material is the one thing it ever took.
+    // pooled material is the one thing it took from the arena.
     expect(arena.sizes.materials).toBe(0);
   });
 });
@@ -615,7 +658,7 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount('lake', createWater(), ctx);
+    const handle = system.mount(LAKE, waterType.create(), ctx);
 
     expect(handle.objects).toHaveLength(1);
     expect(handle.water.isWaterSurface).toBe(true);
@@ -629,20 +672,20 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const first = system.mount('a', createWater(), ctx);
-    const second = system.mount('b', createWater(), ctx);
+    const first = system.mount(ENTITY_A, waterType.create(), ctx);
+    const second = system.mount(ENTITY_B, waterType.create(), ctx);
 
     // `null` on the handle is what says "not mine to retire".
-    expect(first.texture).toBeNull();
+    expect(first.normalMap).toBeNull();
     expect(first.water.waterNormals.value).toBe(second.water.waterNormals.value);
   });
 
   it('writes every uniform in place, keeping the mesh and its shader', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
       mounted,
       component,
@@ -664,9 +707,9 @@ describe('the water system', () => {
   it('never remounts — not even for the reflection resolution', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(mounted, component, { ...component, resolutionScale: 1 }, ctx);
 
     // three's addon bakes this into the shader, so the surface had to be thrown
@@ -679,9 +722,9 @@ describe('the water system', () => {
   it('writes speed, direction and choppiness in place', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
-    const mounted = system.mount('lake', component, ctx);
+    const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
       mounted,
       component,
@@ -696,38 +739,44 @@ describe('the water system', () => {
     expect(handle.water.choppiness.value).toBeCloseTo(3);
   });
 
-  it('takes the sun the scene resolves, and its own when it cannot', () => {
+  it('takes the sun the scene resolves — the sky\'s, a light\'s, else the sky\'s — or its own', () => {
     const arena = new ResourceArena();
     const sun = { direction: [0, 1, 0] as [number, number, number], color: '#ff0000' };
     const ctx: SystemContext = {
       arena,
-      materials: {},
-      models: new ModelCache({ url: () => null }),
+      materials: new Map(),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       time: new StudioTime(),
       shadowMapSize: 1024,
-      sunOf: (source) => (source === 'sky' ? sun : null),
+      sunOf: (light) => (light === null ? sun : null),
       invalidate: () => undefined,
       attach: () => true,
     };
     const system = new WaterSystem();
 
-    const linked = system.mount('lake', createWater(), ctx);
+    const linked = system.mount(LAKE, waterType.create(), ctx);
     expect(linked.water.sunColor.value.getHexString()).toBe('ff0000');
     expect(linked.water.sunDirection.value.y).toBeCloseTo(1);
 
     const own = system.mount(
-      'pond',
-      { ...createWater(), sunSource: SUN_CUSTOM, sunColor: '#00ff00' },
+      POND,
+      { ...waterType.create(), sun: { kind: 'custom', direction: [1, 0, 0], color: '#00ff00' } },
       ctx,
     );
     expect(own.water.sunColor.value.getHexString()).toBe('00ff00');
+    expect(own.water.sunDirection.value.x).toBeCloseTo(1);
+
+    // A light the scene no longer holds lights it as the sky does.
+    const gone = system.mount(POND, { ...waterType.create(), sun: { kind: 'light', entity: fixedId('entity', 'gone') } }, ctx);
+    expect(gone.water.sunColor.value.getHexString()).toBe('ff0000');
+    expect(gone.water.sunDirection.value.y).toBeCloseTo(1);
   });
 
   it('gives back the geometry, the material and the reflection targets', () => {
     const { ctx, arena } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount('lake', createWater(), ctx);
+    const handle = system.mount(LAKE, waterType.create(), ctx);
     expect(arena.sizes.geometries).toBe(1);
 
     let disposed = 0;
@@ -742,5 +791,59 @@ describe('the water system', () => {
     // The geometry came from the pool and outlives the surface, so the surface
     // must not have taken it with it.
     expect(handle.geometry.attributes['position']).toBeDefined();
+  });
+});
+
+/*
+ * A holder that forgets to give back pins its file for the life of the window:
+ * the cache frees nothing something still holds. Each holder, mounted then
+ * unmounted on a cache the test owns, leaves nothing held.
+ */
+describe('every holder', () => {
+  it('gives back every hold it took once unmounted, its textures a frame later', async () => {
+    stubImages();
+    const server = await serveModels();
+    const STONE = fixedId('asset', 'stone');
+    const urls = new Map<AssetId, string>([
+      [STONE, 'http://127.0.0.1/stone.png'],
+      [CHAIR, server.url('chair.gltf')],
+    ]);
+    const assets = new AssetCache(registries, { resolver: { url: (id) => urls.get(id) ?? null }, idleBudgetBytes: 0 });
+    const textured = { ...createMaterial(), colorMap: STONE, normalMap: STONE };
+    const { ctx, arena } = context(new Map([[SHARED, textured]]), assets);
+    const projector = createLightEntity('projector').components[0];
+    if (projector?.type !== 'light') throw new Error('no light component');
+
+    // A private material's slots, a material asset's, a model, a cookie, a
+    // normal map and a sky.
+    const meshes = new MeshSystem();
+    const own = meshes.mount(CUBE, { ...createMeshComponent('box'), material: textured }, ctx);
+    const linked = meshes.mount(CUBE_1, { ...createMeshComponent('box'), materialId: SHARED }, ctx);
+    const models = new ModelSystem();
+    const chair = models.mount(CHAIR_ENTITY, modelComponent({ materialId: SHARED }), ctx);
+    const lights = new LightSystem();
+    const gobo = lights.mount(PROJECTOR, { ...projector, mapId: STONE }, ctx);
+    const water = new WaterSystem();
+    const lake = water.mount(LAKE, { ...waterType.create(), normalMapId: STONE }, ctx);
+    const environment = new EnvironmentBinder(assets, arena, null);
+    environment.sync(new Scene(), { ...createEnvironment(), backgroundMode: 'texture', backgroundTexture: STONE });
+    await models.whenLoaded();
+    // Two slots of the private material, two of the asset's — which the model
+    // draws too, without a hold of its own — the model, the cookie, the normal
+    // map and the sky.
+    expect(assets.stats.held).toBe(8);
+
+    meshes.unmount(own, ctx);
+    meshes.unmount(linked, ctx);
+    models.unmount(chair, ctx);
+    lights.unmount(gobo, ctx);
+    water.unmount(lake, ctx);
+    environment.dispose();
+    // The model is given back at once; a texture goes through the arena, since
+    // the frame in flight may still be sampling it.
+    expect(assets.stats.held).toBe(7);
+    arena.flush();
+
+    expect(assets.stats).toEqual({ entries: 0, held: 0, idleBytes: 0 });
   });
 });

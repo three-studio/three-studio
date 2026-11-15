@@ -1,11 +1,4 @@
-import {
-  DEFAULT_BUILD_PROFILE_ID,
-  basePathProblem,
-  createBuildProfiles,
-  normalizeBasePath,
-  normalizeBuildProfiles,
-  type BuildProfiles,
-} from '../src/index';
+import { basePathProblem, normalizeBasePath } from '../src/index';
 import { describe, expect, it } from 'vitest';
 
 /*
@@ -59,52 +52,5 @@ describe('basePathProblem', () => {
     expect(basePathProblem('/a b/')).toMatch(/spaces, quotes/);
     expect(basePathProblem('/a"b/')).toMatch(/spaces, quotes/);
     expect(basePathProblem('/a<b/')).toMatch(/spaces, quotes/);
-  });
-});
-
-describe('normalizeBuildProfiles', () => {
-  it('fills a field a profile predates and touches nothing else', () => {
-    // The shape on disk before `basePath` existed. Read as-is it would export
-    // `undefined` as a base, which is neither empty nor a URL.
-    const stored = {
-      active: 'custom',
-      profiles: {
-        custom: {
-          name: 'Itch',
-          target: 'web',
-          scenes: ['scene-a'],
-          outputDir: '/tmp/out',
-          includeAllAssets: true,
-          title: 'My Game',
-        },
-      },
-    } as unknown as BuildProfiles;
-
-    const filled = normalizeBuildProfiles(stored, 'Project');
-
-    expect(filled.profiles['custom']?.basePath).toBe('');
-    expect(filled.profiles['custom']).toMatchObject({
-      name: 'Itch',
-      scenes: ['scene-a'],
-      outputDir: '/tmp/out',
-      includeAllAssets: true,
-      title: 'My Game',
-    });
-    // The active profile is the author's, not the factory's default.
-    expect(filled.active).toBe('custom');
-  });
-
-  it('keeps values a factory default would otherwise have replaced', () => {
-    // `outputDir: null` and `scenes: []` are meaningful answers, not missing
-    // ones. A spread that read them as absent would silently reset a profile.
-    const stored = createBuildProfiles('Project');
-    expect(normalizeBuildProfiles(stored, 'Project')).toEqual(stored);
-  });
-
-  it('builds the default set when a project has no build section at all', () => {
-    const filled = normalizeBuildProfiles(undefined, 'Project');
-    expect(filled.active).toBe(DEFAULT_BUILD_PROFILE_ID);
-    expect(filled.profiles[DEFAULT_BUILD_PROFILE_ID]?.title).toBe('Project');
-    expect(filled.profiles[DEFAULT_BUILD_PROFILE_ID]?.basePath).toBe('');
   });
 });

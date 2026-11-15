@@ -5,15 +5,21 @@ import {
   findScene,
   unknownComponentTypes,
   basePathProblem,
-  deserializeScene,
+  decodeScene,
+  formatDiagnostics,
+  jsonOf,
   normalizeBasePath,
+  unwrap,
   type AssetEntry,
+  type AssetId,
   type BuildProfile,
   type BuildProfiles,
+  type CoreRegistries,
   type ExportProgress,
   type ExportResult,
   type SceneDoc,
   type SceneEntry,
+  type SceneId,
 } from '@three-studio/core';
 import { AssetError } from '../assetFiles';
 import { readMaterialAssets, readPhysicsMaterialAssets, readPrefabAssets } from '../assetLibraries';
@@ -84,6 +90,7 @@ export function requireBuildProfile(
  * hold is found while the folder still holds the previous build, whole.
  */
 export async function exportBuild(
+  registries: CoreRegistries,
   projectPath: string,
   profile: BuildProfile,
   outputDir: string,
@@ -136,7 +143,7 @@ export async function exportBuild(
   const release = await claimOutputFolder(outputDir, projectPath, roots);
   try {
     const plan = new BuildPlan(new Set(roots));
-    const planned = await planExport(plan, projectPath, profile, template, base, report);
+    const planned = await planExport(registries, plan, projectPath, profile, template, base, report);
 
     report(0.8, 'Writing the build');
     await writeBuild(plan, outputDir, roots, (fraction) =>
@@ -149,7 +156,7 @@ export async function exportBuild(
       ...planned,
       // Off the plan rather than counted along the way: the sizes are already
       // there, and a second tally is a second thing to keep in step.
-      size: sizeOf(plan.files()),
+      size: sizeOf(registries, plan.files()),
     };
   } finally {
     release();
@@ -158,6 +165,7 @@ export async function exportBuild(
 
 /** Everything the export decides, read and hashed, with nothing written. */
 async function planExport(
+  registries: CoreRegistries,
   plan: BuildPlan,
   projectPath: string,
   profile: BuildProfile,
@@ -169,7 +177,7 @@ async function planExport(
 
   report(0.05, 'Reading the project');
   const project = await readProject(projectPath);
-  const known = await discoverScenes(projectPath);
+  const { scenes: known } = await discoverScenes(projectPath);
   // An empty list means the start scene, so a project that never opened the
   // build settings still exports something sensible. Ids, as everything that
   // refers to a scene is.
@@ -177,7 +185,7 @@ async function planExport(
 
   const read = async (entry: SceneEntry): Promise<SceneDoc> => {
     try {
-      return deserializeScene(await readFile(resolveInside(projectPath, entry.path), 'utf8'));
+      return unwrap(decodeScene(registries, await readFile(resolveInside(projectPath, entry.path), 'utf8')), entry.path);
     } catch (cause) {
       throw new AssetError(`Scene "${entry.name}" could not be read: ${describe(cause)}`);
     }
@@ -213,7 +221,7 @@ async function planExport(
    * the list, so it is never mistaken for the entry. A loading scene the
    * project no longer has is said once, here, and the build has none.
    */
-  let loadingScene: string | null = null;
+  let loadingScene: SceneId | null = null;
   if (project.settings.loadingScene !== null) {
     const entry = findScene(known, project.settings.loadingScene);
     if (!entry) {
@@ -229,16 +237,16 @@ async function planExport(
   }
 
   report(0.15, 'Scanning assets');
-  const manifest = await scanAssets(projectPath);
+  const manifest = await scanAssets(registries, projectPath);
   // Off that manifest rather than each scanning for itself. Three concurrent
   // walks of `assets/` was already two too many, and since a scan writes the
   // sidecars it finds missing or out of date, they also raced: a reader
   // catching a half-written one adopts the asset under a fresh id, and the
   // export ships a scene pointing at an id no longer on disk.
-  const [materials, physicsMaterials, prefabs] = await Promise.all([
-    readMaterialAssets(projectPath, manifest),
-    readPhysicsMaterialAssets(projectPath, manifest),
-    readPrefabAssets(projectPath, manifest),
+  const [materials, physicsMaterials, { prefabs, refused: refusedPrefabs }] = await Promise.all([
+    readMaterialAssets(registries, projectPath, manifest),
+    readPhysicsMaterialAssets(registries, projectPath, manifest),
+    readPrefabAssets(registries, projectPath, manifest),
   ]);
   const byId = new Map(manifest.assets.map((asset) => [asset.id, asset]));
 
@@ -267,7 +275,7 @@ async function planExport(
     ...(profile.includeAllAssets
       ? knownAssets
       : union(
-          scenes.map(({ scene }) => collectSceneAssets(scene, materials, prefabs, knownAssets)),
+          scenes.map(({ scene }) => collectSceneAssets(registries, scene, materials, prefabs, knownAssets)),
         )),
   ].sort();
 
@@ -281,10 +289,19 @@ async function planExport(
     // Scripts ship compiled, not as source: the build has no TypeScript in it.
     if (entry.kind !== 'script') shippable.push(entry);
   }
-  const assets = await planAssets(plan, projectPath, shippable, (done, total) =>
+  const assets = await planAssets(registries, plan, projectPath, shippable, (done, total) =>
     report(0.25 + 0.4 * (done / Math.max(total, 1)), 'Reading assets'),
   );
   warnings.push(...assets.warnings);
+
+  // A prefab this build refuses ships nowhere: the instances of one the build
+  // names are empty in it, as they are in the editor, which says so as it says
+  // an unknown type below is not followed.
+  for (const [id, file] of refusedPrefabs) {
+    if (referenced.includes(id)) {
+      warnings.push(formatDiagnostics(`Prefab ${file.path} could not be read, and its instances are empty in this build:`, file.diagnostics));
+    }
+  }
 
   // A plugin's component, or a newer editor's: kept as found, and opaque. What
   // it needs cannot ship, and a scene that works in the editor holding the
@@ -292,7 +309,7 @@ async function planExport(
   const shippedPrefabs = pick(prefabs, referenced);
   for (const [label, host] of [
     ...scenes.map(({ entry, scene }) => [`Scene "${entry.name}"`, scene] as const),
-    ...Object.entries(shippedPrefabs).map(([id, prefab]) => [`Prefab ${id}`, prefab] as const),
+    ...[...shippedPrefabs].map(([id, prefab]) => [`Prefab ${id}`, prefab] as const),
   ]) {
     const unknown = unknownComponentTypes(host);
     if (unknown.length > 0) {
@@ -303,10 +320,10 @@ async function planExport(
     }
   }
 
-  const shippedScenes = planScenes(plan, scenes);
+  const shippedScenes = planScenes(registries, plan, scenes);
 
   report(0.7, 'Compiling scripts');
-  const scripts = await planScripts(plan, projectPath);
+  const scripts = await planScripts(registries, plan, projectPath);
 
   /*
    * One file, and the only one the player reads before it knows anything.
@@ -315,7 +332,7 @@ async function planExport(
    * beside this one — three more round trips before the first frame, for
    * documents that are small and always needed. See format 4.
    */
-  const build = assembleManifest({
+  const build = assembleManifest(registries, {
     title: profile.title,
     rendering: project.settings.rendering,
     physics: project.settings.physics,
@@ -329,7 +346,7 @@ async function planExport(
     prefabs: shippedPrefabs,
     scripts: scripts.file,
   });
-  plan.addBytes(BUILD_LAYOUT.manifest, JSON.stringify(build, null, 2), { kind: 'manifest' });
+  plan.addBytes(BUILD_LAYOUT.manifest, jsonOf(build, 2), { kind: 'manifest' });
 
   /*
    * GitHub Pages runs Jekyll, which leaves out every path starting with `_` —
@@ -357,8 +374,8 @@ async function planExport(
   };
 }
 
-function union(lists: readonly (readonly string[])[]): Set<string> {
-  const all = new Set<string>();
+function union(lists: readonly (readonly AssetId[])[]): Set<AssetId> {
+  const all = new Set<AssetId>();
   for (const list of lists) for (const id of list) all.add(id);
   return all;
 }
@@ -368,13 +385,14 @@ function describe(cause: unknown): string {
 }
 
 /**
- * The entries of `source` named in `ids`.
- *
- * Own keys only, and defined rather than assigned: an id is read off a sidecar,
- * and one spelled `__proto__` would otherwise become the object's prototype.
+ * The entries of `source` named in `ids`: a library is read by id, and an id the
+ * library does not hold is not one of them.
  */
-function pick<T>(source: Readonly<Record<string, T>>, ids: readonly string[]): Record<string, T> {
-  return Object.fromEntries(
-    ids.filter((id) => Object.hasOwn(source, id)).map((id) => [id, source[id]!]),
-  );
+function pick<T>(source: ReadonlyMap<AssetId, T>, ids: readonly AssetId[]): Map<AssetId, T> {
+  const picked = new Map<AssetId, T>();
+  for (const id of ids) {
+    const held = source.get(id);
+    if (held !== undefined) picked.set(id, held);
+  }
+  return picked;
 }

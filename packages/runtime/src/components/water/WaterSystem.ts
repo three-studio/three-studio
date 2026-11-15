@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, type GeometryDef, type WaterComponent } from '@three-studio/core';
+import { type EntityId, type GeometryDef, type WaterComponent } from '@three-studio/core';
 import {
   BackSide,
   DoubleSide,
@@ -9,6 +9,7 @@ import {
   type BufferGeometry,
   type Texture,
 } from 'three/webgpu';
+import type { TextureHold } from '../../assets/AssetCache';
 import { ComponentSystem, type Sun, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { buildGeometry, geometryKeyOf } from '../../systems/geometry';
 import { ENTITY_ID_KEY } from '../../systems/identity';
@@ -31,25 +32,32 @@ import { defaultWaterNormals } from '../../systems/waterNormals';
 
 const SIDES = { front: FrontSide, back: BackSide, double: DoubleSide } as const;
 
+/**
+ * Where the glint comes from when the scene cannot say where its sky's sun is:
+ * up and to one side, white — what `WaterMesh` lights with by default, and what
+ * a sun of the surface's own starts at.
+ */
+const DEFAULT_SUN: Sun = { direction: [0.70707, 0.70707, 0], color: '#ffffff' };
+
 export interface WaterHandle extends SystemHandle {
   water: WaterSurface;
   geometryDef: GeometryDef;
   /** Identifies the pooled geometry this handle holds a reference to. */
   geometryKey: string;
   geometry: BufferGeometry;
-  /** `null` while the built-in map is in use — that one belongs to no handle. */
   normalMapId: string | null;
-  texture: Texture | null;
+  /** The normal map's hold; `null` while the built-in map is in use — that one belongs to no handle. */
+  normalMap: TextureHold | null;
   readonly objects: readonly WaterSurface[];
 }
 
 export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
   private readonly direction = new Vector3();
 
-  mount(entityId: string, component: WaterComponent, ctx: SystemContext): WaterHandle {
+  mount(entityId: EntityId, component: WaterComponent, ctx: SystemContext): WaterHandle {
     const geometryKey = geometryKeyOf(component.geometry);
     const geometry = ctx.arena.geometry(geometryKey, () => buildGeometry(component.geometry));
-    const { texture, map } = this.normalMap(component, ctx);
+    const { hold, map } = this.normalMap(component, ctx);
     const sun = this.sunFor(component, ctx);
 
     const water = new WaterSurface(geometry, {
@@ -75,7 +83,7 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
       geometryKey,
       geometry,
       normalMapId: component.normalMapId,
-      texture,
+      normalMap: hold,
       objects: [water],
     };
   }
@@ -112,7 +120,7 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
 
     this.applyMaterial(water, next);
 
-    let { geometry, geometryKey, texture } = handle;
+    let { geometry, geometryKey, normalMap } = handle;
     const nextKey = geometryKeyOf(next.geometry);
     if (geometryKey !== nextKey) {
       geometry = ctx.arena.geometry(nextKey, () => buildGeometry(next.geometry));
@@ -124,9 +132,9 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
     if (handle.normalMapId !== next.normalMapId) {
       // The old one goes back through the queue rather than being disposed
       // here: the frame in flight may still be sampling it.
-      if (texture) ctx.arena.retire(texture);
+      if (normalMap) ctx.arena.retire(normalMap);
       const swapped = this.normalMap(next, ctx);
-      texture = swapped.texture;
+      normalMap = swapped.hold;
       water.waterNormals.value = swapped.map;
     }
 
@@ -136,7 +144,7 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
       geometryKey,
       geometry,
       normalMapId: next.normalMapId,
-      texture,
+      normalMap,
     };
   }
 
@@ -151,22 +159,23 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
   unmount(handle: WaterHandle, ctx: SystemContext): void {
     ctx.arena.releaseGeometry(handle.geometryKey);
     ctx.arena.retire(handle.water);
-    if (handle.texture) ctx.arena.retire(handle.texture);
+    if (handle.normalMap) ctx.arena.retire(handle.normalMap);
   }
 
   /**
    * The normal map, or the built-in one.
    *
-   * The built-in is returned with a `null` texture on purpose: it is shared by
+   * The built-in is returned with a `null` hold on purpose: it is shared by
    * every surface and owned by none, so a handle must not retire it.
    */
   private normalMap(
     component: WaterComponent,
     ctx: SystemContext,
-  ): { texture: Texture | null; map: Texture } {
+  ): { hold: TextureHold | null; map: Texture } {
     const assetId = component.normalMapId;
-    const texture = assetId === null ? null : ctx.models.instanceTexture(assetId);
-    if (!texture) return { texture: null, map: defaultWaterNormals() };
+    const hold = assetId === null ? null : ctx.assets.holdTexture(assetId);
+    if (!hold) return { hold: null, map: defaultWaterNormals() };
+    const { texture } = hold;
 
     // Tiled and linear, both of which the shader depends on: it samples the map
     // at four different scales well outside 0..1, and reads the result as
@@ -174,16 +183,19 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
     texture.wrapS = RepeatWrapping;
     texture.wrapT = RepeatWrapping;
     texture.colorSpace = LinearSRGBColorSpace;
-    return { texture, map: texture };
+    return { hold, map: texture };
   }
 
-  /** What the glint is lit by, with the component's own fields as the fallback. */
+  /**
+   * What the glint is lit by. A light that has gone lights it as the sky does,
+   * rather than leaving the water lit from nowhere; and a scene that cannot
+   * answer for its sky lights it from the default a sun of its own starts at.
+   */
   private sunFor(component: WaterComponent, ctx: SystemContext): Sun {
-    const own: Sun = { direction: component.sunDirection, color: component.sunColor };
-    if (component.sunSource === SUN_CUSTOM) return own;
-    // A light that has been deleted falls back here rather than leaving the
-    // water lit from nowhere.
-    return ctx.sunOf(component.sunSource) ?? own;
+    const { sun } = component;
+    if (sun.kind === 'custom') return sun;
+    const sky = ctx.sunOf(null) ?? DEFAULT_SUN;
+    return sun.kind === 'light' && sun.entity !== null ? (ctx.sunOf(sun.entity) ?? sky) : sky;
   }
 
   /**

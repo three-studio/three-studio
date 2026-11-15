@@ -1,24 +1,24 @@
-import { conform } from '../../conform';
+import { bodyOf } from '../../scene/bodies';
 import { defineComponent } from '../registry';
-import { conformJointMotion, createJoint } from './defaults';
+import { jointSchema } from './schema';
 
-/**
- * Holds the body its entity moves with to the body of the entity it names, or
- * to the world, as they were placed: built with the world, after the bodies, a
- * hinge's angle and a slider's offset starting at zero there.
- *
- * Read field by field against its factory, as every physics component is, and
- * what it does not know is dropped; its motion against the factory of the kind
- * it names.
- */
-export const jointComponent = defineComponent({
-  type: 'joint',
-  create: () => createJoint(),
-  fill: (stored) => ({ ...conform(stored, createJoint()), motion: conformJointMotion(stored.motion) }),
-  assets: () => [],
-  entities: (component) => [component.connectedEntity],
-  icon: 'link',
-  placeable: () => true,
+/** Two bodies held together: see `jointSchema`. */
+export const jointType = defineComponent({
+  id: 'joint',
+  label: 'Joint',
+  version: 1,
+  schema: jointSchema,
   runtime: true,
   addable: true,
+  requires: [
+    {
+      // A joint holds the body its entity moves with, so on an entity that
+      // moves with none it brings a Rigid Body, as Unity's joints require one,
+      // and the body brings its Collider; on a child of a body it brings
+      // neither. On level geometry meant to stay put, set the new body to
+      // Fixed, or put the joint on the side that moves.
+      type: 'rigidbody',
+      metElsewhere: (scene, entityId) => bodyOf(scene, entityId) !== null,
+    },
+  ],
 });

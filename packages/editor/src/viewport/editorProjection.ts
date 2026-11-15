@@ -1,6 +1,7 @@
 import type { SceneDoc } from '@three-studio/core';
 import { bindScene, type SceneBinder, type SceneBinderOptions } from '@three-studio/runtime';
 import { DirectionalLight, GridHelper, Group, HemisphereLight, Scene } from 'three/webgpu';
+import type { EditorRegistries } from '../registries';
 import { SelectionOutline } from './SelectionOutline';
 import { ViewportOverlay } from './overlay/ViewportOverlay';
 
@@ -29,6 +30,8 @@ export const EDITOR_OVERLAYS = [
 ] as const;
 
 export interface EditorProjectionOptions extends SceneBinderOptions {
+  /** What the binder reads, and what each type draws about itself in the edit view: its marker, its helper. */
+  registries: SceneBinderOptions['registries'] & Pick<EditorRegistries, 'overlays'>;
   /**
    * The document to project, expanded.
    *
@@ -82,7 +85,7 @@ export function createEditorProjection(options: EditorProjectionOptions): Editor
   // the six that remain, in order, are exactly `EDITOR_OVERLAYS`.
   const binder = bindScene(scene, doc, binderOptions);
 
-  const overlay = new ViewportOverlay(binder);
+  const overlay = new ViewportOverlay(binder, options.registries.overlays);
   const outline = new SelectionOutline();
   const transformGizmo = new Group();
   transformGizmo.name = 'TransformGizmo';
@@ -137,7 +140,7 @@ function buildGrid(): Group {
  * scene that renders black reads as a broken editor rather than as "you have
  * not added a light yet", which is why this exists at all, and it is the one
  * overlay that changes what a build would *show* rather than what it draws on
- * top. T-012 is what makes it say so out loud.
+ * top, which is why the viewport's stats say "Editor default" while it is on.
  */
 function buildFallbackLighting(): Group {
   const group = new Group();

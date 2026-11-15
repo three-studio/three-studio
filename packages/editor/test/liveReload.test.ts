@@ -1,6 +1,7 @@
 import {
   LAUNCH_SNAPSHOT_VERSION,
   PROJECT_FORMAT_VERSION,
+  assertDefined,
   createBuildProfiles,
   createDeviceLaunchOptions,
   createEmptyScene,
@@ -12,10 +13,16 @@ import {
   createPrefabInstance,
   createRenderingSettings,
   createStarterScene,
+  decodePrefab,
+  decodeScene,
+  fixedId,
+  type AssetId,
   type DeviceServerStatus,
   type LaunchSnapshot,
+  type LaunchSnapshotJson,
   type PrefabDoc,
   type ProjectFile,
+  unwrap,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith } from '../../core/test/fixtures';
@@ -34,6 +41,9 @@ import { useEditorStore } from '../src/state/editorStore';
 import { usePrefabModeStore } from '../src/state/prefabModeStore';
 import { useProjectStore } from '../src/state/projectStore';
 import { launchSnapshot } from '../src/viewport/PlaySession';
+import { builtInRegistries } from './registries';
+
+const registries = builtInRegistries();
 
 /*
  * Live reload: every device relaunched a second after the last change, from
@@ -43,13 +53,16 @@ import { launchSnapshot } from '../src/viewport/PlaySession';
  * shows what was launched.
  */
 
+const STONE = fixedId('asset', 'stone');
+const ICE = fixedId('asset', 'ice');
+
 function snapshot(): LaunchSnapshot {
   return {
     version: LAUNCH_SNAPSHOT_VERSION,
-    entry: { id: 'scene-1', name: 'Level 1', scene: createStarterScene() },
-    materials: { stone: createMaterial('#808080') },
-    physicsMaterials: { ice: createPhysicsMaterial() },
-    prefabs: {},
+    entry: { id: fixedId('scene', 'scene-1'), name: 'Level 1', scene: createStarterScene() },
+    materials: new Map([[STONE, createMaterial('#808080')]]),
+    physicsMaterials: new Map([[ICE, createPhysicsMaterial()]]),
+    prefabs: new Map(),
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
     loadingScene: null,
@@ -59,8 +72,8 @@ function snapshot(): LaunchSnapshot {
 /** The same launch, its first entity moved along x. */
 function moved(from: LaunchSnapshot, x: number): LaunchSnapshot {
   const next = structuredClone(from);
-  const [id] = Object.keys(next.entry.scene.entities);
-  next.entry.scene.entities[id!]!.transform.position[0] = x;
+  const first = assertDefined([...next.entry.scene.entities.values()][0], 'the first entity');
+  first.transform.position[0] = x;
   return next;
 }
 
@@ -275,7 +288,7 @@ describe('the same launch', () => {
     const keysTurned = {
       ...a,
       rendering: reversed(a.rendering),
-      entry: { ...a.entry, scene: { ...a.entry.scene, entities: reversed(a.entry.scene.entities) } },
+      entry: { ...a.entry, scene: { ...a.entry.scene, entities: new Map([...a.entry.scene.entities].reverse()) } },
     };
 
     expect(sameLaunchInputs(a, a)).toBe(true);
@@ -285,8 +298,11 @@ describe('the same launch', () => {
 
   it('is not a moved entity, a new material, a changed physics material, another gravity, or the scene renamed', () => {
     const a = snapshot();
-    const withMaterial = { ...a, materials: { ...a.materials, sand: createMaterial('#c2b280') } };
-    const slipperier = { ...a, physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } };
+    const withMaterial = {
+      ...a,
+      materials: new Map(a.materials).set(fixedId('asset', 'sand'), createMaterial('#c2b280')),
+    };
+    const slipperier = { ...a, physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) };
     const lighter = { ...a, physics: { ...a.physics, gravity: [0, -1.62, 0] as [number, number, number] } };
     const renamed = { ...a, entry: { ...a.entry, name: 'Level 2' } };
 
@@ -306,9 +322,9 @@ describe('the same launch', () => {
  * `EventTarget` for the window, so a gesture is an event a test dispatches.
  */
 
-const SCENE_ID = 'window-scene';
-const PREFAB_ID = 'prefab-under-test';
-const MATERIAL_ID = 'material-under-test';
+const SCENE_ID = fixedId('scene', 'window-scene');
+const PREFAB_ID = fixedId('asset', 'prefab-under-test');
+const MATERIAL_ID = fixedId('asset', 'material-under-test');
 
 const project: ProjectFile = {
   version: PROJECT_FORMAT_VERSION,
@@ -346,10 +362,14 @@ function running(launch: string, overrides: Partial<DeviceServerStatus> = {}): D
 const doc = () => useDocumentStore.getState();
 const realSavePrefab = useAssetStore.getState().savePrefab;
 
-/** What each relaunch sent, in order. */
-let sent: LaunchSnapshot[] = [];
+/** What each relaunch sent, in order, as it crossed the bridge: its documents are text. */
+let sent: LaunchSnapshotJson[] = [];
 const stops: (() => void)[] = [];
-let cube = '';
+let cube = fixedId('entity', 'cube');
+
+/** The entry scene a relaunch sent, read back from its text. */
+const sentScene = (index: number) =>
+  unwrap(decodeScene(registries, assertDefined(sent[index], `relaunch ${index}`).entry.sceneJson), 'Scene file');
 
 /** Every relaunch's callbacks, run. */
 async function settle(): Promise<void> {
@@ -358,7 +378,7 @@ async function settle(): Promise<void> {
 
 function moveCube(x: number): void {
   doc().mutate('Move Cube', (scene) => {
-    scene.entities[cube]!.transform.position[0] = x;
+    assertDefined(scene.entities.get(cube), 'the cube').transform.position[0] = x;
   });
 }
 
@@ -372,7 +392,7 @@ function watch(target: EventTarget = new EventTarget()): EventTarget {
     ownLaunch: { id: 'L1', snapshot: launchSnapshot() },
     liveReloadRefused: null,
   });
-  stops.push(watchLiveReload(target));
+  stops.push(watchLiveReload(registries, target));
   return target;
 }
 
@@ -384,7 +404,7 @@ describe('watching the window', () => {
     vi.stubGlobal('window', {
       studio: {
         devices: {
-          launch: async (snapshot: LaunchSnapshot) => {
+          launch: async (snapshot: LaunchSnapshotJson) => {
             sent.push(snapshot);
             // As the server's next status would say: this launch is current.
             const status = running(`L${sent.length + 1}`);
@@ -394,7 +414,7 @@ describe('watching the window', () => {
         },
       },
     });
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
     usePrefabModeStore.setState({ stack: [] });
     useEditorStore.getState().stop();
     useProjectStore.setState({
@@ -405,12 +425,13 @@ describe('watching the window', () => {
     const root = createMeshEntity('box');
     root.entity.name = 'Crate';
     useAssetStore.setState({
-      materials: { [MATERIAL_ID]: createMaterial() },
-      physicsMaterials: { ice: createPhysicsMaterial() },
-      prefabs: { [PREFAB_ID]: prefabWith('Crate', [root], root.entity.id) },
+      materials: new Map([[MATERIAL_ID, createMaterial()]]),
+      physicsMaterials: new Map([[ICE, createPhysicsMaterial()]]),
+      // Filed under its own id, as the main process reads a prefab.
+      prefabs: new Map([[PREFAB_ID, { ...prefabWith('Crate', [root], root.entity.id), id: PREFAB_ID }]]),
       // As the store's own does once the file is written: the table takes it.
-      savePrefab: async (assetId: string, prefab: PrefabDoc) => {
-        useAssetStore.setState((state) => ({ prefabs: { ...state.prefabs, [assetId]: prefab } }));
+      savePrefab: async (_registries, assetId: AssetId, prefab: PrefabDoc) => {
+        useAssetStore.setState((state) => ({ prefabs: new Map(state.prefabs).set(assetId, prefab) }));
       },
     });
     doc().replaceScene(createEmptyScene());
@@ -421,7 +442,7 @@ describe('watching the window', () => {
 
   afterEach(async () => {
     for (const stop of stops.splice(0)) stop();
-    await usePrefabModeStore.getState().exit();
+    await usePrefabModeStore.getState().exit(registries);
     useAssetStore.setState({ savePrefab: realSavePrefab });
     vi.unstubAllGlobals();
   });
@@ -437,7 +458,7 @@ describe('watching the window', () => {
       await settle();
 
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.entry.scene.entities[cube]!.transform.position[0]).toBe(4);
+      expect(sentScene(0).entities.get(cube)?.transform.position[0]).toBe(4);
       expect(useDeviceStore.getState().ownLaunch?.id).toBe('L2');
     });
 
@@ -449,14 +470,14 @@ describe('watching the window', () => {
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);
-      expect(sent[0]!.entry.scene.entities[cube]!.transform.position[0]).toBe(0);
+      expect(sentScene(0).entities.get(cube)?.transform.position[0]).toBe(0);
     });
 
     it('a material changed', () => {
       watch();
 
       useAssetStore.setState((state) => ({
-        materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
+        materials: new Map(state.materials).set(MATERIAL_ID, createMaterial('#ff0000')),
       }));
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
@@ -466,7 +487,7 @@ describe('watching the window', () => {
     it('a physics material changed', () => {
       watch();
 
-      useAssetStore.setState({ physicsMaterials: { ice: { ...createPhysicsMaterial(), friction: 0 } } });
+      useAssetStore.setState({ physicsMaterials: new Map([[ICE, { ...createPhysicsMaterial(), friction: 0 }]]) });
       vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
       expect(sent).toHaveLength(1);
@@ -525,7 +546,7 @@ describe('watching the window', () => {
       vi.advanceTimersByTime(5_000);
       expect(sent).toEqual([]);
 
-      await usePrefabModeStore.getState().exit();
+      await usePrefabModeStore.getState().exit(registries);
       vi.advanceTimersByTime(5_000);
       expect(sent).toEqual([]);
     });
@@ -540,8 +561,12 @@ describe('watching the window', () => {
     vi.advanceTimersByTime(LIVE_RELOAD_PAUSE_MS);
 
     expect(sent).toHaveLength(1);
-    expect(sent[0]!.entry.scene).toBe(scene);
-    expect(sent[0]!.prefabs[PREFAB_ID]!.entities[inside]).toBeDefined();
+    expect(sentScene(0)).toEqual(scene);
+    const prefab = unwrap(
+      decodePrefab(registries, assertDefined(sent[0]?.prefabs[PREFAB_ID], 'the prefab sent'), PREFAB_ID),
+      'Prefab file',
+    );
+    expect(prefab.entities.get(inside)).toBeDefined();
   });
 
   describe('holds while', () => {
@@ -611,7 +636,7 @@ describe('watching the window', () => {
       // A material, since the scene is locked during Play and the asset tables
       // are not.
       useAssetStore.setState((state) => ({
-        materials: { ...state.materials, [MATERIAL_ID]: createMaterial('#ff0000') },
+        materials: new Map(state.materials).set(MATERIAL_ID, createMaterial('#ff0000')),
       }));
       vi.advanceTimersByTime(3_000);
       expect(sent).toEqual([]);

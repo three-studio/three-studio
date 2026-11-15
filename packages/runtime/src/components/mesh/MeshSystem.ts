@@ -1,5 +1,13 @@
-import type { GeometryDef, MaterialDef, MeshComponent } from '@three-studio/core';
-import { Mesh, type BufferGeometry, type Material, type Texture } from 'three/webgpu';
+import {
+  isEntityId,
+  type AssetId,
+  type EntityId,
+  type GeometryDef,
+  type MaterialDef,
+  type MeshComponent,
+} from '@three-studio/core';
+import { Mesh, type BufferGeometry, type MeshStandardNodeMaterial } from 'three/webgpu';
+import type { TextureHold } from '../../assets/AssetCache';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import {
   ComponentSystem,
@@ -25,9 +33,10 @@ export interface MeshHandle extends BatchableHandle {
   geometry: BufferGeometry;
   materialDef: MaterialDef;
   /** The asset id when the material is shared; `null` when this handle owns it. */
-  materialKey: string | null;
-  material: Material;
-  textures: Texture[];
+  materialKey: AssetId | null;
+  material: MeshStandardNodeMaterial;
+  /** The holds on the images its slots sample: the material's, given back with it. */
+  textures: readonly TextureHold[];
   /**
    * What this mesh can be drawn alongside. Computed here rather than per sync:
    * it involves serialising the material definition, and doing that for three
@@ -53,11 +62,11 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     return handle;
   }
 
-  override materialAsset(handle: MeshHandle): string | null {
+  override materialAsset(handle: MeshHandle): AssetId | null {
     return handle.materialKey;
   }
 
-  mount(entityId: string, component: MeshComponent, ctx: SystemContext): MeshHandle {
+  mount(entityId: EntityId, component: MeshComponent, ctx: SystemContext): MeshHandle {
     const handle = this.build(component, undefined, ctx);
     handle.mesh.userData[ENTITY_ID_KEY] = entityId;
     ctx.invalidate();
@@ -81,7 +90,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
   ): MeshHandle {
     const entityId: unknown = handle.mesh.userData[ENTITY_ID_KEY];
     const rebuilt = this.build(next, handle, ctx);
-    if (typeof entityId === 'string') rebuilt.mesh.userData[ENTITY_ID_KEY] = entityId;
+    if (isEntityId(entityId)) rebuilt.mesh.userData[ENTITY_ID_KEY] = entityId;
     // Geometry or material may have changed, and both are in the batch key.
     ctx.invalidate();
     return rebuilt;
@@ -98,7 +107,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
   /** The definition a mesh renders with: the shared asset if it has one. */
   private definitionFor(component: MeshComponent, ctx: SystemContext): MaterialDef {
     if (component.materialId === null) return component.material;
-    return ctx.materials[component.materialId] ?? component.material;
+    return ctx.materials.get(component.materialId) ?? component.material;
   }
 
   private build(
@@ -163,7 +172,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     materialDef: MaterialDef,
     previous: MeshHandle | undefined,
     ctx: SystemContext,
-  ): { material: Material; textures: Texture[]; materialKey: string | null } {
+  ): { material: MeshStandardNodeMaterial; textures: readonly TextureHold[]; materialKey: AssetId | null } {
     const key = component.materialId;
 
     /**
@@ -185,7 +194,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
         else retirePrivate();
         const shared = ctx.arena.material(
           key,
-          () => new SharedMaterial(buildMaterial(materialDef, ctx.models)),
+          () => new SharedMaterial(buildMaterial(materialDef, ctx.assets)),
         );
         return { material: shared.material, textures: shared.textures, materialKey: key };
       }
@@ -194,7 +203,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
       if (!shared) {
         const rebuilt = ctx.arena.material(
           key,
-          () => new SharedMaterial(buildMaterial(materialDef, ctx.models)),
+          () => new SharedMaterial(buildMaterial(materialDef, ctx.assets)),
         );
         return { material: rebuilt.material, textures: rebuilt.textures, materialKey: key };
       }
@@ -223,7 +232,7 @@ export class MeshSystem extends ComponentSystem<MeshComponent, MeshHandle> {
     // A slot changed, so the shader changes: a new material, and the old one
     // goes back through the queue rather than being disposed here.
     retirePrivate();
-    const rebuilt = buildMaterial(materialDef, ctx.models);
+    const rebuilt = buildMaterial(materialDef, ctx.assets);
     return { material: rebuilt.material, textures: rebuilt.textures, materialKey: null };
   }
 }

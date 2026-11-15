@@ -1,11 +1,17 @@
 import {
-  SUN_FROM_SKY,
   componentsOf,
   findComponent,
+  isEntityId,
   skySunDirection,
+  type AssetId,
   type ComponentDoc,
+  type ComponentId,
+  type ComponentTypeId,
+  type CoreRegistries,
   type EntityDoc,
+  type EntityId,
   type MaterialDef,
+  type Registry,
   type RenderingSettings,
   type SceneDoc,
   type Vec3,
@@ -19,12 +25,11 @@ import {
   Vector3,
   type Renderer,
 } from 'three/webgpu';
-import type { AssetResolver } from './assets/AssetResolver';
 import { EnvironmentBinder } from './EnvironmentBinder';
-import { ModelCache } from './assets/ModelCache';
+import type { AssetCache } from './assets/AssetCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
-import type { Sun, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type { Sun, SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY, resolveEntityId } from './systems/identity';
 import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/material';
 import { MeshBatcher } from './MeshBatcher';
@@ -37,10 +42,10 @@ export { isVisibleInHierarchy } from './MeshBatcher';
  * Whether what a view holds still matches the document, element by element.
  *
  * Not identity of the array — there is no array in the document to compare
- * against since phase 10. `componentsOf` builds a fresh one per call, so
- * comparing its identity would differ every sync and rebuild the whole scene
- * every frame. The elements still carry immer's identity, and that is what this
- * uses.
+ * against since components moved into its tables. `componentsOf` builds a fresh
+ * one per call, so comparing its identity would differ every sync and rebuild
+ * the whole scene every frame. The elements still carry immer's identity, and
+ * that is what this uses.
  */
 function sameComponents(a: readonly ComponentDoc[], b: readonly ComponentDoc[]): boolean {
   return a.length === b.length && a.every((component, index) => component === b[index]);
@@ -61,20 +66,35 @@ const _z = new Vector3();
  * That is what lets undo, save/load and the play-mode snapshot work without any
  * of them knowing about three.js.
  *
- * Since phase 11 this is a **coordinator**, not the whole layer. What a
- * component draws belongs to its system (`systems/`), what it holds on the GPU
- * belongs to the arena, pairing the two against the document belongs to the
- * `Reconciler`, and everything that belongs to no entity at all — the
- * background, the lighting, the sky, the fog — belongs to `EnvironmentBinder`.
- * What is left here is what none of them can answer alone: the hierarchy of
- * containers, and the batching, which reads every mesh in the scene at once.
+ * This is a **coordinator**, not the whole layer. What a component draws
+ * belongs to its system (`systems/`), what it holds on the GPU belongs to the
+ * arena, pairing the two against the document belongs to the `Reconciler`, and
+ * everything that belongs to no entity at all — the background, the lighting,
+ * the sky, the fog — belongs to `EnvironmentBinder`. What is left here is what
+ * none of them can answer alone: the hierarchy of containers, and the batching,
+ * which reads every mesh in the scene at once.
  *
  * Change detection is by object identity: immer preserves the identity of
  * anything a mutation did not touch, so a moved entity re-reads its transform
  * without rebuilding its geometry.
  */
 export interface SceneBinderOptions {
-  resolver: AssetResolver;
+  /**
+   * What the binder reads of the registries: the system that draws each type,
+   * from which each binder builds its own, and the order of the types.
+   *
+   * The core's registries and the systems, rather than the runtime's registries
+   * by name: those name the behaviours, whose context holds a binder, and the
+   * binder naming them back would close an import cycle. A window's or a page's
+   * runtime registries are this, whole.
+   */
+  registries: CoreRegistries & { readonly systems: Registry<ComponentTypeId, SystemDefinition> };
+  /**
+   * The project's loaded files, shared by every world the window draws: the
+   * edit view's binder and Play's hold the same model once. Held through, and
+   * never freed here — the cache is its maker's, and so is its frame.
+   */
+  assets: AssetCache;
   /**
    * The project's rendering settings, whole.
    *
@@ -91,7 +111,7 @@ export interface SceneBinderOptions {
    * every linked material has already fallen back to its embedded copy, which
    * is what play mode did until it was passed one.
    */
-  materials?: Readonly<Record<string, MaterialDef>>;
+  materials?: ReadonlyMap<AssetId, MaterialDef> | undefined;
   /**
    * The device an analytic sky is captured on.
    *
@@ -100,7 +120,7 @@ export interface SceneBinderOptions {
    * of the constructor rather than an order to remember. See constraint 2 on
    * `bindScene`.
    */
-  renderer?: Renderer | null;
+  renderer?: Renderer | null | undefined;
   /**
    * Injected rather than reached for, so a test can drive the clock it hands
    * in. The default is the document's own — see `time/StudioTime`.
@@ -143,11 +163,14 @@ export class SceneBinder {
   /** Parent this into the editor viewport scene or the runtime scene. */
   readonly root = new Group();
 
-  private readonly reconciler = new Reconciler();
+  /** For the order an entity's components are read in, which is the order their types were registered in. */
+  private readonly registries: CoreRegistries;
+  private readonly reconciler: Reconciler;
   private readonly arena = new ResourceArena();
-  private readonly models: ModelCache;
+  /** The project's files, which this scene's systems and environment hold. */
+  private readonly assets: AssetCache;
   /** Shared materials by asset id; see `setMaterialLibrary`. */
-  private materials: Readonly<Record<string, MaterialDef>> = {};
+  private materials: ReadonlyMap<AssetId, MaterialDef> = new Map();
   /**
    * Per-light shadow map resolution, from the project settings. Square and a
    * power of two; 4096 costs four times the memory of 2048.
@@ -163,9 +186,9 @@ export class SceneBinder {
    * Entities whose light casts a shadow. Empty means per-instance culling is
    * safe; see `createBatch`.
    */
-  private readonly shadowCasters = new Set<string>();
+  private readonly shadowCasters = new Set<EntityId>();
   /** Entities detached by a removal, to be re-parented from the document. */
-  private readonly orphaned = new Set<string>();
+  private readonly orphaned = new Set<EntityId>();
 
   /**
    * Draws what can be drawn together. On or off by the project's settings, the
@@ -174,12 +197,7 @@ export class SceneBinder {
    * and the outline and the gizmo work off the entity's container, which a
    * batched mesh still hangs from.
    */
-  private readonly batcher = new MeshBatcher(
-    this.root,
-    this.reconciler,
-    this.arena,
-    this.shadowCasters,
-  );
+  private readonly batcher: MeshBatcher;
 
   /**
    * Read-only, and set once from the settings handed in.
@@ -194,12 +212,12 @@ export class SceneBinder {
   }
 
   /** Writes the world matrices of what moved into the batches holding it. */
-  updateBatches(only?: ReadonlySet<string>): void {
+  updateBatches(only?: ReadonlySet<EntityId>): void {
     this.batcher.updateBatches(only);
   }
 
   /** The entity a click on a batch landed on. */
-  resolveBatchHit(object: Object3D, batchId: number): string | undefined {
+  resolveBatchHit(object: Object3D, batchId: number): EntityId | undefined {
     return this.batcher.resolveBatchHit(object, batchId);
   }
 
@@ -217,12 +235,15 @@ export class SceneBinder {
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
-    this.models = new ModelCache(options.resolver);
+    this.registries = options.registries;
+    this.reconciler = new Reconciler(options.registries.systems);
+    this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
+    this.assets = options.assets;
     this.shadowMapSize = options.rendering.shadowMapSize;
     this.batcher.enabled = options.rendering.batching;
     // Given the arena rather than one of its own: what it lets go of has to
     // land in the same retire queue the systems use. See `ResourceArena`.
-    this.environment = new EnvironmentBinder(this.models, this.arena, options.renderer ?? null);
+    this.environment = new EnvironmentBinder(this.assets, this.arena, options.renderer ?? null);
     // Before any sync, which is the ordering `bindScene` exists to hold: a mesh
     // is built synchronously, so a table that arrives afterwards has already
     // been fallen back from.
@@ -240,34 +261,16 @@ export class SceneBinder {
     return {
       arena: this.arena,
       materials: this.materials,
-      models: this.models,
+      assets: this.assets,
       time: this.time,
       shadowMapSize: this.shadowMapSize,
-      sunOf: (source: string) => this.sunOf(source),
+      sunOf: (light) => this.sunOf(light),
       invalidate: () => {
         this.batcher.invalidate();
       },
-      attach: (entityId: string, handle: SystemHandle, object: Object3D) =>
+      attach: (entityId: EntityId, handle: SystemHandle, object: Object3D) =>
         this.reconciler.attachLate(entityId, handle, object),
     };
-  }
-
-  /** Called when a project opens, and when its asset manifest changes. */
-  setAssetResolver(resolver: AssetResolver): void {
-    // Before the cache is told, because `setResolver` disposes every texture
-    // master and our environment maps are clones sharing those images. Held on
-    // to, they would be handed back by `equirectangular`'s "same asset id"
-    // shortcut — a sky that is now a disposed image. The models below are
-    // invalidated for the same reason; the environment was simply left out.
-    this.environment.release();
-    this.models.setResolver(resolver);
-    // Everything loaded through the resolver has to be built again against the
-    // new one, so the entities holding such a build are marked for a full
-    // remount on the next sync.
-    for (const entityId of this.reconciler.entitiesThatLoad()) {
-      const view = this.reconciler.view(entityId);
-      if (view) view.components = [];
-    }
   }
 
   /**
@@ -283,7 +286,7 @@ export class SceneBinder {
    *   sync exactly those. Handing back `undefined` — "reconcile everything" —
    *   was costing a full pass over the scene per material tint.
    */
-  setMaterialLibrary(materials: Readonly<Record<string, MaterialDef>>): ReadonlySet<string> {
+  setMaterialLibrary(materials: ReadonlyMap<AssetId, MaterialDef>): ReadonlySet<EntityId> {
     const previous = this.materials;
     this.materials = materials;
 
@@ -303,14 +306,14 @@ export class SceneBinder {
      * One pass, one decision per asset. It also turns N pipeline compilations
      * into one, which was the entire point of pooling them.
      */
-    for (const [assetId, definition] of Object.entries(materials)) {
+    for (const [assetId, definition] of materials) {
       const shared = this.arena.peekMaterial(assetId);
       // Not in the pool yet — nothing is using it, and the first mesh that does
       // will build it. `setMaterialLibrary` also runs at startup, when the pool
       // is empty and there is nothing to patch.
       if (!shared) continue;
 
-      const before = previous[assetId];
+      const before = previous.get(assetId);
       if (before === definition) continue;
 
       if (before !== undefined && sameTextureSlots(before, definition)) {
@@ -320,7 +323,7 @@ export class SceneBinder {
       } else {
         // A slot changed, and a node material with a different texture slot is
         // a different shader pipeline. Replaced once, here.
-        this.arena.replaceMaterial(assetId, new SharedMaterial(buildMaterial(definition, this.models)));
+        this.arena.replaceMaterial(assetId, new SharedMaterial(buildMaterial(definition, this.assets)));
       }
     }
 
@@ -337,8 +340,8 @@ export class SceneBinder {
 
 
   /**
-   * @param dirty Entity ids to re-read. A set containing `'*'`, or `undefined`,
-   *   forces a full reconcile (initial load, undo of a structural change).
+   * @param dirty Entity ids to re-read. `undefined` forces a full reconcile
+   *   (initial load, undo of a structural change).
    */
   /**
    * Frees what the previous frame let go of. Call once per rendered frame.
@@ -346,40 +349,43 @@ export class SceneBinder {
    * The queue now lives in the arena. This used to hang off `sync`,
    * whose comment claimed the queue was "a frame old now" — true only if syncs
    * come one per frame, and two paths break that in opposite directions.
+   *
+   * The asset cache's frame is not begun here: the cache is the window's, and
+   * the edit view's binder and Play's each begin a frame of their own.
    */
   beginFrame(): void {
     this.arena.flush();
   }
 
-  sync(scene: SceneDoc, dirty?: ReadonlySet<string>): void {
+  sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
     // Held for `sunOf`, which answers about the scene rather than about one
     // entity and so cannot be given its subject as an argument.
     this.scene = scene;
-    const full = dirty === undefined || dirty.has('*');
+    const full = dirty === undefined;
     const ids = full
-      ? new Set([...Object.keys(scene.entities), ...this.reconciler.all().keys()])
+      ? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()])
       : dirty;
 
     for (const id of ids) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (!entity) {
         this.removeEntity(id);
         continue;
       }
-      this.syncEntity(entity, componentsOf(scene, id));
+      this.syncEntity(entity, componentsOf(this.registries, scene, id));
     }
 
     // Parenting is resolved after every entity exists, so an entity created
     // before its parent in the same batch still lands in the right place.
     for (const id of ids) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) this.attachToParent(entity);
     }
 
     // And whatever a removal detached along the way, whether or not this sync
     // was told those entities were dirty.
     for (const id of this.orphaned) {
-      const entity = scene.entities[id];
+      const entity = scene.entities.get(id);
       if (entity) this.attachToParent(entity);
     }
     this.orphaned.clear();
@@ -410,7 +416,7 @@ export class SceneBinder {
   }
 
 
-  getObject(entityId: string): Object3D | undefined {
+  getObject(entityId: EntityId): Object3D | undefined {
     return this.reconciler.view(entityId)?.container;
   }
 
@@ -421,7 +427,7 @@ export class SceneBinder {
    * replaces its objects, and the identity of this array's first element is
    * exactly how a caller notices.
    */
-  objectsFor(entityId: string, componentId: string): readonly Object3D[] {
+  objectsFor(entityId: EntityId, componentId: ComponentId): readonly Object3D[] {
     return this.reconciler.objectsOf(entityId, componentId);
   }
 
@@ -436,7 +442,7 @@ export class SceneBinder {
    * the entity exists, which keeps the overlay's "rebuild when the source
    * changes" rule working unchanged.
    */
-  containerFor(entityId: string): Object3D | undefined {
+  containerFor(entityId: EntityId): Object3D | undefined {
     return this.reconciler.peekContainer(entityId);
   }
 
@@ -449,28 +455,26 @@ export class SceneBinder {
    * already composed. Resolved per sync rather than per frame — a sync is what
    * a gizmo drag produces, so the water still follows a light being moved.
    */
-  private sunOf(source: string): Sun | null {
+  private sunOf(light: EntityId | null): Sun | null {
     const scene = this.scene;
     if (!scene) return null;
+    if (light === null) return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
 
-    if (source === SUN_FROM_SKY) {
-      return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
-    }
+    const component = findComponent(scene, light, 'light');
+    const container = this.reconciler.peekContainer(light);
+    if (!component || !container) return null;
 
-    const light = findComponent(scene, source, 'light');
-    const container = this.reconciler.peekContainer(source);
-    if (!light || !container) return null;
-
-    // +Z, because the light shines along -Z and `sunDirection` points back at
-    // it. `matrixWorld` carries the scale too, so the basis is normalised.
+    // +Z, because the light shines along -Z and the sun's direction points
+    // back at it. `matrixWorld` carries the scale too, so the basis is
+    // normalised.
     container.matrixWorld.extractBasis(_x, _y, _z);
     _z.normalize();
     const direction: Vec3 = [_z.x, _z.y, _z.z];
-    return { direction, color: light.color };
+    return { direction, color: component.color };
   }
 
   /** Walks up from a raycast hit to the entity that owns it. */
-  static resolveEntityId(object: Object3D | null): string | undefined {
+  static resolveEntityId(object: Object3D | null): EntityId | undefined {
     return resolveEntityId(object);
   }
 
@@ -485,15 +489,15 @@ export class SceneBinder {
    * unpacked model whose pieces are the wrong pieces, which reads as a corrupt
    * file rather than as a mismatch.
    */
-  modelShape(assetId: string): Promise<ModelShape> {
-    return this.models.modelShape(assetId);
+  modelShape(assetId: AssetId): Promise<ModelShape> {
+    return this.assets.modelShape(assetId);
   }
 
   /** Every camera the document defines, for play mode to choose from. */
-  collectCameras(scene: SceneDoc): { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
-    const cameras: { entityId: string; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
+  collectCameras(scene: SceneDoc): { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
+    const cameras: { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
     for (const [id, view] of this.reconciler.all()) {
-      if (!scene.entities[id]) continue;
+      if (!scene.entities.has(id)) continue;
       const component = findComponent(scene, id, 'camera');
       if (!component) continue;
       const camera = view.container.children.find(
@@ -520,17 +524,16 @@ export class SceneBinder {
 
   dispose(): void {
     this.batcher.clear();
-    // The model cache was never touched here, so every Play → Stop cycle built a
-    // fresh `SceneBinder` with a fresh `ModelCache`, re-downloaded every glTF,
-    // and abandoned the previous one's buffers on the GPU.
-    void this.models.clear();
     this.environment.dispose();
     this.reconciler.clear(this.context);
-    // Belt to the braces, and last: every system released its share above, so
-    // the pools are already empty unless a count went wrong — and everything up
-    // to here retires rather than frees. Nothing is rendering any more, so there
-    // is nothing left to wait for.
+    // Belt to the braces: every system released its share above, so the pools
+    // are already empty unless a count went wrong — and everything up to here
+    // retires rather than frees. Nothing is rendering any more, so there is
+    // nothing left to wait for.
     this.arena.disposeAll();
+    // Every hold this scene took has been given back by now, the texture holds
+    // the arena just freed included. What nothing else holds, the cache frees
+    // at the window's next frame, or keeps within its budget.
     this.root.clear();
   }
 
@@ -545,9 +548,10 @@ export class SceneBinder {
    * visibility and its transform.
    *
    * The component list is compared **element by element**. There is no array in
-   * the document to compare by identity since phase 10 — `componentsOf` builds a
-   * fresh one per call — but immer still preserves the identity of every
-   * component it did not touch, so this is exactly as precise as the old check.
+   * the document to compare by identity since components moved into its tables
+   * — `componentsOf` builds a fresh one per call — but immer still preserves the
+   * identity of every component it did not touch, so this is exactly as precise
+   * as the old check.
    */
   private syncEntity(entity: EntityDoc, components: readonly ComponentDoc[]): void {
     const container = this.reconciler.containerFor(entity.id);
@@ -590,10 +594,10 @@ export class SceneBinder {
       if (bound) {
         parent = bound;
       } else if (import.meta.env?.DEV) {
-        // Since phase 1 this is an impossible state: the tree layer refuses an
-        // edge to an entity the document does not hold. Falling back to the root
-        // in silence is exactly what hid it for months — an object visible and
-        // clickable in the viewport and present in no branch of the hierarchy.
+        // This is an impossible state: the tree layer refuses an edge to an
+        // entity the document does not hold. Falling back to the root in silence
+        // is exactly what hid it for months — an object visible and clickable in
+        // the viewport and present in no branch of the hierarchy.
         console.warn(
           `[binder] "${entity.id}" names parent "${entity.parent}", which has no view; attached to the root.`,
         );
@@ -612,7 +616,7 @@ export class SceneBinder {
    * root until something else touched it. Detaching the container is enough;
    * `attachToParent` re-reads the document for whatever is still in it.
    */
-  private removeEntity(id: string): void {
+  private removeEntity(id: EntityId): void {
     const view = this.reconciler.view(id);
     if (!view) return;
 
@@ -624,7 +628,7 @@ export class SceneBinder {
       const owner: unknown = child.userData[ENTITY_ID_KEY];
       // Noted, because a detached child whose own entity is not in this sync's
       // dirty set would be reattached by nothing and simply vanish.
-      if (typeof owner === 'string' && owner !== id) {
+      if (isEntityId(owner) && owner !== id) {
         child.removeFromParent();
         this.orphaned.add(owner);
       }

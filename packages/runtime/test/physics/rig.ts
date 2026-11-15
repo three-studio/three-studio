@@ -1,15 +1,22 @@
 import {
+  createAssetId,
+  colliderType,
   createColliderShape,
-  createComponent,
   createComponentForEntity,
   createEntity,
+  jointType,
   createMeshEntity,
   createPhysicsSettings,
+  playerControllerType,
   createRenderingSettings,
+  rigidbodyType,
+  scriptType,
+  type AssetId,
   type BodyType,
   type ColliderComponent,
   type ComponentOfType,
   type ComponentType,
+  type EntityId,
   type EntityTemplate,
   type GeometryKind,
   type JointComponent,
@@ -25,9 +32,20 @@ import { sceneWith } from '../../../core/test/fixtures';
 
 export { nest } from '../../../core/test/fixtures';
 import { Engine } from '../../src/Engine';
+import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
-import { clearScripts, registerScript, type ScriptClass } from '../../src/scripting/ScriptHost';
+import type { RuntimeRegistries } from '../../src/registries';
+import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
+import { builtInRegistries } from '../registries';
+
+const registries = builtInRegistries();
+
+/**
+ * The script each template runs, by the asset id its component names: what
+ * `withScript` gave it, which the rig hands its engine as a build's bundle.
+ */
+const scriptsOf = new WeakMap<EntityTemplate, readonly (readonly [AssetId, ScriptClass])[]>();
 
 /*
  * A scene document running in the real `Engine`, with real Rapier, under Node.
@@ -61,27 +79,48 @@ export interface PhysicsRig {
    * a new body and a character are. A test comparing the two builds its bodies
    * with `{ interpolate: false }`, or compares them at rest.
    */
-  drawn(entityId: string): Pose;
+  drawn(entityId: EntityId): Pose;
   /** Where the solver holds its body, read through the API a behaviour reads it through. */
-  solved(entityId: string): Pose;
+  solved(entityId: EntityId): Pose;
   /** The entity's body, as a behaviour is handed it. */
-  body(entityId: string): BodyHandle;
+  body(entityId: EntityId): BodyHandle;
 }
 
 /**
  * These entities in a running engine, disposed when the test finishes, with the
  * project's physics materials by asset id.
  */
-export async function physicsRig(
+export type PhysicsRigMaker = (
   entities: readonly EntityTemplate[],
   settings?: Partial<PhysicsSettings>,
-  physicsMaterials?: Readonly<Record<string, PhysicsMaterialDef>>,
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
+) => Promise<PhysicsRig>;
+
+/** A rig whose engine runs on the kernel's systems and behaviours, as a root activates them. */
+export const physicsRig: PhysicsRigMaker = physicsRigOn(registries);
+
+/**
+ * Rigs whose engines run on these registries: a test file that registers a
+ * behaviour of its own builds its own registries, so what it adds reaches no
+ * other file.
+ */
+export function physicsRigOn(registries: RuntimeRegistries): PhysicsRigMaker {
+  return (entities, settings, physicsMaterials) => runningRig(registries, entities, settings, physicsMaterials);
+}
+
+async function runningRig(
+  registries: RuntimeRegistries,
+  entities: readonly EntityTemplate[],
+  settings?: Partial<PhysicsSettings>,
+  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
   const engine = await Engine.create({
     scene: sceneWith(entities),
-    resolver: NULL_ASSET_RESOLVER,
+    registries,
+    scripts: bundleOf(entities),
+    assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // Batching off: a batched mesh is drawn by the batch, and the object a test
     // reads would be one the screen never shows.
     rendering: { ...createRenderingSettings(), batching: false },
@@ -95,7 +134,7 @@ export async function physicsRig(
   onTestFinished(() => engine.dispose());
 
   const step = physicsSettings.fixedTimestep;
-  const body = (entityId: string): BodyHandle => {
+  const body = (entityId: EntityId): BodyHandle => {
     const built = engine.physics?.body(entityId);
     if (!built) throw new Error(`No body was built for "${entityId}".`);
     return built;
@@ -177,7 +216,7 @@ export function takeTheBrowserBack(): void {
 export function ground(tiltDegrees = 0): EntityTemplate {
   const tilt = (tiltDegrees * Math.PI) / 180;
   const template = createEntity('Ground', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size: [40, 1, 40] } },
   ]);
   // Half its thickness below the surface along the tilted normal, so whatever
   // the tilt the slope passes through the origin, and a body placed above it
@@ -198,8 +237,8 @@ export function withBody(
 ): EntityTemplate {
   const template = createMeshEntity(kind);
   template.components.push(
-    { ...createComponent('rigidbody'), ...body },
-    createComponentForEntity('collider', template.components),
+    { ...rigidbodyType.create(), ...body },
+    createComponentForEntity(registries, 'collider', template.components),
   );
   template.entity.transform.position = position;
   return template;
@@ -208,7 +247,7 @@ export function withBody(
 /** A primitive with the collider `createComponentForEntity` guesses for it, and no body: `withBody`'s sibling. */
 export function withCollider(kind: GeometryKind, position: Vec3): EntityTemplate {
   const template = createMeshEntity(kind);
-  template.components.push(createComponentForEntity('collider', template.components));
+  template.components.push(createComponentForEntity(registries, 'collider', template.components));
   template.entity.transform.position = position;
   return template;
 }
@@ -225,12 +264,12 @@ export function player(
   }: { controller?: Partial<PlayerControllerComponent>; bodyType?: BodyType } = {},
 ): EntityTemplate {
   const template = createEntity('Player', [
-    { ...createComponent('playerController'), ...controller },
+    { ...playerControllerType.create(), ...controller },
     {
-      ...createComponent('collider'),
+      ...colliderType.create(),
       shape: { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 },
     },
-    { ...createComponent('rigidbody'), bodyType },
+    { ...rigidbodyType.create(), bodyType },
   ]);
   template.entity.transform.position = position;
   return template;
@@ -239,14 +278,19 @@ export function player(
 /**
  * The template, running `type` as its script.
  *
- * Registered under its class name until the test finishes, as a project's
- * compiled bundle registers each script under its asset id.
+ * Under an asset id of its own, which the rig's engine is handed with the class
+ * in its bundle, as a project's compiled bundle pairs each script with its id.
  */
 export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
-  registerScript(type.name, type);
-  onTestFinished(clearScripts);
-  template.components.push({ ...createComponent('script'), assetId: type.name });
+  const assetId = createAssetId();
+  scriptsOf.set(template, [...(scriptsOf.get(template) ?? []), [assetId, type]]);
+  template.components.push({ ...scriptType.create(), assetId });
   return template;
+}
+
+/** The bundle that runs these templates' scripts, as a build would compile it. */
+export function bundleOf(templates: readonly EntityTemplate[]): ScriptClasses {
+  return new Map(templates.flatMap((template) => scriptsOf.get(template) ?? []));
 }
 
 /**
@@ -254,14 +298,14 @@ export function withScript(template: EntityTemplate, type: ScriptClass): EntityT
  * otherwise. A test names the other side by its template's entity id.
  */
 export function withJoint(template: EntityTemplate, joint?: Partial<JointComponent>): EntityTemplate {
-  template.components.push({ ...createComponent('joint'), ...joint });
+  template.components.push({ ...jointType.create(), ...joint });
   return template;
 }
 
 /** Collider-only level geometry, a step or a wall: a box of this full size. */
 export function block(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Block', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size } },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size } },
   ]);
   template.entity.transform.position = position;
   return template;
@@ -270,7 +314,7 @@ export function block(position: Vec3, size: Vec3): EntityTemplate {
 /** `block`'s sibling that touches nothing: a box of this full size, its Collider *Is sensor*. */
 export function sensor(position: Vec3, size: Vec3): EntityTemplate {
   const template = createEntity('Sensor', [
-    { ...createComponent('collider'), shape: { ...createColliderShape('box'), size }, isSensor: true },
+    { ...colliderType.create(), shape: { ...createColliderShape('box'), size }, isSensor: true },
   ]);
   template.entity.transform.position = position;
   return template;

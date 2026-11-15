@@ -2,6 +2,7 @@ import type { GltfModelSettings } from '../../schema';
 import type { TextReader } from '../AssetImporter';
 import { CompanionSet } from '../companions';
 import { field, type FieldRow } from '../../../fields';
+import { fixedId } from '../../../ids';
 import { ModelImporter } from './ModelImporter';
 
 /**
@@ -13,7 +14,7 @@ import { ModelImporter } from './ModelImporter';
  * geometry.
  */
 export class GltfImporter extends ModelImporter<GltfModelSettings> {
-  readonly id = 'model.gltf';
+  readonly id = fixedId('importer', 'model.gltf');
   readonly extensions = ['glb', 'gltf'];
   override get label(): string {
     return 'glTF';

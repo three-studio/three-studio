@@ -3,6 +3,7 @@ import {
   createDeviceLaunchOptions,
   createPhysicsSettings,
   createRenderingSettings,
+  fixedId,
   type BuildManifest,
   type DeviceLaunchOptions,
 } from '@three-studio/core';
@@ -21,7 +22,7 @@ function manifest(overrides: Partial<BuildManifest> = {}): BuildManifest {
     title: 'Races',
     rendering: createRenderingSettings(),
     physics: createPhysicsSettings(),
-    scenes: [{ id: 'main', name: 'Main', path: 'scenes/main.json' }],
+    scenes: [{ id: fixedId('scene', 'main'), name: 'Main', path: 'scenes/main.json' }],
     loadingScene: null,
     assets: {},
     materials: {},

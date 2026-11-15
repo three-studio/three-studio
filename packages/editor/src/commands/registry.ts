@@ -26,10 +26,11 @@ export type { Command, EditorContext } from './command';
  * command simply goes missing" — and that was right about a registry filled by
  * *side effect*, which is what it was. A table composed by value has no such
  * mode: a family that is not spread below is absent from `CommandId`, and every
- * caller naming one of its ids stops compiling. That is stricter than the throw
- * `core`'s component registry falls back on, and `core` only falls back to it
- * because `COMPONENT_TYPES` is a canonical union it can check against. Commands
- * have no such union — which is precisely why theirs has to come from the table.
+ * caller naming one of its ids stops compiling. That is stricter than what
+ * guards `core`'s component types — a test checking their activation list
+ * against their folders — and `core` can lean on that test only because the
+ * folders are a canonical list to check against. Commands have no such list —
+ * which is precisely why theirs has to come from the table.
  *
  * **What is not here**, and deliberately. Opening a panel and changing the
  * layout: neither is a gesture on the document and neither has a `can()` to
@@ -70,9 +71,9 @@ export function commandById(id: CommandId): Command {
  * Every gesture the editor has, in declaration order.
  *
  * The command palette is this list, filtered by `can()` and by what has been
- * typed — which is the whole of milestone 8.4. `Object.keys` with the cast is
- * here rather than at the call site because this is the one place that knows the
- * table's keys *are* the ids.
+ * typed, and nothing more. `Object.keys` with the cast is here rather than at
+ * the call site because this is the one place that knows the table's keys *are*
+ * the ids.
  */
 export function commandIds(): readonly CommandId[] {
   return Object.keys(COMMANDS) as CommandId[];

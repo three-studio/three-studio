@@ -1,20 +1,17 @@
 import {
-  GEOMETRY_LABELS,
+  geometryField,
   colliderGeometry,
+  colliderType,
   createColliderShape,
-  createComponent,
-  createComponentForEntity,
   createMeshEntity,
   createModelEntity,
   createPhysicsMaterial,
-  fillComponent,
   fitColliderShape,
+  fixedId,
   linkedPhysicsMaterial,
   originAboveFeet,
   type BodyType,
-  type ColliderComponent,
   type ColliderShape,
-  type ComponentDoc,
   type GeometryKind,
   type MeshBuild,
   type Vec3,
@@ -315,11 +312,11 @@ describe('fitColliderShape', () => {
   });
 });
 
-describe('createColliderFor', () => {
-  const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(GEOMETRY_LABELS, kind);
+describe('a collider made for its entity', () => {
+  const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(geometryField.variants, kind);
   const guessed = (kind: GeometryKind): ColliderShape => {
     const template = createMeshEntity(kind);
-    return createComponentForEntity('collider', template.components).shape;
+    return colliderType.createFor(template.components).shape;
   };
 
   it('guesses each primitive’s collider as it is drawn', () => {
@@ -352,7 +349,7 @@ describe('createColliderFor', () => {
     const mesh = template.components[0]!;
     if (mesh.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
     mesh.geometry = { ...mesh.geometry, radiusTop, radiusBottom };
-    return createComponentForEntity('collider', template.components).shape;
+    return colliderType.createFor(template.components).shape;
   };
 
   it('guesses a cylinder whose top radius is 0 as a cone, apex up', () => {
@@ -373,8 +370,8 @@ describe('createColliderFor', () => {
   });
 
   it('gives a model a mesh collider built from its triangles', () => {
-    const model = createModelEntity('asset-1', 'Tree');
-    expect(createComponentForEntity('collider', model.components).shape).toEqual({
+    const model = createModelEntity(fixedId('asset', 'asset-1'), 'Tree');
+    expect(colliderType.createFor(model.components).shape).toEqual({
       kind: 'mesh',
       build: 'triangles',
     });
@@ -382,24 +379,26 @@ describe('createColliderFor', () => {
 });
 
 describe('a collider’s physics material', () => {
-  it('a stored collider keeps the physics material it names, and reads anything else as none', () => {
-    const stored = (fields: object) => {
-      const component = { id: 'c1', type: 'collider', ...fields } as unknown as ComponentDoc;
-      return fillComponent(component) as ColliderComponent;
-    };
+  const ICE = fixedId('asset', 'ice');
+  it('a stored collider keeps the physics material it names, and is refused for anything else', () => {
+    const decode = (materialId: unknown) =>
+      colliderType.decode?.({ ...colliderType.create(), materialId }, ['collider']);
 
-    expect(stored({ materialId: 'ice' }).materialId).toBe('ice');
-    expect(stored({ materialId: 7 }).materialId).toBeNull();
-    expect(stored({}).materialId).toBeNull();
+    expect(decode(ICE)).toMatchObject({ ok: true, value: { materialId: ICE } });
+    expect(decode(null)).toMatchObject({ ok: true, value: { materialId: null } });
+    expect(decode(7)).toMatchObject({ ok: false, diagnostics: [{ path: ['collider', 'materialId'] }] });
   });
 
   it('a link finds only an asset its library holds as its own', () => {
     const ice = { ...createPhysicsMaterial(), friction: 0 };
+    const library = new Map([[ICE, ice]]);
 
-    expect(linkedPhysicsMaterial('ice', { ice })).toBe(ice);
-    // An id is read off a file, and `constructor` is what every object answers to.
-    for (const id of [null, '', 'gone', 'constructor']) {
-      expect(linkedPhysicsMaterial(id, { ice })).toBeNull();
+    expect(linkedPhysicsMaterial(ICE, library)).toBe(ice);
+    expect(linkedPhysicsMaterial(null, library)).toBeNull();
+    // An id is read off a file, which holds any text there: one the library
+    // does not hold — `constructor` is what every object answers to — is none.
+    for (const text of [fixedId('asset', 'gone'), fixedId('asset', 'constructor')]) {
+      expect(linkedPhysicsMaterial(text, library)).toBeNull();
     }
   });
 });

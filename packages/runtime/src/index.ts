@@ -27,6 +27,13 @@ export const RUNTIME_VERSION = ENGINE_VERSION;
 /* The engine loop and the scene it drives. */
 export { Engine, isPerspective } from './Engine';
 export type { EngineOptions } from './Engine';
+/* What a game is built from, made and filled by each app's composition root. */
+export { activateRuntime, createRuntimeRegistries } from './registries';
+export type { RuntimeRegistries } from './registries';
+export type { BehaviourDefinition } from './behaviour/Behaviour';
+/* What a component type's system is written with, in the kernel or in a module. */
+export { ComponentSystem, defineSystem } from './systems/ComponentSystem';
+export type { SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 export { SceneHost } from './SceneHost';
 export type { SceneHostOptions, SceneLoad, SceneSource } from './SceneHost';
 export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';
@@ -42,10 +49,12 @@ export type { CreateRendererOptions, RendererBackend, RendererHandle } from './R
 /* Time. One clock for the simulation and every node material; see `time/StudioTime`. */
 export { StudioTime, studioTime } from './time/StudioTime';
 
-/* Assets: resolving ids to URLs, loading models, applying import settings. */
+/* Assets: resolving ids to URLs, holding what is loaded, applying import settings. */
 export { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 export type { AssetResolver } from './assets/AssetResolver';
-export { MODEL_EXTENSIONS, extensionOf, loadModelFromUrl } from './assets/loadModel';
+export { AssetCache } from './assets/AssetCache';
+export type { ModelHold, PreloadHold, TextureHold } from './assets/AssetCache';
+export { disposeModel, extensionOf, loadModelFromUrl } from './assets/loadModel';
 export type { LoadedModel } from './assets/loadModel';
 export { applyModelSettings, applyTextureSettings } from './assets/importSettings';
 export { describeNodes, resolveNode } from './assets/modelNodes';
@@ -79,7 +88,7 @@ export type {
 
 /* Physics. Our types only: nothing of Rapier's is on this barrel. */
 export { PhysicsWorld, applyWorldTransform, jointPose, worldPose } from './physics/PhysicsWorld';
-export type { DebugLines, PhysicsComponent } from './physics/PhysicsWorld';
+export type { DebugLines } from './physics/PhysicsWorld';
 export { collectVertices, ownMeshes } from './physics/meshShape';
 export type {
   BodyHandle,
@@ -95,7 +104,11 @@ export type {
   Vec3Like,
 } from './physics/PhysicsApi';
 
-/* Scripting: the base class user scripts extend, and the registry the host compiles into. */
+/*
+ * Scripting: the base class user scripts extend, and what a compiled bundle's
+ * classes are once the host has decoded them — handed to the engine that runs
+ * them, never filed in a table of the page's.
+ */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';
 export type {
   BehaviourMember,
@@ -103,8 +116,8 @@ export type {
   ScriptProperties,
   ScriptPropertyDef,
 } from './scripting/ScriptApi';
-export { clearScripts, registerScript, scriptClassFor } from './scripting/ScriptHost';
-export type { ScriptClass } from './scripting/ScriptHost';
+export { NO_SCRIPTS, publishScriptApi, scriptClassesOf } from './scripting/scriptBundle';
+export type { ScriptClass, ScriptClasses } from './scripting/scriptBundle';
 
 /* Input and the built-in character controller. */
 export { Input, type InputOptions } from './input/Input';

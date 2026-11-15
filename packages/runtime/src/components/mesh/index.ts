@@ -1,4 +1,4 @@
-import { registerSystem } from '../../systems/ComponentSystem';
+import { defineSystem } from '../../systems/ComponentSystem';
 import { MeshSystem } from './MeshSystem';
 
-registerSystem('mesh', () => new MeshSystem());
+export const meshSystem = defineSystem('mesh', () => new MeshSystem());

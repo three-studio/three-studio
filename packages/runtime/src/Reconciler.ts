@@ -1,7 +1,20 @@
-import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
+import type {
+  ComponentDoc,
+  ComponentId,
+  ComponentType,
+  ComponentTypeId,
+  EntityDoc,
+  EntityId,
+  Registry,
+} from '@three-studio/core';
 import { Group, type Object3D } from 'three/webgpu';
-import { buildSystems, type AnySystem } from './components';
-import type { BatchableHandle, SystemContext, SystemHandle } from './systems/ComponentSystem';
+import type {
+  AnySystem,
+  BatchableHandle,
+  SystemContext,
+  SystemDefinition,
+  SystemHandle,
+} from './systems/ComponentSystem';
 import { ENTITY_ID_KEY } from './systems/identity';
 
 /*
@@ -12,8 +25,8 @@ import { ENTITY_ID_KEY } from './systems/identity';
  * system that claims its type. Adding a renderable type is a folder under
  * `components/`, and this file does not change.
  *
- * The pairing key is the id phase 3 gave every component and phase 10 made the
- * storage key. Before it, builds were keyed by *position* in an array, so
+ * The pairing key is the id every component carries, which is also the key it
+ * is stored under. Before it, builds were keyed by *position* in an array, so
  * removing a component paired a cube's build with a sphere's definition — the
  * geometry key no longer matched, both were rebuilt, and the churn forced the
  * batch holding them to be rebuilt too.
@@ -32,7 +45,7 @@ export interface EntityView {
   /** Carries the entity transform; every component object is its child. */
   container: Group;
   /** By component id, so a removal cannot slide the others along. */
-  mounted: Map<string, Mounted>;
+  mounted: Map<ComponentId, Mounted>;
   /** The document's components as of the last sync, compared element by element. */
   components: readonly ComponentDoc[];
   /** `null` until the first sync, so a new view always applies its transform. */
@@ -40,24 +53,33 @@ export interface EntityView {
 }
 
 export class Reconciler {
-  private readonly views = new Map<string, EntityView>();
+  private readonly views = new Map<EntityId, EntityView>();
 
   /**
    * One system per type that draws, built for this reconciler alone.
    *
    * A `switch` returning `null` for nine of eleven used to stand here; a table
    * of five `new XSystem()` replaced it, and this replaces that. The names are
-   * gone: the types register themselves from `components/<type>/`, and the only
-   * thing this file still knows is that some types have a system and most do
-   * not.
+   * gone: each type's system is defined in `components/<type>/` and arrives
+   * through the registry, and the only thing this file still knows is that
+   * some types have a system and most do not.
    */
-  private readonly systems: ReadonlyMap<ComponentType, AnySystem> = buildSystems();
+  private readonly systems: ReadonlyMap<ComponentType, AnySystem>;
 
-  view(entityId: string): EntityView | undefined {
+  /**
+   * Takes the systems registry rather than the runtime's registries whole,
+   * which name the behaviours: a behaviour's context holds the binder that owns
+   * this, so naming them here would close an import cycle through the binder.
+   */
+  constructor(systems: Registry<ComponentTypeId, SystemDefinition>) {
+    this.systems = new Map(systems.values().map((system) => [system.id, system.create()]));
+  }
+
+  view(entityId: EntityId): EntityView | undefined {
     return this.views.get(entityId);
   }
 
-  all(): ReadonlyMap<string, EntityView> {
+  all(): ReadonlyMap<EntityId, EntityView> {
     return this.views;
   }
 
@@ -73,7 +95,7 @@ export class Reconciler {
    * Empty rather than absent for anything unmounted, so a caller polling every
    * frame does not have to tell "no such entity" from "nothing built yet".
    */
-  objectsOf(entityId: string, componentId: string): readonly Object3D[] {
+  objectsOf(entityId: EntityId, componentId: ComponentId): readonly Object3D[] {
     return this.views.get(entityId)?.mounted.get(componentId)?.handle.objects ?? [];
   }
 
@@ -85,12 +107,12 @@ export class Reconciler {
    * a view into existence — that would mount a container for an id the document
    * has already dropped, and nothing would ever take it down again.
    */
-  peekContainer(entityId: string): Group | undefined {
+  peekContainer(entityId: EntityId): Group | undefined {
     return this.views.get(entityId)?.container;
   }
 
   /** The container an entity's objects hang under, made on first sight. */
-  containerFor(entityId: string): Group {
+  containerFor(entityId: EntityId): Group {
     const existing = this.views.get(entityId);
     if (existing) return existing.container;
 
@@ -112,7 +134,7 @@ export class Reconciler {
    * shadow map. Rebuilding wholesale was costing 240ms per inspector drag on a
    * subdivided ground.
    */
-  reconcile(entityId: string, components: readonly ComponentDoc[], ctx: SystemContext): void {
+  reconcile(entityId: EntityId, components: readonly ComponentDoc[], ctx: SystemContext): void {
     const view = this.views.get(entityId);
     if (!view) return;
 
@@ -156,7 +178,7 @@ export class Reconciler {
   }
 
   /** Drops everything one entity has, and forgets it. */
-  remove(entityId: string, ctx: SystemContext): EntityView | undefined {
+  remove(entityId: EntityId, ctx: SystemContext): EntityView | undefined {
     const view = this.views.get(entityId);
     if (!view) return undefined;
 
@@ -177,7 +199,7 @@ export class Reconciler {
    * followed by a rebuild under the same id produces a new one, and the old
    * handle's model would otherwise be attached to a container nothing draws.
    */
-  attachLate(entityId: string, handle: SystemHandle, object: Object3D): boolean {
+  attachLate(entityId: EntityId, handle: SystemHandle, object: Object3D): boolean {
     const view = this.views.get(entityId);
     if (!view) return false;
     for (const mounted of view.mounted.values()) {
@@ -216,8 +238,8 @@ export class Reconciler {
    *
    * @returns The entity ids this touched, so the caller can sync exactly those.
    */
-  entitiesUsingMaterialAssets(): Set<string> {
-    const found = new Set<string>();
+  entitiesUsingMaterialAssets(): Set<EntityId> {
+    const found = new Set<EntityId>();
     for (const [entityId, view] of this.views) {
       for (const mounted of view.mounted.values()) {
         const asset = mounted.system.materialAsset?.(mounted.handle) ?? null;
@@ -227,21 +249,8 @@ export class Reconciler {
     return found;
   }
 
-  /**
-   * Entity ids whose builds came from a system that loads, for a resolver
-   * change that invalidates them all.
-   */
-  entitiesThatLoad(): Set<string> {
-    const found = new Set<string>();
-    for (const [entityId, view] of this.views) {
-      for (const mounted of view.mounted.values()) {
-        if (mounted.system.whenLoaded) found.add(entityId);
-      }
-    }
-    return found;
-  }
 
-  private drop(view: EntityView, componentId: string, ctx: SystemContext): void {
+  private drop(view: EntityView, componentId: ComponentId, ctx: SystemContext): void {
     const mounted = view.mounted.get(componentId);
     if (!mounted) return;
     this.detach(view, mounted.handle);

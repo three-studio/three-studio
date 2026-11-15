@@ -1,4 +1,4 @@
-import { createComponent, createEntity, type EntityTemplate, type Vec3 } from '@three-studio/core';
+import { createEntity, rigidbodyType, type EntityTemplate, type Vec3 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Vec3Like } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
@@ -36,7 +36,7 @@ class Slide extends Behaviour {
 /** An 8 × 0.5 × 8 kinematic platform, its top at `y`. */
 function platform(y = 0): EntityTemplate {
   const template = block([0, y - 0.25, 0], [8, 0.5, 8]);
-  template.components.push({ ...createComponent('rigidbody'), bodyType: 'kinematicPosition' });
+  template.components.push({ ...rigidbodyType.create(), bodyType: 'kinematicPosition' });
   return template;
 }
 
@@ -48,7 +48,7 @@ function off(value: Readonly<Vec3Like>, [x, y, z]: Vec3): number {
 describe('a body moved by numbers', () => {
   it('changes its velocity by J / mass at an impulse, at once, however its colliders share the mass', async () => {
     const ball = withBody('sphere', [0, 0, 0], { ...FLOATING, mass: 3 });
-    const cart = createEntity('Cart', [{ ...createComponent('rigidbody'), ...FLOATING, mass: 12 }]);
+    const cart = createEntity('Cart', [{ ...rigidbodyType.create(), ...FLOATING, mass: 12 }]);
     cart.entity.transform.position = [0, 0, 5];
     const parts = [
       withCollider('box', [-2, 0, 0]),

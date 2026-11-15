@@ -56,7 +56,7 @@ export class PaneBinder {
   readonly pane: Pane;
   private readonly fields: BoundField[] = [];
   /** The rows that tune the running game, which `setReadOnly` leaves enabled. */
-  private readonly live = new Set<BladeApi>();
+  private readonly tunable = new Set<BladeApi>();
   /** Moved on when a gesture ends so the next one opens a new undo entry. */
   private gestures = ++gestureCount;
   /** True while a change originates from this pane, to suppress self-refresh. */
@@ -109,12 +109,11 @@ export class PaneBinder {
   }
 
   /**
-   * One control, wired to whatever `io` says its value is.
-   *
-   * @param live A row of a pane that tunes the running game: left enabled while
-   *   the game runs, when every other control is greyed.
+   * One control, wired to whatever `io` says its value is. A row of a tunable
+   * field (`spec.tunable`) is left enabled while the game runs, when every
+   * other control is greyed.
    */
-  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO, live = false): void {
+  bind(folder: FolderApi | Pane, spec: BoundSpec, io: FieldIO): void {
     // What the declared type decides, which the row may still override: a
     // `vec3` converts because it is a vec3, but a row is free to say something
     // else about how its value reaches the control.
@@ -157,7 +156,7 @@ export class PaneBinder {
     };
 
     const blade = folder.addBinding(holder, 'value', params);
-    if (live) this.live.add(blade);
+    if (spec.tunable === true) this.tunable.add(blade);
     blade.on('change', (event) => {
       // A change raised by `refresh()` is the source talking back, not the
       // user; acting on it would also bump the coalescing generation.
@@ -211,14 +210,14 @@ export class PaneBinder {
    * (`.tp-v-disabled { pointer-events: none }`), so a greyed slider cannot be
    * dragged by its knob either.
    *
-   * But a live row: it tunes the running game, and the document is not what it
-   * writes (`state/tuning`).
+   * But a tunable row: it tunes the running game, and the document is not what
+   * it writes (`state/tuning`).
    */
   setReadOnly(readOnly: boolean): void {
     const walk = (blades: readonly BladeApi[]): void => {
       for (const blade of blades) {
         if ('children' in blade) walk((blade as FolderApi).children);
-        else blade.disabled = readOnly && !this.live.has(blade);
+        else blade.disabled = readOnly && !this.tunable.has(blade);
       }
     };
     walk(this.pane.children);
