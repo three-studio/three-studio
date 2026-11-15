@@ -1,6 +1,6 @@
 import { isRecord } from '../conform';
 import { invalid, shown, type DecodePath, type Decoded, type Diagnostic } from '../decoded';
-import { planFields, type Infer, type Schema } from '../fieldSchema';
+import { planFields, type Infer, type LinkedObject, type Schema } from '../fieldSchema';
 import { createComponentId, isComponentId, type AssetId, type EntityId } from '../ids';
 import type { Component } from '../scene/primitives';
 import type { ComponentDoc, ComponentTypeId, ComponentTypes, SceneDoc } from '../scene/schema';
@@ -114,6 +114,8 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
   followsDrawing(component: C): boolean;
   /** The type's fields: what its type, its decoder, its references and its pane are derived from. */
   readonly schema: Schema;
+  /** The objects an asset fills, as the schema declares them (`linkedBy`): what the Inspector shows and edits as the asset. */
+  readonly links: readonly LinkedObject[];
   /**
    * A stored component, checked field by field against the schema. A scene
    * holding a component it refuses does not open, and says which field of
@@ -233,6 +235,7 @@ export function defineComponent<const Id extends string, const S extends Schema>
     schema,
     runtime,
     addable,
+    links: plan.links,
     create,
     createFor: description.createFor ?? create,
     requires: description.requires ?? [],

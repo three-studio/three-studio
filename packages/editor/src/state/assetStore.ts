@@ -1,6 +1,8 @@
 import {
   applyAssetChange,
   assetUrl,
+  conformMaterial,
+  conformPhysicsMaterial,
   decodePrefab,
   emptyManifest,
   idMapOf,
@@ -444,6 +446,46 @@ export function childFolders(manifest: AssetManifest, parent: string): string[] 
   }
   return [...children].sort();
 }
+
+/*
+ * The values of the assets an object of a component can be filled by — a
+ * mesh's material, a collider's physics material — through one way in for
+ * every kind: the Inspector shows, edits and tunes them by the kind a schema's
+ * link names, and names no library. The libraries are named here alone, until
+ * asset kinds register their own.
+ */
+
+/** The values of the asset `assetId` names, from its kind's library; `null` for a kind with none, or an id the project lacks. */
+export function assetValues(kind: AssetKind, assetId: AssetId): object | null {
+  const { materials, physicsMaterials } = useAssetStore.getState();
+  switch (kind) {
+    case 'material':
+      return materials.get(assetId) ?? null;
+    case 'physicsMaterial':
+      return physicsMaterials.get(assetId) ?? null;
+    default:
+      return null;
+  }
+}
+
+/** Writes an asset's values to its file, made whole by its kind first; nothing for a kind with no values. */
+export async function saveAssetValues(kind: AssetKind, assetId: AssetId, values: object): Promise<void> {
+  switch (kind) {
+    case 'material':
+      return useAssetStore.getState().saveMaterial(assetId, conformMaterial(values));
+    case 'physicsMaterial':
+      return useAssetStore.getState().savePhysicsMaterial(assetId, conformPhysicsMaterial(values));
+    default:
+      return;
+  }
+}
+
+/**
+ * The libraries whose content a pane shows without the document moving: a
+ * linked asset's values, a prefab's contents. Read with `useShallow`, so that
+ * a change to one of them, and only that, is a change.
+ */
+export const selectLibraries = (state: AssetState) => [state.materials, state.physicsMaterials, state.prefabs] as const;
 
 /**
  * Maps asset ids onto the custom protocol the main process serves.

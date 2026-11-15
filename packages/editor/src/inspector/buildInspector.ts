@@ -1,28 +1,32 @@
 import {
   componentsOf,
   findComponentById,
-  linkedPhysicsMaterial,
+  isAssetId,
   type AssetId,
+  type AssetKind,
   type ComponentDoc,
   type ComponentId,
   type CoreRegistries,
   type EntityDoc,
   type EntityId,
+  type LinkedObject,
   type SceneDoc,
 } from '@three-studio/core';
+import { produce } from 'immer';
 import type { FolderApi } from 'tweakpane';
 import {
   renameEntity,
   setEntityVisible,
   setEnvironmentField,
-  setLinkedMaterialField,
+  setLinkedAssetField,
   setSkyField,
   setTransform,
+  writePath,
 } from '../commands/sceneCommands';
 import { currentSceneName, renameCurrentScene } from '../commands/sceneFiles';
-import { useAssetStore } from '../state/assetStore';
+import { saveAssetValues } from '../state/assetStore';
 import { isSceneLocked } from '../state/sceneLock';
-import { tunePhysicsMaterialField, tunedComponent, tunedPhysicsMaterial } from '../state/tuning';
+import { tunePhysicsMaterialField, tunedAssetValues, tunedComponent } from '../state/tuning';
 import { assetFieldBundle, type AssetFieldActions } from './assetField';
 import { PaneBinder, numeric, type FieldIO, type Holder } from './PaneBinder';
 import {
@@ -295,11 +299,11 @@ export class InspectorBinding {
     const label = this.registries.components.get(component.type)?.label ?? component.type;
     const folder = this.binder.pane.addFolder({ title: label });
 
-    // Conditional fields read the material the mesh actually renders with, so
-    // a linked material shows the shared values' fields, not the embedded ones'.
-    // And the rows are the tuned kind's during Play: a collider tuned to a
-    // sphere shows a radius.
-    const effective = effectiveComponent(entityId, component);
+    // Conditional rows read what is on screen: an object an asset fills shows
+    // the rows of the asset's values, not of the component's own copy. And the
+    // rows are the tuned kind's during Play: a collider tuned to a sphere shows
+    // a radius.
+    const effective = effectiveComponent(this.registries, entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
     const { entries, live } = paneEntriesFor(this.registries, effective);
@@ -340,6 +344,14 @@ export class InspectorBinding {
   ): void {
     const componentId = target.representative.id;
     const multiple = owner instanceof MultiTarget;
+    /** The component as the game runs it during Play, as it is otherwise. */
+    const current = (): ComponentDoc | undefined => {
+      const component = currentComponent(this.registries, entityId, componentId);
+      return component && tunedComponent(entityId, component);
+    };
+    /** The asset this row edits in place of the component, when its object is one an asset fills. */
+    const linkedOf = (component: ComponentDoc | undefined): LinkedAsset | null =>
+      component === undefined ? null : linkedAsset(this.registries, component, spec.path);
     const io: FieldIO = {
       read: () => {
         if (multiple) {
@@ -348,23 +360,20 @@ export class InspectorBinding {
           // throw "No matching controller", so there is nothing else to show.
           return target.read(spec.path);
         }
-        const component = currentComponent(this.registries, entityId, componentId);
-        return readPath(component && effectiveComponent(entityId, component), spec.path);
+        const component = current();
+        const linked = linkedOf(component);
+        return linked ? readPath(linked.values, linked.path) : readPath(component, spec.path);
       },
       write: (value, { last, generation }) => {
         // During Play only a live row is enabled, and it tunes the running game:
         // the world takes the value, `state/tuning` keeps it, and the document
-        // is not written. A linked collider's material rows tune the asset,
-        // every collider linking it, as they edit its file when stopped.
+        // is not written. A row of an object an asset fills tunes the asset,
+        // every component linking it, as it edits its file when stopped.
         if (isSceneLocked()) {
-          const component = currentComponent(this.registries, entityId, componentId);
-          const linked =
-            multiple || !component ? null : linkedMaterial(effectiveComponent(entityId, component), spec.path);
-          const key = spec.path[1];
+          const linked = multiple ? null : linkedOf(current());
           this.binder.edit(() => {
-            if (linked && component?.type === 'collider' && key !== undefined) {
-              tunePhysicsMaterialField(linked.assetId, key, value);
-            } else target.tune(spec.path, value);
+            if (linked) tunePhysicsMaterialField(linked.assetId, linked.path, value);
+            else target.tune(spec.path, value);
           });
           return;
         }
@@ -377,16 +386,15 @@ export class InspectorBinding {
           );
           return;
         }
-        const current = currentComponent(this.registries, entityId, componentId);
-        const linked = linkedMaterial(current && effectiveComponent(entityId, current), spec.path);
+        const linked = linkedOf(current());
         if (linked) {
           // The values belong to a shared asset, so the edit goes to the file
           // rather than to this entity — that is the whole point of linking.
           //
           // Only on `last`, which also makes the undo step exact: nothing is
-          // written during the drag, so the stored material is still the value
+          // written during the drag, so the stored asset is still the value
           // the gesture started from.
-          if (last) linked.edit(spec.label, spec.path[1]!, value);
+          if (last) editLinkedAsset(linked, spec.label, value);
           return;
         }
         this.binder.edit(() =>
@@ -425,68 +433,79 @@ function currentComponent(
 }
 
 /**
- * The component as it renders: a mesh linked to a material asset reports the
- * shared values, so the panel shows what is on screen rather than the embedded
- * copy it is no longer using. A collider linked to a physics material reports
- * the asset's values, which are what it is built with; one whose link the
- * project cannot answer reports its own, which are what it plays with.
- *
- * During Play, with what was tuned on it and on the asset it links: what the
- * running game is built with.
+ * The component as it is shown: during Play with what was tuned on it, and
+ * each object an asset fills (`linkedBy`) holding that asset's values — what is
+ * on screen, and what the running game is built with, rather than the
+ * component's own copy, which it no longer uses. A link the project cannot
+ * answer leaves the component's own values, which are what it draws or plays
+ * with. The component itself, where nothing replaces anything.
  */
-export function effectiveComponent(entityId: EntityId, component: ComponentDoc): ComponentDoc {
-  const { materials } = useAssetStore.getState();
+export function effectiveComponent(registries: CoreRegistries, entityId: EntityId, component: ComponentDoc): ComponentDoc {
   const tuned = tunedComponent(entityId, component);
-  if (tuned.type === 'mesh' && tuned.materialId !== null) {
-    const shared = materials.get(tuned.materialId);
-    return shared ? { ...tuned, material: shared } : tuned;
-  }
-  if (tuned.type === 'collider' && tuned.materialId !== null) {
-    const shared = tunedPhysicsMaterial(tuned.materialId);
-    return shared ? { ...tuned, material: shared } : tuned;
-  }
-  return tuned;
+  const filled = (registries.components.get(tuned.type)?.links ?? []).flatMap((link) => {
+    const asset = assetOf(tuned, link);
+    return asset === null ? [] : [{ object: link.object, values: asset.values }];
+  });
+  if (filled.length === 0) return tuned;
+  return produce(tuned, (draft) => {
+    for (const { object, values } of filled) writePath(draft, object, values);
+  });
 }
 
-/** A field whose edits go to a shared asset rather than to the document. */
-export interface LinkedMaterial {
-  assetId: AssetId;
-  /** Writes one of the asset's values, as one undo step named after the field. */
-  edit(label: string, key: string, value: unknown): void;
+/** A row whose edits go to the asset its object is filled by, rather than to the document. */
+export interface LinkedAsset {
+  readonly kind: AssetKind;
+  readonly assetId: AssetId;
+  /** Where the row's value sits in the asset's values. */
+  readonly path: readonly string[];
+  /** The asset's values: the project's, or during Play as tuned. */
+  readonly values: object;
+  /** What an edit of it is called, « Edit material Roughness »: its object's label. */
+  readonly noun: string;
 }
 
-/** Non-null when this field edits a shared material rather than the document. */
-export function linkedMaterial(
-  component: ComponentDoc | undefined,
+/**
+ * The asset a row at `path` edits: when the row lies under an object its type
+ * links (`linkedBy`), and the asset field beside that object names an asset the
+ * project holds. `null` for any other row, which edits the component.
+ */
+export function linkedAsset(
+  registries: CoreRegistries,
+  component: ComponentDoc,
   path: readonly string[],
-): LinkedMaterial | null {
-  if (path[0] !== 'material' || path.length !== 2) return null;
-  const { materials, physicsMaterials } = useAssetStore.getState();
-  if (component?.type === 'mesh' && component.materialId !== null) {
-    const assetId = component.materialId;
-    const shared = materials.get(assetId);
-    if (!shared) return null;
-    return {
-      assetId,
-      edit: (label, key, value) =>
-        setLinkedMaterialField('material', label, shared, { ...shared, [key]: value }, (material) =>
-          useAssetStore.getState().saveMaterial(assetId, material),
-        ),
-    };
-  }
-  if (component?.type === 'collider' && component.materialId !== null) {
-    const assetId = component.materialId;
-    const shared = linkedPhysicsMaterial(assetId, physicsMaterials);
-    if (!shared) return null;
-    return {
-      assetId,
-      edit: (label, key, value) =>
-        setLinkedMaterialField('physics material', label, shared, { ...shared, [key]: value }, (material) =>
-          useAssetStore.getState().savePhysicsMaterial(assetId, material),
-        ),
-    };
+): LinkedAsset | null {
+  for (const link of registries.components.get(component.type)?.links ?? []) {
+    const under = path.length > link.object.length && link.object.every((key, at) => path[at] === key);
+    if (!under) continue;
+    const asset = assetOf(component, link);
+    if (asset === null) return null;
+    return { kind: link.kind, ...asset, path: path.slice(link.object.length), noun: link.label.toLowerCase() };
   }
   return null;
+}
+
+/**
+ * Writes one of a linked asset's values to its file, as one undo step named
+ * after its object and the row. The document is not written: the values are
+ * the asset's, and every component linking it shows them.
+ */
+export function editLinkedAsset(linked: LinkedAsset, label: string, value: unknown): void {
+  const after = structuredClone(linked.values);
+  writePath(after, linked.path, value);
+  setLinkedAssetField(linked.noun, label, linked.values, after, (values) =>
+    saveAssetValues(linked.kind, linked.assetId, values),
+  );
+}
+
+/** The asset `link` names in `component`, with its values as the game runs them; `null` while it names none the project holds. */
+function assetOf(
+  component: ComponentDoc,
+  link: LinkedObject,
+): { readonly assetId: AssetId; readonly values: object } | null {
+  const assetId = readPath(component, link.by);
+  if (!isAssetId(assetId)) return null;
+  const values = tunedAssetValues(link.kind, assetId);
+  return values === null ? null : { assetId, values };
 }
 
 /**
@@ -502,14 +521,14 @@ export function linkedMaterial(
  * hand-written signature interpolated regardless.
  *
  * `effectiveComponent` is the subject for the same reason the builder uses it:
- * a mesh linked to a shared material shows the shared values' rows, so the
- * predicates have to be asked about the material actually on screen.
+ * an object an asset fills shows the asset's values' rows, so the predicates
+ * have to be asked about the values actually on screen.
  */
 export function inspectorSignature(registries: EditorRegistries, entityId: EntityId | undefined): string {
   const scene = expandedScene(registries).scene;
   if (entityId === undefined || !scene.entities.has(entityId)) return '';
   const parts = componentsOf(registries, scene, entityId).map((component) => {
-    const effective = effectiveComponent(entityId, component);
+    const effective = effectiveComponent(registries, entityId, component);
     const { key, entries } = paneEntriesFor(registries, effective);
     return `${key}/${shapeOf(entries, effective)}`;
   });

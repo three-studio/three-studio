@@ -3,6 +3,7 @@ import {
   findComponentById,
   linkedPhysicsMaterial,
   type AssetId,
+  type AssetKind,
   type ComponentDoc,
   type ComponentId,
   type CoreRegistries,
@@ -13,7 +14,7 @@ import type { Engine } from '@three-studio/runtime';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import { writeComponentPath, writePath } from '../commands/sceneCommands';
-import { useAssetStore } from './assetStore';
+import { assetValues, useAssetStore } from './assetStore';
 import { useDocumentStore } from './documentStore';
 import { expandedScene } from './expansion';
 import { isSceneLocked } from './sceneLock';
@@ -189,14 +190,17 @@ export function tuneComponentField(
 }
 
 /**
- * Records one of a physics material's values as tuned, and hands the running
- * game the asset with it: every collider linking it takes it, as every one
- * takes an edit of its file when stopped. The file is not written.
+ * Records one of a physics material's values as tuned, at `path` inside it,
+ * and hands the running game the asset with it: every collider linking it
+ * takes it, as every one takes an edit of its file when stopped. The file is
+ * not written.
  */
-export function tunePhysicsMaterialField(assetId: AssetId, key: string, value: unknown): void {
-  const base = tunedPhysicsMaterial(assetId);
+export function tunePhysicsMaterialField(assetId: AssetId, path: readonly string[], value: unknown): void {
+  const base = tunedAssetValues('physicsMaterial', assetId);
   if (!base) return;
-  const material = conformPhysicsMaterial({ ...base, [key]: value });
+  const values = structuredClone(base);
+  writePath(values, path, value);
+  const material = conformPhysicsMaterial(values);
   useTuningStore.setState((state) => ({
     materials: new Map(state.materials).set(assetId, material),
     revision: state.revision + 1,
@@ -228,12 +232,12 @@ function withTuned<C extends ComponentDoc>(entityId: EntityId, component: C): C 
 }
 
 /**
- * The same for a physics material asset: its values as tuned during Play, or as
- * the project holds them; `null` for an id the project lacks.
+ * The same for an asset an object is filled by: its values as tuned during
+ * Play, or as the project holds them; `null` for an id the project lacks.
  */
-export function tunedPhysicsMaterial(assetId: AssetId): PhysicsMaterialDef | null {
-  const tuned = isSceneLocked() ? linkedPhysicsMaterial(assetId, useTuningStore.getState().materials) : null;
-  return tuned ?? linkedPhysicsMaterial(assetId, useAssetStore.getState().physicsMaterials);
+export function tunedAssetValues(kind: AssetKind, assetId: AssetId): object | null {
+  const tuned = isSceneLocked() ? useTuningStore.getState().materials.get(assetId) : undefined;
+  return tuned ?? assetValues(kind, assetId);
 }
 
 /** Whether `path` is `prefix` or lies under it. */

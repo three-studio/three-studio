@@ -64,7 +64,7 @@ import {
  * `addComponentWithDependencies` stay functions, as does everything the gizmo
  * and the Tweakpane Inspector drive — `setTransform`, `transformSelection`,
  * `setComponentNestedField`, `setEnvironmentField`, `setSkyField`,
- * `setLinkedMaterialField`, several of them sixty times a second during a drag.
+ * `setLinkedAssetField`, several of them sixty times a second during a drag.
  * `setEntityVisible` is the exception, because "hide it" needs a target and
  * nothing else, and it is behind `toggleVisibility` in `editCommands.ts`.
  */
@@ -709,16 +709,16 @@ export function redo(): void {
 }
 
 /**
- * Edits a shared material asset as one undo step: a mesh's material or a
- * collider's physics material, `save` writing the asset's kind and `noun`
- * naming it in the entry.
+ * Edits the values of an asset an object is filled by as one undo step — a
+ * mesh's material, a collider's physics material —, `save` writing the asset
+ * and `noun` naming it in the entry.
  *
  * The write goes to a file rather than to the document, so there are no immer
  * patches to invert — the step carries the before and after values instead and
  * replays them by writing again. Without this, editing a linked material was
  * the one thing in the editor Cmd+Z could not take back.
  */
-export function setLinkedMaterialField<T>(
+export function setLinkedAssetField<T>(
   noun: string,
   label: string,
   before: T,

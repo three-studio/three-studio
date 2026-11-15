@@ -111,8 +111,12 @@ export const colliderSchema = {
    * collider on its own values, and Play says so.
    */
   materialId: { type: 'asset', label: 'Material', kind: 'physicsMaterial', emptyLabel: 'Embedded', separatorBefore: true },
-  /* How the surface grips and bounces, while `materialId` links no physics material. */
-  material: { type: 'object', label: 'Material', fields: physicsMaterialFields },
+  /*
+   * How the surface grips and bounces, while `materialId` links no physics
+   * material. Its label names an edit of the linked asset, « Edit physics
+   * material Friction »: the pane shows the rows alone.
+   */
+  material: { type: 'object', label: 'Physics material', linkedBy: 'materialId', fields: physicsMaterialFields },
 } as const satisfies Schema;
 
 export type ColliderComponent = Component<'collider', Infer<typeof colliderSchema>>;

@@ -16,7 +16,7 @@ export const meshSchema = {
    * asset's values.
    */
   materialId: { type: 'asset', label: 'Material', kind: 'material', separatorBefore: true },
-  material: { type: 'object', label: 'Material', fields: materialFields },
+  material: { type: 'object', label: 'Material', linkedBy: 'materialId', fields: materialFields },
 } as const satisfies Schema;
 
 export type MeshComponent = Component<'mesh', Infer<typeof meshSchema>>;

@@ -30,7 +30,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { commandById, currentContext } from '../src/commands/registry';
 import { paneEntriesFor } from '../src/inspector/panes';
-import { effectiveComponent, inspectorSignature, linkedMaterial } from '../src/inspector/buildInspector';
+import { effectiveComponent, inspectorSignature, linkedAsset } from '../src/inspector/buildInspector';
 import { MultiTarget } from '../src/inspector/target';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
@@ -198,9 +198,9 @@ describe('tuning during Play', () => {
 
     tuneComponentField(registries, box.entity.id, body.id, ['mass'], 5);
 
-    expect((effectiveComponent(box.entity.id, body) as RigidBodyComponent).mass).toBe(5);
+    expect((effectiveComponent(registries, box.entity.id, body) as RigidBodyComponent).mass).toBe(5);
     stop();
-    expect((effectiveComponent(box.entity.id, body) as RigidBodyComponent).mass).toBe(1);
+    expect((effectiveComponent(registries, box.entity.id, body) as RigidBodyComponent).mass).toBe(1);
   });
 
   it('a kind tuned during Play brings its rows', async () => {
@@ -213,7 +213,7 @@ describe('tuning during Play', () => {
     tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
 
     expect(inspectorSignature(registries, box.entity.id)).not.toBe(before);
-    const labels = paneEntriesFor(registries, effectiveComponent(box.entity.id, collider)).entries.flatMap((entry) =>
+    const labels = paneEntriesFor(registries, effectiveComponent(registries, box.entity.id, collider)).entries.flatMap((entry) =>
       'path' in entry ? [entry.label] : [],
     );
     expect(labels).toContain('Radius');
@@ -231,7 +231,7 @@ describe('tuning during Play', () => {
     tuneComponentField(registries, box.entity.id, collider.id, ['shape'], createColliderShape('sphere'));
     tuneComponentField(registries, box.entity.id, collider.id, ['shape', 'radius'], 0.9);
 
-    expect((effectiveComponent(box.entity.id, collider) as ColliderComponent).shape).toEqual({
+    expect((effectiveComponent(registries, box.entity.id, collider) as ColliderComponent).shape).toEqual({
       ...createColliderShape('sphere'),
       radius: 0.9,
     });
@@ -249,12 +249,12 @@ describe('tuning during Play', () => {
     const engine = await playing();
     const tune = vi.spyOn(engine, 'tunePhysicsMaterial');
 
-    expect(linkedMaterial(effectiveComponent(box.entity.id, collider), ['material', 'friction'])?.assetId).toBe(ICE);
-    tunePhysicsMaterialField(ICE, 'friction', 0);
+    expect(linkedAsset(registries, effectiveComponent(registries, box.entity.id, collider), ['material', 'friction'])?.assetId).toBe(ICE);
+    tunePhysicsMaterialField(ICE, ['friction'], 0);
 
     expect(tune).toHaveBeenCalledWith(ICE, { ...ice, friction: 0 });
     expect(save).not.toHaveBeenCalled();
-    expect((effectiveComponent(box.entity.id, collider) as ColliderComponent).material.friction).toBe(0);
+    expect((effectiveComponent(registries, box.entity.id, collider) as ColliderComponent).material.friction).toBe(0);
   });
 
   it('several selected bodies are tuned together', async () => {
@@ -346,7 +346,7 @@ describe('keeping what was tuned', () => {
     // A kind, then a measure of it: one field, written whole.
     tuneComponentField(registries, produced, ball.id, ['shape'], createColliderShape('capsule'));
     tuneComponentField(registries, produced, ball.id, ['shape', 'radius'], 0.8);
-    tunePhysicsMaterialField(ICE, 'friction', 0);
+    tunePhysicsMaterialField(ICE, ['friction'], 0);
     stop();
     keepTuning(registries);
 

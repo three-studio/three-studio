@@ -8,13 +8,14 @@ import {
 } from '@three-studio/core';
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
 import { addComponentWithDependencies } from '../commands/sceneCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
 import type { AssetFieldActions } from '../inspector/assetField';
 import { browseAndImport } from '../import/importStore';
 import { sceneSignature } from '../inspector/schema';
-import { useAssetStore } from '../state/assetStore';
+import { selectLibraries, useAssetStore } from '../state/assetStore';
 import { useDocumentStore } from '../state/documentStore';
 import { expandedScene } from '../state/expansion';
 import { Selection } from '../state/selection';
@@ -91,10 +92,11 @@ export function InspectorPanel() {
    */
   const componentRevision = useDocumentStore((s) => s.componentRevision);
 
-  // Prefab instances are part of the shape here: their contents are selectable
-  // and have to be inspectable, and editing a prefab changes what fields exist
-  // without touching the document.
-  const prefabs = useAssetStore((s) => s.prefabs);
+  // The libraries a pane shows without the document moving. A linked asset's
+  // values: an edit or its undo changes them and no entity, and they decide
+  // which of its rows show. The prefabs: an instance's contents are
+  // selectable, and editing a prefab changes what fields exist.
+  const libraries = useAssetStore(useShallow(selectLibraries));
   const entity = entityId === undefined ? undefined : expandedScene(registries).scene.entities.get(entityId);
   const instance = entityId === undefined ? null : splitInstancedId(entityId);
 
@@ -125,12 +127,6 @@ export function InspectorPanel() {
   // The script build revision is part of that shape, so recompiling brings new
   // script properties into the panel — see the signature below.
   const scriptRevision = useScriptStore((s) => s.revision);
-  // Editing a shared material changes which fields exist without touching the
-  // document, so the material table is part of the shape too.
-  const materials = useAssetStore((s) => s.materials);
-  // A physics material's values, which a linked Collider's rows show: undoing
-  // an edit of one changes no entity, so only this can refresh them.
-  const physicsMaterials = useAssetStore((s) => s.physicsMaterials);
   // So are the assets themselves: a dropdown's options are computed when the
   // pane is built, so importing a texture has to rebuild it or the new file
   // cannot be chosen without deselecting and selecting again.
@@ -184,8 +180,7 @@ export function InspectorPanel() {
     scriptRevision,
     assetRevision,
     layers,
-    materials,
-    prefabs,
+    libraries,
     componentRevision,
     tuningRevision,
     locked,
@@ -218,9 +213,9 @@ export function InspectorPanel() {
     };
   }, [registries, actions, signature, entityId, selection]);
 
-  // Materials are in here as well as the scene: undoing an edit to a shared
-  // material changes no entity, so without it the panel kept showing the value
-  // that had just been taken back.
+  // The libraries are in here as well as the scene: undoing an edit to a
+  // linked asset changes no entity, so without them the panel kept showing the
+  // value that had just been taken back.
   //
   // And the environment for exactly the same reason. `watched` is the selected
   // entity, and the scene pane is what shows when nothing is selected — so
@@ -237,7 +232,7 @@ export function InspectorPanel() {
   // And the scene's name, which the scene pane reads from the scene list.
   useEffect(() => {
     bindingRef.current?.refresh();
-  }, [watched, environment, materials, physicsMaterials, prefabs, componentRevision, sceneName, tuningRevision, locked]);
+  }, [watched, environment, libraries, componentRevision, sceneName, tuningRevision, locked]);
 
   useEffect(() => {
     bindingRef.current?.setReadOnly(locked);
