@@ -239,6 +239,34 @@ export function deleteEntity(entityId: EntityId): Promise<Record<string, number>
 }
 
 /**
+ * Undoes the last edit with the editor's own key — Cmd+Z on the window, where
+ * the shortcuts listen — and resolves at the first frame drawn with the
+ * entity's model in it again: how long since the press, in ms.
+ *
+ * The model's meshes, not `binder.whenLoaded()`, for `firstFrameWithModel`'s
+ * reason: nothing loading is as true before the reload has begun as after it.
+ */
+export function undoUntilModel(entityId: EntityId): Promise<Record<string, number>> {
+  return new Promise((resolve, reject) => {
+    const hasMesh = (): boolean => {
+      let found = false;
+      window.__studioViewport?.binder.getObject(entityId)?.traverse((child) => {
+        if ('isMesh' in child && child.isMesh === true) found = true;
+      });
+      return found;
+    };
+    const pressed = performance.now();
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', metaKey: true, bubbles: true }));
+    const check = (): void => {
+      if (hasMesh()) requestAnimationFrame(() => resolve({ restoredMs: performance.now() - pressed }));
+      else if (performance.now() - pressed > 600_000) reject(new Error('the model never came back'));
+      else requestAnimationFrame(check);
+    };
+    check();
+  });
+}
+
+/**
  * Resolves at the first frame drawn with every one of these entities bound:
  * when, in ms since navigation. `late` is 1 when they all were already bound
  * when this was asked — the start was missed.

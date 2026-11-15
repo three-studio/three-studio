@@ -24,6 +24,7 @@ import {
   pressPlay,
   pressStop,
   rendererCounts,
+  undoUntilModel,
   windowShape,
 } from '../page/editor';
 import { animationFrames, waitFrames } from '../page/frames';
@@ -45,7 +46,7 @@ import {
 /*
  * S1 — Big assets: a 331 MB model loaded as written, and a model of 24
  * 4096² images capped at 2 048, each in the edit view, in Play, after its
- * entity is deleted, and in an exported build.
+ * entity is deleted, once the delete is undone, and in an exported build.
  *
  * One recipe at a time, its project and export removed before the next is
  * written, so the disk's peak is the big model beside its exported copy.
@@ -99,12 +100,16 @@ function recipeMetrics(name: string): [string, MetricSpec][] {
     ...timings('play'),
     ...memory('play'),
     ...memory('deleted'),
+    timing(`${name}.restored.firstFrameMs`),
     ...timings('build'),
     ...memory('build'),
   ];
 }
 
-const METRICS: ReadonlyMap<string, MetricSpec> = new Map(RECIPES.flatMap((recipe) => recipeMetrics(recipe.name)));
+/** Every reading of the scenario, in the order a launch takes them. */
+export const BIG_ASSETS_METRICS: ReadonlyMap<string, MetricSpec> = new Map(
+  RECIPES.flatMap((recipe) => recipeMetrics(recipe.name)),
+);
 
 /** The entity holding the model, read from the start scene with the app's own code. */
 async function modelEntityOf(projectPath: string): Promise<EntityId> {
@@ -126,9 +131,10 @@ async function memoryOf(session: CdpSession, prefix: string): Promise<Record<str
 }
 
 /**
- * One editor launch: the model's first frame, Play's, and what deleting the
- * model leaves behind. A launch whose driver arrived after the model was drawn
- * is refused and made again, once: its first frame cannot be read.
+ * One editor launch: the model's first frame, Play's, what deleting the model
+ * leaves behind, and the undo of the delete. A launch whose driver arrived
+ * after the model was drawn is refused and made again, once: its first frame
+ * cannot be read.
  */
 async function measureEditor(
   context: ScenarioContext,
@@ -168,8 +174,8 @@ async function measureEditor(
       };
       if (context.shots !== null) await captureView(editor.session, 'edit', 'display', join(context.shots, `${label}-edit.png`));
 
-      // Play builds its own model cache and parses the file again, while the
-      // edit view's copy stays held.
+      // Play draws from the window's cache: the model the edit view holds,
+      // parsed once, with materials of its own.
       const play = decodeNumbers(await runInPage(editor.session, pressPlay, undefined, 600_000));
       const pressedAt = play['pressedAt'] ?? Number.NaN;
       const playFrames = decodeNumberList(await runInPage(editor.session, animationFrames, undefined));
@@ -186,6 +192,11 @@ async function measureEditor(
       await runInPage(editor.session, deleteEntity, entityId);
       await runInPage(editor.session, waitFrames, 60);
       Object.assign(metrics, await memoryOf(editor.session, `${recipe.name}.deleted`));
+
+      // And what bringing it back costs: a model above the cache's idle budget
+      // was freed at the delete, so the undo loads it again.
+      const restored = decodeNumbers(await runInPage(editor.session, undoUntilModel, entityId, 600_000));
+      metrics[`${recipe.name}.restored.firstFrameMs`] = restored['restoredMs'] ?? Number.NaN;
 
       const exit = await editor.finish();
       checkExit(label, 'display', exit);
@@ -317,5 +328,5 @@ export async function bigAssetsScenario(context: ScenarioContext): Promise<Scena
     window ??= ran.window;
     notes.push(...ran.notes);
   }
-  return { metrics: metricsOf(METRICS, launches), window, notes };
+  return { metrics: metricsOf(BIG_ASSETS_METRICS, launches), window, notes };
 }
