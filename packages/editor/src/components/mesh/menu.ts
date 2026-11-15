@@ -1,4 +1,4 @@
-import { GEOMETRY_LABELS, createMeshEntity, type GeometryKind } from '@three-studio/core';
+import { createMeshEntity, geometryField, type GeometryKind } from '@three-studio/core';
 import type { AddMenuEntry, AddMenuGroup } from '../registry';
 
 /** Ordered the way an author reaches for them, not the way the union declares them. */
@@ -28,6 +28,6 @@ export const menu: AddMenuGroup = {
     (kind): AddMenuEntry =>
       kind === null
         ? null
-        : { label: GEOMETRY_LABELS[kind], create: () => createMeshEntity(kind) },
+        : { label: geometryField.variants[kind].label, create: () => createMeshEntity(kind) },
   ),
 };

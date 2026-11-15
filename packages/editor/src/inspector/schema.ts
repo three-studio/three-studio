@@ -20,14 +20,11 @@ import { shapeOf } from './signature';
  */
 export {
   ASSET_SLOT,
-  GEOMETRY_FIELDS,
-  MATERIAL_FIELDS,
   asDegrees,
   assetSlot,
   isAction,
   isGeometrySlot,
   isSeparator,
-  textureSlot,
   type ActionSpec,
   type BoundSpec,
   type ComponentPane,

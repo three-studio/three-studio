@@ -1,16 +1,15 @@
 import {
-  SUN_CUSTOM,
-  SUN_FROM_SKY,
   createComponent,
   createEnvironment,
   createLight,
   createModel,
-  createWater,
   fixedId,
+  waterType,
   type ComponentDoc,
   type LightComponent,
   type LightKind,
   type WaterComponent,
+  type WaterSun,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
 import { paneEntriesFor } from '../src/inspector/panes';
@@ -43,8 +42,8 @@ function light(kind: LightKind, castShadow = false): LightComponent {
   return { ...createLight('point'), kind, castShadow };
 }
 
-function water(sunSource: WaterComponent['sunSource']): WaterComponent {
-  return { ...createWater(), sunSource };
+function water(sun: WaterSun): WaterComponent {
+  return { ...waterType.create(), sun };
 }
 
 describe('every component type is measured, not defaulted', () => {
@@ -58,16 +57,18 @@ describe('every component type is measured, not defaulted', () => {
     }
   });
 
-  it('names the four lists that are not fixed by the type, and only those', () => {
-    // A mesh's, a collider's and a joint's geometry slot and a script's
-    // declared properties change the list itself, which no arrangement of bits
-    // can express. Everything else does.
+  it('names the lists that are not fixed by the type, and only those', () => {
+    // A union's variant — a mesh's primitive, a collider's shape, a joint's
+    // kind, a water surface's sun — and a script's declared properties change
+    // the list itself, which no arrangement of bits can express. Everything
+    // else does.
     const keys = TYPES.map((type) => paneEntriesFor(registries, createComponent(registries, type)).key);
     expect(keys.filter((key) => key.includes(':')).sort()).toEqual([
       'collider:box',
       'joint:hinge',
       'mesh:box',
       'script:',
+      'water:sky',
     ]);
   });
 });
@@ -129,7 +130,7 @@ describe('a model', () => {
 describe('water', () => {
   it('changes shape when the sun becomes a custom one', () => {
     // Choosing a sun decides whether the two manual fields exist at all.
-    expect(shape(water(SUN_CUSTOM))).not.toBe(shape(water(SUN_FROM_SKY)));
+    expect(shape(water({ kind: 'custom', direction: [0, 1, 0], color: '#ffffff' }))).not.toBe(shape(water({ kind: 'sky' })));
   });
 });
 

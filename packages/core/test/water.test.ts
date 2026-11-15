@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from '../src/scene/water';
-import { createWater } from '../src/components/water/defaults';
+import { skySunDirection } from '../src/scene/water';
+import { waterType } from '../src/components/water';
 import { createSkySettings } from '../src/scene/defaults';
 import { fillComponent } from '../src/components';
 import type { WaterComponent } from '../src/scene/schema';
@@ -40,17 +40,9 @@ describe('the sky’s sun', () => {
   });
 });
 
-describe('a water surface’s sun source', () => {
-  it('tells the two modes apart from an entity id', () => {
-    expect(isEntitySun(SUN_FROM_SKY)).toBe(false);
-    expect(isEntitySun(SUN_CUSTOM)).toBe(false);
-    expect(isEntitySun('e_1a2b3c')).toBe(true);
-  });
-});
-
 describe('a fresh water surface', () => {
   it('starts at three’s own behaviour, so nothing added before them moves', () => {
-    const water = createWater();
+    const water = waterType.create();
 
     expect(water.speed).toBe(1);
     expect(water.direction).toBe(0);
@@ -58,7 +50,7 @@ describe('a fresh water surface', () => {
   });
 
   it('fills the three onto a surface saved before they existed', () => {
-    const { speed: _s, direction: _d, choppiness: _c, ...older } = createWater();
+    const { speed: _s, direction: _d, choppiness: _c, ...older } = waterType.create();
     const filled = fillComponent(registries, older as WaterComponent) as WaterComponent;
 
     expect(filled.speed).toBe(1);

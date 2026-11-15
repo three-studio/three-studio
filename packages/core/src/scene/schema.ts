@@ -38,7 +38,6 @@ import type { Hex, Transform } from './primitives';
 
 export type { GeometryDef, GeometryKind } from './geometry';
 export type { MaterialDef, MaterialSide, TextureWrap } from './material';
-export { MATERIAL_SIDE_LABELS, TEXTURE_WRAP_LABELS } from './material';
 export type { CombineRule, PhysicsMaterialDef } from './physicsMaterial';
 export { COMBINE_RULE_LABELS } from './physicsMaterial';
 export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
@@ -49,7 +48,8 @@ export type { ComponentBase, Hex, Transform, Vec2, Vec3 } from './primitives';
  * above it does not compile until it has a name; `optionsFrom` turns one into
  * the choices a control offers, in the order the record is written. The editor
  * imports these rather than re-listing them, which is what it used to do, in a
- * Tweakpane literal, unchecked. `GEOMETRY_LABELS` has always been this shape.
+ * Tweakpane literal, unchecked. A type described by its fields needs none: its
+ * options are its schema's.
  */
 
 export type { AudioListenerComponent } from '../components/audioListener/schema';
@@ -95,7 +95,7 @@ export type {
 } from '../components/prefabInstance/schema';
 export type { BodyType, RigidBodyComponent } from '../components/rigidbody/schema';
 export type { ScriptComponent, ScriptPropValue } from '../components/script/schema';
-export type { WaterComponent, WaterSunSource } from '../components/water/schema';
+export type { WaterComponent, WaterSun } from '../components/water/schema';
 
 // --- the document -----------------------------------------------------------
 

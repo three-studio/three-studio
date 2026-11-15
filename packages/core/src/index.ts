@@ -239,11 +239,11 @@ export type {
   Vec2,
   Vec3,
   WaterComponent,
-  WaterSunSource,
+  WaterSun,
 } from './scene/schema';
 
 /* Water's sun: which one, and where the sky's is. */
-export { SUN_CUSTOM, SUN_FROM_SKY, isEntitySun, skySunDirection } from './scene/water';
+export { skySunDirection } from './scene/water';
 
 export { AUDIO_BUSES } from './scene/schema';
 
@@ -262,9 +262,7 @@ export {
   ENVIRONMENT_MODE_LABELS,
   FOG_MODE_LABELS,
   JOINT_KIND_LABELS,
-  MATERIAL_SIDE_LABELS,
   MESH_BUILD_LABELS,
-  TEXTURE_WRAP_LABELS,
 } from './scene/schema';
 export type {
   BackgroundMode,
@@ -294,8 +292,8 @@ export {
 } from './scene/defaults';
 export { createEntity, createTransform } from './scene/entity';
 /* The two shared vocabularies a component is built out of. */
-export { GEOMETRY_LABELS, createBoxGeometry, createGeometry, restingOffsetY } from './scene/geometry';
-export { createMaterial } from './scene/material';
+export { createGeometry, geometryField, restingOffsetY } from './scene/geometry';
+export { createMaterial, materialAssets, materialFields } from './scene/material';
 export {
   conformPhysicsMaterial,
   createPhysicsMaterial,
@@ -310,8 +308,11 @@ export type { EntityTemplate } from './scene/entity';
 export { audioListenerType } from './components/audioListener';
 export { cameraType } from './components/camera';
 export { lightType } from './components/light';
+export { meshType } from './components/mesh';
 export { playerControllerType } from './components/playerController';
 export { rigidbodyType } from './components/rigidbody';
+export { waterType } from './components/water';
+export { waterSchema } from './components/water/schema';
 export { createAudioListenerEntity } from './components/audioListener/defaults';
 export { createAudioSource, createAudioSourceEntity } from './components/audioSource/defaults';
 export { createCamera, createCameraEntity } from './components/camera/defaults';
@@ -321,7 +322,7 @@ export { createMeshComponent, createMeshEntity } from './components/mesh/default
 export { createModel, createModelEntity } from './components/model/defaults';
 export { createPrefabInstance } from './components/prefabInstance/defaults';
 export { createScript } from './components/script/defaults';
-export { createWater, createWaterEntity } from './components/water/defaults';
+export { createWaterEntity } from './components/water/defaults';
 
 /* The component tables: every read and write of `scene.components`. */
 export {

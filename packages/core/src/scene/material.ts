@@ -1,5 +1,5 @@
+import { planFields, type Infer, type Schema } from '../fieldSchema';
 import type { AssetId } from '../ids';
-import type { Hex, Vec2 } from './primitives';
 
 /*
  * The material vocabulary. Shared for the same reason geometry is: a mesh
@@ -7,124 +7,154 @@ import type { Hex, Vec2 } from './primitives';
  * asset side of the editor reads them without either component in hand.
  */
 
-/** Which faces are drawn. Named because two component types now take it. */
-export type MaterialSide = 'front' | 'back' | 'double';
-
-export const MATERIAL_SIDE_LABELS: Record<MaterialSide, string> = {
-  front: 'Front',
-  back: 'Back',
-  double: 'Double',
-};
+/** A texture slot: an image asset, or none. */
+const map = (label: string) => ({ type: 'asset', label, kind: 'texture' }) as const;
 
 /**
- * How a texture repeats past the 0..1 UV range. Named after three's constants;
- * `mirror` is what stops a tiled ground from showing a hard seam.
+ * A material, as its fields. The order is the pane's.
+ *
+ * The texture slots are asset ids, resolved through the asset registry. Colour
+ * and emissive are authored in sRGB; the rest carry data — directions,
+ * roughness, coverage — and stay linear, or the values the shader reads are not
+ * the values the artist painted. A slot's strength shows once the slot is set.
  */
-export type TextureWrap = 'repeat' | 'clamp' | 'mirror';
-
-export const TEXTURE_WRAP_LABELS: Record<TextureWrap, string> = {
-  repeat: 'Repeat',
-  clamp: 'Clamp',
-  mirror: 'Mirror',
-};
-
-export interface MaterialDef {
-  color: Hex;
-  roughness: number;
-  metalness: number;
-  emissive: Hex;
-  emissiveIntensity: number;
-  opacity: number;
-  transparent: boolean;
-  wireframe: boolean;
-  side: MaterialSide;
-
+export const materialFields = {
+  color: { type: 'color', label: 'Colour', default: '#b7b7b7' },
+  roughness: { type: 'number', label: 'Roughness', default: 0.75, min: 0, max: 1, step: 0.01 },
+  metalness: { type: 'number', label: 'Metalness', default: 0, min: 0, max: 1, step: 0.01 },
+  emissive: { type: 'color', label: 'Emissive', default: '#000000' },
+  emissiveIntensity: { type: 'number', label: 'Emissive power', default: 1, min: 0, max: 20, step: 0.1 },
+  opacity: { type: 'number', label: 'Opacity', default: 1, min: 0, max: 1, step: 0.01 },
+  transparent: { type: 'boolean', label: 'Transparent', default: false },
+  wireframe: { type: 'boolean', label: 'Wireframe', default: false },
+  /* Which faces are drawn. */
+  side: {
+    type: 'enum',
+    label: 'Side',
+    default: 'front',
+    options: [
+      { value: 'front', label: 'Front' },
+      { value: 'back', label: 'Back' },
+      { value: 'double', label: 'Double' },
+    ],
+  },
+  /* Base colour. sRGB. */
+  colorMap: map('Base colour map'),
+  /* Tangent-space normals. Linear. */
+  normalMap: map('Normal map'),
+  normalScale: {
+    type: 'number',
+    label: 'Normal strength',
+    default: 1,
+    min: 0,
+    max: 4,
+    step: 0.05,
+    shownWhen: { field: 'normalMap', notEquals: null },
+  },
   /*
-   * Texture slots. All asset ids, resolved through the asset registry.
-   *
-   * Colour and emissive are authored in sRGB; the rest carry data (directions,
-   * roughness, coverage) and must stay linear, or the values the shader reads
-   * are not the values the artist painted.
+   * Height in the red channel, turned into a normal perturbation. Linear. An
+   * alternative to `normalMap`, not a companion: three takes the normal map
+   * when both are set and never mixes them. Cheaper to author, and it is also
+   * what a displacement map usually looks like, so one file often serves both.
    */
-  /** Base colour. sRGB. */
-  colorMap: AssetId | null;
-  /** Tangent-space normals. Linear. */
-  normalMap: AssetId | null;
-  normalScale: number;
-  /**
-   * Height in the red channel, converted to a normal perturbation. Linear.
-   *
-   * An alternative to `normalMap`, not a companion: three takes the normal map
-   * when both are set and never mixes them. Cheaper to author — a grey-scale
-   * height map rather than a baked tangent-space normal — and it is also what
-   * a displacement map usually looks like, so the same file often serves both.
+  bumpMap: map('Bump map'),
+  /*
+   * Tied to the bump slot alone. It has no effect while a normal map is also
+   * set — three picks one — but hiding the strength of a map that is visibly
+   * assigned would read as the row being broken.
    */
-  bumpMap: AssetId | null;
-  bumpScale: number;
-  /** Read from the green channel, as in glTF. Linear. */
-  roughnessMap: AssetId | null;
-  /** Read from the blue channel, as in glTF. Linear. */
-  metalnessMap: AssetId | null;
-  /** sRGB. */
-  emissiveMap: AssetId | null;
-  /** Ambient occlusion, read from red. Linear. */
-  aoMap: AssetId | null;
-  aoIntensity: number;
-  /** Opacity from the red channel; needs `transparent`. Linear. */
-  alphaMap: AssetId | null;
-  /**
+  bumpScale: {
+    type: 'number',
+    label: 'Bump strength',
+    default: 1,
+    min: 0,
+    max: 4,
+    step: 0.05,
+    shownWhen: { field: 'bumpMap', notEquals: null },
+  },
+  /* Read from the green channel, as in glTF. Linear. */
+  roughnessMap: map('Roughness map'),
+  /* Read from the blue channel, as in glTF. Linear. */
+  metalnessMap: map('Metalness map'),
+  /* sRGB. */
+  emissiveMap: map('Emissive map'),
+  /* Ambient occlusion, read from red. Linear. */
+  aoMap: map('Occlusion map'),
+  aoIntensity: {
+    type: 'number',
+    label: 'Occlusion strength',
+    default: 1,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    shownWhen: { field: 'aoMap', notEquals: null },
+  },
+  /* Opacity from the red channel; needs `transparent`. Linear. */
+  alphaMap: map('Alpha map'),
+  /*
    * Real geometry displacement: each vertex moves along its normal by the red
-   * channel. Linear.
-   *
-   * Per *vertex*, not per pixel, so it only shows on a subdivided mesh — which
-   * is why the box and plane primitives expose segment counts. A normal map
-   * fakes the lighting of detail without moving anything and costs nothing;
+   * channel. Linear. Per vertex, not per pixel, so it shows on a subdivided
+   * mesh alone — which is why the box and the plane offer segment counts. A
+   * normal map fakes the lighting of detail without moving anything;
    * displacement changes the silhouette and the shadow.
    */
-  displacementMap: AssetId | null;
-  displacementScale: number;
-  /** Shifts the whole surface, so a mid-grey map can push in as well as out. */
-  displacementBias: number;
-
+  displacementMap: map('Displacement map'),
+  displacementScale: {
+    type: 'number',
+    label: 'Displacement',
+    default: 0.1,
+    min: -2,
+    max: 2,
+    step: 0.01,
+    shownWhen: { field: 'displacementMap', notEquals: null },
+  },
+  /* Shifts the whole surface, so a mid-grey map can push in as well as out. */
+  displacementBias: {
+    type: 'number',
+    label: 'Displacement bias',
+    default: 0,
+    min: -1,
+    max: 1,
+    step: 0.01,
+    shownWhen: { field: 'displacementMap', notEquals: null },
+  },
   /*
-   * UV transform, applied to every slot of this material. It lives on the
-   * three `Texture`, not the material, which is why the binder clones the
+   * The UV transform, applied to every slot of this material. It lives on the
+   * three `Texture`, not on the material, which is why the binder clones the
    * cached texture per material rather than sharing one instance.
    */
-  tiling: Vec2;
-  offset: Vec2;
-  wrap: TextureWrap;
+  tiling: { type: 'vec2', label: 'Tiling', default: [1, 1], step: 0.1 },
+  offset: { type: 'vec2', label: 'Offset', default: [0, 0], step: 0.01 },
+  /* How a texture repeats past the 0..1 UV range; `mirror` stops a tiled ground showing a hard seam. */
+  wrap: {
+    type: 'enum',
+    label: 'Wrap',
+    default: 'repeat',
+    options: [
+      { value: 'repeat', label: 'Repeat' },
+      { value: 'clamp', label: 'Clamp' },
+      { value: 'mirror', label: 'Mirror' },
+    ],
+  },
+} as const satisfies Schema;
+
+export type MaterialDef = Infer<typeof materialFields>;
+export type MaterialSide = MaterialDef['side'];
+export type TextureWrap = MaterialDef['wrap'];
+
+/** The material's fields, planned once: its defaults, and the assets one names. */
+const materialPlan = planFields(materialFields);
+
+/** A material at its defaults, in `color`. */
+export function createMaterial(color = '#b7b7b7'): MaterialDef {
+  return { ...structuredClone(materialPlan.defaults), color };
 }
 
-// --- components -------------------------------------------------------------
-
-export function createMaterial(color = '#b7b7b7'): MaterialDef {
-  return {
-    color,
-    roughness: 0.75,
-    metalness: 0,
-    emissive: '#000000',
-    emissiveIntensity: 1,
-    opacity: 1,
-    transparent: false,
-    wireframe: false,
-    side: 'front',
-    colorMap: null,
-    normalMap: null,
-    normalScale: 1,
-    bumpMap: null,
-    bumpScale: 1,
-    roughnessMap: null,
-    metalnessMap: null,
-    emissiveMap: null,
-    aoMap: null,
-    aoIntensity: 1,
-    alphaMap: null,
-    displacementMap: null,
-    displacementScale: 0.1,
-    displacementBias: 0,
-    tiling: [1, 1],
-    offset: [0, 0],
-    wrap: 'repeat',
-  };
+/**
+ * Every texture slot of a material, as asset ids, in the fields' order: what a
+ * mesh's own material names, and what a material asset does — so the exporter
+ * ships each map, and a slot added later is named by existing.
+ */
+export function materialAssets(material: MaterialDef): readonly (AssetId | null)[] {
+  return materialPlan.assets(material);
 }

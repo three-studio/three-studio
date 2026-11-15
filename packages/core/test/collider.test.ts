@@ -1,5 +1,5 @@
 import {
-  GEOMETRY_LABELS,
+  geometryField,
   colliderGeometry,
   createColliderShape,
   createMeshEntity,
@@ -319,7 +319,7 @@ describe('fitColliderShape', () => {
 });
 
 describe('createColliderFor', () => {
-  const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(GEOMETRY_LABELS, kind);
+  const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(geometryField.variants, kind);
   const guessed = (kind: GeometryKind): ColliderShape => {
     const template = createMeshEntity(kind);
     return createColliderFor(template.components).shape;

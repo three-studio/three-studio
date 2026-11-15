@@ -24,7 +24,6 @@ import {
   typesWithoutRuntime,
   type ComponentDoc,
   type ComponentType,
-  type MeshComponent,
   type SceneDoc,
 } from '../src/index';
 import { componentsOf, setComponentsOf } from '../src/scene/components';
@@ -185,26 +184,6 @@ describe('fill', () => {
     const filled = fillComponent(registries, stored);
     expect(filled.id).toBe('c1');
     expect(filled).toMatchObject({ type: 'light', intensity: expect.any(Number) });
-  });
-
-  /*
-   * The one type whose fill is not a shallow spread. Texture slots and geometry
-   * segments both reached three as `undefined` on scenes a fortnight old, twice,
-   * before this merge went a level deeper — and a slider bound to `undefined`
-   * took the whole Inspector down with it.
-   */
-  it('fills a mesh a level deeper than the top', () => {
-    const stored = {
-      id: 'c1',
-      type: 'mesh',
-      geometry: { kind: 'box', width: 4 },
-      material: { color: '#ff0000' },
-    } as unknown as ComponentDoc;
-
-    const mesh = fillComponent(registries, stored) as MeshComponent;
-    expect(mesh.geometry).toMatchObject({ kind: 'box', width: 4, widthSegments: expect.any(Number) });
-    expect(mesh.material).toMatchObject({ color: '#ff0000', roughness: expect.any(Number) });
-    expect(mesh.materialId).toBeNull();
   });
 
   /*

@@ -1,12 +1,6 @@
-import type { ComponentDoc, ComponentId, CoreRegistries, EntityId, MaterialDef } from '@three-studio/core';
+import type { ComponentId, CoreRegistries, EntityId, MaterialDef } from '@three-studio/core';
 import { setComponentNestedField } from '../../commands/sceneCommands';
-import {
-  GEOMETRY_FIELDS,
-  MATERIAL_FIELDS,
-  assetSlot,
-  type ComponentPane,
-  type FieldSpec,
-} from '../../inspector/fields';
+import { extendPane } from '../../inspector/fields';
 import { useAssetStore } from '../../state/assetStore';
 import { askForText } from '../../state/dialogStore';
 import { expandedScene } from '../../state/expansion';
@@ -36,60 +30,41 @@ async function extractMaterial(
   setComponentNestedField(registries, entityId, componentId, ['materialId'], assetId);
 }
 
-export const pane: ComponentPane = {
-  id: 'mesh',
-  geometryFields,
-  // The rows themselves change with the primitive, so this is a different pane
-  // rather than the same one with other fields hidden.
-  paneKey: (component) => (component.type === 'mesh' ? `mesh:${component.geometry.kind}` : 'mesh'),
-  fields: [
-    { path: ['castShadow'], label: 'Cast shadows' },
-    { path: ['receiveShadow'], label: 'Receive shadows' },
-    // Shape first: it is what the object *is*, and a displacement map is
-    // useless without the segment counts that live here.
-    { kind: 'separator' },
-    { kind: 'geometry' },
-    { kind: 'separator' },
-    assetSlot(['materialId'], 'Material', 'material'),
-    {
-      kind: 'action',
-      title: 'Save as Asset…',
-      // Extraction on demand, as in Godot. Unity and Unreal are asset-first —
-      // a new object gets a read-only default and any edit forces you to
-      // create an asset — which is consistent but means a file per tinted
-      // cube. Here the file appears when sharing is actually wanted.
-      visibleWhen: (component) => component.type === 'mesh' && component.materialId === null,
-      run: ({ registries, entityId, componentId, component }) => {
-        if (component.type !== 'mesh') return;
-        void extractMaterial(registries, entityId, componentId, component.material);
-      },
-    },
-    {
-      kind: 'action',
-      title: 'Make Unique',
-      visibleWhen: (component) => component.type === 'mesh' && component.materialId !== null,
-      run: ({ registries, entityId, componentId, component }) => {
-        if (component.type !== 'mesh' || component.materialId === null) return;
-        // Copy the shared values in before unlinking, so the object keeps the
-        // look it had. Detaching to whatever was embedded before would look
-        // like the material was lost.
-        const shared = useAssetStore.getState().materials.get(component.materialId);
-        if (shared) setComponentNestedField(registries, entityId, componentId, ['material'], { ...shared });
-        setComponentNestedField(registries, entityId, componentId, ['materialId'], null);
-      },
-    },
-    ...MATERIAL_FIELDS,
-  ],
-};
-
 /**
- * What the `{ kind: 'geometry' }` slot expands into: the fields of whichever
- * primitive this mesh is.
- *
- * Looked up rather than declared, because the list itself changes with the
- * kind — which is what `paneKey` is for.
+ * A mesh's pane is derived from its fields. What it adds, after its material
+ * slot: extracting the material it draws with into an asset, or copying a
+ * shared one back in to edit it alone.
  */
-function geometryFields(component: ComponentDoc): readonly FieldSpec[] {
-  if (component.type !== 'mesh') return [];
-  return GEOMETRY_FIELDS[component.geometry.kind];
-}
+export const pane = extendPane('mesh', {
+  after: {
+    materialId: [
+      {
+        kind: 'action',
+        title: 'Save as Asset…',
+        // Extraction on demand, as in Godot. Unity and Unreal are asset-first —
+        // a new object gets a read-only default and any edit forces you to
+        // create an asset — which is consistent but means a file per tinted
+        // cube. Here the file appears when sharing is actually wanted.
+        visibleWhen: (component) => component.type === 'mesh' && component.materialId === null,
+        run: ({ registries, entityId, componentId, component }) => {
+          if (component.type !== 'mesh') return;
+          void extractMaterial(registries, entityId, componentId, component.material);
+        },
+      },
+      {
+        kind: 'action',
+        title: 'Make Unique',
+        visibleWhen: (component) => component.type === 'mesh' && component.materialId !== null,
+        run: ({ registries, entityId, componentId, component }) => {
+          if (component.type !== 'mesh' || component.materialId === null) return;
+          // Copy the shared values in before unlinking, so the object keeps the
+          // look it had. Detaching to whatever was embedded before would look
+          // like the material was lost.
+          const shared = useAssetStore.getState().materials.get(component.materialId);
+          if (shared) setComponentNestedField(registries, entityId, componentId, ['material'], { ...shared });
+          setComponentNestedField(registries, entityId, componentId, ['materialId'], null);
+        },
+      },
+    ],
+  },
+});

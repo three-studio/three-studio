@@ -3,14 +3,22 @@ import {
   audioListenerType,
   createCamera,
   createLight,
+  createLightEntity,
+  createMeshComponent,
+  fixedId,
   playerControllerType,
   rigidbodyType,
+  waterType,
   type ComponentDoc,
+  type GeometryKind,
   type LightKind,
+  type WaterComponent,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
+import { sceneWith } from '../../core/test/fixtures';
 import { isSeparator, type FieldSpec } from '../src/inspector/fields';
 import { paneEntriesFor } from '../src/inspector/panes';
+import { useDocumentStore } from '../src/state/documentStore';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
@@ -220,3 +228,236 @@ describe('the five types\' panes', () => {
     expect(registries.panes.get('rigidbody')).toEqual({ id: 'rigidbody', live: true });
   });
 });
+
+describe('the mesh\'s pane', () => {
+  /** The material's rows, as `MATERIAL_FIELDS` wrote them. */
+  const MATERIAL_ROWS = [
+    { path: ['material', 'color'], label: 'Colour' },
+    { path: ['material', 'roughness'], label: 'Roughness', type: 'number', min: 0, max: 1, step: 0.01 },
+    { path: ['material', 'metalness'], label: 'Metalness', type: 'number', min: 0, max: 1, step: 0.01 },
+    { path: ['material', 'emissive'], label: 'Emissive' },
+    { path: ['material', 'emissiveIntensity'], label: 'Emissive power', type: 'number', min: 0, max: 20, step: 0.1 },
+    { path: ['material', 'opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
+    { path: ['material', 'transparent'], label: 'Transparent' },
+    { path: ['material', 'wireframe'], label: 'Wireframe' },
+    { path: ['material', 'side'], label: 'Side', type: 'enum', options: [{ value: 'front', label: 'Front' }, { value: 'back', label: 'Back' }, { value: 'double', label: 'Double' }] },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'colorMap'], label: 'Base colour map' },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'normalMap'], label: 'Normal map' },
+    { path: ['material', 'normalScale'], label: 'Normal strength', type: 'number', min: 0, max: 4, step: 0.05 },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'bumpMap'], label: 'Bump map' },
+    { path: ['material', 'bumpScale'], label: 'Bump strength', type: 'number', min: 0, max: 4, step: 0.05 },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'roughnessMap'], label: 'Roughness map' },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'metalnessMap'], label: 'Metalness map' },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'emissiveMap'], label: 'Emissive map' },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'aoMap'], label: 'Occlusion map' },
+    { path: ['material', 'aoIntensity'], label: 'Occlusion strength', type: 'number', min: 0, max: 1, step: 0.01 },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'alphaMap'], label: 'Alpha map' },
+    { params: { view: 'asset', assetKind: 'texture' }, path: ['material', 'displacementMap'], label: 'Displacement map' },
+    { path: ['material', 'displacementScale'], label: 'Displacement', type: 'number', min: -2, max: 2, step: 0.01 },
+    { path: ['material', 'displacementBias'], label: 'Displacement bias', type: 'number', min: -1, max: 1, step: 0.01 },
+    { path: ['material', 'tiling'], label: 'Tiling', type: 'vec2', step: 0.1 },
+    { path: ['material', 'offset'], label: 'Offset', type: 'vec2', step: 0.01 },
+    { path: ['material', 'wrap'], label: 'Wrap', type: 'enum', options: [{ value: 'repeat', label: 'Repeat' }, { value: 'clamp', label: 'Clamp' }, { value: 'mirror', label: 'Mirror' }] },
+  ];
+
+  /** Each primitive's rows, as `GEOMETRY_FIELDS` wrote them: label, minimum, maximum, step. */
+  const PRIMITIVE_ROWS: Record<GeometryKind, [string, string, number, number | null, number][]> = {
+    box: [
+      ['width', 'Width', 0.01, null, 0.1],
+      ['height', 'Height', 0.01, null, 0.1],
+      ['depth', 'Depth', 0.01, null, 0.1],
+      ['widthSegments', 'Segments X', 1, 256, 1],
+      ['heightSegments', 'Segments Y', 1, 256, 1],
+      ['depthSegments', 'Segments Z', 1, 256, 1],
+    ],
+    sphere: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['widthSegments', 'Segments U', 3, 128, 1],
+      ['heightSegments', 'Segments V', 2, 64, 1],
+    ],
+    plane: [
+      ['width', 'Width', 0.01, null, 0.5],
+      ['height', 'Height', 0.01, null, 0.5],
+      ['widthSegments', 'Segments X', 1, 512, 1],
+      ['heightSegments', 'Segments Y', 1, 512, 1],
+    ],
+    capsule: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['height', 'Height', 0.01, null, 0.1],
+    ],
+    cylinder: [
+      ['radiusTop', 'Radius top', 0, null, 0.1],
+      ['radiusBottom', 'Radius bottom', 0, null, 0.1],
+      ['height', 'Height', 0.01, null, 0.1],
+    ],
+    circle: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['segments', 'Segments', 3, 128, 1],
+    ],
+    ring: [
+      ['innerRadius', 'Inner radius', 0, null, 0.05],
+      ['outerRadius', 'Outer radius', 0.01, null, 0.05],
+      ['thetaSegments', 'Segments', 3, 128, 1],
+    ],
+    torus: [
+      ['radius', 'Radius', 0.01, null, 0.05],
+      ['tube', 'Tube', 0.01, null, 0.02],
+      ['radialSegments', 'Segments U', 3, 64, 1],
+      ['tubularSegments', 'Segments V', 3, 256, 1],
+    ],
+    torusKnot: [
+      ['radius', 'Radius', 0.01, null, 0.05],
+      ['tube', 'Tube', 0.01, null, 0.02],
+      ['p', 'Winding P', 1, 20, 1],
+      ['q', 'Winding Q', 1, 20, 1],
+      ['radialSegments', 'Segments U', 3, 64, 1],
+      ['tubularSegments', 'Segments V', 3, 512, 1],
+    ],
+    tetrahedron: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['detail', 'Subdivisions', 0, 5, 1],
+    ],
+    octahedron: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['detail', 'Subdivisions', 0, 5, 1],
+    ],
+    dodecahedron: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['detail', 'Subdivisions', 0, 5, 1],
+    ],
+    icosahedron: [
+      ['radius', 'Radius', 0.01, null, 0.1],
+      ['detail', 'Subdivisions', 0, 5, 1],
+    ],
+  };
+
+  it.each(Object.entries(PRIMITIVE_ROWS))('is, for a %s, what was written by hand, keyed by its primitive', (kind, primitive) => {
+    const mesh = createMeshComponent(kindOf(kind));
+
+    expect(rows(mesh)).toEqual([
+      { path: ['castShadow'], label: 'Cast shadows' },
+      { path: ['receiveShadow'], label: 'Receive shadows' },
+      { kind: 'separator' },
+      ...primitive.map(([key, label, min, max, step]) => ({
+        path: ['geometry', key],
+        label,
+        type: 'number',
+        min,
+        ...(max === null ? {} : { max }),
+        step,
+      })),
+      { kind: 'separator' },
+      { params: { view: 'asset', assetKind: 'material' }, path: ['materialId'], label: 'Material' },
+      { kind: 'action', title: 'Save as Asset…' },
+      { kind: 'action', title: 'Make Unique' },
+      ...MATERIAL_ROWS,
+    ]);
+    expect(paneEntriesFor(registries, mesh).key).toBe(`mesh:${kind}`);
+  });
+
+  const BOX = ['Cast shadows', 'Receive shadows', '—', 'Width', 'Height', 'Depth', 'Segments X', 'Segments Y', 'Segments Z', '—', 'Material'];
+  const LOOK = ['Colour', 'Roughness', 'Metalness', 'Emissive', 'Emissive power', 'Opacity', 'Transparent', 'Wireframe', 'Side'];
+  const UV = ['Tiling', 'Offset', 'Wrap'];
+
+  it('shows a map\'s strength once the map is set, and Save or Make Unique by whether the material is shared', () => {
+    const map = fixedId('asset', 'map');
+    const box = createMeshComponent('box');
+    const mapped = { ...box, material: { ...box.material, normalMap: map, bumpMap: map, aoMap: map, displacementMap: map } };
+    const MAPS = ['Base colour map', 'Normal map', 'Bump map', 'Roughness map', 'Metalness map', 'Emissive map', 'Occlusion map', 'Alpha map', 'Displacement map'];
+
+    expect(shown(box)).toEqual([...BOX, 'Save as Asset…', ...LOOK, ...MAPS, ...UV]);
+    expect(shown({ ...box, materialId: map })).toEqual([...BOX, 'Make Unique', ...LOOK, ...MAPS, ...UV]);
+    expect(shown(mapped)).toEqual([
+      ...BOX,
+      'Save as Asset…',
+      ...LOOK,
+      'Base colour map',
+      'Normal map',
+      'Normal strength',
+      'Bump map',
+      'Bump strength',
+      'Roughness map',
+      'Metalness map',
+      'Emissive map',
+      'Occlusion map',
+      'Occlusion strength',
+      'Alpha map',
+      'Displacement map',
+      'Displacement',
+      'Displacement bias',
+      ...UV,
+    ]);
+  });
+});
+
+describe('the water\'s pane', () => {
+  const custom: WaterComponent = { ...waterType.create(), sun: { kind: 'custom', direction: [0.70707, 0.70707, 0], color: '#ffffff' } };
+  const lamp = createLightEntity('directional');
+  const lit: WaterComponent = { ...waterType.create(), sun: { kind: 'light', entity: lamp.entity.id } };
+
+  it('is what was written by hand, its sun one dropdown and the rows of the sun it holds', () => {
+    expect(rows(custom)).toEqual([
+      { path: ['geometry', 'width'], label: 'Width', type: 'number', min: 0.01, step: 0.5 },
+      { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.5 },
+      { kind: 'separator' },
+      { params: { view: 'asset', assetKind: 'texture' }, path: ['normalMapId'], label: 'Normal map' },
+      { path: ['waterColor'], label: 'Colour' },
+      { path: ['alpha'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
+      { path: ['size'], label: 'Ripple scale', type: 'number', min: 0.01, max: 20, step: 0.01 },
+      { path: ['speed'], label: 'Speed', type: 'number', min: 0, max: 5, step: 0.05 },
+      { path: ['direction'], label: 'Direction', type: 'number', min: 0, max: 360, step: 1 },
+      { path: ['choppiness'], label: 'Choppiness', type: 'number', min: 0.1, max: 5, step: 0.05 },
+      { path: ['distortionScale'], label: 'Distortion', type: 'number', min: 0, max: 100, step: 0.5 },
+      { kind: 'separator' },
+      { path: ['sun'], label: 'Sun' },
+      { path: ['sun', 'direction'], label: 'Sun direction', type: 'vec3' },
+      { path: ['sun', 'color'], label: 'Sun colour' },
+      { kind: 'separator' },
+      { path: ['resolutionScale'], label: 'Reflection quality', type: 'number', min: 0.1, max: 1, step: 0.05 },
+      { path: ['side'], label: 'Side', type: 'enum', options: [{ value: 'front', label: 'Front' }, { value: 'back', label: 'Back' }, { value: 'double', label: 'Double' }] },
+      { path: ['fog'], label: 'Affected by fog' },
+    ]);
+  });
+
+  const SURFACE = ['Width', 'Height', '—', 'Normal map', 'Colour', 'Opacity', 'Ripple scale', 'Speed', 'Direction', 'Choppiness', 'Distortion', '—', 'Sun'];
+  const RENDER = ['—', 'Reflection quality', 'Side', 'Affected by fog'];
+
+  it('shows the sun\'s own direction and colour for a custom sun alone, and keys the pane by the sun', () => {
+    expect(shown(waterType.create())).toEqual([...SURFACE, ...RENDER]);
+    expect(shown(lit)).toEqual([...SURFACE, ...RENDER]);
+    expect(shown(custom)).toEqual([...SURFACE, 'Sun direction', 'Sun colour', ...RENDER]);
+    expect([waterType.create(), lit, custom].map((water) => paneEntriesFor(registries, water).key)).toEqual([
+      'water:sky',
+      'water:light',
+      'water:custom',
+    ]);
+  });
+
+  it('offers the sky, the scene\'s lights and a sun of its own in one dropdown, and writes the one chosen', () => {
+    useDocumentStore.getState().replaceScene(sceneWith([lamp]));
+    const sun = row(waterType.create(), 'sun');
+
+    expect(sun.optionsProvider?.()).toEqual({ 'Sky (scene sun)': 'sky', 'Directional Light': lamp.entity.id, Custom: 'custom' });
+    expect([waterType.create().sun, lit.sun, custom.sun].map((value) => sun.toModel?.(value))).toEqual([
+      'sky',
+      lamp.entity.id,
+      'custom',
+    ]);
+    expect(sun.fromModel?.('sky')).toEqual({ kind: 'sky' });
+    expect(sun.fromModel?.(lamp.entity.id)).toEqual({ kind: 'light', entity: lamp.entity.id });
+    // A sun of its own starts from its defaults, whatever it was before.
+    expect(sun.fromModel?.('custom')).toEqual({ kind: 'custom', direction: [0.70707, 0.70707, 0], color: '#ffffff' });
+  });
+
+  it('shows its direction in degrees, and stores it in radians', () => {
+    const direction = row(waterType.create(), 'direction');
+
+    expect(direction.toModel?.(Math.PI)).toBeCloseTo(180);
+    expect(direction.fromModel?.(90)).toBeCloseTo(Math.PI / 2);
+  });
+});
+
+function kindOf(kind: string): GeometryKind {
+  const kinds: readonly GeometryKind[] = ['box', 'sphere', 'plane', 'capsule', 'cylinder', 'circle', 'ring', 'torus', 'torusKnot', 'tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron'];
+  return assertDefined(kinds.find((known) => known === kind), `the primitive ${kind}`);
+}

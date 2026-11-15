@@ -1,5 +1,5 @@
 import { componentAssetCandidates, componentAssets, componentEntities } from '../components';
-import { materialAssets } from '../components/materialAssets';
+import { materialAssets } from '../scene/material';
 import { isAssetId, type AssetId, type EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
 import { componentsOfType, type ComponentHost } from '../scene/components';

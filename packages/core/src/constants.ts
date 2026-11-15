@@ -96,7 +96,9 @@ export const SCRIPT_API_VERSION = 4;
  * And the types described by their fields are decoded whole: a field of the
  * wrong kind, one missing inside an object — a light's shadow — or one no
  * field of the type refuses the scene, where it was filled or dropped. A rigid
- * body's locks are named axes, `{ x, y, z }`, where they were a tuple.
+ * body's locks are named axes, `{ x, y, z }`, where they were a tuple. A water
+ * surface's sun is one field, `sun` — the sky, a light by its id, or a sun of
+ * its own — where three said it, the light by an id among two keywords.
  */
 export const SCENE_FORMAT_VERSION = 12;
 

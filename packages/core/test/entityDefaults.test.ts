@@ -1,7 +1,6 @@
 import {
   createAudioListenerEntity,
   createAudioSourceEntity,
-  createBoxGeometry,
   createCameraEntity,
   createEntity,
   createGeometry,
@@ -54,7 +53,7 @@ describe('what holds a primitive off its support', () => {
   it('reads the dimensions rather than the kind', () => {
     // The offset has to follow an author who resizes the geometry, which the
     // old constant could not do.
-    expect(restingOffsetY({ ...createBoxGeometry(), height: 4 })).toBe(2);
+    expect(restingOffsetY({ ...createGeometry('box'), height: 4 })).toBe(2);
   });
 
   it('puts the offset on the entity a factory hands back', () => {

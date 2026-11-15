@@ -5,7 +5,8 @@ import { SCENE_FORMAT_VERSION } from '../constants';
 import { createSceneId } from '../ids';
 import { setComponentsOf } from './components';
 import { createEntity } from './entity';
-import { createBoxGeometry } from './geometry';
+import { createGeometry } from './geometry';
+import { createMaterial } from './material';
 
 /*
  * What is left once every component type owns its own factories: the sky and
@@ -23,13 +24,7 @@ import { createBoxGeometry } from './geometry';
  * `index.ts`: an index is the type's definition, and the core's activation list
  * is the one place that imports it.
  */
-import type {
-  CameraComponent,
-  EnvironmentDef,
-  MeshComponent,
-  SceneDoc,
-  SkySettings,
-} from './schema';
+import type { EnvironmentDef, SceneDoc, SkySettings } from './schema';
 
 /** three's own `SkyMesh` defaults, which are a clear early morning. */
 export function createSkySettings(): SkySettings {
@@ -127,18 +122,23 @@ export function createStarterScene(): SceneDoc {
   // character controller lose part of a sideways move — measurably, and only
   // sideways. An unrotated box has none of that, and matches what other engines
   // ship as a default floor.
-  const ground = createEntity('Ground', [createMeshComponent('box')]);
+  const ground = createEntity('Ground', [
+    {
+      ...createMeshComponent('box'),
+      geometry: { ...createGeometry('box'), width: 40, height: 1, depth: 40 },
+      material: createMaterial('#6f7378'),
+      // The ground receives shadows but has nothing above it to cast onto.
+      castShadow: false,
+    },
+  ]);
   ground.entity.transform.position = [0, -0.5, 0];
-  const groundMesh = ground.components[0] as MeshComponent;
-  groundMesh.geometry = { ...createBoxGeometry(), width: 40, height: 1, depth: 40 };
-  groundMesh.material.color = '#6f7378';
-  // The ground receives shadows but has nothing above it to cast onto.
-  groundMesh.castShadow = false;
 
   const sun = createLightEntity('directional');
   const sky = createLightEntity('hemisphere');
   const camera = createCameraEntity();
-  (camera.components[0] as CameraComponent).isMain = true;
+  for (const component of camera.components) {
+    if (component.type === 'camera') component.isMain = true;
+  }
 
   for (const template of [ground, sun, sky, camera]) {
     scene.entities.set(template.entity.id, template.entity);

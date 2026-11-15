@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, type EntityId, type GeometryDef, type WaterComponent } from '@three-studio/core';
+import { type EntityId, type GeometryDef, type WaterComponent } from '@three-studio/core';
 import {
   BackSide,
   DoubleSide,
@@ -30,6 +30,13 @@ import { defaultWaterNormals } from '../../systems/waterNormals';
  */
 
 const SIDES = { front: FrontSide, back: BackSide, double: DoubleSide } as const;
+
+/**
+ * Where the glint comes from when the scene cannot say where its sky's sun is:
+ * up and to one side, white — what `WaterMesh` lights with by default, and what
+ * a sun of the surface's own starts at.
+ */
+const DEFAULT_SUN: Sun = { direction: [0.70707, 0.70707, 0], color: '#ffffff' };
 
 export interface WaterHandle extends SystemHandle {
   water: WaterSurface;
@@ -177,13 +184,16 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
     return { texture, map: texture };
   }
 
-  /** What the glint is lit by, with the component's own fields as the fallback. */
+  /**
+   * What the glint is lit by. A light that has gone lights it as the sky does,
+   * rather than leaving the water lit from nowhere; and a scene that cannot
+   * answer for its sky lights it from the default a sun of its own starts at.
+   */
   private sunFor(component: WaterComponent, ctx: SystemContext): Sun {
-    const own: Sun = { direction: component.sunDirection, color: component.sunColor };
-    if (component.sunSource === SUN_CUSTOM) return own;
-    // A light that has been deleted falls back here rather than leaving the
-    // water lit from nowhere.
-    return ctx.sunOf(component.sunSource) ?? own;
+    const { sun } = component;
+    if (sun.kind === 'custom') return sun;
+    const sky = ctx.sunOf(null) ?? DEFAULT_SUN;
+    return sun.kind === 'light' && sun.entity !== null ? (ctx.sunOf(sun.entity) ?? sky) : sky;
   }
 
   /**

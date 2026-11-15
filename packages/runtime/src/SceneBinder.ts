@@ -1,5 +1,4 @@
 import {
-  SUN_FROM_SKY,
   componentsOf,
   findComponent,
   isEntityId,
@@ -261,7 +260,7 @@ export class SceneBinder {
       models: this.models,
       time: this.time,
       shadowMapSize: this.shadowMapSize,
-      sunOf: (source: string) => this.sunOf(source),
+      sunOf: (light) => this.sunOf(light),
       invalidate: () => {
         this.batcher.invalidate();
       },
@@ -467,27 +466,22 @@ export class SceneBinder {
    * already composed. Resolved per sync rather than per frame — a sync is what
    * a gizmo drag produces, so the water still follows a light being moved.
    */
-  private sunOf(source: string): Sun | null {
+  private sunOf(light: EntityId | null): Sun | null {
     const scene = this.scene;
     if (!scene) return null;
+    if (light === null) return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
 
-    if (source === SUN_FROM_SKY) {
-      return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
-    }
+    const component = findComponent(scene, light, 'light');
+    const container = this.reconciler.peekContainer(light);
+    if (!component || !container) return null;
 
-    // A source is text a component holds, and is read as the id it has to be
-    // before the scene is asked about it.
-    if (!isEntityId(source)) return null;
-    const light = findComponent(scene, source, 'light');
-    const container = this.reconciler.peekContainer(source);
-    if (!light || !container) return null;
-
-    // +Z, because the light shines along -Z and `sunDirection` points back at
-    // it. `matrixWorld` carries the scale too, so the basis is normalised.
+    // +Z, because the light shines along -Z and the sun's direction points
+    // back at it. `matrixWorld` carries the scale too, so the basis is
+    // normalised.
     container.matrixWorld.extractBasis(_x, _y, _z);
     _z.normalize();
     const direction: Vec3 = [_z.x, _z.y, _z.z];
-    return { direction, color: light.color };
+    return { direction, color: component.color };
   }
 
   /** Walks up from a raycast hit to the entity that owns it. */

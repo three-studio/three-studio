@@ -2,6 +2,7 @@ import {
   assertDefined,
   createEmptyScene,
   createEntity,
+  createMeshComponent,
   createMeshEntity,
   emptyManifest,
   field,
@@ -16,7 +17,8 @@ import {
 import type { ScriptProperties } from '@three-studio/runtime';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { declaredControl, entityChoices, specFor, type KeyedField } from '../src/inspector/declaredFields';
-import { GEOMETRY_FIELDS, MATERIAL_FIELDS, type FieldSpec } from '../src/inspector/fields';
+import type { FieldSpec } from '../src/inspector/fields';
+import { paneEntriesFor } from '../src/inspector/panes';
 import { useAssetStore } from '../src/state/assetStore';
 import { useDocumentStore } from '../src/state/documentStore';
 import { builtInRegistries } from './registries';
@@ -218,8 +220,13 @@ describe('an importer declares in the same words', () => {
 });
 
 describe('a component pane declares in the same words', () => {
+  /** A cube's rows, as its pane derives them. */
+  const CUBE = paneEntriesFor(builtInRegistries(), createMeshComponent('box')).entries.filter(
+    (entry): entry is FieldSpec => 'path' in entry,
+  );
+
   it('narrows a number without naming Tweakpane', () => {
-    expect(declaredControl(row(GEOMETRY_FIELDS.box, 'Segments X')).params).toEqual({
+    expect(declaredControl(row(CUBE, 'Segments X')).params).toEqual({
       min: 1,
       max: 256,
       step: 1,
@@ -227,7 +234,7 @@ describe('a component pane declares in the same words', () => {
   });
 
   it('spreads one set of bounds over every axis of a pad', () => {
-    const tiling = row(MATERIAL_FIELDS, 'Tiling');
+    const tiling = row(CUBE, 'Tiling');
     const { params, toModel, fromModel } = declaredControl(tiling);
     expect(params).toEqual({ x: { step: 0.1 }, y: { step: 0.1 } });
     expect(toModel?.([2, 3])).toEqual({ x: 2, y: 3 });
@@ -237,15 +244,15 @@ describe('a component pane declares in the same words', () => {
   it('leaves a row that has nothing to add alone, for Tweakpane to read the value', () => {
     // A colour, a checkbox and a text field all come from the bound value. A
     // declared type would be a restatement of what the document already says.
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Colour'))).toEqual({});
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Transparent'))).toEqual({});
+    expect(declaredControl(row(CUBE, 'Colour'))).toEqual({});
+    expect(declaredControl(row(CUBE, 'Transparent'))).toEqual({});
   });
 
   it('does not fill a missing component value the way it fills a script one', () => {
     // The belt in `PaneBinder`: a field the document has no value for is
     // skipped and said out loud, rather than shown as a zero that would be
     // written back on the first drag.
-    expect(declaredControl(row(MATERIAL_FIELDS, 'Roughness')).toModel).toBeUndefined();
+    expect(declaredControl(row(CUBE, 'Roughness')).toModel).toBeUndefined();
     expect(bind('speed').toModel?.(undefined)).toBe(5);
   });
 });

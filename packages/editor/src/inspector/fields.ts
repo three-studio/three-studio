@@ -13,10 +13,7 @@
  * this file exists.
  */
 import {
-  MATERIAL_SIDE_LABELS,
-  TEXTURE_WRAP_LABELS,
   isComponentOfType,
-  optionsFrom,
   type AssetKind,
   type ComponentDoc,
   type ComponentId,
@@ -25,7 +22,6 @@ import {
   type ComponentTypeId,
   type EntityId,
   type FieldDef,
-  type GeometryKind,
 } from '@three-studio/core';
 import type { RuntimeRegistries } from '@three-studio/runtime';
 
@@ -328,149 +324,6 @@ export const asDegrees: Pick<FieldSpec, 'toModel' | 'fromModel'> = {
 };
 
 /**
- * Keyed by `GeometryKind`, so adding a primitive to the union without giving it
- * inspector fields is a compile error rather than an empty panel.
- */
-export const GEOMETRY_FIELDS: Record<GeometryKind, readonly FieldSpec[]> = {
-  box: [
-    { path: ['geometry', 'width'], label: 'Width', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'depth'], label: 'Depth', type: 'number', min: 0.01, step: 0.1 },
-    // Displacement moves vertices, so a one-segment face cannot show any of it.
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments X',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments Y',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-    {
-      path: ['geometry', 'depthSegments'],
-      label: 'Segments Z',
-      type: 'number', min: 1, max: 256, step: 1,
-    },
-  ],
-  sphere: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments V',
-      type: 'number', min: 2, max: 64, step: 1,
-    },
-  ],
-  plane: [
-    { path: ['geometry', 'width'], label: 'Width', type: 'number', min: 0.01, step: 0.5 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.5 },
-    {
-      path: ['geometry', 'widthSegments'],
-      label: 'Segments X',
-      type: 'number', min: 1, max: 512, step: 1,
-    },
-    {
-      path: ['geometry', 'heightSegments'],
-      label: 'Segments Y',
-      type: 'number', min: 1, max: 512, step: 1,
-    },
-  ],
-  capsule: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-  ],
-  cylinder: [
-    { path: ['geometry', 'radiusTop'], label: 'Radius top', type: 'number', min: 0, step: 0.1 },
-    {
-      path: ['geometry', 'radiusBottom'],
-      label: 'Radius bottom',
-      type: 'number', min: 0, step: 0.1,
-    },
-    { path: ['geometry', 'height'], label: 'Height', type: 'number', min: 0.01, step: 0.1 },
-  ],
-  circle: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'segments'],
-      label: 'Segments',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-  ],
-  ring: [
-    {
-      path: ['geometry', 'innerRadius'],
-      label: 'Inner radius',
-      type: 'number', min: 0, step: 0.05,
-    },
-    {
-      path: ['geometry', 'outerRadius'],
-      label: 'Outer radius',
-      type: 'number', min: 0.01, step: 0.05,
-    },
-    {
-      path: ['geometry', 'thetaSegments'],
-      label: 'Segments',
-      type: 'number', min: 3, max: 128, step: 1,
-    },
-  ],
-  torus: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['geometry', 'tube'], label: 'Tube', type: 'number', min: 0.01, step: 0.02 },
-    {
-      path: ['geometry', 'radialSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 64, step: 1,
-    },
-    {
-      path: ['geometry', 'tubularSegments'],
-      label: 'Segments V',
-      type: 'number', min: 3, max: 256, step: 1,
-    },
-  ],
-  torusKnot: [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.05 },
-    { path: ['geometry', 'tube'], label: 'Tube', type: 'number', min: 0.01, step: 0.02 },
-    { path: ['geometry', 'p'], label: 'Winding P', type: 'number', min: 1, max: 20, step: 1 },
-    { path: ['geometry', 'q'], label: 'Winding Q', type: 'number', min: 1, max: 20, step: 1 },
-    {
-      path: ['geometry', 'radialSegments'],
-      label: 'Segments U',
-      type: 'number', min: 3, max: 64, step: 1,
-    },
-    {
-      path: ['geometry', 'tubularSegments'],
-      label: 'Segments V',
-      type: 'number', min: 3, max: 512, step: 1,
-    },
-  ],
-  ...polyhedronFields('tetrahedron', 'octahedron', 'dodecahedron', 'icosahedron'),
-};
-
-/**
- * The four solids take the same two arguments in three, so they take the same
- * two fields here. `detail` is capped low on purpose: it is exponential, and 5
- * already puts a single solid past a hundred thousand triangles.
- */
-function polyhedronFields<K extends GeometryKind>(
-  ...kinds: readonly K[]
-): Record<K, readonly FieldSpec[]> {
-  const fields: readonly FieldSpec[] = [
-    { path: ['geometry', 'radius'], label: 'Radius', type: 'number', min: 0.01, step: 0.1 },
-    {
-      path: ['geometry', 'detail'],
-      label: 'Subdivisions',
-      type: 'number', min: 0, max: 5, step: 1,
-    },
-  ];
-  return Object.fromEntries(kinds.map((kind) => [kind, fields])) as Record<K, readonly FieldSpec[]>;
-}
-
-/**
  * A slot stores `null` when empty, but the control needs a primitive, so the
  * empty choice round-trips through `''`.
  *
@@ -511,89 +364,3 @@ export const assetSlot = <Subject,>(
   label,
   params: { view: 'asset', assetKind, ...(emptyLabel === undefined ? {} : { emptyLabel }) },
 });
-
-export const textureSlot = (key: string, label: string): FieldSpec =>
-  assetSlot(['material', key], label);
-
-export const MATERIAL_FIELDS: readonly FieldSpec[] = [
-  { path: ['material', 'color'], label: 'Colour' },
-  {
-    path: ['material', 'roughness'],
-    label: 'Roughness',
-    type: 'number', min: 0, max: 1, step: 0.01,
-  },
-  {
-    path: ['material', 'metalness'],
-    label: 'Metalness',
-    type: 'number', min: 0, max: 1, step: 0.01,
-  },
-  { path: ['material', 'emissive'], label: 'Emissive' },
-  {
-    path: ['material', 'emissiveIntensity'],
-    label: 'Emissive power',
-    type: 'number', min: 0, max: 20, step: 0.1,
-  },
-  { path: ['material', 'opacity'], label: 'Opacity', type: 'number', min: 0, max: 1, step: 0.01 },
-  { path: ['material', 'transparent'], label: 'Transparent' },
-  { path: ['material', 'wireframe'], label: 'Wireframe' },
-  {
-    path: ['material', 'side'],
-    label: 'Side',
-    type: 'enum',
-    options: optionsFrom(MATERIAL_SIDE_LABELS),
-  },
-
-  textureSlot('colorMap', 'Base colour map'),
-  textureSlot('normalMap', 'Normal map'),
-  {
-    path: ['material', 'normalScale'],
-    label: 'Normal strength',
-    type: 'number', min: 0, max: 4, step: 0.05,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.normalMap !== null,
-  },
-  textureSlot('bumpMap', 'Bump map'),
-  {
-    path: ['material', 'bumpScale'],
-    label: 'Bump strength',
-    type: 'number', min: 0, max: 4, step: 0.05,
-    // Tied to the bump slot alone. It has no effect while a normal map is also
-    // set — three picks one — but hiding the strength of a map that is visibly
-    // assigned would read as the field being broken.
-    visibleWhen: (c) => c.type === 'mesh' && c.material.bumpMap !== null,
-  },
-  textureSlot('roughnessMap', 'Roughness map'),
-  textureSlot('metalnessMap', 'Metalness map'),
-  textureSlot('emissiveMap', 'Emissive map'),
-  textureSlot('aoMap', 'Occlusion map'),
-  {
-    path: ['material', 'aoIntensity'],
-    label: 'Occlusion strength',
-    type: 'number', min: 0, max: 1, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.aoMap !== null,
-  },
-  textureSlot('alphaMap', 'Alpha map'),
-  textureSlot('displacementMap', 'Displacement map'),
-  {
-    path: ['material', 'displacementScale'],
-    label: 'Displacement',
-    type: 'number', min: -2, max: 2, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.displacementMap !== null,
-  },
-  {
-    path: ['material', 'displacementBias'],
-    label: 'Displacement bias',
-    type: 'number', min: -1, max: 1, step: 0.01,
-    visibleWhen: (c) => c.type === 'mesh' && c.material.displacementMap !== null,
-  },
-
-  // The UV transform belongs to the three `Texture`, but it reads as a property
-  // of the material here because it applies to every slot at once.
-  { path: ['material', 'tiling'], label: 'Tiling', type: 'vec2', step: 0.1 },
-  { path: ['material', 'offset'], label: 'Offset', type: 'vec2', step: 0.01 },
-  {
-    path: ['material', 'wrap'],
-    label: 'Wrap',
-    type: 'enum',
-    options: optionsFrom(TEXTURE_WRAP_LABELS),
-  },
-];

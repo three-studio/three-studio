@@ -1,4 +1,4 @@
-import type { SkySettings, Vec3, WaterSunSource } from './schema';
+import type { SkySettings, Vec3 } from './schema';
 
 /*
  * What a water surface needs to know about the sun, and where it comes from.
@@ -8,15 +8,6 @@ import type { SkySettings, Vec3, WaterSunSource } from './schema';
  * function of the document — so it can be tested without a renderer, and read
  * identically by the editor and the exported build.
  */
-
-/** The two `sunSource` values that are not an entity id. */
-export const SUN_FROM_SKY = 'sky';
-export const SUN_CUSTOM = 'custom';
-
-/** Whether this source names a light entity rather than one of the two modes. */
-export function isEntitySun(source: WaterSunSource): boolean {
-  return source !== SUN_FROM_SKY && source !== SUN_CUSTOM;
-}
 
 /**
  * The scene's analytic sun, as a unit vector pointing from the ground at it.

@@ -5,7 +5,7 @@ import {
   CACHE_DIR,
   assertDefined,
   assetKindInfo,
-  createBoxGeometry,
+  createGeometry,
   createCameraEntity,
   createEmptyScene,
   createEntity,
@@ -168,7 +168,7 @@ function placeCamera(scene: SceneDoc, half: { x: number; z: number }): void {
 
 function placeGround(scene: SceneDoc, half: { x: number; z: number }): void {
   const mesh = createMeshComponent('box');
-  mesh.geometry = { ...createBoxGeometry(), width: half.x * 2 + 20, height: 1, depth: half.z * 2 + 20 };
+  mesh.geometry = { ...createGeometry('box'), width: half.x * 2 + 20, height: 1, depth: half.z * 2 + 20 };
   mesh.material.color = '#55595e';
   mesh.castShadow = false;
   const ground = place(scene, createEntity('Ground', [mesh]));
@@ -570,7 +570,7 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   placeSun(loading, half);
   placeCamera(loading, half);
   const cube = createMeshComponent('box');
-  cube.geometry = { ...createBoxGeometry(), width: 4, height: 4, depth: 4 };
+  cube.geometry = { ...createGeometry('box'), width: 4, height: 4, depth: 4 };
   place(loading, createEntity('Cube', [cube, scriptOn(script(`${scriptsDir}/Spinner.ts`))]));
 
   const start = (await createScene(registries, project.path, 'A', serializeScene(registries, a))).scene.id;

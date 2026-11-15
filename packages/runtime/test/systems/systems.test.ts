@@ -1,4 +1,4 @@
-import { SUN_CUSTOM, createCamera, createLightEntity, createMaterial, createMeshComponent, createModel, createWater, fixedId, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
+import { createCamera, createLightEntity, createMaterial, createMeshComponent, createModel, fixedId, waterType, type AssetId, type CameraComponent, type LightComponent, type MeshComponent, type ModelComponent } from '@three-studio/core';
 import {
   BoxGeometry,
   DirectionalLight,
@@ -638,7 +638,7 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount(LAKE, createWater(), ctx);
+    const handle = system.mount(LAKE, waterType.create(), ctx);
 
     expect(handle.objects).toHaveLength(1);
     expect(handle.water.isWaterSurface).toBe(true);
@@ -652,8 +652,8 @@ describe('the water system', () => {
     const { ctx } = context();
     const system = new WaterSystem();
 
-    const first = system.mount(ENTITY_A, createWater(), ctx);
-    const second = system.mount(ENTITY_B, createWater(), ctx);
+    const first = system.mount(ENTITY_A, waterType.create(), ctx);
+    const second = system.mount(ENTITY_B, waterType.create(), ctx);
 
     // `null` on the handle is what says "not mine to retire".
     expect(first.texture).toBeNull();
@@ -663,7 +663,7 @@ describe('the water system', () => {
   it('writes every uniform in place, keeping the mesh and its shader', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
     const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
@@ -687,7 +687,7 @@ describe('the water system', () => {
   it('never remounts — not even for the reflection resolution', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
     const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(mounted, component, { ...component, resolutionScale: 1 }, ctx);
@@ -702,7 +702,7 @@ describe('the water system', () => {
   it('writes speed, direction and choppiness in place', () => {
     const { ctx } = context();
     const system = new WaterSystem();
-    const component = createWater();
+    const component = waterType.create();
 
     const mounted = system.mount(LAKE, component, ctx);
     const patched = system.patch(
@@ -719,7 +719,7 @@ describe('the water system', () => {
     expect(handle.water.choppiness.value).toBeCloseTo(3);
   });
 
-  it('takes the sun the scene resolves, and its own when it cannot', () => {
+  it('takes the sun the scene resolves — the sky\'s, a light\'s, else the sky\'s — or its own', () => {
     const arena = new ResourceArena();
     const sun = { direction: [0, 1, 0] as [number, number, number], color: '#ff0000' };
     const ctx: SystemContext = {
@@ -728,29 +728,35 @@ describe('the water system', () => {
       models: new ModelCache(registries, { url: () => null }),
       time: new StudioTime(),
       shadowMapSize: 1024,
-      sunOf: (source) => (source === 'sky' ? sun : null),
+      sunOf: (light) => (light === null ? sun : null),
       invalidate: () => undefined,
       attach: () => true,
     };
     const system = new WaterSystem();
 
-    const linked = system.mount(LAKE, createWater(), ctx);
+    const linked = system.mount(LAKE, waterType.create(), ctx);
     expect(linked.water.sunColor.value.getHexString()).toBe('ff0000');
     expect(linked.water.sunDirection.value.y).toBeCloseTo(1);
 
     const own = system.mount(
       POND,
-      { ...createWater(), sunSource: SUN_CUSTOM, sunColor: '#00ff00' },
+      { ...waterType.create(), sun: { kind: 'custom', direction: [1, 0, 0], color: '#00ff00' } },
       ctx,
     );
     expect(own.water.sunColor.value.getHexString()).toBe('00ff00');
+    expect(own.water.sunDirection.value.x).toBeCloseTo(1);
+
+    // A light the scene no longer holds lights it as the sky does.
+    const gone = system.mount(POND, { ...waterType.create(), sun: { kind: 'light', entity: fixedId('entity', 'gone') } }, ctx);
+    expect(gone.water.sunColor.value.getHexString()).toBe('ff0000');
+    expect(gone.water.sunDirection.value.y).toBeCloseTo(1);
   });
 
   it('gives back the geometry, the material and the reflection targets', () => {
     const { ctx, arena } = context();
     const system = new WaterSystem();
 
-    const handle = system.mount(LAKE, createWater(), ctx);
+    const handle = system.mount(LAKE, waterType.create(), ctx);
     expect(arena.sizes.geometries).toBe(1);
 
     let disposed = 0;

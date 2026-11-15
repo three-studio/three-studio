@@ -89,19 +89,16 @@ export interface SystemContext {
    * arrive at the same answer.
    */
   /**
-   * Where a component that shades itself takes its light from.
-   *
-   * `'sky'` is the scene's analytic sun; anything else is a light entity's id.
-   * `null` means "not something this scene can answer" — no such entity, or a
-   * source that is not a reference at all — and the caller falls back to
-   * whatever it holds itself.
+   * Where a component that shades itself takes its light from: a light
+   * entity's, or `null` for the scene's analytic sun. Answers `null` when the
+   * scene cannot say — no such light — and the caller falls back.
    *
    * Pushed in through the context rather than looked up, for the reason
    * `materials` is: it needs the document *and* the world matrices, and the
    * binder is the only thing holding both. A system is handed a component and
    * could not work it out.
    */
-  sunOf(source: string): Sun | null;
+  sunOf(light: EntityId | null): Sun | null;
   invalidate(): void;
   /**
    * Adds an object that only exists now, after the mount that asked for it.

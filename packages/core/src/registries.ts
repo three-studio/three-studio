@@ -18,14 +18,14 @@ import { cameraType } from './components/camera';
 import { colliderComponent } from './components/collider';
 import { jointComponent } from './components/joint';
 import { lightType } from './components/light';
-import { meshComponent } from './components/mesh';
+import { meshType } from './components/mesh';
 import { modelComponent } from './components/model';
 import { playerControllerType } from './components/playerController';
 import { prefabInstanceComponent } from './components/prefabInstance';
 import type { ComponentDefinition } from './components/registry';
 import { rigidbodyType } from './components/rigidbody';
 import { scriptComponent } from './components/script';
-import { waterComponent } from './components/water';
+import { waterType } from './components/water';
 import { combineDisposables, type Disposable } from './disposable';
 import type { ImporterId } from './ids';
 import type { ComponentTypeId } from './scene/schema';
@@ -50,7 +50,7 @@ export interface CoreRegistries {
  * them: the order their modules used to be imported in to register.
  */
 const COMPONENTS: readonly ComponentDefinition[] = [
-  meshComponent,
+  meshType,
   modelComponent,
   lightType,
   cameraType,
@@ -62,7 +62,7 @@ const COMPONENTS: readonly ComponentDefinition[] = [
   scriptComponent,
   prefabInstanceComponent,
   playerControllerType,
-  waterComponent,
+  waterType,
 ];
 
 /**

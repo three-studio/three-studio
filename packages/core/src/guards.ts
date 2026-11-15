@@ -1,9 +1,4 @@
-import {
-  MATERIAL_SIDE_LABELS,
-  TEXTURE_WRAP_LABELS,
-  createMaterial,
-  type MaterialDef,
-} from './scene/material';
+import { createMaterial, materialFields, type MaterialDef } from './scene/material';
 import {
   emptyLayoutPreferences,
   emptyShortcutPreferences,
@@ -18,7 +13,7 @@ import {
 } from './project/schema';
 import { defaultSettings } from './assets/import';
 import type { AssetKind, AssetSettings } from './assets/schema';
-import { conform, conformPatch, isRecord, oneOf } from './conform';
+import { conform, conformPatch, isRecord } from './conform';
 import type { CoreRegistries } from './registries';
 
 /*
@@ -109,8 +104,9 @@ export function conformMaterial(value: unknown): MaterialDef {
   const given = (typeof value === 'object' && value !== null ? value : {}) as Partial<MaterialDef>;
   return {
     ...kept,
-    side: oneOf(given.side, MATERIAL_SIDE_LABELS, model.side),
-    wrap: oneOf(given.wrap, TEXTURE_WRAP_LABELS, model.wrap),
+    // One of the field's own options, read off the schema the decoder reads.
+    side: materialFields.side.options.find((option) => option.value === given.side)?.value ?? model.side,
+    wrap: materialFields.wrap.options.find((option) => option.value === given.wrap)?.value ?? model.wrap,
   };
 }
 

@@ -1,120 +1,160 @@
+import { planFields, type Infer, type Schema } from '../fieldSchema';
+
 /*
- * The geometry vocabulary: the shapes a component can be built out of, the
- * factory that produces one, and the two tables that read one.
+ * The geometry vocabulary: the shapes a mesh can be built out of, the factory
+ * that produces one, and the two tables that read one.
  *
- * Shared rather than `mesh`'s own, because `water` is a plane and reads the
- * same definitions. A module beside `primitives.ts` rather than inside it: a
- * type and the factory that makes one belong together, and this is large
- * enough that keeping it with `Vec3` would have made "primitives" a drawer.
+ * A module beside `primitives.ts` rather than inside it: a type and the
+ * factory that makes one belong together, and this is large enough that
+ * keeping it with `Vec3` would have made "primitives" a drawer. A water surface
+ * is a plane, and its geometry field infers this plane's shape.
  */
 
 // --- geometry ---------------------------------------------------------------
 
-/**
- * One entry per three.js geometry class, rather than a generic "polyhedron"
- * with a shape field: the kind is what the binder switches on, what names the
- * entity and what the collider guess reads, so keeping it 1:1 with three means
- * none of those three tables needs a second lookup.
- */
-export type GeometryDef =
-  | {
-      kind: 'box';
-      width: number;
-      height: number;
-      depth: number;
-      /** Subdivisions. Only matter under a displacement map, which moves vertices. */
-      widthSegments: number;
-      heightSegments: number;
-      depthSegments: number;
-    }
-  | { kind: 'sphere'; radius: number; widthSegments: number; heightSegments: number }
-  | { kind: 'plane'; width: number; height: number; widthSegments: number; heightSegments: number }
-  | { kind: 'capsule'; radius: number; height: number; capSegments: number; radialSegments: number }
-  | {
-      kind: 'cylinder';
-      radiusTop: number;
-      radiusBottom: number;
-      height: number;
-      radialSegments: number;
-    }
-  | { kind: 'circle'; radius: number; segments: number }
-  | { kind: 'ring'; innerRadius: number; outerRadius: number; thetaSegments: number }
-  | { kind: 'torus'; radius: number; tube: number; radialSegments: number; tubularSegments: number }
-  | {
-      kind: 'torusKnot';
-      radius: number;
-      tube: number;
-      tubularSegments: number;
-      radialSegments: number;
-      /** Winding counts. Coprime integers; anything else fails to close the knot. */
-      p: number;
-      q: number;
-    }
-  // The four solids take the same two arguments in three, so they share a shape
-  // here too. `detail` subdivides towards a sphere.
-  | { kind: 'tetrahedron'; radius: number; detail: number }
-  | { kind: 'octahedron'; radius: number; detail: number }
-  | { kind: 'dodecahedron'; radius: number; detail: number }
-  | { kind: 'icosahedron'; radius: number; detail: number };
+/** A size, in metres. */
+const size = (label: string, fallback: number, step: number, min = 0.01) =>
+  ({ type: 'number', label, default: fallback, min, step }) as const;
 
+/** A segment count: whole, and bounded, since each one costs triangles. */
+const segments = (label: string, fallback: number, min: number, max: number) =>
+  ({ type: 'number', label, default: fallback, min, max, step: 1 }) as const;
+
+/** Segments a primitive is built with and that no row offers. */
+const hidden = (label: string, fallback: number) => ({ type: 'number', label, default: fallback, shown: false }) as const;
+
+/**
+ * The four solids take the same two arguments in three, so they share their
+ * fields here too. `detail` subdivides towards a sphere, and is capped low on
+ * purpose: it is exponential, and 5 already puts one solid past a hundred
+ * thousand triangles.
+ */
+const SOLID = {
+  radius: size('Radius', 0.5, 0.1),
+  detail: { type: 'number', label: 'Subdivisions', default: 0, min: 0, max: 5, step: 1 },
+} as const;
+
+/**
+ * A mesh's primitive, one variant per three.js geometry class rather than a
+ * generic "polyhedron" with a shape field: the kind is what the binder switches
+ * on, what names the entity and what the collider guess reads, so keeping it
+ * 1:1 with three means none of those tables needs a second lookup.
+ *
+ * Its selector has no row: the primitive is chosen when the mesh is added, and
+ * the variants' labels are what the Add menu offers.
+ */
+export const geometryField = {
+  type: 'union',
+  label: 'Primitive',
+  default: 'box',
+  shown: false,
+  variants: {
+    box: {
+      label: 'Cube',
+      fields: {
+        width: size('Width', 1, 0.1),
+        height: size('Height', 1, 0.1),
+        depth: size('Depth', 1, 0.1),
+        // Displacement moves vertices, so a one-segment face cannot show any of it.
+        widthSegments: segments('Segments X', 1, 1, 256),
+        heightSegments: segments('Segments Y', 1, 1, 256),
+        depthSegments: segments('Segments Z', 1, 1, 256),
+      },
+    },
+    sphere: {
+      label: 'Sphere',
+      fields: {
+        radius: size('Radius', 0.5, 0.1),
+        widthSegments: segments('Segments U', 32, 3, 128),
+        heightSegments: segments('Segments V', 16, 2, 64),
+      },
+    },
+    plane: {
+      label: 'Plane',
+      fields: {
+        width: size('Width', 10, 0.5),
+        height: size('Height', 10, 0.5),
+        widthSegments: segments('Segments X', 1, 1, 512),
+        heightSegments: segments('Segments Y', 1, 1, 512),
+      },
+    },
+    capsule: {
+      label: 'Capsule',
+      fields: {
+        radius: size('Radius', 0.5, 0.1),
+        height: size('Height', 1, 0.1),
+        capSegments: hidden('Cap segments', 8),
+        radialSegments: hidden('Radial segments', 16),
+      },
+    },
+    cylinder: {
+      label: 'Cylinder',
+      fields: {
+        radiusTop: size('Radius top', 0.5, 0.1, 0),
+        radiusBottom: size('Radius bottom', 0.5, 0.1, 0),
+        height: size('Height', 1, 0.1),
+        radialSegments: hidden('Radial segments', 24),
+      },
+    },
+    circle: {
+      label: 'Circle',
+      fields: { radius: size('Radius', 0.5, 0.1), segments: segments('Segments', 32, 3, 128) },
+    },
+    ring: {
+      label: 'Ring',
+      fields: {
+        innerRadius: size('Inner radius', 0.25, 0.05, 0),
+        outerRadius: size('Outer radius', 0.5, 0.05),
+        thetaSegments: segments('Segments', 32, 3, 128),
+      },
+    },
+    torus: {
+      label: 'Torus',
+      fields: {
+        radius: size('Radius', 0.4, 0.05),
+        tube: size('Tube', 0.15, 0.02),
+        radialSegments: segments('Segments U', 16, 3, 64),
+        tubularSegments: segments('Segments V', 48, 3, 256),
+      },
+    },
+    torusKnot: {
+      label: 'Torus Knot',
+      fields: {
+        radius: size('Radius', 0.4, 0.05),
+        tube: size('Tube', 0.12, 0.02),
+        // Winding counts. Coprime integers; anything else fails to close the knot.
+        p: { type: 'number', label: 'Winding P', default: 2, min: 1, max: 20, step: 1 },
+        q: { type: 'number', label: 'Winding Q', default: 3, min: 1, max: 20, step: 1 },
+        radialSegments: segments('Segments U', 16, 3, 64),
+        tubularSegments: segments('Segments V', 96, 3, 512),
+      },
+    },
+    tetrahedron: { label: 'Tetrahedron', fields: SOLID },
+    octahedron: { label: 'Octahedron', fields: SOLID },
+    dodecahedron: { label: 'Dodecahedron', fields: SOLID },
+    icosahedron: { label: 'Icosahedron', fields: SOLID },
+  },
+} as const;
+
+/** The geometry alone, as a schema: what its type is inferred from and its factory planned on. */
+const geometrySchema = { geometry: geometryField } as const satisfies Schema;
+
+export type GeometryDef = Infer<typeof geometrySchema>['geometry'];
 export type GeometryKind = GeometryDef['kind'];
 
-/** Narrowed helper: `createGeometry` returns the union, which cannot be spread. */
-export function createBoxGeometry(): Extract<GeometryDef, { kind: 'box' }> {
-  return createGeometry('box') as Extract<GeometryDef, { kind: 'box' }>;
+const geometryPlan = planFields(geometrySchema);
+
+/** Whether a primitive is of `kind`, by the one field that says it. */
+function isOfKind<K extends GeometryKind>(geometry: GeometryDef, kind: K): geometry is Extract<GeometryDef, { kind: K }> {
+  return geometry.kind === kind;
 }
 
-export function createGeometry(kind: GeometryKind): GeometryDef {
-  switch (kind) {
-    case 'box':
-      return {
-        kind,
-        width: 1,
-        height: 1,
-        depth: 1,
-        widthSegments: 1,
-        heightSegments: 1,
-        depthSegments: 1,
-      };
-    case 'sphere':
-      return { kind, radius: 0.5, widthSegments: 32, heightSegments: 16 };
-    case 'plane':
-      return { kind, width: 10, height: 10, widthSegments: 1, heightSegments: 1 };
-    case 'capsule':
-      return { kind, radius: 0.5, height: 1, capSegments: 8, radialSegments: 16 };
-    case 'cylinder':
-      return { kind, radiusTop: 0.5, radiusBottom: 0.5, height: 1, radialSegments: 24 };
-    case 'circle':
-      return { kind, radius: 0.5, segments: 32 };
-    case 'ring':
-      return { kind, innerRadius: 0.25, outerRadius: 0.5, thetaSegments: 32 };
-    case 'torus':
-      return { kind, radius: 0.4, tube: 0.15, radialSegments: 16, tubularSegments: 48 };
-    case 'torusKnot':
-      return { kind, radius: 0.4, tube: 0.12, tubularSegments: 96, radialSegments: 16, p: 2, q: 3 };
-    case 'tetrahedron':
-    case 'octahedron':
-    case 'dodecahedron':
-    case 'icosahedron':
-      return { kind, radius: 0.5, detail: 0 };
-  }
+/** A primitive of `kind` at its defaults, typed as that primitive: a new value each time. */
+export function createGeometry<K extends GeometryKind>(kind: K): Extract<GeometryDef, { kind: K }> {
+  const geometry = geometryPlan.createVariant('geometry', kind);
+  if (!isOfKind(geometry, kind)) throw new Error(`The variant "${kind}" came back as "${geometry.kind}"`);
+  return geometry;
 }
-
-export const GEOMETRY_LABELS: Record<GeometryKind, string> = {
-  box: 'Cube',
-  sphere: 'Sphere',
-  plane: 'Plane',
-  capsule: 'Capsule',
-  cylinder: 'Cylinder',
-  circle: 'Circle',
-  ring: 'Ring',
-  torus: 'Torus',
-  torusKnot: 'Torus Knot',
-  tetrahedron: 'Tetrahedron',
-  octahedron: 'Octahedron',
-  dodecahedron: 'Dodecahedron',
-  icosahedron: 'Icosahedron',
-};
 
 /** three builds these in the XY plane, so they face the camera rather than up. */
 export const FLAT_KINDS: ReadonlySet<GeometryKind> = new Set(['plane', 'circle', 'ring']);

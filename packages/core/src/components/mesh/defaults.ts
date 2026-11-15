@@ -1,30 +1,22 @@
-import { createComponentId } from '../../ids';
 import { createEntity, type EntityTemplate } from '../../scene/entity';
 import {
   FLAT_KINDS,
-  GEOMETRY_LABELS,
   createGeometry,
+  geometryField,
   restingOffsetY,
   type GeometryKind,
 } from '../../scene/geometry';
-import { createMaterial } from '../../scene/material';
+import { meshType } from './index';
 import type { MeshComponent } from './schema';
 
+/** A mesh of the primitive `kind`, at its defaults otherwise. */
 export function createMeshComponent(kind: GeometryKind): MeshComponent {
-  return {
-    id: createComponentId(),
-    type: 'mesh',
-    geometry: createGeometry(kind),
-    material: createMaterial(),
-    materialId: null,
-    castShadow: true,
-    receiveShadow: true,
-  };
+  return { ...meshType.create(), geometry: createGeometry(kind) };
 }
 
 export function createMeshEntity(kind: GeometryKind): EntityTemplate {
   const mesh = createMeshComponent(kind);
-  const template = createEntity(GEOMETRY_LABELS[kind], [mesh]);
+  const template = createEntity(geometryField.variants[kind].label, [mesh]);
   if (FLAT_KINDS.has(kind)) {
     // Authors expect a flat primitive to be ground, not a wall.
     template.entity.transform.rotation = [-Math.PI / 2, 0, 0];
