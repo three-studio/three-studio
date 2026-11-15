@@ -9,7 +9,7 @@ import type {
   Vec3,
 } from '@three-studio/core';
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
-import type { ModelCache } from '../assets/ModelCache';
+import type { AssetCache } from '../assets/AssetCache';
 import type { StudioTime } from '../time/StudioTime';
 import type { ResourceArena } from './ResourceArena';
 
@@ -68,7 +68,11 @@ export interface SystemContext {
   readonly arena: ResourceArena;
   /** Shared material definitions, by asset id. */
   readonly materials: ReadonlyMap<AssetId, MaterialDef>;
-  readonly models: ModelCache;
+  /**
+   * The project's loaded files. A system holds what it draws — a model, an
+   * image — and gives it back when it stops; the cache alone frees.
+   */
+  readonly assets: AssetCache;
   /**
    * The one clock. A system that animates reads `time.elapsed` here rather than
    * three's global node, so what it draws obeys Pause and the timescale like
@@ -150,9 +154,9 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
    * file written to know about no type in particular, and it knew about two.
    *
    * **Optional, and declaring one is what claims it.** A system that does not
-   * implement `whenLoaded` does not load, which is the question
-   * `entitiesThatLoad` asks; the two that implement `materialAsset` are the two
-   * that can draw with a shared material. Nothing is cast: a system proves its
+   * implement `whenLoaded` does not load, which is what the reconciler waits
+   * on; the two that implement `materialAsset` are the two that can draw with
+   * a shared material. Nothing is cast: a system proves its
    * handle is batchable by handing it back as one.
    */
 

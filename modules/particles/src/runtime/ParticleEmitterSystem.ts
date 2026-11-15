@@ -1,6 +1,12 @@
 import type { EntityId } from '@three-studio/core';
 import type { ParticleEmitterComponent } from '@three-studio/particles/core';
-import { ComponentSystem, ENTITY_ID_KEY, type SystemContext, type SystemHandle } from '@three-studio/runtime';
+import {
+  ComponentSystem,
+  ENTITY_ID_KEY,
+  type SystemContext,
+  type SystemHandle,
+  type TextureHold,
+} from '@three-studio/runtime';
 import { attribute, texture, time, uniform, vec2, vec3 } from 'three/tsl';
 import {
   AdditiveBlending,
@@ -73,9 +79,9 @@ export interface ParticleEmitterHandle extends SystemHandle {
   count: number;
   shape: ParticleEmitterComponent['shape'];
   uniforms: EmitterUniforms;
-  /** `null` while the built-in sprite is in use — that one belongs to no handle. */
   spriteId: string | null;
-  texture: Texture | null;
+  /** The sprite's hold; `null` while the built-in sprite is in use — that one belongs to no handle. */
+  sprite: TextureHold | null;
   additive: boolean;
   readonly objects: readonly Mesh[];
 }
@@ -131,7 +137,7 @@ export class ParticleEmitterSystem extends ComponentSystem<
       shape: component.shape,
       uniforms,
       spriteId: component.spriteId,
-      texture: image.texture,
+      sprite: image.hold,
       additive: component.additive,
       objects: [mesh],
     };
@@ -156,7 +162,7 @@ export class ParticleEmitterSystem extends ComponentSystem<
     writeUniforms(handle.uniforms, next);
     if (handle.additive !== next.additive) applyBlending(handle.mesh.material, next);
 
-    let { geometry, geometryKey, texture: owned, spriteId } = handle;
+    let { geometry, geometryKey, sprite, spriteId } = handle;
     const count = countOf(next);
     const nextKey = geometryKeyOf(count, next.shape);
     if (geometryKey !== nextKey) {
@@ -169,10 +175,10 @@ export class ParticleEmitterSystem extends ComponentSystem<
     if (spriteId !== next.spriteId) {
       // The old one goes back through the queue rather than being disposed
       // here: the frame in flight may still be sampling it.
-      if (owned) ctx.arena.retire(owned);
+      if (sprite) ctx.arena.retire(sprite);
       const image = this.image(next, ctx);
       handle.uniforms.map.value = image.map;
-      owned = image.texture;
+      sprite = image.hold;
       spriteId = next.spriteId;
     }
 
@@ -183,7 +189,7 @@ export class ParticleEmitterSystem extends ComponentSystem<
       count,
       shape: next.shape,
       spriteId,
-      texture: owned,
+      sprite,
       additive: next.additive,
     };
   }
@@ -197,24 +203,24 @@ export class ParticleEmitterSystem extends ComponentSystem<
   unmount(handle: ParticleEmitterHandle, ctx: SystemContext): void {
     ctx.arena.releaseGeometry(handle.geometryKey);
     ctx.arena.retire(handle.mesh.material);
-    if (handle.texture) ctx.arena.retire(handle.texture);
+    if (handle.sprite) ctx.arena.retire(handle.sprite);
   }
 
   /**
    * The sprite image, or the built-in one.
    *
-   * The built-in is returned with a `null` texture on purpose: it is shared by
+   * The built-in is returned with a `null` hold on purpose: it is shared by
    * every emitter and owned by none, so a handle must not retire it. Same
    * arrangement as a water surface's normal map.
    */
   private image(
     component: ParticleEmitterComponent,
     ctx: SystemContext,
-  ): { texture: Texture | null; map: Texture } {
+  ): { hold: TextureHold | null; map: Texture } {
     const assetId = component.spriteId;
-    const instance = assetId === null ? null : ctx.models.instanceTexture(assetId);
-    if (!instance) return { texture: null, map: defaultParticleSprite() };
-    return { texture: instance, map: instance };
+    const hold = assetId === null ? null : ctx.assets.holdTexture(assetId);
+    if (!hold) return { hold: null, map: defaultParticleSprite() };
+    return { hold, map: hold.texture };
   }
 }
 

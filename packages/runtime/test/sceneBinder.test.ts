@@ -31,7 +31,7 @@ import {
 } from 'three/webgpu';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
-import { ModelCache } from '../src/assets/ModelCache';
+import { AssetCache } from '../src/assets/AssetCache';
 import { SceneBinder } from '../src/SceneBinder';
 import type { AssetResolver } from '../src/assets/AssetResolver';
 import { builtInRegistries } from './registries';
@@ -183,7 +183,7 @@ describe('a model that arrives late', () => {
     const inFlight = new Promise<Object3D>((resolve) => {
       land = () => resolve(model);
     });
-    vi.spyOn(ModelCache.prototype, 'loadModel').mockReturnValue(inFlight);
+    vi.spyOn(AssetCache.prototype, 'holdModel').mockReturnValue({ object: inFlight, dispose: () => {} });
 
     const binder = binderWith({ url: () => 'file:///crate.glb' });
     binder.sync(sceneWith([entity]));
@@ -800,8 +800,8 @@ describe('an equirectangular image that is still decoding', () => {
 
   it('leaves the background on its colour until the pixels have landed', () => {
     const texture = new Texture();
-    vi.spyOn(ModelCache.prototype, 'instanceTexture').mockReturnValue(texture);
-    const ready = vi.spyOn(ModelCache.prototype, 'textureReady').mockReturnValue(false);
+    vi.spyOn(AssetCache.prototype, 'holdTexture').mockReturnValue({ texture, dispose: () => {} });
+    const ready = vi.spyOn(AssetCache.prototype, 'textureReady').mockReturnValue(false);
 
     const binder = binderWith({ url: () => 'studio-asset://project/sky.hdr' });
     const target = new Scene();
@@ -822,13 +822,14 @@ describe('an equirectangular image that is still decoding', () => {
   it('keeps showing the old sky while the next one decodes', () => {
     const first = new Texture();
     const second = new Texture();
-    vi.spyOn(ModelCache.prototype, 'instanceTexture').mockImplementation((assetId) =>
-      assetId === SKY_1 ? first : second,
-    );
+    vi.spyOn(AssetCache.prototype, 'holdTexture').mockImplementation((assetId) => ({
+      texture: assetId === SKY_1 ? first : second,
+      dispose: () => {},
+    }));
     const ready = vi
-      .spyOn(ModelCache.prototype, 'textureReady')
+      .spyOn(AssetCache.prototype, 'textureReady')
       .mockImplementation((assetId) => assetId === SKY_1);
-    vi.spyOn(ModelCache.prototype, 'whenTextureReady').mockResolvedValue(undefined);
+    vi.spyOn(AssetCache.prototype, 'whenTextureReady').mockResolvedValue(undefined);
 
     const binder = binderWith({ url: () => 'studio-asset://project/sky.hdr' });
     const target = new Scene();

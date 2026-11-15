@@ -12,8 +12,7 @@ import {
   type SceneId,
 } from '@three-studio/core';
 import { create } from 'zustand';
-import { peekViewport } from '../viewport/viewportHost';
-import { editorAssetResolver, useAssetStore } from './assetStore';
+import { useAssetStore } from './assetStore';
 import { reportBrokenReferences } from './brokenReport';
 import { reportRefusals } from './refusalReport';
 import { useDocumentStore } from './documentStore';
@@ -120,7 +119,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.
     void useScriptStore.getState().build();
-    peekViewport()?.binder.setAssetResolver(editorAssetResolver);
     set({
       summary: opened.summary,
       project: opened.project,

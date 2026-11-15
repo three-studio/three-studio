@@ -1,5 +1,6 @@
 import type { AssetId, EntityId, ModelComponent } from '@three-studio/core';
 import { Mesh, type Material, type Object3D } from 'three/webgpu';
+import type { ModelHold } from '../../assets/AssetCache';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import { buildMaterial } from '../../systems/material';
@@ -26,13 +27,19 @@ export interface ModelHandle extends SystemHandle {
    *
    * Filled on the first override and read when one is taken away. Without it,
    * clearing the material field leaves the last one assigned: the file's own
-   * belongs to `ModelCache` and is still perfectly alive, but this clone no
+   * belongs to the asset cache and is still perfectly alive, but this clone no
    * longer has a reference to it anywhere.
    *
    * Lazily, so a model nobody re-materialled — which is nearly all of them —
    * carries an empty map and nothing else.
    */
   readonly sourceMaterials: Map<Mesh, Material | Material[]>;
+  /**
+   * What keeps the file loaded while this handle draws it, taken at the mount
+   * and given back at the unmount. `null` with no asset, or one the project
+   * lacks.
+   */
+  hold: ModelHold | null;
   /** Grows when the load lands. Empty until then, and empty forever if it fails. */
   readonly objects: Object3D[];
 }
@@ -73,6 +80,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       receiveShadow: component.receiveShadow,
       materialKey: null,
       sourceMaterials: new Map(),
+      hold: null,
       objects: [],
     };
     // Before the load, so the material is in hand when the object arrives: the
@@ -118,16 +126,16 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
   }
 
   /**
-   * Frees nothing it did not take.
+   * Gives back what it took, and frees nothing.
    *
-   * A loaded glTF's geometries and materials belong to `ModelCache`, which hands
-   * out clones sharing them and owns their lifetime. Disposing them here would
-   * free buffers every other instance of the same model is still drawing.
-   *
-   * The pooled material is the exception, and the only thing this handle ever
-   * took a reference to.
+   * A loaded file's geometries, materials and images belong to the asset cache,
+   * which hands out clones sharing them: disposing them here would free buffers
+   * every other placement of the same model is still drawing. The hold says
+   * this one is done; the cache frees once no hold is left.
    */
   unmount(handle: ModelHandle, ctx: SystemContext): void {
+    handle.hold?.dispose();
+    handle.hold = null;
     if (handle.materialKey !== null) ctx.arena.releaseMaterial(handle.materialKey);
     handle.materialKey = null;
     handle.sourceMaterials.clear();
@@ -165,7 +173,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     }
     ctx.arena.material(
       component.materialId,
-      () => new SharedMaterial(buildMaterial(definition, ctx.models)),
+      () => new SharedMaterial(buildMaterial(definition, ctx.assets)),
     );
   }
 
@@ -196,8 +204,8 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
           if (!handle.sourceMaterials.has(child)) {
             handle.sourceMaterials.set(child, child.material);
           }
-          // Assigned, never disposed. The mesh's own material belongs to
-          // `ModelCache`, and every other clone of this file is still drawing
+          // Assigned, never disposed. The mesh's own material belongs to the
+          // asset cache, and every other clone of this file is still drawing
           // it.
           child.material = material;
           return;
@@ -222,7 +230,7 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     // reported as a stack trace against an entity that then drew nothing.
     // Nothing is the one thing that cannot be fixed: it is invisible and it
     // cannot be clicked. See `missingModel.ts`.
-    if (!ctx.models.knows(assetId)) {
+    if (!ctx.assets.knows(assetId)) {
       const placeholder = createMissingModel();
       // Deferred, and that is not a stylistic choice. `mount` has not returned
       // this handle yet, so the reconciler does not know it is the one mounted
@@ -245,7 +253,13 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
       return;
     }
 
-    const pending = this.fetch(handle, assetId, ctx)
+    // Held before anything is awaited: an unmount during the load gives back
+    // what this took, and a remount finds the load already under way.
+    handle.hold = ctx.assets.holdModel(
+      assetId,
+      handle.nodePath === '' ? null : { path: handle.nodePath, name: handle.nodeName },
+    );
+    const pending = handle.hold.object
       .then((object) => {
         if (object === null) {
           console.warn(
@@ -289,11 +303,5 @@ export class ModelSystem extends ComponentSystem<ModelComponent, ModelHandle> {
     if (!ctx.attach(entityId, handle, object)) return;
     handle.objects.push(object);
     this.dress(handle, ctx);
-  }
-
-  /** The whole file, or the single node this handle names. */
-  private fetch(handle: ModelHandle, assetId: AssetId, ctx: SystemContext): Promise<Object3D | null> {
-    if (handle.nodePath === '') return ctx.models.loadModel(assetId);
-    return ctx.models.loadNode(assetId, handle.nodePath, handle.nodeName);
   }
 }

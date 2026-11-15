@@ -74,9 +74,9 @@ describe('entitiesFromNodes', () => {
   it('carries the node transform on the entity, not on the component', () => {
     const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair');
 
-    // Which is what makes the piece movable, and why `ModelCache.loadNode`
-    // resets the clone's own transform: applied at both ends it would be
-    // applied twice.
+    // Which is what makes the piece movable, and why the asset cache resets a
+    // held node's own transform: applied at both ends it would be applied
+    // twice.
     const seat = unpacked.find((item) => item.template.entity.name === 'Seat');
     expect(seat?.template.entity.transform.position).toEqual([0, 0.45, 0]);
   });

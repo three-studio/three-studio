@@ -123,7 +123,9 @@ describe('shutting down', () => {
     const texture = new Texture();
     texture.dispose = () => void (disposed += 1);
 
-    arena.material('mat-1', () => new SharedMaterial({ material: new MeshStandardNodeMaterial(), textures: [texture] }));
+    // A slot's hold, which gives back its texture when the material goes.
+    const hold = { texture, dispose: () => texture.dispose() };
+    arena.material('mat-1', () => new SharedMaterial({ material: new MeshStandardNodeMaterial(), textures: [hold] }));
     arena.retire({ dispose: () => void (disposed += 1) });
 
     arena.disposeAll();

@@ -49,10 +49,12 @@ export type { CreateRendererOptions, RendererBackend, RendererHandle } from './R
 /* Time. One clock for the simulation and every node material; see `time/StudioTime`. */
 export { StudioTime, studioTime } from './time/StudioTime';
 
-/* Assets: resolving ids to URLs, loading models, applying import settings. */
+/* Assets: resolving ids to URLs, holding what is loaded, applying import settings. */
 export { NULL_ASSET_RESOLVER } from './assets/AssetResolver';
 export type { AssetResolver } from './assets/AssetResolver';
-export { extensionOf, loadModelFromUrl } from './assets/loadModel';
+export { AssetCache } from './assets/AssetCache';
+export type { ModelHold, PreloadHold, TextureHold } from './assets/AssetCache';
+export { disposeModel, extensionOf, loadModelFromUrl } from './assets/loadModel';
 export type { LoadedModel } from './assets/loadModel';
 export { applyModelSettings, applyTextureSettings } from './assets/importSettings';
 export { describeNodes, resolveNode } from './assets/modelNodes';

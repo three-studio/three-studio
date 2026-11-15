@@ -21,7 +21,7 @@ export interface AssetResolver {
    * find out what it is and once to decode it.
    *
    * Optional so a resolver that does not know can say so by leaving it out;
-   * `ModelCache` falls back to the extension, which is right for everything
+   * `AssetCache` falls back to the extension, which is right for everything
    * except the one format that needs this.
    */
   encoding?: (assetId: AssetId) => TextureEncoding | null;

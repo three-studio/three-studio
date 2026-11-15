@@ -249,19 +249,6 @@ export class Reconciler {
     return found;
   }
 
-  /**
-   * Entity ids whose builds came from a system that loads, for a resolver
-   * change that invalidates them all.
-   */
-  entitiesThatLoad(): Set<EntityId> {
-    const found = new Set<EntityId>();
-    for (const [entityId, view] of this.views) {
-      for (const mounted of view.mounted.values()) {
-        if (mounted.system.whenLoaded) found.add(entityId);
-      }
-    }
-    return found;
-  }
 
   private drop(view: EntityView, componentId: ComponentId, ctx: SystemContext): void {
     const mounted = view.mounted.get(componentId);

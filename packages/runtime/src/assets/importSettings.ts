@@ -3,18 +3,21 @@ import {
   ClampToEdgeWrapping,
   Group,
   type AnimationClip,
+  Line,
   LinearSRGBColorSpace,
+  Mesh,
   MeshStandardNodeMaterial,
   MirroredRepeatWrapping,
+  Points,
   RepeatWrapping,
   SRGBColorSpace,
   type Camera,
   type Light,
-  type Mesh,
   type Object3D,
   type Texture,
   type Wrapping,
 } from 'three/webgpu';
+import { disposeModel } from './loadModel';
 
 const WRAPPING: Record<TextureSettings['wrap'], Wrapping> = {
   clamp: ClampToEdgeWrapping,
@@ -91,7 +94,7 @@ function prune(loaded: Object3D, settings: ModelSettings): void {
 
   for (const child of doomed) {
     child.removeFromParent();
-    disposeTree(child);
+    disposeModel(child);
   }
 }
 
@@ -100,10 +103,9 @@ function replaceMaterials(loaded: Object3D): void {
   // is to see the shape, and forty copies of the same grey is forty pipelines.
   const plain = new MeshStandardNodeMaterial();
   loaded.traverse((child) => {
-    const mesh = child as Partial<Mesh>;
-    if (!mesh.geometry) return;
-    for (const material of materialsOf(mesh.material)) material.dispose();
-    (child as Mesh).material = plain;
+    if (!(child instanceof Mesh || child instanceof Line || child instanceof Points)) return;
+    for (const material of [child.material].flat()) material.dispose();
+    child.material = plain;
   });
 }
 
@@ -125,20 +127,4 @@ export function applyTextureSettings(texture: Texture, settings: TextureSettings
   texture.generateMipmaps = settings.generateMipmaps;
   texture.anisotropy = settings.anisotropy;
   texture.needsUpdate = true;
-}
-
-function disposeTree(root: Object3D): void {
-  root.traverse((child) => {
-    const mesh = child as Partial<Mesh>;
-    mesh.geometry?.dispose();
-    for (const material of materialsOf(mesh.material)) material.dispose();
-  });
-}
-
-function materialsOf(material: unknown): { dispose(): void }[] {
-  if (Array.isArray(material)) return material as { dispose(): void }[];
-  if (material && typeof (material as { dispose?: unknown }).dispose === 'function') {
-    return [material as { dispose(): void }];
-  }
-  return [];
 }

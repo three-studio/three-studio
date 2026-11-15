@@ -27,7 +27,7 @@ import {
 } from 'three/webgpu';
 import type { AssetResolver } from './assets/AssetResolver';
 import { EnvironmentBinder } from './EnvironmentBinder';
-import { ModelCache } from './assets/ModelCache';
+import { AssetCache } from './assets/AssetCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
 import type { Sun, SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
@@ -164,7 +164,12 @@ export class SceneBinder {
   private readonly registries: CoreRegistries;
   private readonly reconciler: Reconciler;
   private readonly arena = new ResourceArena();
-  private readonly models: ModelCache;
+  /**
+   * The files this scene draws, held by its systems and its environment. Its
+   * own, and at a budget of 0: what no entity of the scene holds any more is
+   * freed at the next frame.
+   */
+  private readonly assets: AssetCache;
   /** Shared materials by asset id; see `setMaterialLibrary`. */
   private materials: ReadonlyMap<AssetId, MaterialDef> = new Map();
   /**
@@ -234,12 +239,12 @@ export class SceneBinder {
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
-    this.models = new ModelCache(options.registries, options.resolver);
+    this.assets = new AssetCache(options.registries, { resolver: options.resolver, idleBudgetBytes: 0 });
     this.shadowMapSize = options.rendering.shadowMapSize;
     this.batcher.enabled = options.rendering.batching;
     // Given the arena rather than one of its own: what it lets go of has to
     // land in the same retire queue the systems use. See `ResourceArena`.
-    this.environment = new EnvironmentBinder(this.models, this.arena, options.renderer ?? null);
+    this.environment = new EnvironmentBinder(this.assets, this.arena, options.renderer ?? null);
     // Before any sync, which is the ordering `bindScene` exists to hold: a mesh
     // is built synchronously, so a table that arrives afterwards has already
     // been fallen back from.
@@ -257,7 +262,7 @@ export class SceneBinder {
     return {
       arena: this.arena,
       materials: this.materials,
-      models: this.models,
+      assets: this.assets,
       time: this.time,
       shadowMapSize: this.shadowMapSize,
       sunOf: (light) => this.sunOf(light),
@@ -267,24 +272,6 @@ export class SceneBinder {
       attach: (entityId: EntityId, handle: SystemHandle, object: Object3D) =>
         this.reconciler.attachLate(entityId, handle, object),
     };
-  }
-
-  /** Called when a project opens, and when its asset manifest changes. */
-  setAssetResolver(resolver: AssetResolver): void {
-    // Before the cache is told, because `setResolver` disposes every texture
-    // master and our environment maps are clones sharing those images. Held on
-    // to, they would be handed back by `equirectangular`'s "same asset id"
-    // shortcut — a sky that is now a disposed image. The models below are
-    // invalidated for the same reason; the environment was simply left out.
-    this.environment.release();
-    this.models.setResolver(resolver);
-    // Everything loaded through the resolver has to be built again against the
-    // new one, so the entities holding such a build are marked for a full
-    // remount on the next sync.
-    for (const entityId of this.reconciler.entitiesThatLoad()) {
-      const view = this.reconciler.view(entityId);
-      if (view) view.components = [];
-    }
   }
 
   /**
@@ -337,7 +324,7 @@ export class SceneBinder {
       } else {
         // A slot changed, and a node material with a different texture slot is
         // a different shader pipeline. Replaced once, here.
-        this.arena.replaceMaterial(assetId, new SharedMaterial(buildMaterial(definition, this.models)));
+        this.arena.replaceMaterial(assetId, new SharedMaterial(buildMaterial(definition, this.assets)));
       }
     }
 
@@ -363,9 +350,13 @@ export class SceneBinder {
    * The queue now lives in the arena. This used to hang off `sync`,
    * whose comment claimed the queue was "a frame old now" — true only if syncs
    * come one per frame, and two paths break that in opposite directions.
+   *
+   * The arena first: the texture holds it frees give their images back, and
+   * the cache then frees what that left unheld, in the same boundary.
    */
   beginFrame(): void {
     this.arena.flush();
+    this.assets.beginFrame();
   }
 
   sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
@@ -501,7 +492,7 @@ export class SceneBinder {
    * file rather than as a mismatch.
    */
   modelShape(assetId: AssetId): Promise<ModelShape> {
-    return this.models.modelShape(assetId);
+    return this.assets.modelShape(assetId);
   }
 
   /** Every camera the document defines, for play mode to choose from. */
@@ -535,17 +526,18 @@ export class SceneBinder {
 
   dispose(): void {
     this.batcher.clear();
-    // The model cache was never touched here, so every Play → Stop cycle built a
-    // fresh `SceneBinder` with a fresh `ModelCache`, re-downloaded every glTF,
-    // and abandoned the previous one's buffers on the GPU.
-    void this.models.clear();
     this.environment.dispose();
     this.reconciler.clear(this.context);
-    // Belt to the braces, and last: every system released its share above, so
-    // the pools are already empty unless a count went wrong — and everything up
-    // to here retires rather than frees. Nothing is rendering any more, so there
-    // is nothing left to wait for.
+    // Belt to the braces: every system released its share above, so the pools
+    // are already empty unless a count went wrong — and everything up to here
+    // retires rather than frees. Nothing is rendering any more, so there is
+    // nothing left to wait for.
     this.arena.disposeAll();
+    // Last: every hold has been given back by now, the texture holds the arena
+    // just freed included, so this frees what the scene loaded, textures and
+    // all. A cache that was never freed here is how every Play → Stop cycle
+    // once left the game's copy of every model on the GPU.
+    this.assets.dispose();
     this.root.clear();
   }
 

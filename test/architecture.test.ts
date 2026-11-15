@@ -347,13 +347,15 @@ function cycles(): string[][] {
 }
 
 /*
- * The cycles that exist today, named so that a fourth one cannot arrive quietly.
+ * The cycles that exist today, named so that a third one cannot arrive quietly.
  *
  * This list is debt, not permission. Each is closed by a task in this refactor,
  * and each entry goes away with it — the test fails on a cycle that is gone
- * just as loudly as on a new one, which is what keeps the list honest. One has
+ * just as loudly as on a new one, which is what keeps the list honest. Two have
  * gone that way already: `assetField` reached into the import store to open a
- * dialog and into the dock to raise a panel, and both are handed to it now.
+ * dialog and into the dock to raise a panel, and both are handed to it now;
+ * and the project store reached for the viewport to hand its binder a resolver
+ * that the binder's asset cache now takes when it is made.
  *
  * Ordered by first path, which is how `cycles()` returns them.
  */
@@ -369,23 +371,6 @@ const KNOWN_CYCLES: string[][] = [
     'apps/desktop/src/main/import/ImportSession.ts',
   ],
   /*
-   * viewportHost -> EditorViewport -> sceneFiles -> projectStore -> viewportHost.
-   * The only one of the four that is a real cycle of values, and it closes on a
-   * layer violation: `state/projectStore.ts` imports the viewport to call
-   * `peekViewport()?.binder.setAssetResolver(...)`. A store owns no renderer.
-   */
-  [
-    'packages/editor/src/commands/sceneFiles.ts',
-    'packages/editor/src/state/projectStore.ts',
-    'packages/editor/src/viewport/EditorViewport.ts',
-    // Not a fifth cycle: the knot gained a member when the play cycle came out
-    // of `EditorViewport` into a file of its own. `PlaySession` asks which
-    // scene is open, which is a fair question for the thing that runs it; the
-    // knot is still the store reaching for the viewport.
-    'packages/editor/src/viewport/PlaySession.ts',
-    'packages/editor/src/viewport/viewportHost.ts',
-  ],
-  /*
    * The preview surfaces and the surface they share. The three previews take
    * only the type; `PreviewSurface` reaches back with a dynamic `import()`,
    * which is also why `ModelPreview` is a chunk of its own in the build.
@@ -399,7 +384,7 @@ const KNOWN_CYCLES: string[][] = [
 ];
 
 describe('import cycles', () => {
-  it('has exactly the three this refactor is here to remove', () => {
+  it('has exactly the two this refactor is here to remove', () => {
     expect(cycles()).toEqual(KNOWN_CYCLES);
   });
 });

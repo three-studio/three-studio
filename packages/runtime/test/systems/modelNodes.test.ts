@@ -10,7 +10,7 @@ import { describeNodes, resolveNode } from '../../src/assets/modelNodes';
  * `packages/core`, a package that may not import three at all.
  */
 
-/** A dressed model as `ModelCache` caches one: wrapper, scene, two meshes. */
+/** A dressed model as the asset cache keeps one: wrapper, scene, two meshes. */
 function chair(): Group {
   const wrapper = new Group();
   wrapper.name = 'Chair';

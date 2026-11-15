@@ -1,5 +1,5 @@
 import type { AssetSettings, ModelSettings } from '@three-studio/core';
-import { loadModelFromUrl } from '@three-studio/runtime';
+import { disposeModel, loadModelFromUrl } from '@three-studio/runtime';
 import type { EditorRegistries } from '../../registries';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
@@ -123,11 +123,9 @@ export class ModelPreview implements PreviewSurface {
     this.viewport?.detachPreview();
     this.viewport = null;
     this.controls?.dispose();
-    this.model?.traverse((child) => {
-      const mesh = child as Partial<Mesh>;
-      mesh.geometry?.dispose();
-      for (const material of materialsOf(mesh.material)) material.dispose();
-    });
+    // Its textures too, which freeing the geometries and materials left on the
+    // GPU: a file previewed and cancelled kept every image it carried.
+    if (this.model !== null) disposeModel(this.model);
   }
 
   private buildLights(): void {
@@ -185,7 +183,7 @@ function measure(model: Object3D, animations: number): ModelFacts {
     const index = mesh.geometry.getIndex();
     const position = mesh.geometry.getAttribute('position');
     triangles += Math.floor((index?.count ?? position?.count ?? 0) / 3);
-    for (const material of materialsOf(mesh.material)) materials.add(material);
+    for (const material of [mesh.material ?? []].flat()) materials.add(material);
   });
 
   const box = new Box3().setFromObject(model);
@@ -199,12 +197,4 @@ function measure(model: Object3D, animations: number): ModelFacts {
     animations,
     size: [size.x, size.y, size.z],
   };
-}
-
-function materialsOf(material: unknown): { dispose(): void }[] {
-  if (Array.isArray(material)) return material as { dispose(): void }[];
-  if (material && typeof (material as { dispose?: unknown }).dispose === 'function') {
-    return [material as { dispose(): void }];
-  }
-  return [];
 }
