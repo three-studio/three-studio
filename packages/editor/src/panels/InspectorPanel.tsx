@@ -1,5 +1,6 @@
 import {
   addableTypes,
+  componentFits,
   componentsOf,
   splitInstancedId,
   type AssetId,
@@ -8,7 +9,7 @@ import {
 import { Boxes, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { commandById, contextFor, contextForAsset } from '../commands/registry';
-import { addComponentWithDependencies, componentFits } from '../commands/sceneCommands';
+import { addComponentWithDependencies } from '../commands/sceneCommands';
 import { InspectorBinding, inspectorSignature } from '../inspector/buildInspector';
 import type { AssetFieldActions } from '../inspector/assetField';
 import { browseAndImport } from '../import/importStore';
@@ -283,12 +284,10 @@ export function InspectorPanel() {
               onClose={() => setAddOpen(false)}
               items={addableTypes(registries).map((type) => ({
                 label: registries.components.get(type)?.label ?? type,
-                // A second mesh or camera on one entity has no meaning here —
-                // and neither does a mesh on something already drawing a
-                // model, which `componentFits` is what answers.
-                disabled:
-                  (existing.has(type) && type !== 'collider' && type !== 'script') ||
-                  !componentFits(type, existing),
+                // What the types declare about each other — one of a type at
+                // most unless it stacks, none beside a type it excludes — as
+                // the command that adds it reads them.
+                disabled: !componentFits(registries, type, existing),
                 onSelect: () => addComponentWithDependencies(registries, entity.id, type),
               }))}
             />

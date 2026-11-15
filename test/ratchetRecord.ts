@@ -102,7 +102,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/src/commands/exportCommands.ts', { as: 1, nonNull: 1 }],
   ['packages/editor/src/commands/prefabOverrides.ts', { as: 4 }],
   ['packages/editor/src/commands/registry.ts', { as: 1 }],
-  ['packages/editor/src/commands/sceneCommands.ts', { as: 5 }],
+  ['packages/editor/src/commands/sceneCommands.ts', { as: 4 }],
   ['packages/editor/src/components/audioSource/overlay.ts', { as: 2 }],
   ['packages/editor/src/components/light/menu.ts', { as: 1 }],
   ['packages/editor/src/import/ImportDialog.tsx', { as: 1 }],

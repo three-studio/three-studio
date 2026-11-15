@@ -3,7 +3,7 @@ import { invalid, shown, type DecodePath, type Decoded, type Diagnostic } from '
 import { planFields, type Infer, type Schema } from '../fieldSchema';
 import { createComponentId, isComponentId, type AssetId, type EntityId } from '../ids';
 import type { Component } from '../scene/primitives';
-import type { ComponentDoc } from '../scene/schema';
+import type { ComponentDoc, ComponentTypeId, ComponentTypes, SceneDoc } from '../scene/schema';
 
 /*
  * One module per component type, each a definition the core's activation
@@ -28,6 +28,25 @@ import type { ComponentDoc } from '../scene/schema';
  * JSON, which is what makes the play-mode snapshot, the save and the web export
  * work.
  */
+
+/**
+ * A type another cannot work without, and how it is brought: Unity's
+ * RequireComponent. One per required type, so that the component its `create`
+ * makes is typed as that type's.
+ */
+export type Requirement = { readonly [K in keyof ComponentTypes]: RequirementOf<K> }[keyof ComponentTypes];
+
+export interface RequirementOf<K extends keyof ComponentTypes> {
+  readonly type: K;
+  /**
+   * Whether the entity has it without holding one itself — a body's
+   * colliders on its children, a joint's body up the tree. Asked of the
+   * expanded scene, where what a prefab placed under it holds counts.
+   */
+  readonly metElsewhere?: (scene: SceneDoc, entityId: EntityId) => boolean;
+  /** The one brought, where the required type's own `createFor` is not what this type needs. */
+  readonly create?: (siblings: readonly ComponentDoc[]) => ComponentTypes[K];
+}
 
 /**
  * What a component type answers about itself: what the core's activation
@@ -64,6 +83,27 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
   readonly version: number;
   /** A blank one, for "Add Component": the schema's defaults under a new id. */
   create(): C;
+  /**
+   * A new one for an entity holding `siblings`, shaped from them where the
+   * type can guess better than its defaults: a collider added to a capsule
+   * comes out as a capsule. `create()` for a type that cannot.
+   */
+  createFor(siblings: readonly ComponentDoc[]): C;
+  /**
+   * The types it cannot work without, brought along when it is added: each
+   * one the entity neither holds nor has elsewhere, and in turn what that one
+   * requires. A player controller with no collider flies, and a body with no
+   * collider falls through the world: both easy to build, and hard to explain
+   * from what the screen shows.
+   */
+  readonly requires: readonly Requirement[];
+  /**
+   * The types it cannot sit beside, read both ways, so that a pair is written
+   * by one of the two.
+   */
+  readonly excludes: readonly ComponentTypeId[];
+  /** Whether an entity may hold several: a body's colliders, an entity's scripts. Else one at most. */
+  readonly multiple: boolean;
   /** The type's fields: what its type, its decoder, its references and its pane are derived from. */
   readonly schema: Schema;
   /**
@@ -161,9 +201,20 @@ export function defineComponent<const Id extends string, const S extends Schema>
   readonly addable: boolean;
   /** Left out, a component of the type is a place in the world, which all but two kinds of light are. */
   readonly placeable?: (component: Component<Id, Infer<S>>) => boolean;
+  /** Left out, a new one is the type's defaults, whatever the entity holds. */
+  readonly createFor?: (siblings: readonly ComponentDoc[]) => Component<Id, Infer<S>>;
+  /** Left out, it requires nothing. */
+  readonly requires?: readonly Requirement[];
+  /** Left out, it excludes nothing. */
+  readonly excludes?: readonly ComponentTypeId[];
+  /** Left out, an entity holds one at most. */
+  readonly multiple?: boolean;
 }): ComponentDefinition<Component<Id, Infer<S>>> {
   const { id: type, label, version, schema, runtime, addable } = description;
   const plan = planFields(schema);
+  // A copy of the defaults each time: a vector is an array, and two
+  // components sharing one would be edited together.
+  const create = (): Component<Id, Infer<S>> => ({ ...structuredClone(plan.defaults), id: createComponentId(), type });
 
   return {
     id: type,
@@ -172,9 +223,11 @@ export function defineComponent<const Id extends string, const S extends Schema>
     schema,
     runtime,
     addable,
-    // A copy of the defaults each time: a vector is an array, and two
-    // components sharing one would be edited together.
-    create: () => ({ ...structuredClone(plan.defaults), id: createComponentId(), type }),
+    create,
+    createFor: description.createFor ?? create,
+    requires: description.requires ?? [],
+    excludes: description.excludes ?? [],
+    multiple: description.multiple ?? false,
     decode: (value, path) => {
       if (!isRecord(value)) return { ok: false, diagnostics: [invalid(path, 'a component', value)] };
       // What every component carries is checked here, and the rest is the

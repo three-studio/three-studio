@@ -9,4 +9,6 @@ export const scriptType = defineComponent({
   schema: scriptSchema,
   runtime: true,
   addable: true,
+  // Each script is a behaviour of its own, and an entity may run several.
+  multiple: true,
 });

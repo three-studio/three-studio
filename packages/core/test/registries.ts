@@ -1,4 +1,5 @@
-import { activateCore, createCoreRegistries, type CoreRegistries } from '../src/registries';
+import { activateCore } from '../src/activate';
+import { createCoreRegistries, type CoreRegistries } from '../src/registries';
 
 /**
  * Core's registries with the kernel's built-ins in them, as a root makes them.

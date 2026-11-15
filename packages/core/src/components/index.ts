@@ -1,8 +1,7 @@
 import type { AssetId, EntityId } from '../ids';
 import type { CoreRegistries } from '../registries';
 import type { EntityTemplate } from '../scene/entity';
-import type { ComponentDoc, ComponentType } from '../scene/schema';
-import { createColliderFor } from './collider/defaults';
+import type { ComponentDoc, ComponentType, ComponentTypeId } from '../scene/schema';
 
 /*
  * What a component type answers, asked of the registries a caller was handed.
@@ -114,25 +113,20 @@ export function createComponent(registries: CoreRegistries, type: ComponentType)
 }
 
 /**
- * Like `createComponent`, but shapes the defaults from what the entity already
- * has — a collider added to a capsule mesh comes out as a matching capsule.
- *
- * Not a facet of the registry: it reads a *sibling* component, which is a fact
- * about the entity rather than about the type. Only `collider` has ever wanted
- * it, and a `createFor(entity)` on all twelve definitions would be eleven
- * copies of `create()` to serve one. So one type asks for it and one type
- * carries it: the guess itself lives in `collider/defaults.ts`, with the rest
- * of what a collider knows about itself.
+ * Like `createComponent`, but made for an entity holding `siblings`: the
+ * type's own `createFor`, which shapes its defaults from them where it can — a
+ * collider added to a capsule mesh comes out as a matching capsule.
  *
  * Takes the siblings rather than the entity: an entity no longer holds them,
  * and handing over the document would put a scene-wide argument on a function
- * that reads exactly two components.
+ * that reads the components beside the new one.
  */
 export function createComponentForEntity(
   registries: CoreRegistries,
-  type: ComponentType,
+  type: ComponentTypeId,
   siblings: readonly ComponentDoc[],
 ): ComponentDoc {
-  if (type !== 'collider') return createComponent(registries, type);
-  return createColliderFor(siblings);
+  const definition = registries.components.get(type);
+  if (!definition) throw new Error(`Unknown component type "${type}".`);
+  return definition.createFor(siblings);
 }

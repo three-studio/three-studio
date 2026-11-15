@@ -352,7 +352,8 @@ export {
 } from './components';
 export type { ComponentDefinition } from './components';
 /* What the core knows by registration, made and filled by each app's composition root. */
-export { activateCore, createCoreRegistries } from './registries';
+export { createCoreRegistries } from './registries';
+export { activateCore } from './activate';
 export type { CoreRegistries } from './registries';
 
 export { colliderShapeField, createColliderShape } from './components/collider/schema';
@@ -415,6 +416,8 @@ export type { EntityCapability } from './scene/capabilities';
 /* Which body each collider rides: the build, the warnings and the editor ask here. */
 export { bodyOf, collidersOfBody, jointEnds, physicsBodies } from './scene/bodies';
 export type { JointEnds } from './scene/bodies';
+/* What the types on one entity allow each other, as each declares it. */
+export { componentFits, componentsToAdd } from './scene/componentRules';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';

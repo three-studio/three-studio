@@ -1,11 +1,8 @@
 import {
   cloneSubtree,
-  bodyOf,
-  collidersOfBody,
   componentsOf,
+  componentsToAdd,
   splitInstancedId,
-  createColliderShape,
-  createComponentForEntity,
   createEntity,
   deleteComponent,
   findComponentById,
@@ -18,7 +15,7 @@ import {
   setComponentsOf,
   type ComponentDoc,
   type ComponentId,
-  type ComponentType,
+  type ComponentTypeId,
   type CoreRegistries,
   type EntityId,
   type EntityTemplate,
@@ -410,107 +407,27 @@ export function setTransform(
 }
 
 /**
- * Components a type cannot work without.
- *
- * A player controller with no collider silently degrades to flying, and a rigid
- * body with no collider passes through the world. Both are easy to hit and hard
- * to diagnose, so the pieces are added together — the same bargain Unity makes
- * when a CharacterController brings its own capsule.
- *
- * A body's colliders may be on its children, which ride it: a Rigid Body added
- * over them brings none of its own. A player's must be its own, since its
- * character sweeps that one.
- *
- * A joint holds the body its entity moves with, so on an entity that moves
- * with none it brings a Rigid Body, as Unity's joints require one, and that
- * body its Collider; on a child of a body it brings neither. On level geometry
- * meant to stay put, set the new Rigid Body to Fixed, or put the joint on the
- * side that moves.
+ * Adds a component and the companions its type requires, as one undo step:
+ * what each type declares, read by `componentsToAdd`. Refused here as well as
+ * greyed out in the menu: the menu is one caller, and a shortcut or a script
+ * reaching this directly must not build a pairing the editor cannot show.
  */
-const REQUIRED_COMPANIONS: Partial<Record<ComponentType, readonly ComponentType[]>> = {
-  playerController: ['collider', 'rigidbody'],
-  rigidbody: ['collider'],
-  joint: ['rigidbody', 'collider'],
-};
-
-/**
- * Components a type cannot sit beside.
- *
- * One entry, and it is the one that sent someone looking for a bug: `mesh` and
- * `model` both draw, both hang from the same container, and both get drawn. So
- * "Add Component ▸ Mesh" on an imported model put a grey 1×1×1 box through it —
- * which reads as the model having been duplicated, not as a second component
- * having been added.
- *
- * Read by the command *and* by the menu that offers it, so the entry cannot be
- * disabled in one place and allowed in the other. The same shape as
- * `REQUIRED_COMPANIONS` above, and symmetric by construction — `excludes()`
- * looks both ways rather than asking anyone to write the pair twice.
- */
-const MUTUALLY_EXCLUSIVE: Partial<Record<ComponentType, readonly ComponentType[]>> = {
-  mesh: ['model'],
-};
-
-/** Whether `type` may be added to an entity that already carries `present`. */
-export function componentFits(type: ComponentType, present: ReadonlySet<ComponentType>): boolean {
-  for (const other of MUTUALLY_EXCLUSIVE[type] ?? []) {
-    if (present.has(other)) return false;
-  }
-  for (const [declared, excluded] of Object.entries(MUTUALLY_EXCLUSIVE)) {
-    if (!present.has(declared as ComponentType)) continue;
-    if (excluded?.includes(type)) return false;
-  }
-  return true;
-}
-
-/** Adds a component along with anything it needs, as one undo step. */
-export function addComponentWithDependencies(registries: CoreRegistries, id: EntityId, type: ComponentType): void {
+export function addComponentWithDependencies(registries: CoreRegistries, id: EntityId, type: ComponentTypeId): void {
   const scene = useDocumentStore.getState().scene;
   if (!scene.entities.has(id)) return;
 
-  const siblings = componentsOf(registries, scene, id);
-  const present = new Set(siblings.map((component) => component.type));
-  // Refused here as well as greyed out in the menu: the menu is one caller, and
-  // a shortcut or a script reaching this directly must not be able to build a
-  // pairing the editor cannot show.
-  if (!componentFits(type, present)) return;
-
-  const toAdd: ComponentType[] = [type];
-  for (const companion of REQUIRED_COMPANIONS[type] ?? []) {
-    if (present.has(companion)) continue;
-    // Over the expanded scene, so the contents of a prefab placed under it count.
-    if (type === 'joint' && bodyOf(expandedScene(registries).scene, id) !== null) continue;
-    const carries = (type === 'rigidbody' || type === 'joint') && companion === 'collider'
-      && collidersOfBody(expandedScene(registries).scene, id).length > 0;
-    if (!carries) toAdd.push(companion);
-  }
+  const components = componentsToAdd(registries, {
+    // Expanded, so that what a prefab placed under the entity holds counts.
+    scene: expandedScene(registries).scene,
+    entityId: id,
+    type,
+    held: componentsOf(registries, scene, id),
+  });
+  if (components === null) return;
 
   mutate(`Add ${type}`, (draft) => {
     if (!draft.entities.has(id)) return;
-
-    // Whether `createColliderFor` had anything to shape a collider from. With a
-    // mesh or a model to measure, its guess is about the object the author can
-    // see and is the better answer; with neither, it falls back to a 1 m box.
-    const guessable = present.has('mesh') || present.has('model');
-
-    for (const kind of toAdd) {
-      const component = createComponentForEntity(registries, kind, siblings);
-      // A character is moved by the controller, not by forces, so its body has
-      // to be kinematic or physics would fight the input.
-      if (component.type === 'rigidbody' && type === 'playerController') {
-        component.bodyType = 'kinematicPosition';
-      }
-      // A person, rather than the 1 m box a bare entity would otherwise get.
-      // That box is what made the default player incoherent: centred on the
-      // origin, it put a 1.6 m eye at 2.1 m above the floor on a character one
-      // metre tall, and nothing on screen said where the extra half metre came
-      // from. 1.70 m standing is what `eyeHeight` is chosen against — see the
-      // player controller's schema.
-      if (component.type === 'collider' && type === 'playerController' && !guessable) {
-        component.shape = { ...createColliderShape('capsule'), radius: 0.3, height: 1.7 };
-      }
-      putComponent(draft, id, component);
-    }
+    for (const component of components) putComponent(draft, id, component);
   });
 }
 

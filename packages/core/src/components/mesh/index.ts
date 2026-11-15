@@ -9,4 +9,9 @@ export const meshType = defineComponent({
   schema: meshSchema,
   runtime: true,
   addable: true,
+  // A mesh and a model both draw, from the same container, and both get
+  // drawn: Add Component ▸ Mesh on an imported model put a grey 1×1×1 box
+  // through it, which reads as the model duplicated rather than as a second
+  // component added. Read both ways, so the model need not say it too.
+  excludes: ['model'],
 });

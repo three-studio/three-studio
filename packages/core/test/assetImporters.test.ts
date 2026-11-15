@@ -19,7 +19,8 @@ import type {
   ObjModelSettings,
   TextureSettings,
 } from '../src/assets/schema';
-import { activateCore, createCoreRegistries } from '../src/registries';
+import { activateCore } from '../src/activate';
+import { createCoreRegistries } from '../src/registries';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();

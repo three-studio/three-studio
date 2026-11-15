@@ -17,7 +17,6 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { createColliderFor } from '../src/components/collider/defaults';
 
 /*
  * How far a collider hangs below the entity's origin.
@@ -313,11 +312,11 @@ describe('fitColliderShape', () => {
   });
 });
 
-describe('createColliderFor', () => {
+describe('a collider made for its entity', () => {
   const isGeometryKind = (kind: string): kind is GeometryKind => Object.hasOwn(geometryField.variants, kind);
   const guessed = (kind: GeometryKind): ColliderShape => {
     const template = createMeshEntity(kind);
-    return createColliderFor(template.components).shape;
+    return colliderType.createFor(template.components).shape;
   };
 
   it('guesses each primitive’s collider as it is drawn', () => {
@@ -350,7 +349,7 @@ describe('createColliderFor', () => {
     const mesh = template.components[0]!;
     if (mesh.type !== 'mesh' || mesh.geometry.kind !== 'cylinder') throw new Error('not a cylinder');
     mesh.geometry = { ...mesh.geometry, radiusTop, radiusBottom };
-    return createColliderFor(template.components).shape;
+    return colliderType.createFor(template.components).shape;
   };
 
   it('guesses a cylinder whose top radius is 0 as a cone, apex up', () => {
@@ -372,7 +371,7 @@ describe('createColliderFor', () => {
 
   it('gives a model a mesh collider built from its triangles', () => {
     const model = createModelEntity(fixedId('asset', 'asset-1'), 'Tree');
-    expect(createColliderFor(model.components).shape).toEqual({
+    expect(colliderType.createFor(model.components).shape).toEqual({
       kind: 'mesh',
       build: 'triangles',
     });

@@ -1,5 +1,6 @@
 import {
   assertDefined,
+  cameraType,
   componentsOf,
   createAudioSourceEntity,
   colliderType,
@@ -823,6 +824,25 @@ describe('components that cannot sit together', () => {
     addComponentWithDependencies(registries, cube.entity.id, 'model');
 
     expect(componentsOf(registries, scene(), cube.entity.id).map((c) => c.type)).toEqual(['mesh']);
+  });
+
+  it('refuses a second Camera, which only the menu used to refuse', () => {
+    // The menu was one caller: a shortcut or a script reaching the command
+    // could add the second one it never offered.
+    const eye = addEntity(createEntity('Eye', [cameraType.create()]));
+
+    addComponentWithDependencies(registries, eye, 'camera');
+
+    expect(componentsOf(registries, scene(), eye).map((c) => c.type)).toEqual(['camera']);
+  });
+
+  it('adds a second Collider and a second Script, which stack', () => {
+    const crate = addEntity(createEntity('Crate', [colliderType.create(), scriptType.create()]));
+
+    addComponentWithDependencies(registries, crate, 'collider');
+    addComponentWithDependencies(registries, crate, 'script');
+
+    expect(componentsOf(registries, scene(), crate).map((c) => c.type)).toEqual(['collider', 'collider', 'script', 'script']);
   });
 });
 
