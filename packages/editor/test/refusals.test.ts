@@ -4,7 +4,9 @@ import {
   SCENE_FORMAT_VERSION,
   createBuildProfiles,
   createEmptyScene,
+  createEntity,
   createMeshEntity,
+  createPrefabInstance,
   createPhysicsSettings,
   createRenderingSettings,
   defaultSettings,
@@ -21,8 +23,9 @@ import {
   type RefusedFile,
 } from '@three-studio/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { prefabWith } from '../../core/test/fixtures';
+import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { useAssetStore } from '../src/state/assetStore';
+import { brokenRows } from '../src/state/brokenReport';
 import { useProjectStore } from '../src/state/projectStore';
 import { reportRefusals } from '../src/state/refusalReport';
 import { useToastStore } from '../src/state/toastStore';
@@ -160,11 +163,27 @@ describe('a prefab this build refuses', () => {
     await useAssetStore.getState().refresh(registries);
 
     expect([...useAssetStore.getState().prefabs.keys()]).toEqual([TREE]);
-    expect(useAssetStore.getState().refusedPrefabs).toEqual([
-      {
-        path: 'assets/prefabs/Old.prefab.json',
-        diagnostics: versionRefusal(PREFAB_FORMAT_VERSION - 1, PREFAB_FORMAT_VERSION).diagnostics,
-      },
-    ]);
+    expect(useAssetStore.getState().refusedPrefabs).toEqual(
+      new Map([
+        [
+          OLD,
+          {
+            path: 'assets/prefabs/Old.prefab.json',
+            diagnostics: versionRefusal(PREFAB_FORMAT_VERSION - 1, PREFAB_FORMAT_VERSION).diagnostics,
+          },
+        ],
+      ]),
+    );
+  });
+
+  it('marks the rows that place it, in words of their own: the file is there', () => {
+    const OLD = fixedId('asset', 'old');
+    const placed = createEntity('Old Tree', [createPrefabInstance(OLD)]);
+    const elsewhere = createEntity('Lamp');
+    const scene = sceneWith([placed, elsewhere]);
+
+    const marks = brokenRows(registries, scene, new Set([OLD]), new Map([[OLD, CRATE]]));
+
+    expect(marks).toEqual(new Map([[placed.entity.id, [`Its prefab could not be read: ${CRATE.path}`]]]));
   });
 });

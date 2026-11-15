@@ -1,6 +1,4 @@
 import {
-  findBrokenReferences,
-  findMissingEntities,
   hasComponent,
   splitInstancedId,
   type EntityId,
@@ -28,7 +26,7 @@ import {
 import { hasModifier } from '../platform';
 import { instanceInfo } from '../commands/prefabCommands';
 import { commandEntry } from '../shell/commandEntry';
-import { knownAssetIds } from '../state/brokenReport';
+import { brokenRows, knownAssetIds } from '../state/brokenReport';
 import { expandedScene } from '../state/expansion';
 import { draggedEntityIds, isBetweenRows, insertionAt, rangeSelection } from './hierarchyGestures';
 import { buildRows } from './hierarchyRows';
@@ -114,38 +112,17 @@ export function HierarchyPanel() {
   );
 
   /*
-   * The rows whose components name an asset the project does not have, or an
-   * entity the scene does not: what each row's tooltip says of it.
-   *
-   * One walk for the whole tree rather than one question per row, which is the
-   * same reason `selected` is built once above: this is asked for every row of
-   * a list that can be four thousand long.
+   * What each row's tooltip says is broken about it: see `brokenRows`.
    *
    * `revision` rather than the manifest itself, because the manifest is
    * replaced on every mutation and this only has to move when what the project
    * *holds* changes. `componentRevision` too, so choosing a joint's Connected
    * Body again clears its mark at once.
    */
-  const brokenBy = useMemo(() => {
-    const { scene } = expandedScene(registries);
-    const assets = new Map<EntityId, string[]>();
-    for (const { entityId, assetId } of findBrokenReferences(registries, scene, knownAssetIds())) {
-      // The environment is not a row. It is reported at load and shown in the
-      // Inspector; there is nothing here to mark.
-      if (entityId === null) continue;
-      const named = assets.get(entityId);
-      if (named) named.push(assetId);
-      else assets.set(entityId, [assetId]);
-    }
-    const byEntity = new Map<EntityId, string[]>();
-    const say = (entityId: EntityId, line: string) => byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), line]);
-    for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
-    for (const { entityId, type } of findMissingEntities(registries, scene)) {
-      const label = registries.components.get(type)?.label ?? type;
-      say(entityId, `Its ${label} names an entity this scene does not have`);
-    }
-    return byEntity;
-  }, [registries, structureRevision, componentRevision, prefabs, assetRevision]);
+  const brokenBy = useMemo(
+    () => brokenRows(registries, expandedScene(registries).scene, knownAssetIds(), useAssetStore.getState().refusedPrefabs),
+    [registries, structureRevision, componentRevision, prefabs, assetRevision],
+  );
 
   /* Only the rows that fit are rendered; the arithmetic is `rowWindow`. */
   const scrollRef = useRef<HTMLDivElement>(null);

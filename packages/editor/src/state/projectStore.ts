@@ -114,7 +114,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       .refresh(registries)
       .then(() => {
         reportBrokenReferences(registries);
-        reportRefusals([...opened.refusedScenes, ...useAssetStore.getState().refusedPrefabs]);
+        reportRefusals([...opened.refusedScenes, ...useAssetStore.getState().refusedPrefabs.values()]);
       });
     // Compiled on open, not only on Play: the inspector reads a script's
     // declared properties from the compiled class, so without this a script

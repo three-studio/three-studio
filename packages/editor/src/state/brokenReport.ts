@@ -1,10 +1,55 @@
-import { findBrokenReferences, type AssetId, type CoreRegistries } from '@three-studio/core';
+import {
+  findBrokenReferences,
+  findMissingEntities,
+  findPrefabInstances,
+  type AssetId,
+  type CoreRegistries,
+  type EntityId,
+  type RefusedFile,
+  type SceneDoc,
+} from '@three-studio/core';
 import { useAssetStore } from './assetStore';
 import { expandedScene } from './expansion';
 
 /** Every asset id the project holds — materials and prefabs included. */
 export function knownAssetIds(): ReadonlySet<AssetId> {
   return new Set(useAssetStore.getState().manifest.assets.map((asset) => asset.id));
+}
+
+/**
+ * What each row of the Hierarchy is marked with, by entity: the assets it
+ * names that the project does not hold, the entities it names that the scene
+ * does not have, and the prefab it places that this build refused to read —
+ * left out of the library, so its instance draws empty, as a missing one's
+ * does, and is marked beside it in words of its own: the file is there.
+ *
+ * One walk for the whole tree rather than one question per row: it is asked
+ * for a list that can be four thousand rows long.
+ */
+export function brokenRows(
+  registries: CoreRegistries,
+  scene: SceneDoc,
+  known: ReadonlySet<AssetId>,
+  refusedPrefabs: ReadonlyMap<AssetId, RefusedFile>,
+): Map<EntityId, string[]> {
+  const assets = new Map<EntityId, string[]>();
+  for (const { entityId, assetId } of findBrokenReferences(registries, scene, known)) {
+    // The environment is not a row. It is reported at load and shown in the
+    // Inspector; there is nothing here to mark.
+    if (entityId === null) continue;
+    assets.set(entityId, [...(assets.get(entityId) ?? []), assetId]);
+  }
+  const marks = new Map<EntityId, string[]>();
+  const say = (entityId: EntityId, line: string) => marks.set(entityId, [...(marks.get(entityId) ?? []), line]);
+  for (const [entityId, named] of assets) say(entityId, `Not in this project: ${named.join(', ')}`);
+  for (const { entityId, type } of findMissingEntities(registries, scene)) {
+    const label = registries.components.get(type)?.label ?? type;
+    say(entityId, `Its ${label} names an entity this scene does not have`);
+  }
+  for (const [assetId, file] of refusedPrefabs) {
+    for (const entityId of findPrefabInstances(assetId, scene)) say(entityId, `Its prefab could not be read: ${file.path}`);
+  }
+  return marks;
 }
 
 /** How many are named before the line stops naming them. */

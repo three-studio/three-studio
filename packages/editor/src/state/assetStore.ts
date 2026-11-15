@@ -56,7 +56,7 @@ interface AssetState {
    * so their instances draw empty and are marked as a missing prefab's are,
    * and kept here to be named when the project opens.
    */
-  refusedPrefabs: readonly RefusedFile[];
+  refusedPrefabs: ReadonlyMap<AssetId, RefusedFile>;
   loading: boolean;
   error: string | null;
 
@@ -179,7 +179,7 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
   materials: new Map(),
   physicsMaterials: new Map(),
   prefabs: new Map(),
-  refusedPrefabs: [],
+  refusedPrefabs: new Map(),
   revision: 0,
   loading: false,
   error: null,
@@ -205,18 +205,16 @@ export const useAssetStore = create<AssetState>()((set, get) => ({
       // as one, and each file is decoded under it, here, so that a prefab this
       // build refuses is one the window can name with why.
       const prefabs = new Map<AssetId, PrefabDoc>();
-      const refusedPrefabs: RefusedFile[] = [];
+      const refused: [AssetId, RefusedFile][] = [];
       for (const [id, text] of idMapOf(prefabTexts, isAssetId)) {
         const decoded = decodePrefab(registries, text, id);
         if (decoded.ok) prefabs.set(id, decoded.value);
-        else {
-          const path = manifest.assets.find((asset) => asset.id === id)?.path ?? id;
-          refusedPrefabs.push({ path, diagnostics: decoded.diagnostics });
-        }
+        else refused.push([id, { path: manifest.assets.find((asset) => asset.id === id)?.path ?? id, diagnostics: decoded.diagnostics }]);
       }
-      // Named by path, in an order that does not depend on which read the main
+      // By path, in an order that does not depend on which read the main
       // process finished first.
-      refusedPrefabs.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      refused.sort(([, a], [, b]) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      const refusedPrefabs = new Map(refused);
       set({
         manifest,
         materials: idMapOf(materialRecord, isAssetId),
