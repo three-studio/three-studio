@@ -59,7 +59,8 @@ const MANIFEST_URL = new URL(BUILD_LAYOUT.manifest, document.baseURI);
 /**
  * What the game's asset cache keeps of the files nothing holds any more:
  * nothing. A game runs on phones too, and a scene left is rarely re-entered at
- * once.
+ * once — while what two consecutive scenes share, the switch between them
+ * holds across.
  */
 const PLAYER_IDLE_ASSET_BYTES = 0;
 

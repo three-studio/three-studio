@@ -190,7 +190,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/runtime/src/Engine.ts', { as: 1 }],
   ['packages/runtime/src/MeshBatcher.ts', { nonNull: 2 }],
   ['packages/runtime/src/RendererFactory.ts', { as: 1, state: 2 }],
-  ['packages/runtime/src/SceneHost.ts', { nonNull: 2 }],
   ['packages/runtime/src/assets/importSettings.ts', { as: 3 }],
   ['packages/runtime/src/assets/loadModel.ts', { as: 2 }],
   ['packages/runtime/src/assets/modelNodes.ts', { as: 1 }],
