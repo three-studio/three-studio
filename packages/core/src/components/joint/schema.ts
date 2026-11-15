@@ -84,19 +84,24 @@ export const jointMotionField = {
   },
 } as const;
 
-/** Two bodies held together, as their fields. The order is the pane's. */
+/**
+ * Two bodies held together, as their fields. The order is the pane's.
+ *
+ * Every field tunes the running game during Play (`tunable`): the physics world
+ * makes the joint again from them, at the poses it was built from.
+ */
 export const jointSchema = {
-  motion: jointMotionField,
+  motion: { ...jointMotionField, tunable: true },
   /*
    * The entity whose body this entity's is held to, by id: the body that
    * entity moves with — its own Rigid Body, the nearest one up the tree, or its
    * own fixed body if it is level geometry. None holds it to the world.
    */
-  connectedEntity: { type: 'entity', label: 'Connected Body', emptyLabel: 'World' },
+  connectedEntity: { type: 'entity', label: 'Connected Body', tunable: true, emptyLabel: 'World' },
   /* Where it holds, in this entity's frame and units: a door's hinge on its edge. */
-  anchor: { type: 'vec3', label: 'Anchor', default: [0, 0, 0], step: 0.01 },
+  anchor: { type: 'vec3', label: 'Anchor', tunable: true, default: [0, 0, 0], step: 0.01 },
   /* Whether its two bodies collide with each other. Off, a door can sit against its frame and two links overlap. */
-  enableCollision: { type: 'boolean', label: 'Enable Collision', default: false },
+  enableCollision: { type: 'boolean', label: 'Enable Collision', tunable: true, default: false },
 } as const satisfies Schema;
 
 export type JointComponent = Component<'joint', Infer<typeof jointSchema>>;

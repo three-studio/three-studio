@@ -8,7 +8,6 @@ import { menu as cameraMenu } from './components/camera/menu';
 import { overlay as cameraOverlay } from './components/camera/overlay';
 import { pane as colliderPane } from './components/collider/pane';
 import { overlay as colliderOverlay } from './components/collider/overlay';
-import { pane as jointPane } from './components/joint/pane';
 import { overlay as jointOverlay } from './components/joint/overlay';
 import { menu as lightMenu } from './components/light/menu';
 import { overlay as lightOverlay } from './components/light/overlay';
@@ -20,7 +19,6 @@ import { overlay as modelOverlay } from './components/model/overlay';
 import { overlay as playerControllerOverlay } from './components/playerController/overlay';
 import { pane as prefabInstancePane } from './components/prefabInstance/pane';
 import { overlay as prefabInstanceOverlay } from './components/prefabInstance/overlay';
-import { pane as rigidbodyPane } from './components/rigidbody/pane';
 import { overlay as rigidbodyOverlay } from './components/rigidbody/overlay';
 import { pane as scriptPane } from './components/script/pane';
 import { overlay as scriptOverlay } from './components/script/overlay';
@@ -48,9 +46,7 @@ import type { EditorRegistries } from './registries';
 const PANES: readonly PaneExtension[] = [
   meshPane,
   modelPane,
-  rigidbodyPane,
   colliderPane,
-  jointPane,
   audioSourcePane,
   scriptPane,
   prefabInstancePane,

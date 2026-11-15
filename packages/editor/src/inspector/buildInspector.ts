@@ -26,7 +26,7 @@ import {
 import { currentSceneName, renameCurrentScene } from '../commands/sceneFiles';
 import { saveAssetValues } from '../state/assetStore';
 import { isSceneLocked } from '../state/sceneLock';
-import { tunePhysicsMaterialField, tunedAssetValues, tunedComponent } from '../state/tuning';
+import { tuneLinkedAsset, tunedAssetValues, tunedComponent } from '../state/tuning';
 import { assetFieldBundle, type AssetFieldActions } from './assetField';
 import { PaneBinder, numeric, type FieldIO, type Holder } from './PaneBinder';
 import {
@@ -306,7 +306,7 @@ export class InspectorBinding {
     const effective = effectiveComponent(this.registries, entityId, component);
     // The same list `inspectorSignature` measures, from the same call: the shape
     // it decides to rebuild on has to be the shape this then builds.
-    const { entries, live } = paneEntriesFor(this.registries, effective);
+    const { entries } = paneEntriesFor(this.registries, effective);
     for (const spec of entries) {
       if (isSeparator(spec)) {
         folder.addBlade({ view: 'separator' });
@@ -326,7 +326,7 @@ export class InspectorBinding {
           );
         continue;
       }
-      this.bindField(folder, entityId, target, spec, owner, live);
+      this.bindField(folder, entityId, target, spec, owner);
     }
 
     folder
@@ -340,7 +340,6 @@ export class InspectorBinding {
     target: ComponentTarget,
     spec: FieldSpec,
     owner: EntityTarget,
-    live: boolean,
   ): void {
     const componentId = target.representative.id;
     const multiple = owner instanceof MultiTarget;
@@ -365,14 +364,14 @@ export class InspectorBinding {
         return linked ? readPath(linked.values, linked.path) : readPath(component, spec.path);
       },
       write: (value, { last, generation }) => {
-        // During Play only a live row is enabled, and it tunes the running game:
-        // the world takes the value, `state/tuning` keeps it, and the document
-        // is not written. A row of an object an asset fills tunes the asset,
-        // every component linking it, as it edits its file when stopped.
+        // During Play only a tunable row is enabled, and it tunes the running
+        // game: the world takes the value, `state/tuning` keeps it, and the
+        // document is not written. A row of an object an asset fills tunes the
+        // asset, every component linking it, as it edits its file when stopped.
         if (isSceneLocked()) {
           const linked = multiple ? null : linkedOf(current());
           this.binder.edit(() => {
-            if (linked) tunePhysicsMaterialField(linked.assetId, linked.path, value);
+            if (linked) tuneLinkedAsset(linked.kind, linked.assetId, linked.path, value);
             else target.tune(spec.path, value);
           });
           return;
@@ -404,7 +403,7 @@ export class InspectorBinding {
         );
       },
     };
-    this.binder.bind(folder, spec, io, live);
+    this.binder.bind(folder, spec, io);
   }
 
 }

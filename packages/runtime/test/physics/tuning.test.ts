@@ -3,6 +3,7 @@ import {
   createDefaultLayer,
   createJointMotion,
   createPhysicsMaterial,
+  createLight,
   createPhysicsSettings,
   createRenderingSettings,
   fixedId,
@@ -299,7 +300,7 @@ describe('a collider tuned while running', () => {
     rig.run(2);
     const rested = boxes.map((box) => rig.solved(box.entity.id).position);
 
-    rig.engine.tunePhysicsMaterial(GRIP, ice);
+    rig.engine.tuneAsset(GRIP, ice);
     rig.run(1);
 
     boxes.forEach((box, i) => {
@@ -519,7 +520,41 @@ describe('a tune the world cannot take', () => {
     });
     onTestFinished(() => off.dispose());
     off.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
-    off.tunePhysicsMaterial(GRIP, ice);
+    off.tuneAsset(GRIP, ice);
     expect(off.physicsDebug()).toBeNull();
+  });
+
+  it('a component it builds nothing from, and an asset it was not built with, change nothing and throw nothing', async () => {
+    const floor = ground();
+    const box = boxOnSlope(0);
+    colliderOf(box).materialId = GRIP;
+    const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
+    rig.run(2);
+    const rested = rig.solved(box.entity.id).position;
+
+    rig.engine.tune(floor.entity.id, createLight('point'));
+    rig.engine.tuneAsset(fixedId('asset', 'stranger'), ice);
+    rig.run(1);
+
+    expect(rig.solved(box.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);
+  });
+
+  it('an asset’s values it cannot use are read as the factory’s, as a build reads them', async () => {
+    /** Where a box on the slope, gripping by GRIP, is a second after GRIP is tuned to `values`. */
+    const after = async (values: object): Promise<Vector3> => {
+      const box = boxOnSlope(0);
+      colliderOf(box).materialId = GRIP;
+      const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
+      rig.run(1);
+      rig.engine.tuneAsset(GRIP, values);
+      rig.run(1);
+      return rig.solved(box.entity.id).position;
+    };
+
+    // The factory's 0.7, averaged with the slope's 0.2, holds nothing on a 30°
+    // slope (tan 30° is 0.58), where GRIP's 1 at its max held the box.
+    const unusable = await after({ friction: 'none', frictionCombine: 'sideways' });
+    expect(unusable.distanceTo(await after(createPhysicsMaterial()))).toBeLessThan(1e-6);
+    expect(unusable.distanceTo(await after(grip))).toBeGreaterThan(0.5);
   });
 });

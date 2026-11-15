@@ -11,12 +11,12 @@ import { derivedPane, type PaneRows } from './derivePane';
 type Panes = Pick<EditorRegistries, 'components' | 'panes'>;
 
 /**
- * The rows a component's pane offers, the identity of that list, and whether
- * they tune the running game. None for a type this window has not registered.
+ * The rows a component's pane offers, and the identity of that list. None for
+ * a type this window has not registered.
  */
 export function paneEntriesFor(registries: Panes, component: ComponentDoc): PaneRows {
   const schema = registries.components.get(component.type)?.schema;
-  if (schema === undefined) return { key: component.type, entries: [], live: false };
+  if (schema === undefined) return { key: component.type, entries: [] };
   return derivedPane(component.type, schema, registries.panes.get(component.type), component);
 }
 

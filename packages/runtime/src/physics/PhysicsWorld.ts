@@ -1,6 +1,7 @@
 import {
   colliderGeometry,
   componentsOfType,
+  conformPhysicsMaterial,
   createColliderShape,
   entityWorldMatrixPath,
   findComponent,
@@ -15,6 +16,7 @@ import {
   type ColliderComponent,
   type ColliderShape,
   type CombineRule,
+  type ComponentDoc,
   type EntityDoc,
   type EntityId,
   type JointComponent,
@@ -448,9 +450,6 @@ export interface DebugLines {
   readonly colors: Float32Array;
 }
 
-/** The components the running world builds bodies, colliders and joints from. */
-export type PhysicsComponent = RigidBodyComponent | ColliderComponent | JointComponent;
-
 /**
  * A collider the world built: whom an event names for it, and what it was
  * built from, which a tune builds it from again.
@@ -726,9 +725,10 @@ export class PhysicsWorld implements PhysicsApi {
    * a Joint's own —, at the poses the world was built from, so a tuned game is the game built
    * with those values, and no second way from the document to Rapier can fall
    * out of step with the first. A component the world did not build changes
-   * nothing. The document is not the world's to write.
+   * nothing, of whatever type: the editor hands every component it tunes. The
+   * document is not the world's to write.
    */
-  tune(entityId: EntityId, component: PhysicsComponent): void {
+  tune(entityId: EntityId, component: ComponentDoc): void {
     switch (component.type) {
       case 'rigidbody':
         this.tuneBody(entityId, component);
@@ -748,14 +748,22 @@ export class PhysicsWorld implements PhysicsApi {
           ?.find((joint) => joint.component.id === component.id)
           ?.remake(component, this.endsOf(entityId, component));
         break;
+      default:
+        return;
     }
     // Shown at once, paused or not.
     this.version += 1;
   }
 
-  /** A physics material's values, taken at once by every collider that links it. */
-  tunePhysicsMaterial(assetId: AssetId, material: PhysicsMaterialDef): void {
-    this.materials.set(assetId, material);
+  /**
+   * An asset's values, taken at once by every collider that links it: a
+   * physics material's, the one kind of asset the world builds with, made
+   * whole as a build reads one. An id the world was not built with — another
+   * kind's, one the project lacks — changes nothing.
+   */
+  tuneAsset(assetId: AssetId, values: object): void {
+    if (!this.materials.has(assetId)) return;
+    this.materials.set(assetId, conformPhysicsMaterial(values));
     for (const built of this.owners.values()) {
       const body = this.bodies.get(built.owner.body);
       if (body && built.component.materialId === assetId) this.tuneCollider(built, built.component, body, false);

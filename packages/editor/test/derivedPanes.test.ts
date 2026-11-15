@@ -208,6 +208,43 @@ describe('a union', () => {
   });
 });
 
+describe('a tunable field', () => {
+  /*
+   * Its rows stay enabled in Play and tune the running game: a union's
+   * selector and its variant's rows, an object's rows, a leaf's own. A field
+   * that does not say so is locked in Play, beside them.
+   */
+  const tuned = {
+    shape: {
+      type: 'union',
+      label: 'Shape',
+      default: 'box',
+      tunable: true,
+      variants: { box: { label: 'Box', fields: { size: { type: 'vec3', label: 'Size', default: [1, 1, 1] } } } },
+    },
+    material: {
+      type: 'object',
+      label: 'Material',
+      tunable: true,
+      fields: { friction: { type: 'number', label: 'Friction', default: 0.5 } },
+    },
+    isSensor: { type: 'boolean', label: 'Is sensor', tunable: true, default: false },
+    layer: { type: 'string', label: 'Layer', default: 'default' },
+  } as const satisfies Schema;
+
+  it('marks every row it gives, and no other', () => {
+    const { entries } = derivedPane('collider', tuned, undefined, colliderType.create());
+
+    expect(entries.flatMap((entry) => ('path' in entry ? [[entry.label, entry.tunable === true]] : []))).toEqual([
+      ['Shape', true],
+      ['Size', true],
+      ['Friction', true],
+      ['Is sensor', true],
+      ['Layer', false],
+    ]);
+  });
+});
+
 describe('a type\'s extension', () => {
   const shaped = {
     shape: {
@@ -256,17 +293,24 @@ describe('a type\'s extension', () => {
     ]);
   });
 
-  it('adds its own key, and says whether its rows tune the running game', () => {
-    const extension = extendPane('collider', {
-      paneKey: (collider) => (collider.isSensor ? 'sensor' : 'solid'),
-      live: true,
-    });
-    const pane = derivedPane('collider', shaped, extension, sphere);
+  it('adds its own key', () => {
+    const extension = extendPane('collider', { paneKey: (collider) => (collider.isSensor ? 'sensor' : 'solid') });
 
-    expect(pane.key).toBe('collider:sphere:solid');
+    expect(derivedPane('collider', shaped, extension, sphere).key).toBe('collider:sphere:solid');
     expect(derivedPane('collider', shaped, extension, { ...sphere, isSensor: true }).key).toBe('collider:sphere:sensor');
-    expect(pane.live).toBe(true);
-    expect(derivedPane('collider', shaped, undefined, sphere).live).toBe(false);
+  });
+
+  it('draws rows that tune as the field they stand for does', () => {
+    const tuned = { ...shaped, layer: { ...shaped.layer, tunable: true } } satisfies Schema;
+    const extension = extendPane('collider', {
+      drawers: { layer: (layer) => (layer === null ? [] : [{ ...layer, label: 'Layer (drawn)' }, { path: ['layer'], label: 'Layer (new)' }]) },
+      after: { layer: [fit] },
+    });
+    const { entries } = derivedPane('collider', tuned, extension, sphere);
+
+    expect(row(entries, 'Layer (drawn)').tunable).toBe(true);
+    expect(row(entries, 'Layer (new)').tunable).toBe(true);
+    expect(row(entries, 'Is sensor').tunable).toBeUndefined();
   });
 
   it('is asked of its own type alone', () => {

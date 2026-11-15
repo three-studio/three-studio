@@ -184,7 +184,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/test/sceneMenu.test.ts', { nonNull: 7 }],
   ['packages/editor/test/scriptStore.test.ts', { state: 3 }],
   ['packages/editor/test/toastStore.test.ts', { nonNull: 5 }],
-  ['packages/editor/test/tuning.test.ts', { as: 8, nonNull: 4, state: 1 }],
+  ['packages/editor/test/tuning.test.ts', { as: 7, nonNull: 4, state: 1 }],
   ['packages/editor/test/viewState.test.ts', { as: 2 }],
   ['packages/editor/test/viewportInput.test.ts', { as: 9, state: 1 }],
   ['packages/runtime/src/Engine.ts', { as: 1 }],

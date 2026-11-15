@@ -56,9 +56,14 @@ const RULES = [
  * are read at `x`, `y`, `z` where they were read at `0`, `1`, `2`.
  */
 
-/** The rows a component's pane declares, without their functions. */
+/**
+ * The rows a component's pane declares, without their functions, and without
+ * `tunable`: written by hand, that was the pane's `live`, and `tunable` below
+ * reads it row by row.
+ */
 function rows(component: ComponentDoc): unknown {
-  return JSON.parse(JSON.stringify(paneEntriesFor(registries, component).entries));
+  const entries = paneEntriesFor(registries, component).entries;
+  return JSON.parse(JSON.stringify(entries, (key: string, value: unknown) => (key === 'tunable' ? undefined : value)));
 }
 
 /** The labels of the rows a component shows, a rule as `—`. */
@@ -68,6 +73,12 @@ function shown(component: ComponentDoc): string[] {
     if (entry.visibleWhen && !entry.visibleWhen(component)) return [];
     return ['path' in entry ? entry.label : entry.title];
   });
+}
+
+/** How many field rows a component's pane gives, and how many of them tune the running game in Play. */
+function tunable(component: ComponentDoc): { rows: number; tunable: number } {
+  const fields = paneEntriesFor(registries, component).entries.flatMap((entry) => ('path' in entry ? [entry] : []));
+  return { rows: fields.length, tunable: fields.filter((field) => field.tunable === true).length };
 }
 
 function row(component: ComponentDoc, field: string): FieldSpec {
@@ -181,9 +192,11 @@ describe('the rigid body\'s pane', () => {
     ]);
   });
 
-  it('tunes the running game during Play, as it did', () => {
-    expect(paneEntriesFor(registries, rigidbodyType.create()).live).toBe(true);
-    expect(paneEntriesFor(registries, createCamera()).live).toBe(false);
+  it('tunes the running game during Play, every row of it, as it did', () => {
+    const { rows, tunable: tuning } = tunable(rigidbodyType.create());
+    expect(rows).toBeGreaterThan(0);
+    expect(tuning).toBe(rows);
+    expect(tunable(createCamera())).toMatchObject({ tunable: 0 });
   });
 });
 
@@ -240,14 +253,9 @@ describe('the light\'s pane', () => {
 });
 
 describe('the five types\' panes', () => {
-  it('are derived: no pane is registered for them, and only the rigid body extends its own', () => {
-    expect((['camera', 'audioListener', 'playerController', 'light'] as const).map((type) => registries.panes.get(type))).toEqual([
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-    ]);
-    expect(registries.panes.get('rigidbody')).toEqual({ id: 'rigidbody', live: true });
+  it('are derived: no pane is registered for them, the rigid body\'s tuning being its fields\'', () => {
+    const types = ['camera', 'audioListener', 'playerController', 'light', 'rigidbody'] as const;
+    expect(types.map((type) => registries.panes.get(type))).toEqual(types.map(() => undefined));
   });
 });
 
@@ -590,7 +598,8 @@ describe('the collider\'s pane', () => {
 
     expect(rotation.toModel?.([Math.PI, 0, Math.PI / 2])).toEqual({ x: 180, y: 0, z: 90 });
     expect(row(collider('box'), 'layer').optionsProvider?.()).toEqual({ Default: 'default' });
-    expect(paneEntriesFor(registries, collider('box')).live).toBe(true);
+    const { rows, tunable: tuning } = tunable(collider('box'));
+    expect(tuning).toBe(rows);
   });
 });
 
@@ -665,7 +674,8 @@ describe('the joint\'s pane', () => {
     expect(row(joint('hinge'), 'motion.motor.speed').fromModel?.(90)).toBeCloseTo(Math.PI / 2);
     expect(row(joint('slider'), 'motion.limits.min').toModel).toBeUndefined();
     expect(row(joint('hinge'), 'connectedEntity').optionsProvider?.()).toMatchObject({ World: '' });
-    expect(paneEntriesFor(registries, joint('hinge')).live).toBe(true);
+    const { rows, tunable: tuning } = tunable(joint('hinge'));
+    expect(tuning).toBe(rows);
   });
 });
 

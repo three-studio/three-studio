@@ -29,11 +29,10 @@ import { readPath } from './target';
  * component holds another variant.
  */
 
-/** What the Inspector shows for a component: its rows, what makes them another list, and whether they tune Play. */
+/** What the Inspector shows for a component: its rows, and what makes them another list. */
 export interface PaneRows {
   readonly key: string;
   readonly entries: readonly PaneRow[];
-  readonly live: boolean;
 }
 
 /** An object whose fields a condition may read, and where it sits in the component. */
@@ -52,6 +51,8 @@ interface Resolved {
 interface FieldRows {
   readonly key: string;
   readonly separatorBefore: boolean;
+  /** The field is `tunable`, so every row drawn for it is: its own, a drawer's in its place, those it holds. */
+  readonly tunable: boolean;
   readonly own: FieldSpec | null;
   readonly nested: readonly PaneRow[];
 }
@@ -153,6 +154,11 @@ function under(row: FieldSpec, conditions: readonly Resolved[]): FieldSpec {
   };
 }
 
+/** A row of a tunable field marked so; any other row as it is. */
+function tuned(row: PaneRow, tunable: boolean): PaneRow {
+  return tunable && 'path' in row ? { ...row, tunable: true } : row;
+}
+
 /**
  * Where a condition's field is: in the nearest scope that holds it, as the
  * kernel resolved it when the type was planned — which also refused a name
@@ -164,33 +170,45 @@ function resolved(condition: ShownWhen, scopes: readonly Scope[]): Resolved {
   return { path: [...scope.path, condition.field], condition };
 }
 
-/** The rows of one field at `path`, under the conditions of the objects around it. */
+/**
+ * The rows of one field at `path`, under the conditions of the objects around
+ * it, each marked tunable where the field or one around it is (`tunable`).
+ */
 function rowsOfField(
   field: SchemaField,
   path: readonly string[],
   scopes: readonly Scope[],
   conditions: readonly Resolved[],
+  tunable: boolean,
   subject: object,
 ): { own: FieldSpec | null; nested: readonly PaneRow[] } {
   const all = field.shownWhen === undefined ? conditions : [...conditions, resolved(field.shownWhen, scopes)];
+  const tunes = tunable || field.tunable === true;
+  const own = (row: FieldSpec): FieldSpec => (tunes ? { ...under(row, all), tunable: true } : under(row, all));
   switch (field.type) {
     case 'object':
       return {
         own: null,
-        nested: field.shown === false ? [] : rowsIn(field.fields, path, [{ fields: field.fields, path }, ...scopes], all, subject),
+        nested:
+          field.shown === false
+            ? []
+            : rowsIn(field.fields, path, [{ fields: field.fields, path }, ...scopes], all, tunes, subject),
       };
     case 'union': {
       const kind = readPath(subject, [...path, 'kind']);
       const variant = typeof kind === 'string' && Object.hasOwn(field.variants, kind) ? field.variants[kind] : undefined;
       return {
-        own: field.shown === false ? null : under(selectorRow(field, path), all),
-        nested: variant === undefined ? [] : rowsIn(variant.fields, path, [{ fields: variant.fields, path }, ...scopes], all, subject),
+        own: field.shown === false ? null : own(selectorRow(field, path)),
+        nested:
+          variant === undefined
+            ? []
+            : rowsIn(variant.fields, path, [{ fields: variant.fields, path }, ...scopes], all, tunes, subject),
       };
     }
     case 'custom':
       return { own: null, nested: [] };
     default:
-      return { own: field.shown === false ? null : under(leafRow(field, path), all), nested: [] };
+      return { own: field.shown === false ? null : own(leafRow(field, path)), nested: [] };
   }
 }
 
@@ -200,11 +218,12 @@ function rowsIn(
   path: readonly string[],
   scopes: readonly Scope[],
   conditions: readonly Resolved[],
+  tunable: boolean,
   subject: object,
 ): PaneRow[] {
   const entries: PaneRow[] = [];
   for (const [key, field] of Object.entries(fields)) {
-    const { own, nested } = rowsOfField(field, [...path, key], scopes, conditions, subject);
+    const { own, nested } = rowsOfField(field, [...path, key], scopes, conditions, tunable, subject);
     const rows = own === null ? nested : [own, ...nested];
     if (field.separatorBefore && rows.length > 0) entries.push({ kind: 'separator' });
     entries.push(...rows);
@@ -218,7 +237,8 @@ function fieldRows(schema: Schema, subject: object): FieldRows[] {
   return Object.entries(schema).map(([key, field]) => ({
     key,
     separatorBefore: field.separatorBefore === true,
-    ...rowsOfField(field, [key], scopes, [], subject),
+    tunable: field.tunable === true,
+    ...rowsOfField(field, [key], scopes, [], false, subject),
   }));
 }
 
@@ -302,12 +322,14 @@ export function derivedPane(
   const entries: PaneRow[] = [];
   for (const field of fieldRows(schema, component)) {
     const draw = extension?.drawers?.[field.key];
-    const own = draw === undefined ? (field.own === null ? [] : [field.own]) : draw(field.own, component);
+    // A drawer's rows stand for the field's own, so they tune as it does.
+    const drawn = draw === undefined ? null : draw(field.own, component).map((row) => tuned(row, field.tunable));
+    const own = drawn ?? (field.own === null ? [] : [field.own]);
     const rows = [...own, ...field.nested, ...(extension?.after?.[field.key] ?? [])];
     if (field.separatorBefore && rows.length > 0) entries.push({ kind: 'separator' });
     entries.push(...rows);
   }
-  const pane = { key, entries, live: extension?.live === true };
+  const pane = { key, entries };
   panes.set(key, pane);
   return pane;
 }

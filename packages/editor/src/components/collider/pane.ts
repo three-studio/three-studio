@@ -41,11 +41,9 @@ async function extractPhysicsMaterial(
 /**
  * A collider's pane is derived from its fields. What it adds: fitting its shape
  * to the meshes it rides, the project's layers to choose its own from, and
- * saving its material as an asset or copying a shared one back in. Its rows
- * tune the running game during Play.
+ * saving its material as an asset or copying a shared one back in.
  */
 export const pane = extendPane('collider', {
-  live: true,
   after: {
     shape: [
       {

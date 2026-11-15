@@ -11,6 +11,7 @@ import {
   linkedPhysicsMaterial,
   physicsBodies,
   type AssetId,
+  type ComponentDoc,
   type EntityId,
   type JointComponent,
   type MaterialDef,
@@ -39,7 +40,6 @@ import {
   PhysicsWorld,
   type ColliderOwner,
   type DebugLines,
-  type PhysicsComponent,
   type PhysicsEvent,
 } from './physics/PhysicsWorld';
 import { ownMeshes } from './physics/meshShape';
@@ -520,18 +520,22 @@ export class Engine {
   }
 
   /**
-   * A physics component's values applied to the running world at once, as it
-   * would have built them: the editor's live tuning. The host's, as
-   * `physicsDebug` is: retuning the world's components is no behaviour's
-   * business. Nothing with physics off.
+   * A component's values, changed during Play, taken at once by what the
+   * running game built from it, as if built with them; a component it built
+   * nothing from changes nothing. The host's — the editor's live tuning — as
+   * `physicsDebug` is: retuning the world is no behaviour's business.
+   *
+   * The physics world, the one part of the game built here that takes a tune,
+   * is handed every component and keeps what it built from, so that the editor
+   * names no type it tunes.
    */
-  tune(entityId: EntityId, component: PhysicsComponent): void {
+  tune(entityId: EntityId, component: ComponentDoc): void {
     this.world?.tune(entityId, component);
   }
 
-  /** The same for a physics material asset: every collider that links it takes its values. */
-  tunePhysicsMaterial(assetId: AssetId, material: PhysicsMaterialDef): void {
-    this.world?.tunePhysicsMaterial(assetId, material);
+  /** An asset's values, changed during Play, taken by whatever the running game built with that asset. */
+  tuneAsset(assetId: AssetId, values: object): void {
+    this.world?.tuneAsset(assetId, values);
   }
 
   update(delta: number): void {

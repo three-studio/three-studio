@@ -115,6 +115,12 @@ interface FieldPlacement<Subject> {
   toModel?: (value: unknown) => unknown;
   /** Value bound by Tweakpane -> document value. Overrides the variant's own. */
   fromModel?: (value: unknown) => unknown;
+  /**
+   * The row of a field its type marks `tunable`: left enabled while the game
+   * runs, when every other row is locked, and written to the running game
+   * rather than to the document. Set by derivation, never by hand.
+   */
+  tunable?: true;
 }
 
 /** A field as the builder binds it, once `visibleWhen` has already been settled. */
@@ -208,12 +214,6 @@ export interface PaneExtension {
   readonly after?: { readonly [key: string]: readonly PaneRow[] | undefined };
   /** What else makes the rows another list, beyond the variants the component holds. */
   readonly paneKey?: (component: ComponentDoc) => string;
-  /**
-   * Its rows tune the running game during Play, where every other row is
-   * locked. The running world takes the value; the document does not. Declared
-   * by the components the world builds — `rigidbody`, `collider` and `joint`.
-   */
-  readonly live?: true;
 }
 
 /** Rows in place of a field's own; see `PaneExtension.drawers`. */
@@ -233,10 +233,9 @@ export function extendPane<T extends ComponentType>(
     readonly drawers?: { readonly [K in FieldKey<ComponentOfType<T>>]?: Drawer<ComponentOfType<T>> };
     readonly after?: { readonly [K in FieldKey<ComponentOfType<T>>]?: readonly PaneRow[] };
     readonly paneKey?: (component: ComponentOfType<T>) => string;
-    readonly live?: true;
   },
 ): PaneExtension {
-  const { drawers, after, paneKey, live } = extension;
+  const { drawers, after, paneKey } = extension;
   const drawn: Record<string, Drawer<ComponentDoc>> = {};
   // Read through an index signature, which the mapped type of the type's keys
   // is assignable to: a loop over its own keys cannot be typed by them.
@@ -251,7 +250,6 @@ export function extendPane<T extends ComponentType>(
     ...(paneKey === undefined
       ? {}
       : { paneKey: (component: ComponentDoc) => (isComponentOfType(component, id) ? paneKey(component) : '') }),
-    ...(live === undefined ? {} : { live }),
   };
 }
 

@@ -88,35 +88,48 @@ export const colliderShapeField = {
   },
 } as const;
 
-/** What a collider is, as its fields. The order is the pane's. */
+/**
+ * What a collider is, as its fields. The order is the pane's.
+ *
+ * Every field tunes the running game during Play (`tunable`): the physics world
+ * builds the collider again from them, and a linked physics material's rows
+ * tune the asset, every collider linking it.
+ */
 export const colliderSchema = {
-  shape: colliderShapeField,
+  shape: { ...colliderShapeField, tunable: true },
   /*
    * A zone rather than matter: it touches nothing, and weighs nothing. What
    * moves through it is reported, through `onTriggerEnter` and
    * `onTriggerExit`, to the scripts of its entity, of the body it rides, and of
    * what entered it. It sees anything that moves, never another Fixed collider.
    */
-  isSensor: { type: 'boolean', label: 'Is sensor', default: false },
+  isSensor: { type: 'boolean', label: 'Is sensor', tunable: true, default: false },
   /*
    * The collision layer it is on, by id: one of Project Settings ▸ Physics's.
    * Its layer decides what it meets — bodies, sensors and characters alike. A
    * layer the project no longer has collides as Default.
    */
-  layer: { type: 'string', label: 'Layer', default: DEFAULT_LAYER_ID },
+  layer: { type: 'string', label: 'Layer', tunable: true, default: DEFAULT_LAYER_ID },
   /*
    * A shared physics material. While it names one, the collider is built with
    * that asset's friction, bounce and rules, and `material` is left untouched,
    * so unlinking falls back to it. One the project does not have leaves the
    * collider on its own values, and Play says so.
    */
-  materialId: { type: 'asset', label: 'Material', kind: 'physicsMaterial', emptyLabel: 'Embedded', separatorBefore: true },
+  materialId: {
+    type: 'asset',
+    label: 'Material',
+    tunable: true,
+    kind: 'physicsMaterial',
+    emptyLabel: 'Embedded',
+    separatorBefore: true,
+  },
   /*
    * How the surface grips and bounces, while `materialId` links no physics
    * material. Its label names an edit of the linked asset, « Edit physics
    * material Friction »: the pane shows the rows alone.
    */
-  material: { type: 'object', label: 'Physics material', linkedBy: 'materialId', fields: physicsMaterialFields },
+  material: { type: 'object', label: 'Physics material', tunable: true, linkedBy: 'materialId', fields: physicsMaterialFields },
 } as const satisfies Schema;
 
 export type ColliderComponent = Component<'collider', Infer<typeof colliderSchema>>;

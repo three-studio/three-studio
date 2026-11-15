@@ -73,12 +73,12 @@ export const PLAY_COMMANDS = {
   }),
 
   /**
-   * The physics tuned during Play, written into the scene as one undo step.
+   * The values tuned during Play, written into the scene as one undo step.
    * Offered at Stop by a toast, and here until the next Play or another scene,
    * so the toast is not the only way to it: Unreal's Keep Simulation Changes.
    */
   keepTuning: defineCommand({
-    label: () => 'Keep Tuned Physics',
+    label: () => 'Keep Tuned Values',
     writesScene: true,
     can: () => hasTuning(),
     run: (ctx) => keepTuning(ctx.registries),

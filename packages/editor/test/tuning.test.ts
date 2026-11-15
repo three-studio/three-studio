@@ -1,10 +1,13 @@
 import {
   PROJECT_FORMAT_VERSION,
+  Registry,
+  assertDefined,
   createBuildProfiles,
   colliderType,
   createColliderShape,
   createEmptyScene,
   createEntity,
+  createLight,
   createMeshEntity,
   createPhysicsMaterial,
   createPhysicsSettings,
@@ -16,12 +19,16 @@ import {
   findComponentById,
   fixedId,
   instancedId,
+  lightType,
   serializeScene,
   type ColliderComponent,
+  type ComponentDefinition,
   type ComponentDoc,
+  type ComponentTypeId,
   type EntityTemplate,
   type ProjectFile,
   type RigidBodyComponent,
+  type SchemaField,
   type ScriptComponent,
 } from '@three-studio/core';
 import { Behaviour, Engine, NO_SCRIPTS } from '@three-studio/runtime';
@@ -42,9 +49,10 @@ import { useToastStore } from '../src/state/toastStore';
 import {
   keepTuning,
   tuneComponentField,
-  tunePhysicsMaterialField,
+  tuneLinkedAsset,
   useTuningStore,
 } from '../src/state/tuning';
+import type { PaneExtension } from '../src/inspector/fields';
 import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
@@ -247,14 +255,35 @@ describe('tuning during Play', () => {
     collider.materialId = ICE;
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     const engine = await playing();
-    const tune = vi.spyOn(engine, 'tunePhysicsMaterial');
+    const tune = vi.spyOn(engine, 'tuneAsset');
 
-    expect(linkedAsset(registries, effectiveComponent(registries, box.entity.id, collider), ['material', 'friction'])?.assetId).toBe(ICE);
-    tunePhysicsMaterialField(ICE, ['friction'], 0);
+    const linked = assertDefined(linkedAsset(registries, collider, ['material', 'friction']), 'the link');
+    tuneLinkedAsset(linked.kind, linked.assetId, linked.path, 0);
 
     expect(tune).toHaveBeenCalledWith(ICE, { ...ice, friction: 0 });
     expect(save).not.toHaveBeenCalled();
-    expect((effectiveComponent(registries, box.entity.id, collider) as ColliderComponent).material.friction).toBe(0);
+    const effective = effectiveComponent(registries, box.entity.id, collider);
+    expect(effective.type === 'collider' && effective.material.friction).toBe(0);
+  });
+
+  it('a field any type marks tunable is tuned in Play, and the running game is handed its component', async () => {
+    // A Light whose intensity tunes: no physics, and nothing in the editor names it.
+    const intensity: SchemaField = { ...assertDefined(lightType.schema['intensity'], 'the light’s intensity'), tunable: true };
+    const tunedLight = { ...lightType, schema: { ...lightType.schema, intensity } };
+    const components = new Registry<ComponentTypeId, ComponentDefinition>('component type');
+    components.register(tunedLight satisfies ComponentDefinition);
+    const lamp = createEntity('Lamp', [createLight('point')]);
+    const light = componentOf(lamp, 'light');
+    useDocumentStore.getState().replaceScene(sceneWith([lamp]));
+    const engine = await playing();
+    const tune = vi.spyOn(engine, 'tune');
+
+    const rows = paneEntriesFor({ components, panes: new Registry<ComponentTypeId, PaneExtension>('pane') }, light).entries;
+    expect(rows.find((entry) => 'path' in entry && entry.path.join('.') === 'intensity')).toMatchObject({ tunable: true });
+    expect(rows.filter((entry) => 'path' in entry && entry.tunable === true)).toHaveLength(1);
+    tuneComponentField(registries, lamp.entity.id, light.id, ['intensity'], 3);
+
+    expect(tune).toHaveBeenCalledWith(lamp.entity.id, { ...light, intensity: 3 });
   });
 
   it('several selected bodies are tuned together', async () => {
@@ -346,8 +375,11 @@ describe('keeping what was tuned', () => {
     // A kind, then a measure of it: one field, written whole.
     tuneComponentField(registries, produced, ball.id, ['shape'], createColliderShape('capsule'));
     tuneComponentField(registries, produced, ball.id, ['shape', 'radius'], 0.8);
-    tunePhysicsMaterialField(ICE, ['friction'], 0);
+    tuneLinkedAsset('physicsMaterial', ICE, ['friction'], 0);
     stop();
+    expect(toasts()[0]?.description).toBe(
+      'Tuned on 2 entities and 1 asset. Edit ▸ Keep Tuned Values keeps them until the next Play.',
+    );
     keepTuning(registries);
 
     const mass = () => findComponent(doc().scene, box.entity.id, 'rigidbody')?.mass;
@@ -361,7 +393,7 @@ describe('keeping what was tuned', () => {
     expect(override()).toBeDefined();
     expect(shape()).toEqual({ ...createColliderShape('capsule'), radius: 0.8 });
     expect(save).toHaveBeenLastCalledWith(ICE, { ...ice, friction: 0 });
-    expect(doc().undoLabel()).toBe('Keep tuned physics');
+    expect(doc().undoLabel()).toBe('Keep tuned values');
 
     doc().undo();
     expect(mass()).toBe(1);
@@ -384,9 +416,14 @@ describe('keeping what was tuned', () => {
     stop();
 
     expect(toasts()).toHaveLength(1);
-    expect(toasts()[0]).toMatchObject({ kind: 'info', title: 'Keep the physics tuned during Play?' });
+    expect(toasts()[0]).toMatchObject({
+      kind: 'info',
+      title: 'Keep the values tuned during Play?',
+      description: 'Tuned on 1 entity. Edit ▸ Keep Tuned Values keeps them until the next Play.',
+    });
     expect(toasts()[0]!.actions?.map(({ label }) => label)).toEqual(['Keep']);
     expect(commandById('keepTuning').can(currentContext(registries))).toBe(true);
+    expect(commandById('keepTuning').label(currentContext(registries))).toBe('Keep Tuned Values');
 
     play();
     expect(toasts()).toEqual([]);
@@ -420,13 +457,16 @@ describe('keeping what was tuned', () => {
   });
 });
 
-describe('the panes that tune', () => {
-  it('the Rigid Body, the Collider and the Joint declare `live`, and no other pane does', () => {
-    const live = registries.panes
-      .values()
-      .filter((pane) => pane.live === true)
-      .map((pane) => pane.id)
-      .sort();
-    expect(live).toEqual(['collider', 'joint', 'rigidbody']);
+describe('the rows that tune', () => {
+  it('are every row of the Rigid Body’s, the Collider’s and the Joint’s panes, read from their fields, and no other type’s', () => {
+    const byType = registries.components.values().map((definition) => {
+      const rows = paneEntriesFor(registries, definition.create()).entries.flatMap((entry) => ('path' in entry ? [entry] : []));
+      return { type: definition.id, rows: rows.length, tunable: rows.filter((row) => row.tunable === true).length };
+    });
+
+    expect(byType.filter(({ tunable }) => tunable > 0).map(({ type }) => type).sort()).toEqual(['collider', 'joint', 'rigidbody']);
+    for (const { type, rows, tunable } of byType) {
+      if (tunable > 0) expect({ type, tunable }).toEqual({ type, tunable: rows });
+    }
   });
 });
