@@ -1,9 +1,7 @@
-import type { ColliderComponent } from '../components/collider/schema';
 import { modelType } from '../components/model';
 import { createComponentId, type AssetId, type EntityId } from '../ids';
 import { createEntity, type EntityTemplate } from './entity';
-import type { Transform } from './schema';
-
+import type { ComponentDoc, Transform } from './schema';
 
 /*
  * Turning one imported file into one entity per node.
@@ -98,16 +96,15 @@ function isPassThrough(node: ModelNode, childCount: number): boolean {
  *   it, together with its own path.
  * @param rootName What to call the root when the file gave it no name — the
  *   host entity's name, so an unpacked "Chair" is still called "Chair".
- * @param colliders The host's mesh Colliders, a copy of each for every piece
- *   that draws, under an id of its own. A mesh Collider is built from its own
- *   entity's meshes, and the host has none left once it is unpacked: the model
- *   collides as it did, each piece by its own meshes.
+ * @param following The host's components that go with the drawing
+ *   (`componentsFollowingDrawing`), a copy of each for every piece that draws,
+ *   under an id of its own. A group draws nothing, and gets none.
  */
 export function entitiesFromNodes(
   nodes: readonly ModelNode[],
   assetId: AssetId,
   rootName: string,
-  colliders: readonly ColliderComponent[] = [],
+  following: readonly ComponentDoc[] = [],
 ): readonly UnpackedEntity[] {
   const childCount = new Map<string, number>();
   for (const node of nodes) {
@@ -144,7 +141,7 @@ export function entitiesFromNodes(
       node.draws
         ? [
             { ...modelType.create(), assetId, nodePath: node.path, nodeName: node.name },
-            ...colliders.map((collider) => ({ ...structuredClone(collider), id: createComponentId() })),
+            ...following.map((component) => ({ ...structuredClone(component), id: createComponentId() })),
           ]
         : [],
     );

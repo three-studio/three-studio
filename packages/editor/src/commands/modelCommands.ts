@@ -1,9 +1,12 @@
 import {
+  componentsFollowingDrawing,
+  componentsOf,
   deleteComponent,
   entitiesFromNodes,
   findComponent,
   findComponents,
   insertEntity,
+  type CoreRegistries,
   type EntityId,
   type ModelNode,
 } from '@three-studio/core';
@@ -36,9 +39,10 @@ const CONFIRM_ABOVE = 200;
  * Replaces a model entity with one entity per node of its file.
  *
  * The host keeps its place, its name and everything else the author put on it;
- * only the `model` goes, replaced by the sub-tree it was drawing.
+ * the `model` goes, replaced by the sub-tree it was drawing, and with it what
+ * each type says goes with the drawing — a copy of it on every piece that draws.
  */
-export async function unpackModel(entityId: EntityId): Promise<void> {
+export async function unpackModel(registries: CoreRegistries, entityId: EntityId): Promise<void> {
   const document = useDocumentStore.getState();
   const host = document.scene.entities.get(entityId);
   const component = findComponent(document.scene, entityId, 'model');
@@ -99,10 +103,11 @@ export async function unpackModel(entityId: EntityId): Promise<void> {
   }
 
   // Read after the waits, as the mutation below will find them.
-  const meshColliders = findComponents(useDocumentStore.getState().scene, entityId, 'collider').filter(
-    (collider) => collider.shape.kind === 'mesh',
+  const following = componentsFollowingDrawing(
+    registries,
+    componentsOf(registries, useDocumentStore.getState().scene, entityId),
   );
-  const unpacked = entitiesFromNodes(nodes, component.assetId, host.name, meshColliders);
+  const unpacked = entitiesFromNodes(nodes, component.assetId, host.name, following);
   const root = unpacked[0];
   if (!root) return;
 
@@ -111,16 +116,14 @@ export async function unpackModel(entityId: EntityId): Promise<void> {
     (draft) => {
       if (!draft.entities.has(entityId)) return;
 
-      // The model component goes, and so do its mesh Colliders, which every
-      // piece that draws now carries: a mesh Collider is built from its own
-      // entity's meshes, and the host has none left. Everything else the
-      // author put on the host — another collider, a script, a rigid body —
-      // stays, which is what "unpack" means, and the pieces' Colliders ride
-      // its body.
+      // The model component goes, and so does what follows the drawing,
+      // which every piece that draws now carries. Everything else the author
+      // put on the host — a script, a rigid body — stays, which is what
+      // "unpack" means, and what the pieces carry rides its body.
       for (const held of findComponents(draft, entityId, 'model')) {
         deleteComponent(draft, entityId, held.id);
       }
-      for (const held of meshColliders) deleteComponent(draft, entityId, held.id);
+      for (const held of following) deleteComponent(draft, entityId, held.id);
 
       /*
        * The root under the host, every other node under the entity its parent
@@ -165,7 +168,7 @@ export const MODEL_COMMANDS = {
     },
     run: async (ctx) => {
       const entityId = ctx.selection.primary;
-      if (entityId !== null) await unpackModel(entityId);
+      if (entityId !== null) await unpackModel(ctx.registries, entityId);
     },
   }),
 };

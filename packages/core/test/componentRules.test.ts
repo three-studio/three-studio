@@ -3,6 +3,7 @@ import {
   audioSourceType,
   cameraType,
   componentFits,
+  componentsFollowingDrawing,
   componentsToAdd,
   createCoreRegistries,
   createEntity,
@@ -10,12 +11,14 @@ import {
   createModelEntity,
   createPrefabInstance,
   colliderType,
+  createColliderShape,
   expandPrefabs,
   fixedId,
   lightType,
   meshType,
   modelType,
   rigidbodyType,
+  scriptType,
   type ComponentDefinition,
   type ComponentDoc,
   type ComponentTypeId,
@@ -208,3 +211,29 @@ describe('a requirement any type declares', () => {
   });
 });
 
+describe('what follows the drawing', () => {
+  /*
+   * What Unpack Model hands from the host to every piece that draws: a mesh
+   * Collider is built from its own entity's meshes, and the host has none once
+   * its drawing has passed to the pieces.
+   */
+  const meshCollider = { ...colliderType.create(), shape: createColliderShape('mesh') };
+
+  it('is what each type declares: a mesh Collider goes, a box Collider, a Script and a Rigid Body stay', () => {
+    const boxCollider = colliderType.create();
+    const held = [boxCollider, meshCollider, scriptType.create(), rigidbodyType.create()];
+
+    expect(componentsFollowingDrawing(registries, held)).toEqual([meshCollider]);
+  });
+
+  it('leaves a component whose type the registries do not hold where it is: nothing says it moves', () => {
+    expect(componentsFollowingDrawing(registriesOf(modelType), [meshCollider])).toEqual([]);
+  });
+
+  it('is any type\'s to declare', () => {
+    const script = scriptType.create();
+    const using = registriesOf({ ...scriptType, followsDrawing: () => true } satisfies ComponentDefinition);
+
+    expect(componentsFollowingDrawing(using, [script])).toEqual([script]);
+  });
+});

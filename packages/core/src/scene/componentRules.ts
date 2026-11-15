@@ -5,7 +5,8 @@ import type { ComponentDoc, ComponentTypeId, SceneDoc } from './schema';
 
 /*
  * What the types on one entity allow each other, as each type declares it:
- * what it requires, what it excludes, whether it stacks.
+ * what it requires, what it excludes, whether it stacks, and what goes with
+ * the drawing when the entity's drawing passes to others.
  *
  * Read here for every caller, so that none can disagree with another: the
  * menu that offers a type greys out what the command that adds it would
@@ -91,4 +92,17 @@ export function componentsToAdd(
   if (definition === undefined || !componentFits(registries, type, present)) return null;
   put(definition.createFor(siblings));
   return bring(definition) ? added : null;
+}
+
+/**
+ * Those of `components` that go with the drawing when their entity's drawing
+ * passes to other entities, as each type declares (`followsDrawing`): what
+ * Unpack Model copies to every piece that draws and takes off the host. One
+ * whose type the registries do not hold stays: nothing says it moves.
+ */
+export function componentsFollowingDrawing(
+  registries: CoreRegistries,
+  components: readonly ComponentDoc[],
+): readonly ComponentDoc[] {
+  return components.filter((component) => registries.components.get(component.type)?.followsDrawing(component) === true);
 }

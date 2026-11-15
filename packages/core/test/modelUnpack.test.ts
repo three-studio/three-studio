@@ -3,6 +3,7 @@ import {
   createColliderShape,
   entitiesFromNodes,
   fixedId,
+  scriptType,
   type ModelNode,
   type Transform,
 } from '@three-studio/core';
@@ -150,22 +151,26 @@ describe('entitiesFromNodes', () => {
     }
   });
 
-  it('hands the host’s mesh Colliders to every piece that draws, each under an id of its own', () => {
+  it('hands what follows the drawing to every piece that draws, each under an id of its own', () => {
+    // A mesh Collider, and a component of another type: the copy is the same for any.
     const collider = { ...colliderType.create(), shape: createColliderShape('mesh') };
-    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair', [collider]);
+    const script = scriptType.create();
+    const unpacked = entitiesFromNodes(chairNodes(), CHAIR, 'Chair', [collider, script]);
 
-    const collidersOf = (name: string) =>
+    const followingOf = (name: string) =>
       unpacked
         .find((item) => item.template.entity.name === name)
-        ?.template.components.filter((component) => component.type === 'collider') ?? [];
-    const copies = [...collidersOf('Seat'), ...collidersOf('Leg')];
+        ?.template.components.filter((component) => component.type !== 'model') ?? [];
+    const copies = [...followingOf('Seat'), ...followingOf('Leg')];
     expect(copies).toEqual([
       { ...collider, id: expect.any(String) },
+      { ...script, id: expect.any(String) },
       { ...collider, id: expect.any(String) },
+      { ...script, id: expect.any(String) },
     ]);
-    expect(new Set([collider.id, ...copies.map((copy) => copy.id)]).size).toBe(3);
+    expect(new Set([collider.id, script.id, ...copies.map((copy) => copy.id)]).size).toBe(6);
     // A group draws nothing to build one from.
-    expect(collidersOf('Chair')).toEqual([]);
+    expect(followingOf('Chair')).toEqual([]);
   });
 
   it('names an unnamed root after the entity it replaces', () => {

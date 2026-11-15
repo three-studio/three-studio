@@ -104,6 +104,14 @@ export interface ComponentDefinition<C extends Component<string, object> = Compo
   readonly excludes: readonly ComponentTypeId[];
   /** Whether an entity may hold several: a body's colliders, an entity's scripts. Else one at most. */
   readonly multiple: boolean;
+  /**
+   * Whether this component goes with the drawing when its entity's drawing
+   * passes to other entities — Unpack Model's pieces — a copy to each piece
+   * that draws, rather than staying with the entity. A fact about the
+   * component, not a list of the operation's, so that the operation names no
+   * type it moves.
+   */
+  followsDrawing(component: C): boolean;
   /** The type's fields: what its type, its decoder, its references and its pane are derived from. */
   readonly schema: Schema;
   /**
@@ -209,6 +217,8 @@ export function defineComponent<const Id extends string, const S extends Schema>
   readonly excludes?: readonly ComponentTypeId[];
   /** Left out, an entity holds one at most. */
   readonly multiple?: boolean;
+  /** Left out, a component of the type stays with its entity. */
+  readonly followsDrawing?: (component: Component<Id, Infer<S>>) => boolean;
 }): ComponentDefinition<Component<Id, Infer<S>>> {
   const { id: type, label, version, schema, runtime, addable } = description;
   const plan = planFields(schema);
@@ -228,6 +238,7 @@ export function defineComponent<const Id extends string, const S extends Schema>
     requires: description.requires ?? [],
     excludes: description.excludes ?? [],
     multiple: description.multiple ?? false,
+    followsDrawing: description.followsDrawing ?? (() => false),
     decode: (value, path) => {
       if (!isRecord(value)) return { ok: false, diagnostics: [invalid(path, 'a component', value)] };
       // What every component carries is checked here, and the rest is the

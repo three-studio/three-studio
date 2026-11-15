@@ -15,6 +15,10 @@ export const colliderType = defineComponent({
   // shapes, several of them on one entity.
   multiple: true,
   createFor: createColliderFor,
+  // A mesh Collider is built from its own entity's meshes. Once Unpack Model
+  // has passed the drawing to the pieces the host has none, so a copy goes to
+  // each piece that draws, and the model collides as it did.
+  followsDrawing: (collider) => collider.shape.kind === 'mesh',
 });
 
 /**

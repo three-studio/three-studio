@@ -417,7 +417,7 @@ export type { EntityCapability } from './scene/capabilities';
 export { bodyOf, collidersOfBody, jointEnds, physicsBodies } from './scene/bodies';
 export type { JointEnds } from './scene/bodies';
 /* What the types on one entity allow each other, as each declares it. */
-export { componentFits, componentsToAdd } from './scene/componentRules';
+export { componentFits, componentsFollowingDrawing, componentsToAdd } from './scene/componentRules';
 
 export { entitiesFromNodes } from './scene/modelUnpack';
 export type { ModelNode, UnpackedEntity } from './scene/modelUnpack';
