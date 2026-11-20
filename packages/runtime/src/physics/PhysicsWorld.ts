@@ -483,9 +483,9 @@ type Scope = [
  * document's local transforms, so entity nesting is handled for free: the
  * object already carries its resolved world matrix.
  *
- * Two faces. The lifecycle — `create`, `build`, `step`, `writeBack`, `dispose`
- * — is the `World`'s alone. `PhysicsApi` is what behaviours are handed, and
- * nothing of Rapier's crosses it.
+ * Two faces. The lifecycle — `create`, `build`, `tick`, `writeBack`, `dispose`
+ * — is the physics subsystem's alone. `PhysicsApi` is what behaviours are
+ * handed, and nothing of Rapier's crosses it.
  */
 export class PhysicsWorld implements PhysicsApi {
   readonly gravity: Readonly<Vec3Like>;
@@ -509,7 +509,18 @@ export class PhysicsWorld implements PhysicsApi {
   /** The project's physics materials by asset id: the build's, and each one tuned since. */
   private materials = new Map<AssetId, PhysicsMaterialDef>();
   /** What touched when the world was built, for the first tick to hand out before its own. */
-  private atBuild: PhysicsEvent[] = [];
+  private readonly atBuild: PhysicsEvent[] = [];
+  /**
+   * What the last tick heard, handed out until the next: one array for the
+   * world's life, so a tick that hears nothing makes nothing.
+   */
+  private readonly heard: PhysicsEvent[] = [];
+  /** Rapier's queue, read whole into this before any pair is asked where it touches. */
+  private readonly drained: { readonly first: number; readonly second: number; readonly started: boolean }[] = [];
+  /** Rapier's callback for each event in its queue, made once rather than per tick. */
+  private readonly onCollisionEvent = (first: number, second: number, started: boolean): void => {
+    this.drained.push({ first, second, started });
+  };
   /** What a joint with no Connected Body is held to; made by the first one. */
   private grounding: Placed | null = null;
   /**
@@ -519,13 +530,11 @@ export class PhysicsWorld implements PhysicsApi {
   private readonly joints = new Map<EntityId, Joint[]>();
   /** The scene the world was built from, whose bodies a tuned joint holds again. */
   private scene: SceneDoc | null = null;
-  private accumulator = 0;
   /** Moves with each tick and each tune: the debug view read at a version holds until it moves. */
   private version = 0;
   private debug: { readonly version: number; readonly lines: DebugLines } | null = null;
 
   private readonly fixedStep: number;
-  private readonly maxSubsteps: number;
   /** Each layer's collision groups, by its id: project data, as gravity and the step are. */
   private readonly groupsOf: (layerId: string) => number;
   /** The bits of the layers a query asks for, by their ids. */
@@ -533,7 +542,6 @@ export class PhysicsWorld implements PhysicsApi {
 
   private constructor(world: RAPIER.World, settings: PhysicsSettings) {
     this.fixedStep = settings.fixedTimestep;
-    this.maxSubsteps = settings.maxSubsteps;
     this.groupsOf = collisionGroups(settings.layers);
     this.bitsOf = layerBits(settings.layers);
     const [x, y, z] = settings.gravity;
@@ -641,45 +649,38 @@ export class PhysicsWorld implements PhysicsApi {
     this.world.timestep = 1e-9;
     this.world.step(this.events);
     this.world.timestep = this.fixedStep;
-    this.atBuild = this.drain();
+    this.drainInto(this.atBuild);
   }
 
   /**
-   * Advances the simulation, consuming whole fixed steps.
+   * Advances the simulation by one fixed step: the world's, whose clock
+   * decides how many a frame runs — a variable step would make a stack of
+   * boxes settle differently on a 60 Hz and a 144 Hz display, and jump heights
+   * frame-rate dependent.
    *
-   * A variable step would make a stack of boxes settle differently on a 60 Hz
-   * and a 144 Hz display, and makes jump heights frame-rate dependent.
+   * Run after whatever commands a kinematic body in the tick: `setNextKinematic*`
+   * is a target, not an impulse, so a command given at display rate would
+   * overwrite itself between ticks and lose most of the motion.
    *
-   * @param beforeStep Runs immediately before each step, with the fixed delta.
-   *   Anything that commands a kinematic body belongs here: `setNextKinematic*`
-   *   is a target, not an impulse, so a caller running at display rate would
-   *   overwrite its own commands between steps and lose most of the motion.
-   * @param afterStep Runs after each step, with what started or stopped
-   *   touching in it — the first step also with what touched when the world
-   *   was built —, once the step's forces are dropped: a force added then is
-   *   felt in the next step, and a kick at once.
+   * Returns what started or stopped touching in it — the first tick also what
+   * touched when the world was built —, once the tick's forces are dropped: a
+   * force added by whoever hears it is felt in the next tick, and a kick at
+   * once. The array is the world's, and holds the next tick's once it has run.
    */
-  step(
-    delta: number,
-    beforeStep?: (fixedDelta: number) => void,
-    afterStep?: (events: readonly PhysicsEvent[]) => void,
-  ): void {
-    this.accumulator += Math.min(delta, this.fixedStep * this.maxSubsteps);
-
-    let steps = 0;
-    while (this.accumulator >= this.fixedStep && steps < this.maxSubsteps) {
-      beforeStep?.(this.fixedStep);
-      // After the behaviours, so a body follows where they put its entity this tick.
-      for (const body of this.bodies.values()) body.beforeTick();
-      this.world.step(this.events);
-      this.version += 1;
-      for (const body of this.bodies.values()) body.afterTick();
-      const events = this.atBuild.concat(this.drain());
-      this.atBuild = [];
-      afterStep?.(events);
-      this.accumulator -= this.fixedStep;
-      steps += 1;
+  tick(): readonly PhysicsEvent[] {
+    // After the behaviours, so a body follows where they put its entity this tick.
+    for (const body of this.bodies.values()) body.beforeTick();
+    this.world.step(this.events);
+    this.version += 1;
+    for (const body of this.bodies.values()) body.afterTick();
+    this.heard.length = 0;
+    for (let i = 0; i < this.atBuild.length; i += 1) {
+      const event = this.atBuild[i];
+      if (event !== undefined) this.heard.push(event);
     }
+    this.atBuild.length = 0;
+    this.drainInto(this.heard);
+    return this.heard;
   }
 
   /**
@@ -690,10 +691,12 @@ export class PhysicsWorld implements PhysicsApi {
    * last tick, a body stood still on every other frame at 120 Hz, and on three
    * frames out of four at a quarter of the time scale. A body that asks is
    * drawn between its last two ticks instead.
+   *
+   * @param alpha How far the world's clock has run into the next tick, below
+   *   one: the world takes in no more time than the ticks it may run, and runs
+   *   them.
    */
-  writeBack(): void {
-    // Below one: `step` takes in no more time than the ticks it may run, and runs them.
-    const alpha = this.accumulator / this.fixedStep;
+  writeBack(alpha: number): void {
     for (const body of this.bodies.values()) body.draw(alpha);
   }
 
@@ -995,31 +998,34 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * The tick's events, by entity.
+   * The tick's events, by entity, onto the end of `heard`.
    *
    * Rapier's queue is read whole before the world is asked where any pair
    * touches, so nothing calls into Rapier from inside its own loop.
    */
-  private drain(): PhysicsEvent[] {
-    const pairs: { first: number; second: number; started: boolean }[] = [];
-    this.events.drainCollisionEvents((first, second, started) => {
-      pairs.push({ first, second, started });
-    });
-    return pairs.flatMap(({ first, second, started }): PhysicsEvent[] => {
+  private drainInto(heard: PhysicsEvent[]): void {
+    this.drained.length = 0;
+    this.events.drainCollisionEvents(this.onCollisionEvent);
+    for (let i = 0; i < this.drained.length; i += 1) {
+      const event = this.drained[i];
+      if (event === undefined) continue;
+      const { first, second, started } = event;
       const a = this.owners.get(first);
       const b = this.owners.get(second);
       // Every collider the world builds is in the table.
-      if (!a || !b) return [];
+      if (!a || !b) continue;
       const sides = { a: a.owner, b: b.owner };
       const pair = first < second ? `${first} ${second}` : `${second} ${first}`;
       if (started ? a.component.isSensor || b.component.isSensor : this.triggers.has(pair)) {
         if (started) this.triggers.add(pair);
         else this.triggers.delete(pair);
-        return [{ ...sides, kind: started ? 'triggerEnter' : 'triggerExit' }];
+        heard.push({ ...sides, kind: started ? 'triggerEnter' : 'triggerExit' });
+      } else if (!started) {
+        heard.push({ ...sides, kind: 'collisionExit' });
+      } else {
+        heard.push({ ...sides, kind: 'collisionEnter', contact: this.contactOf(a.collider, b.collider) });
       }
-      if (!started) return [{ ...sides, kind: 'collisionExit' }];
-      return [{ ...sides, kind: 'collisionEnter', contact: this.contactOf(a.collider, b.collider) }];
-    });
+    }
   }
 
   /**

@@ -7,7 +7,7 @@ import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle, Collision } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { builtInRegistries } from '../registries';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   bundleOf,
   ground,
@@ -182,11 +182,10 @@ describe('a script hearing its colliders', () => {
     const registries = builtInRegistries();
     const world = await World.play({
       document: sceneWith([door]),
-      registries,
+      registries: withoutPhysics(registries),
       scripts: bundleOf([door]),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      enablePhysics: false,
     });
     onTestFinished(() => world.dispose());
 

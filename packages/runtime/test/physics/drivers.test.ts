@@ -3,6 +3,7 @@ import { Euler, Quaternion } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Behaviour } from '../../src/scripting/ScriptHost';
 import type { ScriptClass } from '../../src/scripting/scriptBundle';
+import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,
   ground,
@@ -159,7 +160,7 @@ describe("a write to a body's transform", () => {
     rig.run(0.5);
     const rested = rig.solved(ball.entity.id);
 
-    const body = rig.world.physics?.body(ball.entity.id);
+    const body = physicsOf(rig.world)?.body(ball.entity.id);
     const object = rig.world.binder.getObject(ball.entity.id);
     if (!body || !object) throw new Error('The ball was not built.');
     body.enabled = false;

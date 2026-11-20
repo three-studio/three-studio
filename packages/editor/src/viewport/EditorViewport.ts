@@ -10,6 +10,7 @@ import {
 import {
   AssetCache,
   audioOf,
+  physicsDebugLines,
   studioTime,
   type World,
   type SceneBinder,
@@ -682,7 +683,7 @@ export class EditorViewport {
    */
   private overGame(world: World): Scene | undefined {
     if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return undefined;
-    const lines = world.physicsDebug();
+    const lines = physicsDebugLines(world);
     return lines === null ? undefined : this.physicsDebug.show(lines);
   }
 

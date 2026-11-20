@@ -13,7 +13,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
-import { builtInRegistries } from '../registries';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   colliderOf,
   ground,
@@ -120,12 +120,11 @@ describe('a collider linked to a physics material', () => {
     const registries = builtInRegistries();
     const off = await World.play({
       document: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
-      registries,
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       physicsMaterials: LIBRARY,
-      enablePhysics: false,
     });
     onTestFinished(() => off.dispose());
     expect(off.warnings.filter((line) => line.includes('physics material'))).toEqual([]);

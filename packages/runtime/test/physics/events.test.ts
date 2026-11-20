@@ -3,6 +3,7 @@ import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Collision, Vec3Like } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
+import { physicsOf } from '../../src/physics/physicsOf';
 import { builtInRegistries } from '../registries';
 import {
   block,
@@ -187,7 +188,7 @@ describe('collision and trigger events', () => {
     // The floor hears the collider's entity, not its body's.
     expect(said(floor)).toEqual([['onCollisionEnter', wheel.entity.id]]);
     // Heard by the cart as the body the wheel rides, not through a body of the wheel's.
-    expect(rig.world.physics?.body(wheel.entity.id)).toBeNull();
+    expect(physicsOf(rig.world)?.body(wheel.entity.id)).toBeNull();
   });
 
   it('a body held out of the world leaves its triggers, and enters them again', async () => {

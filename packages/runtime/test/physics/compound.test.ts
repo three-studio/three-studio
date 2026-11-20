@@ -19,6 +19,7 @@ import {
   withBody,
   withCollider,
 } from './rig';
+import { physicsOf } from '../../src/physics/physicsOf';
 
 /*
  * A body is every collider that rides it: its entity's own, and those of its
@@ -45,7 +46,7 @@ describe('a compound body', () => {
 
     rig.run(3);
 
-    expect(rig.world.physics?.body(child.entity.id)).toBeNull();
+    expect(physicsOf(rig.world)?.body(child.entity.id)).toBeNull();
     expect(Math.abs(rig.solved(parent.entity.id).position.y - 0.5)).toBeLessThan(0.02);
     // It lands on the child, and rolls off it to the ground.
     expect(rig.solved(probe.entity.id).position.y).toBeLessThan(2.5);
@@ -134,7 +135,7 @@ describe('a compound body', () => {
     nest(body, ...parts);
     const rig = await physicsRig([body, ...parts]);
 
-    expect(rig.world.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
+    expect(physicsOf(rig.world)?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
   });
 
   it('lets a player walk with a collider riding its body', async () => {

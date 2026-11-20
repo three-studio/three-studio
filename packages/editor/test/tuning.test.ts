@@ -31,7 +31,7 @@ import {
   type SchemaField,
   type ScriptComponent,
 } from '@three-studio/core';
-import { AssetCache, Behaviour, World, NO_SCRIPTS, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
+import { AssetCache, Behaviour, World, NO_SCRIPTS, NULL_ASSET_RESOLVER, physicsOf } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -136,7 +136,8 @@ function componentOf<T extends ComponentDoc['type']>(template: EntityTemplate, t
 }
 
 /** The running mass of the template's body. */
-const massOf = (world: World | null, template: EntityTemplate) => world?.physics?.body(template.entity.id)?.mass;
+const massOf = (world: World | null, template: EntityTemplate) =>
+  (world === null ? null : physicsOf(world))?.body(template.entity.id)?.mass;
 
 /** What a start that runs to a real world needs of the browser. */
 beforeAll(() => {

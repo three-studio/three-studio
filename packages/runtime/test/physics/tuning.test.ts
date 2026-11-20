@@ -22,7 +22,8 @@ import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { JointHandle } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { builtInRegistries } from '../registries';
+import { physicsDebugLines, physicsOf } from '../../src/physics/physicsOf';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   block,
   colliderOf,
@@ -125,7 +126,7 @@ function pendulum(): EntityTemplate {
 }
 
 /** The template's joint, as a behaviour reaches it. */
-const jointOf = (rig: PhysicsRig, template: EntityTemplate) => rig.world.physics?.joint(template.entity.id) ?? null;
+const jointOf = (rig: PhysicsRig, template: EntityTemplate) => physicsOf(rig.world)?.joint(template.entity.id) ?? null;
 
 const GRIP = fixedId('asset', 'grip');
 const grip: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' };
@@ -312,11 +313,11 @@ describe('a collider tuned while running', () => {
   it('a tune is in the debug view at once, paused or not', async () => {
     const ball = withBody('sphere', [0, 2, 0]);
     const rig = await physicsRig([ground(), ball]);
-    const before = Array.from(rig.world.physicsDebug()?.vertices ?? []);
+    const before = Array.from(physicsDebugLines(rig.world)?.vertices ?? []);
 
     rig.world.tune(ball.entity.id, { ...colliderOf(ball), shape: { ...createColliderShape('sphere'), radius: 1 } });
 
-    expect(Array.from(rig.world.physicsDebug()?.vertices ?? [])).not.toEqual(before);
+    expect(Array.from(physicsDebugLines(rig.world)?.vertices ?? [])).not.toEqual(before);
   });
 });
 
@@ -512,16 +513,15 @@ describe('a tune the world cannot take', () => {
 
     const off = await World.play({
       document: sceneWith([ground(), ball]),
-      registries,
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
-      enablePhysics: false,
     });
     onTestFinished(() => off.dispose());
     off.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
     off.tuneAsset(GRIP, ice);
-    expect(off.physicsDebug()).toBeNull();
+    expect(physicsDebugLines(off)).toBeNull();
   });
 
   it('a component it builds nothing from, and an asset it was not built with, change nothing and throw nothing', async () => {

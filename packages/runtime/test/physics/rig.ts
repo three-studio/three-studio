@@ -38,6 +38,7 @@ import type { AudioContextLike } from '../../src/audio/AudioContextLike';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
 import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
+import { physicsOf } from '../../src/physics/physicsOf';
 import { builtInRegistries } from '../registries';
 
 const registries = builtInRegistries();
@@ -144,7 +145,7 @@ async function runningRig(
 
   const step = physicsSettings.fixedTimestep;
   const body = (entityId: EntityId): BodyHandle => {
-    const built = world.physics?.body(entityId);
+    const built = physicsOf(world)?.body(entityId);
     if (!built) throw new Error(`No body was built for "${entityId}".`);
     return built;
   };

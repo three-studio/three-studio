@@ -1,8 +1,10 @@
 import {
   createAudioListenerEntity,
   createCameraEntity,
+  createEntity,
   createRenderingSettings,
   fixedId,
+  type Disposable,
   type SubsystemId,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
@@ -12,10 +14,25 @@ import { AssetCache } from '../src/assets/AssetCache';
 import { audioOf } from '../src/audio/audioOf';
 import { Input } from '../src/input/Input';
 import { inputOf } from '../src/input/inputOf';
+import { collisionsOf, physicsOf } from '../src/physics/physicsOf';
+import { Behaviour } from '../src/scripting/ScriptHost';
+import { EntityChannel } from '../src/world/channel';
 import { World, type Phase, type Subsystem, type SubsystemDefinition } from '../src/world/World';
 import { FakeContext, FakeListener, type FakeParam } from './audio/fakeContext';
-import { physicsRig, physicsRigOn, player, standInForTheBrowser, takeTheBrowserBack } from './physics/rig';
-import { builtInRegistries } from './registries';
+import {
+  bundleOf,
+  ground,
+  nest,
+  physicsRig,
+  physicsRigOn,
+  player,
+  standInForTheBrowser,
+  takeTheBrowserBack,
+  withBody,
+  withCollider,
+  withScript,
+} from './physics/rig';
+import { builtInRegistries, withoutPhysics } from './registries';
 
 /*
  * A world in Play runs its registered subsystems: each built once, in the order
@@ -228,14 +245,132 @@ describe('input, a subsystem', () => {
     const registries = builtInRegistries();
     const world = await World.play({
       document: sceneWith([player([0, 1, 0])]),
-      registries,
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      enablePhysics: false,
     });
     onTestFinished(() => world.dispose());
 
     expect(inputOf(world)).toBeNull();
     expect(world.behaviours).toEqual([]);
+  });
+});
+
+describe('the fixed step', () => {
+  it('runs one tick per whole step, keeps the rest, and says how far into the next it is', async () => {
+    const log: string[] = [];
+    const rig = await physicsRigOn(registriesWith(logging(fixedId('subsystem', 'ticker'), log, ['fixed'])))([]);
+    log.length = 0;
+    const step = rig.world.fixedStep;
+
+    rig.world.frame(step * 2.5);
+    expect(log).toHaveLength(2);
+    expect(rig.world.fixedAlpha).toBeCloseTo(0.5, 6);
+
+    rig.world.frame(step);
+    expect(log).toHaveLength(3);
+    expect(rig.world.fixedAlpha).toBeCloseTo(0.5, 6);
+  });
+
+  it('runs no more ticks in a frame than the project’s substeps, and drops the rest', async () => {
+    const log: string[] = [];
+    const rig = await physicsRigOn(registriesWith(logging(fixedId('subsystem', 'ticker'), log, ['fixed'])))([], {
+      maxSubsteps: 3,
+    });
+    log.length = 0;
+
+    rig.world.frame(rig.world.fixedStep * 10);
+
+    expect(log).toHaveLength(3);
+    expect(rig.world.fixedAlpha).toBeLessThan(1);
+  });
+
+  it('runs the behaviours’ fixed hooks in a world with no physics', async () => {
+    const ticks: number[] = [];
+    class Ticking extends Behaviour {
+      override onFixedUpdate(step: number) {
+        ticks.push(step);
+      }
+    }
+    const ticker = withScript(createEntity('Ticker'), Ticking);
+    const registries = builtInRegistries();
+    const world = await World.play({
+      document: sceneWith([ticker]),
+      registries: withoutPhysics(registries),
+      scripts: bundleOf([ticker]),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+    });
+    onTestFinished(() => world.dispose());
+
+    world.frame(world.fixedStep);
+
+    expect(physicsOf(world)).toBeNull();
+    expect(ticks).toEqual([world.fixedStep]);
+  });
+});
+
+describe('an entity channel', () => {
+  const door = fixedId('entity', 'door');
+  const lamp = fixedId('entity', 'lamp');
+
+  it('tells an entity’s listeners in the order they began, and no other entity’s', () => {
+    const channel = new EntityChannel<string>();
+    const heard: string[] = [];
+    channel.listen(door, (event) => heard.push(`first ${event}`));
+    channel.listen(lamp, (event) => heard.push(`lamp ${event}`));
+    channel.listen(door, (event) => heard.push(`second ${event}`));
+
+    channel.publish(door, 'opens');
+
+    expect(heard).toEqual(['first opens', 'second opens']);
+    expect(channel.listenedEntities()).toEqual([door, lamp]);
+  });
+
+  it('stops telling a listener once it is disposed, and forgets an entity nobody listens on', () => {
+    const channel = new EntityChannel<string>();
+    const heard: string[] = [];
+    const listening = channel.listen(door, (event) => heard.push(event));
+
+    channel.publish(door, 'once');
+    listening.dispose();
+    listening.dispose();
+    channel.publish(door, 'twice');
+
+    expect(heard).toEqual(['once']);
+    expect(channel.listenedEntities()).toEqual([]);
+  });
+
+  it('finishes the publish in hand when a listener stops another', () => {
+    const channel = new EntityChannel<string>();
+    const heard: string[] = [];
+    let later: Disposable | null = null;
+    channel.listen(door, () => {
+      heard.push('first');
+      later?.dispose();
+    });
+    later = channel.listen(door, () => heard.push('later'));
+
+    channel.publish(door, 'one');
+    channel.publish(door, 'two');
+
+    expect(heard).toEqual(['first', 'later', 'first']);
+  });
+});
+
+describe('physics, a subsystem', () => {
+  it('publishes what a child’s collider touches to its entity, then to its body’s', async () => {
+    const cart = withBody('box', [0, 3, 0], { lockRotation: { x: true, y: true, z: true } });
+    const wheel = withCollider('sphere', [0, -1.5, 0]);
+    nest(cart, wheel);
+    const rig = await physicsRig([cart, wheel, ground()]);
+    const heard: string[] = [];
+    // Listened on body first: the order is physics', not the listeners'.
+    collisionsOf(rig.world)?.listen(cart.entity.id, (touch) => heard.push(`cart ${touch.kind}`));
+    collisionsOf(rig.world)?.listen(wheel.entity.id, (touch) => heard.push(`wheel ${touch.kind}`));
+
+    rig.run(2);
+
+    expect(heard).toEqual(['wheel collisionEnter', 'cart collisionEnter']);
   });
 });

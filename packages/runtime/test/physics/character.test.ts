@@ -2,6 +2,7 @@ import { createDefaultLayer, rigidbodyType, type CollisionLayer } from '@three-s
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CharacterSettings } from '../../src/physics/PhysicsApi';
+import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,
   ground,
@@ -183,7 +184,7 @@ describe('a character', () => {
     const walker = player([0, 1, 0]);
     const rig = await physicsRig([ground(), walker]);
 
-    expect(rig.world.physics?.createCharacterController(walker.entity.id, SETTINGS)).toBeNull();
+    expect(physicsOf(rig.world)?.createCharacterController(walker.entity.id, SETTINGS)).toBeNull();
 
     rig.press('KeyW');
     rig.run(1);
@@ -196,7 +197,7 @@ describe('a character', () => {
     const capsule = withBody('capsule', [0, 1.1, 0]);
     const rig = await physicsRig([ground(), capsule]);
     const id = capsule.entity.id;
-    const character = rig.world.physics?.createCharacterController(id, SETTINGS);
+    const character = physicsOf(rig.world)?.createCharacterController(id, SETTINGS);
     if (!character) throw new Error('The capsule was given no character.');
 
     // Settled as the Player Controller holds a player down: 1 m/s.

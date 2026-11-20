@@ -11,6 +11,7 @@ import {
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PhysicsApi, RaycastHit, Vec3Like } from '../../src/physics/PhysicsApi';
+import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,
   ground,
@@ -59,7 +60,7 @@ async function running(
   settings?: Partial<PhysicsSettings>,
 ): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
   const rig = await physicsRig(entities, settings);
-  const physics = rig.world.physics;
+  const physics = physicsOf(rig.world);
   if (!physics) throw new Error('The rig runs with physics on.');
   return { rig, physics };
 }

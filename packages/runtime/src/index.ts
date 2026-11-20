@@ -27,6 +27,7 @@ export const RUNTIME_VERSION = ENGINE_VERSION;
 /* The world: a scene document running, and the scene graph a host draws. */
 export { World, isPerspective } from './world/World';
 export type { Phase, Subsystem, SubsystemDefinition, WorldOptions, WorldRegistries } from './world/World';
+export { EntityChannel } from './world/channel';
 /* What a game is built from, made and filled by each app's composition root. */
 export { activateRuntime, createRuntimeRegistries } from './registries';
 export type { RuntimeRegistries } from './registries';
@@ -90,6 +91,7 @@ export type {
 /* Physics. Our types only: nothing of Rapier's is on this barrel. */
 export { PhysicsWorld, applyWorldTransform, jointPose, worldPose } from './physics/PhysicsWorld';
 export type { DebugLines } from './physics/PhysicsWorld';
+export { collisionsOf, physicsDebugLines, physicsOf } from './physics/physicsOf';
 export { collectVertices, ownMeshes } from './physics/meshShape';
 export type {
   BodyHandle,
@@ -102,6 +104,7 @@ export type {
   QueryFilter,
   QueryOptions,
   RaycastHit,
+  Touch,
   Vec3Like,
 } from './physics/PhysicsApi';
 

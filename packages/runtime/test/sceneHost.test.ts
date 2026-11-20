@@ -15,7 +15,7 @@ import type { SceneApi } from '../src/behaviour/Behaviour';
 import { SceneHost, type SceneHostOptions } from '../src/SceneHost';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
-import { builtInRegistries } from './registries';
+import { builtInRegistries, withoutPhysics } from './registries';
 
 /*
  * Where a script is, as it asks `scenes.current`.
@@ -61,14 +61,13 @@ function hostOf(
         return structuredClone(scene);
       },
     },
-    registries,
+    registries: withoutPhysics(registries),
     // The bundle the host hands every world it builds, the script in it.
     scripts: new Map([[WHERE, Where]]),
     assets: extra.assets ?? new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     loadingScene: extra.loadingScene ?? null,
     rendering: createRenderingSettings(),
     // Rapier is not what this is about, and it is the one slow thing to load.
-    enablePhysics: false,
   });
 }
 

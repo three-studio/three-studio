@@ -5,6 +5,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 import type { BodyHandle, CharacterController, CharacterSettings } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
 import { noBody, scriptPhysicsFor } from '../../src/scripting/scriptPhysics';
+import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,
   ground,
@@ -155,7 +156,7 @@ describe('a script moving bodies', () => {
     expect(Math.abs(body.linearVelocity.z + 1)).toBeLessThan(1e-6);
     expect(body.angularVelocity.y).toBeGreaterThan(0);
     // The behaviours' face stays exact: the thruster carries no body of its own.
-    expect(rig.world.physics?.body(thruster.entity.id)).toBeNull();
+    expect(physicsOf(rig.world)?.body(thruster.entity.id)).toBeNull();
     expect(Push.kept).toBe(body);
   });
 

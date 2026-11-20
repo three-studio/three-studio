@@ -181,10 +181,14 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
     input,
     run(seconds, onFrame) {
       for (let frame = 0; frame < Math.round(seconds / STEP); frame++) {
+        // One tick a frame, as a world whose frames are its step runs them: the
+        // controller commands the body, then the tick moves it.
         controller.update(STEP);
-        physics.step(STEP, (fixed) => controller.fixedUpdate(fixed));
-        // The world writes the player's entity, as it writes every body it drives.
-        physics.writeBack();
+        controller.fixedUpdate(STEP);
+        physics.tick();
+        // The world writes the player's entity, as it writes every body it
+        // drives: a frame of one step ends with nothing left of the next.
+        physics.writeBack(0);
         controller.postUpdate();
         onFrame?.();
       }

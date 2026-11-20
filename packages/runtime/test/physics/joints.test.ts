@@ -22,6 +22,7 @@ import {
   withJoint,
   type PhysicsRig,
 } from './rig';
+import { physicsOf } from '../../src/physics/physicsOf';
 
 /*
  * A joint holds two bodies where they were built: the body of its own entity
@@ -348,7 +349,7 @@ describe('a joint', () => {
       motion: hinge([0, 0, -1]),
     });
     const rig = await physicsRig([onZ, reversed]);
-    const angle = (template: EntityTemplate) => rig.world.physics?.joint(template.entity.id)?.position ?? NaN;
+    const angle = (template: EntityTemplate) => physicsOf(rig.world)?.joint(template.entity.id)?.position ?? NaN;
     // Zero as built, give or take the nanosecond the world steps through as it
     // is built: -3e-20 rad.
     expect(Math.abs(angle(onZ))).toBeLessThan(1e-12);
@@ -377,13 +378,13 @@ describe('a joint', () => {
 
     rig.run(2);
 
-    expect(Math.abs((rig.world.physics?.joint(box.entity.id)?.position ?? 0) + 1)).toBeLessThan(1e-3);
+    expect(Math.abs((physicsOf(rig.world)?.joint(box.entity.id)?.position ?? 0) + 1)).toBeLessThan(1e-3);
   });
 
   it('a motor turned on drives its joint, and turned off lets it turn freely', async () => {
     const spun = wheel();
     const rig = await physicsRig([spun]);
-    const joint = rig.world.physics?.joint(spun.entity.id);
+    const joint = physicsOf(rig.world)?.joint(spun.entity.id);
     if (!joint) throw new Error('No joint was built.');
 
     joint.motorSpeed = 5;
@@ -400,7 +401,7 @@ describe('a joint', () => {
   it('a write that is not a number is ignored', async () => {
     const spun = wheel({ speed: 3, maxForce: 20 });
     const rig = await physicsRig([spun]);
-    const joint = rig.world.physics?.joint(spun.entity.id);
+    const joint = physicsOf(rig.world)?.joint(spun.entity.id);
     if (!joint) throw new Error('No joint was built.');
 
     joint.motorSpeed = Number.NaN;
@@ -418,7 +419,7 @@ describe('a joint', () => {
       motion: createJointMotion('fixed'),
     });
     const rig = await physicsRig([first, second]);
-    const joint = rig.world.physics?.joint(second.entity.id);
+    const joint = physicsOf(rig.world)?.joint(second.entity.id);
     if (!joint) throw new Error('No joint was built.');
 
     joint.motorEnabled = true;
@@ -438,9 +439,9 @@ describe('a joint', () => {
     const loose = withJoint(createEntity('Loose'));
     const rig = await physicsRig([door, edge, loose]);
 
-    expect(rig.world.physics?.joint(edge.entity.id)).not.toBeNull();
-    expect(rig.world.physics?.joint(door.entity.id)).toBeNull();
-    expect(rig.world.physics?.joint(loose.entity.id)).toBeNull();
+    expect(physicsOf(rig.world)?.joint(edge.entity.id)).not.toBeNull();
+    expect(physicsOf(rig.world)?.joint(door.entity.id)).toBeNull();
+    expect(physicsOf(rig.world)?.joint(loose.entity.id)).toBeNull();
   });
 
   it('building the world with joints moves nothing', async () => {

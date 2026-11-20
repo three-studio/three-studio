@@ -173,6 +173,16 @@ export interface Collision {
 }
 
 /**
+ * What one side of a pair hears after the tick it happened in, published on
+ * physics' collision channel to the entity of that side's collider, then to
+ * its body's when that is another: a cart hears its wheels. Named after the
+ * hook that hears it.
+ */
+export type Touch =
+  | { readonly kind: 'collisionEnter'; readonly collision: Collision }
+  | { readonly kind: 'collisionExit' | 'triggerEnter' | 'triggerExit'; readonly other: string };
+
+/**
  * A body in the world, in world space: metres, seconds, kilograms, radians.
  *
  * A vector or a rotation holding a NaN or an infinity is ignored, and the rest

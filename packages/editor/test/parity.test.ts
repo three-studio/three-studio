@@ -21,6 +21,7 @@ import { Mesh, type Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { serveModels, stubImages } from '../../runtime/test/assetFixtures';
+import { withoutPhysics } from '../../runtime/test/registries';
 import { digestProjection, type ProjectionDigest } from '../../runtime/test/sceneDigest';
 import { EDITOR_OVERLAYS, createEditorProjection, type EditorProjection } from '../src/viewport/editorProjection';
 import { builtInRegistries } from './registries';
@@ -137,11 +138,10 @@ async function editView(scene: SceneDoc, rendering: RenderingSettings, assets = 
 function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<World> {
   return World.play({
     document: scene,
-    registries,
+    registries: withoutPhysics(registries),
     assets,
     rendering,
     materials,
-    enablePhysics: false,
   });
 }
 

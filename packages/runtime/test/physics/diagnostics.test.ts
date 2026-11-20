@@ -13,7 +13,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
-import { builtInRegistries } from '../registries';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   block,
   ground,
@@ -107,11 +107,10 @@ describe('the physics set-up, with layers', () => {
     const registries = builtInRegistries();
     const world = await World.play({
       document: sceneWith([onLayer(player([0, 1, 0]), 'player'), ground(), lost]),
-      registries,
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: { ...createPhysicsSettings(), layers: APART },
-      enablePhysics: false,
     });
     onTestFinished(() => world.dispose());
 
@@ -174,10 +173,9 @@ describe('the physics set-up, with joints', () => {
     const registries = builtInRegistries();
     const world = await World.play({
       document: sceneWith([withJoint(createEntity('Hinge'))]),
-      registries,
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      enablePhysics: false,
     });
     onTestFinished(() => world.dispose());
     expect(world.warnings.filter((line) => line.includes('Joint'))).toEqual([]);
