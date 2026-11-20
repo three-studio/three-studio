@@ -8,7 +8,7 @@ import { BufferAttribute, BufferGeometry, LineBasicMaterial, LineSegments, Scene
  * and dim a sleeping one.
  *
  * A scene of its own, drawn onto the game's image (`ViewportRenderer.draw`'s
- * `over`). The running engine's scene carries nothing of the editor's, so that
+ * `over`). The running world's scene carries nothing of the editor's, so that
  * what Play draws is what a build draws.
  */
 export class PhysicsDebug {

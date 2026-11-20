@@ -16,7 +16,7 @@ type Collection = ReturnType<typeof import('nipplejs').create>;
  * and an exported build have to offer the same controls, or the thing being
  * tested is not the thing being shipped — the same argument that makes
  * `rendering.batching` a project setting rather than a per-view flag. Both
- * hosts hand the engine a canvas and nothing else, so putting this on the host
+ * hosts hand the world a canvas and nothing else, so putting this on the host
  * side would be two implementations, and two implementations of an input scheme
  * are two different feels.
  *

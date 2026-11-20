@@ -155,7 +155,7 @@ export interface BuildManifest {
   physicsMaterials: Record<string, PhysicsMaterialDef>;
   /**
    * The prefabs a shipped scene instances, by asset id, expanded before the
-   * engine sees the scene.
+   * world sees the scene.
    *
    * Each one is the JSON of its document, as a file holds it. A document keeps
    * its entities in a Map, which a manifest cannot say, so a declaration of

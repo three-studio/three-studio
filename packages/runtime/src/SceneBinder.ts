@@ -147,7 +147,7 @@ export interface SceneBinderOptions {
  * 4. **Environment last**, which is 2 and 3 together.
  *
  * Written down here rather than left as the order of four statements in
- * `Engine`'s constructor, because it is a constraint on *this* class's methods:
+ * `World`'s constructor, because it is a constraint on *this* class's methods:
  * a reader of `SceneBinder` should not have to find a caller to learn which of
  * its methods may not be called first.
  */

@@ -55,7 +55,7 @@ export class CameraSystem extends ComponentSystem<CameraComponent, CameraHandle>
 
   /**
    * Nothing to free. What a discarded camera does leave behind is
-   * `Engine.documentCamera` pointing at an object nothing draws — a dangling
+   * `World.documentCamera` pointing at an object nothing draws — a dangling
    * reference rather than a leak, and the patch path above is what stops one
    * being created on every edit.
    */

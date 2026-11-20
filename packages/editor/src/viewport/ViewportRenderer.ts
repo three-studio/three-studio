@@ -24,7 +24,7 @@ const STATS_INTERVAL_MS = 500;
  *
  * What it deliberately does **not** own is any camera. `resize` measures the
  * boxes and sizes the surface; whose aspect that changes is a question for the
- * editor camera, the running engine and the preview, and each of them answers
+ * editor camera, the running world and the preview, and each of them answers
  * it where it lives.
  */
 export class ViewportRenderer {
@@ -48,7 +48,7 @@ export class ViewportRenderer {
   readonly editView = new Presentation('edit');
   /**
    * The running game's canvas, stacked with the edit view's on the Viewport's
-   * stage. The engine's `Input` listens on it.
+   * stage. The world's `Input` listens on it.
    */
   readonly gameView = new Presentation('game');
   /**
@@ -218,7 +218,7 @@ export class ViewportRenderer {
    * the three views want three of them rather than one belonging to the
    * renderer. Nothing above has to move for that — the renderer and the loop are
    * already this class's, which is the whole of the seam; see the class comment
-   * on `Engine`.
+   * on `World`.
    *
    * What is not free is the size, and it is worth knowing before starting.
    * `PassNode` sizes its render target from `renderer.getDrawingBufferSize()`
@@ -233,7 +233,7 @@ export class ViewportRenderer {
    *
    * @param over Drawn onto the image `scene` leaves, through the same camera:
    *   what the editor lays over the running game. A scene of its own, because
-   *   a running engine's scene carries no overlay — what Play draws is what a
+   *   a running world's scene carries no overlay — what Play draws is what a
    *   build draws.
    * @returns Whether it drew. For the game's canvas, the first `true` of a
    *   session is its first frame: the moment it has something of its own to

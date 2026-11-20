@@ -2,7 +2,7 @@
  * The project's collision layers, and the one rule of the matrix between them.
  *
  * A file of its own because the rule has three readers — the running world's
- * collision groups, the checkboxes of Project Settings and the engine's
+ * collision groups, the checkboxes of Project Settings and the world's
  * warnings — and is written once, here.
  */
 import { isRecord } from '../conform';

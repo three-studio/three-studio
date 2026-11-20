@@ -7,7 +7,7 @@ import {
   type CoreRegistries,
   type EntityId,
 } from '@three-studio/core';
-import type { Engine } from '@three-studio/runtime';
+import type { World } from '@three-studio/runtime';
 import { produce } from 'immer';
 import { create } from 'zustand';
 import { writeComponentPath, writePath } from '../commands/sceneCommands';
@@ -29,7 +29,7 @@ import { toastSlot } from './toastStore';
  *
  * It names no type and no physics: the running game is handed every tuned
  * component and every tuned asset, and what it built from them takes them
- * (`Engine.tune`, `Engine.tuneAsset`).
+ * (`World.tune`, `World.tuneAsset`).
  */
 
 /** A value tuned during Play, at a path of one component, as the Inspector wrote it. */
@@ -62,11 +62,11 @@ interface TuningState {
 export const useTuningStore = create<TuningState>()(() => ({ values: [], assets: new Map(), revision: 0 }));
 
 /**
- * The engine running the window's scene, which a tune reaches; `null` while the
+ * The world running the window's scene, which a tune reaches; `null` while the
  * game runs another scene, or none. Module-level, as Play's `running` is: a
  * window has one session.
  */
-let engine: Engine | null = null;
+let world: World | null = null;
 
 /** The offer at Stop: one toast, replaced where it stands. */
 const offer = toastSlot();
@@ -157,12 +157,12 @@ export function keepTuning(registries: CoreRegistries): void {
 }
 
 /**
- * The engine running the window's scene from now on, or `null`. It is handed
+ * The world running the window's scene from now on, or `null`. It is handed
  * everything tuned so far: a game that restarts the scene, or comes back to it,
  * keeps what this Play tuned.
  */
-export function tuningEngine(registries: CoreRegistries, next: Engine | null): void {
-  engine = next;
+export function tuningWorld(registries: CoreRegistries, next: World | null): void {
+  world = next;
   if (!next) return;
   const { values, assets } = useTuningStore.getState();
   // The assets first: a component tuned after them is built with them.
@@ -193,7 +193,7 @@ export function tuneComponentField(
     ],
     revision: state.revision + 1,
   }));
-  if (engine) handTo(registries, engine, entityId, componentId);
+  if (world) handTo(registries, world, entityId, componentId);
 }
 
 /**
@@ -211,7 +211,7 @@ export function tuneLinkedAsset(kind: AssetKind, assetId: AssetId, path: readonl
     assets: new Map(state.assets).set(assetId, { kind, values }),
     revision: state.revision + 1,
   }));
-  engine?.tuneAsset(assetId, values);
+  world?.tuneAsset(assetId, values);
 }
 
 /**
@@ -256,7 +256,7 @@ function within(path: readonly string[], prefix: readonly string[]): boolean {
  * from the component takes it, and a component it built nothing from changes
  * nothing: which types the world builds is the world's to know.
  */
-function handTo(registries: CoreRegistries, running: Engine, entityId: EntityId, componentId: ComponentId): void {
+function handTo(registries: CoreRegistries, running: World, entityId: EntityId, componentId: ComponentId): void {
   const component = findComponentById(expandedScene(registries).scene, entityId, componentId);
   if (component) running.tune(entityId, tunedComponent(entityId, component));
 }

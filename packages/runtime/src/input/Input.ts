@@ -128,7 +128,7 @@ export class Input {
   /**
    * Asks for on-screen controls, at the behest of whatever needs them.
    *
-   * Called by `PlayerController` rather than by `Engine`, because the sticks
+   * Called by `PlayerController` rather than by `World`, because the sticks
    * belong to the thing being driven: a scene with no player controller in it
    * shows none, and nobody had to write a rule saying so.
    *
@@ -337,7 +337,7 @@ export class Input {
     })
       .then((controls) => {
         // The import is a round trip, and a lot can happen across one: the
-        // engine can be torn down, or a mouse can arrive and settle the
+        // world can be torn down, or a mouse can arrive and settle the
         // question the other way. Either way what just finished building is
         // already unwanted.
         if (controls === null) return;

@@ -21,7 +21,7 @@ import { builtInRegistries } from './registries';
  * Where a script is, as it asks `scenes.current`.
  *
  * It read `null` in the first scene's `onStart`, and the name of the scene just
- * left in every later one: every `onAwake` and `onStart` runs while the engine
+ * left in every later one: every `onAwake` and `onStart` runs while the world
  * is being built, and the host named a scene only once it ran. A level that
  * restarted itself from `onStart` restarted the previous one, or failed on
  * `No scene "null"`.
@@ -74,12 +74,12 @@ function hostOf(
       },
     },
     registries,
-    // The bundle the host hands every engine it builds, the script in it.
+    // The bundle the host hands every world it builds, the script in it.
     scripts: new Map([[WHERE, Where]]),
     assets: extra.assets ?? new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     loadingScene: extra.loadingScene ?? null,
     rendering: createRenderingSettings(),
-    domElement: eventTarget as unknown as HTMLElement,
+    element: eventTarget as unknown as HTMLElement,
     // Rapier is not what this is about, and it is the one slow thing to load.
     enablePhysics: false,
   });
@@ -134,8 +134,8 @@ describe('scenes.current, as a script sees it', () => {
  * What a switch between two scenes keeps. A build's cache keeps nothing that
  * nothing holds, so a model two consecutive scenes share must never drop to
  * no holder between them: the load holds what the next scene needs from the
- * moment it has read it until the next scene's engine holds it too. Before,
- * it fetched each file, let go of it, and the next engine fetched it again.
+ * moment it has read it until the next scene's world holds it too. Before,
+ * it fetched each file, let go of it, and the next world fetched it again.
  */
 describe('a switch between scenes', () => {
   const CRATE = fixedId('asset', 'crate');
@@ -169,7 +169,7 @@ describe('a switch between scenes', () => {
     await host.go('Level');
 
     expect(server.requests('crate.gltf')).toBe(1);
-    // The level's engine holds it now, and nothing else does.
+    // The level's world holds it now, and nothing else does.
     expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
     host.dispose();
   });

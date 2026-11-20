@@ -16,7 +16,7 @@ import {
 } from '@three-studio/core';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER, type AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
-import { Engine } from '@three-studio/runtime/Engine';
+import { World } from '@three-studio/runtime/world/World';
 import { Mesh, type Object3D } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
@@ -45,7 +45,7 @@ import { builtInRegistries } from './registries';
  *   naming it. A type cannot be skipped the way a test can.
  * - *Timing.* A glTF or a texture arrives whenever it arrives; `whenLoaded` is
  *   awaited on both sides so this compares two settled scenes, not two races.
- * - *The exported build.* It runs no engine here. `apps/desktop/test/exportBuild.test.ts`
+ * - *The exported build.* It runs no world here. `apps/desktop/test/exportBuild.test.ts`
  *   covers the half that can be checked without a browser: that `build.json`
  *   carries `rendering` at all, so the player has the same numbers to read.
  *
@@ -55,12 +55,12 @@ import { builtInRegistries } from './registries';
  */
 
 /**
- * The one browser dependency between here and a running `Engine`.
+ * The one browser dependency between here and a running `World`.
  *
  * `Input` registers listeners on `window`, on `document` and on the element it
  * is handed; nothing on this path reads anything back off them. Physics is off,
  * which skips Rapier, and omitting `audioContext` is a game with no audio — so
- * this object is the whole of the browser `Engine.create` needs.
+ * this object is the whole of the browser `World.play` needs.
  */
 const eventTarget = { addEventListener() {}, removeEventListener() {} };
 
@@ -139,8 +139,8 @@ function windowAssets(resolver: AssetResolver = NULL_ASSET_RESOLVER): AssetCache
 
 /** The edit view's projection, with no canvas and no device under it. */
 async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<EditorProjection> {
-  const projection = createEditorProjection({ scene, registries, assets, rendering, materials });
-  // What `Engine.create` awaits on its own side. The two have to be read at the
+  const projection = createEditorProjection({ document: scene, registries, assets, rendering, materials });
+  // What `World.play` awaits on its own side. The two have to be read at the
   // same point in their lives, or a fixture holding a model would compare a
   // finished scene against one still waiting for a glTF.
   await projection.binder.whenLoaded();
@@ -155,24 +155,24 @@ async function editView(scene: SceneDoc, rendering: RenderingSettings, assets = 
   return digest;
 }
 
-/** The game Play runs: the real `Engine` rather than a stand-in for it. */
-function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<Engine> {
-  return Engine.create({
-    scene,
+/** The game Play runs: the real `World` rather than a stand-in for it. */
+function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<World> {
+  return World.play({
+    document: scene,
     registries,
     assets,
     rendering,
     materials,
-    domElement: eventTarget as unknown as HTMLElement,
+    element: eventTarget as unknown as HTMLElement,
     enablePhysics: false,
   });
 }
 
 /** What Play holds. */
 async function play(scene: SceneDoc, rendering: RenderingSettings, assets = windowAssets()): Promise<ProjectionDigest> {
-  const engine = await game(scene, rendering, assets);
-  const digest = digestProjection(engine.scene, engine.binder);
-  engine.dispose();
+  const world = await game(scene, rendering, assets);
+  const digest = digestProjection(world.scene, world.binder);
+  world.dispose();
   return digest;
 }
 
@@ -274,18 +274,18 @@ describe('the edit view and Play draw from the window’s one cache', () => {
     const scene = sceneWith([chair]);
 
     const projection = await projected(scene, settings(), assets);
-    const engine = await game(scene, settings(), assets);
+    const world = await game(scene, settings(), assets);
 
     // Play parses nothing the edit view already holds …
     expect(server.requests('chair.gltf')).toBe(1);
     expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
     const edited = meshUnder(projection.binder.getObject(chair.entity.id));
-    const played = meshUnder(engine.binder.getObject(chair.entity.id));
+    const played = meshUnder(world.binder.getObject(chair.entity.id));
     expect(played.geometry).toBe(edited.geometry);
     // … and a script tinting the game's materials tints none of the edit view's.
     expect(played.material).not.toBe(edited.material);
 
-    engine.dispose();
+    world.dispose();
     expect(assets.stats.held).toBe(1);
     projection.binder.dispose();
     expect(assets.stats.held).toBe(0);

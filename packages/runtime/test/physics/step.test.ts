@@ -27,21 +27,21 @@ beforeEach(() => {
 
 describe('Step', () => {
   it("advances one tick of the project's step, whatever the last frame left over", async () => {
-    const { engine } = await physicsRig([withScript(createEntity('Ticker', []), Ticker)], {
+    const { world } = await physicsRig([withScript(createEntity('Ticker', []), Ticker)], {
       fixedTimestep: 1 / 50,
     });
-    expect(engine.fixedStep).toBe(1 / 50);
+    expect(world.fixedStep).toBe(1 / 50);
 
     // Where the old 1/60 ran none.
-    engine.update(engine.fixedStep);
+    world.frame(world.fixedStep);
     expect(ticks).toBe(1);
 
     // Less than a tick, left over for the next frame…
-    engine.update(1 / 120);
+    world.frame(1 / 120);
     expect(ticks).toBe(1);
 
     // …which still makes a Step one tick.
-    engine.update(engine.fixedStep);
+    world.frame(world.fixedStep);
     expect(ticks).toBe(2);
   });
 });

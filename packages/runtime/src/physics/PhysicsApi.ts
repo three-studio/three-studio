@@ -29,7 +29,7 @@ export interface QuatLike {
  * `BehaviourContext.physics`: the world as a behaviour may touch it.
  *
  * No fixed step here: a behaviour is handed the tick as `fixedUpdate`'s
- * argument, and a host reads `Engine.fixedStep`.
+ * argument, and a host reads `World.fixedStep`.
  */
 export interface PhysicsApi {
   /** The project's gravity, in m/s². */

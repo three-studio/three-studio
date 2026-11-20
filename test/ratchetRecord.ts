@@ -187,7 +187,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/test/tuning.test.ts', { as: 7, nonNull: 4, state: 1 }],
   ['packages/editor/test/viewState.test.ts', { as: 2 }],
   ['packages/editor/test/viewportInput.test.ts', { as: 9, state: 1 }],
-  ['packages/runtime/src/Engine.ts', { as: 1 }],
   ['packages/runtime/src/MeshBatcher.ts', { nonNull: 2 }],
   ['packages/runtime/src/RendererFactory.ts', { as: 1, state: 2 }],
   ['packages/runtime/src/assets/importSettings.ts', { as: 3 }],

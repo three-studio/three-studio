@@ -132,7 +132,7 @@ function adoptDecodedParameters(clone: Texture, master: Texture): void {
  * **What is evicted is freed at the next `beginFrame`**, never at the release:
  * the frame in flight may still be drawing it, and freeing a buffer a pass is
  * encoding is a crash, not a dropped frame. The window's loop begins the frame,
- * once — never an engine or a binder, two of which may share one window, and a
+ * once — never a world or a binder, two of which may share one window, and a
  * second flush in one frame would free what its first half had just let go of.
  *
  * DRACO and KTX2 are not wired up: their decoders are binaries that have to be

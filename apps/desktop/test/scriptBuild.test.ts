@@ -75,8 +75,8 @@ describe('a build after an edit made on disk', () => {
 
 /*
  * What a bundle hands the page is its classes, as data: the host decodes them
- * and gives them to the engine that runs them. A bundle that registered its
- * classes itself filled a table of the page's, which every engine then read.
+ * and gives them to the world that runs them. A bundle that registered its
+ * classes itself filled a table of the page's, which every world then read.
  */
 describe('what a bundle exports', () => {
   it('exports its classes as `scripts`, and registers nothing', async () => {

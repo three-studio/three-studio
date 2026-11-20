@@ -211,7 +211,7 @@ function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): str
   });
 
   // Exported as data, and nothing called: the host decodes the pairs and hands
-  // the classes to the engine that runs them. A helper's default export, or
+  // the classes to the world that runs them. A helper's default export, or
   // none, is in the list too, and the decoding drops it.
   const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, module${index}.default]`);
   lines.push(`export const scripts = [${pairs.join(', ')}];`);

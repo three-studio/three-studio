@@ -45,7 +45,7 @@ describe('a compound body', () => {
 
     rig.run(3);
 
-    expect(rig.engine.physics?.body(child.entity.id)).toBeNull();
+    expect(rig.world.physics?.body(child.entity.id)).toBeNull();
     expect(Math.abs(rig.solved(parent.entity.id).position.y - 0.5)).toBeLessThan(0.02);
     // It lands on the child, and rolls off it to the ground.
     expect(rig.solved(probe.entity.id).position.y).toBeLessThan(2.5);
@@ -134,7 +134,7 @@ describe('a compound body', () => {
     nest(body, ...parts);
     const rig = await physicsRig([body, ...parts]);
 
-    expect(rig.engine.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
+    expect(rig.world.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
   });
 
   it('lets a player walk with a collider riding its body', async () => {
@@ -167,7 +167,7 @@ describe('a compound body', () => {
 
     // The hull's top is at 0.3, so the ball rests about 0.4 up.
     expect(rig.solved(ball.entity.id).position.y).toBeGreaterThan(0.3);
-    const said = rig.engine.warnings.filter((line) => line.includes('"Torus"'));
+    const said = rig.world.warnings.filter((line) => line.includes('"Torus"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('"Cart"');
   });
@@ -196,7 +196,7 @@ describe('a mesh collider', () => {
     nest(shelf, cube);
     const rig = await physicsRig([shelf, cube]);
 
-    const said = rig.engine.warnings.filter((line) => line.includes('"Shelf"'));
+    const said = rig.world.warnings.filter((line) => line.includes('"Shelf"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain("its children's");
   });

@@ -774,7 +774,7 @@ describe('the modules', () => {
   });
 
   it('reports a part that reaches above its layer: the kernel\'s, its own, another module\'s', () => {
-    expect(found('modules/sparks/src/core/index.ts', "import { Engine } from '@three-studio/runtime';")).toEqual([
+    expect(found('modules/sparks/src/core/index.ts', "import { World } from '@three-studio/runtime';")).toEqual([
       'modules/sparks/src/core/index.ts: @three-studio/runtime is above its layer',
     ]);
     expect(found('modules/sparks/src/runtime/index.ts', "import { pane } from '@three-studio/sparks/editor';")).toEqual([
@@ -803,8 +803,8 @@ describe('the modules', () => {
   it('reports a file that imports a module and is no root, in the kernel or in an app', () => {
     const importing = "import * as sparksCore from '@three-studio/sparks/core';";
 
-    expect(found('packages/runtime/src/Engine.ts', importing)).toEqual([
-      'packages/runtime/src/Engine.ts: imports the module sparks, and is no composition root',
+    expect(found('packages/runtime/src/world/World.ts', importing)).toEqual([
+      'packages/runtime/src/world/World.ts: imports the module sparks, and is no composition root',
     ]);
     expect(found('apps/player/src/loading.ts', importing)).toEqual([
       'apps/player/src/loading.ts: imports the module sparks, and is no composition root',
@@ -833,7 +833,7 @@ describe('the modules', () => {
       'packages/editor/src/icons.ts: names sparks, which belongs to a module',
     ]);
     // A comment may say it, and a longer word is another word.
-    expect(named('packages/runtime/src/Engine.ts', '// GPU culling, sparks and trails\nconst sparksPerFrame = 3;')).toEqual([]);
+    expect(named('packages/runtime/src/world/World.ts', '// GPU culling, sparks and trails\nconst sparksPerFrame = 3;')).toEqual([]);
     expect(named('modules/sparks/src/core/index.ts', "const id = 'sparkEmitter';")).toEqual([]);
     expect(named('apps/player/src/main.ts', 'sparks.activate(registries);')).toEqual([]);
   });

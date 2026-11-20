@@ -18,7 +18,7 @@ describe('a body’s mass', () => {
     const rig = await physicsRig(bodies);
 
     for (const body of bodies) {
-      expect(rig.engine.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
+      expect(rig.world.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
     }
   });
 
@@ -26,7 +26,7 @@ describe('a body’s mass', () => {
     const plane = withBody('plane', [0, 3, 0], { mass: 5 });
     const rig = await physicsRig([ground(), plane]);
 
-    expect(rig.engine.physics?.body(plane.entity.id)?.mass).toBeCloseTo(5, 4);
+    expect(rig.world.physics?.body(plane.entity.id)?.mass).toBeCloseTo(5, 4);
     rig.run(2);
 
     expect(Math.abs(rig.solved(plane.entity.id).position.y)).toBeLessThan(0.05);

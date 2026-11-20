@@ -28,31 +28,31 @@ import {
   type Object3D,
   type Renderer,
 } from 'three/webgpu';
-import { SceneBinder, bindScene } from './SceneBinder';
-import type { AssetCache } from './assets/AssetCache';
-import { AudioEngine } from './audio/AudioEngine';
-import type { AudioClipCache } from './audio/AudioClipCache';
-import type { AudioContextLike } from './audio/AudioContextLike';
-import type { Behaviour, BehaviourContext } from './behaviour/Behaviour';
-import { Input, type InputOptions } from './input/Input';
-import type { PhysicsApi } from './physics/PhysicsApi';
+import { SceneBinder, bindScene } from '../SceneBinder';
+import type { AssetCache } from '../assets/AssetCache';
+import { AudioEngine } from '../audio/AudioEngine';
+import type { AudioClipCache } from '../audio/AudioClipCache';
+import type { AudioContextLike } from '../audio/AudioContextLike';
+import type { Behaviour, BehaviourContext } from '../behaviour/Behaviour';
+import { Input, type InputOptions } from '../input/Input';
+import type { PhysicsApi } from '../physics/PhysicsApi';
 import {
   PhysicsWorld,
   type ColliderOwner,
   type DebugLines,
   type PhysicsEvent,
-} from './physics/PhysicsWorld';
-import { ownMeshes } from './physics/meshShape';
-import type { RuntimeRegistries } from './registries';
-import { NO_SCRIPTS, type ScriptClasses } from './scripting/scriptBundle';
-import { studioTime } from './time/StudioTime';
-import type { SceneApi } from './behaviour/Behaviour';
+} from '../physics/PhysicsWorld';
+import { ownMeshes } from '../physics/meshShape';
+import type { RuntimeRegistries } from '../registries';
+import { NO_SCRIPTS, type ScriptClasses } from '../scripting/scriptBundle';
+import { studioTime } from '../time/StudioTime';
+import type { SceneApi } from '../behaviour/Behaviour';
 
-export interface EngineOptions {
-  scene: SceneDoc;
+export interface WorldOptions {
+  document: SceneDoc;
   /**
    * What the game is built from: the system that draws each type and the
-   * behaviour of each type that acts. Handed in by whoever hosts the engine, so
+   * behaviour of each type that acts. Handed in by whoever hosts the world, so
    * a vehicle, an animator or an audio source is a registration and the loop
    * below never learns that any of them exist.
    */
@@ -61,7 +61,7 @@ export interface EngineOptions {
    * The project's loaded files, shared with every other world of the window:
    * Play draws the models the edit view already holds, with no second parse
    * and no second copy, and the audio engine reaches the files through its
-   * resolver. The engine holds what it draws and frees nothing; whoever made
+   * resolver. The world holds what it draws and frees nothing; whoever made
    * the cache begins its frame.
    */
   assets: AssetCache;
@@ -77,21 +77,21 @@ export interface EngineOptions {
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
-   * engine says so.
+   * world says so.
    */
   physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
   /** Receives input and takes pointer lock; normally the render canvas. */
-  domElement: HTMLElement;
+  element: HTMLElement;
   /**
    * How the game's `Input` listens. Omitted, keys are heard window-wide, which
-   * is the exported player's choice; the editor hears them on `domElement`
-   * alone, so that a key typed in one of its panels never reaches the game.
+   * is the exported player's choice; the editor hears them on `element` alone,
+   * so that a key typed in one of its panels never reaches the game.
    */
   input?: InputOptions;
   /**
-   * The audio context this engine mixes into.
+   * The audio context this world mixes into.
    *
    * Passed in rather than created, because it is shared: the editor's preview
    * uses the same one through its own root, a browser caps how many a
@@ -101,7 +101,7 @@ export interface EngineOptions {
    */
   audioContext?: AudioContextLike | undefined;
   /**
-   * A decoded-clip cache to share with the engines that come after this one.
+   * A decoded-clip cache to share with the worlds that come after this one.
    *
    * `SceneHost` owns it, so a sound the last level used is still in hand when
    * the next one asks for it.
@@ -110,8 +110,8 @@ export interface EngineOptions {
   /**
    * The device an analytic sky is captured on.
    *
-   * Not what draws this engine — the host still calls `update` and renders
-   * `engine.scene` itself. It is here because a scene whose background is the
+   * Not what draws this world — the host still calls `frame` and renders
+   * `world.scene` itself. It is here because a scene whose background is the
    * procedural sky needs that sky turned into a cubemap before anything can be
    * lit by it, and a cubemap is six draw calls. Omitting it leaves such a scene
    * on its background colour, unlit, rather than failing.
@@ -121,9 +121,9 @@ export interface EngineOptions {
   /**
    * The project's rendering settings.
    *
-   * Required, and that is the point of it: it used to be absent entirely, so an
-   * engine answered `shadowMapSize` with the binder's own 2048 whatever the
-   * project said, and answered `batching` with a default of its own that
+   * Required, and that is the point of it: it used to be absent entirely, so a
+   * running game answered `shadowMapSize` with the binder's own 2048 whatever
+   * the project said, and answered `batching` with a default of its own that
    * happened to match the editor's. Being required means the three modes — the
    * edit view, Play, and an exported build — cannot each quietly answer this
    * for themselves; `npm run typecheck` names any that tries.
@@ -131,11 +131,11 @@ export interface EngineOptions {
   rendering: RenderingSettings;
   /**
    * Lets scripts move to another scene. Supplied by whatever is hosting this
-   * engine; an engine built on its own does not have a next scene to go to.
+   * world; a world built on its own does not have a next scene to go to.
    */
   scenes?: SceneApi | null;
   /**
-   * The classes of the compiled script bundle this engine runs, decoded by
+   * The classes of the compiled script bundle this world runs, decoded by
    * `scriptClassesOf`. Left out, none: a scene's scripts say they are not
    * compiled.
    */
@@ -145,9 +145,9 @@ export interface EngineOptions {
 /**
  * A running game, built from a scene document.
  *
- * The engine owns the scene graph, physics and controllers, but neither the
- * renderer nor the frame loop — the host calls `update(delta)` and draws
- * `engine.scene` through `engine.activeCamera`. That is what lets the editor
+ * The world owns the scene graph, physics and controllers, but neither the
+ * renderer nor the frame loop — the host calls `frame(delta)` and draws
+ * `world.scene` through `world.activeCamera`. That is what lets the editor
  * play a scene inside its own viewport while an exported build runs the exact
  * same code from a bare `requestAnimationFrame`.
  *
@@ -155,11 +155,11 @@ export interface EngineOptions {
  * There is no composer anywhere in this runtime, and no seam waiting to receive
  * one — the seam is the paragraph above. three's `RenderPipeline` is built out
  * of `pass(scene, camera)`, which is exactly the pair this class already hands
- * out, so a host trades its one `renderer.render(engine.scene,
- * engine.activeCamera)` for `pipeline.render()` and the engine never learns
+ * out, so a host trades its one `renderer.render(world.scene,
+ * world.activeCamera)` for `pipeline.render()` and the world never learns
  * that anything changed. There are two such lines in the whole product:
  * `EditorViewport.draw` and the player's loop in `apps/web-template/src/main.ts`.
- * Neither the renderer nor the frame was ever the engine's, so neither has to
+ * Neither the renderer nor the frame was ever the world's, so neither has to
  * be taken back to compose one.
  *
  * That is checked rather than assumed. `LauncherScene` already runs a
@@ -176,18 +176,18 @@ export interface EngineOptions {
  * `rendering.exposure` still arrive. What would drop them is composing with
  * `outputColorTransform = false` and no `renderOutput()` of one's own, and it
  * would drop them in an exported build while the edit view carried on looking
- * right: the same shape of divergence that `EngineOptions.rendering` was made
+ * right: the same shape of divergence that `WorldOptions.rendering` was made
  * required to end.
  */
-export class Engine {
+export class World {
   readonly scene = new Scene();
   readonly binder: SceneBinder;
   readonly input: Input;
   /**
    * Physics as the behaviours see it, `null` with physics off.
    *
-   * The world's lifecycle stays private, so no host can step it out of turn or
-   * free it a second time, which throws.
+   * The physics world's lifecycle stays private, so no host can step it out of
+   * turn or free it a second time, which throws.
    */
   readonly physics: PhysicsApi | null;
   /** `null` when the host handed over no context. */
@@ -195,7 +195,7 @@ export class Engine {
   /**
    * One tick, in seconds: the project's fixed step.
    *
-   * What a host advances `update` by to move the game exactly one tick, as the
+   * What a host advances `frame` by to move the game exactly one tick, as the
    * editor's Step does. Set with physics off too, from the same settings.
    */
   readonly fixedStep: number;
@@ -211,13 +211,13 @@ export class Engine {
    */
   onWarning: ((warnings: readonly string[]) => void) | null = null;
 
-  /** Exposed for diagnostics; drive them through `update`, not directly. */
+  /** Exposed for diagnostics; drive them through `frame`, not directly. */
   readonly behaviours: Behaviour[] = [];
   /** The behaviours that hear what colliders touch, by the entity each sits on. */
   private readonly listeners = new Map<EntityId, Behaviour[]>();
 
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
-  private readonly world: PhysicsWorld | null;
+  private readonly physicsWorld: PhysicsWorld | null;
   private readonly context: BehaviourContext;
   private documentCamera: Camera | null = null;
   private disposed = false;
@@ -225,24 +225,24 @@ export class Engine {
   private listenerOwners = 0;
 
   private constructor(
-    options: EngineOptions,
+    options: WorldOptions,
     physicsSettings: PhysicsSettings,
     physics: PhysicsWorld | null,
   ) {
-    // The renderer is handed over rather than owned: this engine still neither
+    // The renderer is handed over rather than owned: this world still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
     // the device the host already has. The order of the rest is `bindScene`'s,
     // where it is written down.
-    this.binder = bindScene(this.scene, options.scene, {
+    this.binder = bindScene(this.scene, options.document, {
       registries: options.registries,
       assets: options.assets,
       rendering: options.rendering,
       materials: options.materials,
       renderer: options.renderer,
     });
-    this.input = new Input(options.domElement, options.input);
-    this.world = physics;
+    this.input = new Input(options.element, options.input);
+    this.physicsWorld = physics;
     this.physics = physics;
     this.fixedStep = physicsSettings.fixedTimestep;
 
@@ -257,7 +257,7 @@ export class Engine {
           });
 
     this.context = {
-      scene: options.scene,
+      scene: options.document,
       binder: this.binder,
       physics,
       input: this.input,
@@ -369,7 +369,7 @@ export class Engine {
       warn(
         'Nothing but the player has a Collider, so there is no ground to stand on. Add a Collider to whatever the player should walk on.',
       );
-    } else if (this.world) {
+    } else if (this.physicsWorld) {
       // Nor is a sensor, nor a collider whose layer the player's passes
       // through. Unticking a pair while trying the matrix out is the quickest
       // way to a player that falls for ever, and nothing else says why.
@@ -398,7 +398,7 @@ export class Engine {
     // and its Layer row only shows no choice. Removing a layer rewrites no
     // scene: the others are on disk.
     const layerIds = new Set(settings.layers.map((layer) => layer.id));
-    for (const entityId of this.world ? riding.keys() : []) {
+    for (const entityId of this.physicsWorld ? riding.keys() : []) {
       const entity = scene.entities.get(entityId);
       const colliders = findComponents(scene, entityId, 'collider');
       if (!entity || colliders.every((collider) => layerIds.has(collider.layer))) continue;
@@ -411,7 +411,7 @@ export class Engine {
     // values. The hierarchy marks it while editing; a device and a build have
     // no hierarchy, and a puck that grips where it was made to slide gives no
     // reason. `''` is a slot left empty, not a link.
-    for (const entityId of this.world ? riding.keys() : []) {
+    for (const entityId of this.physicsWorld ? riding.keys() : []) {
       const entity = scene.entities.get(entityId);
       const colliders = findComponents(scene, entityId, 'collider');
       const lost = colliders.some(
@@ -427,7 +427,7 @@ export class Engine {
     // the solver moves is built and does nothing: a door falls off its hinge,
     // or a gate on a Kinematic body never swings, and nothing else says why.
     // Read through the rule the build reads.
-    for (const [entityId, held] of this.world ? componentsOfType(scene, 'joint') : []) {
+    for (const [entityId, held] of this.physicsWorld ? componentsOfType(scene, 'joint') : []) {
       for (const joint of held.values()) {
         const problem = joint.type === 'joint' ? jointProblem(scene, entityId, joint) : null;
         if (problem) warn(problem);
@@ -439,7 +439,7 @@ export class Engine {
     // nothing, and nothing says why. A Rigid Body with no collider anywhere is
     // said above. With physics off the line would be about the host, not the
     // scene.
-    for (const entityId of this.world ? this.listeners.keys() : []) {
+    for (const entityId of this.physicsWorld ? this.listeners.keys() : []) {
       const entity = scene.entities.get(entityId);
       if (!entity || hasComponent(scene, entityId, 'collider') || hasComponent(scene, entityId, 'rigidbody')) {
         continue;
@@ -467,12 +467,12 @@ export class Engine {
     );
   }
 
-  static async create(options: EngineOptions): Promise<Engine> {
-    // Resolved once, so the world ticks by the step the engine tells its host.
+  static async play(options: WorldOptions): Promise<World> {
+    // Resolved once, so physics ticks by the step the world tells its host.
     const physicsSettings = options.physicsSettings ?? createPhysicsSettings();
     const physics =
       options.enablePhysics === false ? null : await PhysicsWorld.create(physicsSettings);
-    const engine = new Engine(options, physicsSettings, physics);
+    const world = new World(options, physicsSettings, physics);
 
     // Order matters, and each step needs the one before it:
     //
@@ -482,16 +482,16 @@ export class Engine {
     //             the player fell straight through;
     //   physics   a behaviour looks its rigid body up when it is constructed,
     //             so a controller built earlier would find none and fly.
-    await engine.binder.whenLoaded();
+    await world.binder.whenLoaded();
     const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
-    physics?.build(options.scene, engine.binder, physicsMaterials);
-    engine.buildBehaviours(options.scene, options.registries);
-    engine.pickCamera(options.scene);
-    engine.checkPhysicsSetup(options.scene, physicsSettings, physicsMaterials);
-    engine.checkAudioSetup(options.scene);
-    engine.checkLighting(options.scene);
+    physics?.build(options.document, world.binder, physicsMaterials);
+    world.buildBehaviours(options.document, options.registries);
+    world.pickCamera(options.document);
+    world.checkPhysicsSetup(options.document, physicsSettings, physicsMaterials);
+    world.checkAudioSetup(options.document);
+    world.checkLighting(options.document);
 
-    return engine;
+    return world;
   }
 
   /**
@@ -523,7 +523,7 @@ export class Engine {
    * the solver holds is the host's to show.
    */
   physicsDebug(): DebugLines | null {
-    return this.world?.debugLines() ?? null;
+    return this.physicsWorld?.debugLines() ?? null;
   }
 
   /**
@@ -537,7 +537,7 @@ export class Engine {
    * names no type it tunes.
    */
   tune(entityId: EntityId, component: ComponentDoc): void {
-    this.world?.tune(entityId, component);
+    this.physicsWorld?.tune(entityId, component);
   }
 
   /**
@@ -547,10 +547,10 @@ export class Engine {
    * writes the asset's file, which every world then reads through its library.
    */
   tuneAsset(assetId: AssetId, values: object): void {
-    this.world?.tuneAsset(assetId, values);
+    this.physicsWorld?.tuneAsset(assetId, values);
   }
 
-  update(delta: number): void {
+  frame(delta: number): void {
     if (this.disposed) return;
 
     // The frame boundary, for the binder's retire queue: the previous frame's
@@ -564,8 +564,8 @@ export class Engine {
     // impulse — issuing two targets between one step discards the first.
     for (const behaviour of this.behaviours) behaviour.update?.(delta, this.context);
 
-    if (this.world) {
-      this.world.step(
+    if (this.physicsWorld) {
+      this.physicsWorld.step(
         delta,
         (step) => {
           for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
@@ -574,7 +574,7 @@ export class Engine {
         // `fixedUpdate`, as Unity runs its collision messages.
         (events) => this.hear(events),
       );
-      this.world.writeBack();
+      this.physicsWorld.writeBack();
     }
 
     for (const behaviour of this.behaviours) behaviour.postUpdate?.(this.context);
@@ -597,7 +597,7 @@ export class Engine {
    * Counts the ears, and says when a scene has the wrong number of them.
    *
    * The count is also what decides the fallback: with no `audioListener`
-   * anywhere the engine places the ear on whatever camera the game is rendered
+   * anywhere the world places the ear on whatever camera the game is rendered
    * through, which is right far more often than it is wrong and is very much
    * better than a silent scene. With several, the first behaviour to
    * write each frame wins, and saying so is the whole value of the warning —
@@ -655,7 +655,7 @@ export class Engine {
     this.listeners.clear();
     this.input.dispose();
     this.audio?.dispose();
-    this.world?.dispose();
+    this.physicsWorld?.dispose();
     this.binder.dispose();
     this.scene.clear();
   }
@@ -663,7 +663,7 @@ export class Engine {
   /**
    * Instantiates a behaviour for every component that has one registered.
    *
-   * The engine deliberately does not name any component type here. A new kind
+   * The world deliberately does not name any component type here. A new kind
    * of controller is a registration, not an edit to this loop.
    */
   private buildBehaviours(scene: SceneDoc, registries: RuntimeRegistries): void {
@@ -777,7 +777,7 @@ export class Engine {
 
 /** Narrow a camera the binder produced, for hosts that need the concrete type. */
 export function isPerspective(camera: Camera): camera is PerspectiveCamera {
-  return (camera as PerspectiveCamera).isPerspectiveCamera === true;
+  return camera instanceof PerspectiveCamera;
 }
 
 export type { Object3D, OrthographicCamera };

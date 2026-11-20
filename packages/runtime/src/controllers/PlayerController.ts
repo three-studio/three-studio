@@ -176,7 +176,7 @@ export class PlayerController implements Behaviour {
    * Asks for the on-screen controls, once every behaviour exists.
    *
    * Here rather than in the constructor because `Input` arrives with the
-   * context, and here rather than in `Engine` because the sticks belong to the
+   * context, and here rather than in `World` because the sticks belong to the
    * thing they drive: a scene carrying no player controller shows none, and
    * nobody had to write that rule down. `enableTouch` is idempotent, so two
    * players in one scene still mean one set of joysticks.

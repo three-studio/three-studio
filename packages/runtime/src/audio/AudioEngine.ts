@@ -27,7 +27,7 @@ export interface AudioEngineOptions {
   /**
    * A clip cache to share rather than build.
    *
-   * `SceneHost` passes the same one to every engine it makes, which is what
+   * `SceneHost` passes the same one to every world it makes, which is what
    * lets a decoded clip survive a scene change: the next level almost always
    * plays some of the same sounds, and decoding them again is the wrong
    * economy. An engine that was handed a cache does not clear it on dispose —
@@ -42,7 +42,7 @@ export interface AudioEngineOptions {
  *
  * Owns things with a lifetime, so it is a class — the rule `ComponentSystem`
  * states and a behaviour's factory is the exception to. One instance per root
- * : the editor builds one for preview, `Engine` builds one for the game,
+ * : the editor builds one for preview, `World` builds one for the game,
  * and neither can hear the other.
  */
 export class AudioEngine {

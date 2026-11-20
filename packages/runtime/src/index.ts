@@ -1,7 +1,7 @@
 /*
  * The public surface of the runtime.
  *
- * Inside the monorepo the apps reach modules directly — `@three-studio/runtime/Engine`
+ * Inside the monorepo the apps reach modules directly — `@three-studio/runtime/world/World`
  * and friends — because Vite aliases the scope onto `src/`. Published, there is only
  * this barrel: the package exports one entry point, so anything a consumer is meant
  * to reach has to be named here.
@@ -24,9 +24,9 @@ import { ENGINE_VERSION } from '@three-studio/core';
  */
 export const RUNTIME_VERSION = ENGINE_VERSION;
 
-/* The engine loop and the scene it drives. */
-export { Engine, isPerspective } from './Engine';
-export type { EngineOptions } from './Engine';
+/* The world: a scene document running, and the scene graph a host draws. */
+export { World, isPerspective } from './world/World';
+export type { WorldOptions } from './world/World';
 /* What a game is built from, made and filled by each app's composition root. */
 export { activateRuntime, createRuntimeRegistries } from './registries';
 export type { RuntimeRegistries } from './registries';
@@ -106,7 +106,7 @@ export type {
 
 /*
  * Scripting: the base class user scripts extend, and what a compiled bundle's
- * classes are once the host has decoded them — handed to the engine that runs
+ * classes are once the host has decoded them — handed to the world that runs
  * them, never filed in a table of the page's.
  */
 export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';

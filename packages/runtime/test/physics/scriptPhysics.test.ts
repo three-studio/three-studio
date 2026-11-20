@@ -138,7 +138,7 @@ describe('a script moving bodies', () => {
     rig.run(0.5);
 
     expect(KickEveryTick.ticks).toBe(30);
-    const said = rig.engine.warnings.filter((line) => line.includes('Sign'));
+    const said = rig.world.warnings.filter((line) => line.includes('Sign'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('Rigid Body');
   });
@@ -155,7 +155,7 @@ describe('a script moving bodies', () => {
     expect(Math.abs(body.linearVelocity.z + 1)).toBeLessThan(1e-6);
     expect(body.angularVelocity.y).toBeGreaterThan(0);
     // The behaviours' face stays exact: the thruster carries no body of its own.
-    expect(rig.engine.physics?.body(thruster.entity.id)).toBeNull();
+    expect(rig.world.physics?.body(thruster.entity.id)).toBeNull();
     expect(Push.kept).toBe(body);
   });
 
@@ -170,7 +170,7 @@ describe('a script moving bodies', () => {
     expect(Math.abs(rig.body(ball.entity.id).linearVelocity.x - 2)).toBeLessThan(1e-6);
     expect(KickOther.nobody).toBeNull();
     // It never touched `this.body`, so nothing is said about the body it lacks.
-    expect(rig.engine.warnings.filter((line) => line.includes('Kicker'))).toEqual([]);
+    expect(rig.world.warnings.filter((line) => line.includes('Kicker'))).toEqual([]);
   });
 
   it('is answered null for an id that is none, by every way a script has of naming an entity', async () => {

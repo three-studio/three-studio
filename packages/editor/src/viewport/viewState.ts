@@ -51,7 +51,7 @@ export interface ViewState {
    * is the whole of the start: the game's canvas comes on top with a frame of
    * this session in it, so neither the last frame of the session before — of
    * another scene, as like as not — nor a blank one can show. "The game" means
-   * the game once there is one: until the engine exists nothing is drawn, which
+   * the game once there is one: until the world exists nothing is drawn, which
    * is the loop's fact, since it has nothing to draw.
    */
   drawn: 'edit' | 'game';

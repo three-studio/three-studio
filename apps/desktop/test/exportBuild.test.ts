@@ -620,7 +620,7 @@ describe('web export', () => {
   it('carries the physics settings, so the build falls the way the editor did', async () => {
     /*
      * Nothing about physics used to travel, and the player passed nothing to
-     * the engine, so every build ran on the factory's gravity and step: a
+     * the world, so every build ran on the factory's gravity and step: a
      * project tuned for low gravity played it in the editor and lost it in the
      * thing people download.
      */

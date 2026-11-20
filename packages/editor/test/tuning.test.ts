@@ -31,7 +31,7 @@ import {
   type SchemaField,
   type ScriptComponent,
 } from '@three-studio/core';
-import { AssetCache, Behaviour, Engine, NO_SCRIPTS, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
+import { AssetCache, Behaviour, World, NO_SCRIPTS, NULL_ASSET_RESOLVER } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -98,7 +98,7 @@ async function until(condition: () => boolean, what: string): Promise<void> {
 }
 
 const host: PlayHost = {
-  // `null` is what `EngineOptions.renderer` allows for.
+  // `null` is what `WorldOptions.renderer` allows for.
   renderer: null as unknown as WebGPURenderer,
   gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
   rendering: createRenderingSettings(),
@@ -110,15 +110,15 @@ const host: PlayHost = {
 
 let session: PlaySession | null = null;
 
-/** A session watching the transport, as the viewport builds one, and the engine Play starts. */
-async function playing(): Promise<Engine> {
+/** A session watching the transport, as the viewport builds one, and the world Play starts. */
+async function playing(): Promise<World> {
   if (!session) {
     session = new PlaySession(host);
     session.watch();
   }
   play();
-  await until(() => session?.playEngine != null, 'the engine');
-  return session.playEngine!;
+  await until(() => session?.playWorld != null, 'the world');
+  return session.playWorld!;
 }
 
 /** A Cube with a Rigid Body of mass 1 and a Collider, as Add Component makes them. */
@@ -136,9 +136,9 @@ function componentOf<T extends ComponentDoc['type']>(template: EntityTemplate, t
 }
 
 /** The running mass of the template's body. */
-const massOf = (engine: Engine | null, template: EntityTemplate) => engine?.physics?.body(template.entity.id)?.mass;
+const massOf = (world: World | null, template: EntityTemplate) => world?.physics?.body(template.entity.id)?.mass;
 
-/** What a start that runs to a real engine needs of the browser. */
+/** What a start that runs to a real world needs of the browser. */
 beforeAll(() => {
   Object.assign(globalThis, {
     window: Object.assign(new EventTarget(), {
@@ -188,12 +188,12 @@ describe('tuning during Play', () => {
     const box = cube();
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     const errors = vi.spyOn(console, 'error');
-    const engine = await playing();
+    const world = await playing();
     const revision = useDocumentStore.getState().revision;
 
     tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
 
-    expect(massOf(engine, box)).toBeCloseTo(5, 5);
+    expect(massOf(world, box)).toBeCloseTo(5, 5);
     expect(useDocumentStore.getState().revision).toBe(revision);
     stop();
     expect(errors.mock.calls.flat().some((line) => String(line).includes('round the lock'))).toBe(false);
@@ -255,8 +255,8 @@ describe('tuning during Play', () => {
     const collider = componentOf(box, 'collider');
     collider.materialId = ICE;
     useDocumentStore.getState().replaceScene(sceneWith([box]));
-    const engine = await playing();
-    const tune = vi.spyOn(engine, 'tuneAsset');
+    const world = await playing();
+    const tune = vi.spyOn(world, 'tuneAsset');
 
     const linked = assertDefined(linkedAsset(registries, collider, ['material', 'friction']), 'the link');
     tuneLinkedAsset(linked.kind, linked.assetId, linked.path, 0);
@@ -276,8 +276,8 @@ describe('tuning during Play', () => {
     const lamp = createEntity('Lamp', [createLight('point')]);
     const light = componentOf(lamp, 'light');
     useDocumentStore.getState().replaceScene(sceneWith([lamp]));
-    const engine = await playing();
-    const tune = vi.spyOn(engine, 'tune');
+    const world = await playing();
+    const tune = vi.spyOn(world, 'tune');
 
     const rows = paneEntriesFor({ components, panes: new Registry<ComponentTypeId, PaneExtension>('pane') }, light).entries;
     expect(rows.find((entry) => 'path' in entry && entry.path.join('.') === 'intensity')).toMatchObject({ tunable: true });
@@ -291,19 +291,19 @@ describe('tuning during Play', () => {
     const [left, right] = [cube('Left'), cube('Right')];
     right.entity.transform.position = [3, 0, 0];
     useDocumentStore.getState().replaceScene(sceneWith([left, right]));
-    const engine = await playing();
+    const world = await playing();
 
     const body = new MultiTarget(registries, [left.entity.id, right.entity.id])
       .components()
       .find(({ type }) => type === 'rigidbody');
     body?.tune(['mass'], 3);
 
-    expect(massOf(engine, left)).toBeCloseTo(3, 5);
-    expect(massOf(engine, right)).toBeCloseTo(3, 5);
+    expect(massOf(world, left)).toBeCloseTo(3, 5);
+    expect(massOf(world, right)).toBeCloseTo(3, 5);
     expect(body?.read(['mass'])).toBe(3);
   });
 
-  it('a game that restarts the window’s scene keeps the tuning; another scene’s engine is handed none', async () => {
+  it('a game that restarts the window’s scene keeps the tuning; another scene’s world is handed none', async () => {
     /** Goes to a scene once asked: its own, or Boss. */
     class Director extends Behaviour {
       static to: string | null = null;
@@ -323,15 +323,15 @@ describe('tuning during Play', () => {
     tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
 
     Director.to = 'self';
-    first.update(1 / 60);
-    await until(() => session?.playEngine !== first && session?.playEngine != null, 'the restarted engine');
-    const restarted = session!.playEngine!;
+    first.frame(1 / 60);
+    await until(() => session?.playWorld !== first && session?.playWorld != null, 'the restarted world');
+    const restarted = session!.playWorld!;
     expect(massOf(restarted, box)).toBeCloseTo(5, 5);
 
-    const tune = vi.spyOn(Engine.prototype, 'tune');
+    const tune = vi.spyOn(World.prototype, 'tune');
     Director.to = 'Boss';
-    restarted.update(1 / 60);
-    await until(() => session?.playEngine !== restarted && session?.playEngine != null, 'Boss’s engine');
+    restarted.frame(1 / 60);
+    await until(() => session?.playWorld !== restarted && session?.playWorld != null, 'Boss’s world');
     tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 7);
     expect(tune).not.toHaveBeenCalled();
   });
@@ -428,7 +428,7 @@ describe('keeping what was tuned', () => {
 
     play();
     expect(toasts()).toEqual([]);
-    await until(() => session?.playEngine != null, 'the next engine');
+    await until(() => session?.playWorld != null, 'the next world');
     stop();
     expect(commandById('keepTuning').can(currentContext(registries))).toBe(false);
     expect(toasts()).toEqual([]);

@@ -96,7 +96,7 @@ class Body implements BodyHandle {
     /**
      * The entity's container, kept from the build. The binder creates it once,
      * and nothing syncs the binder while a game runs, so it is the entity's
-     * object for the engine's life.
+     * object for the world's life.
      */
     readonly object: Object3D,
     public driver: Driver,
@@ -484,7 +484,7 @@ type Scope = [
  * object already carries its resolved world matrix.
  *
  * Two faces. The lifecycle — `create`, `build`, `step`, `writeBack`, `dispose`
- * — is the `Engine`'s alone. `PhysicsApi` is what behaviours are handed, and
+ * — is the `World`'s alone. `PhysicsApi` is what behaviours are handed, and
  * nothing of Rapier's crosses it.
  */
 export class PhysicsWorld implements PhysicsApi {
@@ -606,7 +606,7 @@ export class PhysicsWorld implements PhysicsApi {
     // After the bodies, two of which each joint holds, and before the step of
     // no time, which moves nothing with joints built either. One that holds
     // nothing is kept holding nothing, for a tune to give it ends, and the
-    // Engine says why.
+    // world says why.
     for (const [entityId, held] of componentsOfType(scene, 'joint')) {
       const object = binder.getObject(entityId);
       if (!object) continue;
@@ -960,7 +960,7 @@ export class PhysicsWorld implements PhysicsApi {
   }
 
   /**
-   * The two bodies a joint holds, as they were built, by the rule the Engine's
+   * The two bodies a joint holds, as they were built, by the rule the world's
    * warnings read; `null` when it holds nothing.
    */
   private endsOf(entityId: EntityId, joint: JointComponent): JointBodies | null {
@@ -1224,7 +1224,7 @@ export class PhysicsWorld implements PhysicsApi {
   /**
    * The physics material a collider is built with: the one it links, or its
    * own values where the project cannot answer the link, as an unlinked
-   * collider plays them; the Engine says so.
+   * collider plays them; the world says so.
    */
   private materialOf(collider: ColliderComponent): PhysicsMaterialDef {
     return linkedPhysicsMaterial(collider.materialId, this.materials) ?? collider.material;

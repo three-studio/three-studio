@@ -8,7 +8,7 @@ import {
   type SceneDoc,
   type SceneId,
 } from '@three-studio/core';
-import { Engine, type EngineOptions } from './Engine';
+import { World, type WorldOptions } from './world/World';
 import type { PreloadHold } from './assets/AssetCache';
 import { AudioClipCache } from './audio/AudioClipCache';
 import type { SceneApi } from './behaviour/Behaviour';
@@ -18,7 +18,7 @@ import type { SceneApi } from './behaviour/Behaviour';
  *
  * A game is a sequence of scenes — a splash, a menu, its sub-pages, a first
  * level, a second — and the interesting part is what happens between two of
- * them. `Engine` builds a scene and tears one down; this decides when.
+ * them. `World` builds a scene and tears one down; this decides when.
  *
  * Loading and showing are deliberately separate, which is the one thing Unity,
  * Unreal and Godot all agree on. Unity stalls `LoadSceneAsync` at 0.9 until
@@ -34,7 +34,7 @@ export interface SceneSource {
 }
 
 /** What everything a scene needs, other than the document itself. */
-export interface SceneHostOptions extends Omit<EngineOptions, 'scene'> {
+export interface SceneHostOptions extends Omit<WorldOptions, 'document'> {
   source: SceneSource;
   materials?: ReadonlyMap<AssetId, MaterialDef>;
   prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
@@ -74,11 +74,11 @@ export interface SceneLoad {
 
 export class SceneHost implements SceneApi {
   /** Null until the first scene is activated. */
-  engine: Engine | null = null;
+  world: World | null = null;
   /** The path of the running scene, for scripts that branch on it. */
   current: string | null = null;
   /** Fired after each activation, for a player to hide its own chrome. */
-  onSceneChanged: ((path: string, engine: Engine) => void) | null = null;
+  onSceneChanged: ((path: string, world: World) => void) | null = null;
 
   private pending: LoadHandle | null = null;
   private disposed = false;
@@ -154,17 +154,17 @@ export class SceneHost implements SceneApi {
   }
 
   update(delta: number): void {
-    this.engine?.update(delta);
+    this.world?.frame(delta);
   }
 
   dispose(): void {
     this.disposed = true;
     this.pending?.cancel();
-    this.engine?.dispose();
-    this.engine = null;
+    this.world?.dispose();
+    this.world = null;
     this.current = null;
-    // Cleared here and not in `Engine.dispose`, which is exactly the point of
-    // sharing it: the engine goes away between scenes, the host does not.
+    // Cleared here and not in `World.dispose`, which is exactly the point of
+    // sharing it: the world goes away between scenes, the host does not.
     this.clips?.clear();
   }
 
@@ -174,44 +174,44 @@ export class SceneHost implements SceneApi {
 
     // The outgoing scene is told before anything of it is taken apart, so a
     // behaviour can still read its own entities while saving state.
-    this.engine?.notifySceneUnload();
-    this.engine?.dispose();
+    this.world?.notifySceneUnload();
+    this.world?.dispose();
 
     // Expanded here, once, for every caller. A scene arrives as a document —
     // read from disk or handed over by the editor — and an instance's contents
     // only exist after this. Doing it at each call site is three places to
     // forget, and the symptom is a level that loads with its props missing.
-    const engine = await Engine.create({
+    const world = await World.play({
       ...this.options,
-      scene: expandPrefabs(this.options.registries, scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
+      document: expandPrefabs(this.options.registries, scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
       scenes: this.sceneApiFor(path),
-      // Handed over rather than built per engine, so the clips outlive the
+      // Handed over rather than built per world, so the clips outlive the
       // scene that first asked for them.
       audioCache: this.clips ?? undefined,
     });
 
-    // Checked again, because `Engine.create` awaits Rapier and every model the
+    // Checked again, because `World.play` awaits Rapier and every model the
     // scene needs — hundreds of milliseconds during which Stop can be pressed.
-    // `dispose` ran while `this.engine` was still null, so it had nothing to
-    // take down, and this line used to hand a fully built engine to a host
+    // `dispose` ran while `this.world` was still null, so it had nothing to
+    // take down, and this line used to hand a fully built world to a host
     // nobody holds any more. Its `Input` keeps listening on the canvas, and the
     // first click back in the editor asks for a pointer lock the editor never
     // wanted — which is how a stopped game was still grabbing the mouse.
     if (this.disposed) {
-      engine.dispose();
+      world.dispose();
       return;
     }
 
-    this.engine = engine;
+    this.world = world;
     this.current = path;
-    this.onSceneChanged?.(path, engine);
+    this.onSceneChanged?.(path, world);
   }
 
   /**
    * This host as one scene's scripts see it: `current` is always that scene.
    *
-   * The host itself names a scene only once it runs, after `Engine.create` — and
-   * every `onAwake` and `onStart` runs inside `Engine.create`. Handed the host,
+   * The host itself names a scene only once it runs, after `World.play` — and
+   * every `onAwake` and `onStart` runs inside `World.play`. Handed the host,
    * a script asking where it was read `null` in the first scene and the name of
    * the scene just left in every later one, so a level restarting itself from
    * `onStart` restarted the previous one, or failed on `No scene "null"`.
@@ -243,7 +243,7 @@ export class SceneHost implements SceneApi {
 
   /**
    * Holds one asset ahead of the swap: a sound in the clip cache, anything else
-   * in the project's. The load gives the hold back once the new engine holds
+   * in the project's. The load gives the hold back once the new world holds
    * what it draws, or when it is cancelled.
    */
   preloadAsset(assetId: AssetId): PreloadHold {
@@ -277,7 +277,7 @@ class LoadHandle implements SceneLoad {
   private fail = (_reason: unknown): void => {};
   private scene: SceneDoc | null = null;
   /**
-   * What the scene needs, held from the moment it is read until the new engine
+   * What the scene needs, held from the moment it is read until the new world
    * holds it too — so a file the scene being left shares with it never drops to
    * no holder in between.
    */
@@ -346,7 +346,7 @@ class LoadHandle implements SceneLoad {
     try {
       await this.host.swap(this.path, this.scene);
     } finally {
-      // The new engine holds what it draws by now — or failed to be built,
+      // The new world holds what it draws by now — or failed to be built,
       // and holds nothing that should stay pinned for it.
       this.giveBack();
     }

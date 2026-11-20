@@ -97,7 +97,7 @@ export interface DrawDigest {
 /**
  * Everything about a projected scene that holds without a GPU.
  *
- * @param scene The three.js `Scene` the mode built — `engine.scene`, or the
+ * @param scene The three.js `Scene` the mode built — `world.scene`, or the
  *   projection's own. Only its environment and its extra children are read.
  * @param binder The binder that scene was bound with. Everything the document
  *   asked for is under `binder.root`, and nothing else is.

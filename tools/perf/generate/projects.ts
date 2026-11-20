@@ -443,7 +443,7 @@ export interface ScriptedRecipe {
   /**
    * A model of images `Heavy` holds besides its field, so that it has
    * something to load. With nothing to preload a scene is ready at once, and
-   * the loading screen gets no frame: building its engine then blocks the
+   * the loading screen gets no frame: building its world then blocks the
    * thread in one piece.
    */
   readonly heavyImages: TexturesRecipe;

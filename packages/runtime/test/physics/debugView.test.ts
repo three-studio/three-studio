@@ -1,7 +1,7 @@
 import { createJointMotion, createPhysicsSettings, createRenderingSettings } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { DebugLines } from '../../src/physics/PhysicsWorld';
@@ -34,7 +34,7 @@ describe('the debug view', () => {
   it('draws every collider, each body’s axes and each joint the solver holds', async () => {
     const rig = await physicsRig(scene().entities);
 
-    const lines = rig.engine.physicsDebug();
+    const lines = rig.world.physicsDebug();
 
     // Measured: a box's 12 edges and a ball's 60 arcs, each with its body's
     // three axes — the ground's, the ball's, the pendulum's —, 3 for the hinge,
@@ -48,38 +48,38 @@ describe('the debug view', () => {
   it('leaves out a body held out of the world', async () => {
     const { ball, entities } = scene();
     const rig = await physicsRig(entities);
-    const before = linesIn(rig.engine.physicsDebug());
+    const before = linesIn(rig.world.physicsDebug());
 
     rig.body(ball.entity.id).enabled = false;
     rig.run(1 / 60);
 
     // Its sphere and its axes: Rapier drew a disabled body where it was left.
-    expect(linesIn(rig.engine.physicsDebug())).toBe(before - 63);
+    expect(linesIn(rig.world.physicsDebug())).toBe(before - 63);
   });
 
   it('is read once per tick', async () => {
     const rig = await physicsRig(scene().entities);
 
-    const first = rig.engine.physicsDebug();
-    expect(rig.engine.physicsDebug()?.vertices).toBe(first?.vertices);
+    const first = rig.world.physicsDebug();
+    expect(rig.world.physicsDebug()?.vertices).toBe(first?.vertices);
 
     rig.run(1 / 60);
-    expect(rig.engine.physicsDebug()?.vertices).not.toBe(first?.vertices);
+    expect(rig.world.physicsDebug()?.vertices).not.toBe(first?.vertices);
   });
 
   it('with physics off, there is nothing to draw', async () => {
     const registries = builtInRegistries();
-    const engine = await Engine.create({
-      scene: sceneWith(scene().entities),
+    const world = await World.play({
+      document: sceneWith(scene().entities),
       registries,
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
-      domElement: new EventTarget() as unknown as HTMLElement,
+      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
-    onTestFinished(() => engine.dispose());
+    onTestFinished(() => world.dispose());
 
-    expect(engine.physicsDebug()).toBeNull();
+    expect(world.physicsDebug()).toBeNull();
   });
 });

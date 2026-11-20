@@ -10,7 +10,7 @@ import {
 import {
   AssetCache,
   studioTime,
-  type Engine,
+  type World,
   type SceneBinder,
 } from '@three-studio/runtime';
 import {
@@ -130,7 +130,7 @@ export class EditorViewport {
 
   /** Play, Pause and Stop, and everything that has to happen around them. */
   private readonly play: PlaySession;
-  /** Rapier's debug view, laid over whichever engine runs. */
+  /** Rapier's debug view, laid over whichever world runs. */
   private readonly physicsDebug = new PhysicsDebug();
 
   /**
@@ -190,7 +190,7 @@ export class EditorViewport {
      * leave a prefab instance's produced ids unknown to the very next edit.
      */
     const projection = createEditorProjection({
-      scene: expandedScene(registries).scene,
+      document: expandedScene(registries).scene,
       registries,
       assets: this.assets,
       rendering,
@@ -367,8 +367,8 @@ export class EditorViewport {
   }
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
-  get playEngine(): Engine | null {
-    return this.play.playEngine;
+  get playWorld(): World | null {
+    return this.play.playWorld;
   }
 
   /*
@@ -391,7 +391,7 @@ export class EditorViewport {
     // of it, held still under its pill, and nothing may drive the edit view in
     // the meantime: flying the camera would move a view nobody is shown, and
     // dragging a handle would try an edit the scene lock refuses. These used
-    // to go only once the engine had arrived, and until then a held key still
+    // to go only once the world had arrived, and until then a held key still
     // flew the camera, and a release anywhere on the window switched it back
     // on.
     this.controls.setEnabled(false);
@@ -557,7 +557,7 @@ export class EditorViewport {
         this.camera.aspect = this.view.editView.width / this.view.editView.height;
         this.camera.updateProjectionMatrix();
       }
-      if (this.play.playEngine) this.play.syncAspect(this.play.playEngine);
+      if (this.play.playWorld) this.play.syncAspect(this.play.playWorld);
       if (this.preview && this.view.previewView.visible) {
         const { camera } = this.preview;
         camera.aspect = this.view.previewView.width / this.view.previewView.height;
@@ -572,7 +572,7 @@ export class EditorViewport {
     // free. This used to ride on `sync`, which is neither once per frame nor
     // guaranteed to happen at all.
     this.binder.beginFrame();
-    // The window's cache, once, here: Play's engine begins a frame of its own,
+    // The window's cache, once, here: Play's world begins a frame of its own,
     // and a second flush within one frame would free what its first half had
     // just let go of, with no render in between. After the binder's, so the
     // images its arena gave back go with this boundary.
@@ -593,24 +593,24 @@ export class EditorViewport {
     studioTime.advance(raw);
     const delta = studioTime.delta;
 
-    const engine = this.play.playEngine;
-    if (engine) {
+    const world = this.play.playWorld;
+    if (world) {
       // Paused still renders, so the frame stays live and Step can advance it.
-      if (playState === 'playing') engine.update(delta);
+      if (playState === 'playing') world.frame(delta);
       else if (consumeStep()) {
-        // One tick of the project's step, as the engine reads it. A constant
+        // One tick of the project's step, as the world reads it. A constant
         // here was 1/60 whatever the project said: at 30 Hz every other Step
         // ran no tick, and at 120 Hz every Step ran two.
         //
         // The clock too, or the surfaces hold still through a step that moves
         // everything else. `step` is the one thing a zero timescale cannot veto.
-        studioTime.step(engine.fixedStep);
-        engine.update(engine.fixedStep);
+        studioTime.step(world.fixedStep);
+        world.frame(world.fixedStep);
       }
 
       // Paused means paused, including the part you can hear. The root gain
       // rather than the context, which the preview is sharing.
-      engine.audio?.setSuspended(playState !== 'playing');
+      world.audio?.setSuspended(playState !== 'playing');
     } else {
       // `raw`, not the simulated delta: flying the editor camera is not part of
       // the simulation, and a timescale of zero must not nail it to the spot.
@@ -618,7 +618,7 @@ export class EditorViewport {
       // Only while the edit view is in a panel: the loop keeps running once it
       // is detached, and integrating a gesture nobody can see is how a stuck key
       // used to travel while the edit view's tab was closed. And only while the
-      // view's input is the editor's: from the press of Play there is no engine
+      // view's input is the editor's: from the press of Play there is no world
       // yet, for as long as the start takes, and the camera must not move under
       // a scene Stop brings back as it was left.
       if (this.view.editView.host && view.input === 'editor') this.controls.update(raw);
@@ -668,7 +668,7 @@ export class EditorViewport {
     // While the game starts it is the game too, unseen under the edit image
     // until its first frame is in, which is what brings it on top.
     if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (engine && this.view.draw(engine.scene, engine.activeCamera, this.view.gameView, this.overGame(engine))) {
+    else if (world && this.view.draw(world.scene, world.activeCamera, this.view.gameView, this.overGame(world))) {
       this.play.gameDrawn();
     }
     this.view.reportStats(time, this.controls.moveSpeed);
@@ -679,9 +679,9 @@ export class EditorViewport {
    * Physics is on. Read only then, and only while the game is seen, since the
    * world hands new arrays at each tick it is read.
    */
-  private overGame(engine: Engine): Scene | undefined {
+  private overGame(world: World): Scene | undefined {
     if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return undefined;
-    const lines = engine.physicsDebug();
+    const lines = world.physicsDebug();
     return lines === null ? undefined : this.physicsDebug.show(lines);
   }
 
@@ -847,7 +847,7 @@ export class EditorViewport {
     const hasAuthoredLight = componentsOfType(scene, 'light').size > 0;
     this.fallbackLighting.visible = !hasAuthoredLight;
     // And published, because the pair is editor-only: the same document is
-    // black in Play and in a build. `Engine.create` says the other half of this
+    // black in Play and in a build. `World.play` says the other half of this
     // sentence, on the screen where that half is the one that matters.
     useViewportStore.getState().setFallbackLighting(!hasAuthoredLight);
   }

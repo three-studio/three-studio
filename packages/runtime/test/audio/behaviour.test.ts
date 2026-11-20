@@ -16,10 +16,10 @@ import { flush, rig } from './rig';
 /*
  * The glue: a component becomes a request, and a request becomes a voice.
  *
- * `Engine` itself is not built here — it wants a DOM element and a Rapier
+ * `World` itself is not built here — it wants a DOM element and a Rapier
  * world, neither of which exists under node. The definitions are the ones the
  * runtime's activation registers, so calling one exercises exactly what the
- * engine would call.
+ * world would call.
  */
 
 const STEP = fixedId('asset', 'step');

@@ -13,7 +13,7 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
-import { Engine, SceneHost, type AssetCache, type RuntimeRegistries, type SceneSource } from '@three-studio/runtime';
+import { SceneHost, type AssetCache, type RuntimeRegistries, type SceneSource, type World } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
@@ -24,14 +24,14 @@ import { composedPrefabMode, inPrefabMode, usePrefabModeStore } from '../state/p
 import { useProjectStore } from '../state/projectStore';
 import { useScriptStore } from '../state/scriptStore';
 import { toastSlot } from '../state/toastStore';
-import { dropTuning, offerTuning, tuningEngine } from '../state/tuning';
+import { dropTuning, offerTuning, tuningWorld } from '../state/tuning';
 import { useViewportStore } from '../state/viewportStore';
 import type { Presentation } from './Presentation';
 
 /**
  * What running a game needs from the viewport, and it is deliberately little.
  *
- * The renderer and the game's canvas, because the engine draws through the one
+ * The renderer and the game's canvas, because the world draws through the one
  * renderer this document is allowed. And two announcements, because from the
  * press of Play the edit view is no longer the editor's to drive — flying it
  * over a frozen picture, or dragging a handle into an edit the scene lock
@@ -42,7 +42,7 @@ export interface PlayHost {
   readonly renderer: WebGPURenderer;
   /** The window's loaded files: Play draws the models the edit view already holds. */
   readonly assets: AssetCache;
-  /** The game's own canvas, on the Viewport's stage; the engine's `Input` listens on it. */
+  /** The game's own canvas, on the Viewport's stage; the world's `Input` listens on it. */
   readonly gameView: Presentation;
   /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
@@ -174,8 +174,8 @@ function namesEntry(entry: LaunchSnapshot['entry'], idOrName: string): boolean {
  */
 export class PlaySession {
   /** Non-null while the game is running; owns its own scene graph and physics. */
-  private engine: Engine | null = null;
-  /** Owns the engine while playing, and moves between scenes. */
+  private world: World | null = null;
+  /** Owns the world while playing, and moves between scenes. */
   private sceneHost: SceneHost | null = null;
   /**
    * The document as it was at the press, once Prefab Mode is left; `null` while
@@ -208,14 +208,14 @@ export class PlaySession {
   constructor(private readonly host: PlayHost) {}
 
   /** The running game, or `null` when stopped. Read-only; use the transport. */
-  get playEngine(): Engine | null {
-    return this.engine;
+  get playWorld(): World | null {
+    return this.world;
   }
 
   /**
    * Starts and stops the game in response to the transport buttons.
    *
-   * The engine is created here rather than in a React component because it
+   * The world is created here rather than in a React component because it
    * draws through this renderer, and this document only gets one: a second
    * `WebGPURenderer` in the same frame destroys this one's output target every
    * frame. It has a canvas of its own, though — the game's, on the Viewport's
@@ -258,7 +258,7 @@ export class PlaySession {
   }
 
   /**
-   * One start, from the press to the first engine.
+   * One start, from the press to the first world.
    *
    * Every await is followed by asking whether this start is still the one
    * somebody waits for (`session`), and one `try` holds the whole of it, leaving
@@ -325,7 +325,7 @@ export class PlaySession {
         source,
         registries: this.host.registries,
         // The classes of the bundle just compiled, which every scene this game
-        // moves to runs: the host hands them to each engine it builds.
+        // moves to runs: the host hands them to each world it builds.
         scripts: useScriptStore.getState().scripts,
         loadingScene: inputs.loadingScene,
         // The window's own: the game holds what the edit view already loaded,
@@ -352,7 +352,7 @@ export class PlaySession {
         // The game's own canvas. The two views had to share one until they
         // could be drawn separately, and sharing it is what made pressing Play
         // hand the editor's pointer handling over to the game's.
-        domElement: this.host.gameView.canvas,
+        element: this.host.gameView.canvas,
         // And the keys typed into it alone, while it holds the focus. The
         // editor is the same page: heard window-wide, a space typed in the
         // Console during Play made the player jump, and never reached the
@@ -380,13 +380,13 @@ export class PlaySession {
       // half of a scene's identity — and a script that wants the stable half
       // can name the id instead.
       await host.adopt(inputs.entry.name, await source.read(inputs.entry.name));
-      // Stopped while the engine was being built — the physics module and every
+      // Stopped while the world was being built — the physics module and every
       // model the scene needs. That Stop took this host down, since it was
       // `this.sceneHost` by then, and `swap`, finding the host disposed, threw
-      // the engine away: there is nothing left to hand over.
+      // the world away: there is nothing left to hand over.
       if (!current()) return;
-      const engine = host.engine;
-      if (!engine) return;
+      const world = host.world;
+      if (!world) return;
 
       // A script may swap scenes at any point; the viewport renders through
       // whatever is current rather than the one it started with. Each one by
@@ -394,11 +394,11 @@ export class PlaySession {
       // it is at each change, a scene added meanwhile included.
       const sceneIdOf = (asked: string) => playSceneId(inputs.entry, useProjectStore.getState().scenes, asked);
       host.onSceneChanged = (asked, next) => this.run(next, sceneIdOf(asked));
-      this.run(engine, sceneIdOf(inputs.entry.name));
+      this.run(world, sceneIdOf(inputs.entry.name));
       // Pressing Play is the user gesture, which is the only moment a browser
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
-      void engine.audio?.unlock();
+      void world.audio?.unlock();
     } catch (cause) {
       // A start nobody waits for any more says nothing: whatever it would say is
       // about a Play the person has already stopped or pressed again.
@@ -418,38 +418,38 @@ export class PlaySession {
   /**
    * The frame loop has just drawn the running game. The first time, the game
    * has a frame of its own to take the edit image's place with; before there
-   * is an engine there was nothing to draw, and this says nothing.
+   * is a world there was nothing to draw, and this says nothing.
    */
   gameDrawn(): void {
-    if (this.engine === null || useViewportStore.getState().gameShown) return;
+    if (this.world === null || useViewportStore.getState().gameShown) return;
     useViewportStore.getState().setGameShown(true);
   }
 
   /**
-   * Makes `engine` the one the viewport draws: the first, and each one a
+   * Makes `world` the one the viewport draws: the first, and each one a
    * script moves to. And publishes which scene it runs, `sceneId`.
    *
    * Its problems are published here, at each activation: what it found while it
    * was built — no camera, no light, a body with no collider — which goes into
    * `warnings` without `onWarning` hearing of it, then whatever it raises later.
-   * A script's change of scene used to wire the next engine's `onWarning` and
+   * A script's change of scene used to wire the next world's `onWarning` and
    * stop there, so the scene left behind went on listing its problems over the
    * next one, whose own were never shown. The exported player says them again
    * at every scene; so does this.
    */
-  private run(engine: Engine, sceneId: SceneId | null): void {
-    this.engine = engine;
+  private run(world: World, sceneId: SceneId | null): void {
+    this.world = world;
     useViewportStore.getState().setRunningScene(sceneId);
-    // The Inspector tunes the window's scene: another scene's engine is handed
+    // The Inspector tunes the window's scene: another scene's world is handed
     // nothing, and the window's, restarted or come back to, all of it.
-    tuningEngine(this.host.registries, sceneId !== null && sceneId === running?.entry.id ? engine : null);
+    tuningWorld(this.host.registries, sceneId !== null && sceneId === running?.entry.id ? world : null);
     // A copy, and a live subscription: warnings raised later must reach the
     // panel, and React only redraws on a new reference.
-    engine.onWarning = (warnings) => {
+    world.onWarning = (warnings) => {
       useViewportStore.getState().setPlayWarnings(warnings);
     };
-    useViewportStore.getState().setPlayWarnings([...engine.warnings]);
-    this.syncAspect(engine);
+    useViewportStore.getState().setPlayWarnings([...world.warnings]);
+    this.syncAspect(world);
   }
 
   /**
@@ -472,13 +472,13 @@ export class PlaySession {
   private endPlay(): void {
     // Whatever start is still under way is one nobody waits for now.
     this.session += 1;
-    // The host owns the engine once playing; disposing both would tear the
+    // The host owns the world once playing; disposing both would tear the
     // same one down twice.
     this.sceneHost?.dispose();
     this.sceneHost = null;
-    this.engine = null;
+    this.world = null;
     running = null;
-    tuningEngine(this.host.registries, null);
+    tuningWorld(this.host.registries, null);
     // What the Play tuned, offered back now that the document can take it.
     offerTuning(this.host.registries);
     this.host.onPlayStopped();
@@ -506,9 +506,9 @@ export class PlaySession {
   }
 
   /** Hands the running game the shape of the canvas it is drawn in. */
-  syncAspect(engine: Engine): void {
+  syncAspect(world: World): void {
     if (!this.host.gameView.visible) return;
-    engine.setViewportAspect(this.host.gameView.width / this.host.gameView.height);
+    world.setViewportAspect(this.host.gameView.width / this.host.gameView.height);
   }
 
   /** Stops the game and unsubscribes. The session is not usable afterwards. */
@@ -516,15 +516,15 @@ export class PlaySession {
     this.unsubscribePlayState?.();
     this.unsubscribeScene?.();
     this.session += 1;
-    // The host owns the engine, its loads in flight and its preloader. Disposing
-    // the engine alone left all three alive, along with the `Input` listening on
-    // a canvas that is about to go away. And the host alone: the engine is the
+    // The host owns the world, its loads in flight and its preloader. Disposing
+    // the world alone left all three alive, along with the `Input` listening on
+    // a canvas that is about to go away. And the host alone: the world is the
     // host's, and disposing it again freed its physics world a second time,
     // which Rapier answers by throwing — out of a teardown with the renderer
     // and the rest of the viewport still to go.
     this.sceneHost?.dispose();
     this.sceneHost = null;
-    this.engine = null;
+    this.world = null;
     running = null;
     useViewportStore.getState().setRunningScene(null);
   }

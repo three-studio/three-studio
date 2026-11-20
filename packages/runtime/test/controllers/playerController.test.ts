@@ -123,7 +123,7 @@ afterEach(() => {
  * A player standing in a world with a floor at `y = 0`.
  *
  * Everything real: a scene document, a bound scene graph, a Rapier world and
- * the controller the engine would build. The point of not faking the physics is
+ * the controller the world would build. The point of not faking the physics is
  * that the defect being pinned is *which* gravity reaches the character, and a
  * fake would have to answer that question itself.
  */

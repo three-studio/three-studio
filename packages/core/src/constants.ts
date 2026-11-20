@@ -63,7 +63,7 @@ export const ENGINE_VERSION = '0.6.0';
  *
  * 4 — the API lost `registerScript`. A bundle no longer files its classes in a
  * table of the page's: it exports them as `scripts`, pairs of an asset id and a
- * class, and the host decodes them and hands them to the engine that runs them.
+ * class, and the host decodes them and hands them to the world that runs them.
  * A bundle compiled against 3 calls a `registerScript` that is gone, which this
  * check turns into a sentence rather than a `TypeError`.
  */

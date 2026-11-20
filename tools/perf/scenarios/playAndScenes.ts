@@ -30,7 +30,7 @@ import { checkExit, heapReading } from './readings';
 
 /*
  * S6 — Play and scenes: the scripted project of four scenes. Play's start —
- * compile, import, engine, first frame — five times; thirty switches between
+ * compile, import, world, first frame — five times; thirty switches between
  * `A` and `B` through the game's own scene API; a switch to `Heavy` behind `Loading`; and
  * ten cycles of a ballast script edited on disk, Play, Stop.
  *

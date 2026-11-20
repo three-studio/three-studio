@@ -22,7 +22,7 @@ import type { SystemDefinition } from './systems/ComponentSystem';
  * that draws each type that has something to show, and the behaviour of each
  * type that acts.
  *
- * Made by a composition root and handed to the engine, which builds from it
+ * Made by a composition root and handed to the world, which builds from it
  * whatever it runs. Nothing registers by being imported: a module the root does
  * not activate is a module the game does not have.
  */
@@ -33,7 +33,7 @@ export interface RuntimeRegistries extends CoreRegistries {
 
 /*
  * The kernel's own, in the order they used to register in. The systems' is the
- * order the slices were imported in. The behaviours' is the order the engine
+ * order the slices were imported in. The behaviours' is the order the runtime
  * imported their modules in, and it is the order each phase runs them in: a
  * script's `onLateUpdate` runs after the player controller has placed its
  * camera for the frame, and reads it there.

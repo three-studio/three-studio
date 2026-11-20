@@ -35,11 +35,11 @@ export interface EditorProjectionOptions extends SceneBinderOptions {
   /**
    * The document to project, expanded.
    *
-   * Named `scene` and required, like `EngineOptions.scene`, because the two are
-   * the halves this projection exists to keep comparable: an argument list that
-   * differs is a difference the parity test cannot see.
+   * Named `document` and required, like `WorldOptions.document`, because the two
+   * are the halves this projection exists to keep comparable: an argument list
+   * that differs is a difference the parity test cannot see.
    */
-  scene: SceneDoc;
+  document: SceneDoc;
 }
 
 /**
@@ -49,7 +49,7 @@ export interface EditorProjectionOptions extends SceneBinderOptions {
  * no renderer, no canvas, no frame loop, no Play cycle. That is the whole point
  * of the file. Those belong to `EditorViewport`, which owns a GPU device and
  * therefore cannot be built in a test — while everything worth comparing
- * against a running `Engine` is right here, and builds under bare Node.
+ * against a running `World` is right here, and builds under bare Node.
  *
  * `renderer` stays optional, which is the type saying the same thing: the one
  * job that needs a device is capturing an analytic sky, and a projection built
@@ -76,7 +76,7 @@ export interface EditorProjection {
 }
 
 export function createEditorProjection(options: EditorProjectionOptions): EditorProjection {
-  const { scene: doc, ...binderOptions } = options;
+  const { document: doc, ...binderOptions } = options;
 
   const scene = new Scene();
   // The named constructor, so the four ordering constraints this depends on are

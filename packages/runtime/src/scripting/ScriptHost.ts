@@ -15,7 +15,7 @@ import {
 } from './ScriptApi';
 
 /**
- * Adapts a user script to the engine's behaviour interface.
+ * Adapts a user script to the runtime's behaviour interface.
  *
  * Errors are caught per phase and reported once rather than per frame: a script
  * that throws every tick would otherwise bury the console and take the whole
@@ -25,7 +25,7 @@ import {
 class ScriptBehaviour implements RuntimeBehaviour {
   private failed = false;
   // Set for the hooks the script defines, and only those: a script that
-  // defines none is not listening, so the engine passes it by and never warns
+  // defines none is not listening, so the world passes it by and never warns
   // that it can hear nothing.
   readonly onCollisionEnter?: (collision: Collision) => void;
   readonly onCollisionExit?: (other: string) => void;
@@ -57,7 +57,7 @@ class ScriptBehaviour implements RuntimeBehaviour {
     this.guard('onAwake', () => this.instance.onAwake?.());
   }
 
-  /** Called by the engine once every behaviour exists. */
+  /** Called by the world once every behaviour exists. */
   start(): void {
     this.guard('onStart', () => this.instance.onStart?.());
   }
@@ -104,7 +104,7 @@ export const scriptBehaviour: BehaviourDefinition = {
     const { component } = target;
     if (component.type !== 'script' || component.assetId === null) return null;
 
-    // The classes of the bundle this engine was given, and of no other. Checked
+    // The classes of the bundle this world was given, and of no other. Checked
     // as it is read: the context cannot name the script API without the API
     // naming the context back, so it holds them as values of no known type.
     const ScriptType = ctx.scripts.get(component.assetId);
@@ -162,7 +162,7 @@ export const scriptBehaviour: BehaviourDefinition = {
     });
 
     const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, ctx);
-    // Only `onAwake` here. `onStart` is run by the engine once every behaviour
+    // Only `onAwake` here. `onStart` is run by the world once every behaviour
     // in the scene exists, so a script can reference another entity's script
     // without depending on which of them happened to be constructed first.
     behaviour.awake();

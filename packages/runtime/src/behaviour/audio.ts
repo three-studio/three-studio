@@ -207,9 +207,9 @@ function remember(audio: AudioEngine, entityId: EntityId, behaviour: AudioSource
 /**
  * The ear, when the scene names one.
  *
- * Writing it here rather than in the engine is what lets the listener sit on the
+ * Writing it here rather than in the world is what lets the listener sit on the
  * player while the camera orbits behind it — the case that makes the component
- * worth having at all. The engine only steps in when there is no such component
+ * worth having at all. The world only steps in when there is no such component
  * , because a scene with no ear that plays nothing is the worst possible
  * first contact with the system.
  */

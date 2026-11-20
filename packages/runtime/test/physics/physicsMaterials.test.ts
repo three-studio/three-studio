@@ -10,7 +10,7 @@ import {
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { builtInRegistries } from '../registries';
@@ -112,20 +112,20 @@ describe('a collider linked to a physics material', () => {
     rig.run(1);
 
     expect(rig.solved(puck.entity.id).position.distanceTo(landed)).toBeLessThan(0.01);
-    const said = rig.engine.warnings.filter((line) => line.includes('"Puck"'));
+    const said = rig.world.warnings.filter((line) => line.includes('"Puck"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('physics material');
 
     // With physics off the line would be about the host, not the scene.
     const registries = builtInRegistries();
-    const off = await Engine.create({
-      scene: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
+    const off = await World.play({
+      document: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
       registries,
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       physicsMaterials: LIBRARY,
-      domElement: new EventTarget() as unknown as HTMLElement,
+      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => off.dispose());

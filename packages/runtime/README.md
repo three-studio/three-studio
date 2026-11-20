@@ -39,8 +39,8 @@ arrives either. Still unfixed on three's dev branch. The repository carries the 
 
 ## Use
 
-The engine owns the scene graph, physics and behaviours — but neither the renderer nor the frame
-loop. The host calls `update(delta)` and draws `engine.scene` itself, which is what lets the editor
+The world owns the scene graph, physics and behaviours — but neither the renderer nor the frame
+loop. The host calls `update(delta)` and draws `world.scene` itself, which is what lets the editor
 play a scene inside its own viewport while an exported build runs the same code from a bare loop.
 
 ```ts
@@ -64,7 +64,7 @@ activateRuntime(registries);
 
 const host = new SceneHost({
   registries,
-  domElement: canvas,
+  element: canvas,
   renderer,
   source: { read: async (name) => unwrap(decodeScene(registries, await (await fetch(`${name}.json`)).text()), name) },
   // Maps an asset id to a URL. Scenes reference ids, never paths, so this is
@@ -83,8 +83,8 @@ renderer.setAnimationLoop(() => {
   last = now;
 
   host.update(delta);
-  const engine = host.engine;
-  if (engine) void renderer.render(engine.scene, engine.activeCamera);
+  const world = host.world;
+  if (world) void renderer.render(world.scene, world.activeCamera);
 });
 ```
 
@@ -92,11 +92,11 @@ renderer.setAnimationLoop(() => {
 
 | | |
 | --- | --- |
-| **Engine** | fixed-step loop, system layer, resource arena, mesh batching |
+| **World** | fixed-step loop, system layer, resource arena, mesh batching |
 | **Scenes** | `SceneHost` (load, loading scene, activate, cancel), `SceneBinder` (document → three objects) |
 | **Rendering** | `createRenderer` — WebGPU, falling back to WebGL |
 | **Physics** | `PhysicsWorld` — Rapier rigid bodies, colliders, and a character-style `PlayerController` |
-| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the engine that runs them (`scripts`) |
+| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the world that runs them (`scripts`) |
 | **Audio** | 32-voice mixer with priority stealing, a continuous 2D↔3D `spatialBlend`, buses |
 | **Assets** | model loading for glTF / GLB / FBX / OBJ, import settings applied the same way the editor applies them |
 

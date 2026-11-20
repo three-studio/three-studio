@@ -10,8 +10,8 @@ import type { StudioTime } from '../time/StudioTime';
  * A scene being fetched.
  *
  * Declared here rather than beside `SceneHost` so a behaviour can hold one
- * without the engine depending on the thing that runs it — the host builds
- * engines, and an engine that imported the host would be a cycle.
+ * without the world depending on the thing that runs it — the host builds
+ * worlds, and a world that imported the host would be a cycle.
  */
 export interface SceneLoadHandle {
   readonly path: string;
@@ -47,7 +47,7 @@ export interface BehaviourContext {
   readonly binder: SceneBinder;
   /**
    * How a behaviour, a plugin's included, reaches physics: through our API,
-   * never Rapier's. `null` when the engine runs without physics.
+   * never Rapier's. `null` when the world runs without physics.
    */
   readonly physics: PhysicsApi | null;
   readonly input: Input;
@@ -61,7 +61,7 @@ export interface BehaviourContext {
    */
   readonly time: StudioTime;
   /**
-   * `null` when the engine is running on its own — the editor's Play used to,
+   * `null` when the world is running on its own — the editor's Play used to,
    * and a test does. A script that changes scenes has to say what it wants to
    * happen then, rather than have one silently do nothing.
    */
@@ -75,12 +75,12 @@ export interface BehaviourContext {
    */
   readonly audio: AudioEngine | null;
   /**
-   * The classes of the script bundle this engine runs, by script asset id: its
-   * own, never another engine's.
+   * The classes of the script bundle this world runs, by script asset id: its
+   * own, never another world's.
    *
    * Values of no known type here. Naming the script API would close an import
    * cycle, since the API names this context, so the `script` behaviour checks
-   * each class as it reads it; the engine's options are where they are typed.
+   * each class as it reads it; the world's options are where they are typed.
    */
   readonly scripts: ReadonlyMap<AssetId, unknown>;
   /** Surfaces a problem in the editor, laid over the game in the Viewport. */
@@ -154,7 +154,7 @@ export interface BehaviourTarget {
  *
  * This is the seam that makes features into blocks: a vehicle controller, an
  * animator, an audio source and a user script are all "a component type plus a
- * factory", and none of them requires the engine loop to know they exist.
+ * factory", and none of them requires the world's loop to know they exist.
  */
 export interface BehaviourDefinition {
   readonly id: ComponentType;
@@ -162,7 +162,7 @@ export interface BehaviourDefinition {
    * The behaviour for one component of the type, or `null` for one that
    * declines — an audio source with no audio engine to play through.
    *
-   * Handed every component the engine finds under `id`, and nothing else, so it
+   * Handed every component the world finds under `id`, and nothing else, so it
    * narrows `target.component` by its `type` and owes no cast.
    */
   create(target: BehaviourTarget, ctx: BehaviourContext): Behaviour | null;

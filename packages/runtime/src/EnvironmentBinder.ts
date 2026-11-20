@@ -51,7 +51,7 @@ export class EnvironmentBinder {
    * @param renderer The device an analytic sky is captured on, or null until
    *   there is one: acquiring a WebGPU device is async, and the editor's binder
    *   is built before that resolves. Everything else in the runtime is
-   *   deliberately renderer-free — `Engine` owns no renderer either, because
+   *   deliberately renderer-free — `World` owns no renderer either, because
    *   the host draws it — and this is the one thing that cannot be. Capturing a
    *   sky is six draw calls and a blur chain, not a transform over data.
    */
