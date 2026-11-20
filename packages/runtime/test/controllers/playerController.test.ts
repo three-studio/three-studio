@@ -22,6 +22,7 @@ import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { SceneBinder } from '../../src/SceneBinder';
 import type { Input } from '../../src/input/Input';
 import { builtInRegistries } from '../registries';
+import { CameraClaims } from '../../src/world/cameras';
 
 /*
  * The controller had no tests at all, and the two defects below were both
@@ -151,6 +152,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   const scene: SceneDoc = sceneWith([ground, player]);
   const registries = builtInRegistries();
   const binder = new SceneBinder({
+    cameras: new CameraClaims(),
     registries,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     rendering: { ...createRenderingSettings(), batching: false },

@@ -1,7 +1,6 @@
 import {
   componentsOfType,
   createPhysicsSettings,
-  entitiesWith,
   type AssetId,
   type ComponentDoc,
   type ComponentTypeId,
@@ -37,6 +36,7 @@ import { collisionsOf, physicsOf } from '../physics/physicsOf';
 import { NO_SCRIPTS, type ScriptClasses } from '../scripting/scriptBundle';
 import type { SystemDefinition } from '../systems/ComponentSystem';
 import { studioTime } from '../time/StudioTime';
+import { CAMERA_PRIORITY, CameraClaims } from './cameras';
 import type { SceneApi } from '../behaviour/Behaviour';
 
 /**
@@ -220,7 +220,7 @@ export interface WorldOptions {
  *
  * The world owns the scene graph, physics and controllers, but neither the
  * renderer nor the frame loop — the host calls `frame(delta)` and draws
- * `world.scene` through `world.activeCamera`. That is what lets the editor
+ * `world.scene` through `world.cameras.active`. That is what lets the editor
  * play a scene inside its own viewport while an exported build runs the exact
  * same code from a bare `requestAnimationFrame`.
  *
@@ -229,7 +229,7 @@ export interface WorldOptions {
  * one — the seam is the paragraph above. three's `RenderPipeline` is built out
  * of `pass(scene, camera)`, which is exactly the pair this class already hands
  * out, so a host trades its one `renderer.render(world.scene,
- * world.activeCamera)` for `pipeline.render()` and the world never learns
+ * world.cameras.active)` for `pipeline.render()` and the world never learns
  * that anything changed. There are two such lines in the whole product:
  * `EditorViewport.draw` and the player's loop in `apps/web-template/src/main.ts`.
  * Neither the renderer nor the frame was ever the world's, so neither has to
@@ -260,6 +260,12 @@ export class World {
   readonly document: SceneDoc;
   readonly binder: SceneBinder;
   /**
+   * Which camera the world is drawn through: claimed by the scene's cameras as
+   * they mount and by whatever drives one, and fitted to the host's canvas by
+   * one rule (`setAspect`).
+   */
+  readonly cameras = new CameraClaims();
+  /**
    * One tick, in seconds: the project's fixed step.
    *
    * What a host advances `frame` by to move the game exactly one tick, as the
@@ -284,8 +290,12 @@ export class World {
 
   /** Exposed for diagnostics; drive them through `frame`, not directly. */
   readonly behaviours: Behaviour[] = [];
-  /** What the behaviours that hear what colliders touch listen with, on physics' channel. */
-  private readonly listening: Disposable[] = [];
+  /**
+   * What the behaviours hold of the world, given back with them: the listeners
+   * of those that hear what colliders touch, on physics' channel, and the
+   * claims of those that drive a camera.
+   */
+  private readonly held: Disposable[] = [];
 
   /** In the order they were built, which is the order they were registered in. */
   private readonly subsystems: Subsystem[] = [];
@@ -295,9 +305,7 @@ export class World {
    */
   private readonly hooks: { readonly [P in Phase]: Hook[] } = { update: [], fixed: [], lateUpdate: [], renderPrep: [] };
 
-  private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private context: BehaviourContext;
-  private documentCamera: Camera | null = null;
   private disposed = false;
 
   private constructor(options: WorldOptions) {
@@ -314,6 +322,7 @@ export class World {
       rendering: options.rendering,
       materials: options.materials,
       renderer: options.renderer,
+      cameras: this.cameras,
     });
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;
@@ -353,23 +362,6 @@ export class World {
     };
   }
 
-  /**
-   * A scene with no light at all renders black, and nothing else says so.
-   *
-   * Silent at runtime, as a physics set-up gone wrong is, and worse: while it
-   * is edited, the Viewport lights such a scene with a default pair of its own,
-   * so the author has already seen it lit. What is named here is therefore the
-   * difference, not the absence — the same condition that switches the
-   * editor's pair on, said from the side that does not have it. See
-   * `viewport/editorProjection`.
-   */
-  private checkLighting(scene: SceneDoc): void {
-    if (entitiesWith(scene, 'light').length > 0) return;
-    this.warnings.push(
-      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
-    );
-  }
-
   static async play(options: WorldOptions): Promise<World> {
     const world = new World(options);
 
@@ -393,12 +385,7 @@ export class World {
       world.schedule(definitions);
       world.context = world.behaviourContext();
       world.buildBehaviours(options.document, options.registries);
-      world.pickCamera(options.document);
-      // In the order they were built, which says physics' lines before audio's.
-      for (const subsystem of world.subsystems) {
-        for (const problem of subsystem.diagnose?.() ?? []) world.warn(problem);
-      }
-      world.checkLighting(options.document);
+      world.diagnose();
     } catch (cause) {
       world.dispose();
       throw cause;
@@ -447,24 +434,16 @@ export class World {
   }
 
   /**
-   * A behaviour's camera wins over an authored one: if something is driving the
-   * view — a player, a vehicle, a cutscene rig — that is the view you are in.
+   * Says what is wrong with the scene once the world is built: what the
+   * drawing side found — two main cameras, no light —, then each subsystem in
+   * the order it was built, then the view, which nothing may have claimed.
    */
-  get activeCamera(): Camera {
-    return this.behaviourCameras[0] ?? this.documentCamera ?? this.fallbackCamera;
-  }
-
-  private get behaviourCameras(): Camera[] {
-    return this.behaviours.flatMap((behaviour) => (behaviour.camera ? [behaviour.camera] : []));
-  }
-
-  setViewportAspect(aspect: number): void {
-    for (const camera of [this.fallbackCamera, ...this.behaviourCameras, this.documentCamera]) {
-      if (camera instanceof PerspectiveCamera) {
-        camera.aspect = aspect;
-        camera.updateProjectionMatrix();
-      }
+  private diagnose(): void {
+    for (const problem of this.binder.diagnose()) this.warn(problem);
+    for (const subsystem of this.subsystems) {
+      for (const problem of subsystem.diagnose?.() ?? []) this.warn(problem);
     }
+    for (const problem of this.cameras.diagnose()) this.warn(problem);
   }
 
   /**
@@ -565,8 +544,8 @@ export class World {
     this.disposed = true;
     for (const behaviour of this.behaviours) behaviour.dispose?.();
     this.behaviours.length = 0;
-    for (const listening of this.listening) listening.dispose();
-    this.listening.length = 0;
+    for (const holding of this.held) holding.dispose();
+    this.held.length = 0;
     // Last built first: one may hold what one built before it provides.
     for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
     this.subsystems.length = 0;
@@ -598,11 +577,16 @@ export class World {
           if (!behaviour) continue;
 
           this.behaviours.push(behaviour);
-          if (behaviour.camera) cameraOwners += 1;
+          // Over the scene's own cameras: what drives the view is the view you
+          // are in. The first of two drivers wins, and is said below.
+          if (behaviour.camera) {
+            cameraOwners += 1;
+            this.held.push(this.cameras.claim(behaviour.camera, CAMERA_PRIORITY.driven));
+          }
           // What its entity's colliders touch, and those of the children
           // riding its body when it is a body's: physics publishes to both.
           if (collisions && listens(behaviour)) {
-            this.listening.push(collisions.listen(entityId, (touch) => this.hear(behaviour, touch)));
+            this.held.push(collisions.listen(entityId, (touch) => this.hear(behaviour, touch)));
           }
         }
       }
@@ -652,24 +636,6 @@ export class World {
     }
   }
 
-  private pickCamera(scene: SceneDoc): void {
-    const cameras = this.binder.collectCameras(scene);
-    const claiming = cameras.filter((entry) => entry.isMain);
-    if (claiming.length > 1) {
-      // Easy to reach without noticing: one prefab holding a main camera,
-      // placed twice.
-      this.warnings.push(`${claiming.length} cameras are marked main; the first one is used.`);
-    }
-
-    const main = claiming[0] ?? cameras[0];
-    this.documentCamera = main?.camera ?? null;
-
-    if (this.behaviourCameras.length === 0 && !this.documentCamera) {
-      this.warnings.push('No camera and no player controller; using a default view.');
-      this.fallbackCamera.position.set(8, 6, 12);
-      this.fallbackCamera.lookAt(0, 0, 0);
-    }
-  }
 }
 
 /** Narrow a camera the binder produced, for hosts that need the concrete type. */

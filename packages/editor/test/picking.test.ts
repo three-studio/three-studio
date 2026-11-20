@@ -8,6 +8,7 @@ import {
 } from '@three-studio/core';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { CameraClaims } from '@three-studio/runtime/world/cameras';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { PerspectiveCamera } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +48,7 @@ function stage(
   pickable: (entityId: string) => boolean = () => true,
 ): { picker: Picker; overlay: ViewportOverlay; camera: PerspectiveCamera } {
   const binder = new SceneBinder({
+    cameras: new CameraClaims(),
     registries,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.

@@ -41,7 +41,11 @@ export interface LightHandle extends SystemHandle {
  * one. Sixty a second, none of them freed.
  */
 export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
+  /** How many lights it drew: none is a scene that renders black. */
+  private lights = 0;
+
   mount(entityId: EntityId, component: LightComponent, ctx: SystemContext): LightHandle {
+    this.lights += 1;
     const light = buildLight(component);
     applyShadow(light, component, ctx.shadowMapSize);
     const cookie = applyCookie(light, component, ctx, null);
@@ -118,8 +122,25 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
   }
 
   unmount(handle: LightHandle, ctx: SystemContext): void {
+    this.lights -= 1;
     ctx.arena.retire(handle.light as unknown as { dispose(): void });
     if (handle.cookie) ctx.arena.retire(handle.cookie);
+  }
+
+  /**
+   * A scene with no light at all renders black, and nothing else says so.
+   *
+   * Silent at runtime, and worse than silent: while it is edited, the Viewport
+   * lights such a scene with a default pair of its own, so the author has
+   * already seen it lit. What is named here is therefore the difference, not
+   * the absence — the same condition that switches the editor's pair on, said
+   * from the side that does not have it. See `viewport/editorProjection`.
+   */
+  override diagnose(): readonly string[] {
+    if (this.lights > 0) return [];
+    return [
+      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
+    ];
   }
 }
 

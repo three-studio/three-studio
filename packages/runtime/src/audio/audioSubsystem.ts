@@ -48,7 +48,7 @@ class AudioSubsystem implements Subsystem {
   }
 
   lateUpdate(): void {
-    if (this.listeners === 0) this.ear.place(this.audio, this.world.activeCamera);
+    if (this.listeners === 0) this.ear.place(this.audio, this.world.cameras.active);
     this.audio.update();
   }
 

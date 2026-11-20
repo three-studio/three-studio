@@ -33,7 +33,6 @@ import {
   scriptClassesOf,
   type ScriptClasses,
 } from '@three-studio/runtime/scripting/scriptBundle';
-import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
 
 /**
  * The player an exported build ships.
@@ -234,21 +233,10 @@ async function boot(): Promise<void> {
   // showed.
   await host.adopt(entrySceneName(build), scene);
 
+  // Every camera of the scene, by the rule the editor's Play fits by too.
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
-    const camera = host.world?.activeCamera;
-    if (!camera) return;
-    const aspect = window.innerWidth / window.innerHeight;
-    if (camera instanceof PerspectiveCamera) {
-      camera.aspect = aspect;
-      camera.updateProjectionMatrix();
-    } else if (camera instanceof OrthographicCamera) {
-      // The document stores a vertical extent; width follows the window.
-      const height = (camera.top - camera.bottom) / 2;
-      camera.left = -height * aspect;
-      camera.right = height * aspect;
-      camera.updateProjectionMatrix();
-    }
+    host.world?.cameras.setAspect(window.innerWidth / window.innerHeight);
   };
   window.addEventListener('resize', resize);
   resize();
@@ -274,7 +262,7 @@ async function boot(): Promise<void> {
     assets.beginFrame();
     host.update(studioTime.delta);
     const world = host.world;
-    if (world) void renderer.render(world.scene, world.activeCamera);
+    if (world) void renderer.render(world.scene, world.cameras.active);
   });
 
   message.textContent = build.title || scene.name;

@@ -15,6 +15,7 @@ import { AssetCache } from '../src/assets/AssetCache';
 import { SceneBinder } from '../src/SceneBinder';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries } from './registries';
+import { CameraClaims } from '../src/world/cameras';
 
 const registries = builtInRegistries();
 
@@ -350,6 +351,7 @@ describe('two worlds on one cache', () => {
   /** A world drawing a scene, as the edit view's binder or Play's would. */
   async function world(cache: AssetCache, scene: SceneDoc): Promise<SceneBinder> {
     const binder = new SceneBinder({
+      cameras: new CameraClaims(),
       registries,
       assets: cache,
       rendering: { ...createRenderingSettings(), batching: false },

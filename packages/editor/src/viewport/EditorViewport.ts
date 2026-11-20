@@ -9,6 +9,7 @@ import {
 } from '@three-studio/core';
 import {
   AssetCache,
+  CameraClaims,
   audioOf,
   physicsDebugLines,
   studioTime,
@@ -201,6 +202,9 @@ export class EditorViewport {
       // Shared materials are pushed in rather than pulled: the binder builds a
       // mesh synchronously, so it cannot await one.
       materials: useAssetStore.getState().materials,
+      // The edit view is drawn through the editor's camera: the scene's cameras
+      // claim a view nobody draws through.
+      cameras: new CameraClaims(),
     });
     this.scene = projection.scene;
     this.binder = projection.binder;
@@ -670,7 +674,7 @@ export class EditorViewport {
     // While the game starts it is the game too, unseen under the edit image
     // until its first frame is in, which is what brings it on top.
     if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (world && this.view.draw(world.scene, world.activeCamera, this.view.gameView, this.overGame(world))) {
+    else if (world && this.view.draw(world.scene, world.cameras.active, this.view.gameView, this.overGame(world))) {
       this.play.gameDrawn();
     }
     this.view.reportStats(time, this.controls.moveSpeed);

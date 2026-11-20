@@ -508,7 +508,7 @@ export class PlaySession {
   /** Hands the running game the shape of the canvas it is drawn in. */
   syncAspect(world: World): void {
     if (!this.host.gameView.visible) return;
-    world.setViewportAspect(this.host.gameView.width / this.host.gameView.height);
+    world.cameras.setAspect(this.host.gameView.width / this.host.gameView.height);
   }
 
   /** Stops the game and unsubscribes. The session is not usable afterwards. */

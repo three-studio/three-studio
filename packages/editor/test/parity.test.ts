@@ -16,6 +16,7 @@ import {
 } from '@three-studio/core';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER, type AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
+import { CameraClaims } from '@three-studio/runtime/world/cameras';
 import { World } from '@three-studio/runtime/world/World';
 import { Mesh, type Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -118,7 +119,7 @@ function windowAssets(resolver: AssetResolver = NULL_ASSET_RESOLVER): AssetCache
 
 /** The edit view's projection, with no canvas and no device under it. */
 async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<EditorProjection> {
-  const projection = createEditorProjection({ document: scene, registries, assets, rendering, materials });
+  const projection = createEditorProjection({ document: scene, registries, assets, rendering, materials, cameras: new CameraClaims() });
   // What `World.play` awaits on its own side. The two have to be read at the
   // same point in their lives, or a fixture holding a model would compare a
   // finished scene against one still waiting for a glTF.

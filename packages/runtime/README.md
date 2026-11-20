@@ -84,7 +84,7 @@ renderer.setAnimationLoop(() => {
 
   host.update(delta);
   const world = host.world;
-  if (world) void renderer.render(world.scene, world.activeCamera);
+  if (world) void renderer.render(world.scene, world.cameras.active);
 });
 ```
 

@@ -11,6 +11,7 @@ import type {
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
 import type { AssetCache } from '../assets/AssetCache';
 import type { StudioTime } from '../time/StudioTime';
+import type { CameraClaims } from '../world/cameras';
 import type { ResourceArena } from './ResourceArena';
 
 /*
@@ -85,6 +86,12 @@ export interface SystemContext {
    */
   readonly shadowMapSize: number;
   /**
+   * Who the view is drawn through, which a camera claims as it mounts and gives
+   * back as it goes: the world's, so the world never asks the scene which
+   * camera it holds.
+   */
+  readonly cameras: CameraClaims;
+  /**
    * Says that what a batch could hold may have changed.
    *
    * A mount or an unmount changes the membership of a group; a `setTransform`
@@ -147,11 +154,13 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
   abstract unmount(handle: H, ctx: SystemContext): void;
 
   /*
-   * The three capabilities below, and no fourth "in case".
+   * The four capabilities below, and no fifth "in case".
    *
-   * Each replaces a walk in `Reconciler` that asked `doc.type === 'mesh'` or
-   * `=== 'model'` and then cast the handle it found. The reconciler was the one
-   * file written to know about no type in particular, and it knew about two.
+   * Each replaces a place that named a type. Three were walks in `Reconciler`
+   * that asked `doc.type === 'mesh'` or `=== 'model'` and then cast the handle
+   * they found — the reconciler was the one file written to know about no type
+   * in particular, and it knew about two —, and `diagnose` the world's own
+   * checks, which asked the document for its cameras and its lights.
    *
    * **Optional, and declaring one is what claims it.** A system that does not
    * implement `whenLoaded` does not load, which is what the reconciler waits
@@ -175,6 +184,13 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
 
   /** Resolves once everything this system has in flight has landed or failed. */
   whenLoaded?(): Promise<void>;
+
+  /**
+   * What is wrong with the scene this system drew, said once when a world in
+   * Play has been built: the camera system's two main cameras, the light
+   * system's scene with no light. Never asked of the edit view.
+   */
+  diagnose?(): readonly string[];
 }
 
 // ------------------------------------------------------------- the definition

@@ -89,8 +89,9 @@ export class Reconciler {
    * The per-component sibling of `view()`, and it exists for the editor's
    * overlay: a `CameraHelper` needs *the* camera `CameraSystem` built, and a
    * light helper needs *the* light — which is a different class per `kind`, so
-   * the `children.find(instanceof …)` `collectCameras` uses does not generalise.
-   * It also misses one of two components of the same type on an entity.
+   * a `children.find(instanceof …)` over the entity's container does not
+   * generalise. It also misses one of two components of the same type on an
+   * entity.
    *
    * Empty rather than absent for anything unmounted, so a caller polling every
    * frame does not have to tell "no such entity" from "nothing built yet".
@@ -230,6 +231,11 @@ export class Reconciler {
   whenLoaded(): Promise<void> {
     const settled = [...this.systems.values()].map((system) => system.whenLoaded?.());
     return Promise.all(settled).then(() => undefined);
+  }
+
+  /** Each system's lines about the scene it drew, in the order the types were registered. */
+  diagnose(): readonly string[] {
+    return [...this.systems.values()].flatMap((system) => system.diagnose?.() ?? []);
   }
 
   /**

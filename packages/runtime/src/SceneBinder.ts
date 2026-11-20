@@ -16,15 +16,7 @@ import {
   type SceneDoc,
   type Vec3,
 } from '@three-studio/core';
-import {
-  Group,
-  Object3D,
-  OrthographicCamera,
-  PerspectiveCamera,
-  Scene,
-  Vector3,
-  type Renderer,
-} from 'three/webgpu';
+import { Group, Object3D, Scene, Vector3, type Renderer } from 'three/webgpu';
 import { EnvironmentBinder } from './EnvironmentBinder';
 import type { AssetCache } from './assets/AssetCache';
 import type { ModelShape } from './assets/modelNodes';
@@ -35,6 +27,7 @@ import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/materi
 import { MeshBatcher } from './MeshBatcher';
 import { ResourceArena, SharedMaterial } from './systems/ResourceArena';
 import { studioTime, type StudioTime } from './time/StudioTime';
+import type { CameraClaims } from './world/cameras';
 
 export { isVisibleInHierarchy } from './MeshBatcher';
 
@@ -121,6 +114,12 @@ export interface SceneBinderOptions {
    * `bindScene`.
    */
   renderer?: Renderer | null | undefined;
+  /**
+   * Who the view is drawn through: a camera component claims it as it mounts.
+   * Its world's, handed in; a binder no world draws through, the edit view's,
+   * is handed claims of its own that nothing reads.
+   */
+  cameras: CameraClaims;
   /**
    * Injected rather than reached for, so a test can drive the clock it hands
    * in. The default is the document's own — see `time/StudioTime`.
@@ -222,6 +221,7 @@ export class SceneBinder {
   }
 
   private readonly time: StudioTime;
+  private readonly cameras: CameraClaims;
 
   /**
    * Everything the binder is configured with, at the one moment it is
@@ -235,6 +235,7 @@ export class SceneBinder {
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
+    this.cameras = options.cameras;
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
@@ -264,6 +265,7 @@ export class SceneBinder {
       assets: this.assets,
       time: this.time,
       shadowMapSize: this.shadowMapSize,
+      cameras: this.cameras,
       sunOf: (light) => this.sunOf(light),
       invalidate: () => {
         this.batcher.invalidate();
@@ -493,20 +495,9 @@ export class SceneBinder {
     return this.assets.modelShape(assetId);
   }
 
-  /** Every camera the document defines, for play mode to choose from. */
-  collectCameras(scene: SceneDoc): { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] {
-    const cameras: { entityId: EntityId; camera: PerspectiveCamera | OrthographicCamera; isMain: boolean }[] = [];
-    for (const [id, view] of this.reconciler.all()) {
-      if (!scene.entities.has(id)) continue;
-      const component = findComponent(scene, id, 'camera');
-      if (!component) continue;
-      const camera = view.container.children.find(
-        (object): object is PerspectiveCamera | OrthographicCamera =>
-          object instanceof PerspectiveCamera || object instanceof OrthographicCamera,
-      );
-      if (camera) cameras.push({ entityId: id, camera, isMain: component.isMain });
-    }
-    return cameras;
+  /** What the systems find wrong with the scene they drew, in the order their types were registered. */
+  diagnose(): readonly string[] {
+    return this.reconciler.diagnose();
   }
 
   /**

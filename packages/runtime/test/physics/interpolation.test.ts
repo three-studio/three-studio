@@ -76,10 +76,10 @@ describe('a body drawn between ticks', () => {
     // Up to speed first: a body at rest is drawn at rest, between ticks or not.
     rig.run(0.25);
 
-    let was = rig.world.activeCamera.position.clone();
+    let was = rig.world.cameras.active.position.clone();
     for (let frame = 0; frame < 30; frame++) {
       rig.run(1 / 120, 120);
-      const now = rig.world.activeCamera.position.clone();
+      const now = rig.world.cameras.active.position.clone();
       expect(now.distanceTo(was)).toBeGreaterThan(0);
       was = now;
     }

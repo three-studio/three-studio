@@ -28,6 +28,7 @@ import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
 import { serveModels, stubImages } from '../assetFixtures';
 import { builtInRegistries } from '../registries';
+import { CameraClaims } from '../../src/world/cameras';
 
 const registries = builtInRegistries();
 
@@ -72,6 +73,7 @@ function context(
     assets,
     time,
     shadowMapSize: 1024,
+    cameras: new CameraClaims(),
     // No scene here, so nothing to resolve: a water component falls back to the
     // direction and colour it holds itself, which is what the tests assert on.
     sunOf: () => null,
@@ -748,6 +750,7 @@ describe('the water system', () => {
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       time: new StudioTime(),
       shadowMapSize: 1024,
+      cameras: new CameraClaims(),
       sunOf: (light) => (light === null ? sun : null),
       invalidate: () => undefined,
       attach: () => true,

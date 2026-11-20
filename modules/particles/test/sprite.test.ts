@@ -1,7 +1,7 @@
 import { fixedId } from '@three-studio/core';
 import { particleEmitterType } from '@three-studio/particles/core';
 import { ParticleEmitterSystem } from '@three-studio/particles/runtime';
-import { AssetCache, StudioTime, type SystemContext } from '@three-studio/runtime';
+import { AssetCache, CameraClaims, StudioTime, type SystemContext } from '@three-studio/runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ResourceArena } from '../../../packages/runtime/src/systems/ResourceArena';
 import { stubImages } from '../../../packages/runtime/test/assetFixtures';
@@ -38,6 +38,7 @@ describe("an emitter's sprite", () => {
       assets,
       time: new StudioTime(),
       shadowMapSize: 1024,
+      cameras: new CameraClaims(),
       sunOf: () => null,
       invalidate: () => {},
       attach: () => true,

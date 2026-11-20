@@ -2,11 +2,13 @@ import {
   createAudioListenerEntity,
   createCameraEntity,
   createEntity,
+  createLightEntity,
   createRenderingSettings,
   fixedId,
   type Disposable,
   type SubsystemId,
 } from '@three-studio/core';
+import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
@@ -16,6 +18,7 @@ import { Input } from '../src/input/Input';
 import { inputOf } from '../src/input/inputOf';
 import { collisionsOf, physicsOf } from '../src/physics/physicsOf';
 import { Behaviour } from '../src/scripting/ScriptHost';
+import { CAMERA_PRIORITY, CameraClaims } from '../src/world/cameras';
 import { EntityChannel } from '../src/world/channel';
 import { World, type Phase, type Subsystem, type SubsystemDefinition } from '../src/world/World';
 import { FakeContext, FakeListener, type FakeParam } from './audio/fakeContext';
@@ -372,5 +375,80 @@ describe('physics, a subsystem', () => {
     rig.run(2);
 
     expect(heard).toEqual(['wheel collisionEnter', 'cart collisionEnter']);
+  });
+});
+
+describe('camera claims', () => {
+  it('give the view to the highest priority, the first to claim among equals, else a default view', () => {
+    const claims = new CameraClaims();
+    const authored = new PerspectiveCamera();
+    const firstMain = new PerspectiveCamera();
+    const secondMain = new PerspectiveCamera();
+    const driven = new PerspectiveCamera();
+    const fallback = claims.active;
+    expect(fallback.position.toArray()).toEqual([8, 6, 12]);
+
+    const byAuthored = claims.claim(authored, CAMERA_PRIORITY.authored);
+    const byFirstMain = claims.claim(firstMain, CAMERA_PRIORITY.main);
+    const bySecondMain = claims.claim(secondMain, CAMERA_PRIORITY.main);
+    const byDriven = claims.claim(driven, CAMERA_PRIORITY.driven);
+    expect(claims.active).toBe(driven);
+
+    byDriven.dispose();
+    expect(claims.active).toBe(firstMain);
+    byFirstMain.dispose();
+    byFirstMain.dispose();
+    expect(claims.active).toBe(secondMain);
+    bySecondMain.dispose();
+    expect(claims.active).toBe(authored);
+    byAuthored.dispose();
+    expect(claims.active).toBe(fallback);
+  });
+
+  it('fit a perspective camera by its aspect and an orthographic one by its width, then each that claims later', () => {
+    const claims = new CameraClaims();
+    const perspective = new PerspectiveCamera(60, 1);
+    claims.claim(perspective, CAMERA_PRIORITY.main);
+
+    claims.setAspect(2);
+    const orthographic = new OrthographicCamera(-5, 5, 5, -5);
+    claims.claim(orthographic, CAMERA_PRIORITY.authored);
+
+    expect(perspective.aspect).toBe(2);
+    expect([orthographic.left, orthographic.right, orthographic.top, orthographic.bottom]).toEqual([-10, 10, 5, -5]);
+  });
+
+  it('say there is no camera only when nothing claims the view', () => {
+    const claims = new CameraClaims();
+    expect(claims.diagnose()).toEqual(['No camera and no player controller; using a default view.']);
+
+    claims.claim(new PerspectiveCamera(), CAMERA_PRIORITY.authored);
+    expect(claims.diagnose()).toEqual([]);
+  });
+
+  it('are made in Play by the scene’s cameras, its main one drawn through and two of them said', async () => {
+    const first = createCameraEntity();
+    const second = createCameraEntity();
+    const plain = createCameraEntity();
+    for (const camera of [first, second]) {
+      const component = camera.components[0];
+      if (component?.type !== 'camera') throw new Error('A camera entity holds a camera.');
+      component.isMain = true;
+    }
+    const rig = await physicsRig([plain, first, second, createLightEntity('directional')]);
+
+    expect(rig.world.cameras.active).toBe(rig.world.binder.getObject(first.entity.id)?.children[0]);
+    expect(rig.world.warnings).toContain('2 cameras are marked main; the first one is used.');
+    expect(rig.world.warnings.filter((line) => line.includes('No camera'))).toEqual([]);
+  });
+
+  it('say a scene with no light renders black, from the light system, and nothing of one lit', async () => {
+    const dark = await physicsRig([createCameraEntity()]);
+    const lit = await physicsRig([createCameraEntity(), createLightEntity('point')]);
+
+    expect(dark.world.warnings).toContain(
+      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
+    );
+    expect(lit.world.warnings.filter((line) => line.includes('no lights'))).toEqual([]);
   });
 });
