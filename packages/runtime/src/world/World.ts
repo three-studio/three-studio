@@ -1,5 +1,4 @@
 import {
-  componentsOfType,
   createPhysicsSettings,
   type AssetId,
   type ComponentDoc,
@@ -27,17 +26,10 @@ import { SceneBinder, bindScene } from '../SceneBinder';
 import type { AssetCache } from '../assets/AssetCache';
 import type { AudioClipCache } from '../audio/AudioClipCache';
 import type { AudioContextLike } from '../audio/AudioContextLike';
-import { audioOf } from '../audio/audioOf';
-import type { Behaviour, BehaviourContext, BehaviourDefinition } from '../behaviour/Behaviour';
 import type { InputOptions } from '../input/Input';
-import { inputOf } from '../input/inputOf';
-import type { Touch } from '../physics/PhysicsApi';
-import { collisionsOf, physicsOf } from '../physics/physicsOf';
-import { NO_SCRIPTS, type ScriptClasses } from '../scripting/scriptBundle';
+import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
-import { studioTime } from '../time/StudioTime';
-import { CAMERA_PRIORITY, CameraClaims } from './cameras';
-import type { SceneApi } from '../behaviour/Behaviour';
+import { CameraClaims } from './cameras';
 
 /**
  * The parts of a frame a subsystem can claim, in the order a frame runs them:
@@ -59,7 +51,6 @@ export type Phase = (typeof PHASES)[number];
  */
 export type WorldRegistries = CoreRegistries & {
   readonly systems: Registry<ComponentTypeId, SystemDefinition>;
-  readonly behaviours: Registry<ComponentTypeId, BehaviourDefinition>;
   readonly subsystems: Registry<SubsystemId, SubsystemDefinition>;
 };
 
@@ -102,6 +93,8 @@ export interface Subsystem extends Disposable {
    * runs goes to `world.warn` when it finds it.
    */
   diagnose?(): readonly string[];
+  /** The scene is being left, while everything is still readable: say goodbye, save what matters. */
+  sceneUnload?(): void;
   /**
    * A component's values, changed during Play, for what the subsystem built
    * from it to take as if built with them; a component it built nothing from
@@ -118,10 +111,11 @@ type Hook = (value: number) => void;
 export interface WorldOptions {
   document: SceneDoc;
   /**
-   * What the game is built from: the system that draws each type and the
-   * behaviour of each type that acts. Handed in by whoever hosts the world, so
-   * a vehicle, an animator or an audio source is a registration and the loop
-   * below never learns that any of them exist.
+   * What the game is built from: the system that draws each type, and the
+   * subsystems that simulate — among them the behaviours, each type's that
+   * acts. Handed in by whoever hosts the world, so a vehicle, an animator or an
+   * audio source is a registration and the loop below never learns that any of
+   * them exist.
    */
   registries: WorldRegistries;
   /**
@@ -211,8 +205,12 @@ export interface WorldOptions {
    * The classes of the compiled script bundle this world runs, decoded by
    * `scriptClassesOf`. Left out, none: a scene's scripts say they are not
    * compiled.
+   *
+   * Values of no known type here: the script API names the world, so naming
+   * the API back would close an import cycle. The script behaviour checks each
+   * class as it reads it.
    */
-  scripts?: ScriptClasses;
+  scripts?: ReadonlyMap<AssetId, unknown>;
 }
 
 /**
@@ -288,15 +286,6 @@ export class World {
    */
   onWarning: ((warnings: readonly string[]) => void) | null = null;
 
-  /** Exposed for diagnostics; drive them through `frame`, not directly. */
-  readonly behaviours: Behaviour[] = [];
-  /**
-   * What the behaviours hold of the world, given back with them: the listeners
-   * of those that hear what colliders touch, on physics' channel, and the
-   * claims of those that drive a camera.
-   */
-  private readonly held: Disposable[] = [];
-
   /** In the order they were built, which is the order they were registered in. */
   private readonly subsystems: Subsystem[] = [];
   /**
@@ -305,7 +294,6 @@ export class World {
    */
   private readonly hooks: { readonly [P in Phase]: Hook[] } = { update: [], fixed: [], lateUpdate: [], renderPrep: [] };
 
-  private context: BehaviourContext;
   private disposed = false;
 
   private constructor(options: WorldOptions) {
@@ -327,7 +315,6 @@ export class World {
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;
     this.maxSubsteps = maxSubsteps;
-    this.context = this.behaviourContext();
   }
 
   /**
@@ -343,25 +330,6 @@ export class World {
     this.onWarning?.([...this.warnings]);
   };
 
-  /**
-   * What the behaviours are handed. Made again once the subsystems are built,
-   * since input, physics and audio are subsystems', made after the world: a
-   * behaviour is never built before that.
-   */
-  private behaviourContext(): BehaviourContext {
-    return {
-      scene: this.document,
-      binder: this.binder,
-      physics: physicsOf(this),
-      input: inputOf(this),
-      time: studioTime,
-      scenes: this.options.scenes ?? null,
-      audio: audioOf(this),
-      scripts: this.options.scripts ?? NO_SCRIPTS,
-      warn: this.warn,
-    };
-  }
-
   static async play(options: WorldOptions): Promise<World> {
     const world = new World(options);
 
@@ -369,22 +337,14 @@ export class World {
     // `Input` built before the throw would keep listening on the canvas, and any
     // other subsystem would keep what it holds.
     try {
-      // Order matters, and each step needs the one before it:
-      //
-      //   subsystems  each in the order it was registered, awaited, so one
-      //               may read what those before it provide — physics among
-      //               them, built once the models are in;
-      //   models      in before any behaviour, physics or none: a script
-      //               reads its model's nodes from `onAwake`;
-      //   behaviours  last: one looks its rigid body up when it is built, so a
-      //               controller built earlier would find none and fly, and
-      //               each reaches input, physics and audio through them.
+      // Each in the order it was registered, and awaited, so one may read what
+      // those before it provide: the behaviours, registered after input,
+      // physics and audio, reach all three from the moment they are built —
+      // a controller looks its rigid body up as it is made, and one made
+      // before physics would find none and fly.
       const definitions = options.registries.subsystems.values();
       for (const definition of definitions) world.subsystems.push(await definition.create(world));
-      await world.binder.whenLoaded();
       world.schedule(definitions);
-      world.context = world.behaviourContext();
-      world.buildBehaviours(options.document, options.registries);
       world.diagnose();
     } catch (cause) {
       world.dispose();
@@ -398,33 +358,12 @@ export class World {
    * Files the hooks of the subsystems, built from `definitions` in that order,
    * in their phases' arrays by their order keys. Once, when the world is built,
    * so that a frame only walks the arrays.
-   *
-   * The behaviours' hooks go first, at 0 in the three phases they run in: they
-   * are the world's until they are a subsystem of their own, and they sit
-   * where they always ran — a tick after their fixed hook, the bodies drawn
-   * before their late one, the ear placed after it.
    */
   private schedule(definitions: readonly SubsystemDefinition[]): void {
-    const behaviours: Subsystem = {
-      update: (delta) => {
-        for (const behaviour of this.behaviours) behaviour.update?.(delta, this.context);
-      },
-      fixed: (step) => {
-        for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
-      },
-      lateUpdate: () => {
-        for (const behaviour of this.behaviours) behaviour.postUpdate?.(this.context);
-      },
-      dispose: () => {},
-    };
-    const scheduled = [
-      { subsystem: behaviours, order: undefined },
-      ...this.subsystems.map((subsystem, index) => ({ subsystem, order: definitions[index]?.order })),
-    ];
     for (const phase of PHASES) {
-      const claimed = scheduled.flatMap(({ subsystem, order }) => {
+      const claimed = this.subsystems.flatMap((subsystem, index) => {
         const hook = subsystem[phase];
-        const key = order?.[phase] ?? 0;
+        const key = definitions[index]?.order?.[phase] ?? 0;
         return hook === undefined ? [] : [{ key, hook: hook.bind(subsystem) }];
       });
       // A stable sort: two at one key keep the order they were registered in.
@@ -518,124 +457,24 @@ export class World {
   }
 
   /**
-   * Tells every behaviour the scene is going away, before anything is taken
-   * apart.
-   *
-   * Separate from `dispose` because the two answer different questions: this
-   * one is "we are leaving, save what matters" and still has a live scene to
-   * read; `dispose` is the teardown itself. Unity splits them the same way
-   * with `OnDisable` and `OnDestroy`.
+   * Tells every subsystem the scene is going away, before anything is taken
+   * apart: the behaviours tell theirs, which still have a live scene to read.
    */
   notifySceneUnload(): void {
     if (this.disposed) return;
-    for (const behaviour of this.behaviours) {
-      try {
-        behaviour.onSceneUnload?.();
-      } catch (cause) {
-        // One script refusing to leave must not strand the transition.
-        console.error('[scene] onSceneUnload threw', cause);
-      }
-    }
+    for (const subsystem of this.subsystems) subsystem.sceneUnload?.();
   }
 
   dispose(): void {
     // Once: Rapier answers a world freed twice by throwing.
     if (this.disposed) return;
     this.disposed = true;
-    for (const behaviour of this.behaviours) behaviour.dispose?.();
-    this.behaviours.length = 0;
-    for (const holding of this.held) holding.dispose();
-    this.held.length = 0;
     // Last built first: one may hold what one built before it provides.
     for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
     this.subsystems.length = 0;
     this.binder.dispose();
     this.scene.clear();
   }
-
-  /**
-   * Instantiates a behaviour for every component that has one registered.
-   *
-   * The world deliberately does not name any component type here. A new kind
-   * of controller is a registration, not an edit to this loop.
-   */
-  private buildBehaviours(scene: SceneDoc, registries: WorldRegistries): void {
-    let cameraOwners = 0;
-    const collisions = collisionsOf(this);
-
-    // Driven by the registry and then by the tables of the types it names: a
-    // scene of two thousand props with one player controller in it visits one
-    // entity. It used to walk them all, and every component of each.
-    for (const definition of registries.behaviours.values()) {
-      for (const [entityId, held] of componentsOfType(scene, definition.id)) {
-        const entity = scene.entities.get(entityId);
-        const object = this.binder.getObject(entityId);
-        if (!entity || !object) continue;
-
-        for (const component of held.values()) {
-          const behaviour = definition.create({ entity, object, component }, this.context);
-          if (!behaviour) continue;
-
-          this.behaviours.push(behaviour);
-          // Over the scene's own cameras: what drives the view is the view you
-          // are in. The first of two drivers wins, and is said below.
-          if (behaviour.camera) {
-            cameraOwners += 1;
-            this.held.push(this.cameras.claim(behaviour.camera, CAMERA_PRIORITY.driven));
-          }
-          // What its entity's colliders touch, and those of the children
-          // riding its body when it is a body's: physics publishes to both.
-          if (collisions && listens(behaviour)) {
-            this.held.push(collisions.listen(entityId, (touch) => this.hear(behaviour, touch)));
-          }
-        }
-      }
-    }
-
-    if (cameraOwners > 1) {
-      this.warnings.push(
-        `${cameraOwners} components want to drive the camera; the first one wins.`,
-      );
-    }
-
-    // Second pass. Everything now exists, so a behaviour can look another one
-    // up regardless of which entity was built first.
-    for (const behaviour of this.behaviours) behaviour.start?.(this.context);
-  }
-
-  /**
-   * What one side of a pair heard, told to a behaviour on it.
-   *
-   * Unguarded, as `update` is: a script's hook is guarded by its own behaviour.
-   */
-  private hear(behaviour: Behaviour, touch: Touch): void {
-    switch (touch.kind) {
-      case 'collisionEnter': {
-        // A copy each, so no listener can change what the next one hears.
-        const { other, point, normal, impulse } = touch.collision;
-        behaviour.onCollisionEnter?.(
-          {
-            other,
-            point: { x: point.x, y: point.y, z: point.z },
-            normal: { x: normal.x, y: normal.y, z: normal.z },
-            impulse,
-          },
-          this.context,
-        );
-        break;
-      }
-      case 'collisionExit':
-        behaviour.onCollisionExit?.(touch.other, this.context);
-        break;
-      case 'triggerEnter':
-        behaviour.onTriggerEnter?.(touch.other, this.context);
-        break;
-      case 'triggerExit':
-        behaviour.onTriggerExit?.(touch.other, this.context);
-        break;
-    }
-  }
-
 }
 
 /** Narrow a camera the binder produced, for hosts that need the concrete type. */
@@ -645,15 +484,6 @@ export function isPerspective(camera: Camera): camera is PerspectiveCamera {
 
 export type { Object3D, OrthographicCamera };
 
-/** Whether a behaviour hears what its entity's colliders touch. */
-function listens(behaviour: Behaviour): boolean {
-  return (
-    behaviour.onCollisionEnter !== undefined ||
-    behaviour.onCollisionExit !== undefined ||
-    behaviour.onTriggerEnter !== undefined ||
-    behaviour.onTriggerExit !== undefined
-  );
-}
 
 /**
  * Runs one phase's hooks. An indexed loop over an array built once: a frame

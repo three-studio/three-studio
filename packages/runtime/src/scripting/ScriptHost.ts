@@ -1,10 +1,13 @@
 import type {
   Behaviour as RuntimeBehaviour,
-  BehaviourContext,
   BehaviourDefinition,
   BehaviourTarget,
 } from '../behaviour/Behaviour';
+import { audioOf } from '../audio/audioOf';
+import { inputOf } from '../input/inputOf';
 import type { Collision } from '../physics/PhysicsApi';
+import { physicsOf } from '../physics/physicsOf';
+import type { World } from '../world/World';
 import { audioApiFor } from './audioApi';
 import { isScriptClass } from './scriptBundle';
 import { noBody, scriptPhysicsFor } from './scriptPhysics';
@@ -21,6 +24,9 @@ import {
  * that throws every tick would otherwise bury the console and take the whole
  * game down with it. A failed script is disabled and named, which is what makes
  * the problem findable.
+ *
+ * Each hook calls the script inside a `try` of its own. They went through
+ * `guard(phase, () => …)`, which made a closure per script per hook per frame.
  */
 class ScriptBehaviour implements RuntimeBehaviour {
   private failed = false;
@@ -35,86 +41,136 @@ class ScriptBehaviour implements RuntimeBehaviour {
   constructor(
     private readonly instance: Behaviour,
     private readonly label: string,
-    private readonly ctx: BehaviourContext,
+    private readonly world: World,
   ) {
     if (instance.onCollisionEnter) {
-      this.onCollisionEnter = (collision) =>
-        this.guard('onCollisionEnter', () => instance.onCollisionEnter?.(collision));
+      this.onCollisionEnter = (collision) => {
+        if (this.failed) return;
+        try {
+          instance.onCollisionEnter?.(collision);
+        } catch (cause) {
+          this.fail('onCollisionEnter', cause);
+        }
+      };
     }
     if (instance.onCollisionExit) {
-      this.onCollisionExit = (other) => this.guard('onCollisionExit', () => instance.onCollisionExit?.(other));
+      this.onCollisionExit = (other) => {
+        if (this.failed) return;
+        try {
+          instance.onCollisionExit?.(other);
+        } catch (cause) {
+          this.fail('onCollisionExit', cause);
+        }
+      };
     }
     if (instance.onTriggerEnter) {
-      this.onTriggerEnter = (other) => this.guard('onTriggerEnter', () => instance.onTriggerEnter?.(other));
+      this.onTriggerEnter = (other) => {
+        if (this.failed) return;
+        try {
+          instance.onTriggerEnter?.(other);
+        } catch (cause) {
+          this.fail('onTriggerEnter', cause);
+        }
+      };
     }
     if (instance.onTriggerExit) {
-      this.onTriggerExit = (other) => this.guard('onTriggerExit', () => instance.onTriggerExit?.(other));
+      this.onTriggerExit = (other) => {
+        if (this.failed) return;
+        try {
+          instance.onTriggerExit?.(other);
+        } catch (cause) {
+          this.fail('onTriggerExit', cause);
+        }
+      };
     }
   }
 
   /** Self-contained setup, while other entities may still be under construction. */
   awake(): void {
-    this.guard('onAwake', () => this.instance.onAwake?.());
+    if (this.failed) return;
+    try {
+      this.instance.onAwake?.();
+    } catch (cause) {
+      this.fail('onAwake', cause);
+    }
   }
 
   /** Called by the world once every behaviour exists. */
   start(): void {
-    this.guard('onStart', () => this.instance.onStart?.());
+    if (this.failed) return;
+    try {
+      this.instance.onStart?.();
+    } catch (cause) {
+      this.fail('onStart', cause);
+    }
   }
 
   update(delta: number): void {
     this.instance.time += delta;
-    this.guard('onUpdate', () => this.instance.onUpdate?.(delta));
+    if (this.failed) return;
+    try {
+      this.instance.onUpdate?.(delta);
+    } catch (cause) {
+      this.fail('onUpdate', cause);
+    }
   }
 
   fixedUpdate(step: number): void {
-    this.guard('onFixedUpdate', () => this.instance.onFixedUpdate?.(step));
+    if (this.failed) return;
+    try {
+      this.instance.onFixedUpdate?.(step);
+    } catch (cause) {
+      this.fail('onFixedUpdate', cause);
+    }
   }
 
   postUpdate(): void {
-    this.guard('onLateUpdate', () => this.instance.onLateUpdate?.());
+    if (this.failed) return;
+    try {
+      this.instance.onLateUpdate?.();
+    } catch (cause) {
+      this.fail('onLateUpdate', cause);
+    }
   }
 
   dispose(): void {
     // Cleanup runs even for a script that already failed. Skipping it was
     // exactly backwards: the script most likely to have left something behind
     // is the one that crashed.
-    this.failed = false;
-    this.guard('onDestroy', () => this.instance.onDestroy?.());
+    try {
+      this.instance.onDestroy?.();
+    } catch (cause) {
+      this.fail('onDestroy', cause);
+    }
     this.instance.cancelTimers();
     internalContext.delete(this.instance);
   }
 
-  private guard(phase: string, run: () => void): void {
-    if (this.failed) return;
-    try {
-      run();
-    } catch (cause) {
-      this.failed = true;
-      const message = cause instanceof Error ? cause.message : String(cause);
-      console.error(`[script] ${this.label}.${phase} threw, script disabled:`, cause);
-      this.ctx.warn(`${this.label} failed in ${phase}: ${message}`);
-    }
+  private fail(phase: string, cause: unknown): void {
+    this.failed = true;
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error(`[script] ${this.label}.${phase} threw, script disabled:`, cause);
+    this.world.warn(`${this.label} failed in ${phase}: ${message}`);
   }
 }
 
 export const scriptBehaviour: BehaviourDefinition = {
   id: 'script',
-  create(target: BehaviourTarget, ctx: BehaviourContext) {
+  create(target: BehaviourTarget, world: World) {
     const { component } = target;
     if (component.type !== 'script' || component.assetId === null) return null;
 
     // The classes of the bundle this world was given, and of no other. Checked
-    // as it is read: the context cannot name the script API without the API
-    // naming the context back, so it holds them as values of no known type.
-    const ScriptType = ctx.scripts.get(component.assetId);
+    // as it is read: the world cannot name the script API without the API
+    // naming the world back, so it holds them as values of no known type.
+    const ScriptType = world.options.scripts?.get(component.assetId);
     if (!isScriptClass(ScriptType)) {
-      ctx.warn(`"${target.entity.name}" references a script that is not compiled.`);
+      world.warn(`"${target.entity.name}" references a script that is not compiled.`);
       return null;
     }
 
     const instance = new ScriptType();
-    internalContext.set(instance, ctx);
+    internalContext.set(instance, world);
 
     // Editable values are applied before onStart, so a script sees its
     // configured values the first time it runs — as in Unity and Unreal.
@@ -129,7 +185,7 @@ export const scriptBehaviour: BehaviourDefinition = {
       // a stale field on every instance forever.
       if (!Object.hasOwn(declared, key)) continue;
       if (RESERVED_PROPERTY_NAMES.has(key)) {
-        ctx.warn(
+        world.warn(
           `"${target.entity.name}": script property "${key}" is a reserved name and was ignored.`,
         );
         continue;
@@ -137,7 +193,8 @@ export const scriptBehaviour: BehaviourDefinition = {
       Reflect.set(instance, key, value);
     }
 
-    const physics = scriptPhysicsFor(ctx.physics, ctx.scene, target.entity, ctx.warn);
+    const worldPhysics = physicsOf(world);
+    const physics = scriptPhysicsFor(worldPhysics, world.document, target.entity, world.warn);
     Object.assign(instance, {
       entity: target.entity,
       transform: target.object,
@@ -146,24 +203,24 @@ export const scriptBehaviour: BehaviourDefinition = {
       body:
         physics.body(target.entity.id) ??
         noBody(
-          ctx.physics &&
+          worldPhysics &&
             (() =>
-              ctx.warn(
+              world.warn(
                 `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
               )),
         ),
       physics,
       // `null` in a world handed no element to listen on, which only a test
       // builds: there is nothing a script there could hear.
-      input: ctx.input,
-      scenes: ctx.scenes,
+      input: inputOf(world),
+      scenes: world.options.scenes ?? null,
       // Bound to this entity, so `this.audio.play()` with no argument means "my
       // own sound" — the case a script wants ninety per cent of the time and the
       // one that should be shortest to write.
-      audio: audioApiFor(ctx.audio, target.entity.id),
+      audio: audioApiFor(audioOf(world), target.entity.id),
     });
 
-    const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, ctx);
+    const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, world);
     // Only `onAwake` here. `onStart` is run by the world once every behaviour
     // in the scene exists, so a script can reference another entity's script
     // without depending on which of them happened to be constructed first.

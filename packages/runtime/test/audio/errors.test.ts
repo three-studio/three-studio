@@ -1,9 +1,13 @@
-import { audioSourceType, createEntity, fixedId } from '@three-studio/core';
+import { audioSourceType, createEntity, createRenderingSettings, fixedId } from '@three-studio/core';
 import { Group } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
+import { sceneWith } from '../../../core/test/fixtures';
+import { AssetCache } from '../../src/assets/AssetCache';
+import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { AudioEngine } from '../../src/audio/AudioEngine';
-import { audioSourceBehaviour } from '../../src/behaviour/audio';
-import type { BehaviourContext } from '../../src/behaviour/Behaviour';
+import { audioSourceBehaviour, audioSourceOn } from '../../src/behaviour/audio';
+import { World } from '../../src/world/World';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import { FakeContext } from './fakeContext';
 import { flush, rig } from './rig';
 
@@ -25,11 +29,14 @@ const WEIRD = fixedId('asset', 'weird');
 
 const source = (overrides = {}) => ({ ...audioSourceType.create(), assetId: STEP, ...overrides });
 
-function mount(audio: AudioEngine | null, overrides = {}) {
-  return audioSourceBehaviour.create(
-    { entity: createEntity('noise').entity, object: new Group(), component: source(overrides) },
-    { audio, warn: () => {} } as unknown as BehaviourContext,
-  );
+const target = (overrides = {}) => ({
+  entity: createEntity('noise').entity,
+  object: new Group(),
+  component: source(overrides),
+});
+
+function mount(audio: AudioEngine, overrides = {}) {
+  return audioSourceOn(audio, target(overrides));
 }
 
 describe('nothing here may bring anything down', () => {
@@ -60,10 +67,19 @@ describe('nothing here may bring anything down', () => {
     expect(warnings).toHaveLength(1);
   });
 
-  it('no audio context at all: the component is inert, not broken', () => {
+  it('no audio context at all: the component is inert, not broken', async () => {
     // A host that handed nothing over, or a browser with no Web Audio. The
     // behaviour declines to build, so nothing throws once a frame.
-    expect(mount(null)).toBeNull();
+    const registries = builtInRegistries();
+    const world = await World.play({
+      document: sceneWith([]),
+      registries: withoutPhysics(registries),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+    });
+    onTestFinished(() => world.dispose());
+
+    expect(audioSourceBehaviour.create(target(), world)).toBeNull();
   });
 
   it('a suspended context: the sound is queued, and unlock starts it', async () => {
@@ -82,7 +98,7 @@ describe('nothing here may bring anything down', () => {
   it('a source deleted mid-play: its voice goes with it', async () => {
     const { engine } = rig({ step: { duration: 60 } });
     const behaviour = mount(engine, { playOnStart: true });
-    behaviour?.start?.({} as BehaviourContext);
+    behaviour?.start?.();
     await flush();
     expect(engine.voices).toHaveLength(1);
 
@@ -109,7 +125,7 @@ describe('nothing here may bring anything down', () => {
   it('the scene is left: everything it started stops', async () => {
     const { engine } = rig({ step: { duration: 60 } });
     const behaviour = mount(engine, { playOnStart: true });
-    behaviour?.start?.({} as BehaviourContext);
+    behaviour?.start?.();
     await flush();
 
     behaviour?.onSceneUnload?.();

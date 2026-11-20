@@ -8,8 +8,7 @@ import {
 import { Group, type Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
-import { audioSourceBehaviour } from '../../src/behaviour/audio';
-import type { BehaviourContext } from '../../src/behaviour/Behaviour';
+import { audioSourceOn } from '../../src/behaviour/audio';
 import { audioApiFor } from '../../src/scripting/audioApi';
 import { flush, rig } from './rig';
 
@@ -27,11 +26,7 @@ const STEP = fixedId('asset', 'step');
 const ME = fixedId('entity', 'me');
 const DOOR = fixedId('entity', 'door');
 
-function context(audio: AudioEngine | null): BehaviourContext {
-  return { audio, warn: () => {} } as unknown as BehaviourContext;
-}
-
-/** Builds a source behaviour the way the engine does, so it registers itself. */
+/** Builds a source behaviour as its definition does on a world's engine, so it registers itself. */
 function mountSource(
   engine: AudioEngine,
   entityId: EntityId,
@@ -40,7 +35,7 @@ function mountSource(
   const object = new Group();
   const entity = { ...createEntity('noise').entity, id: entityId };
   const component = { ...audioSourceType.create(), assetId: STEP, ...overrides };
-  audioSourceBehaviour.create({ entity, object, component }, context(engine));
+  audioSourceOn(engine, { entity, object, component });
   return object;
 }
 

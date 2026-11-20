@@ -11,7 +11,7 @@ import {
 import { World, type WorldOptions } from './world/World';
 import type { PreloadHold } from './assets/AssetCache';
 import { AudioClipCache } from './audio/AudioClipCache';
-import type { SceneApi } from './behaviour/Behaviour';
+import type { SceneApi } from './sceneApi';
 
 /**
  * Runs one scene at a time, and moves between them.

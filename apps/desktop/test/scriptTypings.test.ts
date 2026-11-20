@@ -60,7 +60,7 @@ const PROBE = `import type {
   RaycastHit as PublishedHit,
 } from '@three-studio/runtime';
 import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
-import type { SceneApi } from ${importable('packages/runtime/src/behaviour/Behaviour')};
+import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
 import type { AudioApi } from ${importable('packages/runtime/src/scripting/audioApi')};
 import type {

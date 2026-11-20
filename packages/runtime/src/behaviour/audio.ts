@@ -1,13 +1,9 @@
 import type { AudioListenerComponent, AudioSourceComponent, EntityId } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { AudioEngine } from '../audio/AudioEngine';
+import { audioOf } from '../audio/audioOf';
 import type { PlayRequest, Vec3Tuple, VoiceHandle } from '../audio/playback';
-import type {
-  Behaviour,
-  BehaviourContext,
-  BehaviourDefinition,
-  BehaviourTarget,
-} from './Behaviour';
+import type { Behaviour, BehaviourDefinition, BehaviourTarget } from './Behaviour';
 
 /*
  * The glue between a component and a voice, and the only place three and the
@@ -271,25 +267,38 @@ class AudioListenerBehaviour implements Behaviour {
   }
 }
 
+/**
+ * An audio source playing through `audio`, filed where a script's `this.audio`
+ * finds it; `null` for a component of another type. The definition's, on its
+ * world's engine, and a test's, on one of its own.
+ */
+export function audioSourceOn(audio: AudioEngine, target: BehaviourTarget): Behaviour | null {
+  if (target.component.type !== 'audioSource') return null;
+  const behaviour = new AudioSourceBehaviour(target.component, target.object, audio);
+  remember(audio, target.entity.id, behaviour);
+  return behaviour;
+}
+
+/** The ear placed by an Audio Listener on `audio`, as `audioSourceOn` makes a source. */
+export function audioListenerOn(audio: AudioEngine, target: BehaviourTarget): Behaviour | null {
+  if (target.component.type !== 'audioListener') return null;
+  return new AudioListenerBehaviour(target.component, target.object, audio);
+}
+
 export const audioSourceBehaviour: BehaviourDefinition = {
   id: 'audioSource',
-  create(target: BehaviourTarget, ctx: BehaviourContext) {
-    if (target.component.type !== 'audioSource') return null;
+  create(target, world) {
     // No audio engine at all — a host that never handed one over, or a browser
-    // with no Web Audio. The component is inert rather than broken, and the
-    // engine has already said so once.
-    if (ctx.audio === null) return null;
-    const behaviour = new AudioSourceBehaviour(target.component, target.object, ctx.audio);
-    remember(ctx.audio, target.entity.id, behaviour);
-    return behaviour;
+    // with no Web Audio. The component is inert rather than broken.
+    const audio = audioOf(world);
+    return audio === null ? null : audioSourceOn(audio, target);
   },
 };
 
 export const audioListenerBehaviour: BehaviourDefinition = {
   id: 'audioListener',
-  create(target: BehaviourTarget, ctx: BehaviourContext) {
-    if (target.component.type !== 'audioListener') return null;
-    if (ctx.audio === null) return null;
-    return new AudioListenerBehaviour(target.component, target.object, ctx.audio);
+  create(target, world) {
+    const audio = audioOf(world);
+    return audio === null ? null : audioListenerOn(audio, target);
   },
 };

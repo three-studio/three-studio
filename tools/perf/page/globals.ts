@@ -1,4 +1,4 @@
-import type { SceneApi } from '@three-studio/runtime/behaviour/Behaviour';
+import type { SceneApi } from '@three-studio/runtime/sceneApi';
 import type { PlayerAnnouncement } from '../../../apps/web-template/src/announce';
 
 /*

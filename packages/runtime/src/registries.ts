@@ -12,6 +12,7 @@ import { inputSubsystem } from './input/inputSubsystem';
 import { physicsSubsystem } from './physics/physicsSubsystem';
 import { audioListenerBehaviour, audioSourceBehaviour } from './behaviour/audio';
 import type { BehaviourDefinition } from './behaviour/Behaviour';
+import { behaviourSubsystem } from './behaviour/behaviours';
 import { cameraSystem } from './components/camera';
 import { lightSystem } from './components/light';
 import { meshSystem } from './components/mesh';
@@ -59,10 +60,15 @@ const BEHAVIOURS: readonly BehaviourDefinition[] = [
   scriptBehaviour,
 ];
 
-/*
- * Built in this order, which is also the order of two at one place in a phase.
+/**
+ * The kernel's subsystems, built in this order, which is also the order of two
+ * at one place in a phase. The behaviours come after the three they reach, and
+ * are made here, handed the registries' table of them, so that the world never
+ * names it.
  */
-const SUBSYSTEMS: readonly SubsystemDefinition[] = [inputSubsystem, physicsSubsystem, audioSubsystem];
+function kernelSubsystems(registries: RuntimeRegistries): readonly SubsystemDefinition[] {
+  return [inputSubsystem, physicsSubsystem, audioSubsystem, behaviourSubsystem(registries.behaviours)];
+}
 
 /**
  * The runtime's registries, the core's among them, all empty. A root fills them
@@ -82,6 +88,6 @@ export function activateRuntime(registries: RuntimeRegistries): Disposable {
   return combineDisposables([
     ...SYSTEMS.map((system) => registries.systems.register(system)),
     ...BEHAVIOURS.map((behaviour) => registries.behaviours.register(behaviour)),
-    ...SUBSYSTEMS.map((subsystem) => registries.subsystems.register(subsystem)),
+    ...kernelSubsystems(registries).map((subsystem) => registries.subsystems.register(subsystem)),
   ]);
 }

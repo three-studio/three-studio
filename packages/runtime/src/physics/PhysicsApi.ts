@@ -26,7 +26,7 @@ export interface QuatLike {
 }
 
 /**
- * `BehaviourContext.physics`: the world as a behaviour may touch it.
+ * Physics as a behaviour may touch it, reached by `physicsOf(world)`.
  *
  * No fixed step here: a behaviour is handed the tick as `fixedUpdate`'s
  * argument, and a host reads `World.fixedStep`.

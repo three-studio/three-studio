@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
-import type { SceneApi } from '../src/behaviour/Behaviour';
+import type { SceneApi } from '../src/sceneApi';
 import { SceneHost, type SceneHostOptions } from '../src/SceneHost';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';

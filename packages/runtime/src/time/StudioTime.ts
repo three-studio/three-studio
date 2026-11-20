@@ -23,8 +23,8 @@ import { deltaTime, time } from 'three/tsl';
  * already built the publish channel, and a uniform is a better one than any
  * listener list we could add.
  *
- * Consumers receive an instance through `SystemContext` and `BehaviourContext`
- * rather than importing {@link studioTime}. The singleton exists because three's
+ * Consumers receive an instance through `SystemContext` rather than importing
+ * {@link studioTime}. The singleton exists because three's
  * nodes are singletons — there can be exactly one authoritative clock per
  * document — but nothing downstream should have to know that.
  *

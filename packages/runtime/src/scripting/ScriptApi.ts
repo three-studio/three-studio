@@ -1,10 +1,10 @@
 import { isEntityId, type EntityDoc, type FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
-import type { BehaviourContext } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
 import type { BodyHandle, Collision } from '../physics/PhysicsApi';
 import type { AudioApi } from './audioApi';
-import type { SceneApi } from '../behaviour/Behaviour';
+import type { SceneApi } from '../sceneApi';
+import type { World } from '../world/World';
 import type { ScriptPhysics } from './scriptPhysics';
 
 /**
@@ -234,9 +234,9 @@ export abstract class Behaviour {
     // What a script holds is text, and what it names is read as an id before
     // the scene is asked: an empty one, or one that is not text, names nothing.
     if (!isEntityId(entityId)) return null;
-    const ctx = internalContext.get(this);
-    const doc = ctx?.scene.entities.get(entityId);
-    const object = ctx?.binder.getObject(entityId);
+    const world = internalContext.get(this);
+    const doc = world?.document.entities.get(entityId);
+    const object = world?.binder.getObject(entityId);
     if (!doc || !object) return null;
     return { id: entityId, name: doc.name, object };
   }
@@ -248,7 +248,7 @@ export abstract class Behaviour {
 }
 
 /**
- * Context injected by the host, kept off the public surface so a script cannot
- * reach the physics world or the binder by accident.
+ * Each script's world, set by the host, kept off the public surface so a script
+ * cannot reach the physics world or the binder by accident.
  */
-export const internalContext = new WeakMap<Behaviour, BehaviourContext>();
+export const internalContext = new WeakMap<Behaviour, World>();

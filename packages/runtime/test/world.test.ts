@@ -255,7 +255,8 @@ describe('input, a subsystem', () => {
     onTestFinished(() => world.dispose());
 
     expect(inputOf(world)).toBeNull();
-    expect(world.behaviours).toEqual([]);
+    // No player was built to claim the view.
+    expect(world.warnings).toContain('No camera and no player controller; using a default view.');
   });
 });
 

@@ -2,24 +2,32 @@ import {
   audioListenerType,
   audioSourceType,
   createEntity,
+  createRenderingSettings,
   fixedId,
   type AudioSourceComponent,
 } from '@three-studio/core';
 import { Group, Object3D } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
-import { audioListenerBehaviour, audioSourceBehaviour, playRequestFor } from '../../src/behaviour/audio';
-import type { BehaviourContext } from '../../src/behaviour/Behaviour';
-import type { AudioEngine } from '../../src/audio/AudioEngine';
-import { builtInRegistries } from '../registries';
+import { describe, expect, it, onTestFinished } from 'vitest';
+import { sceneWith } from '../../../core/test/fixtures';
+import { AssetCache } from '../../src/assets/AssetCache';
+import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import {
+  audioListenerBehaviour,
+  audioListenerOn,
+  audioSourceBehaviour,
+  audioSourceOn,
+  playRequestFor,
+} from '../../src/behaviour/audio';
+import { World } from '../../src/world/World';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import { flush, rig } from './rig';
 
 /*
  * The glue: a component becomes a request, and a request becomes a voice.
  *
- * `World` itself is not built here — it wants a DOM element and a Rapier
- * world, neither of which exists under node. The definitions are the ones the
- * runtime's activation registers, so calling one exercises exactly what the
- * world would call.
+ * Built on an engine of the test's own, through what the definitions build
+ * with once their world has one: the same code, with the mix in the test's
+ * hands. The definitions are the ones the runtime's activation registers.
  */
 
 const STEP = fixedId('asset', 'step');
@@ -33,10 +41,6 @@ function at(x: number, y: number, z: number): Object3D {
   object.position.set(x, y, z);
   object.updateMatrixWorld(true);
   return object;
-}
-
-function context(audio: AudioEngine | null): BehaviourContext {
-  return { audio, warn: () => {} } as unknown as BehaviourContext;
 }
 
 describe('playRequestFor', () => {
@@ -87,10 +91,19 @@ describe('the audioSource behaviour', () => {
     expect(registries.behaviours.get('audioListener')).toBe(audioListenerBehaviour);
   });
 
-  it('declines to build when the host handed over no audio', () => {
+  it('declines to build in a world the host handed no audio', async () => {
+    const registries = builtInRegistries();
+    const world = await World.play({
+      document: sceneWith([]),
+      registries: withoutPhysics(registries),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+    });
+    onTestFinished(() => world.dispose());
+
     const built = audioSourceBehaviour.create(
       { entity: createEntity('noise').entity, object: at(0, 0, 0), component: source() },
-      context(null),
+      world,
     );
     expect(built).toBeNull();
   });
@@ -99,19 +112,17 @@ describe('the audioSource behaviour', () => {
     const { engine } = rig({ step: { duration: 10 } });
     const entity = createEntity('noise').entity;
 
-    const quiet = audioSourceBehaviour.create(
-      { entity, object: at(0, 0, 0), component: source({ playOnStart: false }) },
-      context(engine),
-    );
-    quiet?.start?.(context(engine));
+    const quiet = audioSourceOn(engine, {
+      entity,
+      object: at(0, 0, 0),
+      component: source({ playOnStart: false }),
+    });
+    quiet?.start?.();
     await flush();
     expect(engine.voices).toHaveLength(0);
 
-    const loud = audioSourceBehaviour.create(
-      { entity, object: at(0, 0, 0), component: source({ playOnStart: true }) },
-      context(engine),
-    );
-    loud?.start?.(context(engine));
+    const loud = audioSourceOn(engine, { entity, object: at(0, 0, 0), component: source({ playOnStart: true }) });
+    loud?.start?.();
     await flush();
     expect(engine.voices).toHaveLength(1);
   });
@@ -119,11 +130,12 @@ describe('the audioSource behaviour', () => {
   it('follows its entity, and does so after physics rather than before', async () => {
     const { context: audioContext, engine } = rig({ step: { duration: 10 } });
     const object = at(0, 0, 0);
-    const behaviour = audioSourceBehaviour.create(
-      { entity: createEntity('noise').entity, object, component: source({ playOnStart: true }) },
-      context(engine),
-    );
-    behaviour?.start?.(context(engine));
+    const behaviour = audioSourceOn(engine, {
+      entity: createEntity('noise').entity,
+      object,
+      component: source({ playOnStart: true }),
+    });
+    behaviour?.start?.();
     await flush();
 
     object.position.set(7, 0, 0);
@@ -131,7 +143,7 @@ describe('the audioSource behaviour', () => {
     // itself, because `postUpdate` runs before the render traversal that would
     // otherwise have refreshed it — and a sound one frame behind its object is
     // the bug this guards.
-    behaviour?.postUpdate?.(context(engine));
+    behaviour?.postUpdate?.();
 
     expect(audioContext.panners[0]?.positionX.target).toBe(7);
     // And it is `postUpdate` that does it, not `update`.
@@ -140,15 +152,12 @@ describe('the audioSource behaviour', () => {
 
   it('stops what it started when the scene is left', async () => {
     const { engine } = rig({ step: { duration: 10 } });
-    const behaviour = audioSourceBehaviour.create(
-      {
-        entity: createEntity('noise').entity,
-        object: at(0, 0, 0),
-        component: source({ playOnStart: true }),
-      },
-      context(engine),
-    );
-    behaviour?.start?.(context(engine));
+    const behaviour = audioSourceOn(engine, {
+      entity: createEntity('noise').entity,
+      object: at(0, 0, 0),
+      component: source({ playOnStart: true }),
+    });
+    behaviour?.start?.();
     await flush();
     expect(engine.voices).toHaveLength(1);
 
@@ -164,11 +173,12 @@ describe('the audioListener behaviour', () => {
     const listener = audioListenerType.create();
     listener.masterVolume = 0.5;
 
-    const behaviour = audioListenerBehaviour.create(
-      { entity: createEntity('ear').entity, object: at(2, 3, 4), component: listener },
-      context(engine),
-    );
-    behaviour?.start?.(context(engine));
+    const behaviour = audioListenerOn(engine, {
+      entity: createEntity('ear').entity,
+      object: at(2, 3, 4),
+      component: listener,
+    });
+    behaviour?.start?.();
 
     const ear = audioContext.listener as unknown as { positionY: { target: number } };
     expect(ear.positionY.target).toBe(3);

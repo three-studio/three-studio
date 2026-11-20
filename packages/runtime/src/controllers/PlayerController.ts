@@ -6,13 +6,10 @@ import {
   type PlayerControllerComponent,
 } from '@three-studio/core';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
-import type {
-  Behaviour,
-  BehaviourContext,
-  BehaviourDefinition,
-  BehaviourTarget,
-} from '../behaviour/Behaviour';
+import type { Behaviour, BehaviourDefinition } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
+import { inputOf } from '../input/inputOf';
+import { physicsOf } from '../physics/physicsOf';
 import type { CharacterController, PhysicsApi } from '../physics/PhysicsApi';
 import { applyWorldTransform } from '../physics/PhysicsWorld';
 
@@ -385,21 +382,22 @@ export class PlayerController implements Behaviour {
 
 export const playerControllerBehaviour: BehaviourDefinition = {
   id: 'playerController',
-  create(target: BehaviourTarget, ctx: BehaviourContext) {
+  create(target, world) {
     if (target.component.type !== 'playerController') return null;
     // A player nobody can drive is no player: a world handed no element to
     // listen on is a test's, and one that presses nothing.
-    if (ctx.input === null) return null;
+    const input = inputOf(world);
+    if (input === null) return null;
     return new PlayerController(
       target.component,
       target.object,
-      ctx.input,
-      ctx.physics,
+      input,
+      physicsOf(world),
       target.entity.id,
       // The entity's first collider, the one its character sweeps — so an
       // entity carrying two cannot have the camera measuring from one and the
       // character sweeping the other.
-      findComponent(ctx.scene, target.entity.id, 'collider'),
+      findComponent(world.document, target.entity.id, 'collider'),
     );
   },
 };
