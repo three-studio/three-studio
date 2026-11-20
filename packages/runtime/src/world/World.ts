@@ -12,13 +12,18 @@ import {
   physicsBodies,
   type AssetId,
   type ComponentDoc,
+  type ComponentTypeId,
+  type CoreRegistries,
+  type Disposable,
   type EntityId,
   type JointComponent,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type RenderingSettings,
+  type Registry,
   type SceneDoc,
+  type SubsystemId,
 } from '@three-studio/core';
 import {
   PerspectiveCamera,
@@ -30,10 +35,10 @@ import {
 } from 'three/webgpu';
 import { SceneBinder, bindScene } from '../SceneBinder';
 import type { AssetCache } from '../assets/AssetCache';
-import { AudioEngine } from '../audio/AudioEngine';
 import type { AudioClipCache } from '../audio/AudioClipCache';
 import type { AudioContextLike } from '../audio/AudioContextLike';
-import type { Behaviour, BehaviourContext } from '../behaviour/Behaviour';
+import { audioOf } from '../audio/audioOf';
+import type { Behaviour, BehaviourContext, BehaviourDefinition } from '../behaviour/Behaviour';
 import { Input, type InputOptions } from '../input/Input';
 import type { PhysicsApi } from '../physics/PhysicsApi';
 import {
@@ -43,10 +48,78 @@ import {
   type PhysicsEvent,
 } from '../physics/PhysicsWorld';
 import { ownMeshes } from '../physics/meshShape';
-import type { RuntimeRegistries } from '../registries';
 import { NO_SCRIPTS, type ScriptClasses } from '../scripting/scriptBundle';
+import type { SystemDefinition } from '../systems/ComponentSystem';
 import { studioTime } from '../time/StudioTime';
 import type { SceneApi } from '../behaviour/Behaviour';
+
+/**
+ * The parts of a frame a subsystem can claim, in the order a frame runs them:
+ * `update` once per frame, `fixed` once per whole step of the project's fixed
+ * step, `lateUpdate` once what moves has moved, `renderPrep` last before the
+ * host draws.
+ */
+export const PHASES = ['update', 'fixed', 'lateUpdate', 'renderPrep'] as const;
+
+export type Phase = (typeof PHASES)[number];
+
+/**
+ * What a world reads of the registries; a root's runtime registries are this,
+ * whole.
+ *
+ * Written out rather than imported as `RuntimeRegistries`: the runtime's
+ * activation registers subsystems whose files import this one, so naming its
+ * registries here would close an import cycle.
+ */
+export type WorldRegistries = CoreRegistries & {
+  readonly systems: Registry<ComponentTypeId, SystemDefinition>;
+  readonly behaviours: Registry<ComponentTypeId, BehaviourDefinition>;
+  readonly subsystems: Registry<SubsystemId, SubsystemDefinition>;
+};
+
+/**
+ * Something that simulates in Play, registered as a system or a behaviour is:
+ * the kernel's in `activateRuntime`, a module's by its runtime part, so that
+ * the loop below names none of them.
+ *
+ * Declared beside `World`, which it is built for: in a file of its own it would
+ * import the world, and the world it.
+ */
+export interface SubsystemDefinition {
+  readonly id: SubsystemId;
+  /**
+   * Its place in each phase it claims, lowest first; 0 for a phase it says
+   * nothing of, and two at one place run in the order they were registered.
+   * Per phase, because one subsystem can need to go after a second in one
+   * phase and before it in another.
+   */
+  readonly order?: { readonly [P in Phase]?: number };
+  /**
+   * Builds it for one world in Play, after every subsystem registered before
+   * it — each awaited — so it may read what those provide.
+   */
+  create(world: World): Subsystem | Promise<Subsystem>;
+}
+
+/**
+ * One subsystem of one world. A hook present is a phase claimed: there is no
+ * list of phases to keep in step with the methods.
+ */
+export interface Subsystem extends Disposable {
+  update?(delta: number): void;
+  fixed?(step: number): void;
+  lateUpdate?(delta: number): void;
+  renderPrep?(delta: number): void;
+  /**
+   * What it finds wrong with the scene it was built for: said once, when the
+   * world has been built, among the world's warnings. What it finds while it
+   * runs goes to `world.warn` when it finds it.
+   */
+  diagnose?(): readonly string[];
+}
+
+/** One phase's hooks, bound once when the world is built. */
+type Hook = (value: number) => void;
 
 export interface WorldOptions {
   document: SceneDoc;
@@ -56,7 +129,7 @@ export interface WorldOptions {
    * a vehicle, an animator or an audio source is a registration and the loop
    * below never learns that any of them exist.
    */
-  registries: RuntimeRegistries;
+  registries: WorldRegistries;
   /**
    * The project's loaded files, shared with every other world of the window:
    * Play draws the models the edit view already holds, with no second parse
@@ -181,6 +254,10 @@ export interface WorldOptions {
  */
 export class World {
   readonly scene = new Scene();
+  /** What it was built with, which its subsystems read: the audio context, the asset cache. */
+  readonly options: WorldOptions;
+  /** The scene it runs, as a document. `scene` is the graph a host draws. */
+  readonly document: SceneDoc;
   readonly binder: SceneBinder;
   readonly input: Input;
   /**
@@ -190,8 +267,6 @@ export class World {
    * turn or free it a second time, which throws.
    */
   readonly physics: PhysicsApi | null;
-  /** `null` when the host handed over no context. */
-  readonly audio: AudioEngine | null;
   /**
    * One tick, in seconds: the project's fixed step.
    *
@@ -216,19 +291,27 @@ export class World {
   /** The behaviours that hear what colliders touch, by the entity each sits on. */
   private readonly listeners = new Map<EntityId, Behaviour[]>();
 
+  /** In the order they were built, which is the order they were registered in. */
+  private readonly subsystems: Subsystem[] = [];
+  /**
+   * Each phase's hooks in the order they run, bound once when the world is
+   * built: a frame walks four arrays and looks nothing up.
+   */
+  private readonly hooks: { readonly [P in Phase]: Hook[] } = { update: [], fixed: [], lateUpdate: [], renderPrep: [] };
+
   private readonly fallbackCamera = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private readonly physicsWorld: PhysicsWorld | null;
-  private readonly context: BehaviourContext;
+  private context: BehaviourContext;
   private documentCamera: Camera | null = null;
   private disposed = false;
-  /** How many `audioListener` components the scene holds. Decides the fallback. */
-  private listenerOwners = 0;
 
   private constructor(
     options: WorldOptions,
     physicsSettings: PhysicsSettings,
     physics: PhysicsWorld | null,
   ) {
+    this.options = options;
+    this.document = options.document;
     // The renderer is handed over rather than owned: this world still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
@@ -245,35 +328,39 @@ export class World {
     this.physicsWorld = physics;
     this.physics = physics;
     this.fixedStep = physicsSettings.fixedTimestep;
+    this.context = this.behaviourContext();
+  }
 
-    this.audio =
-      options.audioContext === undefined
-        ? null
-        : new AudioEngine({
-            context: options.audioContext,
-            resolver: options.assets.resolver,
-            cache: options.audioCache,
-            onWarning: (message) => this.context.warn(message),
-          });
+  /**
+   * Says a problem once: where the editor lays it over the game, and where the
+   * player writes it to the console.
+   *
+   * Repeats are dropped: a warning raised per frame would otherwise fill the
+   * panel with one line per tick.
+   */
+  readonly warn = (message: string): void => {
+    if (this.warnings.includes(message)) return;
+    this.warnings.push(message);
+    this.onWarning?.([...this.warnings]);
+  };
 
-    this.context = {
-      scene: options.document,
+  /**
+   * What the behaviours are handed. Made again once the subsystems are built,
+   * since the audio engine is the audio subsystem's, and it is made after the
+   * world: a behaviour is never built before that.
+   */
+  private behaviourContext(): BehaviourContext {
+    return {
+      scene: this.document,
       binder: this.binder,
-      physics,
+      physics: this.physics,
       input: this.input,
       time: studioTime,
-      scenes: options.scenes ?? null,
-      audio: this.audio,
-      scripts: options.scripts ?? NO_SCRIPTS,
-      warn: (message) => {
-        // Repeats are dropped: a warning raised per frame would otherwise fill
-        // the panel with one line per tick.
-        if (this.warnings.includes(message)) return;
-        this.warnings.push(message);
-        this.onWarning?.([...this.warnings]);
-      },
+      scenes: this.options.scenes ?? null,
+      audio: audioOf(this),
+      scripts: this.options.scripts ?? NO_SCRIPTS,
+      warn: this.warn,
     };
-
   }
 
   /**
@@ -298,8 +385,7 @@ export class World {
     for (const [body, carried] of bodies) {
       for (const entityId of carried) riding.set(entityId, body);
     }
-    // Through the context, as every warning is, so a line is said once.
-    const { warn } = this.context;
+    const { warn } = this;
 
     // A mesh-derived collider on an entity with nothing to derive from falls
     // back to a box 2 cm across, which a player walks straight past. It
@@ -474,24 +560,60 @@ export class World {
       options.enablePhysics === false ? null : await PhysicsWorld.create(physicsSettings);
     const world = new World(options, physicsSettings, physics);
 
-    // Order matters, and each step needs the one before it:
-    //
-    //   models    a collider derived from a mesh needs the mesh, and a glTF
-    //             arrives well after `sync` returns — building physics first
-    //             gave an imported level a box around an empty group, which
-    //             the player fell straight through;
-    //   physics   a behaviour looks its rigid body up when it is constructed,
-    //             so a controller built earlier would find none and fly.
-    await world.binder.whenLoaded();
-    const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
-    physics?.build(options.document, world.binder, physicsMaterials);
-    world.buildBehaviours(options.document, options.registries);
-    world.pickCamera(options.document);
-    world.checkPhysicsSetup(options.document, physicsSettings, physicsMaterials);
-    world.checkAudioSetup(options.document);
-    world.checkLighting(options.document);
+    // Whatever fails below, nothing of a world nobody will hold stays alive: its
+    // `Input` would keep listening on the canvas, and a subsystem built before
+    // the one that threw would keep what it holds.
+    try {
+      // Order matters, and each step needs the one before it:
+      //
+      //   models      a collider derived from a mesh needs the mesh, and a glTF
+      //               arrives well after `sync` returns — building physics
+      //               first gave an imported level a box around an empty group,
+      //               which the player fell straight through;
+      //   physics     a behaviour looks its rigid body up when it is
+      //               constructed, so a controller built earlier would find
+      //               none and fly;
+      //   subsystems  each in the order it was registered, awaited, so one
+      //               may read what those before it provide; and before the
+      //               behaviours, which reach the audio engine through them.
+      await world.binder.whenLoaded();
+      const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
+      physics?.build(options.document, world.binder, physicsMaterials);
+      const definitions = options.registries.subsystems.values();
+      for (const definition of definitions) world.subsystems.push(await definition.create(world));
+      world.schedule(definitions);
+      world.context = world.behaviourContext();
+      world.buildBehaviours(options.document, options.registries);
+      world.pickCamera(options.document);
+      world.checkPhysicsSetup(options.document, physicsSettings, physicsMaterials);
+      for (const subsystem of world.subsystems) {
+        for (const problem of subsystem.diagnose?.() ?? []) world.warn(problem);
+      }
+      world.checkLighting(options.document);
+    } catch (cause) {
+      world.dispose();
+      throw cause;
+    }
 
     return world;
+  }
+
+  /**
+   * Files the hooks of the subsystems, built from `definitions` in that order,
+   * in their phases' arrays by their order keys. Once, when the world is built,
+   * so that a frame only walks the arrays.
+   */
+  private schedule(definitions: readonly SubsystemDefinition[]): void {
+    for (const phase of PHASES) {
+      const claimed = this.subsystems.flatMap((subsystem, index) => {
+        const hook = subsystem[phase];
+        const key = definitions[index]?.order?.[phase] ?? 0;
+        return hook === undefined ? [] : [{ key, hook: hook.bind(subsystem) }];
+      });
+      // A stable sort: two at one key keep the order they were registered in.
+      claimed.sort((a, b) => a.key - b.key);
+      this.hooks[phase].push(...claimed.map(({ hook }) => hook));
+    }
   }
 
   /**
@@ -563,12 +685,14 @@ export class World {
     // a kinematic body is commanded with a target position rather than an
     // impulse — issuing two targets between one step discards the first.
     for (const behaviour of this.behaviours) behaviour.update?.(delta, this.context);
+    run(this.hooks.update, delta);
 
     if (this.physicsWorld) {
       this.physicsWorld.step(
         delta,
         (step) => {
           for (const behaviour of this.behaviours) behaviour.fixedUpdate?.(step, this.context);
+          run(this.hooks.fixed, step);
         },
         // After the tick they happened in and before the next one's
         // `fixedUpdate`, as Unity runs its collision messages.
@@ -578,53 +702,15 @@ export class World {
     }
 
     for (const behaviour of this.behaviours) behaviour.postUpdate?.(this.context);
-
-    // After `postUpdate`, so a listener that rides the player is read at the
-    // position the player ended the frame at, and the fallback below sees the
-    // camera where it actually is.
-    if (this.audio) {
-      if (this.listenerOwners === 0) this.writeListenerFromCamera();
-      this.audio.update();
-    }
+    // After `postUpdate`, so what is placed there — a camera following its
+    // player, a listener riding it — is read where it ended the frame.
+    run(this.hooks.lateUpdate, delta);
+    run(this.hooks.renderPrep, delta);
 
     // Last, once everything that moves has moved: a batch reads its members'
     // world matrices, and reading them before physics wrote back would draw
     // every batched object one frame behind.
     this.binder.updateBatches();
-  }
-
-  /**
-   * Counts the ears, and says when a scene has the wrong number of them.
-   *
-   * The count is also what decides the fallback: with no `audioListener`
-   * anywhere the world places the ear on whatever camera the game is rendered
-   * through, which is right far more often than it is wrong and is very much
-   * better than a silent scene. With several, the first behaviour to
-   * write each frame wins, and saying so is the whole value of the warning —
-   * two ears is a bug that sounds like a mixing problem.
-   */
-  private checkAudioSetup(scene: SceneDoc): void {
-    if (this.audio === null) return;
-    this.listenerOwners = entitiesWith(scene, 'audioListener').length;
-    if (this.listenerOwners > 1) {
-      this.context.warn(
-        `${this.listenerOwners} entities carry an Audio Listener; only one ear is placed and the others are ignored.`,
-      );
-    }
-  }
-
-  /** The ear on the camera, for a scene that never named one. */
-  private writeListenerFromCamera(): void {
-    const camera = this.activeCamera;
-    camera.updateWorldMatrix(true, false);
-    const e = camera.matrixWorld.elements;
-    this.audio?.setListener(
-      [e[12] ?? 0, e[13] ?? 0, e[14] ?? 0],
-      // A camera looks down its own −Z, which is also what the audio side means
-      // by forward — see `behaviour/audio.ts`.
-      unit(-(e[8] ?? 0), -(e[9] ?? 0), -(e[10] ?? 1)),
-      unit(e[4] ?? 0, e[5] ?? 1, e[6] ?? 0),
-    );
   }
 
   /**
@@ -649,12 +735,16 @@ export class World {
   }
 
   dispose(): void {
+    // Once: Rapier answers a world freed twice by throwing.
+    if (this.disposed) return;
     this.disposed = true;
     for (const behaviour of this.behaviours) behaviour.dispose?.();
     this.behaviours.length = 0;
     this.listeners.clear();
+    // Last built first: one may hold what one built before it provides.
+    for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
+    this.subsystems.length = 0;
     this.input.dispose();
-    this.audio?.dispose();
     this.physicsWorld?.dispose();
     this.binder.dispose();
     this.scene.clear();
@@ -666,7 +756,7 @@ export class World {
    * The world deliberately does not name any component type here. A new kind
    * of controller is a registration, not an edit to this loop.
    */
-  private buildBehaviours(scene: SceneDoc, registries: RuntimeRegistries): void {
+  private buildBehaviours(scene: SceneDoc, registries: WorldRegistries): void {
     let cameraOwners = 0;
 
     // Driven by the registry and then by the tables of the types it names: a
@@ -792,9 +882,12 @@ function listens(behaviour: Behaviour): boolean {
   );
 }
 
-function unit(x: number, y: number, z: number): [number, number, number] {
-  const length = Math.hypot(x, y, z);
-  return length === 0 ? [0, 0, -1] : [x / length, y / length, z / length];
+/**
+ * Runs one phase's hooks. An indexed loop over an array built once: a frame
+ * makes no iterator, no closure and no array of its own.
+ */
+function run(hooks: readonly Hook[], value: number): void {
+  for (let i = 0; i < hooks.length; i += 1) hooks[i]?.(value);
 }
 
 /** What keeps a joint from doing its work, said as `checkPhysicsSetup` says it, or `null`. */

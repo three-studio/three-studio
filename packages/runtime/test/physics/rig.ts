@@ -34,6 +34,7 @@ export { nest } from '../../../core/test/fixtures';
 import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import type { AudioContextLike } from '../../src/audio/AudioContextLike';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
 import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
@@ -99,20 +100,27 @@ export type PhysicsRigMaker = (
 /** A rig whose world runs on the kernel's systems and behaviours, as a root activates them. */
 export const physicsRig: PhysicsRigMaker = physicsRigOn(registries);
 
+/** What a rig's world is handed besides its scene: an audio context, for a test of what it plays. */
+export interface RigOptions {
+  readonly audioContext?: AudioContextLike;
+}
+
 /**
  * Rigs whose worlds run on these registries: a test file that registers a
- * behaviour of its own builds its own registries, so what it adds reaches no
- * other file.
+ * behaviour or a subsystem of its own builds its own registries, so what it adds
+ * reaches no other file.
  */
-export function physicsRigOn(registries: RuntimeRegistries): PhysicsRigMaker {
-  return (entities, settings, physicsMaterials) => runningRig(registries, entities, settings, physicsMaterials);
+export function physicsRigOn(registries: RuntimeRegistries, options: RigOptions = {}): PhysicsRigMaker {
+  return (entities, settings, physicsMaterials) =>
+    runningRig(registries, entities, settings, physicsMaterials, options);
 }
 
 async function runningRig(
   registries: RuntimeRegistries,
   entities: readonly EntityTemplate[],
-  settings?: Partial<PhysicsSettings>,
-  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
+  settings: Partial<PhysicsSettings> | undefined,
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined,
+  { audioContext }: RigOptions,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
@@ -130,6 +138,7 @@ async function runningRig(
     // Heard on the canvas rather than on the window, which every test file
     // shares: two rigs alive in one test cannot hear each other's keys.
     input: { keys: 'element' },
+    audioContext,
   });
   onTestFinished(() => world.dispose());
 

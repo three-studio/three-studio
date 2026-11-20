@@ -17,6 +17,7 @@ import {
 import * as particlesCore from '@three-studio/particles/core';
 import * as particlesRuntime from '@three-studio/particles/runtime';
 import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { audioOf } from '@three-studio/runtime/audio/audioOf';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
@@ -277,6 +278,9 @@ async function boot(): Promise<void> {
   });
 
   message.textContent = build.title || scene.name;
+  // The running scene's engine: each scene runs in a world of its own.
+  const audio = () => (host.world === null ? null : audioOf(host.world));
+
   let started = false;
   // What the Play button does, once: a page the editor restarted calls it
   // without the button, and a click that lands after it must not do it twice.
@@ -288,7 +292,7 @@ async function boot(): Promise<void> {
     // The gesture the whole page exists to collect, as far as audio is
     // concerned: a context created without one stays suspended, and a build
     // that is silent for that reason says nothing about it anywhere.
-    void host.world?.audio?.unlock();
+    void audio()?.unlock();
   };
   startButton.hidden = false;
   startButton.addEventListener('click', start);
@@ -298,7 +302,7 @@ async function boot(): Promise<void> {
   if (audioContext !== undefined) {
     unlockAudioOnGesture(
       window,
-      () => void host.world?.audio?.unlock(),
+      () => void audio()?.unlock(),
       () => audioContext.state === 'running',
     );
   }
@@ -307,7 +311,7 @@ async function boot(): Promise<void> {
   // gain and not `context.suspend()`, so the timeline keeps running and a
   // returning player does not find every loop restarted.
   document.addEventListener('visibilitychange', () => {
-    host.world?.audio?.setSuspended(document.hidden);
+    audio()?.setSuspended(document.hidden);
   });
 
   // Surfaced rather than swallowed: a build with no camera or no collider is

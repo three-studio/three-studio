@@ -9,6 +9,7 @@ import {
 } from '@three-studio/core';
 import {
   AssetCache,
+  audioOf,
   studioTime,
   type World,
   type SceneBinder,
@@ -610,7 +611,7 @@ export class EditorViewport {
 
       // Paused means paused, including the part you can hear. The root gain
       // rather than the context, which the preview is sharing.
-      world.audio?.setSuspended(playState !== 'playing');
+      audioOf(world)?.setSuspended(playState !== 'playing');
     } else {
       // `raw`, not the simulated delta: flying the editor camera is not part of
       // the simulation, and a timescale of zero must not nail it to the spot.

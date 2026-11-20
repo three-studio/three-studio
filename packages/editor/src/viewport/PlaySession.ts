@@ -13,7 +13,7 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
-import { SceneHost, type AssetCache, type RuntimeRegistries, type SceneSource, type World } from '@three-studio/runtime';
+import { SceneHost, audioOf, type AssetCache, type RuntimeRegistries, type SceneSource, type World } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
@@ -398,7 +398,7 @@ export class PlaySession {
       // Pressing Play is the user gesture, which is the only moment a browser
       // will start an audio context. Missing it means a game that is silent
       // until something else happens to be clicked, with nothing to say why.
-      void world.audio?.unlock();
+      void audioOf(world)?.unlock();
     } catch (cause) {
       // A start nobody waits for any more says nothing: whatever it would say is
       // about a Play the person has already stopped or pressed again.

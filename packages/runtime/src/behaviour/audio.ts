@@ -205,15 +205,56 @@ function remember(audio: AudioEngine, entityId: EntityId, behaviour: AudioSource
 }
 
 /**
+ * Where an ear is and which way it faces, written in place: the triples
+ * `setListener` reads, kept by whatever places an ear every frame, so that
+ * placing it makes nothing.
+ */
+export class EarPose {
+  private readonly position: [number, number, number] = [0, 0, 0];
+  private readonly forward: [number, number, number] = [0, 0, -1];
+  private readonly up: [number, number, number] = [0, 1, 0];
+
+  /** Places `audio`'s ear where `object` is, facing down its −Z as a camera does. */
+  place(audio: AudioEngine, object: Object3D): void {
+    // Asked for, as `worldAudioTransform` asks: a late hook runs before the
+    // render traversal, which would otherwise bring the matrix up to date.
+    object.updateWorldMatrix(true, false);
+    const e = object.matrixWorld.elements;
+    this.position[0] = e[12] ?? 0;
+    this.position[1] = e[13] ?? 0;
+    this.position[2] = e[14] ?? 0;
+    writeUnit(this.forward, -(e[8] ?? 0), -(e[9] ?? 0), -(e[10] ?? 1));
+    writeUnit(this.up, e[4] ?? 0, e[5] ?? 1, e[6] ?? 0);
+    audio.setListener(this.position, this.forward, this.up);
+  }
+}
+
+/** `normalized`, into `target`. */
+function writeUnit(target: [number, number, number], x: number, y: number, z: number): void {
+  const length = Math.hypot(x, y, z);
+  if (length === 0) {
+    target[0] = 0;
+    target[1] = 0;
+    target[2] = -1;
+    return;
+  }
+  target[0] = x / length;
+  target[1] = y / length;
+  target[2] = z / length;
+}
+
+/**
  * The ear, when the scene names one.
  *
  * Writing it here rather than in the world is what lets the listener sit on the
  * player while the camera orbits behind it — the case that makes the component
- * worth having at all. The world only steps in when there is no such component
- * , because a scene with no ear that plays nothing is the worst possible
- * first contact with the system.
+ * worth having at all. The audio subsystem only steps in when there is no such
+ * component, because a scene with no ear that plays nothing is the worst
+ * possible first contact with the system.
  */
 class AudioListenerBehaviour implements Behaviour {
+  private readonly ear = new EarPose();
+
   constructor(
     private readonly component: AudioListenerComponent,
     private readonly object: Object3D,
@@ -222,16 +263,11 @@ class AudioListenerBehaviour implements Behaviour {
 
   start(): void {
     this.audio.setMasterVolume(this.component.masterVolume);
-    this.write();
+    this.ear.place(this.audio, this.object);
   }
 
   postUpdate(): void {
-    this.write();
-  }
-
-  private write(): void {
-    const { position, forward, up } = worldAudioTransform(this.object);
-    this.audio.setListener(position, forward, up);
+    this.ear.place(this.audio, this.object);
   }
 }
 

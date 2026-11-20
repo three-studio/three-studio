@@ -26,7 +26,7 @@ export const RUNTIME_VERSION = ENGINE_VERSION;
 
 /* The world: a scene document running, and the scene graph a host draws. */
 export { World, isPerspective } from './world/World';
-export type { WorldOptions } from './world/World';
+export type { Phase, Subsystem, SubsystemDefinition, WorldOptions, WorldRegistries } from './world/World';
 /* What a game is built from, made and filled by each app's composition root. */
 export { activateRuntime, createRuntimeRegistries } from './registries';
 export type { RuntimeRegistries } from './registries';
@@ -62,6 +62,7 @@ export type { ModelNodeDesc, ModelShape } from './assets/modelNodes';
 
 /* Audio. The `*Like` types exist so the mixer can be driven by a fake context in tests. */
 export { AudioEngine } from './audio/AudioEngine';
+export { audioOf } from './audio/audioOf';
 export type { AudioEngineOptions } from './audio/AudioEngine';
 export { isStopped } from './audio/AudioContextLike';
 export type {
