@@ -560,6 +560,9 @@ const KERNEL_OWN_TYPE = 'prefabInstance';
 /** The types a file that reads the types' rules may still name; `null` for a file the rule leaves alone. */
 function typesItMayName(path: string): readonly string[] | null {
   if (path.startsWith('packages/editor/src/inspector/') || TYPE_BLIND.has(path)) return [];
+  // The world runs what is registered — systems, subsystems — and its loop
+  // names none of it: a feature it named would be one a module could not add.
+  if (path.startsWith('packages/runtime/src/world/')) return [];
   if (UNPACK_MODEL.has(path)) return ['model'];
   return null;
 }
@@ -872,13 +875,25 @@ describe('the frameworks that read the types', () => {
     expect(named('packages/editor/src/components/collider/pane.ts', "extendPane('collider', {});")).toEqual([]);
   });
 
+  it('reports a type named in the world\'s files, whose loop runs what is registered and names none of it', () => {
+    expect(named('packages/runtime/src/world/World.ts', "if (entitiesWith(document, 'collider').length === 0) warn();")).toEqual([
+      'packages/runtime/src/world/World.ts: names the component type collider, whose rules are its own',
+    ]);
+  });
+
+  it("reports a type named in the world's files, whose loop runs what is registered and names none of it", () => {
+    expect(named('packages/runtime/src/world/World.ts', "if (entitiesWith(document, 'collider').length === 0) warn();")).toEqual([
+      'packages/runtime/src/world/World.ts: names the component type collider, whose rules are its own',
+    ]);
+  });
+
   it('lets Unpack Model name the model it unpacks, and no other type', () => {
     expect(named('packages/core/src/scene/modelUnpack.ts', "findComponent(scene, id, 'model'); keep('collider');")).toEqual([
       'packages/core/src/scene/modelUnpack.ts: names the component type collider, whose rules are its own',
     ]);
   });
 
-  it('finds none in the tree: the Inspector, the scene commands, the tuning state and the rules read the types', () => {
+  it('finds none in the tree: the Inspector, the scene commands, the tuning state, the rules and the world read the types', () => {
     const registries = createCoreRegistries();
     activateCore(registries);
     const kernelTypes = new Set<string>(registries.components.values().map(({ id }) => id));

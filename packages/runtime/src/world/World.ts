@@ -449,11 +449,6 @@ export class World {
 
     run(this.hooks.lateUpdate, delta);
     run(this.hooks.renderPrep, delta);
-
-    // Last, once everything that moves has moved: a batch reads its members'
-    // world matrices, and reading them before physics wrote back would draw
-    // every batched object one frame behind.
-    this.binder.updateBatches();
   }
 
   /**

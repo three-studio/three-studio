@@ -9,7 +9,8 @@ import { OrthographicCamera, PerspectiveCamera, type Camera } from 'three/webgpu
 export const CAMERA_PRIORITY = { driven: 2, main: 1, authored: 0 } as const;
 
 interface Claim {
-  readonly camera: Camera;
+  /** What is drawn through, so long as the claim holds. */
+  readonly viewpoint: Camera;
   readonly priority: number;
 }
 
@@ -42,7 +43,7 @@ export class CameraClaims {
 
   /** Claims the view for `camera` at `priority` until the result is disposed. */
   claim(camera: Camera, priority: number): Disposable {
-    const claim: Claim = { camera, priority };
+    const claim: Claim = { viewpoint: camera, priority };
     this.claims.push(claim);
     if (this.aspect !== null) fit(camera, this.aspect);
     this.choose();
@@ -70,7 +71,7 @@ export class CameraClaims {
   setAspect(aspect: number): void {
     this.aspect = aspect;
     fit(this.fallback, aspect);
-    for (const { camera } of this.claims) fit(camera, aspect);
+    for (const { viewpoint } of this.claims) fit(viewpoint, aspect);
   }
 
   /** What is wrong with the view, said once the world is built. */
@@ -83,7 +84,7 @@ export class CameraClaims {
     for (const claim of this.claims) {
       if (chosen === null || claim.priority > chosen.priority) chosen = claim;
     }
-    this.current = chosen?.camera ?? this.fallback;
+    this.current = chosen?.viewpoint ?? this.fallback;
   }
 }
 

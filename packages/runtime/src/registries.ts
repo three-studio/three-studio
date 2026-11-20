@@ -12,6 +12,7 @@ import { inputSubsystem } from './input/inputSubsystem';
 import { physicsSubsystem } from './physics/physicsSubsystem';
 import { audioListenerBehaviour, audioSourceBehaviour } from './behaviour/audio';
 import type { BehaviourDefinition } from './behaviour/Behaviour';
+import { batchingSubsystem } from './batchingSubsystem';
 import { behaviourSubsystem } from './behaviour/behaviours';
 import { cameraSystem } from './components/camera';
 import { lightSystem } from './components/light';
@@ -64,10 +65,16 @@ const BEHAVIOURS: readonly BehaviourDefinition[] = [
  * The kernel's subsystems, built in this order, which is also the order of two
  * at one place in a phase. The behaviours come after the three they reach, and
  * are made here, handed the registries' table of them, so that the world never
- * names it.
+ * names it; the batching last, in the frame's last phase.
  */
 function kernelSubsystems(registries: RuntimeRegistries): readonly SubsystemDefinition[] {
-  return [inputSubsystem, physicsSubsystem, audioSubsystem, behaviourSubsystem(registries.behaviours)];
+  return [
+    inputSubsystem,
+    physicsSubsystem,
+    audioSubsystem,
+    behaviourSubsystem(registries.behaviours),
+    batchingSubsystem,
+  ];
 }
 
 /**
