@@ -10,6 +10,7 @@ import {
 import {
   AssetCache,
   CameraClaims,
+  SunService,
   audioOf,
   physicsDebugLines,
   studioTime,
@@ -205,6 +206,8 @@ export class EditorViewport {
       // The edit view is drawn through the editor's camera: the scene's cameras
       // claim a view nobody draws through.
       cameras: new CameraClaims(),
+      // Its own: the edit view's water is lit by the edit view's lights.
+      sun: new SunService(),
     });
     this.scene = projection.scene;
     this.binder = projection.binder;

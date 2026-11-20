@@ -30,6 +30,7 @@ import type { InputOptions } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
 import { CameraClaims } from './cameras';
+import { SunService } from './sun';
 
 /**
  * The parts of a frame a subsystem can claim, in the order a frame runs them:
@@ -263,6 +264,8 @@ export class World {
    * one rule (`setAspect`).
    */
   readonly cameras = new CameraClaims();
+  /** What a surface that shades itself is lit by: a light, as it mounts, or the scene's sky. */
+  readonly sun = new SunService();
   /**
    * One tick, in seconds: the project's fixed step.
    *
@@ -311,6 +314,7 @@ export class World {
       materials: options.materials,
       renderer: options.renderer,
       cameras: this.cameras,
+      sun: this.sun,
     });
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;

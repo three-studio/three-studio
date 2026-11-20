@@ -4,14 +4,13 @@ import type {
   ComponentOfType,
   ComponentType,
   EntityId,
-  Hex,
   MaterialDef,
-  Vec3,
 } from '@three-studio/core';
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
 import type { AssetCache } from '../assets/AssetCache';
 import type { StudioTime } from '../time/StudioTime';
 import type { CameraClaims } from '../world/cameras';
+import type { SunService } from '../world/sun';
 import type { ResourceArena } from './ResourceArena';
 
 /*
@@ -30,13 +29,6 @@ import type { ResourceArena } from './ResourceArena';
  * place, lights and cameras too, and a mesh had its own rules for reusing a
  * geometry. Now each system has to answer the question out loud.
  */
-
-/** A direction to be lit from, and the colour of what is lighting. */
-export interface Sun {
-  /** Unit vector pointing from the surface at the light. */
-  readonly direction: Vec3;
-  readonly color: Hex;
-}
 
 /** What a system hands back. The only part of it the reconciler reads. */
 export interface SystemHandle {
@@ -92,6 +84,13 @@ export interface SystemContext {
    */
   readonly cameras: CameraClaims;
   /**
+   * Where a component that shades itself takes its light from: a light
+   * entity's, or the scene's sky for `null`, each provided by what knows it —
+   * the light system as a light mounts, the environment as the scene's sky is
+   * read. Answers `null` when nothing provides it, and the caller falls back.
+   */
+  readonly sun: SunService;
+  /**
    * Says that what a batch could hold may have changed.
    *
    * A mount or an unmount changes the membership of a group; a `setTransform`
@@ -99,17 +98,6 @@ export interface SystemContext {
    * walked every binding and every mesh build once per frame of a drag to
    * arrive at the same answer.
    */
-  /**
-   * Where a component that shades itself takes its light from: a light
-   * entity's, or `null` for the scene's analytic sun. Answers `null` when the
-   * scene cannot say — no such light — and the caller falls back.
-   *
-   * Pushed in through the context rather than looked up, for the reason
-   * `materials` is: it needs the document *and* the world matrices, and the
-   * binder is the only thing holding both. A system is handed a component and
-   * could not work it out.
-   */
-  sunOf(light: EntityId | null): Sun | null;
   invalidate(): void;
   /**
    * Adds an object that only exists now, after the mount that asked for it.

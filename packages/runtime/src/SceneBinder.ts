@@ -1,8 +1,6 @@
 import {
   componentsOf,
-  findComponent,
   isEntityId,
-  skySunDirection,
   type AssetId,
   type ComponentDoc,
   type ComponentId,
@@ -14,20 +12,20 @@ import {
   type Registry,
   type RenderingSettings,
   type SceneDoc,
-  type Vec3,
 } from '@three-studio/core';
-import { Group, Object3D, Scene, Vector3, type Renderer } from 'three/webgpu';
+import { Group, Object3D, Scene, type Renderer } from 'three/webgpu';
 import { EnvironmentBinder } from './EnvironmentBinder';
 import type { AssetCache } from './assets/AssetCache';
 import type { ModelShape } from './assets/modelNodes';
 import { Reconciler } from './Reconciler';
-import type { Sun, SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
+import type { SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 import { ENTITY_ID_KEY, resolveEntityId } from './systems/identity';
 import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/material';
 import { MeshBatcher } from './MeshBatcher';
 import { ResourceArena, SharedMaterial } from './systems/ResourceArena';
 import { studioTime, type StudioTime } from './time/StudioTime';
 import type { CameraClaims } from './world/cameras';
+import type { SunService } from './world/sun';
 
 export { isVisibleInHierarchy } from './MeshBatcher';
 
@@ -45,11 +43,6 @@ function sameComponents(a: readonly ComponentDoc[], b: readonly ComponentDoc[]):
 }
 
 export { ENTITY_ID_KEY } from './systems/identity';
-
-/** Scratch for `sunOf`'s basis extraction. Module-scope so it allocates once. */
-const _x = new Vector3();
-const _y = new Vector3();
-const _z = new Vector3();
 
 
 /**
@@ -121,6 +114,11 @@ export interface SceneBinderOptions {
    */
   cameras: CameraClaims;
   /**
+   * Where what shades itself takes its light from: each light provides its own
+   * as it mounts, the environment the sky's. Its world's, handed in.
+   */
+  sun: SunService;
+  /**
    * Injected rather than reached for, so a test can drive the clock it hands
    * in. The default is the document's own — see `time/StudioTime`.
    */
@@ -141,8 +139,9 @@ export interface SceneBinderOptions {
  *    cubemap is six draw calls, so the device has to be in hand before the
  *    environment is built and not merely before the first frame is drawn.
  * 3. **Entities before the environment.** The environment reads the world
- *    matrices the sync has just written, and `sunOf` answers off the lights the
- *    sync has just bound.
+ *    matrices the sync has just written. The sky's sun is the exception, read
+ *    from the document at the start of each sync: a water lit by the sky reads
+ *    it as it mounts.
  * 4. **Environment last**, which is 2 and 3 together.
  *
  * Written down here rather than left as the order of four statements in
@@ -222,6 +221,7 @@ export class SceneBinder {
 
   private readonly time: StudioTime;
   private readonly cameras: CameraClaims;
+  private readonly sun: SunService;
 
   /**
    * Everything the binder is configured with, at the one moment it is
@@ -236,6 +236,7 @@ export class SceneBinder {
     this.root.name = 'SceneRoot';
     this.time = options.time ?? studioTime;
     this.cameras = options.cameras;
+    this.sun = options.sun;
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
@@ -244,7 +245,7 @@ export class SceneBinder {
     this.batcher.enabled = options.rendering.batching;
     // Given the arena rather than one of its own: what it lets go of has to
     // land in the same retire queue the systems use. See `ResourceArena`.
-    this.environment = new EnvironmentBinder(this.assets, this.arena, options.renderer ?? null);
+    this.environment = new EnvironmentBinder(this.assets, this.arena, options.renderer ?? null, options.sun);
     // Before any sync, which is the ordering `bindScene` exists to hold: a mesh
     // is built synchronously, so a table that arrives afterwards has already
     // been fallen back from.
@@ -266,7 +267,7 @@ export class SceneBinder {
       time: this.time,
       shadowMapSize: this.shadowMapSize,
       cameras: this.cameras,
-      sunOf: (light) => this.sunOf(light),
+      sun: this.sun,
       invalidate: () => {
         this.batcher.invalidate();
       },
@@ -360,9 +361,8 @@ export class SceneBinder {
   }
 
   sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
-    // Held for `sunOf`, which answers about the scene rather than about one
-    // entity and so cannot be given its subject as an argument.
-    this.scene = scene;
+    // Before the entities: a water lit by the sky reads its sun as it mounts.
+    this.environment.readSky(scene.environment);
     const full = dirty === undefined;
     const ids = full
       ? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()])
@@ -394,9 +394,6 @@ export class SceneBinder {
 
     this.batcher.sync(full, ids);
   }
-
-  /** The last document synced, for the scene-wide questions a system may ask. */
-  private scene: SceneDoc | null = null;
 
   /**
    * The background, the lighting, the sky and the fog — none of which is an
@@ -457,24 +454,6 @@ export class SceneBinder {
    * already composed. Resolved per sync rather than per frame — a sync is what
    * a gizmo drag produces, so the water still follows a light being moved.
    */
-  private sunOf(light: EntityId | null): Sun | null {
-    const scene = this.scene;
-    if (!scene) return null;
-    if (light === null) return { direction: skySunDirection(scene.environment.sky), color: '#ffffff' };
-
-    const component = findComponent(scene, light, 'light');
-    const container = this.reconciler.peekContainer(light);
-    if (!component || !container) return null;
-
-    // +Z, because the light shines along -Z and the sun's direction points
-    // back at it. `matrixWorld` carries the scale too, so the basis is
-    // normalised.
-    container.matrixWorld.extractBasis(_x, _y, _z);
-    _z.normalize();
-    const direction: Vec3 = [_z.x, _z.y, _z.z];
-    return { direction, color: component.color };
-  }
-
   /** Walks up from a raycast hit to the entity that owns it. */
   static resolveEntityId(object: Object3D | null): EntityId | undefined {
     return resolveEntityId(object);

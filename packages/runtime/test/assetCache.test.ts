@@ -16,6 +16,7 @@ import { SceneBinder } from '../src/SceneBinder';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries } from './registries';
 import { CameraClaims } from '../src/world/cameras';
+import { SunService } from '../src/world/sun';
 
 const registries = builtInRegistries();
 
@@ -352,6 +353,7 @@ describe('two worlds on one cache', () => {
   async function world(cache: AssetCache, scene: SceneDoc): Promise<SceneBinder> {
     const binder = new SceneBinder({
       cameras: new CameraClaims(),
+      sun: new SunService(),
       registries,
       assets: cache,
       rendering: { ...createRenderingSettings(), batching: false },

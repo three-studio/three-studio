@@ -3,12 +3,16 @@ import {
   createCameraEntity,
   createEntity,
   createLightEntity,
+  createWaterEntity,
+  skySunDirection,
   createRenderingSettings,
   fixedId,
   type Disposable,
+  type EntityId,
   type SubsystemId,
+  type Vec3,
 } from '@three-studio/core';
-import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
+import { OrthographicCamera, PerspectiveCamera, Scene } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
@@ -17,9 +21,12 @@ import { audioOf } from '../src/audio/audioOf';
 import { Input } from '../src/input/Input';
 import { inputOf } from '../src/input/inputOf';
 import { collisionsOf, physicsOf } from '../src/physics/physicsOf';
+import { bindScene } from '../src/SceneBinder';
 import { Behaviour } from '../src/scripting/ScriptHost';
+import { WaterSurface } from '../src/systems/WaterSurface';
 import { CAMERA_PRIORITY, CameraClaims } from '../src/world/cameras';
 import { EntityChannel } from '../src/world/channel';
+import { SunService } from '../src/world/sun';
 import { World, type Phase, type Subsystem, type SubsystemDefinition } from '../src/world/World';
 import { FakeContext, FakeListener, type FakeParam } from './audio/fakeContext';
 import {
@@ -451,5 +458,78 @@ describe('camera claims', () => {
       'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
     );
     expect(lit.world.warnings.filter((line) => line.includes('no lights'))).toEqual([]);
+  });
+});
+
+describe('the sun', () => {
+  it('is what the sky and each light provide, until they stop', () => {
+    const sun = new SunService();
+    const lamp = fixedId('entity', 'lamp');
+    expect(sun.of(null)).toBeNull();
+
+    const sky = sun.provide(null, { sun: () => ({ direction: [0, 1, 0], color: '#ffffff' }) });
+    const light = sun.provide(lamp, { sun: () => ({ direction: [1, 0, 0], color: '#ff0000' }) });
+    expect(sun.of(null)?.direction).toEqual([0, 1, 0]);
+    expect(sun.of(lamp)?.color).toBe('#ff0000');
+
+    light.dispose();
+    light.dispose();
+    sky.dispose();
+    expect(sun.of(lamp)).toBeNull();
+    expect(sun.of(null)).toBeNull();
+  });
+
+  it('follows a light that turns and changes colour, and lights the water linked to it or to the sky', () => {
+    const registries = builtInRegistries();
+    const sun = new SunService();
+    const lamp = createLightEntity('directional');
+    lamp.entity.transform.rotation = [0, Math.PI / 2, 0];
+    const lit = createWaterEntity();
+    const skyLit = createWaterEntity();
+    for (const component of [...lamp.components, ...lit.components]) {
+      if (component.type === 'light') component.color = '#ff8800';
+      if (component.type === 'water') component.sun = { kind: 'light', entity: lamp.entity.id };
+    }
+    const document = sceneWith([lamp, lit, skyLit]);
+    const binder = bindScene(new Scene(), document, {
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: { ...createRenderingSettings(), batching: false },
+      cameras: new CameraClaims(),
+      sun,
+    });
+    onTestFinished(() => binder.dispose());
+    const surfaceOf = (entityId: EntityId) => {
+      const surface = binder.getObject(entityId)?.children.find((child) => child instanceof WaterSurface);
+      if (!(surface instanceof WaterSurface)) throw new Error('The water drew no surface.');
+      return surface;
+    };
+
+    const turned = sun.of(lamp.entity.id);
+    expect(turned?.direction.map((value) => Math.round(value * 1e6) / 1e6 + 0)).toEqual([1, 0, 0]);
+    expect(turned?.color).toBe('#ff8800');
+    expect(surfaceOf(lit.entity.id).sunDirection.value.x).toBeCloseTo(1);
+    expect(surfaceOf(lit.entity.id).sunColor.value.getHexString()).toBe('ff8800');
+    // Mounted before the environment was synced, and still lit by the sky.
+    const [x, y, z] = skySunDirection(document.environment.sky);
+    expect(surfaceOf(skyLit.entity.id).sunDirection.value.toArray().map((value) => +value.toFixed(6))).toEqual(
+      [x, y, z].map((value) => +value.toFixed(6)),
+    );
+
+    // New objects, as an edit makes them: the binder patches what changed by reference.
+    const rotation: Vec3 = [0, -Math.PI / 2, 0];
+    const turnedBack = {
+      entity: { ...lamp.entity, transform: { ...lamp.entity.transform, rotation } },
+      components: lamp.components.map((component) =>
+        component.type === 'light' ? { ...component, color: '#00ff00' } : component,
+      ),
+    };
+    binder.sync(sceneWith([turnedBack, lit, skyLit]));
+    const moved = sun.of(lamp.entity.id);
+    expect(moved?.direction.map((value) => Math.round(value * 1e6) / 1e6 + 0)).toEqual([-1, 0, 0]);
+    expect(moved?.color).toBe('#00ff00');
+
+    binder.sync(sceneWith([lit, skyLit]));
+    expect(sun.of(lamp.entity.id)).toBeNull();
   });
 });

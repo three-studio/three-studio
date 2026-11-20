@@ -13,6 +13,7 @@ import { particleEmitterType } from '@three-studio/particles/core';
 import {
   AssetCache,
   CameraClaims,
+  SunService,
   NULL_ASSET_RESOLVER,
   activateRuntime,
   bindScene,
@@ -78,6 +79,7 @@ describe('a scene holding an emitter, in a build without the module', () => {
 
     const binder = bindScene(new Scene(), doc, {
       cameras: new CameraClaims(),
+      sun: new SunService(),
       registries,
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),

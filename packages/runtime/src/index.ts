@@ -29,6 +29,8 @@ export { World, isPerspective } from './world/World';
 export type { Phase, Subsystem, SubsystemDefinition, WorldOptions, WorldRegistries } from './world/World';
 export { EntityChannel } from './world/channel';
 export { CAMERA_PRIORITY, CameraClaims } from './world/cameras';
+export { SunService } from './world/sun';
+export type { Sun, SunSource } from './world/sun';
 /* What a game is built from, made and filled by each app's composition root. */
 export { activateRuntime, createRuntimeRegistries } from './registries';
 export type { RuntimeRegistries } from './registries';

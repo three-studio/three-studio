@@ -23,6 +23,7 @@ import { SceneBinder } from '../../src/SceneBinder';
 import type { Input } from '../../src/input/Input';
 import { builtInRegistries } from '../registries';
 import { CameraClaims } from '../../src/world/cameras';
+import { SunService } from '../../src/world/sun';
 
 /*
  * The controller had no tests at all, and the two defects below were both
@@ -153,6 +154,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   const registries = builtInRegistries();
   const binder = new SceneBinder({
     cameras: new CameraClaims(),
+    sun: new SunService(),
     registries,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     rendering: { ...createRenderingSettings(), batching: false },

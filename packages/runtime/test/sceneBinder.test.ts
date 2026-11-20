@@ -36,6 +36,7 @@ import { SceneBinder } from '../src/SceneBinder';
 import type { AssetResolver } from '../src/assets/AssetResolver';
 import { builtInRegistries } from './registries';
 import { CameraClaims } from '../src/world/cameras';
+import { SunService } from '../src/world/sun';
 
 /*
  * The binder had no tests at all, which is why five of the twelve bugs found
@@ -65,6 +66,7 @@ function binderWith(
 ): SceneBinder {
   const binder = new SceneBinder({
     cameras: new CameraClaims(),
+    sun: new SunService(),
     registries,
     assets: new AssetCache(registries, { resolver, idleBudgetBytes: 0 }),
     rendering,

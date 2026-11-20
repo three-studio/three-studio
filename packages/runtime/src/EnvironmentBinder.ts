@@ -1,4 +1,4 @@
-import type { AssetId, Disposable, EnvironmentDef } from '@three-studio/core';
+import { skySunDirection, type AssetId, type Disposable, type EnvironmentDef } from '@three-studio/core';
 import {
   Color,
   EquirectangularReflectionMapping,
@@ -13,6 +13,7 @@ import {
 import type { AssetCache, TextureHold } from './assets/AssetCache';
 import type { ResourceArena } from './systems/ResourceArena';
 import { ProceduralSky } from './systems/sky';
+import type { SunService } from './world/sun';
 
 /** One of the two things an equirectangular image can be: the sky, or the light. */
 type EnvironmentSlot = 'background' | 'environment';
@@ -59,7 +60,31 @@ export class EnvironmentBinder {
     private readonly assets: AssetCache,
     private readonly arena: ResourceArena,
     private readonly renderer: Renderer | null,
+    /** Answered for the sky, from the document's sky, as the light system answers for each light. */
+    private readonly sun: SunService,
   ) {}
+
+  /** The sky the scene's sun comes from, as the last document read says; `null` before the first. */
+  private skySettings: EnvironmentDef['sky'] | null = null;
+  /** The sky's place in the sun service, taken at the first read and given back on `dispose`. */
+  private skySun: Disposable | null = null;
+
+  /**
+   * Reads the sky the scene's sun comes from: white, from the sky's own sun.
+   *
+   * Apart from `sync`, and called by the binder before it syncs any entity: a
+   * water lit by the sky reads its sun as it mounts, and the rest of the
+   * environment is synced after the entities, whose world matrices it reads.
+   */
+  readSky(environment: EnvironmentDef): void {
+    this.skySettings = environment.sky;
+    this.skySun ??= this.sun.provide(null, {
+      sun: () => ({
+        direction: this.skySettings === null ? [0, 1, 0] : skySunDirection(this.skySettings),
+        color: '#ffffff',
+      }),
+    });
+  }
 
   /** Equirectangular images by asset id, shared between the two slots. */
   private readonly maps = new Map<AssetId, EnvironmentMap>();
@@ -118,6 +143,7 @@ export class EnvironmentBinder {
 
   sync(scene: Scene, environment: EnvironmentDef): void {
     this.scene = scene;
+    this.readSky(environment);
 
     // Which image each of the two slots wants, resolved before either is
     // loaded: `environmentMode: 'background'` names the same asset as the sky,
@@ -397,5 +423,7 @@ export class EnvironmentBinder {
     this.release();
     this.sky?.dispose();
     this.sky = null;
+    this.skySun?.dispose();
+    this.skySun = null;
   }
 }

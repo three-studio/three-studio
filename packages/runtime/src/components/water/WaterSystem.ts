@@ -10,7 +10,8 @@ import {
   type Texture,
 } from 'three/webgpu';
 import type { TextureHold } from '../../assets/AssetCache';
-import { ComponentSystem, type Sun, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
+import type { Sun } from '../../world/sun';
 import { buildGeometry, geometryKeyOf } from '../../systems/geometry';
 import { ENTITY_ID_KEY } from '../../systems/identity';
 import { WaterSurface } from '../../systems/WaterSurface';
@@ -194,8 +195,8 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
   private sunFor(component: WaterComponent, ctx: SystemContext): Sun {
     const { sun } = component;
     if (sun.kind === 'custom') return sun;
-    const sky = ctx.sunOf(null) ?? DEFAULT_SUN;
-    return sun.kind === 'light' && sun.entity !== null ? (ctx.sunOf(sun.entity) ?? sky) : sky;
+    const sky = ctx.sun.of(null) ?? DEFAULT_SUN;
+    return sun.kind === 'light' && sun.entity !== null ? (ctx.sun.of(sun.entity) ?? sky) : sky;
   }
 
   /**
