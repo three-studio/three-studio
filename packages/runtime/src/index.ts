@@ -122,5 +122,6 @@ export type { ScriptClass, ScriptClasses } from './scripting/scriptBundle';
 
 /* Input and the built-in character controller. */
 export { Input, type InputOptions } from './input/Input';
+export { inputOf } from './input/inputOf';
 export { PressedKeys, type KeyEventLike } from './input/PressedKeys';
 export { PlayerController } from './controllers/PlayerController';

@@ -75,7 +75,6 @@ describe('the debug view', () => {
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
-      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => world.dispose());

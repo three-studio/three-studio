@@ -111,12 +111,13 @@ describe('the physics set-up, with layers', () => {
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: { ...createPhysicsSettings(), layers: APART },
-      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => world.dispose());
 
-    expect(world.warnings.filter((line) => line.includes('layer'))).toEqual([]);
+    // The word: with no element to drive it the player is not built, and the
+    // world says it has no player controller, which holds "layer" too.
+    expect(world.warnings.filter((line) => /\blayer\b/.test(line))).toEqual([]);
   });
 });
 
@@ -176,7 +177,6 @@ describe('the physics set-up, with joints', () => {
       registries,
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => world.dispose());

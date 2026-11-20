@@ -18,7 +18,7 @@ import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER, type AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import { World } from '@three-studio/runtime/world/World';
 import { Mesh, type Object3D } from 'three/webgpu';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { serveModels, stubImages } from '../../runtime/test/assetFixtures';
 import { digestProjection, type ProjectionDigest } from '../../runtime/test/sceneDigest';
@@ -53,28 +53,6 @@ import { builtInRegistries } from './registries';
  * `three/webgpu` imports and its objects construct, and neither side asks for a
  * device. What must never appear is a `WebGPURenderer`.
  */
-
-/**
- * The one browser dependency between here and a running `World`.
- *
- * `Input` registers listeners on `window`, on `document` and on the element it
- * is handed; nothing on this path reads anything back off them. Physics is off,
- * which skips Rapier, and omitting `audioContext` is a game with no audio — so
- * this object is the whole of the browser `World.play` needs.
- */
-const eventTarget = { addEventListener() {}, removeEventListener() {} };
-
-beforeAll(() => {
-  Object.assign(globalThis, { window: eventTarget, document: eventTarget });
-});
-
-afterAll(() => {
-  // Taken back down: three decides at module load whether it is in a browser,
-  // and a `window` left behind is a global this file wrote for another file to
-  // find.
-  Reflect.deleteProperty(globalThis, 'window');
-  Reflect.deleteProperty(globalThis, 'document');
-});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -163,7 +141,6 @@ function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache)
     assets,
     rendering,
     materials,
-    element: eventTarget as unknown as HTMLElement,
     enablePhysics: false,
   });
 }

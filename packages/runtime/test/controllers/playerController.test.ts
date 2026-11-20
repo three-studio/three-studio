@@ -20,10 +20,7 @@ import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { PlayerController } from '../../src/controllers/PlayerController';
 import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { SceneBinder } from '../../src/SceneBinder';
-import { studioTime } from '../../src/time/StudioTime';
-import type { BehaviourContext } from '../../src/behaviour/Behaviour';
 import type { Input } from '../../src/input/Input';
-import { NO_SCRIPTS } from '../../src/scripting/scriptBundle';
 import { builtInRegistries } from '../registries';
 
 /*
@@ -106,6 +103,11 @@ function stubInput(): StubInput {
   return stub;
 }
 
+/** The stub, as the controller takes it: the one place it stands in for the real thing. */
+function asInput(stub: StubInput): Input {
+  return stub as unknown as Input;
+}
+
 interface Rig {
   controller: PlayerController;
   object: Object3D;
@@ -164,21 +166,10 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   if (!object) throw new Error('the player was not bound');
 
   const input = stubInput();
-  const ctx = {
-    scene,
-    binder,
-    physics,
-    input: input as unknown as Input,
-    time: studioTime,
-    scenes: null,
-    audio: null,
-    scripts: NO_SCRIPTS,
-    warn: () => {},
-  } satisfies BehaviourContext;
-
   const controller = new PlayerController(
     player.components[0] as PlayerControllerComponent,
     object,
+    asInput(input),
     physics,
     player.entity.id,
     personCapsule(),
@@ -190,8 +181,8 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
     input,
     run(seconds, onFrame) {
       for (let frame = 0; frame < Math.round(seconds / STEP); frame++) {
-        controller.update(STEP, ctx);
-        physics.step(STEP, (fixed) => controller.fixedUpdate(fixed, ctx));
+        controller.update(STEP);
+        physics.step(STEP, (fixed) => controller.fixedUpdate(fixed));
         // The world writes the player's entity, as it writes every body it drives.
         physics.writeBack();
         controller.postUpdate();
@@ -299,7 +290,8 @@ describe('PlayerController places the eye above the feet', () => {
     const object = new Object3D();
     object.position.set(0, groundY, 0);
     const component = { ...playerControllerType.create(), eyeHeight };
-    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), collider);
+    const id = fixedId('entity', 'player');
+    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, collider);
     controller.postUpdate();
     return controller.camera.position.y;
   }
@@ -335,7 +327,8 @@ describe('PlayerController places the eye above the feet', () => {
   it('takes the field of view from the component, and follows it', () => {
     const object = new Object3D();
     const component = { ...playerControllerType.create(), fov: 85 };
-    const controller = new PlayerController(component, object, null, fixedId('entity', 'player'), undefined);
+    const id = fixedId('entity', 'player');
+    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, undefined);
 
     expect(controller.camera.fov).toBe(85);
 

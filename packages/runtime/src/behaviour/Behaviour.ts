@@ -50,7 +50,8 @@ export interface BehaviourContext {
    * never Rapier's. `null` when the world runs without physics.
    */
   readonly physics: PhysicsApi | null;
-  readonly input: Input;
+  /** What the game hears; `null` in a world handed no element to listen on, which only a test builds. */
+  readonly input: Input | null;
   /**
    * The one clock, shared with the shaders.
    *

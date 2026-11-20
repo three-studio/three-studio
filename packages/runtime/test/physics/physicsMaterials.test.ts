@@ -125,7 +125,6 @@ describe('a collider linked to a physics material', () => {
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       physicsMaterials: LIBRARY,
-      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => off.dispose());

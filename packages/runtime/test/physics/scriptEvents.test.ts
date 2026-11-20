@@ -186,7 +186,6 @@ describe('a script hearing its colliders', () => {
       scripts: bundleOf([door]),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      element: new EventTarget() as unknown as HTMLElement,
       enablePhysics: false,
     });
     onTestFinished(() => world.dispose());

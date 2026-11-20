@@ -8,6 +8,7 @@ import {
   type SubsystemId,
 } from '@three-studio/core';
 import { audioSubsystem } from './audio/audioSubsystem';
+import { inputSubsystem } from './input/inputSubsystem';
 import { audioListenerBehaviour, audioSourceBehaviour } from './behaviour/audio';
 import type { BehaviourDefinition } from './behaviour/Behaviour';
 import { cameraSystem } from './components/camera';
@@ -60,7 +61,7 @@ const BEHAVIOURS: readonly BehaviourDefinition[] = [
 /*
  * Built in this order, which is also the order of two at one place in a phase.
  */
-const SUBSYSTEMS: readonly SubsystemDefinition[] = [audioSubsystem];
+const SUBSYSTEMS: readonly SubsystemDefinition[] = [inputSubsystem, audioSubsystem];
 
 /**
  * The runtime's registries, the core's among them, all empty. A root fills them

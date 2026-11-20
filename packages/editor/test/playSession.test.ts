@@ -23,7 +23,7 @@ import {
   type Vec3,
   unwrap,
 } from '@three-studio/core';
-import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, type World } from '@three-studio/runtime';
+import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, inputOf, type World } from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -500,15 +500,16 @@ describe('the keys the game hears', () => {
   }
 
   function hearsItsCanvasAlone(world: World, canvas: EventTarget): void {
+    const input = inputOf(world);
     const space = press('Space');
     window.dispatchEvent(press('KeyW'));
     window.dispatchEvent(space);
-    expect(world.input.isDown('KeyW')).toBe(false);
-    expect(world.input.isDown('Space')).toBe(false);
+    expect(input?.isDown('KeyW')).toBe(false);
+    expect(input?.isDown('Space')).toBe(false);
     expect(space.defaultPrevented).toBe(false);
 
     canvas.dispatchEvent(press('KeyW'));
-    expect(world.input.isDown('KeyW')).toBe(true);
+    expect(input?.isDown('KeyW')).toBe(true);
   }
 
   it('are the ones typed into its canvas, in every scene it plays', async () => {

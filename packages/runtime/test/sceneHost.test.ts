@@ -7,7 +7,7 @@ import {
   type SceneDoc,
   type ScriptComponent,
 } from '@three-studio/core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
@@ -26,18 +26,6 @@ import { builtInRegistries } from './registries';
  * restarted itself from `onStart` restarted the previous one, or failed on
  * `No scene "null"`.
  */
-
-/** `Input` listens on `window` and `document`, and nothing on this path reads them back. */
-const eventTarget = { addEventListener() {}, removeEventListener() {} };
-
-beforeAll(() => {
-  Object.assign(globalThis, { window: eventTarget, document: eventTarget });
-});
-
-afterAll(() => {
-  Reflect.deleteProperty(globalThis, 'window');
-  Reflect.deleteProperty(globalThis, 'document');
-});
 
 const WHERE = fixedId('asset', 'script-where');
 
@@ -79,7 +67,6 @@ function hostOf(
     assets: extra.assets ?? new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     loadingScene: extra.loadingScene ?? null,
     rendering: createRenderingSettings(),
-    element: eventTarget as unknown as HTMLElement,
     // Rapier is not what this is about, and it is the one slow thing to load.
     enablePhysics: false,
   });

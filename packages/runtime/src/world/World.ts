@@ -39,7 +39,8 @@ import type { AudioClipCache } from '../audio/AudioClipCache';
 import type { AudioContextLike } from '../audio/AudioContextLike';
 import { audioOf } from '../audio/audioOf';
 import type { Behaviour, BehaviourContext, BehaviourDefinition } from '../behaviour/Behaviour';
-import { Input, type InputOptions } from '../input/Input';
+import type { InputOptions } from '../input/Input';
+import { inputOf } from '../input/inputOf';
 import type { PhysicsApi } from '../physics/PhysicsApi';
 import {
   PhysicsWorld,
@@ -155,8 +156,12 @@ export interface WorldOptions {
   physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined;
   /** Gravity and the solver's step. Defaults when the project has none. */
   physicsSettings?: PhysicsSettings;
-  /** Receives input and takes pointer lock; normally the render canvas. */
-  element: HTMLElement;
+  /**
+   * Receives input and takes pointer lock; normally the render canvas. Omitted,
+   * the world has no `Input` — a test that presses nothing — and a player
+   * controller declines to be built.
+   */
+  element?: HTMLElement;
   /**
    * How the game's `Input` listens. Omitted, keys are heard window-wide, which
    * is the exported player's choice; the editor hears them on `element` alone,
@@ -259,7 +264,6 @@ export class World {
   /** The scene it runs, as a document. `scene` is the graph a host draws. */
   readonly document: SceneDoc;
   readonly binder: SceneBinder;
-  readonly input: Input;
   /**
    * Physics as the behaviours see it, `null` with physics off.
    *
@@ -324,7 +328,6 @@ export class World {
       materials: options.materials,
       renderer: options.renderer,
     });
-    this.input = new Input(options.element, options.input);
     this.physicsWorld = physics;
     this.physics = physics;
     this.fixedStep = physicsSettings.fixedTimestep;
@@ -346,15 +349,15 @@ export class World {
 
   /**
    * What the behaviours are handed. Made again once the subsystems are built,
-   * since the audio engine is the audio subsystem's, and it is made after the
-   * world: a behaviour is never built before that.
+   * since the input and the audio engine are subsystems', made after the world:
+   * a behaviour is never built before that.
    */
   private behaviourContext(): BehaviourContext {
     return {
       scene: this.document,
       binder: this.binder,
       physics: this.physics,
-      input: this.input,
+      input: inputOf(this),
       time: studioTime,
       scenes: this.options.scenes ?? null,
       audio: audioOf(this),
@@ -560,9 +563,9 @@ export class World {
       options.enablePhysics === false ? null : await PhysicsWorld.create(physicsSettings);
     const world = new World(options, physicsSettings, physics);
 
-    // Whatever fails below, nothing of a world nobody will hold stays alive: its
-    // `Input` would keep listening on the canvas, and a subsystem built before
-    // the one that threw would keep what it holds.
+    // Whatever fails below, nothing of a world nobody will hold stays alive: an
+    // `Input` built before the throw would keep listening on the canvas, and any
+    // other subsystem would keep what it holds.
     try {
       // Order matters, and each step needs the one before it:
       //
@@ -575,7 +578,7 @@ export class World {
       //               none and fly;
       //   subsystems  each in the order it was registered, awaited, so one
       //               may read what those before it provide; and before the
-      //               behaviours, which reach the audio engine through them.
+      //               behaviours, which reach input and audio through them.
       await world.binder.whenLoaded();
       const physicsMaterials = options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
       physics?.build(options.document, world.binder, physicsMaterials);
@@ -744,7 +747,6 @@ export class World {
     // Last built first: one may hold what one built before it provides.
     for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
     this.subsystems.length = 0;
-    this.input.dispose();
     this.physicsWorld?.dispose();
     this.binder.dispose();
     this.scene.clear();

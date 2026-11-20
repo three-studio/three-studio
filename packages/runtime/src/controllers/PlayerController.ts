@@ -126,6 +126,8 @@ export class PlayerController implements Behaviour {
   constructor(
     private readonly component: PlayerControllerComponent,
     private readonly object: Object3D,
+    /** What drives it: kept, since it is read every frame. */
+    private readonly input: Input,
     physics: PhysicsApi | null,
     entityId: EntityId,
     /**
@@ -175,19 +177,18 @@ export class PlayerController implements Behaviour {
   /**
    * Asks for the on-screen controls, once every behaviour exists.
    *
-   * Here rather than in the constructor because `Input` arrives with the
-   * context, and here rather than in `World` because the sticks belong to the
-   * thing they drive: a scene carrying no player controller shows none, and
-   * nobody had to write that rule down. `enableTouch` is idempotent, so two
-   * players in one scene still mean one set of joysticks.
+   * Here rather than in `World` because the sticks belong to the thing they
+   * drive: a scene carrying no player controller shows none, and nobody had to
+   * write that rule down. `enableTouch` is idempotent, so two players in one
+   * scene still mean one set of joysticks.
    */
-  start(ctx: BehaviourContext): void {
-    ctx.input.enableTouch(this.component.touchControls, null);
+  start(): void {
+    this.input.enableTouch(this.component.touchControls, null);
   }
 
   /** Per display frame: aiming, which must stay as responsive as the screen. */
-  update(delta: number, ctx: BehaviourContext): void {
-    const input = ctx.input;
+  update(delta: number): void {
+    const input = this.input;
     this.look(delta, input);
 
     // Latched here rather than read in the fixed step: a short tap can fall
@@ -198,8 +199,8 @@ export class PlayerController implements Behaviour {
   }
 
   /** Per physics tick: movement, so commands are not overwritten between steps. */
-  fixedUpdate(step: number, ctx: BehaviourContext): void {
-    if (this.usesPhysics) this.moveOnGround(step, ctx.input);
+  fixedUpdate(step: number): void {
+    if (this.usesPhysics) this.moveOnGround(step, this.input);
   }
 
   /** After physics has run, so the camera never trails the body by a frame. */
@@ -386,9 +387,13 @@ export const playerControllerBehaviour: BehaviourDefinition = {
   id: 'playerController',
   create(target: BehaviourTarget, ctx: BehaviourContext) {
     if (target.component.type !== 'playerController') return null;
+    // A player nobody can drive is no player: a world handed no element to
+    // listen on is a test's, and one that presses nothing.
+    if (ctx.input === null) return null;
     return new PlayerController(
       target.component,
       target.object,
+      ctx.input,
       ctx.physics,
       target.entity.id,
       // The entity's first collider, the one its character sweeps — so an

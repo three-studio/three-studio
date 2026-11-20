@@ -1,14 +1,20 @@
 import {
   createAudioListenerEntity,
   createCameraEntity,
+  createRenderingSettings,
   fixedId,
   type SubsystemId,
 } from '@three-studio/core';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { sceneWith } from '../../core/test/fixtures';
+import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
+import { AssetCache } from '../src/assets/AssetCache';
 import { audioOf } from '../src/audio/audioOf';
-import type { Phase, Subsystem, SubsystemDefinition } from '../src/world/World';
+import { Input } from '../src/input/Input';
+import { inputOf } from '../src/input/inputOf';
+import { World, type Phase, type Subsystem, type SubsystemDefinition } from '../src/world/World';
 import { FakeContext, FakeListener, type FakeParam } from './audio/fakeContext';
-import { physicsRig, physicsRigOn, standInForTheBrowser, takeTheBrowserBack } from './physics/rig';
+import { physicsRig, physicsRigOn, player, standInForTheBrowser, takeTheBrowserBack } from './physics/rig';
 import { builtInRegistries } from './registries';
 
 /*
@@ -199,5 +205,37 @@ describe('audio, the first subsystem', () => {
     expect(rig.world.warnings).toContain(
       '2 entities carry an Audio Listener; only one ear is placed and the others are ignored.',
     );
+  });
+});
+
+describe('input, a subsystem', () => {
+  it('is the world’s `Input`, hearing the element it was handed, and goes with the world', async () => {
+    const rig = await physicsRig([]);
+    const input = inputOf(rig.world);
+
+    expect(input).toBeInstanceOf(Input);
+    rig.press('KeyW');
+    expect(input?.isDown('KeyW')).toBe(true);
+    rig.release('KeyW');
+
+    rig.world.dispose();
+    rig.press('KeyW');
+    expect(inputOf(rig.world)).toBeNull();
+    expect(input?.isDown('KeyW')).toBe(false);
+  });
+
+  it('is absent from a world handed no element, where a player controller drives nothing', async () => {
+    const registries = builtInRegistries();
+    const world = await World.play({
+      document: sceneWith([player([0, 1, 0])]),
+      registries,
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+      enablePhysics: false,
+    });
+    onTestFinished(() => world.dispose());
+
+    expect(inputOf(world)).toBeNull();
+    expect(world.behaviours).toEqual([]);
   });
 });

@@ -153,6 +153,8 @@ export const scriptBehaviour: BehaviourDefinition = {
               )),
         ),
       physics,
+      // `null` in a world handed no element to listen on, which only a test
+      // builds: there is nothing a script there could hear.
       input: ctx.input,
       scenes: ctx.scenes,
       // Bound to this entity, so `this.audio.play()` with no argument means "my
