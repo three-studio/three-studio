@@ -10,6 +10,7 @@ import type { HeapProfiler } from 'node:inspector';
 import { Session } from 'node:inspector/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AudioListenerLike, AudioParamLike } from '../src/audio/AudioContextLike';
+import { audioOf } from '../src/audio/audioOf';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { rig as audioRig } from './audio/rig';
 import {
@@ -152,9 +153,15 @@ describe('a running world', () => {
     const step = rig.world.fixedStep;
 
     // Settled: the bodies at rest, the clip decoded and playing, every
-    // function the frame calls compiled.
-    for (let frame = 0; frame < 1000; frame += 1) rig.world.frame(step);
+    // function the frame calls compiled. The ear unlocked first: the source
+    // starts as the world starts, at the end of `World.play`, and its voice
+    // plays once its clip has landed, which takes turns of the event loop the
+    // frames below do not give — unlocked after them, the voice began playing
+    // as sampling began, and its frame's code was compiled while sampled.
     await audio.engine.unlock();
+    for (let frame = 0; frame < 1000; frame += 1) rig.world.frame(step);
+    // What the frames below measure: a voice playing, placed every frame.
+    expect(audioOf(rig.world)?.voices.map((voice) => voice.state)).toEqual(['playing']);
 
     const session = new Session();
     session.connect();

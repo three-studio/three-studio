@@ -1,7 +1,17 @@
-import { componentsOfType, fixedId, type ComponentTypeId, type Disposable, type Registry } from '@three-studio/core';
+import {
+  componentsOfType,
+  fixedId,
+  type ComponentDoc,
+  type ComponentId,
+  type ComponentTypeId,
+  type Disposable,
+  type EntityId,
+  type Registry,
+} from '@three-studio/core';
 import { collisionsOf } from '../physics/physicsOf';
 import type { Touch } from '../physics/PhysicsApi';
 import { CAMERA_PRIORITY } from '../world/cameras';
+import type { EntityChannel } from '../world/channel';
 import type { Subsystem, SubsystemDefinition, World } from '../world/World';
 import type { Behaviour, BehaviourDefinition } from './Behaviour';
 
@@ -19,6 +29,11 @@ import type { Behaviour, BehaviourDefinition } from './Behaviour';
 export function behaviourSubsystem(registry: Registry<ComponentTypeId, BehaviourDefinition>): SubsystemDefinition {
   return {
     id: fixedId('subsystem', 'behaviours'),
+    // Read when a world is made, after every activation: a module's
+    // behaviours register after the kernel's, which made this definition.
+    get mounts() {
+      return registry.values().map((definition) => definition.id);
+    },
     async create(world) {
       // The models in first, physics or none: a script reads its model's nodes
       // from `onAwake`. Physics awaited them already, when it is there.
@@ -28,56 +43,126 @@ export function behaviourSubsystem(registry: Registry<ComponentTypeId, Behaviour
   };
 }
 
+/** A behaviour made for one component, and what it holds of the world, given back with it. */
+interface Made {
+  readonly behaviour: Behaviour;
+  /** Its type's place in the registry, which is its run's in `all`. */
+  readonly type: number;
+  /** Its camera claim, its listener on physics' channel. */
+  readonly held: readonly Disposable[];
+}
+
 class Behaviours implements Subsystem {
-  /** In the order they were built: by type as registered, then by entity as the scene holds them. */
-  private readonly all: Behaviour[] = [];
   /**
-   * What they hold of the world, given back with them: the listeners of those
-   * that hear what colliders touch, on physics' channel, and the claims of
-   * those that drive a camera.
+   * Every behaviour, in the order a phase runs them: a run per registered
+   * type, in registry order, each in the order its behaviours were made. So
+   * the player controller places its camera before any script's
+   * `onLateUpdate` reads it, and a spawned behaviour runs after those of its
+   * type already there, before the next type's. One array, which a frame walks
+   * with one indexed loop per phase.
    */
-  private readonly held: Disposable[] = [];
-  /** How many want to drive the camera: two is a line. */
-  private readonly drivers: number;
+  private readonly all: Behaviour[] = [];
+  /** How many of `all` each type holds, by its place in the registry. */
+  private readonly counts: number[] = [];
+  private readonly typeOf = new Map<ComponentTypeId, number>();
+  /** What each mounted component made, by entity and component id: taken down at its unmount. */
+  private readonly made = new Map<EntityId, Map<ComponentId, Made>>();
+  /** Mounted before the world started, by entity: made at `start`, in the order the scene was always built in. */
+  private readonly waiting = new Map<EntityId, Set<ComponentId>>();
+  /** Mounted by a pass once started: made when it settles, in mount order. */
+  private arrived: { readonly entityId: EntityId; readonly component: ComponentDoc }[] = [];
+  private started = false;
+  /** How many have wanted to drive the camera: two is a line. */
+  private drivers = 0;
+  private readonly collisions: EntityChannel<Touch> | null;
 
-  constructor(world: World, registry: Registry<ComponentTypeId, BehaviourDefinition>) {
-    const collisions = collisionsOf(world);
-    let drivers = 0;
-
-    // Driven by the registry and then by the tables of the types it names: a
-    // scene of two thousand props with one player controller in it visits one
-    // entity. It used to walk them all, and every component of each. Nothing
-    // here names a type: a new kind of controller is a registration.
+  constructor(
+    private readonly world: World,
+    private readonly registry: Registry<ComponentTypeId, BehaviourDefinition>,
+  ) {
+    this.collisions = collisionsOf(world);
     for (const definition of registry.values()) {
-      for (const [entityId, held] of componentsOfType(world.document, definition.id)) {
-        const entity = world.document.entities.get(entityId);
-        const object = world.binder.getObject(entityId);
-        if (!entity || !object) continue;
+      this.typeOf.set(definition.id, this.counts.length);
+      this.counts.push(0);
+    }
+  }
 
+  mount(entityId: EntityId, component: ComponentDoc): void {
+    if (this.started) {
+      this.arrived.push({ entityId, component });
+      return;
+    }
+    const waiting = this.waiting.get(entityId);
+    if (waiting) waiting.add(component.id);
+    else this.waiting.set(entityId, new Set([component.id]));
+  }
+
+  /**
+   * The behaviours of a scene, once all of it is built: each type in registry
+   * order, each entity in its type's table order, every one awake as it is
+   * made, then every one started — a behaviour can find any other from
+   * `onStart`, whichever was made first.
+   *
+   * Driven by the registry and then by the tables of the types it names: a
+   * scene of two thousand props with one player controller in it visits one
+   * entity, and nothing here names a type.
+   */
+  start(): void {
+    this.started = true;
+    const made: Behaviour[] = [];
+    for (const definition of this.registry.values()) {
+      for (const [entityId, held] of componentsOfType(this.world.document, definition.id)) {
+        const waiting = this.waiting.get(entityId);
+        if (waiting === undefined) continue;
         for (const component of held.values()) {
-          const behaviour = definition.create({ entity, object, component }, world);
-          if (!behaviour) continue;
-          this.all.push(behaviour);
-
-          // Over the scene's own cameras: what drives the view is the view you
-          // are in. The first of two drivers wins, and is said.
-          if (behaviour.camera) {
-            drivers += 1;
-            this.held.push(world.cameras.claim(behaviour.camera, CAMERA_PRIORITY.driven));
-          }
-          // What its entity's colliders touch, and those of the children
-          // riding its body when it is a body's: physics publishes to both.
-          if (collisions && listens(behaviour)) {
-            this.held.push(collisions.listen(entityId, (touch) => hear(behaviour, touch)));
-          }
+          if (!waiting.has(component.id)) continue;
+          const behaviour = this.make(entityId, component);
+          if (behaviour) made.push(behaviour);
         }
       }
     }
-    this.drivers = drivers;
+    this.waiting.clear();
+    for (const behaviour of made) behaviour.start?.();
+  }
 
-    // Second pass. Everything now exists, so a behaviour can look another one
-    // up regardless of which entity was built first.
-    for (const behaviour of this.all) behaviour.start?.();
+  /**
+   * What a pass mounted, once physics has settled it, so that a controller
+   * finds its body: made in mount order, then started, before any of them
+   * updates — a spawned script's `onStart` sees everything spawned with it,
+   * the rest of its prefab.
+   */
+  settle(): void {
+    if (!this.started || this.arrived.length === 0) return;
+    const arrived = this.arrived;
+    this.arrived = [];
+    const made: Behaviour[] = [];
+    for (const { entityId, component } of arrived) {
+      const behaviour = this.make(entityId, component);
+      if (behaviour) made.push(behaviour);
+    }
+    for (const behaviour of made) behaviour.start?.();
+  }
+
+  /**
+   * Its component left: deleted, or its entity destroyed. Taken down now,
+   * while its object still hangs where it did — `onDestroy` reads it —, with
+   * its claim and its listener, and out of its type's list.
+   */
+  unmount(entityId: EntityId, component: ComponentDoc): void {
+    const waiting = this.waiting.get(entityId);
+    waiting?.delete(component.id);
+    if (waiting?.size === 0) this.waiting.delete(entityId);
+
+    const ofEntity = this.made.get(entityId);
+    const made = ofEntity?.get(component.id);
+    if (ofEntity === undefined || made === undefined) return;
+    ofEntity.delete(component.id);
+    if (ofEntity.size === 0) this.made.delete(entityId);
+    made.behaviour.dispose?.();
+    for (const holding of made.held) holding.dispose();
+    const at = this.all.indexOf(made.behaviour);
+    if (at >= 0) this.all.splice(at, 1);
+    this.counts[made.type] = (this.counts[made.type] ?? 1) - 1;
   }
 
   // Aiming runs at display rate; movement runs inside the fixed step, because
@@ -122,8 +207,49 @@ class Behaviours implements Subsystem {
   dispose(): void {
     for (const behaviour of this.all) behaviour.dispose?.();
     this.all.length = 0;
-    for (const holding of this.held) holding.dispose();
-    this.held.length = 0;
+    for (const ofEntity of this.made.values()) {
+      for (const { held } of ofEntity.values()) for (const holding of held) holding.dispose();
+    }
+    this.made.clear();
+  }
+
+  /**
+   * The behaviour of one component, made on its entity's object and filed at
+   * the end of its type's run; `null` for a component its type declines.
+   */
+  private make(entityId: EntityId, component: ComponentDoc): Behaviour | null {
+    const definition = this.registry.get(component.type);
+    const type = this.typeOf.get(component.type);
+    const entity = this.world.document.entities.get(entityId);
+    const object = this.world.binder.getObject(entityId);
+    if (!definition || type === undefined || !entity || !object) return null;
+
+    const behaviour = definition.create({ entity, object, component }, this.world);
+    if (!behaviour) return null;
+
+    const held: Disposable[] = [];
+    // Over the scene's own cameras: what drives the view is the view you are
+    // in. The first of two drivers wins, and is said.
+    if (behaviour.camera) {
+      this.drivers += 1;
+      held.push(this.world.cameras.claim(behaviour.camera, CAMERA_PRIORITY.driven));
+    }
+    // What its entity's colliders touch, and those of the children riding its
+    // body when it is a body's: physics publishes to both.
+    if (this.collisions && listens(behaviour)) {
+      held.push(this.collisions.listen(entityId, (touch) => hear(behaviour, touch)));
+    }
+
+    // The end of its type's run: past every behaviour of its type and of
+    // those registered before it.
+    let at = 0;
+    for (let t = 0; t <= type; t += 1) at += this.counts[t] ?? 0;
+    this.all.splice(at, 0, behaviour);
+    this.counts[type] = (this.counts[type] ?? 0) + 1;
+    const ofEntity = this.made.get(entityId);
+    if (ofEntity) ofEntity.set(component.id, { behaviour, type, held });
+    else this.made.set(entityId, new Map([[component.id, { behaviour, type, held }]]));
+    return behaviour;
   }
 }
 

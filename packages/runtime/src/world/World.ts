@@ -123,6 +123,11 @@ export interface Subsystem extends Disposable, MountHooks {
   /** The scene is being left, while everything is still readable: say goodbye, save what matters. */
   sceneUnload?(): void;
   /**
+   * Its world starts: the scene is built, and every component of the types it
+   * mounts has been handed to it. Before this no game code runs.
+   */
+  start?(): void;
+  /**
    * A component's values, changed during Play, for what the subsystem built
    * from it to take as if built with them; a component it built nothing from
    * changes nothing. The editor's live tuning.
@@ -421,8 +426,8 @@ export class World {
 
   /**
    * The document drawn, then every registered subsystem built in turn and
-   * handed the components of the types it mounts, then what is wrong with the
-   * scene said: Play, a device, the player.
+   * handed the components of the types it mounts, then the world started:
+   * Play, a device, the player.
    */
   static async play(options: WorldOptions): Promise<World> {
     const world = new World(options, 'play');
@@ -447,13 +452,23 @@ export class World {
       // the drawing side, synced by `bindScene`, finds nothing to change.
       for (const entityId of world.document.entities.keys()) world.dirty.add(entityId);
       world.reconcile();
-      world.diagnose();
+      world.start();
     } catch (cause) {
       world.dispose();
       throw cause;
     }
 
     return world;
+  }
+
+  /**
+   * Starts the game built: each subsystem's `start`, in registration order —
+   * the behaviours made, every `onAwake`, then every `onStart` —, then what is
+   * wrong with the scene said. The phases run from the next frame.
+   */
+  start(): void {
+    for (const subsystem of this.subsystems) subsystem.start?.();
+    this.diagnose();
   }
 
   /**

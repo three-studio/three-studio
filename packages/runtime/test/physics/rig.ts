@@ -23,6 +23,7 @@ import {
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type PlayerControllerComponent,
+  type PrefabDoc,
   type RigidBodyComponent,
   type Vec3,
 } from '@three-studio/core';
@@ -111,6 +112,13 @@ export interface RigOptions {
   readonly audioCache?: AudioClipCache;
   /** Batching on, for a test of the batches; off otherwise, see below. */
   readonly batching?: boolean;
+  /**
+   * Templates a test spawns, or places as a prefab's, once the world runs:
+   * their scripts are in the world's bundle, as a build compiles every script.
+   */
+  readonly spawnable?: readonly EntityTemplate[];
+  /** What the world's `instantiate` places. */
+  readonly prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
 }
 
 /**
@@ -128,7 +136,7 @@ async function runningRig(
   entities: readonly EntityTemplate[],
   settings: Partial<PhysicsSettings> | undefined,
   physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined,
-  { audioContext, audioCache, batching = false }: RigOptions,
+  { audioContext, audioCache, batching = false, spawnable = [], prefabs }: RigOptions,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
@@ -136,7 +144,8 @@ async function runningRig(
     time: new StudioTime(),
     document: sceneWith(entities),
     registries,
-    scripts: bundleOf(entities),
+    scripts: bundleOf([...entities, ...spawnable]),
+    prefabs,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // Batching off unless asked: a batched mesh is drawn by the batch, and the
     // object a test reads would be one the screen never shows.
