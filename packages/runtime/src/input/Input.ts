@@ -177,7 +177,20 @@ export class Input {
   }
 
   isAnyDown(...codes: readonly string[]): boolean {
-    return this.pressed.anyDown(codes) || codes.some((code) => this.virtual.has(code));
+    return this.anyDown(codes);
+  }
+
+  /**
+   * `isAnyDown` for a caller that keeps its list of codes: no rest array and
+   * no callback per call, which a player controller asks several times a tick.
+   */
+  anyDown(codes: readonly string[]): boolean {
+    if (this.pressed.anyDown(codes)) return true;
+    for (let i = 0; i < codes.length; i += 1) {
+      const code = codes[i];
+      if (code !== undefined && this.virtual.has(code)) return true;
+    }
+    return false;
   }
 
   get pointerLocked(): boolean {
@@ -189,10 +202,17 @@ export class Input {
    * frame that does not read does not accumulate a jump for the next one.
    */
   consumeMouseDelta(): { x: number; y: number } {
-    const delta = { x: this.mouseX, y: this.mouseY };
+    const delta = { x: 0, y: 0 };
+    this.readMouseDelta(delta);
+    return delta;
+  }
+
+  /** `consumeMouseDelta` into `target`, for a caller reading it every frame: nothing is made. */
+  readMouseDelta(target: { x: number; y: number }): void {
+    target.x = this.mouseX;
+    target.y = this.mouseY;
     this.mouseX = 0;
     this.mouseY = 0;
-    return delta;
   }
 
   consumeWheel(): number {

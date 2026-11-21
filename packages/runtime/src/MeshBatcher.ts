@@ -554,11 +554,10 @@ export class MeshBatcher {
     this.root.updateMatrixWorld(true);
 
     if (only === undefined) {
-      for (const group of this.batches.values()) {
-        for (const member of group.members) {
-          group.mesh.setMatrixAt(member.slot, member.mesh.matrixWorld);
-        }
-      }
+      // Through `forEach` and a callback made once, and an indexed loop: the
+      // full pass runs every frame of a game, where a `Map` iterator and an
+      // array iterator were made for it each time.
+      this.batches.forEach(writeMembers);
       return;
     }
 
@@ -580,5 +579,14 @@ export class MeshBatcher {
         placed?.group.mesh.setMatrixAt(placed.slot, object.matrixWorld);
       });
     }
+  }
+}
+
+/** Writes each member's world matrix into its slot of the group's batch. */
+function writeMembers(group: BatchGroup): void {
+  const { mesh, members } = group;
+  for (let i = 0; i < members.length; i += 1) {
+    const member = members[i];
+    if (member !== undefined) mesh.setMatrixAt(member.slot, member.mesh.matrixWorld);
   }
 }

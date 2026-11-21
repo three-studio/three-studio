@@ -62,6 +62,12 @@ export class Voice implements VoiceHandle {
   private dry: GainNodeLike | null = null;
   private wet: GainNodeLike | null = null;
   private panner: PannerNodeLike | null = null;
+  /**
+   * What `applySpatial` last wrote. A source moves its voice every frame, and
+   * one that stayed where it was wrote the same ramps again each time: work
+   * that changed nothing, and numbers boxed for the calls.
+   */
+  private readonly applied = { blend: NaN, px: NaN, py: NaN, pz: NaN, fx: NaN, fy: NaN, fz: NaN };
   private source: AudioBufferSourceNodeLike | null = null;
   private buffer: AudioBufferLike | null = null;
 
@@ -297,6 +303,8 @@ export class Voice implements VoiceHandle {
     dry.connect(this.mixer.input(this.bus));
     this.gain = gain;
     this.dry = dry;
+    // Fresh nodes hold nothing of what was written to the last ones.
+    forget(this.applied);
     this.applySpatial();
   }
 
@@ -351,15 +359,21 @@ export class Voice implements VoiceHandle {
       this.panner = panner;
       this.wet = wet;
       setNow(wet.gain, 0, now);
+      forget(this.applied);
     }
 
-    rampTo(dry.gain, 1 - blend, now);
-    if (this.wet) rampTo(this.wet.gain, blend, now);
+    const applied = this.applied;
+    if (blend !== applied.blend) {
+      applied.blend = blend;
+      rampTo(dry.gain, 1 - blend, now);
+      if (this.wet) rampTo(this.wet.gain, blend, now);
+    }
 
     const spatial = this.spatial;
     const panner = this.panner;
     if (spatial === null || panner === null) return;
 
+    // Plain assignments, which an unchanged value leaves as it was.
     panner.distanceModel = spatial.distanceModel;
     panner.refDistance = Math.max(0.0001, spatial.refDistance);
     panner.maxDistance = Math.max(panner.refDistance, spatial.maxDistance);
@@ -368,17 +382,34 @@ export class Voice implements VoiceHandle {
     panner.coneOuterAngle = spatial.coneOuterAngle;
     panner.coneOuterGain = spatial.coneOuterGain;
 
-    const [px, py, pz] = spatial.position;
-    const [fx, fy, fz] = spatial.forward;
     // A ramp rather than an assignment: a position written straight onto the
     // parameter every frame steps the panner's own interpolation and is heard
-    // as a click on anything moving quickly.
-    rampTo(panner.positionX, px, now);
-    rampTo(panner.positionY, py, now);
-    rampTo(panner.positionZ, pz, now);
-    rampTo(panner.orientationX, fx, now);
-    rampTo(panner.orientationY, fy, now);
-    rampTo(panner.orientationZ, fz, now);
+    // as a click on anything moving quickly. Indexed, where destructuring the
+    // tuples made an iterator of each, every frame.
+    const position = spatial.position;
+    const forward = spatial.forward;
+    const px = position[0];
+    const py = position[1];
+    const pz = position[2];
+    if (px !== applied.px || py !== applied.py || pz !== applied.pz) {
+      applied.px = px;
+      applied.py = py;
+      applied.pz = pz;
+      rampTo(panner.positionX, px, now);
+      rampTo(panner.positionY, py, now);
+      rampTo(panner.positionZ, pz, now);
+    }
+    const fx = forward[0];
+    const fy = forward[1];
+    const fz = forward[2];
+    if (fx !== applied.fx || fy !== applied.fy || fz !== applied.fz) {
+      applied.fx = fx;
+      applied.fy = fy;
+      applied.fz = fz;
+      rampTo(panner.orientationX, fx, now);
+      rampTo(panner.orientationY, fy, now);
+      rampTo(panner.orientationZ, fz, now);
+    }
   }
 
   private targetGain(): number {
@@ -428,4 +459,15 @@ export class Voice implements VoiceHandle {
 
 function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+
+/** Marks every value `applySpatial` wrote as unwritten, for nodes that hold none of them. */
+function forget(applied: { blend: number; px: number; py: number; pz: number; fx: number; fy: number; fz: number }): void {
+  applied.blend = NaN;
+  applied.px = NaN;
+  applied.py = NaN;
+  applied.pz = NaN;
+  applied.fx = NaN;
+  applied.fy = NaN;
+  applied.fz = NaN;
 }

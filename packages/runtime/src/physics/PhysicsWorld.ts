@@ -236,10 +236,9 @@ class Body implements BodyHandle {
     // A frame with no tick still takes a write made in `onUpdate` or `onLateUpdate`.
     if (this.moved()) this.jumpToObject();
 
-    const translation = this.rapier.translation();
-    const rotation = this.rapier.rotation();
-    _worldPosition.set(translation.x, translation.y, translation.z);
-    _worldQuaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+    // Into the scratches, where Rapier made a new object of each, every frame.
+    this.rapier.translation(_worldPosition);
+    this.rapier.rotation(_worldQuaternion);
     if (this.smooth) {
       // Into scratches of their own. `slerpQuaternions(a, b, t)` copies `a` into
       // its target before it reads `b`, so `_worldQuaternion` as both would draw
@@ -297,8 +296,8 @@ class Body implements BodyHandle {
   }
 
   private rememberPrevious(): void {
-    this.previous.position.copy(this.rapier.translation());
-    this.previous.quaternion.copy(this.rapier.rotation());
+    this.rapier.translation(this.previous.position);
+    this.rapier.rotation(this.previous.quaternion);
   }
 
   // Rapier hands back a fresh object on every read, which is the copy the API

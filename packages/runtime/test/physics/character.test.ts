@@ -213,8 +213,12 @@ describe('a character', () => {
       rig.run(1 / 60);
       expect(rig.solved(id).position.distanceTo(settled.position)).toBeLessThan(1e-6);
     }
+    // Into the caller's vector when it keeps one, a refused move's included.
+    const into = { x: 7, y: 7, z: 7 };
+    expect(character.move({ x: NaN, y: 0, z: 0 }, turn, into)).toBe(into);
+    expect(into).toEqual({ x: 0, y: 0, z: 0 });
 
-    character.move({ x: 0.01, y: 0, z: 0 }, { x: 0, y: 0, z: 0, w: 0 });
+    expect(character.move({ x: 0.01, y: 0, z: 0 }, { x: 0, y: 0, z: 0, w: 0 }, into)).toBe(into);
     rig.run(1 / 60);
     const { position, quaternion } = rig.solved(id);
     expect(quaternion.angleTo(settled.quaternion)).toBeLessThan(1e-6);

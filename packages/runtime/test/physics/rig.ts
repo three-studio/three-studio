@@ -34,6 +34,7 @@ export { nest } from '../../../core/test/fixtures';
 import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import type { AudioClipCache } from '../../src/audio/AudioClipCache';
 import type { AudioContextLike } from '../../src/audio/AudioContextLike';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
@@ -102,9 +103,14 @@ export type PhysicsRigMaker = (
 /** A rig whose world runs on the kernel's systems and behaviours, as a root activates them. */
 export const physicsRig: PhysicsRigMaker = physicsRigOn(registries);
 
-/** What a rig's world is handed besides its scene: an audio context, for a test of what it plays. */
+/** What a rig's world is handed besides its scene. */
 export interface RigOptions {
+  /** For a test of what it plays. */
   readonly audioContext?: AudioContextLike;
+  /** The clips it plays, decoded by a loader of the test's. */
+  readonly audioCache?: AudioClipCache;
+  /** Batching on, for a test of the batches; off otherwise, see below. */
+  readonly batching?: boolean;
 }
 
 /**
@@ -122,7 +128,7 @@ async function runningRig(
   entities: readonly EntityTemplate[],
   settings: Partial<PhysicsSettings> | undefined,
   physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined,
-  { audioContext }: RigOptions,
+  { audioContext, audioCache, batching = false }: RigOptions,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
@@ -132,9 +138,9 @@ async function runningRig(
     registries,
     scripts: bundleOf(entities),
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
-    // Batching off: a batched mesh is drawn by the batch, and the object a test
-    // reads would be one the screen never shows.
-    rendering: { ...createRenderingSettings(), batching: false },
+    // Batching off unless asked: a batched mesh is drawn by the batch, and the
+    // object a test reads would be one the screen never shows.
+    rendering: { ...createRenderingSettings(), batching },
     physicsSettings,
     physicsMaterials,
     element: canvas as unknown as HTMLElement,
@@ -142,6 +148,7 @@ async function runningRig(
     // shares: two rigs alive in one test cannot hear each other's keys.
     input: { keys: 'element' },
     audioContext,
+    audioCache,
   });
   onTestFinished(() => world.dispose());
 

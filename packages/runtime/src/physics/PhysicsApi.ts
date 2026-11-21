@@ -277,9 +277,11 @@ export interface CharacterController {
    * A translation that is not a number moves nothing, and a rotation with no
    * direction keeps the body's turn.
    *
-   * @returns the part of `translation` the world allowed.
+   * @param into Where the part allowed is written, for a caller moving it every
+   *   tick that keeps one; a new object when left out.
+   * @returns the part of `translation` the world allowed: `into` when given.
    */
-  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like>;
+  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, into?: Vec3Like): Readonly<Vec3Like>;
   /** Whether the character stood on something after the last move, and was not leaving it. */
   readonly grounded: boolean;
 }
