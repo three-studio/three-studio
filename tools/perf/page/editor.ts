@@ -4,7 +4,7 @@
  * handles `devtools.ts` declares on `window`.
  */
 
-import type { EntityId, SceneId } from '@three-studio/core';
+import type { AssetId, EntityId, SceneId } from '@three-studio/core';
 
 /** Which of the editor's handles the window has, and whether it believes it has the focus: 1 or 0 each. */
 export function editorHandles(): Record<string, number> {
@@ -586,4 +586,119 @@ export async function setLoadingScene(id: SceneId | null): Promise<Record<string
   const saved = await window.studio.project.updateSettings({ loadingScene: id });
   window.__studioStores?.project.getState().adoptProject(saved);
   return { set: id === null ? 0 : 1 };
+}
+
+/**
+ * Places `count` of a prefab in the running world, one per slot of a grid in
+ * the air, `columns` a row and `spacing` apart at `height`, then runs the
+ * world's pass, all in one task: how long, in ms. Scripts cannot spawn yet, so
+ * the page drives the world. What was placed is kept slot by slot in
+ * `__perfCrates`, for the next call.
+ */
+export function spawnCrates(field: {
+  prefab: AssetId;
+  count: number;
+  columns: number;
+  spacing: number;
+  height: number;
+}): Record<string, number> {
+  const world = window.__studioViewport?.playWorld;
+  if (!world) throw new Error('no running world');
+  const rows = Math.ceil(field.count / field.columns);
+  const crates: EntityId[] = [];
+  const started = performance.now();
+  for (let slot = 0; slot < field.count; slot += 1) {
+    const crate = world.instantiate(field.prefab, {
+      transform: {
+        position: [
+          ((slot % field.columns) - (field.columns - 1) / 2) * field.spacing,
+          field.height,
+          (Math.floor(slot / field.columns) - (rows - 1) / 2) * field.spacing,
+        ],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+    });
+    if (crate === null) throw new Error(`the running world has no prefab ${field.prefab}`);
+    crates.push(crate);
+  }
+  world.reconcile();
+  const ms = performance.now() - started;
+  window.__perfCrates = crates;
+  return { ms, crates: crates.length };
+}
+
+/** Destroys what `spawnCrates` placed, then runs the world's pass, in one task: how long, in ms. */
+export function destroyCrates(): Record<string, number> {
+  const world = window.__studioViewport?.playWorld;
+  const crates = window.__perfCrates;
+  if (!world || !crates) throw new Error('no running world, or no crates placed');
+  const started = performance.now();
+  for (const crate of crates) world.destroy(crate);
+  world.reconcile();
+  const ms = performance.now() - started;
+  window.__perfCrates = [];
+  return { ms, crates: crates.length };
+}
+
+/**
+ * A churn of `ms`: at each frame the `perFrame` oldest crates are destroyed
+ * and as many placed in their slots, so that as many stay alive as
+ * `spawnCrates` placed. Each slot's crate is the oldest when its turn comes
+ * round, and the one it replaces has fallen from it meanwhile. The time
+ * between frames, in ms.
+ */
+export function churnCrates(args: {
+  prefab: AssetId;
+  count: number;
+  columns: number;
+  spacing: number;
+  height: number;
+  perFrame: number;
+  ms: number;
+}): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const world = window.__studioViewport?.playWorld;
+    const crates = window.__perfCrates;
+    if (!world || !crates || crates.length !== args.count) {
+      reject(new Error(`no running world, or not ${args.count} crates placed`));
+      return;
+    }
+    const rows = Math.ceil(args.count / args.columns);
+    const deltas: number[] = [];
+    let next = 0;
+    let started = -1;
+    let last = -1;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0) deltas.push(now - last);
+      else started = now;
+      last = now;
+      for (let k = 0; k < args.perFrame; k += 1) {
+        const slot = next % args.count;
+        next += 1;
+        const oldest = crates[slot];
+        if (oldest !== undefined) world.destroy(oldest);
+        const crate = world.instantiate(args.prefab, {
+          transform: {
+            position: [
+              ((slot % args.columns) - (args.columns - 1) / 2) * args.spacing,
+              args.height,
+              (Math.floor(slot / args.columns) - (rows - 1) / 2) * args.spacing,
+            ],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+        });
+        if (crate === null) {
+          reject(new Error(`the running world has no prefab ${args.prefab}`));
+          return;
+        }
+        crates[slot] = crate;
+      }
+      if (now - started < args.ms) requestAnimationFrame(tick);
+      else resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
 }

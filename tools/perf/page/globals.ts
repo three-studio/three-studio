@@ -1,3 +1,4 @@
+import type { EntityId } from '@three-studio/core';
 import type { SceneApi } from '@three-studio/runtime/sceneApi';
 import type { PlayerAnnouncement } from '../../../apps/web-template/src/announce';
 
@@ -24,5 +25,7 @@ declare global {
     /** The scene API, published by the `scripted` recipe's `Director` when its scene starts. */
     __perfScenes?: SceneApi;
     __perfPlayer?: PerfPlayer;
+    /** The crates `spawnCrates` placed in the running world, slot by slot: what the next call takes. */
+    __perfCrates?: EntityId[];
   }
 }

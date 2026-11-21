@@ -1,5 +1,5 @@
 import { createServer } from 'node:net';
-import { isEntityId, isRecord, type EntityId } from '@three-studio/core';
+import { isAssetId, isEntityId, isRecord, type AssetId, type EntityId } from '@three-studio/core';
 
 /*
  * The Chrome DevTools Protocol, over Node's own `WebSocket` and `fetch`: the
@@ -85,6 +85,13 @@ export function entityIdsAt(record: Record<string, unknown>, key: string): Entit
     if (!isEntityId(entry)) throw new Error(`expected an entity id at "${key}[${index}]"`);
     return entry;
   });
+}
+
+/** An asset id out of a record that was kept as text between two launches. */
+export function assetIdAt(record: Record<string, unknown>, key: string): AssetId {
+  const value = record[key];
+  if (!isAssetId(value)) throw new Error(`expected an asset id at "${key}"`);
+  return value;
 }
 
 export interface CdpTarget {

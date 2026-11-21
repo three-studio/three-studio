@@ -21,6 +21,7 @@ import { abMarkdown, reportName, runMarkdown } from './report/write';
 import { assetsScenario } from './scenarios/assets';
 import { bigAssetsScenario } from './scenarios/bigAssets';
 import type { Scenario, ScenarioContext } from './scenarios/context';
+import { dynamicsScenario } from './scenarios/dynamics';
 import { playAndScenesScenario } from './scenarios/playAndScenes';
 import { playerScenario } from './scenarios/player';
 import { renderScenario } from './scenarios/render';
@@ -54,6 +55,7 @@ const SCENARIOS: readonly { readonly id: string; readonly title: string; readonl
   { id: 'S1', title: 'big assets', run: bigAssetsScenario },
   { id: 'S2', title: 'scene scale', run: sceneScaleScenario },
   { id: 'S3', title: 'render', run: renderScenario },
+  { id: 'S4', title: 'dynamics', run: dynamicsScenario },
   { id: 'S5', title: 'assets', run: assetsScenario },
   { id: 'S6', title: 'Play and scenes', run: playAndScenesScenario },
   { id: 'S7', title: 'player', run: playerScenario },
