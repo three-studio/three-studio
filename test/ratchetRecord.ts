@@ -216,7 +216,7 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/runtime/test/physics/scriptQueries.test.ts', { state: 1 }],
   ['packages/runtime/test/physics/step.test.ts', { state: 1 }],
   ['packages/runtime/test/physics/tuning.test.ts', { nonNull: 1, state: 1 }],
-  ['packages/runtime/test/sceneBinder.test.ts', { as: 21, nonNull: 10, state: 1 }],
+  ['packages/runtime/test/sceneBinder.test.ts', { as: 21, nonNull: 9, state: 1 }],
   ['packages/runtime/test/sceneDigest.ts', { as: 4 }],
   ['packages/runtime/test/sceneHost.test.ts', { state: 2 }],
   ['packages/runtime/test/systems/modelNodes.test.ts', { nonNull: 2 }],

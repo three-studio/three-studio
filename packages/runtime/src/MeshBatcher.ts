@@ -309,14 +309,22 @@ export class MeshBatcher {
      * changed, which is a different shader pipeline — leaves the key identical
      * while every member switches to a new object and the old one goes into the
      * retire queue. The next `beginFrame` frees it and the batch draws with a
-     * destroyed pipeline.
+     * destroyed pipeline. And an embedded material belongs to the member the
+     * batch took it from, and leaves the scene with it.
      *
-     * Asking whether any current member still holds it answers both that and
-     * the embedded case, where the object belongs to whichever member happened
-     * to be first and leaves the scene with it.
+     * Either way the batch takes one a member holds now: every member draws the
+     * same definition, which is what the key says, so the material object is
+     * all that changed. Rebuilding instead uploaded the geometry and every
+     * matrix again, and a game that spawns and destroys did it every frame —
+     * the member a batch takes its material from is its oldest, the first a
+     * churn destroys. The newest's, then, which a churn keeps longest.
      */
     const drawn = group.mesh.material;
-    if (!members.some((member) => member.material === drawn)) return false;
+    if (!members.some((member) => member.material === drawn)) {
+      const newest = members[members.length - 1];
+      if (newest === undefined) return false;
+      group.mesh.material = newest.material;
+    }
 
     /*
      * Nothing moved, which is the answer almost every time.
