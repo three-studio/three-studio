@@ -33,8 +33,15 @@ export interface SceneSource {
   read(path: string): Promise<SceneDoc>;
 }
 
-/** What everything a scene needs, other than the document itself. */
-export interface SceneHostOptions extends Omit<WorldOptions, 'document'> {
+/**
+ * What a frame gives the build of a scene behind the loading scene, in
+ * milliseconds: with the loading scene's own frame, it fits a frame at 60 Hz,
+ * so the spinner keeps turning while the next level builds.
+ */
+export const LOADING_BUILD_BUDGET_MS = 12;
+
+/** What everything a scene needs, other than the document itself; the build's budget is the host's. */
+export interface SceneHostOptions extends Omit<WorldOptions, 'document' | 'buildBudgetMs'> {
   source: SceneSource;
   materials?: ReadonlyMap<AssetId, MaterialDef>;
   /**
@@ -81,6 +88,13 @@ export class SceneHost implements SceneApi {
 
   private pending: LoadHandle | null = null;
   private disposed = false;
+  /** The scene a switch builds behind the loading scene, which runs meanwhile. */
+  private building: World | null = null;
+  /**
+   * Moves with every switch and with `dispose`: a switch that finds it moved
+   * after an await was replaced, and goes no further.
+   */
+  private switches = 0;
 
   /**
    * Decoded clips, kept across scenes — the one cache that *is* shared.
@@ -152,13 +166,23 @@ export class SceneHost implements SceneApi {
     await load.activate();
   }
 
+  /** One frame: the running scene's, then the build of the one a switch moves to behind it. */
   update(delta: number): void {
     this.world?.frame(delta);
+    this.building?.frame(delta);
+  }
+
+  /** What the running scene was asked since its last frame, taken without one: a paused host's. */
+  reconcile(): void {
+    this.world?.reconcile();
   }
 
   dispose(): void {
     this.disposed = true;
+    this.switches += 1;
     this.pending?.cancel();
+    this.building?.dispose();
+    this.building = null;
     this.world?.dispose();
     this.world = null;
     this.current = null;
@@ -170,24 +194,37 @@ export class SceneHost implements SceneApi {
   /** Used by a handle once its assets are in; not part of the public surface. */
   async swap(path: string, scene: SceneDoc): Promise<void> {
     if (this.disposed) return;
-
-    // The outgoing scene is told before anything of it is taken apart, so a
-    // behaviour can still read its own entities while saving state.
-    this.world?.notifySceneUnload();
-    this.world?.dispose();
+    // A switch replaces one still building.
+    const switched = ++this.switches;
+    this.building?.dispose();
+    this.building = null;
+    const replaced = () => this.disposed || this.switches !== switched;
 
     // Expanded here, once, for every caller. A scene arrives as a document —
     // read from disk or handed over by the editor — and an instance's contents
     // only exist after this. Doing it at each call site is three places to
     // forget, and the symptom is a level that loads with its props missing.
-    const world = await World.play({
+    const options: WorldOptions = {
       ...this.options,
       document: expandPrefabs(this.options.registries, scene, { get: (id) => this.options.prefabs?.get(id) }).scene,
       scenes: this.sceneApiFor(path),
       // Handed over rather than built per world, so the clips outlive the
       // scene that first asked for them.
       audioCache: this.clips ?? undefined,
-    });
+    };
+
+    const loading = this.options.loadingScene;
+    if (this.world !== null && loading != null && this.current === loading && path !== loading) {
+      await this.buildBehindLoading(path, options, replaced);
+      return;
+    }
+
+    // The outgoing scene is told before anything of it is taken apart, so a
+    // behaviour can still read its own entities while saving state; and it goes
+    // before the next is built, so that two levels are never held at once.
+    this.world?.notifySceneUnload();
+    this.world?.dispose();
+    const world = await World.play(options);
 
     // Checked again, because `World.play` awaits Rapier and every model the
     // scene needs — hundreds of milliseconds during which Stop can be pressed.
@@ -196,11 +233,43 @@ export class SceneHost implements SceneApi {
     // nobody holds any more. Its `Input` keeps listening on the canvas, and the
     // first click back in the editor asks for a pointer lock the editor never
     // wanted — which is how a stopped game was still grabbing the mouse.
-    if (this.disposed) {
+    if (replaced()) {
       world.dispose();
       return;
     }
+    this.show(path, world);
+  }
 
+  /**
+   * Builds the next scene over frames while the loading scene keeps playing,
+   * and shows it once ready: the loading scene is told it unloads and goes, and
+   * the next one starts. Its scripts run from then, as a scene Unity has loaded
+   * waits for its activation.
+   */
+  private async buildBehindLoading(path: string, options: WorldOptions, replaced: () => boolean): Promise<void> {
+    const world = await World.load({ ...options, buildBudgetMs: LOADING_BUILD_BUDGET_MS });
+    if (replaced()) {
+      world.dispose();
+      return;
+    }
+    this.building = world;
+    try {
+      await world.ready;
+    } catch (cause) {
+      // Disposed by a switch that replaced it, or by Stop: nothing to say.
+      if (replaced()) return;
+      this.building = null;
+      throw cause;
+    }
+    if (replaced()) return;
+    this.building = null;
+    this.world?.notifySceneUnload();
+    this.world?.dispose();
+    world.start();
+    this.show(path, world);
+  }
+
+  private show(path: string, world: World): void {
     this.world = world;
     this.current = path;
     this.onSceneChanged?.(path, world);

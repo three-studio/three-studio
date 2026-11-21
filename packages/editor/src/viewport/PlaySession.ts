@@ -223,6 +223,33 @@ export class PlaySession {
   }
 
   /**
+   * The game's part of the viewport's frame. Playing, a frame of `delta`: the
+   * running scene's, and the build of the one a switch moves to behind a
+   * loading scene. Paused, one tick when Step asks; otherwise what the game was
+   * asked meanwhile, taken without a frame, so a tune shows on the paused game.
+   */
+  advance(delta: number): void {
+    const host = this.sceneHost;
+    const world = this.world;
+    if (host === null || world === null) return;
+    const { playState, consumeStep } = useEditorStore.getState();
+    if (playState === 'playing') host.update(delta);
+    else if (consumeStep()) {
+      // One tick of the project's step, as the world reads it. A constant
+      // here was 1/60 whatever the project said: at 30 Hz every other Step
+      // ran no tick, and at 120 Hz every Step ran two.
+      //
+      // The clock too, or the surfaces hold still through a step that moves
+      // everything else. `step` is the one thing a zero timescale cannot veto.
+      this.host.time.step(world.fixedStep);
+      host.update(world.fixedStep);
+    } else host.reconcile();
+    // Paused means paused, including the part you can hear. The root gain
+    // rather than the context, which the preview is sharing.
+    audioOf(world)?.setSuspended(playState !== 'playing');
+  }
+
+  /**
    * Starts and stops the game in response to the transport buttons.
    *
    * The world is created here rather than in a React component because it

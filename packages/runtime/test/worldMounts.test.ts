@@ -237,13 +237,18 @@ describe('a subsystem mounting components', () => {
       createEntity('Crate', [{ ...modelType.create(), assetId: fixedId('asset', 'crate') }]),
       fixedId('entity', 'crate'),
     );
-    const world = await playing([recording(A, log, ['model'])], [crate], {}, { url: () => 'file:///crate.glb' });
+    // Loaded rather than played: Play's world waits for the model to land, and
+    // this test lands it once the build's pass has mounted the component. The
+    // build's last passes hand it back, before the world is ready.
+    const world = await World.load(
+      optionsFor([recording(A, log, ['model'])], [crate], { url: () => 'file:///crate.glb' }),
+    );
+    onTestFinished(() => world.dispose());
     expect(handouts(log)).toEqual(['a mount crate:model drawn']);
     log.length = 0;
 
     land();
-    await world.binder.whenLoaded();
-    world.frame(STEP);
+    await world.ready;
 
     expect(handouts(log)).toEqual(['a patch crate:model→itself']);
   });

@@ -100,7 +100,9 @@ export interface SubsystemDefinition {
   readonly mounts?: readonly ComponentTypeId[];
   /**
    * Builds it for one world in Play, after every subsystem registered before
-   * it — each awaited — so it may read what those provide.
+   * it — each awaited — so it may read what those provide. Before the scene is
+   * built, and behind a loading scene while another world plays on the same
+   * page: what it does to the page — a listener, a sound — waits for `start`.
    */
   create(world: World): Subsystem | Promise<Subsystem>;
 }
@@ -170,6 +172,12 @@ export interface WorldOptions {
    * game instantiates nothing.
    */
   prefabs?: ReadonlyMap<AssetId, PrefabDoc> | undefined;
+  /**
+   * What a frame gives the build, in milliseconds (`World.load`): the document
+   * is mounted an entity at a time as `frame` is called, until a frame has spent
+   * this long, and at least one entity a frame. Absent, it is built at once.
+   */
+  buildBudgetMs?: number;
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
@@ -361,20 +369,48 @@ export class World {
   /** What `instantiate` places. */
   private readonly prefabs: ReadonlyMap<AssetId, PrefabDoc>;
 
+  /**
+   * Settles once the document is built, the drawing side has nothing in flight
+   * and nothing waits to be read again: a model that lands marks its entity, and
+   * the build's last passes hand it back. Rejects if the world is disposed first.
+   */
+  readonly ready: Promise<void>;
+  private settleReady = (): void => {};
+  private failReady = (_cause: unknown): void => {};
+  private isReady = false;
+  /** The document's entities, each after its parent, as the build mounts them; and how many it has. */
+  private toBuild: readonly EntityId[] = [];
+  private builtUpTo = 0;
+  /** Every entity mounted and the environment up: what is left is what lands. */
+  private builtWhole = false;
+  /** What a frame gives the build; `undefined`, all of it at once. */
+  private readonly buildBudgetMs: number | undefined;
+  /** Before `start`, a frame builds and runs no phase: no game code runs while a scene builds. */
+  private started = false;
+
   private disposed = false;
 
-  private constructor(options: WorldOptions, mode: WorldMode) {
+  private constructor(options: WorldOptions, mode: WorldMode, buildBudgetMs?: number) {
     this.mode = mode;
     this.options = options;
     this.document = mode === 'play' ? liveScene(options.document) : options.document;
     this.time = options.time;
     this.prefabs = options.prefabs ?? NO_PREFABS;
+    this.buildBudgetMs = buildBudgetMs;
+    this.ready = new Promise<void>((resolve, reject) => {
+      this.settleReady = () => {
+        this.isReady = true;
+        resolve();
+      };
+      this.failReady = reject;
+    });
+    // Nobody may ask: a world disposed while it builds, which a switch leaves.
+    this.ready.catch(() => {});
     // The renderer is handed over rather than owned: this world still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
-    // the device the host already has. The order of the rest is `bindScene`'s,
-    // where it is written down.
-    this.binder = bindScene(this.scene, this.document, {
+    // the device the host already has.
+    const binderOptions = {
       registries: options.registries,
       assets: options.assets,
       rendering: options.rendering,
@@ -386,8 +422,19 @@ export class World {
       // A model lands after the sync that mounted it: what a subsystem built
       // from the entity's objects — a mesh collider — is built again from it.
       // Not in the edit view, whose document is the editor's to sync.
-      landed: mode === 'play' ? (entityId) => this.readAgain(entityId) : undefined,
-    });
+      landed: mode === 'play' ? (entityId: EntityId) => this.readAgain(entityId) : undefined,
+    };
+    if (mode === 'edit') {
+      // Drawn at once, in the order `bindScene` writes down.
+      this.binder = bindScene(this.scene, this.document, binderOptions);
+      this.settleReady();
+    } else {
+      // Empty: the build syncs it entity by entity, then batches it and puts
+      // up the environment once it is whole — nothing draws it before.
+      this.binder = new SceneBinder(binderOptions);
+      this.scene.add(this.binder.root);
+      this.binder.holdBatches();
+    }
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;
     this.maxSubsteps = maxSubsteps;
@@ -417,12 +464,33 @@ export class World {
   }
 
   /**
-   * The document drawn, then every registered subsystem built in turn and
-   * handed the components of the types it mounts, then the world started:
-   * Play, a device, the player.
+   * Play's world, its subsystems built and its document built after them: at
+   * once, or, given `buildBudgetMs`, an entity at a time as `frame` is called,
+   * behind a loading scene. Nothing of the game runs until `start`, once
+   * `ready` has settled.
+   */
+  static load(options: WorldOptions): Promise<World> {
+    return World.made(options, options.buildBudgetMs);
+  }
+
+  /**
+   * Play's world built at once, ready and started: Play, a device, the player,
+   * every switch but one behind a loading scene.
    */
   static async play(options: WorldOptions): Promise<World> {
-    const world = new World(options, 'play');
+    const world = await World.made(options, undefined);
+    try {
+      await world.ready;
+      world.start();
+    } catch (cause) {
+      world.dispose();
+      throw cause;
+    }
+    return world;
+  }
+
+  private static async made(options: WorldOptions, buildBudgetMs: number | undefined): Promise<World> {
+    const world = new World(options, 'play', buildBudgetMs);
 
     // Whatever fails below, nothing of a world nobody will hold stays alive: an
     // `Input` built before the throw would keep listening on the canvas, and any
@@ -440,11 +508,10 @@ export class World {
         world.mounts.route(subsystem, definition.mounts ?? []);
       }
       world.schedule(definitions);
-      // One pass over the whole document hands every subsystem what it mounts;
-      // the drawing side, synced by `bindScene`, finds nothing to change.
-      for (const entityId of world.document.entities.keys()) world.dirty.add(entityId);
-      world.reconcile();
-      world.start();
+      // Each entity after its parent: a child synced before its parent's
+      // container exists is hung from the root, and nothing hangs it again.
+      world.toBuild = treeOrder(world.document);
+      if (buildBudgetMs === undefined) world.build(undefined);
     } catch (cause) {
       world.dispose();
       throw cause;
@@ -455,10 +522,14 @@ export class World {
 
   /**
    * Starts the game built: each subsystem's `start`, in registration order —
-   * the behaviours made, every `onAwake`, then every `onStart` —, then what is
-   * wrong with the scene said. The phases run from the next frame.
+   * physics' step of no time, the behaviours made, every `onAwake`, then every
+   * `onStart` —, then what is wrong with the scene said. The phases run from
+   * the next frame. Once, and only once `ready` has settled.
    */
   start(): void {
+    if (this.started || this.disposed) return;
+    if (!this.isReady) throw new Error('start: the world is not built yet; await its `ready`');
+    this.started = true;
     for (const subsystem of this.subsystems) subsystem.start?.();
     this.diagnose();
   }
@@ -506,6 +577,7 @@ export class World {
    * One frame of `delta` seconds: the `update` hooks, a `fixed` pass per whole
    * step of the project's fixed step, the `lateUpdate` hooks, the document's
    * changes reconciled, then the `renderPrep` hooks. The host draws afterwards.
+   * Before `start`, the frame builds instead, and runs no phase.
    */
   frame(delta: number): void {
     if (this.disposed) return;
@@ -515,6 +587,19 @@ export class World {
     // the last pass took down, what was retired on the way into Play — is safe
     // to free now.
     this.binder.beginFrame();
+
+    // The edit view's document is the editor's to sync, and nothing runs in it.
+    if (this.mode === 'play' && !this.started) {
+      try {
+        this.build(this.buildBudgetMs);
+      } catch (cause) {
+        // Said through `ready`, to whoever waits to show the scene, and the
+        // world taken down: a scene half built is no scene to start.
+        this.failReady(cause);
+        this.dispose();
+      }
+      return;
+    }
 
     // Aiming runs at display rate; movement runs inside the fixed step, because
     // a kinematic body is commanded with a target position rather than an
@@ -559,6 +644,63 @@ export class World {
     this.mounts.pass(this.document, dirty, reread, this.binder);
     dirty.clear();
     reread.clear();
+  }
+
+  /**
+   * Mounts the next of the document, in tree order: all that is left at once
+   * without a budget, in one pass, as a scene was always built; else an entity
+   * a pass until the budget has gone, at least one, the time read after each.
+   * The batches, then the environment, follow the last entity, as `bindScene`
+   * orders them; with a budget, in a frame of their own, since grouping two
+   * thousand boxes takes 7 ms by itself. Built, it takes what landed since.
+   */
+  private build(budgetMs: number | undefined): void {
+    if (this.builtWhole) {
+      this.reconcile();
+      return;
+    }
+    const order = this.toBuild;
+    if (budgetMs === undefined) {
+      for (let i = this.builtUpTo; i < order.length; i += 1) {
+        const entityId = order[i];
+        if (entityId !== undefined) this.dirty.add(entityId);
+      }
+      this.builtUpTo = order.length;
+      this.reconcile();
+    } else if (this.builtUpTo < order.length) {
+      const until = performance.now() + budgetMs;
+      do {
+        const entityId = order[this.builtUpTo];
+        this.builtUpTo += 1;
+        if (entityId !== undefined) this.dirty.add(entityId);
+        this.reconcile();
+      } while (this.builtUpTo < order.length && performance.now() < until);
+      return;
+    }
+    this.builtWhole = true;
+    this.binder.releaseBatches();
+    this.binder.syncEnvironment(this.scene, this.document);
+    void this.whenSettled();
+  }
+
+  /**
+   * Settles `ready` once the drawing side has nothing in flight and nothing
+   * waits to be read again: each model that lands marks its entity, and is
+   * handed back here at once.
+   */
+  private async whenSettled(): Promise<void> {
+    try {
+      for (;;) {
+        await this.binder.whenLoaded();
+        if (this.disposed) return;
+        if (this.dirty.size === 0) break;
+        this.reconcile();
+      }
+      this.settleReady();
+    } catch (cause) {
+      this.failReady(cause);
+      this.dispose();
+    }
   }
 
   /**
@@ -704,6 +846,7 @@ export class World {
     // Once: Rapier answers a world freed twice by throwing.
     if (this.disposed) return;
     this.disposed = true;
+    this.failReady(new Error('The world was disposed before it was ready.'));
     // Last built first: one may hold what one built before it provides.
     for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
     this.subsystems.length = 0;
@@ -719,6 +862,34 @@ export function isPerspective(camera: Camera): camera is PerspectiveCamera {
 
 /** The library of a world handed no prefabs. */
 const NO_PREFABS: ReadonlyMap<AssetId, PrefabDoc> = new Map();
+
+/**
+ * The document's entities, each after its parent: the roots in their order,
+ * each followed by its subtree, then whatever no root reaches, in table order.
+ */
+function treeOrder(document: SceneDoc): EntityId[] {
+  const order: EntityId[] = [];
+  const seen = new Set<EntityId>();
+  const stack: EntityId[] = [];
+  const from = (start: EntityId): void => {
+    stack.push(start);
+    while (stack.length > 0) {
+      const entityId = stack.pop();
+      const entity = entityId === undefined ? undefined : document.entities.get(entityId);
+      if (entityId === undefined || entity === undefined || seen.has(entityId)) continue;
+      seen.add(entityId);
+      order.push(entityId);
+      // Reversed onto the stack, so that the first child comes off first.
+      for (let i = entity.children.length - 1; i >= 0; i -= 1) {
+        const child = entity.children[i];
+        if (child !== undefined) stack.push(child);
+      }
+    }
+  };
+  for (const root of document.rootOrder) from(root);
+  for (const entityId of document.entities.keys()) from(entityId);
+  return order;
+}
 
 export type { Object3D, OrthographicCamera };
 

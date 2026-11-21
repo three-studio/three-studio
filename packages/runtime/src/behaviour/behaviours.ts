@@ -34,10 +34,9 @@ export function behaviourSubsystem(registry: Registry<ComponentTypeId, Behaviour
     get mounts() {
       return registry.values().map((definition) => definition.id);
     },
-    async create(world) {
-      // The models in first, physics or none: a script reads its model's nodes
-      // from `onAwake`. Physics awaited them already, when it is there.
-      await world.binder.whenLoaded();
+    create(world) {
+      // Made at `start`, once the world is ready: every model has landed, so a
+      // script reads its model's nodes from `onAwake`.
       return new Behaviours(world, registry);
     },
   };

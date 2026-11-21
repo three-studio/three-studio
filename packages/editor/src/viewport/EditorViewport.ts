@@ -10,7 +10,6 @@ import {
 import {
   AssetCache,
   StudioTime,
-  audioOf,
   physicsDebugLines,
   type World,
   type SceneBinder,
@@ -599,7 +598,7 @@ export class EditorViewport {
     // the images its arena gave back go with this boundary.
     this.assets.beginFrame();
 
-    const { playState, consumeStep } = useEditorStore.getState();
+    const { playState } = useEditorStore.getState();
     // What the Viewport shows, and who has its input: read once, for the whole
     // frame.
     const view = this.viewNow();
@@ -614,24 +613,7 @@ export class EditorViewport {
     const world = this.play.playWorld;
     if (world) {
       // Paused still renders, so the frame stays live and Step can advance it.
-      if (playState === 'playing') world.frame(delta);
-      else if (consumeStep()) {
-        // One tick of the project's step, as the world reads it. A constant
-        // here was 1/60 whatever the project said: at 30 Hz every other Step
-        // ran no tick, and at 120 Hz every Step ran two.
-        //
-        // The clock too, or the surfaces hold still through a step that moves
-        // everything else. `step` is the one thing a zero timescale cannot veto.
-        this.time.step(world.fixedStep);
-        world.frame(world.fixedStep);
-      }
-      // Paused, with no frame to end in a pass: what the Inspector tuned
-      // meanwhile is taken now, and shows on the paused game.
-      else world.reconcile();
-
-      // Paused means paused, including the part you can hear. The root gain
-      // rather than the context, which the preview is sharing.
-      audioOf(world)?.setSuspended(playState !== 'playing');
+      this.play.advance(delta);
     } else {
       // `raw`, not the simulated delta: flying the editor camera is not part of
       // the simulation, and a timescale of zero must not nail it to the spot.

@@ -1,11 +1,16 @@
 import {
+  Registry,
   createEntity,
+  createLightEntity,
   createRenderingSettings,
   modelType,
   scriptType,
   fixedId,
+  type AssetId,
+  type EntityTemplate,
   type SceneDoc,
   type ScriptComponent,
+  type SubsystemId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
@@ -14,6 +19,7 @@ import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import type { SceneApi } from '../src/sceneApi';
 import { SceneHost, type SceneHostOptions } from '../src/SceneHost';
 import { Behaviour } from '../src/scripting/ScriptHost';
+import type { SubsystemDefinition, WorldRegistries } from '../src/world/World';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries, withoutPhysics } from './registries';
 import { StudioTime } from '../src/time/StudioTime';
@@ -51,7 +57,7 @@ function sceneWithWhere(): SceneDoc {
 
 function hostOf(
   scenes: Record<string, SceneDoc>,
-  extra: Partial<Pick<SceneHostOptions, 'assets' | 'loadingScene'>> = {},
+  extra: Partial<Pick<SceneHostOptions, 'assets' | 'loadingScene' | 'registries' | 'scripts'>> = {},
 ): SceneHost {
   const registries = builtInRegistries();
   return new SceneHost({
@@ -63,14 +69,41 @@ function hostOf(
         return structuredClone(scene);
       },
     },
-    registries: withoutPhysics(registries),
+    registries: extra.registries ?? withoutPhysics(registries),
     // The bundle the host hands every world it builds, the script in it.
-    scripts: new Map([[WHERE, Where]]),
+    scripts: extra.scripts ?? new Map([[WHERE, Where]]),
     assets: extra.assets ?? new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     loadingScene: extra.loadingScene ?? null,
     rendering: createRenderingSettings(),
     // Rapier is not what this is about, and it is the one slow thing to load.
   });
+}
+
+const STEP = 1 / 60;
+
+/** The host's frames, as a player's loop runs them, until `condition` holds. */
+async function framesUntil(host: SceneHost, condition: () => boolean): Promise<void> {
+  for (let frame = 0; frame < 5000; frame += 1) {
+    if (condition()) return;
+    host.update(STEP);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error('Still waiting after 5 000 frames.');
+}
+
+/** The host's frames until `going` settles: a scene behind the loading scene builds as they come. */
+async function framed(host: SceneHost, going: Promise<void>): Promise<void> {
+  let done = false;
+  const outcome = going.then(
+    () => null,
+    (cause: unknown) => cause,
+  );
+  void outcome.then(() => {
+    done = true;
+  });
+  await framesUntil(host, () => done);
+  const cause = await outcome;
+  if (cause !== null) throw cause;
 }
 
 beforeEach(() => {
@@ -194,11 +227,152 @@ describe('a switch between scenes', () => {
     const host = hostOf({ Level: withCrate(), [LOADING]: sceneWith([]) }, { assets, loadingScene: LOADING });
     await host.adopt('Menu', withCrate());
 
-    await host.go('Level');
+    await framed(host, host.go('Level'));
 
     expect(server.requests('crate.gltf')).toBe(1);
     expect(host.current).toBe('Level');
     expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
     host.dispose();
+  });
+});
+
+/*
+ * A switch with the loading scene up builds the next scene over frames, behind
+ * it, while it keeps playing: before, the loading scene was taken down and the
+ * next built at once, the spinner standing still for as long as it took.
+ */
+describe('a switch behind the loading scene', () => {
+  const LOADING = fixedId('scene', 'loading');
+  const SPINNER = fixedId('asset', 'script-spinner');
+  const ARRIVAL = fixedId('asset', 'script-arrival');
+  const OTHER = fixedId('asset', 'script-other');
+
+  /** A script logging its hooks under `name`. */
+  function logging(name: string, log: string[]): typeof Behaviour {
+    return class extends Behaviour {
+      override onAwake() {
+        log.push(`${name} awake`);
+      }
+
+      override onStart() {
+        log.push(`${name} start`);
+      }
+
+      override onUpdate() {
+        log.push(`${name} update`);
+      }
+
+      override onSceneUnload() {
+        log.push(`${name} unload`);
+      }
+
+      override onDestroy() {
+        log.push(`${name} destroy`);
+      }
+    };
+  }
+
+  /** A scene with an entity running the script `assetId`, and these others. */
+  function running(assetId: AssetId, ...others: readonly EntityTemplate[]): SceneDoc {
+    const script: ScriptComponent = { ...scriptType.create(), assetId };
+    return sceneWith([createEntity('Runner', [script]), ...others]);
+  }
+
+  /** Eight lights, which `slowLights` takes 5 ms each to mount: more than one frame's budget. */
+  const lights = () => Array.from({ length: 8 }, () => createLightEntity('point'));
+
+  /** Registries whose worlds take 5 ms to mount each light, saying so in `log`. */
+  function slowLights(log: string[]): WorldRegistries {
+    const base = withoutPhysics(builtInRegistries());
+    const subsystems = new Registry<SubsystemId, SubsystemDefinition>('subsystem');
+    for (const subsystem of base.subsystems.values()) subsystems.register(subsystem);
+    subsystems.register({
+      id: fixedId('subsystem', 'slow'),
+      mounts: ['light'],
+      create: () => ({
+        mount: () => {
+          log.push('light mounted');
+          const until = performance.now() + 5;
+          while (performance.now() < until) {
+            // A heavy mount.
+          }
+        },
+        dispose() {},
+      }),
+    });
+    return { ...base, subsystems };
+  }
+
+  function hostWith(log: string[]): SceneHost {
+    return hostOf(
+      {
+        [LOADING]: running(SPINNER),
+        Level: running(ARRIVAL, ...lights()),
+        Other: running(OTHER),
+      },
+      {
+        loadingScene: LOADING,
+        registries: slowLights(log),
+        scripts: new Map([
+          [SPINNER, logging('spinner', log)],
+          [ARRIVAL, logging('level', log)],
+          [OTHER, logging('other', log)],
+        ]),
+      },
+    );
+  }
+
+  it('plays the loading scene while the next builds over frames, then unloads it and starts the next', async () => {
+    const log: string[] = [];
+    const host = hostWith(log);
+    await host.adopt('Menu', sceneWith([]));
+
+    await framed(host, host.go('Level'));
+
+    const first = log.indexOf('light mounted');
+    const last = log.lastIndexOf('light mounted');
+    expect(log.slice(first, last).filter((line) => line === 'spinner update').length).toBeGreaterThan(0);
+    expect(log.slice(last + 1).filter((line) => line !== 'spinner update')).toEqual([
+      'spinner unload',
+      'spinner destroy',
+      'level awake',
+      'level start',
+    ]);
+    expect(host.current).toBe('Level');
+    host.dispose();
+  });
+
+  it('drops a scene still building when another switch starts', async () => {
+    const log: string[] = [];
+    const host = hostWith(log);
+    await host.adopt('Menu', sceneWith([]));
+    const toLevel = host.go('Level');
+    await framesUntil(host, () => log.includes('light mounted'));
+
+    await framed(host, host.go('Other'));
+    await toLevel;
+
+    expect(host.current).toBe('Other');
+    expect(log).not.toContain('level awake');
+    expect(log.filter((line) => line === 'spinner unload')).toHaveLength(1);
+    expect(log.slice(-2)).toEqual(['other awake', 'other start']);
+    host.dispose();
+  });
+
+  it('leaves no world when stopped while a scene builds', async () => {
+    const log: string[] = [];
+    const host = hostWith(log);
+    await host.adopt('Menu', sceneWith([]));
+    const toLevel = host.go('Level');
+    await framesUntil(host, () => log.includes('light mounted'));
+
+    host.dispose();
+    await toLevel;
+    host.update(STEP);
+
+    expect(host.world).toBeNull();
+    expect(host.current).toBeNull();
+    expect(log).toContain('spinner destroy');
+    expect(log).not.toContain('level awake');
   });
 });

@@ -23,7 +23,15 @@ import {
   type Vec3,
   unwrap,
 } from '@three-studio/core';
-import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, inputOf, type World } from '@three-studio/runtime';
+import {
+  AssetCache,
+  Behaviour,
+  NO_SCRIPTS,
+  NULL_ASSET_RESOLVER,
+  SceneHost,
+  inputOf,
+  type World,
+} from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -414,6 +422,35 @@ function directedToBoss(): void {
   const director: ScriptComponent = { ...scriptType.create(), assetId: GO_TO_BOSS };
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
+
+describe('the game’s part of the viewport’s frame', () => {
+  withBoss();
+
+  it('runs a frame while playing, one fixed step at a Step, and only what was asked while paused', async () => {
+    const host = watching();
+    play();
+    await until(() => session?.playWorld != null, 'the world');
+    const playing = assertDefined(session, 'the session');
+    const world = assertDefined(playing.playWorld, 'the world');
+    const update = vi.spyOn(SceneHost.prototype, 'update');
+    const reconcile = vi.spyOn(SceneHost.prototype, 'reconcile');
+
+    playing.advance(0.02);
+    expect(update.mock.calls).toEqual([[0.02]]);
+
+    useEditorStore.getState().togglePause();
+    playing.advance(0.02);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+
+    const elapsed = host.time.elapsed;
+    useEditorStore.getState().requestStep();
+    playing.advance(0.02);
+    expect(update.mock.calls).toEqual([[0.02], [world.fixedStep]]);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(host.time.elapsed - elapsed).toBeCloseTo(world.fixedStep, 9);
+  });
+});
 
 describe('the problems over the game', () => {
   const reads = withBoss();

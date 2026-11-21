@@ -31,20 +31,17 @@ export const physicsSubsystem: SubsystemDefinition = {
   async create(world) {
     const settings = world.options.physicsSettings ?? createPhysicsSettings();
     const materials = world.options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
-    // Rapier's start and the models' loads at once, and both before the first
-    // pass mounts anything: a collider derived from a mesh needs the mesh, and
-    // a glTF arrives well after the binder's `sync` returns — building physics
-    // first gave an imported level a box around an empty group, which the
-    // player fell straight through. A model landing later is handed back.
-    const [physics] = await Promise.all([
-      PhysicsWorld.create(settings, {
-        scene: world.document,
-        objects: world.binder,
-        materials,
-        assetValues: (assetId) => world.assetValues(assetId),
-      }),
-      world.binder.whenLoaded(),
-    ]);
+    // Rapier alone: nothing is built at creation. A collider derived from a
+    // model is built again when the model lands, and the world starts only once
+    // every model has (`World.ready`): built from the empty group a glTF hangs
+    // from before it arrives, an imported level was a box the player fell
+    // straight past.
+    const physics = await PhysicsWorld.create(settings, {
+      scene: world.document,
+      objects: world.binder,
+      materials,
+      assetValues: (assetId) => world.assetValues(assetId),
+    });
     return new PhysicsSubsystem(world, physics, settings, materials);
   },
 };

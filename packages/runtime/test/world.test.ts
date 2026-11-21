@@ -37,6 +37,7 @@ import {
   physicsRig,
   physicsRigOn,
   player,
+  standInCanvas,
   standInForTheBrowser,
   takeTheBrowserBack,
   withBody,
@@ -292,7 +293,45 @@ describe('input, a subsystem', () => {
     // No player was built to claim the view.
     expect(world.warnings).toContain('No camera and no player controller; using a default view.');
   });
+
+  it('hears nothing until its world starts: the mouse moved over a loading scene does not turn the level', async () => {
+    // A level built behind a loading scene is made while the loading scene
+    // plays on the same canvas, the pointer still locked by the level before.
+    const { canvas, element } = standInCanvas();
+    Object.assign(document, { pointerLockElement: canvas, exitPointerLock: () => {} });
+    onTestFinished(() => {
+      Reflect.deleteProperty(document, 'pointerLockElement');
+      Reflect.deleteProperty(document, 'exitPointerLock');
+    });
+    const registries = builtInRegistries();
+    const world = await World.load({
+      time: new StudioTime(),
+      document: sceneWith([]),
+      registries: withoutPhysics(registries),
+      assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+      rendering: createRenderingSettings(),
+      element,
+      input: { keys: 'element' },
+    });
+    onTestFinished(() => world.dispose());
+
+    canvas.dispatchEvent(mouseMoved(300, -120));
+    await world.ready;
+    expect(inputOf(world)).toBeNull();
+    world.start();
+
+    const input = inputOf(world);
+    expect(input).toBeInstanceOf(Input);
+    expect(input?.consumeMouseDelta()).toEqual({ x: 0, y: 0 });
+    canvas.dispatchEvent(mouseMoved(4, 2));
+    expect(input?.consumeMouseDelta()).toEqual({ x: 4, y: 2 });
+  });
 });
+
+/** The mouse moved under a pointer lock, as `Input` reads it. */
+function mouseMoved(movementX: number, movementY: number): Event {
+  return Object.assign(new Event('pointermove'), { movementX, movementY, pointerType: 'mouse' });
+}
 
 describe('the fixed step', () => {
   it('runs one tick per whole step, keeps the rest, and says how far into the next it is', async () => {

@@ -48,6 +48,9 @@ export { ENTITY_ID_KEY } from './systems/identity';
 /** What `namersOf` answers for an entity nothing names. */
 const NO_NAMERS: ReadonlySet<EntityId> = new Set();
 
+/** The entities a sync of the whole scene was told of: none, since it reads them all. */
+const NOTHING: ReadonlySet<EntityId> = new Set();
+
 
 /**
  * Projects a `SceneDoc` onto a three.js scene graph and keeps it in sync.
@@ -220,6 +223,8 @@ export class SceneBinder {
    * batched mesh still hangs from.
    */
   private readonly batcher: MeshBatcher;
+  /** See `holdBatches`. */
+  private batchesHeld = false;
 
   /**
    * Read-only, and set once from the settings handed in.
@@ -425,7 +430,26 @@ export class SceneBinder {
     // is now.
     this.rereadNamers(ids);
 
-    this.batcher.sync(full, ids);
+    if (!this.batchesHeld) this.batcher.sync(full, ids);
+  }
+
+  /**
+   * Leaves the batches as they are at each sync, until `releaseBatches`: for a
+   * document built a few entities a sync, which nobody draws until it is whole
+   * — a world built behind a loading scene. A regroup walks every batchable
+   * mesh the binder holds, and one a sync made two thousand batched boxes take
+   * 1.3 s of frames to build rather than 40 ms.
+   */
+  holdBatches(): void {
+    this.batchesHeld = true;
+  }
+
+  /** Groups at once what was synced while the batches were held, and every sync from now on. */
+  releaseBatches(): void {
+    if (!this.batchesHeld) return;
+    this.batchesHeld = false;
+    this.batcher.invalidate();
+    this.batcher.sync(true, NOTHING);
   }
 
   /**

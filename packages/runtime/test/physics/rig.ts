@@ -139,7 +139,7 @@ async function runningRig(
   { audioContext, audioCache, batching = false, spawnable = [], prefabs }: RigOptions,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
-  const canvas = new EventTarget();
+  const { canvas, element } = standInCanvas();
   const world = await World.play({
     time: new StudioTime(),
     document: sceneWith(entities),
@@ -152,7 +152,7 @@ async function runningRig(
     rendering: { ...createRenderingSettings(), batching },
     physicsSettings,
     physicsMaterials,
-    element: canvas as unknown as HTMLElement,
+    element,
     // Heard on the canvas rather than on the window, which every test file
     // shares: two rigs alive in one test cannot hear each other's keys.
     input: { keys: 'element' },
@@ -214,6 +214,12 @@ function keyEvent(type: 'keydown' | 'keyup', code: string): Event {
     metaKey: false,
     shiftKey: false,
   });
+}
+
+/** The game's canvas, as a world is handed it: an event target, all `Input` uses of it. */
+export function standInCanvas(): { readonly canvas: EventTarget; readonly element: HTMLElement } {
+  const canvas = new EventTarget();
+  return { canvas, element: canvas as unknown as HTMLElement };
 }
 
 /**
