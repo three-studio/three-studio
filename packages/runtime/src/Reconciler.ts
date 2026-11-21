@@ -50,6 +50,9 @@ export interface EntityView {
   components: readonly ComponentDoc[];
   /** `null` until the first sync, so a new view always applies its transform. */
   transform: EntityDoc['transform'] | null;
+  /** The name and visibility last applied, `null` until the first sync: each written when the document changes it. */
+  name: string | null;
+  visible: boolean | null;
 }
 
 export class Reconciler {
@@ -124,6 +127,8 @@ export class Reconciler {
       mounted: new Map(),
       components: [],
       transform: null,
+      name: null,
+      visible: null,
     });
     return container;
   }

@@ -37,7 +37,6 @@ export interface SceneSource {
 export interface SceneHostOptions extends Omit<WorldOptions, 'document'> {
   source: SceneSource;
   materials?: ReadonlyMap<AssetId, MaterialDef>;
-  prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
   /**
    * Shown while another scene loads, by id. `null` swaps straight over.
    *

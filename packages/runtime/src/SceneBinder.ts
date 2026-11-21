@@ -124,6 +124,13 @@ export interface SceneBinderOptions {
    * worlds of one window read one time and a test drives the clock it hands in.
    */
   time: StudioTime;
+  /**
+   * Told when an object a system loaded lands on its entity, after the sync
+   * that mounted it — a model. A running world hands that entity's components
+   * back to its subsystems, so that what was built from the entity's objects,
+   * a mesh collider, is built again from what landed.
+   */
+  landed?: ((entityId: EntityId) => void) | undefined;
 }
 
 /**
@@ -223,6 +230,7 @@ export class SceneBinder {
   private readonly time: StudioTime;
   private readonly cameras: CameraClaims;
   private readonly sun: SunService;
+  private readonly landed: ((entityId: EntityId) => void) | undefined;
 
   /**
    * Everything the binder is configured with, at the one moment it is
@@ -238,6 +246,7 @@ export class SceneBinder {
     this.time = options.time;
     this.cameras = options.cameras;
     this.sun = options.sun;
+    this.landed = options.landed;
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
@@ -272,8 +281,11 @@ export class SceneBinder {
       invalidate: () => {
         this.batcher.invalidate();
       },
-      attach: (entityId: EntityId, handle: SystemHandle, object: Object3D) =>
-        this.reconciler.attachLate(entityId, handle, object),
+      attach: (entityId: EntityId, handle: SystemHandle, object: Object3D) => {
+        const taken = this.reconciler.attachLate(entityId, handle, object);
+        if (taken) this.landed?.(entityId);
+        return taken;
+      },
     };
   }
 
@@ -514,6 +526,11 @@ export class SceneBinder {
    * — `componentsOf` builds a fresh one per call — but immer still preserves the
    * identity of every component it did not touch, so this is exactly as precise
    * as the old check.
+   *
+   * The name, the visibility and the transform are written when the document
+   * changed them since they were last written, and not because the object
+   * differs: in Play a script hides or moves its own object, and a component put
+   * on its entity must not show it again or put it back.
    */
   private syncEntity(entity: EntityDoc, components: readonly ComponentDoc[]): void {
     const container = this.reconciler.containerFor(entity.id);
@@ -529,12 +546,18 @@ export class SceneBinder {
       else this.shadowCasters.delete(entity.id);
     }
 
-    container.name = entity.name;
-    if (container.visible !== entity.visible) {
-      // Hidden meshes are left out of their group entirely, so this is a
-      // membership change like any other.
-      container.visible = entity.visible;
-      this.batcher.invalidate();
+    if (view.name !== entity.name) {
+      container.name = entity.name;
+      view.name = entity.name;
+    }
+    if (view.visible !== entity.visible) {
+      view.visible = entity.visible;
+      if (container.visible !== entity.visible) {
+        // Hidden meshes are left out of their group entirely, so this is a
+        // membership change like any other.
+        container.visible = entity.visible;
+        this.batcher.invalidate();
+      }
     }
 
     if (view.transform !== entity.transform) {

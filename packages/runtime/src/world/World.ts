@@ -1,18 +1,30 @@
 import {
+  componentAssets,
   createPhysicsSettings,
+  createTransform,
+  deleteComponent,
+  insertEntity,
+  liveScene,
+  placePrefab,
+  putComponent,
+  removeSubtree,
   type AssetId,
   type ComponentDoc,
+  type ComponentId,
   type ComponentTypeId,
   type CoreRegistries,
   type Disposable,
   type EntityId,
+  type EntityTemplate,
   type MaterialDef,
   type PhysicsMaterialDef,
   type PhysicsSettings,
+  type PrefabDoc,
   type RenderingSettings,
   type Registry,
   type SceneDoc,
   type SubsystemId,
+  type Transform,
 } from '@three-studio/core';
 import {
   PerspectiveCamera,
@@ -31,6 +43,7 @@ import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
 import type { StudioTime } from '../time/StudioTime';
 import { CameraClaims } from './cameras';
+import { SubsystemMounts, type MountHooks } from './mounts';
 import { SunService } from './sun';
 
 /**
@@ -80,6 +93,11 @@ export interface SubsystemDefinition {
    */
   readonly order?: { readonly [P in Phase]?: number };
   /**
+   * The component types whose components it is handed one by one (see
+   * `MountHooks`). Read once, when a world is made.
+   */
+  readonly mounts?: readonly ComponentTypeId[];
+  /**
    * Builds it for one world in Play, after every subsystem registered before
    * it — each awaited — so it may read what those provide.
    */
@@ -90,7 +108,7 @@ export interface SubsystemDefinition {
  * One subsystem of one world. A hook present is a phase claimed: there is no
  * list of phases to keep in step with the methods.
  */
-export interface Subsystem extends Disposable {
+export interface Subsystem extends Disposable, MountHooks {
   update?(delta: number): void;
   fixed?(step: number): void;
   lateUpdate?(delta: number): void;
@@ -149,6 +167,11 @@ export interface WorldOptions {
    * which is exactly what play mode was doing before it was passed.
    */
   materials?: ReadonlyMap<AssetId, MaterialDef> | undefined;
+  /**
+   * The project's prefabs by asset id: what `instantiate` places. Omitted, a
+   * game instantiates nothing.
+   */
+  prefabs?: ReadonlyMap<AssetId, PrefabDoc> | undefined;
   /**
    * The project's physics materials by asset id, read when the world is built.
    * Omitted, every collider that links one plays with its own values, and the
@@ -269,7 +292,15 @@ export class World {
   readonly mode: WorldMode;
   /** What it was built with, which its subsystems read: the audio context, the asset cache. */
   readonly options: WorldOptions;
-  /** The scene it runs, as a document. `scene` is the graph a host draws. */
+  /**
+   * The scene it runs, as a document; `scene` is the graph a host draws.
+   *
+   * In Play, the running game's own copy (`liveScene`), changed through the
+   * calls below alone — `spawn`, `instantiate`, `destroy`, `putComponent`,
+   * `deleteComponent` — and never by what moves: a pose a body or a script
+   * gives an object stays on the object. In the edit view, the editor's as it
+   * was when the world was made: the editor syncs the binder from its store.
+   */
   readonly document: SceneDoc;
   /** The window's clock, shared with every other world of the window and with every node material. */
   readonly time: StudioTime;
@@ -312,20 +343,38 @@ export class World {
    * built: a frame walks four arrays and looks nothing up.
    */
   private readonly hooks: { readonly [P in Phase]: Hook[] } = { update: [], fixed: [], lateUpdate: [], renderPrep: [] };
+  /** What each subsystem is handed of the document, and was. */
+  private readonly mounts = new SubsystemMounts();
+  /**
+   * The entities the next pass brings the drawing side and the subsystems in
+   * line with, in the order they were touched; and the components it hands
+   * back as they are, what they were built with having changed. Each swapped
+   * with its spare when a pass begins, so that what a hook asks for during the
+   * pass waits for the next one, and a pass makes no set.
+   */
+  private dirty = new Set<EntityId>();
+  private spareDirty = new Set<EntityId>();
+  private reread = new Set<ComponentDoc>();
+  private spareReread = new Set<ComponentDoc>();
+  /** What `setAssetValues` gave each asset. */
+  private readonly assetValuesOf = new Map<AssetId, object>();
+  /** What `instantiate` places. */
+  private readonly prefabs: ReadonlyMap<AssetId, PrefabDoc>;
 
   private disposed = false;
 
   private constructor(options: WorldOptions, mode: WorldMode) {
     this.mode = mode;
     this.options = options;
-    this.document = options.document;
+    this.document = mode === 'play' ? liveScene(options.document) : options.document;
     this.time = options.time;
+    this.prefabs = options.prefabs ?? NO_PREFABS;
     // The renderer is handed over rather than owned: this world still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
     // the device the host already has. The order of the rest is `bindScene`'s,
     // where it is written down.
-    this.binder = bindScene(this.scene, options.document, {
+    this.binder = bindScene(this.scene, this.document, {
       registries: options.registries,
       assets: options.assets,
       rendering: options.rendering,
@@ -334,6 +383,10 @@ export class World {
       cameras: this.cameras,
       sun: this.sun,
       time: options.time,
+      // A model lands after the sync that mounted it: what a subsystem built
+      // from the entity's objects — a mesh collider — is built again from it.
+      // Not in the edit view, whose document is the editor's to sync.
+      landed: mode === 'play' ? (entityId) => this.readAgain(entityId) : undefined,
     });
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;
@@ -364,8 +417,9 @@ export class World {
   }
 
   /**
-   * The document drawn, then every registered subsystem built in turn, then
-   * what is wrong with the scene said: Play, a device, the player.
+   * The document drawn, then every registered subsystem built in turn and
+   * handed the components of the types it mounts, then what is wrong with the
+   * scene said: Play, a device, the player.
    */
   static async play(options: WorldOptions): Promise<World> {
     const world = new World(options, 'play');
@@ -380,8 +434,16 @@ export class World {
       // a controller looks its rigid body up as it is made, and one made
       // before physics would find none and fly.
       const definitions = options.registries.subsystems.values();
-      for (const definition of definitions) world.subsystems.push(await definition.create(world));
+      for (const definition of definitions) {
+        const subsystem = await definition.create(world);
+        world.subsystems.push(subsystem);
+        world.mounts.route(subsystem, definition.mounts ?? []);
+      }
       world.schedule(definitions);
+      // One pass over the whole document hands every subsystem what it mounts;
+      // the drawing side, synced by `bindScene`, finds nothing to change.
+      for (const entityId of world.document.entities.keys()) world.dirty.add(entityId);
+      world.reconcile();
       world.diagnose();
     } catch (cause) {
       world.dispose();
@@ -455,16 +517,16 @@ export class World {
 
   /**
    * One frame of `delta` seconds: the `update` hooks, a `fixed` pass per whole
-   * step of the project's fixed step, the `lateUpdate` hooks, then the
-   * `renderPrep` hooks. The host draws afterwards.
+   * step of the project's fixed step, the `lateUpdate` hooks, the document's
+   * changes reconciled, then the `renderPrep` hooks. The host draws afterwards.
    */
   frame(delta: number): void {
     if (this.disposed) return;
 
     // The frame boundary, for the binder's retire queue: the previous frame's
-    // render has been submitted, so what it may still have been reading is safe
-    // to free now. Nothing in a running game syncs the binder, so without this
-    // anything retired on the way into Play would stay resident for the session.
+    // render has been submitted, so what it may still have been reading — what
+    // the last pass took down, what was retired on the way into Play — is safe
+    // to free now.
     this.binder.beginFrame();
 
     // Aiming runs at display rate; movement runs inside the fixed step, because
@@ -485,7 +547,133 @@ export class World {
     }
 
     run(this.hooks.lateUpdate, delta);
+    // What the frame spawned is drawn in it, and what it destroyed is gone
+    // before it is drawn, as Unity's `Destroy` and Godot's `queue_free` take
+    // effect: an entity destroyed in a hook keeps that frame's other hooks.
+    this.reconcile();
     run(this.hooks.renderPrep, delta);
+  }
+
+  /**
+   * Brings the drawing side and every subsystem in line with what the document
+   * was asked since the last pass (see `SubsystemMounts.pass`). Once a frame,
+   * from `frame`; a paused host, which runs no frame, calls it to show what it
+   * changed. Nothing asked, it returns at once and makes nothing.
+   */
+  reconcile(): void {
+    if (this.disposed || this.dirty.size === 0) return;
+    const dirty = this.dirty;
+    const reread = this.reread;
+    this.dirty = this.spareDirty;
+    this.reread = this.spareReread;
+    this.spareDirty = dirty;
+    this.spareReread = reread;
+    this.mounts.pass(this.document, dirty, reread, this.binder);
+    dirty.clear();
+    reread.clear();
+  }
+
+  /**
+   * Adds an entity, under `parent` or at the root: in the document at once,
+   * drawn and mounted at the next pass. Its id is its template's, a fresh one;
+   * `null`, with nothing added, for an id the document holds or a parent it
+   * does not.
+   */
+  spawn(template: EntityTemplate, parent: EntityId | null = null): EntityId | null {
+    this.playing('spawn');
+    if (!insertEntity(this.document, template, parent)) return null;
+    this.dirty.add(template.entity.id);
+    return template.entity.id;
+  }
+
+  /**
+   * Places a prefab, its contents under the placement, as an expansion places
+   * them (`placePrefab`): in the document at once, drawn and mounted at the
+   * next pass. Answers the placement; `null` for a prefab this world was not
+   * handed, or a parent the document does not hold.
+   */
+  instantiate(
+    prefab: AssetId,
+    place: { readonly parent?: EntityId | null; readonly transform?: Transform } = {},
+  ): EntityId | null {
+    this.playing('instantiate');
+    const placed = placePrefab(this.options.registries, this.document, this.prefabs, {
+      prefab,
+      parent: place.parent ?? null,
+      transform: place.transform ?? createTransform(),
+    });
+    if (placed === null) return null;
+    for (const entityId of placed.entities) this.dirty.add(entityId);
+    return placed.root;
+  }
+
+  /**
+   * Takes the entity and everything under it out of the document, a
+   * placement's contents included; its objects, bodies and behaviours go at the
+   * next pass.
+   */
+  destroy(entityId: EntityId): void {
+    this.playing('destroy');
+    for (const removed of removeSubtree(this.document, entityId)) this.dirty.add(removed);
+  }
+
+  /**
+   * Adds a component to an entity, or replaces the one under its id. `false`,
+   * with nothing written, for an entity the document does not hold.
+   */
+  putComponent(entityId: EntityId, component: ComponentDoc): boolean {
+    this.playing('putComponent');
+    if (!this.document.entities.has(entityId)) return false;
+    putComponent(this.document, entityId, component);
+    this.dirty.add(entityId);
+    return true;
+  }
+
+  /** Takes one component off an entity; `false` when it carried none under that id. */
+  deleteComponent(entityId: EntityId, componentId: ComponentId): boolean {
+    this.playing('deleteComponent');
+    if (!deleteComponent(this.document, entityId, componentId)) return false;
+    this.dirty.add(entityId);
+    return true;
+  }
+
+  /**
+   * The values this world plays an asset with from now on, in place of its
+   * file's: each component naming it is handed back to the subsystems mounting
+   * it at the next pass, to read them through `assetValues`.
+   */
+  setAssetValues(assetId: AssetId, values: object): void {
+    this.playing('setAssetValues');
+    this.assetValuesOf.set(assetId, values);
+    for (const type of this.mounts.types()) {
+      for (const [entityId, held] of this.document.components.get(type) ?? []) {
+        for (const component of held.values()) {
+          if (!componentAssets(this.options.registries, component).includes(assetId)) continue;
+          this.dirty.add(entityId);
+          this.reread.add(component);
+        }
+      }
+    }
+  }
+
+  /** What `setAssetValues` last gave an asset; `undefined` while its file's values stand. */
+  assetValues(assetId: AssetId): object | undefined {
+    return this.assetValuesOf.get(assetId);
+  }
+
+  /** Hands the entity's components back to the subsystems mounting them at the next pass, as they are. */
+  private readAgain(entityId: EntityId): void {
+    this.dirty.add(entityId);
+    for (const type of this.mounts.types()) {
+      for (const component of this.document.components.get(type)?.get(entityId)?.values() ?? []) {
+        this.reread.add(component);
+      }
+    }
+  }
+
+  /** Refuses a change to an edit world's document, which is the editor's, changed through its store. */
+  private playing(call: string): void {
+    if (this.mode === 'edit') throw new Error(`${call}: an edit world's document is the editor's to change`);
   }
 
   /**
@@ -513,6 +701,9 @@ export class World {
 export function isPerspective(camera: Camera): camera is PerspectiveCamera {
   return camera instanceof PerspectiveCamera;
 }
+
+/** The library of a world handed no prefabs. */
+const NO_PREFABS: ReadonlyMap<AssetId, PrefabDoc> = new Map();
 
 export type { Object3D, OrthographicCamera };
 
