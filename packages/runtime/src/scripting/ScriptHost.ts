@@ -133,6 +133,23 @@ class ScriptBehaviour implements RuntimeBehaviour {
     }
   }
 
+  /**
+   * The scene is being left, and everything in it is still there to read.
+   *
+   * Published to scripts and reserved for two releases, and forwarded by no
+   * one: the world told this adapter, which had no such hook, so a script's
+   * `onSceneUnload` ran nowhere — not in the editor's Play, on a device or in
+   * a build.
+   */
+  onSceneUnload(): void {
+    if (this.failed) return;
+    try {
+      this.instance.onSceneUnload?.();
+    } catch (cause) {
+      this.fail('onSceneUnload', cause);
+    }
+  }
+
   dispose(): void {
     // Cleanup runs even for a script that already failed. Skipping it was
     // exactly backwards: the script most likely to have left something behind

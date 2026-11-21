@@ -104,6 +104,25 @@ describe('the behaviours, a subsystem', () => {
     expect(log).toEqual(['Stubborn leaves', 'Calm leaves', 'Stubborn goes', 'Calm goes']);
   });
 
+  it('tell a script the scene is left, before it is destroyed', async () => {
+    const calls: string[] = [];
+    class Leaving extends ScriptBehaviour {
+      override onSceneUnload() {
+        calls.push('unload');
+      }
+
+      override onDestroy() {
+        calls.push('destroy');
+      }
+    }
+    const rig = await physicsRigOn(builtInRegistries())([withScript(createEntity('Holder'), Leaving)]);
+
+    rig.world.notifySceneUnload();
+    rig.world.dispose();
+
+    expect(calls).toEqual(['unload', 'destroy']);
+  });
+
   it('disable a script whose hook throws, say so once, and still let it clean up', async () => {
     const calls: string[] = [];
     class Faulty extends ScriptBehaviour {
