@@ -134,10 +134,12 @@ export class Joint implements JointHandle {
   get position(): number {
     const held = this.holding;
     if (!held?.free) return 0;
-    const turn1 = _turn1.copy(held.other.rotation()).multiply(held.frame1.rotation);
+    held.other.rotation(_turn1);
+    const turn1 = _turn1.multiply(held.frame1.rotation);
     if (held.free.kind === 'hinge') {
       // The own frame's twist about X against the other's, the shorter way round.
-      const turn2 = _turn2.copy(held.own.rotation()).multiply(held.frame2.rotation);
+      held.own.rotation(_turn2);
+      const turn2 = _turn2.multiply(held.frame2.rotation);
       const relative = turn1.invert().multiply(turn2);
       const sign = relative.w < 0 ? -1 : 1;
       return 2 * Math.atan2(sign * relative.x, sign * relative.w);
@@ -199,14 +201,17 @@ export function holdingPose(entity: EntityPose, joint: JointComponent): JointPos
 
 const UNIT_X = new Vector3(1, 0, 0);
 
-/** A point of a body's frame, in the world, from where the body is. */
+/** A point of a body's frame, in the world, from where the body is: its pose read into scratches. */
 function inWorld(point: Vector3, body: RAPIER.RigidBody, target: Vector3): Vector3 {
-  return target.copy(point).applyQuaternion(_bodyTurn.copy(body.rotation())).add(body.translation());
+  body.rotation(_bodyTurn);
+  body.translation(_bodyAt);
+  return target.copy(point).applyQuaternion(_bodyTurn).add(_bodyAt);
 }
 
 const _turn1 = new Quaternion();
 const _turn2 = new Quaternion();
 const _bodyTurn = new Quaternion();
+const _bodyAt = new Vector3();
 const _anchor1 = new Vector3();
 const _anchor2 = new Vector3();
 const _axis = new Vector3();

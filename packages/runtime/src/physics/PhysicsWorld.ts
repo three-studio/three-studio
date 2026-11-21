@@ -74,10 +74,20 @@ class Body implements BodyHandle {
    * someone else's write.
    */
   private readonly written = { position: new Vector3(), quaternion: new Quaternion() };
-  /** The body's world pose when the last tick began: where drawing between ticks starts. */
+  /**
+   * The body's world pose when the last tick began, where drawing between ticks
+   * starts; where it sleeps, while it rests.
+   */
   private readonly previous = { position: new Vector3(), quaternion: new Quaternion() };
   /** A force or a torque was added since the last tick, for `afterTick` to drop. */
   private pushed = false;
+  /**
+   * Asleep, and drawn where it sleeps: nothing of it is read from Rapier until
+   * it wakes. Each read of a pose makes a typed array in Rapier's bindings,
+   * whatever it is read into, and a body read its pose four times a frame:
+   * 180 KB a frame for a thousand boxes at rest.
+   */
+  private resting = false;
   /**
    * Its world pose when it was made: what a joint's frames on it are measured
    * from, when the joint is built and each time it is built again.
@@ -105,7 +115,7 @@ class Body implements BodyHandle {
      * on level geometry, a collider with no Rigid Body above it.
      */
     public rigidbody: RigidBodyComponent | null,
-    /** How deep its entity is: bodies are drawn shallowest first. */
+    /** How deep its entity is, 1 at the root: bodies are drawn shallowest first. */
     readonly depth: number,
   ) {
     this.built = {
@@ -205,7 +215,8 @@ class Body implements BodyHandle {
     if (this.driver === 'none' || !this.enabled) return;
     if (this.driver !== 'transform') {
       if (this.moved()) this.jumpToObject();
-      if (this.smooth) this.rememberPrevious();
+      // A resting body's `previous` is where it sleeps already.
+      if (this.smooth && !this.resting) this.rememberPrevious();
       return;
     }
     worldPose(this.object, _worldPosition, _worldQuaternion, _worldScale);
@@ -246,6 +257,18 @@ class Body implements BodyHandle {
     if ((this.driver !== 'solver' && this.driver !== 'controller') || !this.enabled) return;
     // A frame with no tick still takes a write made in `onUpdate` or `onLateUpdate`.
     if (this.moved()) this.jumpToObject();
+    // A character's body is read whatever Rapier says of its sleep: its
+    // controller moves it.
+    const asleep = this.driver === 'solver' && this.rapier.isSleeping();
+    if (asleep && this.resting) {
+      // At the root its object is where the world left it; under another
+      // entity it is placed again, that entity having perhaps moved.
+      if (this.depth > 1) {
+        applyWorldTransform(this.object, this.previous.position, this.previous.quaternion);
+        this.rememberWritten();
+      }
+      return;
+    }
 
     // Into the scratches, where Rapier made a new object of each, every frame.
     this.rapier.translation(_worldPosition);
@@ -261,6 +284,12 @@ class Body implements BodyHandle {
       applyWorldTransform(this.object, _worldPosition, _worldQuaternion);
     }
     this.rememberWritten();
+    // Fallen asleep: from the next frame on, drawn where it sleeps.
+    this.resting = asleep;
+    if (asleep) {
+      this.previous.position.copy(_worldPosition);
+      this.previous.quaternion.copy(_worldQuaternion);
+    }
   }
 
   /**
@@ -772,7 +801,7 @@ export class PhysicsWorld implements PhysicsApi {
    */
   start(): void {
     this.world.timestep = 1e-9;
-    this.world.step(this.events);
+    this.step();
     this.world.timestep = this.fixedStep;
     this.drainInto(this.atBuild);
     this.forgetLeaving();
@@ -796,7 +825,7 @@ export class PhysicsWorld implements PhysicsApi {
   tick(): readonly PhysicsEvent[] {
     // After the behaviours, so a body follows where they put its entity this tick.
     for (let i = 0; i < this.order.length; i += 1) this.order[i]?.beforeTick();
-    this.world.step(this.events);
+    this.step();
     this.version += 1;
     for (let i = 0; i < this.order.length; i += 1) this.order[i]?.afterTick();
     this.heard.length = 0;
@@ -825,6 +854,32 @@ export class PhysicsWorld implements PhysicsApi {
    */
   writeBack(alpha: number): void {
     for (let i = 0; i < this.order.length; i += 1) this.order[i]?.draw(alpha);
+  }
+
+  /**
+   * A step of Rapier's pipeline, handed what `World.step` hands it, without
+   * what `World.step` does next: walk every handle through a callback from
+   * WebAssembly, and each of its JS tables, to map what WebAssembly made and
+   * unmap what it removed — 600 KB a step for a thousand bodies, asleep or not.
+   * Nothing is made or removed in there: what the world makes or removes is in
+   * or out of those tables at once, which `rapier.test.ts` holds Rapier to.
+   */
+  private step(): void {
+    const world = this.world;
+    world.physicsPipeline.step(
+      world.gravity,
+      world.integrationParameters,
+      world.islands,
+      world.broadPhase,
+      world.narrowPhase,
+      world.bodies,
+      world.colliders,
+      world.softBodies,
+      world.impulseJoints,
+      world.multibodyJoints,
+      world.ccdSolver,
+      this.events,
+    );
   }
 
   /**
@@ -857,6 +912,7 @@ export class PhysicsWorld implements PhysicsApi {
     readonly joints: number;
     readonly rapierBodies: number;
     readonly rapierColliders: number;
+    readonly rapierJoints: number;
   } {
     let joints = 0;
     for (const held of this.joints.values()) joints += held.length;
@@ -864,8 +920,10 @@ export class PhysicsWorld implements PhysicsApi {
       bodies: this.bodies.size,
       colliders: this.owners.size,
       joints,
+      // The sizes of Rapier's JS tables, each set's `len()` being its map's.
       rapierBodies: this.world.bodies.len(),
       rapierColliders: this.world.colliders.len(),
+      rapierJoints: this.world.impulseJoints.len(),
     };
   }
 

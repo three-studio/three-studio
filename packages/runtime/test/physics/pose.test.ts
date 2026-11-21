@@ -1,6 +1,16 @@
-import { Quaternion } from 'three/webgpu';
+import { createEntity } from '@three-studio/core';
+import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
+import { Behaviour } from '../../src/scripting/ScriptHost';
+import {
+  ground,
+  nest,
+  physicsRig,
+  standInForTheBrowser,
+  takeTheBrowserBack,
+  withBody,
+  withScript,
+} from './rig';
 
 /*
  * A body is drawn where the solver holds it, turned as the solver turns it.
@@ -45,5 +55,50 @@ describe('a body is drawn as the solver holds it', () => {
       expect(drawn.position.distanceTo(solved.position)).toBeLessThan(1e-5);
       expect(drawn.quaternion.angleTo(solved.quaternion)).toBeLessThan(1e-4);
     }
+  });
+});
+
+/*
+ * A body asleep is not read from the solver again until it wakes, and is drawn
+ * where it fell asleep: what is drawn must not tell the two apart.
+ */
+describe('a body asleep', () => {
+  it('is drawn where it sleeps under an entity that moves', async () => {
+    class Slide extends Behaviour {
+      static going = false;
+      override onFixedUpdate(step: number) {
+        if (Slide.going) this.transform.position.x += 2 * step;
+      }
+    }
+    const arm = withScript(createEntity('Arm', []), Slide);
+    arm.entity.transform.position = [0, 5, 0];
+    const hand = withBody('box', [2, 0, 0], { gravityScale: 0, interpolate: false });
+    const rig = await physicsRig([nest(arm, hand), hand]);
+    // Still for longer than Rapier waits before it puts a body to sleep.
+    rig.run(4);
+
+    Slide.going = true;
+    rig.run(1);
+
+    expect(rig.drawn(arm.entity.id).position.x).toBeGreaterThan(1.9);
+    expect(rig.solved(hand.entity.id).position.distanceTo(new Vector3(2, 5, 0))).toBeLessThan(1e-6);
+    expect(rig.drawn(hand.entity.id).position.distanceTo(rig.solved(hand.entity.id).position)).toBeLessThan(1e-6);
+  });
+
+  it('is drawn between its ticks again once something wakes it', async () => {
+    // Interpolated, as a Rigid Body is made.
+    const box = withBody('box', [0, 0.5, 0]);
+    const rig = await physicsRig([ground(), box]);
+    rig.run(4);
+
+    rig.body(box.entity.id).applyImpulse({ x: 0, y: 5, z: 0 });
+    let began = rig.solved(box.entity.id).position;
+    for (let frame = 0; frame < 15; frame += 1) {
+      rig.run(rig.world.fixedStep);
+      // A frame of one tick ends where its next begins: drawn where this one began.
+      expect(rig.drawn(box.entity.id).position.distanceTo(began)).toBeLessThan(1e-5);
+      began = rig.solved(box.entity.id).position;
+    }
+    expect(began.y).toBeGreaterThan(0.7);
   });
 });
