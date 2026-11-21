@@ -1,5 +1,6 @@
 import {
   componentAssets,
+  componentEntities,
   createPhysicsSettings,
   createTransform,
   deleteComponent,
@@ -356,6 +357,8 @@ export class World {
   private spareDirty = new Set<EntityId>();
   private reread = new Set<ComponentDoc>();
   private spareReread = new Set<ComponentDoc>();
+  /** What a pass changes, as it begins: see `handBackNamers`. */
+  private readonly changed: EntityId[] = [];
   /** What `setAssetValues` gave each asset. */
   private readonly assetValuesOf = new Map<AssetId, object>();
   /** What `instantiate` places. */
@@ -568,9 +571,33 @@ export class World {
     this.reread = this.spareReread;
     this.spareDirty = dirty;
     this.spareReread = reread;
+    this.handBackNamers(dirty, reread);
     this.mounts.pass(this.document, dirty, reread, this.binder);
     dirty.clear();
     reread.clear();
+  }
+
+  /**
+   * Adds to a pass each mounted component naming an entity it changes, handed
+   * back as it is: a subsystem is told of a water's light as the binder tells
+   * the water's system (`SceneBinder.namersOf`). From what is changed when the
+   * pass begins, not from what this adds: a namer is not changed by being read
+   * again.
+   */
+  private handBackNamers(dirty: Set<EntityId>, reread: Set<ComponentDoc>): void {
+    for (const entityId of dirty) this.changed.push(entityId);
+    for (const entityId of this.changed) {
+      for (const namer of this.binder.namersOf(entityId)) {
+        for (const type of this.mounts.types()) {
+          for (const component of this.document.components.get(type)?.get(namer)?.values() ?? []) {
+            if (!componentEntities(this.options.registries, component).includes(entityId)) continue;
+            dirty.add(namer);
+            reread.add(component);
+          }
+        }
+      }
+    }
+    this.changed.length = 0;
   }
 
   /**

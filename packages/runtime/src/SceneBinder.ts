@@ -1,4 +1,5 @@
 import {
+  componentEntities,
   componentsOf,
   isEntityId,
   type AssetId,
@@ -43,6 +44,9 @@ function sameComponents(a: readonly ComponentDoc[], b: readonly ComponentDoc[]):
 }
 
 export { ENTITY_ID_KEY } from './systems/identity';
+
+/** What `namersOf` answers for an entity nothing names. */
+const NO_NAMERS: ReadonlySet<EntityId> = new Set();
 
 
 /**
@@ -195,6 +199,18 @@ export class SceneBinder {
   private readonly shadowCasters = new Set<EntityId>();
   /** Entities detached by a removal, to be re-parented from the document. */
   private readonly orphaned = new Set<EntityId>();
+  /**
+   * Which entities hold a component naming each entity, by the entity named —
+   * a water lit by a light —, and what each entity's components name: kept
+   * from the components each sync reads, so that a change to the one is read
+   * again by the other (`rereadNamers`). Its own change only: a light turned by
+   * turning its parent changed nothing the document says of the light, and a
+   * water lit by it is lit as it was.
+   */
+  private readonly namers = new Map<EntityId, Set<EntityId>>();
+  private readonly named = new Map<EntityId, readonly EntityId[]>();
+  /** The namers one sync reads again, gathered once each. */
+  private readonly rereading = new Set<EntityId>();
 
   /**
    * Draws what can be drawn together. On or off by the project's settings, the
@@ -405,7 +421,76 @@ export class SceneBinder {
     }
     this.orphaned.clear();
 
+    // After the entities and their parents, so that what is read is where it
+    // is now.
+    this.rereadNamers(ids);
+
     this.batcher.sync(full, ids);
+  }
+
+  /**
+   * The entities whose components name `entityId` — the waters lit by a light —,
+   * as the last sync read them.
+   */
+  namersOf(entityId: EntityId): ReadonlySet<EntityId> {
+    return this.namers.get(entityId) ?? NO_NAMERS;
+  }
+
+  /**
+   * Hands back as it is each drawn component naming an entity in `changed`: a
+   * water reads its light's sun when it is built or patched, and a light that
+   * turned, changed colour, went or came back changed nothing of the water's.
+   * Within one sync too: a scene read from its file holds its entities by id,
+   * and a water whose id sorts first is built before its light is there to
+   * answer.
+   */
+  private rereadNamers(changed: ReadonlySet<EntityId>): void {
+    for (const id of changed) {
+      for (const namer of this.namers.get(id) ?? NO_NAMERS) this.rereading.add(namer);
+    }
+    if (this.rereading.size === 0) return;
+
+    const ctx = this.context;
+    for (const namer of this.rereading) {
+      // A snapshot: a component its system remounts is filed again under its id.
+      const mounted = [...(this.reconciler.view(namer)?.mounted ?? [])];
+      for (const [componentId, { doc }] of mounted) {
+        const names = componentEntities(this.registries, doc);
+        if (!names.some((named) => named !== null && changed.has(named))) continue;
+        this.reconciler.reread(namer, componentId, ctx);
+      }
+    }
+    this.rereading.clear();
+  }
+
+  /**
+   * Files what `entityId`'s components name, in place of what they named: of
+   * every type, drawn or not, so that a running world can hand them to its
+   * subsystems as the binder hands its own to their systems.
+   */
+  private index(entityId: EntityId, components: readonly ComponentDoc[]): void {
+    for (const named of this.named.get(entityId) ?? []) {
+      const namers = this.namers.get(named);
+      namers?.delete(entityId);
+      if (namers?.size === 0) this.namers.delete(named);
+    }
+
+    const names: EntityId[] = [];
+    for (const component of components) {
+      for (const named of componentEntities(this.registries, component)) {
+        if (named !== null && !names.includes(named)) names.push(named);
+      }
+    }
+    if (names.length === 0) {
+      this.named.delete(entityId);
+      return;
+    }
+    this.named.set(entityId, names);
+    for (const named of names) {
+      const namers = this.namers.get(named);
+      if (namers) namers.add(entityId);
+      else this.namers.set(named, new Set([entityId]));
+    }
   }
 
   /**
@@ -539,6 +624,7 @@ export class SceneBinder {
 
     if (!sameComponents(view.components, components)) {
       this.reconciler.reconcile(entity.id, components, this.context);
+      this.index(entity.id, components);
       // Tracked here rather than scanned per sync: this is the one place that
       // already knows an entity's components changed.
       const caster = components.some((c) => c.type === 'light' && c.castShadow);
@@ -606,6 +692,7 @@ export class SceneBinder {
     if (!view) return;
 
     this.shadowCasters.delete(id);
+    this.index(id, []);
     this.batcher.invalidate();
 
     for (const child of [...view.container.children]) {

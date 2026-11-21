@@ -150,28 +150,14 @@ export class Reconciler {
 
       const mounted = view.mounted.get(component.id);
       if (mounted && mounted.system === system) {
-        const patched = mounted.system.patch(mounted.handle, mounted.doc, component, ctx);
-
-        if (patched !== 'remount') {
-          if (patched !== mounted.handle) {
-            this.detach(view, mounted.handle);
-            this.attachAll(view, patched);
-          }
-          view.mounted.set(component.id, { system, handle: patched, doc: component });
-          continue;
-        }
-        // The system cannot write this change onto what it built — a light of a
-        // different kind, a camera of a different projection, a different glTF.
-        this.drop(view, component.id, ctx);
+        if (this.patchInPlace(view, mounted, component, ctx)) continue;
       } else if (mounted) {
         // Same id, different type. Only a hand-edited file does this, and the
         // alternative is patching a camera with a light's definition.
         this.drop(view, component.id, ctx);
       }
 
-      const handle = system.mount(entityId, component, ctx);
-      view.mounted.set(component.id, { system, handle, doc: component });
-      this.attachAll(view, handle);
+      this.mount(view, entityId, system, component, ctx);
     }
 
     // Whatever the document no longer holds.
@@ -181,6 +167,51 @@ export class Reconciler {
     }
 
     view.components = components;
+  }
+
+  /**
+   * Hands one mounted component back to its system as it is, for what it was
+   * built with outside itself to be read again: the light a water is lit by,
+   * which changed while the water did not.
+   */
+  reread(entityId: EntityId, componentId: ComponentId, ctx: SystemContext): void {
+    const view = this.views.get(entityId);
+    const mounted = view?.mounted.get(componentId);
+    if (view === undefined || mounted === undefined) return;
+    if (this.patchInPlace(view, mounted, mounted.doc, ctx)) return;
+    this.mount(view, entityId, mounted.system, mounted.doc, ctx);
+  }
+
+  /**
+   * `mounted` brought to `next` by its system. `false` when the system cannot
+   * write the change onto what it built — a light of a different kind, a
+   * camera of a different projection, a different glTF —, and has dropped it
+   * for the caller to mount again.
+   */
+  private patchInPlace(view: EntityView, mounted: Mounted, next: ComponentDoc, ctx: SystemContext): boolean {
+    const patched = mounted.system.patch(mounted.handle, mounted.doc, next, ctx);
+    if (patched === 'remount') {
+      this.drop(view, next.id, ctx);
+      return false;
+    }
+    if (patched !== mounted.handle) {
+      this.detach(view, mounted.handle);
+      this.attachAll(view, patched);
+    }
+    view.mounted.set(next.id, { system: mounted.system, handle: patched, doc: next });
+    return true;
+  }
+
+  private mount(
+    view: EntityView,
+    entityId: EntityId,
+    system: AnySystem,
+    component: ComponentDoc,
+    ctx: SystemContext,
+  ): void {
+    const handle = system.mount(entityId, component, ctx);
+    view.mounted.set(component.id, { system, handle, doc: component });
+    this.attachAll(view, handle);
   }
 
   /** Drops everything one entity has, and forgets it. */
