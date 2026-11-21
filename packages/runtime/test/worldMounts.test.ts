@@ -255,17 +255,21 @@ describe('a subsystem mounting components', () => {
 });
 
 describe('a running world’s structural calls', () => {
-  it('put a spawn in the document at once, and draw it at the frame’s pass', async () => {
+  it('put a spawn in the document and draw it at once, and the frame’s pass leaves its objects as they are', async () => {
     const world = await playing([], []);
     const crate = createMeshEntity('box');
 
     expect(world.spawn(crate)).toBe(crate.entity.id);
     expect(world.document.entities.has(crate.entity.id)).toBe(true);
-    expect(world.binder.getObject(crate.entity.id)).toBeUndefined();
+    const drawn = assertDefined(world.binder.getObject(crate.entity.id), 'the crate drawn');
+    expect(topOf(drawn)).toBe(world.scene);
+    // Moved before the pass, as a script moves what it just spawned.
+    drawn.position.x = 4;
 
     world.frame(STEP);
 
-    expect(topOf(world.binder.getObject(crate.entity.id))).toBe(world.scene);
+    expect(world.binder.getObject(crate.entity.id)).toBe(drawn);
+    expect(drawn.position.x).toBe(4);
   });
 
   it('place a prefab whole, and destroy a placement with everything it placed', async () => {
@@ -282,7 +286,12 @@ describe('a running world’s structural calls', () => {
     );
     const placed = [root, ...collectDescendants(world.document, root)];
     expect(placed).toHaveLength(4);
-    expect(placed.filter((entityId) => world.binder.getObject(entityId) !== undefined)).toEqual([]);
+    // Drawn from the call, each under its own parent.
+    for (const entityId of placed) expect(topOf(world.binder.getObject(entityId))).toBe(world.scene);
+    for (const entityId of placed) {
+      const parent = world.document.entities.get(entityId)?.parent ?? null;
+      if (parent !== null) expect(world.binder.getObject(entityId)?.parent).toBe(world.binder.getObject(parent));
+    }
 
     world.frame(STEP);
     for (const entityId of placed) expect(topOf(world.binder.getObject(entityId))).toBe(world.scene);

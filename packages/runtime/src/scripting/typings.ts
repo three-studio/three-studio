@@ -147,12 +147,42 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
     addComponent<K extends keyof ComponentTypes>(type: K): ComponentTypes[K] | null;
     /** Takes a component off, from the end of the frame. False when the entity does not hold it. */
     removeComponent(component: ComponentTypes[keyof ComponentTypes]): boolean;
+    /**
+     * Takes it and everything under it out of the game: from the call it is gone to every
+     * question, its objects and scripts going at the end of the frame.
+     */
+    destroy(): void;
+  }
+
+  /** Where a spawn or a placement goes. */
+  export interface PlaceOptions {
+    /** A live entity of the same world, or none for the top. */
+    readonly parent?: Entity | null;
+    /** Local to the parent, in metres. */
+    readonly position?: Readonly<Vec3Like>;
+    /** Euler angles in radians. */
+    readonly rotation?: Readonly<Vec3Like>;
+    readonly scale?: Readonly<Vec3Like>;
+  }
+
+  export interface SpawnOptions extends PlaceOptions {
+    readonly name?: string;
   }
 
   /** The world a script runs in. */
   export interface ScriptWorld {
     /** The entity with this id, or null: one destroyed, one not there, or a value that is no id. */
     entity(id: string): Entity | null;
+    /**
+     * A new entity, drawn from the call: its transform is there to move at once, its body and
+     * scripts arrive at the end of the frame. Null, with a warning, for options that do not read.
+     */
+    spawn(options?: SpawnOptions): Entity | null;
+    /**
+     * A placement of a prefab, by its asset id — one given to this script as a property — drawn
+     * from the call as a spawn is. Null, with a warning, for a prefab this game was not given.
+     */
+    instantiate(prefab: string, options?: PlaceOptions): Entity | null;
   }`;
 
 /** The class's one static, first in its body. */

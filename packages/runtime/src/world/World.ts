@@ -747,23 +747,31 @@ export class World {
   }
 
   /**
-   * Adds an entity, under `parent` or at the root: in the document at once,
-   * drawn and mounted at the next pass. Its id is its template's, a fresh one;
+   * Adds an entity, under `parent` or at the root: in the document and drawn at
+   * once, mounted at the next pass. Its id is its template's, a fresh one;
    * `null`, with nothing added, for an id the document holds or a parent it
    * does not.
+   *
+   * Drawn from the call because the transform lives in the drawing: a script
+   * holding the handle of what it just spawned has a container to move at
+   * once, and the subsystems mount at the pass from the objects as it left
+   * them, so a body is made where the script put its entity. The pass's sync
+   * finds them unchanged — the binder writes a transform for a new record only
+   * — so this is the same work as the pass's, done earlier.
    */
   spawn(template: EntityTemplate, parent: EntityId | null = null): EntityId | null {
     this.playing('spawn');
     if (!insertEntity(this.document, template, parent)) return null;
+    this.binder.sync(this.document, new Set([template.entity.id]));
     this.dirty.add(template.entity.id);
     return template.entity.id;
   }
 
   /**
    * Places a prefab, its contents under the placement, as an expansion places
-   * them (`placePrefab`): in the document at once, drawn and mounted at the
-   * next pass. Answers the placement; `null` for a prefab this world was not
-   * handed, or a parent the document does not hold.
+   * them (`placePrefab`): in the document and drawn at once, as `spawn` draws,
+   * mounted at the next pass. Answers the placement; `null` for a prefab this
+   * world was not handed, or a parent the document does not hold.
    */
   instantiate(
     prefab: AssetId,
@@ -776,6 +784,7 @@ export class World {
       transform: place.transform ?? createTransform(),
     });
     if (placed === null) return null;
+    this.binder.sync(this.document, new Set(placed.entities));
     for (const entityId of placed.entities) this.dirty.add(entityId);
     return placed.root;
   }

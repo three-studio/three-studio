@@ -78,9 +78,11 @@ const PROBE = `import type {
   QueryFilter as PublishedFilter,
   RaycastHit as PublishedHit,
   ComponentTypes as PublishedComponents,
+  PlaceOptions as PublishedPlace,
+  SpawnOptions as PublishedSpawn,
 } from '@three-studio/runtime';
 import type { Behaviour } from ${importable('packages/runtime/src/scripting/ScriptApi')};
-import type { Entity, EntityTransform, ScriptWorld } from ${importable('packages/runtime/src/scripting/Entity')};
+import type { Entity, EntityTransform, PlaceOptions, ScriptWorld, SpawnOptions } from ${importable('packages/runtime/src/scripting/Entity')};
 import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
 import type { AudioApi } from ${importable('packages/runtime/src/audio/scriptMembers')};
@@ -183,6 +185,14 @@ declare const components: ComponentTypes;
 // runtime holds it is one a script may read: keyed on the kernel's own types,
 // so a type left out fails here rather than vanishing from an author's editor.
 export const x: { [K in keyof ComponentTypes]: PublishedComponents[K] } = components;
+
+declare const place: PlaceOptions;
+declare const spawn: SpawnOptions;
+
+// One way, as \`Entity\` is: the published parent is a part of the runtime's
+// handle, whose private fields no published type can have.
+export const y1: PublishedPlace = place;
+export const y2: PublishedSpawn = spawn;
 `;
 
 /**

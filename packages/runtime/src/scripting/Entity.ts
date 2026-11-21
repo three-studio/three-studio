@@ -26,6 +26,25 @@ export interface ScriptWorld {
    * where they come from.
    */
   entity(id: string): Entity | null;
+  /** A new entity, drawn from the call; `null`, with a warning, for options that do not read. */
+  spawn(options?: SpawnOptions): Entity | null;
+  /** A placement of a prefab, by its asset id, drawn from the call; `null`, with a warning, for one this game was not given. */
+  instantiate(prefab: string, options?: PlaceOptions): Entity | null;
+}
+
+/** Where a spawn or a placement goes. */
+export interface PlaceOptions {
+  /** A live entity of the same world, or none for the top. */
+  readonly parent?: Entity | null;
+  /** Local to the parent, in metres. */
+  readonly position?: Readonly<Vec3Like>;
+  /** Euler angles in radians, as the document holds them. */
+  readonly rotation?: Readonly<Vec3Like>;
+  readonly scale?: Readonly<Vec3Like>;
+}
+
+export interface SpawnOptions extends PlaceOptions {
+  readonly name?: string;
 }
 
 /*
@@ -228,5 +247,15 @@ export class Entity {
     if (!this.alive || !isRecord(component)) return false;
     const id = component['id'];
     return isComponentId(id) && this.world.deleteComponent(this.id, id);
+  }
+
+  /**
+   * Takes it and everything under it out of the world's document: from the
+   * call every answer about it is that it is gone, while its objects, body and
+   * scripts stay until the frame's pass, undrawn. Its own scripts finish the
+   * frame's hooks. Nothing, once it is gone.
+   */
+  destroy(): void {
+    if (this.alive) this.world.destroy(this.id);
   }
 }

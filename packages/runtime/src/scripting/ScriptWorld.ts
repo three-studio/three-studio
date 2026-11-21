@@ -1,13 +1,21 @@
 import {
+  collectSceneAssets,
+  createEntity,
+  createTransform,
   fixedId,
+  isAssetId,
   isEntityId,
+  isRecord,
   type EntityDoc,
+  type EntityId,
   type Registry,
   type ScriptMembersId,
+  type Transform,
+  type Vec3,
 } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { SubsystemDefinition, World } from '../world/World';
-import { Entity, type ScriptWorld } from './Entity';
+import { Entity, type PlaceOptions, type ScriptWorld, type SpawnOptions } from './Entity';
 import type { ScriptMembersDefinition } from './members';
 import { reservedScriptNames } from './typings';
 
@@ -50,6 +58,85 @@ export class WorldScripts implements ScriptWorld {
     this.handles.set(object, made);
     return made;
   }
+
+  /**
+   * A new entity, posed as `options` say, drawn from the call: its handle's
+   * transform is there to move at once. Its components, body and scripts come
+   * at the frame's pass. `null`, with the script told, for options that do not
+   * read.
+   */
+  spawn(options: SpawnOptions = {}): Entity | null {
+    const placement = this.placement('spawn', options);
+    if (placement === null) return null;
+    const name = isRecord(options) && typeof options['name'] === 'string' ? options['name'] : 'Entity';
+    const template = createEntity(name);
+    template.entity.transform = placement.transform;
+    const spawned = this.world.spawn(template, placement.parent);
+    return spawned === null ? null : this.entity(spawned);
+  }
+
+  /**
+   * A placement of `prefab`, its contents under it, drawn from the call as a
+   * spawn is. `null`, with the script told, for text that names no prefab this
+   * world was handed, or options that do not read.
+   */
+  instantiate(prefab: string, options: PlaceOptions = {}): Entity | null {
+    const placement = this.placement('instantiate', options);
+    if (placement === null) return null;
+    const placed = isAssetId(prefab) ? this.world.instantiate(prefab, placement) : null;
+    if (placed === null) {
+      this.world.warn(`instantiate: "${String(prefab)}" is no prefab this game was given.`);
+      return null;
+    }
+    return this.entity(placed);
+  }
+
+  /**
+   * Where a spawn or a placement goes, read from a script's options, which are
+   * not typechecked where they come from: the parent a live handle of this
+   * world, each vector three finite numbers. `null`, with the script told, at
+   * the first that does not read: a NaN in a document is a body Rapier cannot
+   * place, and a parent of another world an entity drawn under nothing.
+   */
+  private placement(call: string, options: unknown): { parent: EntityId | null; transform: Transform } | null {
+    if (!isRecord(options)) {
+      this.world.warn(`${call}: its options are no object.`);
+      return null;
+    }
+    const given = options['parent'] ?? null;
+    const parent = given instanceof Entity && this.handles.get(given.object3D) === given ? given : null;
+    if (given !== null && parent === null) {
+      this.world.warn(`${call}: its parent is no entity of this game.`);
+      return null;
+    }
+    if (parent !== null && !parent.alive) {
+      this.world.warn(`${call}: its parent "${parent.name}" is destroyed.`);
+      return null;
+    }
+    const transform = createTransform();
+    for (const key of ['position', 'rotation', 'scale'] as const) {
+      const given = options[key];
+      if (given === undefined) continue;
+      const vector = vectorOf(given);
+      if (vector === null) {
+        this.world.warn(`${call}: its ${key} is no vector of three finite numbers.`);
+        return null;
+      }
+      transform[key] = vector;
+    }
+    return { parent: parent === null ? null : parent.id, transform };
+  }
+}
+
+/** `{ x, y, z }` read as the document's tuple; `null` unless each is a finite number. */
+function vectorOf(value: unknown): Vec3 | null {
+  if (!isRecord(value)) return null;
+  const { x, y, z } = value;
+  return isFiniteNumber(x) && isFiniteNumber(y) && isFiniteNumber(z) ? [x, y, z] : null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 /*
@@ -71,13 +158,38 @@ export function worldScriptsOf(world: World): WorldScripts | null {
  * Registered before the behaviours, which make the scripts and read this as
  * each is made; and so taken down after them, a script's `onDestroy` running
  * while what it shares is still its world's.
+ *
+ * It holds, for the world's life, every asset of the prefabs the document's
+ * components name as candidates — what a script was given to instantiate —
+ * and the world's load waits for them. Drawn by nothing at start, such a
+ * prefab's model would otherwise load at the first `instantiate`, be freed a
+ * frame after its last instance went, under a build's idle budget of nothing,
+ * and load again for the next: a spawner's every crate a fetch.
  */
 export function scriptsSubsystem(registry: Registry<ScriptMembersId, ScriptMembersDefinition>): SubsystemDefinition {
   return {
     id: fixedId('subsystem', 'scripts'),
-    create(world) {
+    async create(world) {
+      const { registries, prefabs, assets } = world.options;
+      const materials = world.options.materials ?? new Map();
+      // What the candidates bring beyond what the scene names itself: the
+      // scene's own are held by what draws them, and a hold here would keep a
+      // model the scene stopped drawing for the rest of the game.
+      const named = new Set(prefabs === undefined ? [] : collectSceneAssets(registries, world.document, materials, prefabs));
+      const holds =
+        prefabs === undefined
+          ? []
+          : collectSceneAssets(registries, world.document, materials, prefabs, new Set(prefabs.keys()))
+              .filter((assetId) => !named.has(assetId))
+              .map((assetId) => assets.preload(assetId));
       worlds.set(world, new WorldScripts(world, registry.values()));
-      return { dispose: () => void worlds.delete(world) };
+      await Promise.all(holds.map(({ ready }) => ready));
+      return {
+        dispose() {
+          worlds.delete(world);
+          for (const hold of holds) hold.dispose();
+        },
+      };
     },
   };
 }

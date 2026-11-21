@@ -121,7 +121,7 @@ export type {
  */
 export { Behaviour } from './scripting/ScriptApi';
 export type { ScriptMembers, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
-export type { Entity, EntityTransform, ScriptWorld } from './scripting/Entity';
+export type { Entity, EntityTransform, PlaceOptions, ScriptWorld, SpawnOptions } from './scripting/Entity';
 export type { ScriptMembersDefinition, ScriptSite } from './scripting/members';
 export { reservedScriptNames, scriptTypings } from './scripting/typings';
 export { NO_SCRIPTS, publishScriptApi, scriptClassesOf } from './scripting/scriptBundle';
