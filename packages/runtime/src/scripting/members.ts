@@ -1,5 +1,6 @@
-import type { Disposable, EntityDoc, ScriptMembersId } from '@three-studio/core';
+import type { Disposable, ScriptMembersId } from '@three-studio/core';
 import type { World } from '../world/World';
+import type { Entity } from './Entity';
 import type { Behaviour } from './ScriptApi';
 
 /**
@@ -31,8 +32,8 @@ export interface ScriptMembersDefinition {
 /** One script, as a contribution installs into it. */
 export interface ScriptSite {
   readonly script: Behaviour;
-  /** The entity it runs on. */
-  readonly entity: EntityDoc;
+  /** The entity it runs on: its handle, as the script is given it. */
+  readonly entity: Entity;
   /** The world it runs in: its document, its features' accessors, `warn`. */
   readonly world: World;
   /**

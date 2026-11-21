@@ -17,9 +17,10 @@ import { writeScriptTypings } from '../src/main/scripts';
  * then each contribution's, physics' and audio's — and written by the main
  * process. They are not the runtime's own declarations: a user's project
  * cannot resolve `three` or `@three-studio/core`, so `Object3D` is published
- * as `any` and an `EntityDoc` as the two fields a script reads off it. That
- * makes them a second statement of the same API — and the only reason the copy
- * is acceptable is this test, which fails the moment the two stop agreeing.
+ * as `any` and three's vectors as the fields and the methods a script writes
+ * them with. That makes them a second statement of the same API — and the only
+ * reason the copy is acceptable is this test, which fails the moment the two
+ * stop agreeing.
  *
  * TypeScript 7 has no JS API (see `packages/core/package.json`), so the check
  * is the compiler itself, run over a probe file. It costs about a quarter of a
@@ -55,7 +56,12 @@ const importable = (...parts: string[]): string =>
  */
 const PROBE = `import type {
   Behaviour as Published,
-  EntityHandle as PublishedHandle,
+  Entity as PublishedEntity,
+  EntityTransform as PublishedTransform,
+  ScriptWorld as PublishedWorld,
+  Vec3 as PublishedVector,
+  Euler as PublishedEuler,
+  Quat as PublishedRotation,
   SceneApi as PublishedScenes,
   AudioBus as PublishedBus,
   ScriptPropertyDef as PublishedProperty,
@@ -72,7 +78,8 @@ const PROBE = `import type {
   QueryFilter as PublishedFilter,
   RaycastHit as PublishedHit,
 } from '@three-studio/runtime';
-import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
+import type { Behaviour } from ${importable('packages/runtime/src/scripting/ScriptApi')};
+import type { Entity, EntityTransform, ScriptWorld } from ${importable('packages/runtime/src/scripting/Entity')};
 import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
 import type { AudioApi } from ${importable('packages/runtime/src/audio/scriptMembers')};
@@ -94,12 +101,14 @@ import type { AudioBus } from ${importable('packages/core/src/index')};
 // The public half of a type. A class carrying a protected member is assignable
 // from nothing but a subclass, so the two \`Behaviour\`s cannot be compared
 // whole; a mapped type is keyed on \`keyof\`, which leaves the protected
-// helpers out. Those four are covered by name, by the kernel's record of its
+// helpers out. Those three are covered by name, by the kernel's record of its
 // members in \`typings.ts\`.
 type PublicPart<T> = { [K in keyof T]: T[K] };
 
 declare const behaviour: Behaviour;
-declare const handle: EntityHandle;
+declare const entity: Entity;
+declare const transform: EntityTransform;
+declare const world: ScriptWorld;
 declare const scenes: SceneApi;
 declare const input: Input;
 declare const audio: AudioApi;
@@ -108,7 +117,14 @@ declare const bus: AudioBus;
 declare const publishedBus: PublishedBus;
 
 export const a: PublicPart<Published> = behaviour;
-export const b: PublishedHandle = handle;
+export const b: PublishedEntity = entity;
+export const b1: PublishedTransform = transform;
+export const b2: PublishedWorld = world;
+// three's own, which the transform hands out: what is published of them is a
+// part of each, the fields and what writes them in place.
+export const b3: PublishedVector = transform.position;
+export const b4: PublishedEuler = transform.rotation;
+export const b5: PublishedRotation = transform.quaternion;
 export const c: PublishedScenes = scenes;
 export const d: StudioInput = input;
 export const e: StudioAudio = audio;

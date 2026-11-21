@@ -2,9 +2,7 @@ import {
   Registry,
   createEntity,
   fixedId,
-  type EntityTemplate,
   type ScriptMembersId,
-  type ScriptPropValue,
   type SubsystemId,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -40,14 +38,6 @@ function probe(id: ScriptMembersId, log: string[]): ScriptMembersDefinition {
       return { dispose: () => void log.push(`${name} given back by ${site.entity.name}`) };
     },
   };
-}
-
-/** The template's script, its stored properties these. */
-function withProps(template: EntityTemplate, props: Record<string, ScriptPropValue>): EntityTemplate {
-  template.components = template.components.map((component) =>
-    component.type === 'script' ? { ...component, props } : component,
-  );
-  return template;
 }
 
 describe('a contribution to scripts', () => {
@@ -97,7 +87,7 @@ describe('a contribution to scripts', () => {
         kept.push(Reflect.get(this, 'speed'), typeof this.transform.position);
       }
     }
-    const holder = withProps(withScript(createEntity('Holder'), Declares), { probe: 5, transform: 2, speed: 3 });
+    const holder = withScript(createEntity('Holder'), Declares, { probe: 5, transform: 2, speed: 3 });
 
     const { world } = await physicsRigOn(registries)([holder]);
 

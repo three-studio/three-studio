@@ -88,11 +88,11 @@ describe('what a bundle exports', () => {
     expect(code).not.toContain('registerScript');
   });
 
-  it('checks for version 4 of the script API, the first without `registerScript`', async () => {
+  it('checks for version 5 of the script API, the first with entity handles', async () => {
     const { project } = await projectWithScript(scriptLogging('', "'VERSIONED'"));
     const { code } = await buildScripts(registries, project);
 
-    expect(code).toContain('api.version !== 4');
+    expect(code).toContain('api.version !== 5');
   });
 });
 

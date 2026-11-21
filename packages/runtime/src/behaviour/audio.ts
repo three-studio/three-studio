@@ -194,8 +194,8 @@ export class AudioSourceBehaviour implements Behaviour {
  * `ComponentSystem` states about registries: this has a lifetime, and the
  * lifetime is the engine's. `SceneHost` builds a new engine for every scene, and
  * a table shared between them would hand a script the sources of a scene that
- * has already been torn down. The same shape `internalContext` uses in
- * `ScriptApi`, and for the same reason.
+ * has already been torn down. The same shape each world's accessors use, and
+ * for the same reason.
  */
 const sources = new WeakMap<AudioEngine, Map<EntityId, AudioSourceBehaviour[]>>();
 

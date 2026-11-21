@@ -96,7 +96,7 @@ renderer.setAnimationLoop(() => {
 | **Scenes** | `SceneHost` (load, loading scene, activate, cancel), `SceneBinder` (document → three objects) |
 | **Rendering** | `createRenderer` — WebGPU, falling back to WebGL |
 | **Physics** | `PhysicsWorld` — Rapier rigid bodies, colliders, and a character-style `PlayerController` |
-| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the world that runs them (`scripts`) |
+| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, entities reached through handles (`this.entity`, `this.world.entity(id)`) and moved through the transform the world draws, what each feature gives scripts by contribution (`scriptMembers`), `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the world that runs them (`scripts`) |
 | **Audio** | 32-voice mixer with priority stealing, a continuous 2D↔3D `spatialBlend`, buses |
 | **Assets** | model loading for glTF / GLB / FBX / OBJ, import settings applied the same way the editor applies them |
 

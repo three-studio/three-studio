@@ -88,7 +88,7 @@ class AskForNothing extends Behaviour {
     AskForNothing.body = this.physics.body('');
     AskForNothing.joint = this.physics.joint('');
     AskForNothing.character = this.physics.createCharacterController('', SETTINGS);
-    AskForNothing.entity = this.resolve('');
+    AskForNothing.entity = this.world.entity('');
   }
 }
 

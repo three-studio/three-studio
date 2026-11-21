@@ -1,8 +1,7 @@
-import { isEntityId, type EntityDoc, type FieldDef } from '@three-studio/core';
-import type { Object3D } from 'three/webgpu';
+import type { FieldDef } from '@three-studio/core';
 import type { Input } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
-import type { World } from '../world/World';
+import type { Entity, EntityTransform, ScriptWorld } from './Entity';
 
 /**
  * Declared shape of one editable property. Drives the inspector.
@@ -28,19 +27,38 @@ export type ScriptProperties = Record<string, ScriptPropertyDef>;
  */
 export interface ScriptMembers {}
 
-/** A live handle to another entity, resolved from an `entity` property. */
-export interface EntityHandle {
-  readonly id: string;
-  readonly name: string;
-  readonly object: Object3D;
+/** What the host gives every script before its first hook. */
+interface HostGiven {
+  /** The entity this script is attached to: its handle, the one `world.entity(its id)` gives. */
+  readonly entity: Entity;
+  /**
+   * Its transform, the entity's: the drawing's own vectors, written in place to
+   * move it, and the entity's body with it:
+   *  - a dynamic body, or the player, is put there and keeps its speed;
+   *  - a kinematic body moves there at the next tick, carrying what rests on it;
+   *  - a fixed body's collider stays where it is, and so does a collider riding
+   *    an ancestor's body: it sits where the world was built, and only the mesh
+   *    moves.
+   */
+  readonly transform: EntityTransform;
+  /** The world it runs in: other entities by id. */
+  readonly world: ScriptWorld;
+  readonly input: Input;
+  /**
+   * Moving between scenes. `null` when nothing is hosting this world — a
+   * world made directly has no notion of a next scene.
+   */
+  readonly scenes: SceneApi | null;
 }
 
 /**
- * Merged with the class: the members the contributions give a script, typed on
- * every `Behaviour` without a field of the class, which would name each feature
- * and be one more member for the host to fill.
+ * Merged with the class: what the host and the contributions give a script,
+ * typed on every `Behaviour` with no field of the class, where each was an
+ * assignment the host kept, asserted and never checked, and one more per
+ * feature. None is there yet when a field initialiser runs: they are given
+ * once the script is made.
  */
-export interface Behaviour extends ScriptMembers {}
+export interface Behaviour extends HostGiven, ScriptMembers {}
 
 /**
  * Base class for user scripts.
@@ -68,25 +86,6 @@ export abstract class Behaviour {
    * the scene. Same contract as Unity's `[SerializeField]`.
    */
   static properties: ScriptProperties = {};
-
-  /** The entity this script is attached to. */
-  readonly entity!: EntityDoc;
-  /**
-   * Its transform, in three.js terms. Mutating it moves the object, and the
-   * entity's body with it:
-   *  - a dynamic body, or the player, is put there and keeps its speed;
-   *  - a kinematic body moves there at the next tick, carrying what rests on it;
-   *  - a fixed body's collider stays where it is, and so does a collider riding
-   *    an ancestor's body: it sits where the world was built, and only the mesh
-   *    moves.
-   */
-  readonly transform!: Object3D;
-  readonly input!: Input;
-  /**
-   * Moving between scenes. `null` when nothing is hosting this engine — an
-   * engine created directly has no notion of a next scene.
-   */
-  readonly scenes!: SceneApi | null;
 
   /** Seconds since play started. */
   time = 0;
@@ -149,26 +148,8 @@ export abstract class Behaviour {
     this.timers.clear();
   }
 
-  /** Resolves an `entity` property to a live handle, or `null` if it is unset. */
-  protected resolve(entityId: string | null | undefined): EntityHandle | null {
-    // What a script holds is text, and what it names is read as an id before
-    // the scene is asked: an empty one, or one that is not text, names nothing.
-    if (!isEntityId(entityId)) return null;
-    const world = internalContext.get(this);
-    const doc = world?.document.entities.get(entityId);
-    const object = world?.binder.getObject(entityId);
-    if (!doc || !object) return null;
-    return { id: entityId, name: doc.name, object };
-  }
-
   /** Prints to the editor console, tagged with the entity it came from. */
   protected log(...args: unknown[]): void {
     console.log(`[${this.entity.name}]`, ...args);
   }
 }
-
-/**
- * Each script's world, set by the host, kept off the public surface so a script
- * cannot reach the physics world or the binder by accident.
- */
-export const internalContext = new WeakMap<Behaviour, World>();

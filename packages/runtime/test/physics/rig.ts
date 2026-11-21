@@ -25,6 +25,7 @@ import {
   type PlayerControllerComponent,
   type PrefabDoc,
   type RigidBodyComponent,
+  type ScriptPropValue,
   type Vec3,
 } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
@@ -310,15 +311,19 @@ export function player(
 }
 
 /**
- * The template, running `type` as its script.
+ * The template, running `type` as its script, its stored properties `props`.
  *
  * Under an asset id of its own, which the rig's world is handed with the class
  * in its bundle, as a project's compiled bundle pairs each script with its id.
  */
-export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
+export function withScript(
+  template: EntityTemplate,
+  type: ScriptClass,
+  props: Record<string, ScriptPropValue> = {},
+): EntityTemplate {
   const assetId = createAssetId();
   scriptsOf.set(template, [...(scriptsOf.get(template) ?? []), [assetId, type]]);
-  template.components.push({ ...scriptType.create(), assetId });
+  template.components.push({ ...scriptType.create(), assetId, props });
   return template;
 }
 

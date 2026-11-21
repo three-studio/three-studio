@@ -1,4 +1,4 @@
-import { combineDisposables, type Disposable, type EntityDoc } from '@three-studio/core';
+import { combineDisposables, type Disposable } from '@three-studio/core';
 import type {
   Behaviour as RuntimeBehaviour,
   BehaviourDefinition,
@@ -6,10 +6,11 @@ import type {
 } from '../behaviour/Behaviour';
 import { inputOf } from '../input/inputOf';
 import type { World } from '../world/World';
+import type { Entity } from './Entity';
 import type { ScriptMembersDefinition, ScriptSite } from './members';
 import { isScriptClass } from './scriptBundle';
-import { Behaviour, internalContext } from './ScriptApi';
-import { scriptWorldOf } from './ScriptWorld';
+import { Behaviour } from './ScriptApi';
+import { worldScriptsOf } from './ScriptWorld';
 
 /**
  * Adapts a user script to the runtime's behaviour interface.
@@ -33,7 +34,7 @@ class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
 
   constructor(
     readonly script: Behaviour,
-    readonly entity: EntityDoc,
+    readonly entity: Entity,
     readonly world: World,
     private readonly label: string,
   ) {}
@@ -129,7 +130,6 @@ class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
     this.script.cancelTimers();
     // After `onDestroy`, which may still play a sound or read its body.
     this.installed.dispose();
-    internalContext.delete(this.script);
   }
 
   private fail(phase: string, cause: unknown): void {
@@ -154,16 +154,16 @@ export const scriptBehaviour: BehaviourDefinition = {
       world.warn(`"${target.entity.name}" references a script that is not compiled.`);
       return null;
     }
-    // What the world's scripts share: the contributions and the names they
-    // reserve. Left out of a test's own registries, nothing runs a script.
-    const scripting = scriptWorldOf(world);
-    if (scripting === null) {
+    // What the world's scripts share: the handles, the contributions and the
+    // names they reserve. Left out of a test's own registries, nothing runs a
+    // script.
+    const scripts = worldScriptsOf(world);
+    if (scripts === null) {
       world.warn(`"${target.entity.name}" has a script, and this world runs none: it has no scripts subsystem.`);
       return null;
     }
 
     const instance = new ScriptType();
-    internalContext.set(instance, world);
 
     // Editable values are applied before onStart, so a script sees its
     // configured values the first time it runs — as in Unity and Unreal.
@@ -178,7 +178,7 @@ export const scriptBehaviour: BehaviourDefinition = {
       // ignored rather than assigned: renaming a property would otherwise leave
       // a stale field on every instance forever.
       if (!Object.hasOwn(declared, key)) continue;
-      if (scripting.reserved.has(key)) {
+      if (scripts.reserved.has(key)) {
         world.warn(
           `"${target.entity.name}": script property "${key}" is a reserved name and was ignored.`,
         );
@@ -187,24 +187,23 @@ export const scriptBehaviour: BehaviourDefinition = {
       Reflect.set(instance, key, value);
     }
 
+    // Its entity's handle, the one `this.world.entity(its id)` answers: made
+    // from what the world handed the behaviour, its record and its container.
+    const entity = scripts.handle(target.entity, target.object);
     Object.assign(instance, {
-      entity: target.entity,
-      transform: target.object,
+      entity,
+      transform: entity.transform,
+      world: scripts,
       // `null` in a world handed no element to listen on, which only a test
       // builds: there is nothing a script there could hear.
       input: inputOf(world),
       scenes: world.options.scenes ?? null,
     });
 
-    const behaviour = new ScriptBehaviour(
-      instance,
-      target.entity,
-      world,
-      `${target.entity.name}/${ScriptType.name}`,
-    );
+    const behaviour = new ScriptBehaviour(instance, entity, world, `${target.entity.name}/${ScriptType.name}`);
     // What each feature gives it, before it first runs: a script reads its
     // body or plays its sound from `onAwake`.
-    behaviour.install(scripting.contributions);
+    behaviour.install(scripts.contributions);
     // Only `onAwake` here. `onStart` is run by the world once every behaviour
     // in the scene exists, so a script can reference another entity's script
     // without depending on which of them happened to be constructed first.

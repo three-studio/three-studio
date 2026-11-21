@@ -758,24 +758,23 @@ describe('Stop, by the document’s identity', () => {
 
 describe('the scene the game plays', () => {
   /*
-   * A copy, never the document. A script's `this.entity` is the entity the game
-   * was handed, and a property's value is the scene's own — a `vec3` is an
-   * array. Handed the document, a script wrote the editor's scene: silently
-   * while it had not been edited since it was opened, and with a `TypeError`
-   * that disabled the script once immer had frozen it, where the same script
-   * works in the exported player.
+   * A copy, never the document. A property's value is the scene's own — a
+   * `vec3` is an array. Handed the document, a script wrote the editor's scene:
+   * silently while it had not been edited since it was opened, and with a
+   * `TypeError` that disabled the script once immer had frozen it, where the
+   * same script works in the exported player. Its entity it reaches through a
+   * handle, whose name it reads and has no way to write.
    */
   const MOVER = fixedId('asset', 'script-mover');
   /** What the script saw itself do. */
   const record = { started: false, name: '', frames: 0, offset: [] as number[] };
 
-  /** Renames its entity as it starts, and moves its own offset every frame. */
+  /** Reads its entity's name as it starts, and moves its own offset every frame. */
   class Mover extends Behaviour {
     static override properties = { offset: { type: 'vec3' as const, default: [0, 0, 0] as Vec3 } };
     offset: Vec3 = [0, 0, 0];
 
     override onStart() {
-      this.entity.name = 'Renamed by the game';
       record.started = true;
       record.name = this.entity.name;
     }
@@ -822,7 +821,7 @@ describe('the scene the game plays', () => {
 
     await playThreeFrames();
 
-    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(record).toMatchObject({ started: true, name: 'Mover' });
     expect(record.frames).toBeGreaterThan(0);
     expect(record.offset[0]).toBe(1 + record.frames);
     expect(doc().scene).toBe(scene);
@@ -844,7 +843,7 @@ describe('the scene the game plays', () => {
 
     await playThreeFrames();
 
-    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(record).toMatchObject({ started: true, name: 'Mover' });
     expect(useViewportStore.getState().playWarnings.some((warning) => warning.includes('failed in'))).toBe(false);
     expect(doc().scene.entities.get(id)?.name).toBe('Mover');
   });

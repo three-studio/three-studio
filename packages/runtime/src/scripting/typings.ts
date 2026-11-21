@@ -7,9 +7,9 @@ import type { Behaviour, ScriptMembers } from './ScriptApi';
  *
  * A user's project cannot resolve `three` or `@three-studio/core`, so this is
  * not the runtime's own declarations narrowed by a compiler — it is a
- * deliberately smaller contract: `Object3D` becomes `any`, an `EntityDoc`
- * becomes the two fields a script reads off it. Which is exactly why it has to
- * be checked against the real thing rather than trusted;
+ * deliberately smaller contract: `Object3D` becomes `any`, three's vectors the
+ * fields and the two methods a script writes them with. Which is exactly why
+ * it has to be checked against the real thing rather than trusted;
  * `apps/desktop/test/scriptTypings.test.ts` compiles what this produces against
  * `ScriptApi` and fails on the first divergence. It found two: the property
  * vocabulary was missing `vec2` altogether, and its `vec3` had lost the
@@ -31,12 +31,6 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
     | { type: 'enum'; options: readonly (string | { value: string; label: string })[]; default?: string; label?: string }
     | { type: 'entity'; label?: string }
     | { type: 'asset'; kind?: string; label?: string };
-
-  export interface EntityHandle {
-    readonly id: string;
-    readonly name: string;
-    readonly object: any;
-  }
 
   export interface StudioInput {
     isDown(code: string): boolean;
@@ -72,7 +66,81 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
   /** A point, a direction or a velocity: metres, metres per second. three's \`Vector3\` is one. */
   export interface Vec3Like { x: number; y: number; z: number }
   /** A rotation. three's \`Quaternion\` is one. */
-  export interface QuatLike { x: number; y: number; z: number; w: number }`;
+  export interface QuatLike { x: number; y: number; z: number; w: number }
+
+  /** A vector written in place: \`this.transform.position.x += 1\`. three's \`Vector3\` is one. */
+  export interface Vec3 {
+    x: number;
+    y: number;
+    z: number;
+    set(x: number, y: number, z: number): this;
+    copy(vector: Readonly<Vec3Like>): this;
+  }
+
+  /** Angles in radians about x, y and z, written in place. three's \`Euler\` is one. */
+  export interface Euler {
+    x: number;
+    y: number;
+    z: number;
+    set(x: number, y: number, z: number): this;
+    copy(euler: Euler): this;
+  }
+
+  /** A rotation written in place. three's \`Quaternion\` is one. */
+  export interface Quat {
+    x: number;
+    y: number;
+    z: number;
+    w: number;
+    set(x: number, y: number, z: number, w: number): this;
+    copy(quaternion: Readonly<QuatLike>): this;
+  }
+
+  /**
+   * Where an entity is: the vectors the world draws it with, local to its parent, written in
+   * place to move it. A dynamic body, or the player, is put where it is written and keeps its
+   * speed; a kinematic one moves there at the next tick, carrying what rests on it; a fixed
+   * one's collider stays where it is, and so does a collider riding an ancestor's body.
+   */
+  export interface EntityTransform {
+    /** Local to its parent, in metres. */
+    readonly position: Vec3;
+    /** Local, in radians, kept in step with \`quaternion\`. */
+    readonly rotation: Euler;
+    readonly quaternion: Quat;
+    readonly scale: Vec3;
+    /** Where it is in the world, written into \`target\`, which comes back. */
+    getWorldPosition<T extends Vec3Like>(target: T): T;
+    /** How it is turned in the world, written into \`target\`, which comes back. */
+    getWorldQuaternion<T extends QuatLike>(target: T): T;
+    /** The way its local +Z points in the world, unit length, written into \`target\`, which comes back. */
+    getWorldDirection<T extends Vec3Like>(target: T): T;
+    /** Turns it so its local +Z faces a point in the world. */
+    lookAt(point: Readonly<Vec3Like>): void;
+  }
+
+  /** An entity of the running game: one handle per entity, the same each time it is asked for. */
+  export interface Entity {
+    readonly id: string;
+    readonly name: string;
+    /** False from the moment it is destroyed. */
+    readonly alive: boolean;
+    /** The entity it hangs under, or null at the top. */
+    readonly parent: Entity | null;
+    readonly transform: EntityTransform;
+    /**
+     * Its three.js object, outside what this API keeps stable. Its model's materials are this
+     * game's own copies; the model's geometry and textures are the project's, shared with the
+     * editor and read-only: written, a change shows in the edit view after Stop.
+     */
+    readonly object3D: any;
+  }
+
+  /** The world a script runs in. */
+  export interface ScriptWorld {
+    /** The entity with this id, or null: one destroyed, one not there, or a value that is no id. */
+    entity(id: string): Entity | null;
+  }`;
 
 /** The class's one static, first in its body. */
 const PROPERTIES = `    /** Editable in the Inspector, saved per instance with the scene. */
@@ -81,10 +149,10 @@ const PROPERTIES = `    /** Editable in the Inspector, saved per instance with t
 /**
  * A member of `Behaviour` that is the kernel's, which no contribution gives.
  *
- * `keyof` sees no protected member, so the four helpers a script calls on
+ * `keyof` sees no protected member, so the three helpers a script calls on
  * itself are named: the only names here written rather than derived.
  */
-type KernelMember = Exclude<keyof Behaviour, keyof ScriptMembers> | 'resolve' | 'log' | 'wait' | 'repeat';
+type KernelMember = Exclude<keyof Behaviour, keyof ScriptMembers> | 'log' | 'wait' | 'repeat';
 
 /**
  * The kernel's half of the published `Behaviour`, a member's lines each.
@@ -109,16 +177,12 @@ type KernelMember = Exclude<keyof Behaviour, keyof ScriptMembers> | 'resolve' | 
  */
 const KERNEL_MEMBERS: Record<KernelMember, string | null> = {
   entity: `
-    /** The entity this script is attached to. */
-    readonly entity: { id: string; name: string };`,
-  transform: `    /**
-     * Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it.
-     * A dynamic body, or the player, is put there and keeps its speed; a
-     * kinematic one moves there at the next tick, carrying what rests on it; a
-     * fixed one's collider stays where it is, and so does a collider riding an
-     * ancestor's body: it sits where the world was built.
-     */
-    readonly transform: any;`,
+    /** The entity this script is attached to: the handle \`this.world.entity(its id)\` gives. */
+    readonly entity: Entity;`,
+  transform: `    /** Its entity's transform: write \`position\`, \`rotation\`, \`scale\` in place to move it. */
+    readonly transform: EntityTransform;`,
+  world: `    /** The world it runs in: other entities by id. */
+    readonly world: ScriptWorld;`,
   input: `    readonly input: StudioInput;`,
   scenes: `    /** Moving between scenes. \`null\` when nothing is hosting this engine. */
     readonly scenes: SceneApi | null;`,
@@ -138,9 +202,8 @@ const KERNEL_MEMBERS: Record<KernelMember, string | null> = {
   onSceneUnload: `    /** The scene is being left, and everything is still here to read. */
     onSceneUnload?(): void;`,
   onDestroy: `    onDestroy?(): void;`,
-  resolve: `
-    protected resolve(entityId: string | null | undefined): EntityHandle | null;`,
-  log: `    protected log(...args: unknown[]): void;`,
+  log: `
+    protected log(...args: unknown[]): void;`,
   wait: `    /** setTimeout tied to this script's lifetime. */
     protected wait(callback: () => void, ms: number): void;`,
   repeat: `    /** setInterval tied to this script's lifetime; returns a canceller. */

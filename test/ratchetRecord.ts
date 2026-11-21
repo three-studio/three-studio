@@ -195,7 +195,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/runtime/src/components/light/LightSystem.ts', { as: 5 }],
   ['packages/runtime/src/components/model/missingModel.ts', { state: 2 }],
   ['packages/runtime/src/physics/meshShape.ts', { state: 1 }],
-  ['packages/runtime/src/scripting/ScriptApi.ts', { nonNull: 4 }],
   ['packages/runtime/src/systems/WaterSurface.ts', { as: 4 }],
   ['packages/runtime/src/systems/geometry.ts', { as: 1 }],
   ['packages/runtime/src/systems/waterNormals.ts', { state: 1 }],

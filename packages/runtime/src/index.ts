@@ -120,7 +120,8 @@ export type {
  * its contribution, and a project's typings are written from the registries.
  */
 export { Behaviour } from './scripting/ScriptApi';
-export type { EntityHandle, ScriptMembers, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
+export type { ScriptMembers, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
+export type { Entity, EntityTransform, ScriptWorld } from './scripting/Entity';
 export type { ScriptMembersDefinition, ScriptSite } from './scripting/members';
 export { reservedScriptNames, scriptTypings } from './scripting/typings';
 export { NO_SCRIPTS, publishScriptApi, scriptClassesOf } from './scripting/scriptBundle';

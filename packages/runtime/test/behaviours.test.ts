@@ -193,7 +193,7 @@ describe('behaviours mounted per entity', () => {
 
       override onStart() {
         log.push(`start ${this.entity.name}`);
-        resolved = ids.filter((id) => this.resolve(id) !== null).length;
+        resolved = ids.filter((id) => this.world.entity(id) !== null).length;
       }
     }
     const scene = [
@@ -254,7 +254,7 @@ describe('behaviours mounted per entity', () => {
     class Twin extends ScriptBehaviour {
       override onStart() {
         const other = instancedId(assertDefined(placed, 'the placement'), this.entity.name === 'Left' ? right : left);
-        seen.push(`${this.entity.name} sees ${this.resolve(other)?.name ?? 'nothing'}`);
+        seen.push(`${this.entity.name} sees ${this.world.entity(other)?.name ?? 'nothing'}`);
       }
     }
     const holder = createEntity('Pair');
@@ -307,7 +307,7 @@ describe('behaviours mounted per entity', () => {
       override onCollisionEnter() {}
 
       override onDestroy() {
-        parentAtDestroy = this.transform.parent;
+        parentAtDestroy = this.entity.object3D.parent;
       }
     }
     const holder = createEntity('Holder');
