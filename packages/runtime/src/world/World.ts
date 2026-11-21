@@ -1,4 +1,5 @@
 import {
+  collectSceneAssets,
   componentAssets,
   componentEntities,
   createPhysicsSettings,
@@ -36,7 +37,7 @@ import {
   type Renderer,
 } from 'three/webgpu';
 import { SceneBinder, bindScene } from '../SceneBinder';
-import type { AssetCache } from '../assets/AssetCache';
+import type { AssetCache, PreloadHold } from '../assets/AssetCache';
 import type { AudioClipCache } from '../audio/AudioClipCache';
 import type { AudioContextLike } from '../audio/AudioContextLike';
 import type { InputOptions } from '../input/Input';
@@ -385,6 +386,8 @@ export class World {
   private builtWhole = false;
   /** What a frame gives the build; `undefined`, all of it at once. */
   private readonly buildBudgetMs: number | undefined;
+  /** The document's files, held from the world's making until its build is whole: see `made`. */
+  private preloads: readonly PreloadHold[] = [];
   /** Before `start`, a frame builds and runs no phase: no game code runs while a scene builds. */
   private started = false;
 
@@ -491,6 +494,17 @@ export class World {
 
   private static async made(options: WorldOptions, buildBudgetMs: number | undefined): Promise<World> {
     const world = new World(options, 'play', buildBudgetMs);
+    // The scene's files are asked for before the subsystems are made, which
+    // the build that draws them waits for: Rapier's start is slow to make, and
+    // a scene's models and images used to be loading through it, begun by the
+    // binder as the world was made. Asked for after, a model waited for both.
+    // Given back once the build is whole, when what draws them holds them.
+    world.preloads = collectSceneAssets(
+      options.registries,
+      world.document,
+      options.materials ?? NO_MATERIALS,
+      world.prefabs,
+    ).map((assetId) => options.assets.preload(assetId));
 
     // Whatever fails below, nothing of a world nobody will hold stays alive: an
     // `Input` built before the throw would keep listening on the canvas, and any
@@ -680,7 +694,13 @@ export class World {
     this.builtWhole = true;
     this.binder.releaseBatches();
     this.binder.syncEnvironment(this.scene, this.document);
+    this.givePreloadsBack();
     void this.whenSettled();
+  }
+
+  private givePreloadsBack(): void {
+    for (const hold of this.preloads) hold.dispose();
+    this.preloads = [];
   }
 
   /**
@@ -851,6 +871,7 @@ export class World {
     for (let i = this.subsystems.length - 1; i >= 0; i -= 1) this.subsystems[i]?.dispose();
     this.subsystems.length = 0;
     this.binder.dispose();
+    this.givePreloadsBack();
     this.scene.clear();
   }
 }
@@ -862,6 +883,9 @@ export function isPerspective(camera: Camera): camera is PerspectiveCamera {
 
 /** The library of a world handed no prefabs. */
 const NO_PREFABS: ReadonlyMap<AssetId, PrefabDoc> = new Map();
+
+/** The material table of a world handed none. */
+const NO_MATERIALS: ReadonlyMap<AssetId, MaterialDef> = new Map();
 
 /**
  * The document's entities, each after its parent: the roots in their order,

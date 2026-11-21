@@ -217,7 +217,9 @@ describe('a world built over frames', () => {
     const world = await building(optionsFor([crate], [], assets));
 
     world.frame(STEP);
-    expect(assets.stats.held).toBe(1);
+    // The file asked for as the world was made, and the crate's own hold since
+    // the frame drew it: the first is given back once the build is whole.
+    expect(assets.stats.held).toBe(2);
     world.dispose();
 
     await expect(world.ready).rejects.toThrow(/disposed/);
@@ -226,6 +228,51 @@ describe('a world built over frames', () => {
 });
 
 describe('Play’s world, built at once', () => {
+  it('asks for its scene’s files while its subsystems are made, before the build that draws them', async () => {
+    // Rapier's start is the slow one to make, and the binder used to have the
+    // models loading through it. A subsystem that waits stands in for it here.
+    stubImages();
+    const server = await serveModels();
+    const registries = builtInRegistries();
+    const assets = new AssetCache(registries, {
+      resolver: { url: (id) => (id === CRATE ? server.url('crate.gltf') : null) },
+      idleBudgetBytes: 0,
+    });
+    let entered = (): void => {};
+    const making = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release = (): void => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow: SubsystemDefinition = {
+      id: fixedId('subsystem', 'slow'),
+      create: async () => {
+        entered();
+        await released;
+        return { dispose() {} };
+      },
+    };
+    const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
+
+    const playing = World.play(optionsFor([crate], [slow], assets));
+    await making;
+    let waited = 0;
+    while (server.requests('crate.gltf') === 0 && waited < 200) {
+      await settled();
+      waited += 1;
+    }
+    const requestedWhileMaking = server.requests('crate.gltf');
+    release();
+    const world = await playing;
+    onTestFinished(() => world.dispose());
+
+    expect(requestedWhileMaking).toBe(1);
+    expect(server.requests('crate.gltf')).toBe(1);
+    expect(assets.stats.held).toBe(1);
+  });
+
   it('starts with a mesh Collider built from its model, which landed after the pass that mounted it', async () => {
     // Physics no longer waits for the models before the build: `ready` does,
     // and the landing is handed back to it before the world starts. Built from
