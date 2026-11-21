@@ -9,8 +9,6 @@ import {
 } from '@three-studio/core';
 import {
   AssetCache,
-  CameraClaims,
-  SunService,
   StudioTime,
   audioOf,
   physicsDebugLines,
@@ -115,7 +113,13 @@ export class EditorViewport {
    * loop, and a window has one: two clocks installed would fight over that node.
    */
   readonly time = new StudioTime();
-  /** Projects the scene document onto three.js objects. */
+  /**
+   * The edit view's world: the document drawn as Play draws it, and nothing
+   * simulated. Drawn through the editor's camera, so the scene's cameras claim
+   * a view nobody draws through; its water lit by its own lights and sky.
+   */
+  readonly world: World;
+  /** Projects the scene document onto three.js objects: the edit world's, which picking and the overlays read. */
   readonly binder: SceneBinder;
   /**
    * Markers on what draws nothing, helpers on what is selected.
@@ -210,13 +214,9 @@ export class EditorViewport {
       // Shared materials are pushed in rather than pulled: the binder builds a
       // mesh synchronously, so it cannot await one.
       materials: useAssetStore.getState().materials,
-      // The edit view is drawn through the editor's camera: the scene's cameras
-      // claim a view nobody draws through.
-      cameras: new CameraClaims(),
-      // Its own: the edit view's water is lit by the edit view's lights.
-      sun: new SunService(),
       time: this.time,
     });
+    this.world = projection.world;
     this.scene = projection.scene;
     this.binder = projection.binder;
     this.overlay = projection.overlay;
@@ -360,7 +360,7 @@ export class EditorViewport {
     this.outline.dispose();
     this.overlay.dispose();
     this.physicsDebug.dispose();
-    this.binder.dispose();
+    this.world.dispose();
     // After every world that held from it, and before the device its buffers
     // live on.
     this.assets.dispose();
@@ -584,19 +584,20 @@ export class EditorViewport {
 
     const covered = this.shouldSkipRender();
 
+    const raw = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
+    this.lastFrameTime = time;
+
     // Once per frame, before anything else can retire more: the previous frame's
     // render has been submitted, so what it may have been reading is now safe to
     // free. This used to ride on `sync`, which is neither once per frame nor
-    // guaranteed to happen at all.
-    this.binder.beginFrame();
+    // guaranteed to happen at all. The edit world simulates nothing, so its
+    // frame is that flush.
+    this.world.frame(raw);
     // The window's cache, once, here: Play's world begins a frame of its own,
     // and a second flush within one frame would free what its first half had
-    // just let go of, with no render in between. After the binder's, so the
-    // images its arena gave back go with this boundary.
+    // just let go of, with no render in between. After the edit world's, so
+    // the images its arena gave back go with this boundary.
     this.assets.beginFrame();
-
-    const raw = this.lastFrameTime === 0 ? 0 : Math.min((time - this.lastFrameTime) / 1000, MAX_FRAME_DELTA);
-    this.lastFrameTime = time;
 
     const { playState, consumeStep } = useEditorStore.getState();
     // What the Viewport shows, and who has its input: read once, for the whole

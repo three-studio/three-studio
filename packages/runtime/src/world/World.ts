@@ -44,6 +44,12 @@ export const PHASES = ['update', 'fixed', 'lateUpdate', 'renderPrep'] as const;
 export type Phase = (typeof PHASES)[number];
 
 /**
+ * `edit`: the document drawn and nothing simulated — the editor's edit view.
+ * `play`: Play, a device, the player.
+ */
+export type WorldMode = 'edit' | 'play';
+
+/**
  * What a world reads of the registries; a root's runtime registries are this,
  * whole.
  *
@@ -260,6 +266,7 @@ export interface WorldOptions {
  */
 export class World {
   readonly scene = new Scene();
+  readonly mode: WorldMode;
   /** What it was built with, which its subsystems read: the audio context, the asset cache. */
   readonly options: WorldOptions;
   /** The scene it runs, as a document. `scene` is the graph a host draws. */
@@ -308,7 +315,8 @@ export class World {
 
   private disposed = false;
 
-  private constructor(options: WorldOptions) {
+  private constructor(options: WorldOptions, mode: WorldMode) {
+    this.mode = mode;
     this.options = options;
     this.document = options.document;
     this.time = options.time;
@@ -345,8 +353,22 @@ export class World {
     this.onWarning?.([...this.warnings]);
   };
 
+  /**
+   * The document drawn — its component systems mounted, the world's services
+   * live — and nothing simulated: no subsystem is built, so its frame is the
+   * arena's flush. The editor's edit view, which draws as Play does, by the
+   * same systems mounted the same way.
+   */
+  static edit(options: WorldOptions): World {
+    return new World(options, 'edit');
+  }
+
+  /**
+   * The document drawn, then every registered subsystem built in turn, then
+   * what is wrong with the scene said: Play, a device, the player.
+   */
   static async play(options: WorldOptions): Promise<World> {
-    const world = new World(options);
+    const world = new World(options, 'play');
 
     // Whatever fails below, nothing of a world nobody will hold stays alive: an
     // `Input` built before the throw would keep listening on the canvas, and any

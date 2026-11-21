@@ -16,9 +16,10 @@ import {
 } from '@three-studio/core';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER, type AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
-import { CameraClaims } from '@three-studio/runtime/world/cameras';
-import { SunService } from '@three-studio/runtime/world/sun';
 import { World } from '@three-studio/runtime/world/World';
+import { audioOf } from '@three-studio/runtime/audio/audioOf';
+import { inputOf } from '@three-studio/runtime/input/inputOf';
+import { physicsOf } from '@three-studio/runtime/physics/physicsOf';
 import { Mesh, type Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
@@ -127,8 +128,6 @@ async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: 
     assets,
     rendering,
     materials,
-    cameras: new CameraClaims(),
-    sun: new SunService(),
     time: new StudioTime(),
   });
   // What `World.play` awaits on its own side. The two have to be read at the
@@ -142,7 +141,7 @@ async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: 
 async function editView(scene: SceneDoc, rendering: RenderingSettings, assets = windowAssets()): Promise<ProjectionDigest> {
   const projection = await projected(scene, rendering, assets);
   const digest = digestProjection(projection.scene, projection.binder);
-  projection.binder.dispose();
+  projection.world.dispose();
   return digest;
 }
 
@@ -196,6 +195,18 @@ describe('the edit view and Play project a scene the same way', () => {
     // is covered by this the day it is added; a field added to a projection and
     // not to the digest is not, which is why the digest names what it reads.
     expect({ ...view, overlays: [] }).toEqual(running);
+  });
+
+  it('draws the edit view in a world that builds no subsystem, whose frame is the arena\'s flush', async () => {
+    const { world } = await projected(fixture(), settings(), windowAssets());
+    const flush = vi.spyOn(world.binder, 'beginFrame');
+
+    world.frame(1 / 60);
+
+    expect(world.mode).toBe('edit');
+    expect([audioOf(world), physicsOf(world), inputOf(world)]).toEqual([null, null, null]);
+    expect(flush).toHaveBeenCalledTimes(1);
+    world.dispose();
   });
 
   it('keeps the editor’s fallback lighting out of the projection', async () => {
@@ -277,7 +288,7 @@ describe('the edit view and Play draw from the window’s one cache', () => {
 
     world.dispose();
     expect(assets.stats.held).toBe(1);
-    projection.binder.dispose();
+    projection.world.dispose();
     expect(assets.stats.held).toBe(0);
   });
 });

@@ -26,7 +26,7 @@ export const RUNTIME_VERSION = ENGINE_VERSION;
 
 /* The world: a scene document running, and the scene graph a host draws. */
 export { World, isPerspective } from './world/World';
-export type { Phase, Subsystem, SubsystemDefinition, WorldOptions, WorldRegistries } from './world/World';
+export type { Phase, Subsystem, SubsystemDefinition, WorldMode, WorldOptions, WorldRegistries } from './world/World';
 export { EntityChannel } from './world/channel';
 export { CAMERA_PRIORITY, CameraClaims } from './world/cameras';
 export { SunService } from './world/sun';

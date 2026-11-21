@@ -1,6 +1,5 @@
-import type { SceneDoc } from '@three-studio/core';
-import { bindScene, type SceneBinder, type SceneBinderOptions } from '@three-studio/runtime';
-import { DirectionalLight, GridHelper, Group, HemisphereLight, Scene } from 'three/webgpu';
+import { World, type SceneBinder, type WorldOptions } from '@three-studio/runtime';
+import { DirectionalLight, GridHelper, Group, HemisphereLight, type Scene } from 'three/webgpu';
 import type { EditorRegistries } from '../registries';
 import { SelectionOutline } from './SelectionOutline';
 import { ViewportOverlay } from './overlay/ViewportOverlay';
@@ -29,17 +28,14 @@ export const EDITOR_OVERLAYS = [
   'FallbackLighting', // The only one that changes what is *lit*.
 ] as const;
 
-export interface EditorProjectionOptions extends SceneBinderOptions {
-  /** What the binder reads, and what each type draws about itself in the edit view: its marker, its helper. */
-  registries: SceneBinderOptions['registries'] & Pick<EditorRegistries, 'overlays'>;
-  /**
-   * The document to project, expanded.
-   *
-   * Named `document` and required, like `WorldOptions.document`, because the two
-   * are the halves this projection exists to keep comparable: an argument list
-   * that differs is a difference the parity test cannot see.
-   */
-  document: SceneDoc;
+/**
+ * A world's options, as Play is handed them, and the overlays: the two halves
+ * this projection exists to keep comparable take one argument list, since one
+ * that differed would be a difference the parity test cannot see.
+ */
+export interface EditorProjectionOptions extends WorldOptions {
+  /** What the world draws with, and what each type draws about itself in the edit view: its marker, its helper. */
+  registries: WorldOptions['registries'] & Pick<EditorRegistries, 'overlays'>;
 }
 
 /**
@@ -56,6 +52,8 @@ export interface EditorProjectionOptions extends SceneBinderOptions {
  * without one is left on its background colour rather than failing.
  */
 export interface EditorProjection {
+  /** The edit view's world: the document drawn, nothing simulated. */
+  readonly world: World;
   readonly scene: Scene;
   readonly binder: SceneBinder;
   readonly overlay: ViewportOverlay;
@@ -76,14 +74,12 @@ export interface EditorProjection {
 }
 
 export function createEditorProjection(options: EditorProjectionOptions): EditorProjection {
-  const { document: doc, ...binderOptions } = options;
-
-  const scene = new Scene();
-  // The named constructor, so the four ordering constraints this depends on are
-  // read where they are written down rather than restated here. It also puts
-  // `binder.root` into the scene, which is why the overlays go in afterwards:
-  // the six that remain, in order, are exactly `EDITOR_OVERLAYS`.
-  const binder = bindScene(scene, doc, binderOptions);
+  // A world that runs no simulation: the drawing mounts as it does in Play,
+  // and nothing else is built. Its binder puts `binder.root` into its scene,
+  // which is why the overlays go in afterwards: the six that remain, in
+  // order, are exactly `EDITOR_OVERLAYS`.
+  const world = World.edit(options);
+  const { scene, binder } = world;
 
   const overlay = new ViewportOverlay(binder, options.registries.overlays);
   const outline = new SelectionOutline();
@@ -109,7 +105,7 @@ export function createEditorProjection(options: EditorProjectionOptions): Editor
     fallbackLighting,
   );
 
-  return { scene, binder, overlay, outline, transformGizmo, fallbackLighting, grid };
+  return { world, scene, binder, overlay, outline, transformGizmo, fallbackLighting, grid };
 }
 
 function buildGrid(): Group {
