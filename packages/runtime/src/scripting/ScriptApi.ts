@@ -1,7 +1,7 @@
 import type { FieldDef } from '@three-studio/core';
 import type { Input } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
-import type { Entity, EntityTransform, ScriptWorld } from './Entity';
+import type { Entity, EntityTransform, Message, ScriptWorld } from './Entity';
 
 /**
  * Declared shape of one editable property. Drives the inspector.
@@ -101,6 +101,11 @@ export abstract class Behaviour {
   onUpdate?(delta: number): void;
   onFixedUpdate?(step: number): void;
   onLateUpdate?(): void;
+  /**
+   * A message sent to this entity (`entity.send`), heard at the start of the
+   * frame after it was sent, before any `onUpdate`.
+   */
+  onMessage?(message: Message): void;
   /**
    * The scene is being left, and everything is still here to read.
    *

@@ -80,9 +80,10 @@ const PROBE = `import type {
   ComponentTypes as PublishedComponents,
   PlaceOptions as PublishedPlace,
   SpawnOptions as PublishedSpawn,
+  Message as PublishedMessage,
 } from '@three-studio/runtime';
 import type { Behaviour } from ${importable('packages/runtime/src/scripting/ScriptApi')};
-import type { Entity, EntityTransform, PlaceOptions, ScriptWorld, SpawnOptions } from ${importable('packages/runtime/src/scripting/Entity')};
+import type { Entity, EntityTransform, Message, PlaceOptions, ScriptWorld, SpawnOptions } from ${importable('packages/runtime/src/scripting/Entity')};
 import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
 import type { AudioApi } from ${importable('packages/runtime/src/audio/scriptMembers')};
@@ -193,6 +194,13 @@ declare const spawn: SpawnOptions;
 // handle, whose private fields no published type can have.
 export const y1: PublishedPlace = place;
 export const y2: PublishedSpawn = spawn;
+
+declare const message: Message;
+declare const publishedMessage: PublishedMessage;
+
+// Both ways: what the runtime hands \`onMessage\` is what the script reads.
+export const z1: PublishedMessage = message;
+export const z2: Message = publishedMessage;
 `;
 
 /**

@@ -5,8 +5,9 @@ import type {
   BehaviourTarget,
 } from '../behaviour/Behaviour';
 import { inputOf } from '../input/inputOf';
+import type { EntityChannel } from '../world/channel';
 import type { World } from '../world/World';
-import type { Entity } from './Entity';
+import type { Entity, Message } from './Entity';
 import type { ScriptMembersDefinition, ScriptSite } from './members';
 import { isScriptClass } from './scriptBundle';
 import { Behaviour } from './ScriptApi';
@@ -31,6 +32,8 @@ class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
   private failed = false;
   /** What each contribution installed, given back after `onDestroy`. */
   private installed: Disposable = { dispose() {} };
+  /** Its script's ear on its entity's messages, for a script defining `onMessage`. */
+  private hearing: Disposable | null = null;
 
   constructor(
     readonly script: Behaviour,
@@ -42,6 +45,16 @@ class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
   /** Each contribution's members given to the script, in the order they were registered. */
   install(contributions: readonly ScriptMembersDefinition[]): void {
     this.installed = combineDisposables(contributions.map((contribution) => contribution.install(this)));
+  }
+
+  /**
+   * Hears its entity's messages, for a script defining `onMessage`, from its
+   * making: so the scripts of one entity hear in the order they were made, and
+   * one that hears nothing costs a delivery nothing.
+   */
+  listen(messages: EntityChannel<Message>): void {
+    if (this.script.onMessage === undefined) return;
+    this.hearing = messages.listen(this.entity.id, (message) => this.run('onMessage', this.script.onMessage, message));
   }
 
   run<A>(hook: string, call: ((this: Behaviour, arg: A) => void) | undefined, arg: A): void {
@@ -128,6 +141,7 @@ class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
       this.fail('onDestroy', cause);
     }
     this.script.cancelTimers();
+    this.hearing?.dispose();
     // After `onDestroy`, which may still play a sound or read its body.
     this.installed.dispose();
   }
@@ -204,6 +218,7 @@ export const scriptBehaviour: BehaviourDefinition = {
     // What each feature gives it, before it first runs: a script reads its
     // body or plays its sound from `onAwake`.
     behaviour.install(scripts.contributions);
+    behaviour.listen(scripts.messages);
     // Only `onAwake` here. `onStart` is run by the world once every behaviour
     // in the scene exists, so a script can reference another entity's script
     // without depending on which of them happened to be constructed first.

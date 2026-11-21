@@ -47,6 +47,23 @@ export interface SpawnOptions extends PlaceOptions {
   readonly name?: string;
 }
 
+/** What one entity tells another, heard by its scripts' `onMessage` at the next frame. */
+export interface Message {
+  readonly name: string;
+  /** As it was sent, not copied. A reply's entity goes in it: a message has no sender. */
+  readonly payload: unknown;
+}
+
+/** A message on its way: one object per send, its entity with it. */
+export interface Envelope extends Message {
+  readonly to: EntityId;
+}
+
+/** What a handle reaches its world's scripts through: the handles, and the queue its messages wait in. */
+export interface HandleHost extends ScriptWorld {
+  post(envelope: Envelope): void;
+}
+
 /*
  * Where a world read lands before it is copied into the caller's target, which
  * may be a plain object three cannot write into. Value objects, one each, read
@@ -140,7 +157,7 @@ export class Entity {
      */
     readonly object3D: Object3D,
     private readonly world: World,
-    private readonly scripts: ScriptWorld,
+    private readonly scripts: HandleHost,
   ) {
     this.transform = new EntityTransform(object3D);
   }
@@ -257,5 +274,15 @@ export class Entity {
    */
   destroy(): void {
     if (this.alive) this.world.destroy(this.id);
+  }
+
+  /**
+   * Tells its scripts `name`, with `payload` as it is: heard by each defining
+   * `onMessage` at the start of the next frame, before any `onUpdate`, and not
+   * inside the sender's hook. Dropped once it is destroyed, and when it is
+   * destroyed before the message is heard.
+   */
+  send(name: string, payload?: unknown): void {
+    if (this.alive) this.scripts.post({ to: this.id, name, payload });
   }
 }

@@ -14,8 +14,16 @@ import {
   type Vec3,
 } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
+import { EntityChannel } from '../world/channel';
 import type { SubsystemDefinition, World } from '../world/World';
-import { Entity, type PlaceOptions, type ScriptWorld, type SpawnOptions } from './Entity';
+import {
+  Entity,
+  type Envelope,
+  type HandleHost,
+  type Message,
+  type PlaceOptions,
+  type SpawnOptions,
+} from './Entity';
 import type { ScriptMembersDefinition } from './members';
 import { reservedScriptNames } from './typings';
 
@@ -25,15 +33,27 @@ import { reservedScriptNames } from './typings';
  * Made once per world by its scripts subsystem, reached by `worldScriptsOf`,
  * and given to each of its scripts as `this.world`.
  */
-export class WorldScripts implements ScriptWorld {
+export class WorldScripts implements HandleHost {
   /** Every name a script property may not take, each contribution's included. */
   readonly reserved: ReadonlySet<string>;
+  /**
+   * Where each entity's messages are heard: each script defining `onMessage`
+   * listens on its entity from its making until it is destroyed.
+   */
+  readonly messages = new EntityChannel<Message>();
   /**
    * Each entity's handle, by its container: a handle lives as long as the
    * drawing does, so a churn of spawns leaves nothing behind here, and nothing
    * has to be told when an entity goes.
    */
   private readonly handles = new WeakMap<Object3D, Entity>();
+  /**
+   * What was sent since the last delivery, and the array the one before was
+   * delivered from: swapped at each, so a frame's messages cost the queue no
+   * array, and what a handler sends waits for the next frame.
+   */
+  private queued: Envelope[] = [];
+  private delivering: Envelope[] = [];
 
   constructor(
     private readonly world: World,
@@ -57,6 +77,28 @@ export class WorldScripts implements ScriptWorld {
     const made = new Entity(record.id, record, object, this.world, this);
     this.handles.set(object, made);
     return made;
+  }
+
+  post(envelope: Envelope): void {
+    this.queued.push(envelope);
+  }
+
+  /**
+   * Hands each message sent since the last delivery to its entity's listeners,
+   * in send order; one whose entity is gone is dropped. At the start of the
+   * frame, before any `onUpdate`: a spawn made last frame has started, so it
+   * hears what was sent to it in its spawn frame — which Unity's immediate
+   * `SendMessage` would have lost.
+   */
+  deliver(): void {
+    if (this.queued.length === 0) return;
+    const batch = this.queued;
+    this.queued = this.delivering;
+    this.delivering = batch;
+    for (const envelope of batch) {
+      if (this.world.document.entities.has(envelope.to)) this.messages.publish(envelope.to, envelope);
+    }
+    batch.length = 0;
   }
 
   /**
@@ -169,6 +211,8 @@ export function worldScriptsOf(world: World): WorldScripts | null {
 export function scriptsSubsystem(registry: Registry<ScriptMembersId, ScriptMembersDefinition>): SubsystemDefinition {
   return {
     id: fixedId('subsystem', 'scripts'),
+    // Messages are delivered before the behaviours' updates, at 0.
+    order: { update: -1 },
     async create(world) {
       const { registries, prefabs, assets } = world.options;
       const materials = world.options.materials ?? new Map();
@@ -182,9 +226,11 @@ export function scriptsSubsystem(registry: Registry<ScriptMembersId, ScriptMembe
           : collectSceneAssets(registries, world.document, materials, prefabs, new Set(prefabs.keys()))
               .filter((assetId) => !named.has(assetId))
               .map((assetId) => assets.preload(assetId));
-      worlds.set(world, new WorldScripts(world, registry.values()));
+      const scripts = new WorldScripts(world, registry.values());
+      worlds.set(world, scripts);
       await Promise.all(holds.map(({ ready }) => ready));
       return {
+        update: () => scripts.deliver(),
         dispose() {
           worlds.delete(world);
           for (const hold of holds) hold.dispose();

@@ -152,6 +152,18 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
      * question, its objects and scripts going at the end of the frame.
      */
     destroy(): void;
+    /**
+     * Tells its scripts \`name\`: each defining \`onMessage\` hears it at the start of the next
+     * frame. Dropped if it is destroyed first. A message has no sender: a reply's entity goes
+     * in the payload, which is passed as it is.
+     */
+    send(name: string, payload?: unknown): void;
+  }
+
+  /** What one entity tells another. */
+  export interface Message {
+    readonly name: string;
+    readonly payload: unknown;
   }
 
   /** Where a spawn or a placement goes. */
@@ -242,6 +254,8 @@ const KERNEL_MEMBERS: Record<KernelMember, string | null> = {
     onFixedUpdate?(step: number): void;`,
   onLateUpdate: `    /** After physics. Anything following a subject belongs here. */
     onLateUpdate?(): void;`,
+  onMessage: `    /** A message sent to this entity, heard at the start of the frame after it was sent. */
+    onMessage?(message: Message): void;`,
   onSceneUnload: `    /** The scene is being left, and everything is still here to read. */
     onSceneUnload?(): void;`,
   onDestroy: `    onDestroy?(): void;`,
