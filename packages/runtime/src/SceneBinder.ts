@@ -446,15 +446,6 @@ export class SceneBinder {
     return this.reconciler.peekContainer(entityId);
   }
 
-  /**
-   * Where a self-shading component takes its light from. See `SystemContext`.
-   *
-   * The sky's sun is a pure function of the document. A light's is not: it is
-   * aimed along its entity's world -Z (see `aimAlongLocalForward` in
-   * `LightSystem`), so the answer is the container's matrix, which three has
-   * already composed. Resolved per sync rather than per frame — a sync is what
-   * a gizmo drag produces, so the water still follows a light being moved.
-   */
   /** Walks up from a raycast hit to the entity that owns it. */
   static resolveEntityId(object: Object3D | null): EntityId | undefined {
     return resolveEntityId(object);

@@ -191,6 +191,12 @@ export class WaterSystem extends ComponentSystem<WaterComponent, WaterHandle> {
    * What the glint is lit by. A light that has gone lights it as the sky does,
    * rather than leaving the water lit from nowhere; and a scene that cannot
    * answer for its sky lights it from the default a sun of its own starts at.
+   *
+   * Read when the water mounts and when its own component changes, and at no
+   * other time. A light turned afterwards leaves the water lit as it was; and
+   * a light that mounts after its water is not there to answer, so the water
+   * takes the sky's — the binder mounts in the document's order, which a scene
+   * read from its file holds by id, its keys being sorted.
    */
   private sunFor(component: WaterComponent, ctx: SystemContext): Sun {
     const { sun } = component;
