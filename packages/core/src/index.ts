@@ -168,6 +168,7 @@ export type {
 /* A type's fields written once, and what reading a value from outside answers. */
 export { conditionHolds, planFields, variantDefaults, variantFactory } from './fieldSchema';
 export type { FieldPlan, Infer, LinkedObject, Schema, SchemaField, ShownWhen } from './fieldSchema';
+export { schemaTypeText } from './schemaTypes';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
 export {
@@ -370,7 +371,7 @@ export { createJointMotion, jointMotionField } from './components/joint/schema';
 export { jointFrame } from './components/joint/frame';
 
 export { decodeScene, sceneJsonOf, serializeScene } from './scene/serialization';
-export { jsonOf, stableJson } from './json';
+export { deepFreeze, jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */

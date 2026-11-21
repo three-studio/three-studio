@@ -77,6 +77,7 @@ const PROBE = `import type {
   Collision as PublishedCollision,
   QueryFilter as PublishedFilter,
   RaycastHit as PublishedHit,
+  ComponentTypes as PublishedComponents,
 } from '@three-studio/runtime';
 import type { Behaviour } from ${importable('packages/runtime/src/scripting/ScriptApi')};
 import type { Entity, EntityTransform, ScriptWorld } from ${importable('packages/runtime/src/scripting/Entity')};
@@ -96,7 +97,7 @@ import type {
 } from ${importable('packages/runtime/src/physics/PhysicsApi')};
 import type { ScriptPhysics } from ${importable('packages/runtime/src/physics/scriptMembers')};
 import type { FieldDef } from ${importable('packages/core/src/fields')};
-import type { AudioBus } from ${importable('packages/core/src/index')};
+import type { AudioBus, ComponentTypes } from ${importable('packages/core/src/index')};
 
 // The public half of a type. A class carrying a protected member is assignable
 // from nothing but a subclass, so the two \`Behaviour\`s cannot be compared
@@ -175,6 +176,13 @@ export const w: StudioJoint = joint;
 // Both ways: the filter a script builds is the one the runtime reads.
 export const u: PublishedFilter = filter;
 export const v: QueryFilter = publishedFilter;
+
+declare const components: ComponentTypes;
+
+// Every type the build defines is published, and each component as the
+// runtime holds it is one a script may read: keyed on the kernel's own types,
+// so a type left out fails here rather than vanishing from an author's editor.
+export const x: { [K in keyof ComponentTypes]: PublishedComponents[K] } = components;
 `;
 
 /**

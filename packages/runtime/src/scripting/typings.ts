@@ -1,4 +1,4 @@
-import type { Registry, ScriptMembersId } from '@three-studio/core';
+import { schemaTypeText, type CoreRegistries, type Registry, type ScriptMembersId } from '@three-studio/core';
 import type { ScriptMembersDefinition } from './members';
 import type { Behaviour, ScriptMembers } from './ScriptApi';
 
@@ -134,6 +134,19 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
      * editor and read-only: written, a change shows in the edit view after Stop.
      */
     readonly object3D: any;
+
+    /** Its first component of \`type\`, frozen: a change is a copy handed to \`setComponent\`. Null when it holds none. */
+    getComponent<K extends keyof ComponentTypes>(type: K): ComponentTypes[K] | null;
+    /**
+     * Puts a changed copy in place of the component under its id —
+     * \`setComponent({ ...light, intensity: 3 })\` — drawn from the end of the frame. False, with
+     * a warning, for a component the entity does not hold or a field that does not read.
+     */
+    setComponent(component: ComponentTypes[keyof ComponentTypes]): boolean;
+    /** Adds a component of \`type\` with what its type requires. Null, with a warning, when it does not fit. */
+    addComponent<K extends keyof ComponentTypes>(type: K): ComponentTypes[K] | null;
+    /** Takes a component off, from the end of the frame. False when the entity does not hold it. */
+    removeComponent(component: ComponentTypes[keyof ComponentTypes]): boolean;
   }
 
   /** The world a script runs in. */
@@ -222,6 +235,22 @@ export function reservedScriptNames(contributions: readonly ScriptMembersDefinit
 }
 
 /**
+ * Every component type of the build, as a script reads one: from each type's
+ * schema, a module's as the kernel's, so a type reaches an author's editor
+ * with nothing written for it by hand.
+ */
+function componentTypes(components: CoreRegistries['components']): string {
+  const entries = components.values().map(
+    ({ id, schema }) =>
+      `    ${JSON.stringify(id)}: ${schemaTypeText(schema, '    ', ['readonly id: string', `readonly type: ${JSON.stringify(id)}`])};`,
+  );
+  return `  /** Each component type, as a script reads one: frozen, so a change is a copy handed to \`setComponent\`. */
+  export interface ComponentTypes {
+${entries.join('\n')}
+  }`;
+}
+
+/**
  * The declaration of `@three-studio/runtime` written into a project, so that an
  * editor of the author's own gives completion and type errors: the kernel's
  * types and each contribution's, in registration order, then `Behaviour`, the
@@ -235,10 +264,13 @@ export function reservedScriptNames(contributions: readonly ScriptMembersDefinit
  * typings as it is left out of Play.
  */
 export function scriptTypings(registries: {
+  readonly components: CoreRegistries['components'];
   readonly scriptMembers: Registry<ScriptMembersId, ScriptMembersDefinition>;
 }): string {
   const contributions = registries.scriptMembers.values();
-  const types = [KERNEL_TYPES, ...contributions.map(({ types }) => types)].filter((block) => block !== '');
+  const types = [KERNEL_TYPES, componentTypes(registries.components), ...contributions.map(({ types }) => types)].filter(
+    (block) => block !== '',
+  );
   const members = [
     PROPERTIES,
     ...Object.values(KERNEL_MEMBERS).filter((member): member is string => member !== null),

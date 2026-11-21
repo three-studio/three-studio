@@ -74,7 +74,11 @@ export const ENGINE_VERSION = '0.6.0';
  * it was the three.js object; and `this.world.entity(id)` hands another
  * entity's handle, where `resolve(id)` handed a record's name and an object. A
  * script that renamed its entity, read `this.transform.parent` or called
- * `resolve` no longer runs as it did, and `world` joined the reserved names.
+ * `resolve` no longer runs as it did, and `world` joined the reserved names. A
+ * handle reads a component frozen (`getComponent`) and writes one whole
+ * (`setComponent`, `addComponent`, `removeComponent`), each decoded as a file
+ * is and drawn from the end of the frame; the published `ComponentTypes`
+ * types them from each type's schema.
  */
 export const SCRIPT_API_VERSION = 5;
 

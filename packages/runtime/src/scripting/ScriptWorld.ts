@@ -46,7 +46,7 @@ export class WorldScripts implements ScriptWorld {
   handle(record: EntityDoc, object: Object3D): Entity {
     const known = this.handles.get(object);
     if (known !== undefined) return known;
-    const made = new Entity(record.id, record, object, this.world.document, this);
+    const made = new Entity(record.id, record, object, this.world, this);
     this.handles.set(object, made);
     return made;
   }
