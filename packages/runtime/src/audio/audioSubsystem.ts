@@ -1,4 +1,4 @@
-import { entitiesWith, fixedId, type Disposable } from '@three-studio/core';
+import { fixedId, type Disposable } from '@three-studio/core';
 import { EarPose } from '../behaviour/audio';
 import type { Subsystem, SubsystemDefinition, World } from '../world/World';
 import { AudioEngine } from './AudioEngine';
@@ -14,6 +14,7 @@ export const audioSubsystem: SubsystemDefinition = {
   // where the player ended the frame, and the camera the ear falls back to is
   // where its controller left it.
   order: { lateUpdate: 100 },
+  mounts: ['audioListener'],
   create(world) {
     const { audioContext, audioCache, assets } = world.options;
     // No context, no sound: a test, or a browser with no Web Audio. Nothing to
@@ -31,11 +32,13 @@ export const audioSubsystem: SubsystemDefinition = {
 
 class AudioSubsystem implements Subsystem {
   /**
-   * How many entities carry an Audio Listener. None puts the ear on the camera
-   * the game is drawn through, which is right far more often than it is wrong
-   * and much better than a silent scene; several is said.
+   * How many Audio Listeners the world's document holds, counted as they mount
+   * and unmount. None puts the ear on the camera the game is drawn through,
+   * which is right far more often than it is wrong and much better than a
+   * silent scene: a listener spawned takes the ear, and one destroyed gives it
+   * back. Several is said.
    */
-  private readonly listeners: number;
+  private listeners = 0;
   private readonly ear = new EarPose();
   private readonly provided: Disposable;
 
@@ -43,8 +46,15 @@ class AudioSubsystem implements Subsystem {
     private readonly world: World,
     private readonly audio: AudioEngine,
   ) {
-    this.listeners = entitiesWith(world.document, 'audioListener').length;
     this.provided = provideAudio(world, audio);
+  }
+
+  mount(): void {
+    this.listeners += 1;
+  }
+
+  unmount(): void {
+    this.listeners -= 1;
   }
 
   lateUpdate(): void {

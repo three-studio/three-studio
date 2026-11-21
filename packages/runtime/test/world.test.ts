@@ -234,6 +234,31 @@ describe('audio, the first subsystem', () => {
       '2 entities carry an Audio Listener; only one ear is placed and the others are ignored.',
     );
   });
+
+  it('gives the ear to a listener spawned, and back to the camera once the listener is destroyed', async () => {
+    const context = new FakeContext();
+    const camera = createCameraEntity();
+    camera.entity.transform.position = [3, 4, 5];
+    const rig = await physicsRigOn(builtInRegistries(), { audioContext: context })([camera]);
+    const ear = context.listener;
+    if (!(ear instanceof FakeListener)) throw new Error('The fake context lent another listener.');
+    const heardFrom = () => [ear.positionX, ear.positionY, ear.positionZ].map((param) => param.target + 0);
+    rig.world.frame(0);
+    expect(heardFrom()).toEqual([3, 4, 5]);
+
+    const listener = createAudioListenerEntity();
+    listener.entity.transform.position = [-1, 2, -3];
+    rig.world.spawn(listener);
+    // Mounted at the first frame's pass; the second is the first it runs in.
+    rig.world.frame(0);
+    rig.world.frame(0);
+    expect(heardFrom()).toEqual([-1, 2, -3]);
+
+    rig.world.destroy(listener.entity.id);
+    rig.world.frame(0);
+    rig.world.frame(0);
+    expect(heardFrom()).toEqual([3, 4, 5]);
+  });
 });
 
 describe('input, a subsystem', () => {
