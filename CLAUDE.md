@@ -51,6 +51,13 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   après la dernière prise, au-delà de son budget, à la frame suivante. Ce qu'un monde en cours de jeu
   peut changer d'un asset — les matériaux d'un modèle — est sa copie ; géométrie et images sont
   partagées, en lecture seule.
+- **Une scène tourne dans un monde.** La vue d'édition est un `World` qui ne simule rien ; Play, un device et
+  le player font tourner un `World` en jeu. Ses phases sont fixes (`update`, `fixed`, `lateUpdate`,
+  `renderPrep`) et le noyau tient le pas fixe ; ce qui simule est un sous-système enregistré
+  (`RuntimeRegistries.subsystems`), avec sa place dans chaque phase, ses diagnostics et son accesseur
+  (`physicsOf(world)`), jamais un champ du monde ni un contexte fourre-tout. `runtime/src/world/` ne nomme
+  aucun type de composant, ce que `test/architecture.test.ts` vérifie, et ce que le code du runtime alloue
+  par frame tient dans un budget, ce que `worldAllocations.test.ts` vérifie.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
