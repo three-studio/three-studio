@@ -58,6 +58,13 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   (`physicsOf(world)`), jamais un champ du monde ni un contexte fourre-tout. `runtime/src/world/` ne nomme
   aucun type de composant, ce que `test/architecture.test.ts` vérifie, et ce que le code du runtime alloue
   par frame tient dans un budget, ce que `worldAllocations.test.ts` vérifie.
+- **Un monde en jeu tient son propre document.** `spawn`, `instantiate`, `destroy`, `putComponent`,
+  `deleteComponent` et `setAssetValues` le changent et marquent ce qu'ils touchent ; une seule passe par
+  frame, après `lateUpdate`, monte, rapièce et démonte le dessin et chaque sous-système, selon les types
+  qu'il déclare (`mounts`). L'état chaud — poses, vitesses — n'y passe jamais, et un réglage en Play est
+  une écriture de ce document. Les behaviours d'une scène naissent quand elle est construite tout entière,
+  tous les `onAwake` puis tous les `onStart` ; ceux d'un spawn à la fin de sa passe, avant leur premier
+  `onUpdate`.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
