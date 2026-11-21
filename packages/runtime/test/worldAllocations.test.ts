@@ -154,6 +154,31 @@ describe('a running world', () => {
       override onLateUpdate() {}
       override onCollisionEnter() {}
     }
+    // What a script does every frame through its façade, into fields it keeps:
+    // none of it may make anything. The calls made at an event — a component
+    // read or written, a send, a spawn — are outside the guarantee. On an
+    // entity with no body, so what its moves cost is the façade's, not a
+    // teleport's in the solver.
+    class Facade extends Behaviour {
+      private readonly where = { x: 0, y: 0, z: 0 };
+      private readonly mouse = { x: 0, y: 0 };
+      seen = 0;
+
+      override onUpdate(delta: number) {
+        this.transform.rotation.y += delta;
+        this.transform.getWorldPosition(this.where);
+        this.input.consumeMouseDelta(this.mouse);
+        if (this.entity.alive && this.world.entity(this.entity.id) === this.entity) this.seen += 1;
+      }
+
+      override onLateUpdate() {
+        this.transform.position.x = Math.sin(this.time);
+      }
+
+      override onMessage() {}
+    }
+    const facade = withScript(createMeshEntity('sphere'), Facade);
+    facade.entity.transform.position = [-6, 0.5, 0];
     const crates = [0, 1, 2].map((i) => withBody('box', [i * 2 - 2, 0.5, -3]));
     const scripted = withScript(withBody('sphere', [3, 0.5, 0]), Busy);
     const speaker = createEntity('Speaker', [
@@ -179,6 +204,7 @@ describe('a running world', () => {
       ground(),
       ...crates,
       scripted,
+      facade,
       player([0, 1, 0]),
       speaker,
       createCameraEntity(),

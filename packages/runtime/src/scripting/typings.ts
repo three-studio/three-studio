@@ -36,7 +36,8 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
     isDown(code: string): boolean;
     isAnyDown(...codes: string[]): boolean;
     readonly pointerLocked: boolean;
-    consumeMouseDelta(): { x: number; y: number };
+    /** Mouse movement since the last call, in pixels, written into \`target\`, which comes back. */
+    consumeMouseDelta<T extends { x: number; y: number }>(target: T): T;
     consumeWheel(): number;
   }
 

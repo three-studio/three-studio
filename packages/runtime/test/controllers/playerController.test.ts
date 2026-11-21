@@ -80,7 +80,7 @@ interface StubInput {
   touchActive: boolean;
   isDown(code: string): boolean;
   anyDown(codes: readonly string[]): boolean;
-  readMouseDelta(target: { x: number; y: number }): void;
+  consumeMouseDelta<T extends { x: number; y: number }>(target: T): T;
   consumeWheel(): number;
   moveAxis(): { x: number; y: number };
   lookAxis(): { x: number; y: number };
@@ -97,9 +97,10 @@ function stubInput(): StubInput {
     touchActive: false,
     isDown: (code) => down.has(code),
     anyDown: (codes) => codes.some((code) => down.has(code)),
-    readMouseDelta: (target) => {
+    consumeMouseDelta: (target) => {
       target.x = 0;
       target.y = 0;
+      return target;
     },
     consumeWheel: () => 0,
     moveAxis: () => stub.move,

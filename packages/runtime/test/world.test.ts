@@ -322,9 +322,9 @@ describe('input, a subsystem', () => {
 
     const input = inputOf(world);
     expect(input).toBeInstanceOf(Input);
-    expect(input?.consumeMouseDelta()).toEqual({ x: 0, y: 0 });
+    expect(input?.consumeMouseDelta({ x: 0, y: 0 })).toEqual({ x: 0, y: 0 });
     canvas.dispatchEvent(mouseMoved(4, 2));
-    expect(input?.consumeMouseDelta()).toEqual({ x: 4, y: 2 });
+    expect(input?.consumeMouseDelta({ x: 0, y: 0 })).toEqual({ x: 4, y: 2 });
   });
 });
 

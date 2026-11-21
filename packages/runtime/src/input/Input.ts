@@ -198,21 +198,17 @@ export class Input {
   }
 
   /**
-   * Mouse movement since the last call, in pixels. Reading clears it, so a
-   * frame that does not read does not accumulate a jump for the next one.
+   * Mouse movement since the last call, in pixels, written into `target`,
+   * which comes back. Reading clears it, so a frame that does not read does
+   * not accumulate a jump for the next one. Into a target the caller keeps, so
+   * a script reading it every frame makes nothing.
    */
-  consumeMouseDelta(): { x: number; y: number } {
-    const delta = { x: 0, y: 0 };
-    this.readMouseDelta(delta);
-    return delta;
-  }
-
-  /** `consumeMouseDelta` into `target`, for a caller reading it every frame: nothing is made. */
-  readMouseDelta(target: { x: number; y: number }): void {
+  consumeMouseDelta<T extends { x: number; y: number }>(target: T): T {
     target.x = this.mouseX;
     target.y = this.mouseY;
     this.mouseX = 0;
     this.mouseY = 0;
+    return target;
   }
 
   consumeWheel(): number {

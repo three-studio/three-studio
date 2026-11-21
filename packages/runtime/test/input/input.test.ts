@@ -50,6 +50,21 @@ afterEach(() => {
   Reflect.deleteProperty(globalThis, 'document');
 });
 
+describe('the mouse', () => {
+  it('moves into the target it is read into, which comes back, and reading clears it', () => {
+    const mouse = input();
+    Object.assign(document, { pointerLockElement: element });
+    element.dispatchEvent(Object.assign(new Event('pointermove'), { movementX: 3, movementY: -2, pointerType: 'mouse' }));
+    const target = { x: 9, y: 9 };
+
+    expect(mouse.consumeMouseDelta(target)).toBe(target);
+    expect(target).toEqual({ x: 3, y: -2 });
+    expect(mouse.consumeMouseDelta(target)).toEqual({ x: 0, y: 0 });
+    // Unlocked again: `dispose` releases a lock it holds, which this document cannot.
+    Object.assign(document, { pointerLockElement: null });
+  });
+});
+
 describe('Input, keys heard window-wide (the default)', () => {
   it('holds a key pressed anywhere on the page, until it is released', () => {
     const keys = input();

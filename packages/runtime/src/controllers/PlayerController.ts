@@ -231,7 +231,7 @@ export class PlayerController implements Behaviour {
      * the frame rate instead of on the time held.
      */
     const mouse = this.mouse;
-    input.readMouseDelta(mouse);
+    input.consumeMouseDelta(mouse);
     const stick = input.lookAxis();
     const turn = this.component.touchLookSpeed * delta;
 
