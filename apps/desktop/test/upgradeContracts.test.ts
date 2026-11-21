@@ -7,12 +7,14 @@ import {
   ASSET_META_VERSION,
   CACHE_DIR,
   SCRIPT_API_VERSION,
+  activateCore,
   isAssetId,
   type AssetEntry,
 } from '@three-studio/core';
+import { activateRuntime, createRuntimeRegistries, scriptTypings } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 import { readAssetMeta, scanAssets, updateAssetSettings } from '../src/main/assetScan';
-import { writeScriptTypings } from '../src/main/scripts';
+import { writeScriptTsconfig, writeScriptTypings } from '../src/main/scripts';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
@@ -26,7 +28,7 @@ const registries = builtInRegistries();
 describe('script typings and tsconfig', () => {
   it('writes its own config under .studio and a project file that extends it', async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-tsconfig-'));
-    await writeScriptTypings(project);
+    await writeScriptTsconfig(project);
 
     const studio = JSON.parse(
       await readFile(join(project, CACHE_DIR, 'tsconfig.json'), 'utf8'),
@@ -50,17 +52,20 @@ describe('script typings and tsconfig', () => {
     );
     await writeFile(join(project, 'tsconfig.json'), mine, 'utf8');
 
-    // Opening a project regenerates the typings, which is where this used to
+    // Opening a project writes the config again, which is where this used to
     // take the customisation with it.
-    await writeScriptTypings(project);
-    await writeScriptTypings(project);
+    await writeScriptTsconfig(project);
+    await writeScriptTsconfig(project);
 
     expect(await readFile(join(project, 'tsconfig.json'), 'utf8')).toBe(mine);
   });
 
   it('bakes the API version into the shim so a stale bundle says so', async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-shim-'));
-    await writeScriptTypings(project);
+    const runtime = createRuntimeRegistries();
+    activateCore(runtime);
+    activateRuntime(runtime);
+    await writeScriptTypings(project, scriptTypings(runtime));
 
     // The shim is compiled into the bundle at build time; its check is what
     // turns "a method vanished" into a sentence instead of a TypeError deep in

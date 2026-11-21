@@ -903,6 +903,54 @@ describe('the frameworks that read the types', () => {
   });
 });
 
+// ------------------------------------------------------------------ scripting
+
+/*
+ * What a script is given by physics and audio — `this.body`, the collision
+ * hooks, `this.audio` — is each one's contribution, registered by it and
+ * installed by the script host, which names neither. The host used to: the
+ * script API grew a member each time a feature did, and its reserved names and
+ * its published typings were written out twice more, in the host and in the
+ * main process, where they fell behind. And a host that named a feature would
+ * need an edit the day that feature moves into a module of its own.
+ */
+
+/** The features scripting may not name: those that give scripts their members. */
+const CONTRIBUTORS = /^packages\/runtime\/src\/(physics|audio)\//;
+
+/** The scripting files that import physics or audio, a line each. */
+function scriptingImportProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (!path.startsWith('packages/runtime/src/scripting/')) continue;
+    for (const spec of specifiersIn(source)) {
+      const hit = resolveSpecifier(join(repoRoot, path), spec);
+      if (hit.kind === 'file' && CONTRIBUTORS.test(show(hit.path))) {
+        problems.push(`${path}: imports ${spec}, and scripting names no feature that gives scripts their members`);
+      }
+    }
+  }
+  return problems;
+}
+
+describe('scripting', () => {
+  it('reports a file of the script host that imports physics or audio', () => {
+    const found = (source: string) => scriptingImportProblems([['packages/runtime/src/scripting/Probe.ts', source]]);
+
+    expect(found("import type { Collision } from '../physics/PhysicsApi';")).toEqual([
+      'packages/runtime/src/scripting/Probe.ts: imports ../physics/PhysicsApi, and scripting names no feature that gives scripts their members',
+    ]);
+    expect(found("import { audioOf } from '@three-studio/runtime/audio/audioOf';")).toEqual([
+      'packages/runtime/src/scripting/Probe.ts: imports @three-studio/runtime/audio/audioOf, and scripting names no feature that gives scripts their members',
+    ]);
+    expect(found("import { inputOf } from '../input/inputOf';")).toEqual([]);
+  });
+
+  it('finds none in the tree: physics and audio give scripts their members by contribution', () => {
+    expect(scriptingImportProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
+  });
+});
+
 describe('the kernel alone', () => {
   it('is what tsconfig.kernel.json compiles: every package, their paths, and no module', () => {
     // `npm run typecheck` compiles this config after the whole repository's. A

@@ -1,8 +1,32 @@
-import { isAssetId, isEntityId, type AudioBus, type EntityId } from '@three-studio/core';
-import type { AudioEngine } from '../audio/AudioEngine';
-import type { BusState } from '../audio/AudioMixer';
-import type { PlayRequest, VoiceHandle } from '../audio/playback';
+import { fixedId, isAssetId, isEntityId, type AudioBus, type EntityId } from '@three-studio/core';
 import { audioSourcesOn } from '../behaviour/audio';
+import type { ScriptMembersDefinition } from '../scripting/members';
+import type { AudioEngine } from './AudioEngine';
+import type { BusState } from './AudioMixer';
+import { audioOf } from './audioOf';
+import type { PlayRequest, VoiceHandle } from './playback';
+
+/*
+ * What audio gives every script: `this.audio`. A contribution, installed by
+ * the script host, which names no audio: the member is typed on every
+ * `Behaviour` by the augmentation below, and published by the line beside it.
+ */
+
+/** Audio's member of a script. */
+export interface AudioScriptMembers {
+  /**
+   * The mix: this entity's own sounds, one-shot clips, and the buses.
+   *
+   * Present even when the host handed over no audio context — every method is
+   * then a no-op — so a script never has to ask whether sound exists before
+   * asking for it.
+   */
+  readonly audio: AudioApi;
+}
+
+declare module '../scripting/ScriptApi' {
+  interface ScriptMembers extends AudioScriptMembers {}
+}
 
 /**
  * What a script can do to the mix.
@@ -108,3 +132,82 @@ export function audioApiFor(audio: AudioEngine | null, ownEntityId: EntityId): A
     stopAll: (fadeOut) => audio?.stopAll(fadeOut),
   };
 }
+
+/** Audio's line of the published `Behaviour`: a member added above and not published here does not compile. */
+const MEMBERS: Record<keyof AudioScriptMembers, string> = {
+  audio: `
+    /** This entity's sounds, one-shot clips, and the buses. */
+    readonly audio: StudioAudio;`,
+};
+
+/** The types audio's line names, as a script sees them. */
+const TYPES = `  export type AudioBus = 'master' | 'music' | 'sfx' | 'ui' | 'ambience';
+
+  /** A playing sound. Every method is safe to call after it has finished. */
+  export interface AudioVoice {
+    readonly state: 'pending' | 'playing' | 'paused' | 'stopped' | 'failed';
+    /** Seconds advanced through the clip, loops included. */
+    readonly elapsed: number;
+    stop(fadeOut?: number): void;
+    pause(): void;
+    resume(): void;
+    setVolume(volume: number, ramp?: number): void;
+    setPitch(pitch: number, detune?: number): void;
+    /** \`'ended'\` covers every way a sound can finish. Returns an unsubscribe. */
+    on(event: 'started' | 'ended' | 'failed', listener: () => void): () => void;
+  }
+
+  export interface AudioClipOptions {
+    bus?: AudioBus;
+    volume?: number;
+    pitch?: number;
+    detune?: number;
+    loop?: boolean;
+    startOffset?: number;
+    delay?: number;
+    fadeIn?: number;
+    /** 0 is the highest. Decides who is dropped when too many sounds play. */
+    priority?: number;
+  }
+
+  export interface StudioAudio {
+    /**
+     * Plays the Audio Source on an entity, with everything the Inspector says
+     * about it. Leaving \`target\` out means this script's own entity.
+     *
+     * A source that is already playing restarts rather than doubling up.
+     */
+    play(target?: string): AudioVoice | null;
+    stop(target?: string, fadeOut?: number): void;
+    pause(target?: string): void;
+    resume(target?: string): void;
+    restart(target?: string): void;
+    setVolume(target: string | undefined, volume: number, ramp?: number): void;
+    setPitch(target: string | undefined, pitch: number, detune?: number): void;
+
+    /** A one-shot with no component behind it — an explosion, a UI click. */
+    playClip(assetId: string, options?: AudioClipOptions): AudioVoice | null;
+
+    bus(name: AudioBus): { volume: number; mute: boolean; solo: boolean } | undefined;
+    setBusVolume(name: AudioBus, volume: number): void;
+    setBusMute(name: AudioBus, mute: boolean): void;
+    setMasterVolume(volume: number): void;
+    stopAll(fadeOut?: number): void;
+  }`;
+
+/**
+ * Audio's contribution to every script: its mix, bound to the script's entity
+ * so that `this.audio.play()` with no argument means "my own sound" — the case
+ * a script wants ninety per cent of the time and the one that should be
+ * shortest to write.
+ */
+export const audioScriptMembers: ScriptMembersDefinition = {
+  id: fixedId('scriptMembers', 'audio'),
+  members: MEMBERS,
+  types: TYPES,
+  install({ script, entity, world }) {
+    const given: AudioScriptMembers = { audio: audioApiFor(audioOf(world), entity.id) };
+    Object.assign(script, given);
+    return { dispose() {} };
+  },
+};

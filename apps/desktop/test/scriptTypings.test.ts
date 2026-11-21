@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { CACHE_DIR } from '@three-studio/core';
+import { CACHE_DIR, activateCore, assertDefined } from '@three-studio/core';
+import { activateRuntime, createRuntimeRegistries, reservedScriptNames, scriptTypings } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 import { writeScriptTypings } from '../src/main/scripts';
 
@@ -12,11 +13,13 @@ import { writeScriptTypings } from '../src/main/scripts';
  * The typings the editor writes into a project, compiled against the runtime
  * they claim to describe.
  *
- * They are not the runtime's own declarations: a user's project cannot resolve
- * `three` or `@three-studio/core`, so `Object3D` is published as `any` and an
- * `EntityDoc` as the two fields a script reads off it. That makes them a second
- * statement of the same API — and the only reason the copy is acceptable is
- * this test, which fails the moment the two stop agreeing.
+ * Generated from the registries the editor window runs — the kernel's members,
+ * then each contribution's, physics' and audio's — and written by the main
+ * process. They are not the runtime's own declarations: a user's project
+ * cannot resolve `three` or `@three-studio/core`, so `Object3D` is published
+ * as `any` and an `EntityDoc` as the two fields a script reads off it. That
+ * makes them a second statement of the same API — and the only reason the copy
+ * is acceptable is this test, which fails the moment the two stop agreeing.
  *
  * TypeScript 7 has no JS API (see `packages/core/package.json`), so the check
  * is the compiler itself, run over a probe file. It costs about a quarter of a
@@ -26,6 +29,16 @@ import { writeScriptTypings } from '../src/main/scripts';
 
 const run = promisify(execFile);
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+
+/** The editor window's runtime registries, as its root activates them: the typings are theirs. */
+function runtimeRegistries() {
+  const registries = createRuntimeRegistries();
+  activateCore(registries);
+  activateRuntime(registries);
+  return registries;
+}
+
+const registries = runtimeRegistries();
 
 /** A path a TypeScript import can carry, on a machine whose separator is `\`. */
 const importable = (...parts: string[]): string =>
@@ -62,7 +75,7 @@ const PROBE = `import type {
 import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
 import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
-import type { AudioApi } from ${importable('packages/runtime/src/scripting/audioApi')};
+import type { AudioApi } from ${importable('packages/runtime/src/audio/scriptMembers')};
 import type {
   BodyHandle,
   CharacterController,
@@ -74,15 +87,15 @@ import type {
   RaycastHit,
   Vec3Like,
 } from ${importable('packages/runtime/src/physics/PhysicsApi')};
-import type { ScriptPhysics } from ${importable('packages/runtime/src/scripting/scriptPhysics')};
+import type { ScriptPhysics } from ${importable('packages/runtime/src/physics/scriptMembers')};
 import type { FieldDef } from ${importable('packages/core/src/fields')};
 import type { AudioBus } from ${importable('packages/core/src/index')};
 
 // The public half of a type. A class carrying a protected member is assignable
 // from nothing but a subclass, so the two \`Behaviour\`s cannot be compared
 // whole; a mapped type is keyed on \`keyof\`, which leaves the protected
-// helpers out. Those four are covered by name, by the table the body is keyed
-// on in \`scripts.ts\`.
+// helpers out. Those four are covered by name, by the kernel's record of its
+// members in \`typings.ts\`.
 type PublicPart<T> = { [K in keyof T]: T[K] };
 
 declare const behaviour: Behaviour;
@@ -178,7 +191,7 @@ const TSCONFIG = {
 describe('the generated script typings', () => {
   it('compiles against the runtime they describe', { timeout: 60_000 }, async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-typings-'));
-    await writeScriptTypings(project);
+    await writeScriptTypings(project, scriptTypings(registries));
 
     const probe = join(project, 'probe');
     await mkdir(probe, { recursive: true });
@@ -205,23 +218,25 @@ describe('the generated script typings', () => {
     // `onSceneUnload`, which existed on `Behaviour` for two releases and were
     // published nowhere.
     const project = await mkdtemp(join(tmpdir(), 'studio-typings-'));
-    await writeScriptTypings(project);
+    await writeScriptTypings(project, scriptTypings(registries));
     const dts = await readFile(join(project, CACHE_DIR, 'studio-runtime.d.ts'), 'utf8');
 
-    const { RESERVED_PROPERTY_NAMES } = await import('@three-studio/runtime');
+    const reserved = reservedScriptNames(registries.scriptMembers.values());
     // The class body alone: the interfaces above it are indented the same, and
     // an `AudioVoice` with a `pause` is not a `Behaviour` with one.
     const body = dts.slice(dts.indexOf('export abstract class Behaviour {'));
     const published = new Set(
-      [...body.matchAll(/^ {4}(?:(?:static|protected|readonly) )*(\w+)[?(:]/gm)].map((hit) => hit[1]!),
+      [...body.matchAll(/^ {4}(?:(?:static|protected|readonly) )*(\w+)[?(:]/gm)].map((hit) =>
+        assertDefined(hit[1], 'the name of a published member'),
+      ),
     );
 
     // `cancelTimers` is the one the host owns: reserved so a property cannot
     // take the name, unpublished so a script cannot cancel its own timers.
-    expect([...RESERVED_PROPERTY_NAMES].filter((name) => !published.has(name))).toEqual([
-      'cancelTimers',
-    ]);
-    expect([...published].filter((name) => name !== 'properties' && !RESERVED_PROPERTY_NAMES.has(name))).toEqual(
+    expect([...reserved].filter((name) => !published.has(name))).toEqual(['cancelTimers']);
+    expect([...published].filter((name) => name !== 'properties' && !reserved.has(name))).toEqual([]);
+    // Physics' and audio's among them, which the host names nowhere.
+    expect(['body', 'physics', 'onCollisionEnter', 'onTriggerExit', 'audio'].filter((name) => !published.has(name))).toEqual(
       [],
     );
   });

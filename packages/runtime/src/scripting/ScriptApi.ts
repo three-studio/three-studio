@@ -1,11 +1,8 @@
 import { isEntityId, type EntityDoc, type FieldDef } from '@three-studio/core';
 import type { Object3D } from 'three/webgpu';
 import type { Input } from '../input/Input';
-import type { BodyHandle, Collision } from '../physics/PhysicsApi';
-import type { AudioApi } from './audioApi';
 import type { SceneApi } from '../sceneApi';
 import type { World } from '../world/World';
-import type { ScriptPhysics } from './scriptPhysics';
 
 /**
  * Declared shape of one editable property. Drives the inspector.
@@ -20,62 +17,16 @@ export type ScriptPropertyDef = FieldDef;
 export type ScriptProperties = Record<string, ScriptPropertyDef>;
 
 /**
- * The members `keyof` cannot see.
+ * What the features give every script besides what the host gives it:
+ * physics' `body`, `physics` and collision hooks, audio's `audio`.
  *
- * Private and protected members are not part of a type's key set, so the four
- * helpers a script calls on itself have to be named. They are the only names
- * below that are written rather than derived.
+ * Empty here, and augmented by each feature in a file of its own
+ * (`declare module '…/scripting/ScriptApi'`), so `this.body` is typed
+ * wherever physics is compiled while this folder names no feature. What a
+ * feature gives is its contribution (`ScriptMembersDefinition`), which installs
+ * the members, reserves their names and publishes their typings.
  */
-type ProtectedMember = 'resolve' | 'log' | 'wait' | 'repeat';
-
-/** Every name the base class occupies. What the editor publishes is keyed on it. */
-export type BehaviourMember = keyof Behaviour | ProtectedMember;
-
-/**
- * Names a script property may not take.
- *
- * Applying properties onto the instance is what makes them editable, but it
- * also means a property called `transform` replaces the object the script is
- * supposed to move, and one called `log` replaces the method — silently, with
- * no error, leaving a script that cannot do anything and gives no clue why.
- *
- * A **total record** rather than a list of strings, and that is the whole
- * mechanism: `keyof Behaviour` is the class, so a member added below and
- * forgotten here does not compile, and a name here that the class does not have
- * does not compile either. The list it replaces was correct — nothing was
- * keeping it that way, and the same names copied a third time into the editor's
- * generated typings had already fallen two behind.
- *
- * The values carry nothing. It is a set with a compiler behind it.
- */
-const OCCUPIED_NAMES: Record<BehaviourMember, true> = {
-  entity: true,
-  transform: true,
-  body: true,
-  physics: true,
-  input: true,
-  scenes: true,
-  audio: true,
-  time: true,
-  log: true,
-  resolve: true,
-  wait: true,
-  repeat: true,
-  cancelTimers: true,
-  onAwake: true,
-  onStart: true,
-  onUpdate: true,
-  onFixedUpdate: true,
-  onLateUpdate: true,
-  onCollisionEnter: true,
-  onCollisionExit: true,
-  onTriggerEnter: true,
-  onTriggerExit: true,
-  onSceneUnload: true,
-  onDestroy: true,
-};
-
-export const RESERVED_PROPERTY_NAMES: ReadonlySet<string> = new Set(Object.keys(OCCUPIED_NAMES));
+export interface ScriptMembers {}
 
 /** A live handle to another entity, resolved from an `entity` property. */
 export interface EntityHandle {
@@ -83,6 +34,13 @@ export interface EntityHandle {
   readonly name: string;
   readonly object: Object3D;
 }
+
+/**
+ * Merged with the class: the members the contributions give a script, typed on
+ * every `Behaviour` without a field of the class, which would name each feature
+ * and be one more member for the host to fill.
+ */
+export interface Behaviour extends ScriptMembers {}
 
 /**
  * Base class for user scripts.
@@ -98,8 +56,8 @@ export interface EntityHandle {
  *  - `onLateUpdate` runs after physics, which is where anything following a
  *    subject has to be or it trails by a frame.
  *
- * After each physics tick, the collision and trigger hooks hear what its
- * colliders started or stopped touching in it.
+ * What a feature adds — the body and the collision hooks, the mix — is merged
+ * in through `ScriptMembers`.
  */
 export abstract class Behaviour {
   /**
@@ -123,32 +81,7 @@ export abstract class Behaviour {
    *    moves.
    */
   readonly transform!: Object3D;
-  /**
-   * The body this entity moves with: its own Rigid Body, or the nearest one up
-   * the tree — a wheel's is its car's. An entity with a Collider and no Rigid
-   * Body on or above it is level geometry, a Fixed body of its own.
-   *
-   * There on every script. With no body behind it, it moves nothing, its reads
-   * are zero, and its first change raises a warning. Forces, impulses and
-   * velocities move a Dynamic body only.
-   */
-  readonly body!: BodyHandle;
-  /**
-   * The physics world: gravity, any entity's body, the scene's joints,
-   * character controllers, the project's collision layers, and rays, casts and
-   * overlaps that leave out this entity's own body. Its ids name bodies as
-   * `body` does, and a joint by the entity that carries it.
-   */
-  readonly physics!: ScriptPhysics;
   readonly input!: Input;
-  /**
-   * The mix: this entity's own sounds, one-shot clips, and the buses.
-   *
-   * Present even when the host handed over no audio context — every method is
-   * then a no-op — so a script never has to ask whether sound exists before
-   * asking for it.
-   */
-  readonly audio!: AudioApi;
   /**
    * Moving between scenes. `null` when nothing is hosting this engine — an
    * engine created directly has no notion of a next scene.
@@ -169,19 +102,6 @@ export abstract class Behaviour {
   onUpdate?(delta: number): void;
   onFixedUpdate?(step: number): void;
   onLateUpdate?(): void;
-  /**
-   * One of this entity's Colliders, or a child's riding its body, began
-   * touching another, after the physics tick it happened in. One side needs a
-   * Dynamic Rigid Body. `this.physics.body(collision.other)` is the body the
-   * other moves with.
-   */
-  onCollisionEnter?(collision: Collision): void;
-  /** They stopped touching. */
-  onCollisionExit?(other: string): void;
-  /** A sensor of this entity was entered, or this entity entered one. A sensor sees whatever moves. */
-  onTriggerEnter?(other: string): void;
-  /** It left. */
-  onTriggerExit?(other: string): void;
   /**
    * The scene is being left, and everything is still here to read.
    *

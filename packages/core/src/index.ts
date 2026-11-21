@@ -21,7 +21,7 @@ export {
   isEntityId,
   isSceneId,
 } from './ids';
-export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId, SubsystemId } from './ids';
+export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId, ScriptMembersId, SubsystemId } from './ids';
 /* What every table of definitions is, and what each registration hands back. */
 export { Registry } from './Registry';
 export { combineDisposables } from './disposable';

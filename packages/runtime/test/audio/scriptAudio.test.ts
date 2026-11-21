@@ -9,7 +9,7 @@ import { Group, type Object3D } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import type { AudioEngine } from '../../src/audio/AudioEngine';
 import { audioSourceOn } from '../../src/behaviour/audio';
-import { audioApiFor } from '../../src/scripting/audioApi';
+import { audioApiFor } from '../../src/audio/scriptMembers';
 import { flush, rig } from './rig';
 
 /*

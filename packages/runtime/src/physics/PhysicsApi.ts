@@ -1,29 +1,18 @@
 /*
  * Physics as a behaviour sees it.
  *
- * Types only, importing nothing: a behaviour, a plugin's included, names
- * physics through this file without reaching Rapier or the world that holds
- * it. Only `physics/` knows the engine underneath, so changing engines one day
- * rewrites that folder and nothing else.
+ * Types only, importing none but the runtime's vectors: a behaviour, a
+ * plugin's included, names physics through this file without reaching Rapier
+ * or the world that holds it. Only `physics/` knows the engine underneath, so
+ * changing engines one day rewrites that folder and nothing else.
  *
  * Plain values cross it, and what comes out is a copy: writing
  * `body.position.x = 3` would move nothing, so the types refuse it.
  */
 
-/** A point or a displacement, in metres. three's `Vector3` is one. */
-export interface Vec3Like {
-  x: number;
-  y: number;
-  z: number;
-}
+import type { QuatLike, Vec3Like } from '../vectors';
 
-/** A rotation. three's `Quaternion` is one. */
-export interface QuatLike {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}
+export type { QuatLike, Vec3Like };
 
 /**
  * Physics as a behaviour may touch it, reached by `physicsOf(world)`.

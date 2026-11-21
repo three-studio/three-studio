@@ -19,12 +19,11 @@ import type { Behaviour, BehaviourDefinition } from './Behaviour';
  * The behaviours of a world in Play, one per component whose type has one
  * registered: the player controllers, the audio sources, the scripts.
  *
- * Handed the behaviours' registry when the runtime is activated, the one
- * subsystem that reads a registry, so that the world never names it.
- * Registered after input, physics and audio, which every behaviour may reach
- * from the moment it is built; and at 0 in each phase it claims, so a body
- * ticks after the fixed hooks that command it, and is drawn before the late
- * hooks that place a camera on it.
+ * Handed the behaviours' registry when the runtime is activated, so that the
+ * world never names it. Registered after input, physics, audio and the
+ * scripts, which every behaviour may reach from the moment it is built; and at
+ * 0 in each phase it claims, so a body ticks after the fixed hooks that command
+ * it, and is drawn before the late hooks that place a camera on it.
  */
 export function behaviourSubsystem(registry: Registry<ComponentTypeId, BehaviourDefinition>): SubsystemDefinition {
   return {
@@ -265,7 +264,8 @@ function listens(behaviour: Behaviour): boolean {
 /**
  * What one side of a pair heard, told to a behaviour on it.
  *
- * Unguarded, as `update` is: a script's hook is guarded by its own behaviour.
+ * Unguarded, as `update` is: a behaviour guards its own hooks. A script hears
+ * its own through physics' contribution to scripts, not through here.
  */
 function hear(behaviour: Behaviour, touch: Touch): void {
   switch (touch.kind) {

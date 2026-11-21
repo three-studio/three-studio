@@ -1,21 +1,15 @@
+import { combineDisposables, type Disposable, type EntityDoc } from '@three-studio/core';
 import type {
   Behaviour as RuntimeBehaviour,
   BehaviourDefinition,
   BehaviourTarget,
 } from '../behaviour/Behaviour';
-import { audioOf } from '../audio/audioOf';
 import { inputOf } from '../input/inputOf';
-import type { Collision } from '../physics/PhysicsApi';
-import { physicsOf } from '../physics/physicsOf';
 import type { World } from '../world/World';
-import { audioApiFor } from './audioApi';
+import type { ScriptMembersDefinition, ScriptSite } from './members';
 import { isScriptClass } from './scriptBundle';
-import { noBody, scriptPhysicsFor } from './scriptPhysics';
-import {
-  Behaviour,
-  RESERVED_PROPERTY_NAMES,
-  internalContext,
-} from './ScriptApi';
+import { Behaviour, internalContext } from './ScriptApi';
+import { scriptWorldOf } from './ScriptWorld';
 
 /**
  * Adapts a user script to the runtime's behaviour interface.
@@ -27,61 +21,34 @@ import {
  *
  * Each hook calls the script inside a `try` of its own. They went through
  * `guard(phase, () => …)`, which made a closure per script per hook per frame.
+ *
+ * It is also the site each contribution installs into: what a feature gives the
+ * script, and the hooks it calls — physics' collision hooks — through `run`,
+ * under the same guard.
  */
-class ScriptBehaviour implements RuntimeBehaviour {
+class ScriptBehaviour implements RuntimeBehaviour, ScriptSite {
   private failed = false;
-  // Set for the hooks the script defines, and only those: a script that
-  // defines none is not listening, so the world passes it by and never warns
-  // that it can hear nothing.
-  readonly onCollisionEnter?: (collision: Collision) => void;
-  readonly onCollisionExit?: (other: string) => void;
-  readonly onTriggerEnter?: (other: string) => void;
-  readonly onTriggerExit?: (other: string) => void;
+  /** What each contribution installed, given back after `onDestroy`. */
+  private installed: Disposable = { dispose() {} };
 
   constructor(
-    private readonly instance: Behaviour,
+    readonly script: Behaviour,
+    readonly entity: EntityDoc,
+    readonly world: World,
     private readonly label: string,
-    private readonly world: World,
-  ) {
-    if (instance.onCollisionEnter) {
-      this.onCollisionEnter = (collision) => {
-        if (this.failed) return;
-        try {
-          instance.onCollisionEnter?.(collision);
-        } catch (cause) {
-          this.fail('onCollisionEnter', cause);
-        }
-      };
-    }
-    if (instance.onCollisionExit) {
-      this.onCollisionExit = (other) => {
-        if (this.failed) return;
-        try {
-          instance.onCollisionExit?.(other);
-        } catch (cause) {
-          this.fail('onCollisionExit', cause);
-        }
-      };
-    }
-    if (instance.onTriggerEnter) {
-      this.onTriggerEnter = (other) => {
-        if (this.failed) return;
-        try {
-          instance.onTriggerEnter?.(other);
-        } catch (cause) {
-          this.fail('onTriggerEnter', cause);
-        }
-      };
-    }
-    if (instance.onTriggerExit) {
-      this.onTriggerExit = (other) => {
-        if (this.failed) return;
-        try {
-          instance.onTriggerExit?.(other);
-        } catch (cause) {
-          this.fail('onTriggerExit', cause);
-        }
-      };
+  ) {}
+
+  /** Each contribution's members given to the script, in the order they were registered. */
+  install(contributions: readonly ScriptMembersDefinition[]): void {
+    this.installed = combineDisposables(contributions.map((contribution) => contribution.install(this)));
+  }
+
+  run<A>(hook: string, call: ((this: Behaviour, arg: A) => void) | undefined, arg: A): void {
+    if (this.failed || call === undefined) return;
+    try {
+      call.call(this.script, arg);
+    } catch (cause) {
+      this.fail(hook, cause);
     }
   }
 
@@ -89,7 +56,7 @@ class ScriptBehaviour implements RuntimeBehaviour {
   awake(): void {
     if (this.failed) return;
     try {
-      this.instance.onAwake?.();
+      this.script.onAwake?.();
     } catch (cause) {
       this.fail('onAwake', cause);
     }
@@ -99,17 +66,17 @@ class ScriptBehaviour implements RuntimeBehaviour {
   start(): void {
     if (this.failed) return;
     try {
-      this.instance.onStart?.();
+      this.script.onStart?.();
     } catch (cause) {
       this.fail('onStart', cause);
     }
   }
 
   update(delta: number): void {
-    this.instance.time += delta;
+    this.script.time += delta;
     if (this.failed) return;
     try {
-      this.instance.onUpdate?.(delta);
+      this.script.onUpdate?.(delta);
     } catch (cause) {
       this.fail('onUpdate', cause);
     }
@@ -118,7 +85,7 @@ class ScriptBehaviour implements RuntimeBehaviour {
   fixedUpdate(step: number): void {
     if (this.failed) return;
     try {
-      this.instance.onFixedUpdate?.(step);
+      this.script.onFixedUpdate?.(step);
     } catch (cause) {
       this.fail('onFixedUpdate', cause);
     }
@@ -127,7 +94,7 @@ class ScriptBehaviour implements RuntimeBehaviour {
   postUpdate(): void {
     if (this.failed) return;
     try {
-      this.instance.onLateUpdate?.();
+      this.script.onLateUpdate?.();
     } catch (cause) {
       this.fail('onLateUpdate', cause);
     }
@@ -144,7 +111,7 @@ class ScriptBehaviour implements RuntimeBehaviour {
   onSceneUnload(): void {
     if (this.failed) return;
     try {
-      this.instance.onSceneUnload?.();
+      this.script.onSceneUnload?.();
     } catch (cause) {
       this.fail('onSceneUnload', cause);
     }
@@ -155,12 +122,14 @@ class ScriptBehaviour implements RuntimeBehaviour {
     // exactly backwards: the script most likely to have left something behind
     // is the one that crashed.
     try {
-      this.instance.onDestroy?.();
+      this.script.onDestroy?.();
     } catch (cause) {
       this.fail('onDestroy', cause);
     }
-    this.instance.cancelTimers();
-    internalContext.delete(this.instance);
+    this.script.cancelTimers();
+    // After `onDestroy`, which may still play a sound or read its body.
+    this.installed.dispose();
+    internalContext.delete(this.script);
   }
 
   private fail(phase: string, cause: unknown): void {
@@ -185,15 +154,23 @@ export const scriptBehaviour: BehaviourDefinition = {
       world.warn(`"${target.entity.name}" references a script that is not compiled.`);
       return null;
     }
+    // What the world's scripts share: the contributions and the names they
+    // reserve. Left out of a test's own registries, nothing runs a script.
+    const scripting = scriptWorldOf(world);
+    if (scripting === null) {
+      world.warn(`"${target.entity.name}" has a script, and this world runs none: it has no scripts subsystem.`);
+      return null;
+    }
 
     const instance = new ScriptType();
     internalContext.set(instance, world);
 
     // Editable values are applied before onStart, so a script sees its
     // configured values the first time it runs — as in Unity and Unreal.
-    // Anything named like a framework member is refused rather than allowed to
-    // overwrite it: a property called `transform` would replace the object the
-    // script is meant to move, and the failure would be completely silent.
+    // Anything named like a member is refused rather than allowed to overwrite
+    // it, the kernel's or a contribution's: a property called `transform` would
+    // replace the object the script is meant to move, and the failure would be
+    // completely silent.
     const declared = ScriptType.properties ?? {};
 
     for (const [key, value] of Object.entries(component.props)) {
@@ -201,7 +178,7 @@ export const scriptBehaviour: BehaviourDefinition = {
       // ignored rather than assigned: renaming a property would otherwise leave
       // a stale field on every instance forever.
       if (!Object.hasOwn(declared, key)) continue;
-      if (RESERVED_PROPERTY_NAMES.has(key)) {
+      if (scripting.reserved.has(key)) {
         world.warn(
           `"${target.entity.name}": script property "${key}" is a reserved name and was ignored.`,
         );
@@ -210,34 +187,24 @@ export const scriptBehaviour: BehaviourDefinition = {
       Reflect.set(instance, key, value);
     }
 
-    const worldPhysics = physicsOf(world);
-    const physics = scriptPhysicsFor(worldPhysics, world.document, target.entity, world.warn);
     Object.assign(instance, {
       entity: target.entity,
       transform: target.object,
-      // With physics off — a host that has none, which is a test — the
-      // stand-in is silent: the line would be about the host, not the scene.
-      body:
-        physics.body(target.entity.id) ??
-        noBody(
-          worldPhysics &&
-            (() =>
-              world.warn(
-                `"${target.entity.name}" has no Rigid Body, on it or above it, so what its script does to this.body moves nothing. Add a Rigid Body to it or to an entity above it.`,
-              )),
-        ),
-      physics,
       // `null` in a world handed no element to listen on, which only a test
       // builds: there is nothing a script there could hear.
       input: inputOf(world),
       scenes: world.options.scenes ?? null,
-      // Bound to this entity, so `this.audio.play()` with no argument means "my
-      // own sound" — the case a script wants ninety per cent of the time and the
-      // one that should be shortest to write.
-      audio: audioApiFor(audioOf(world), target.entity.id),
     });
 
-    const behaviour = new ScriptBehaviour(instance, `${target.entity.name}/${ScriptType.name}`, world);
+    const behaviour = new ScriptBehaviour(
+      instance,
+      target.entity,
+      world,
+      `${target.entity.name}/${ScriptType.name}`,
+    );
+    // What each feature gives it, before it first runs: a script reads its
+    // body or plays its sound from `onAwake`.
+    behaviour.install(scripting.contributions);
     // Only `onAwake` here. `onStart` is run by the world once every behaviour
     // in the scene exists, so a script can reference another entity's script
     // without depending on which of them happened to be constructed first.

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import type { RaycastHit } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { scriptPhysicsFor } from '../../src/scripting/scriptPhysics';
+import { scriptPhysicsFor } from '../../src/physics/scriptMembers';
 import {
   block,
   nest,

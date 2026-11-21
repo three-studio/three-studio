@@ -68,6 +68,7 @@ export type { ModelNodeDesc, ModelShape } from './assets/modelNodes';
 export { AudioEngine } from './audio/AudioEngine';
 export { audioOf } from './audio/audioOf';
 export type { AudioEngineOptions } from './audio/AudioEngine';
+export type { AudioApi, AudioScriptMembers } from './audio/scriptMembers';
 export { isStopped } from './audio/AudioContextLike';
 export type {
   AudioBufferLike,
@@ -95,6 +96,7 @@ export type {
 export { PhysicsWorld, applyWorldTransform, jointPose, worldPose } from './physics/PhysicsWorld';
 export type { DebugLines } from './physics/PhysicsWorld';
 export { collisionsOf, physicsDebugLines, physicsOf } from './physics/physicsOf';
+export type { PhysicsScriptMembers, ScriptPhysics } from './physics/scriptMembers';
 export { collectVertices, ownMeshes } from './physics/meshShape';
 export type {
   BodyHandle,
@@ -114,15 +116,13 @@ export type {
 /*
  * Scripting: the base class user scripts extend, and what a compiled bundle's
  * classes are once the host has decoded them — handed to the world that runs
- * them, never filed in a table of the page's.
+ * them, never filed in a table of the page's. What a feature gives scripts is
+ * its contribution, and a project's typings are written from the registries.
  */
-export { Behaviour, RESERVED_PROPERTY_NAMES } from './scripting/ScriptApi';
-export type {
-  BehaviourMember,
-  EntityHandle,
-  ScriptProperties,
-  ScriptPropertyDef,
-} from './scripting/ScriptApi';
+export { Behaviour } from './scripting/ScriptApi';
+export type { EntityHandle, ScriptMembers, ScriptProperties, ScriptPropertyDef } from './scripting/ScriptApi';
+export type { ScriptMembersDefinition, ScriptSite } from './scripting/members';
+export { reservedScriptNames, scriptTypings } from './scripting/typings';
 export { NO_SCRIPTS, publishScriptApi, scriptClassesOf } from './scripting/scriptBundle';
 export type { ScriptClass, ScriptClasses } from './scripting/scriptBundle';
 

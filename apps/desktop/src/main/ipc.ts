@@ -94,7 +94,7 @@ import {
   updateProject,
 } from './project';
 import { createScene, deleteScene, duplicateScene, renameScene, setStartScene } from './scenes';
-import { buildScripts, createScript } from './scripts';
+import { buildScripts, createScript, writeScriptTypings } from './scripts';
 import { forget, listRecent } from './recentProjects';
 import {
   adoptProject,
@@ -571,6 +571,13 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
     create: (_event, name: string): Promise<string> => {
       return createScript(requireProject(), name);
+    },
+
+    writeTypings: async (_event, text: unknown): Promise<void> => {
+      // Text, and written to one file of the open project: what the window
+      // generated, or whatever a script calling the bridge made up.
+      if (typeof text !== 'string') throw new Error('Script typings are text.');
+      await writeScriptTypings(requireProject(), text);
     },
   },
   build: {

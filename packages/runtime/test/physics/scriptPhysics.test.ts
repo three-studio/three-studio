@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import type { BodyHandle, CharacterController, CharacterSettings } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { noBody, scriptPhysicsFor } from '../../src/scripting/scriptPhysics';
+import { noBody, scriptPhysicsFor } from '../../src/physics/scriptMembers';
 import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,

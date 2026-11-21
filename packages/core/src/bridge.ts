@@ -348,6 +348,12 @@ export interface ScriptApi {
   build: () => Promise<ScriptBuildResult>;
   /** Creates a script file from a template and returns its asset path. */
   create: (name: string) => Promise<string>;
+  /**
+   * Writes the scripts' typings into the open project, as the window generated
+   * them: from the registries it runs, which know what each module gives
+   * scripts. The main process activates core alone, and cannot.
+   */
+  writeTypings: (text: string) => Promise<void>;
 }
 
 export interface PreferencesApi {
@@ -580,6 +586,7 @@ export const IPC_INVOKE = {
   scripts: {
     build: 'scripts:build',
     create: 'scripts:create',
+    writeTypings: 'scripts:writeTypings',
   },
   build: {
     export: 'build:export',
