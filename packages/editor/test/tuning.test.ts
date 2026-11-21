@@ -62,8 +62,10 @@ const registries = builtInRegistries();
 
 /*
  * The Inspector tunes the running game during Play: a physics row's value goes
- * to the running world and to `state/tuning`, never to the document, which the
- * scene lock holds still until Stop.
+ * into the running world's document, its own copy, and to `state/tuning`, never
+ * to the window's document, which the scene lock holds still until Stop. The
+ * running world takes it at its next pass, at the end of a frame; no viewport
+ * runs frames here, so a test reconciles where a frame would.
  */
 
 const SCENE_ID = fixedId('scene', 'window-scene');
@@ -195,11 +197,25 @@ describe('tuning during Play', () => {
     const revision = useDocumentStore.getState().revision;
 
     tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    world.reconcile();
 
     expect(massOf(world, box)).toBeCloseTo(5, 5);
     expect(useDocumentStore.getState().revision).toBe(revision);
     stop();
     expect(errors.mock.calls.flat().some((line) => String(line).includes('round the lock'))).toBe(false);
+  });
+
+  it('a tune while paused waits for no frame: the running world takes it at the pass the paused viewport runs', async () => {
+    const box = cube();
+    useDocumentStore.getState().replaceScene(sceneWith([box]));
+    const world = await playing();
+    useEditorStore.getState().togglePause();
+
+    tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 5);
+    expect(massOf(world, box)).toBeCloseTo(1, 5);
+    world.reconcile();
+
+    expect(massOf(world, box)).toBeCloseTo(5, 5);
   });
 
   it('what was tuned is what the Inspector reads during Play, and the document’s value after Stop', async () => {
@@ -259,7 +275,7 @@ describe('tuning during Play', () => {
     collider.materialId = ICE;
     useDocumentStore.getState().replaceScene(sceneWith([box]));
     const world = await playing();
-    const tune = vi.spyOn(world, 'tuneAsset');
+    const tune = vi.spyOn(world, 'setAssetValues');
 
     const linked = assertDefined(linkedAsset(registries, collider, ['material', 'friction']), 'the link');
     tuneLinkedAsset(linked.kind, linked.assetId, linked.path, 0);
@@ -270,7 +286,7 @@ describe('tuning during Play', () => {
     expect(effective.type === 'collider' && effective.material.friction).toBe(0);
   });
 
-  it('a field any type marks tunable is tuned in Play, and the running game is handed its component', async () => {
+  it('a field any type marks tunable is tuned in Play, and its component put into the running game', async () => {
     // A Light whose intensity tunes: no physics, and nothing in the editor names it.
     const intensity: SchemaField = { ...assertDefined(lightType.schema['intensity'], 'the light’s intensity'), tunable: true };
     const tunedLight = { ...lightType, schema: { ...lightType.schema, intensity } };
@@ -280,7 +296,7 @@ describe('tuning during Play', () => {
     const light = componentOf(lamp, 'light');
     useDocumentStore.getState().replaceScene(sceneWith([lamp]));
     const world = await playing();
-    const tune = vi.spyOn(world, 'tune');
+    const tune = vi.spyOn(world, 'putComponent');
 
     const rows = paneEntriesFor({ components, panes: new Registry<ComponentTypeId, PaneExtension>('pane') }, light).entries;
     expect(rows.find((entry) => 'path' in entry && entry.path.join('.') === 'intensity')).toMatchObject({ tunable: true });
@@ -300,6 +316,7 @@ describe('tuning during Play', () => {
       .components()
       .find(({ type }) => type === 'rigidbody');
     body?.tune(['mass'], 3);
+    world.reconcile();
 
     expect(massOf(world, left)).toBeCloseTo(3, 5);
     expect(massOf(world, right)).toBeCloseTo(3, 5);
@@ -331,7 +348,7 @@ describe('tuning during Play', () => {
     const restarted = session!.playWorld!;
     expect(massOf(restarted, box)).toBeCloseTo(5, 5);
 
-    const tune = vi.spyOn(World.prototype, 'tune');
+    const tune = vi.spyOn(World.prototype, 'putComponent');
     Director.to = 'Boss';
     restarted.frame(1 / 60);
     await until(() => session?.playWorld !== restarted && session?.playWorld != null, 'Boss’s world');

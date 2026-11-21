@@ -625,6 +625,9 @@ export class EditorViewport {
         this.time.step(world.fixedStep);
         world.frame(world.fixedStep);
       }
+      // Paused, with no frame to end in a pass: what the Inspector tuned
+      // meanwhile is taken now, and shows on the paused game.
+      else world.reconcile();
 
       // Paused means paused, including the part you can hear. The root gain
       // rather than the context, which the preview is sharing.

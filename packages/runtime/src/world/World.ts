@@ -127,14 +127,6 @@ export interface Subsystem extends Disposable, MountHooks {
    * mounts has been handed to it. Before this no game code runs.
    */
   start?(): void;
-  /**
-   * A component's values, changed during Play, for what the subsystem built
-   * from it to take as if built with them; a component it built nothing from
-   * changes nothing. The editor's live tuning.
-   */
-  tune?(entityId: EntityId, component: ComponentDoc): void;
-  /** The same for an asset's values: whatever it built with the asset takes them. */
-  tuneAsset?(assetId: AssetId, values: object): void;
 }
 
 /** One phase's hooks, bound once when the world is built. */
@@ -511,29 +503,6 @@ export class World {
   }
 
   /**
-   * A component's values, changed during Play, taken at once by what the
-   * running game built from it, as if built with them; a component it built
-   * nothing from changes nothing. The host's — the editor's live tuning —:
-   * retuning the world is no behaviour's business.
-   *
-   * Handed to every subsystem that takes a tune, so that neither the world nor
-   * the editor names a type it tunes.
-   */
-  tune(entityId: EntityId, component: ComponentDoc): void {
-    for (const subsystem of this.subsystems) subsystem.tune?.(entityId, component);
-  }
-
-  /**
-   * An asset's values, changed during Play, taken by whatever the running game
-   * built with that asset — never by the asset cache, which holds what loading
-   * made and which no world writes. The tune goes with the world at Stop; Keep
-   * writes the asset's file, which every world then reads through its library.
-   */
-  tuneAsset(assetId: AssetId, values: object): void {
-    for (const subsystem of this.subsystems) subsystem.tuneAsset?.(assetId, values);
-  }
-
-  /**
    * One frame of `delta` seconds: the `update` hooks, a `fixed` pass per whole
    * step of the project's fixed step, the `lateUpdate` hooks, the document's
    * changes reconciled, then the `renderPrep` hooks. The host draws afterwards.
@@ -683,6 +652,10 @@ export class World {
    * The values this world plays an asset with from now on, in place of its
    * file's: each component naming it is handed back to the subsystems mounting
    * it at the next pass, to read them through `assetValues`.
+   *
+   * Never the asset cache's, which holds what loading made and which no world
+   * writes: the values go with the world at Stop, and Keep writes the asset's
+   * file, which every world then reads.
    */
   setAssetValues(assetId: AssetId, values: object): void {
     this.playing('setAssetValues');

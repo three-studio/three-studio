@@ -167,8 +167,16 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   binder.sync(scene);
   live.push(binder);
 
-  const physics = await PhysicsWorld.create({ ...createPhysicsSettings(), gravity, fixedTimestep: STEP });
-  physics.build(scene, binder);
+  const physics = await PhysicsWorld.create(
+    { ...createPhysicsSettings(), gravity, fixedTimestep: STEP },
+    { scene, objects: binder },
+  );
+  // Handed every component, as a world's first pass hands it those it mounts.
+  for (const template of [ground, player]) {
+    for (const component of template.components) physics.mount(template.entity.id, component);
+  }
+  physics.settle();
+  physics.start();
   live.push(physics);
 
   const object = binder.getObject(player.entity.id);

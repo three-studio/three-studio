@@ -27,9 +27,11 @@ import { toastSlot } from './toastStore';
  * no exception, so the lock stays whole; Stop offers the values back, to be
  * written then through the document's ordinary writes.
  *
- * It names no type and no physics: the running game is handed every tuned
- * component and every tuned asset, and what it built from them takes them
- * (`World.tune`, `World.tuneAsset`).
+ * It names no type and no physics: a tuned component is put into the running
+ * world's document, its own copy, and a tuned asset's values set on that world
+ * (`World.putComponent`, `World.setAssetValues`); what the game built from
+ * them takes them as it takes any edit of that document, at the world's next
+ * pass.
  */
 
 /** A value tuned during Play, at a path of one component, as the Inspector wrote it. */
@@ -158,15 +160,14 @@ export function keepTuning(registries: CoreRegistries): void {
 
 /**
  * The world running the window's scene from now on, or `null`. It is handed
- * everything tuned so far: a game that restarts the scene, or comes back to it,
- * keeps what this Play tuned.
+ * everything tuned so far, and takes it before its next tick: a game that
+ * restarts the scene, or comes back to it, keeps what this Play tuned.
  */
 export function tuningWorld(registries: CoreRegistries, next: World | null): void {
   world = next;
   if (!next) return;
   const { values, assets } = useTuningStore.getState();
-  // The assets first: a component tuned after them is built with them.
-  for (const [assetId, tuned] of assets) next.tuneAsset(assetId, tuned.values);
+  for (const [assetId, tuned] of assets) next.setAssetValues(assetId, tuned.values);
   const handed = new Set<string>();
   for (const { entityId, componentId } of values) {
     const key = JSON.stringify([entityId, componentId]);
@@ -174,6 +175,7 @@ export function tuningWorld(registries: CoreRegistries, next: World | null): voi
     handed.add(key);
     handTo(registries, next, entityId, componentId);
   }
+  next.reconcile();
 }
 
 /** Records a component's value as tuned, and hands the running game the component with it. */
@@ -198,9 +200,9 @@ export function tuneComponentField(
 
 /**
  * Records a value of an asset an object is filled by as tuned, at `path` inside
- * it, and hands the running game the asset with it: whatever it built with the
- * asset takes it — every collider linking a physics material —, as every one
- * takes an edit of its file when stopped. The file is not written.
+ * it, and has the running game play the asset with it: whatever it built with
+ * the asset takes it — every collider linking a physics material —, as every
+ * one takes an edit of its file when stopped. The file is not written.
  */
 export function tuneLinkedAsset(kind: AssetKind, assetId: AssetId, path: readonly string[], value: unknown): void {
   const base = tunedAssetValues(kind, assetId);
@@ -211,7 +213,7 @@ export function tuneLinkedAsset(kind: AssetKind, assetId: AssetId, path: readonl
     assets: new Map(state.assets).set(assetId, { kind, values }),
     revision: state.revision + 1,
   }));
-  world?.tuneAsset(assetId, values);
+  world?.setAssetValues(assetId, values);
 }
 
 /**
@@ -252,11 +254,12 @@ function within(path: readonly string[], prefix: readonly string[]): boolean {
 }
 
 /**
- * Hands the running game a component with what was tuned on it. What it built
- * from the component takes it, and a component it built nothing from changes
- * nothing: which types the world builds is the world's to know.
+ * Puts a component, with what was tuned on it, into the running game's
+ * document. What the game built from it takes it at the next pass, and a
+ * component it built nothing from changes nothing: which types the world
+ * builds is the world's to know. An entity the game destroyed takes nothing.
  */
 function handTo(registries: CoreRegistries, running: World, entityId: EntityId, componentId: ComponentId): void {
   const component = findComponentById(expandedScene(registries).scene, entityId, componentId);
-  if (component) running.tune(entityId, tunedComponent(entityId, component));
+  if (component) running.putComponent(entityId, tunedComponent(entityId, component));
 }

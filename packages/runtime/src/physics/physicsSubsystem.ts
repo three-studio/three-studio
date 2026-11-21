@@ -16,9 +16,10 @@ import { providePhysics } from './physicsOf';
 import { PhysicsWorld, type ColliderOwner, type PhysicsEvent } from './PhysicsWorld';
 
 /**
- * Rapier's world, stepped by the world's clock: built from the scene's bodies,
- * ticked once per fixed step, drawn onto the entities once per frame, and
- * heard through its collision channel.
+ * Rapier's world, stepped by the world's clock: handed each Rigid Body,
+ * Collider and Joint as the world's document holds them, ticked once per fixed
+ * step, drawn onto the entities once per frame, and heard through its
+ * collision channel.
  */
 export const physicsSubsystem: SubsystemDefinition = {
   id: fixedId('subsystem', 'physics'),
@@ -26,16 +27,24 @@ export const physicsSubsystem: SubsystemDefinition = {
   // the bodies drawn before their late hooks, which place a camera on a body
   // where it ended the frame.
   order: { fixed: 100, lateUpdate: -100 },
+  mounts: ['rigidbody', 'collider', 'joint'],
   async create(world) {
     const settings = world.options.physicsSettings ?? createPhysicsSettings();
     const materials = world.options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
-    // Rapier's start and the models' loads at once, and both before the
-    // build: a collider derived from a mesh needs the mesh, and a glTF arrives
-    // well after the binder's `sync` returns — building physics first gave an
-    // imported level a box around an empty group, which the player fell
-    // straight through.
-    const [physics] = await Promise.all([PhysicsWorld.create(settings), world.binder.whenLoaded()]);
-    physics.build(world.document, world.binder, materials);
+    // Rapier's start and the models' loads at once, and both before the first
+    // pass mounts anything: a collider derived from a mesh needs the mesh, and
+    // a glTF arrives well after the binder's `sync` returns — building physics
+    // first gave an imported level a box around an empty group, which the
+    // player fell straight through. A model landing later is handed back.
+    const [physics] = await Promise.all([
+      PhysicsWorld.create(settings, {
+        scene: world.document,
+        objects: world.binder,
+        materials,
+        assetValues: (assetId) => world.assetValues(assetId),
+      }),
+      world.binder.whenLoaded(),
+    ]);
     return new PhysicsSubsystem(world, physics, settings, materials);
   },
 };
@@ -71,6 +80,26 @@ class PhysicsSubsystem implements Subsystem {
     this.physics.writeBack(this.world.fixedAlpha);
   }
 
+  mount(entityId: EntityId, component: ComponentDoc): void {
+    this.physics.mount(entityId, component);
+  }
+
+  patch(entityId: EntityId, previous: ComponentDoc, next: ComponentDoc): void {
+    this.physics.patch(entityId, previous, next);
+  }
+
+  unmount(entityId: EntityId, component: ComponentDoc): void {
+    this.physics.unmount(entityId, component);
+  }
+
+  settle(): void {
+    this.physics.settle();
+  }
+
+  start(): void {
+    this.physics.start();
+  }
+
   diagnose(): readonly string[] {
     return physicsSetupProblems({
       scene: this.world.document,
@@ -80,18 +109,6 @@ class PhysicsSubsystem implements Subsystem {
       // Asked once the world is built, so every listener has begun.
       listening: this.collisions.listenedEntities(),
     });
-  }
-
-  /**
-   * The physics world is handed every component and keeps what it built from,
-   * so that the editor names no type it tunes.
-   */
-  tune(entityId: EntityId, component: ComponentDoc): void {
-    this.physics.tune(entityId, component);
-  }
-
-  tuneAsset(assetId: AssetId, values: object): void {
-    this.physics.tuneAsset(assetId, values);
   }
 
   dispose(): void {

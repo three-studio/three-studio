@@ -33,6 +33,15 @@ export function physicsDebugLines(world: World): DebugLines | null {
   return provided.get(world)?.physics.debugLines() ?? null;
 }
 
+/**
+ * What a world's physics holds, its own tables and Rapier's, for a test or a
+ * probe to see a spawn and its destroy balance; `null` with no physics. The
+ * host's, as the debug view is.
+ */
+export function physicsStats(world: World): PhysicsWorld['stats'] | null {
+  return provided.get(world)?.physics.stats ?? null;
+}
+
 /** Where a world's collisions are heard: listened on by entity, told after the tick they happen in. */
 export function collisionsOf(world: World): EntityChannel<Touch> | null {
   return provided.get(world)?.collisions ?? null;
