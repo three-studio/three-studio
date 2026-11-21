@@ -23,7 +23,7 @@ import { ENTITY_ID_KEY, resolveEntityId } from './systems/identity';
 import { buildMaterial, patchMaterial, sameTextureSlots } from './systems/material';
 import { MeshBatcher } from './MeshBatcher';
 import { ResourceArena, SharedMaterial } from './systems/ResourceArena';
-import { studioTime, type StudioTime } from './time/StudioTime';
+import type { StudioTime } from './time/StudioTime';
 import type { CameraClaims } from './world/cameras';
 import type { SunService } from './world/sun';
 
@@ -119,10 +119,11 @@ export interface SceneBinderOptions {
    */
   sun: SunService;
   /**
-   * Injected rather than reached for, so a test can drive the clock it hands
-   * in. The default is the document's own — see `time/StudioTime`.
+   * The window's clock, which every node material and every system reads: made
+   * by whoever owns the window's loop and handed in, never reached for, so two
+   * worlds of one window read one time and a test drives the clock it hands in.
    */
-  time?: StudioTime;
+  time: StudioTime;
 }
 
 /**
@@ -234,7 +235,7 @@ export class SceneBinder {
    */
   constructor(options: SceneBinderOptions) {
     this.root.name = 'SceneRoot';
-    this.time = options.time ?? studioTime;
+    this.time = options.time;
     this.cameras = options.cameras;
     this.sun = options.sun;
     this.registries = options.registries;

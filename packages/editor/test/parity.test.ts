@@ -27,6 +27,7 @@ import { withoutPhysics } from '../../runtime/test/registries';
 import { digestProjection, type ProjectionDigest } from '../../runtime/test/sceneDigest';
 import { EDITOR_OVERLAYS, createEditorProjection, type EditorProjection } from '../src/viewport/editorProjection';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 /*
  * The edit view and Play project the same document, and this is what says so.
@@ -120,7 +121,16 @@ function windowAssets(resolver: AssetResolver = NULL_ASSET_RESOLVER): AssetCache
 
 /** The edit view's projection, with no canvas and no device under it. */
 async function projected(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<EditorProjection> {
-  const projection = createEditorProjection({ document: scene, registries, assets, rendering, materials, cameras: new CameraClaims(), sun: new SunService() });
+  const projection = createEditorProjection({
+    document: scene,
+    registries,
+    assets,
+    rendering,
+    materials,
+    cameras: new CameraClaims(),
+    sun: new SunService(),
+    time: new StudioTime(),
+  });
   // What `World.play` awaits on its own side. The two have to be read at the
   // same point in their lives, or a fixture holding a model would compare a
   // finished scene against one still waiting for a glTF.
@@ -139,6 +149,7 @@ async function editView(scene: SceneDoc, rendering: RenderingSettings, assets = 
 /** The game Play runs: the real `World` rather than a stand-in for it. */
 function game(scene: SceneDoc, rendering: RenderingSettings, assets: AssetCache): Promise<World> {
   return World.play({
+    time: new StudioTime(),
     document: scene,
     registries: withoutPhysics(registries),
     assets,

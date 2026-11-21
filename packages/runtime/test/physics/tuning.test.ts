@@ -39,6 +39,7 @@ import {
   withScript,
   type PhysicsRig,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * The editor's live tuning: a Rigid Body's, a Collider's or a physics
@@ -512,6 +513,7 @@ describe('a tune the world cannot take', () => {
     expect(rig.solved(floor.entity.id).position.distanceTo(rig.drawn(floor.entity.id).position)).toBeLessThan(1e-6);
 
     const off = await World.play({
+      time: new StudioTime(),
       document: sceneWith([ground(), ball]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

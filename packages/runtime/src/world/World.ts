@@ -29,6 +29,7 @@ import type { AudioContextLike } from '../audio/AudioContextLike';
 import type { InputOptions } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
+import type { StudioTime } from '../time/StudioTime';
 import { CameraClaims } from './cameras';
 import { SunService } from './sun';
 
@@ -119,6 +120,12 @@ export interface WorldOptions {
    * them exist.
    */
   registries: WorldRegistries;
+  /**
+   * The window's clock: made by whoever owns the window's loop — the editor's
+   * viewport, the player's root — and handed to every world it draws, since
+   * three's `time` node is one per document.
+   */
+  time: StudioTime;
   /**
    * The project's loaded files, shared with every other world of the window:
    * Play draws the models the edit view already holds, with no second parse
@@ -257,6 +264,8 @@ export class World {
   readonly options: WorldOptions;
   /** The scene it runs, as a document. `scene` is the graph a host draws. */
   readonly document: SceneDoc;
+  /** The window's clock, shared with every other world of the window and with every node material. */
+  readonly time: StudioTime;
   readonly binder: SceneBinder;
   /**
    * Which camera the world is drawn through: claimed by the scene's cameras as
@@ -302,6 +311,7 @@ export class World {
   private constructor(options: WorldOptions) {
     this.options = options;
     this.document = options.document;
+    this.time = options.time;
     // The renderer is handed over rather than owned: this world still neither
     // draws nor holds a frame loop. Capturing an analytic sky into a cubemap is
     // the one thing the binder cannot do as a transform over data, and it needs
@@ -315,6 +325,7 @@ export class World {
       renderer: options.renderer,
       cameras: this.cameras,
       sun: this.sun,
+      time: options.time,
     });
     const { fixedTimestep, maxSubsteps } = options.physicsSettings ?? createPhysicsSettings();
     this.fixedStep = fixedTimestep;

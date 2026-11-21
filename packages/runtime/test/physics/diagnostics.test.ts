@@ -27,6 +27,7 @@ import {
   withCollider,
   withJoint,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * What the world says of a set-up that will not behave as its author expects,
@@ -106,6 +107,7 @@ describe('the physics set-up, with layers', () => {
     const lost = onLayer(withBody('sphere', [0, 2, 0]), 'gone');
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([onLayer(player([0, 1, 0]), 'player'), ground(), lost]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
@@ -172,6 +174,7 @@ describe('the physics set-up, with joints', () => {
 
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([withJoint(createEntity('Hinge'))]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

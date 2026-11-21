@@ -56,6 +56,7 @@ import type { PaneExtension } from '../src/inspector/fields';
 import { PlaySession, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -98,6 +99,7 @@ async function until(condition: () => boolean, what: string): Promise<void> {
 }
 
 const host: PlayHost = {
+  time: new StudioTime(),
   // `null` is what `WorldOptions.renderer` allows for.
   renderer: null as unknown as WebGPURenderer,
   gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,

@@ -11,9 +11,9 @@ import {
   AssetCache,
   CameraClaims,
   SunService,
+  StudioTime,
   audioOf,
   physicsDebugLines,
-  studioTime,
   type World,
   type SceneBinder,
 } from '@three-studio/runtime';
@@ -108,6 +108,13 @@ export class EditorViewport {
    * lazily, so it stays correct as assets are imported.
    */
   readonly assets: AssetCache;
+  /**
+   * The window's clock: every world this window draws reads it, the edit view
+   * and Play, and so does every node material, through three's `time` node,
+   * which it is installed on. Made here because this viewport owns the window's
+   * loop, and a window has one: two clocks installed would fight over that node.
+   */
+  readonly time = new StudioTime();
   /** Projects the scene document onto three.js objects. */
   readonly binder: SceneBinder;
   /**
@@ -208,6 +215,7 @@ export class EditorViewport {
       cameras: new CameraClaims(),
       // Its own: the edit view's water is lit by the edit view's lights.
       sun: new SunService(),
+      time: this.time,
     });
     this.scene = projection.scene;
     this.binder = projection.binder;
@@ -263,7 +271,7 @@ export class EditorViewport {
     // Owning the loop is what earns the right to own the clock: this is where
     // three's `time` node stops reading `performance.now()` and starts reading
     // the simulation. Once per viewport, and the viewport is once per document.
-    studioTime.install();
+    this.time.install();
     void this.view.renderer.setAnimationLoop((time) => this.tick(time));
   }
 
@@ -598,9 +606,9 @@ export class EditorViewport {
     // material in the document is about to sample this. Written here rather
     // than on the transport commands because this is where the state is
     // already read, and it is per frame that it has to be right.
-    studioTime.timescale = timescaleFor(playState, useViewportStore.getState().animated);
-    studioTime.advance(raw);
-    const delta = studioTime.delta;
+    this.time.timescale = timescaleFor(playState, useViewportStore.getState().animated);
+    this.time.advance(raw);
+    const delta = this.time.delta;
 
     const world = this.play.playWorld;
     if (world) {
@@ -613,7 +621,7 @@ export class EditorViewport {
         //
         // The clock too, or the surfaces hold still through a step that moves
         // everything else. `step` is the one thing a zero timescale cannot veto.
-        studioTime.step(world.fixedStep);
+        this.time.step(world.fixedStep);
         world.frame(world.fixedStep);
       }
 

@@ -34,6 +34,7 @@ import {
 } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -137,6 +138,7 @@ describe('what Play runs, read in one place', () => {
 describe('what a launch sends while the editor plays', () => {
   function stubHost(): PlayHost {
     return {
+      time: new StudioTime(),
       renderer: {} as WebGPURenderer,
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
       rendering,

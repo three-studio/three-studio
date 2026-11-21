@@ -40,6 +40,7 @@ import type { RuntimeRegistries } from '../../src/registries';
 import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
 import { physicsOf } from '../../src/physics/physicsOf';
 import { builtInRegistries } from '../registries';
+import { StudioTime } from '../../src/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -126,6 +127,7 @@ async function runningRig(
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
   const canvas = new EventTarget();
   const world = await World.play({
+    time: new StudioTime(),
     document: sceneWith(entities),
     registries,
     scripts: bundleOf(entities),

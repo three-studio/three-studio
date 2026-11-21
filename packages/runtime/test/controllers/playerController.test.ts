@@ -24,6 +24,7 @@ import type { Input } from '../../src/input/Input';
 import { builtInRegistries } from '../registries';
 import { CameraClaims } from '../../src/world/cameras';
 import { SunService } from '../../src/world/sun';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * The controller had no tests at all, and the two defects below were both
@@ -153,6 +154,7 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
   const scene: SceneDoc = sceneWith([ground, player]);
   const registries = builtInRegistries();
   const binder = new SceneBinder({
+    time: new StudioTime(),
     cameras: new CameraClaims(),
     sun: new SunService(),
     registries,

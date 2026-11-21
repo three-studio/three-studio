@@ -16,6 +16,7 @@ import { SceneHost, type SceneHostOptions } from '../src/SceneHost';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries, withoutPhysics } from './registries';
+import { StudioTime } from '../src/time/StudioTime';
 
 /*
  * Where a script is, as it asks `scenes.current`.
@@ -54,6 +55,7 @@ function hostOf(
 ): SceneHost {
   const registries = builtInRegistries();
   return new SceneHost({
+    time: new StudioTime(),
     source: {
       read: async (name) => {
         const scene = scenes[name];

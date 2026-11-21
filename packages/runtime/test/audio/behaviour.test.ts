@@ -21,6 +21,7 @@ import {
 import { World } from '../../src/world/World';
 import { builtInRegistries, withoutPhysics } from '../registries';
 import { flush, rig } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * The glue: a component becomes a request, and a request becomes a voice.
@@ -94,6 +95,7 @@ describe('the audioSource behaviour', () => {
   it('declines to build in a world the host handed no audio', async () => {
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

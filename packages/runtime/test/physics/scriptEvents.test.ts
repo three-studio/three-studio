@@ -21,6 +21,7 @@ import {
   withCollider,
   withScript,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * A script hears what its entity's colliders, and those of children riding its
@@ -181,6 +182,7 @@ describe('a script hearing its colliders', () => {
     const door = withScript(createEntity('Door'), Log);
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([door]),
       registries: withoutPhysics(registries),
       scripts: bundleOf([door]),

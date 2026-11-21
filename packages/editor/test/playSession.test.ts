@@ -44,6 +44,7 @@ import { useViewportStore } from '../src/state/viewportStore';
 import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -99,6 +100,7 @@ interface StubHost extends PlayHost {
 function stubHost(): StubHost {
   const calls: string[] = [];
   return {
+    time: new StudioTime(),
     calls,
     // `null` is what `WorldOptions.renderer` allows for: a scene's analytic sky
     // is skipped without a device.

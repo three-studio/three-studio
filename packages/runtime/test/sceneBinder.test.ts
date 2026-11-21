@@ -37,6 +37,7 @@ import type { AssetResolver } from '../src/assets/AssetResolver';
 import { builtInRegistries } from './registries';
 import { CameraClaims } from '../src/world/cameras';
 import { SunService } from '../src/world/sun';
+import { StudioTime } from '../src/time/StudioTime';
 
 /*
  * The binder had no tests at all, which is why five of the twelve bugs found
@@ -65,6 +66,7 @@ function binderWith(
   rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
 ): SceneBinder {
   const binder = new SceneBinder({
+    time: new StudioTime(),
     cameras: new CameraClaims(),
     sun: new SunService(),
     registries,

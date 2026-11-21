@@ -13,7 +13,15 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
-import { SceneHost, audioOf, type AssetCache, type RuntimeRegistries, type SceneSource, type World } from '@three-studio/runtime';
+import {
+  SceneHost,
+  audioOf,
+  type AssetCache,
+  type RuntimeRegistries,
+  type SceneSource,
+  type StudioTime,
+  type World,
+} from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { currentSceneName } from '../commands/sceneFiles';
 import { editorAudioContext } from '../audio/context';
@@ -48,6 +56,8 @@ export interface PlayHost {
   readonly rendering: RenderingSettings;
   /** The window's registries, which the game is built from as the edit view is. */
   readonly registries: RuntimeRegistries;
+  /** The window's clock, which the game reads as the edit view does: Pause and Step move it. */
+  readonly time: StudioTime;
   /**
    * Play was pressed. Called before anything is awaited: the start takes as
    * long as the compile and the load, and the view is not the editor's for any
@@ -331,6 +341,7 @@ export class PlaySession {
         // The window's own: the game holds what the edit view already loaded,
         // and its materials are copies of its own.
         assets: this.host.assets,
+        time: this.host.time,
         physicsSettings: inputs.physics,
         // The viewport's own, not the inputs': Play draws on the viewport's
         // renderer, which was made with these and is not remade when Project

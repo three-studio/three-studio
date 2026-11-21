@@ -17,6 +17,7 @@ import { sceneWith } from '../../core/test/fixtures';
 import { Picker } from '../src/viewport/Picker';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -49,6 +50,7 @@ function stage(
   pickable: (entityId: string) => boolean = () => true,
 ): { picker: Picker; overlay: ViewportOverlay; camera: PerspectiveCamera } {
   const binder = new SceneBinder({
+    time: new StudioTime(),
     cameras: new CameraClaims(),
     sun: new SunService(),
     registries,

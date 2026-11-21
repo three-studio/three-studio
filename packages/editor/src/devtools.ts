@@ -1,4 +1,4 @@
-import { studioTime } from '@three-studio/runtime';
+import type { StudioTime } from '@three-studio/runtime';
 import type { EditorRegistries } from './registries';
 import type { DockviewApi } from 'dockview-react';
 import { audioPreview } from './audio/preview';
@@ -43,7 +43,7 @@ declare global {
     /** The window's registries, which the store actions that decode or expand take. */
     __studioRegistries?: EditorRegistries;
     __studioAudioPreview?: typeof audioPreview;
-    __studioTime?: typeof studioTime;
+    readonly __studioTime?: StudioTime | null;
     __studioLaunchSnapshot?: typeof launchSnapshot;
     readonly __studioViewport?: EditorViewport | null;
     readonly __studioDockApi?: DockviewApi | null;
@@ -89,8 +89,9 @@ export function installDevtools(registries: EditorRegistries): void {
 
   // Not a store either, and the same reason: every node material in the document
   // reads this clock, so "is the viewport animating, and at what rate" is a
-  // question only it can answer — a screenshot of water cannot.
-  window.__studioTime = studioTime;
+  // question only it can answer — a screenshot of water cannot. The viewport's,
+  // read through it: null until there is one.
+  Object.defineProperty(window, '__studioTime', { get: () => peekViewport()?.time ?? null, configurable: true });
 
   // What a device launch would send, read the way a launch reads it. Nothing
   // else can say whether a launch from Prefab Mode or during Play carries the

@@ -13,8 +13,9 @@ import { particleEmitterType } from '@three-studio/particles/core';
 import {
   AssetCache,
   CameraClaims,
-  SunService,
   NULL_ASSET_RESOLVER,
+  StudioTime,
+  SunService,
   activateRuntime,
   bindScene,
   createRuntimeRegistries,
@@ -78,6 +79,7 @@ describe('a scene holding an emitter, in a build without the module', () => {
     const doc = unwrap(decodeScene(registries, text), 'Scene file');
 
     const binder = bindScene(new Scene(), doc, {
+      time: new StudioTime(),
       cameras: new CameraClaims(),
       sun: new SunService(),
       registries,

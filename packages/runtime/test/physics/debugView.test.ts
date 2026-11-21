@@ -8,6 +8,7 @@ import type { DebugLines } from '../../src/physics/PhysicsWorld';
 import { physicsDebugLines } from '../../src/physics/physicsOf';
 import { builtInRegistries, withoutPhysics } from '../registries';
 import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody, withJoint } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * Rapier's debug view, as a host reads it to draw over the running game: every
@@ -71,6 +72,7 @@ describe('the debug view', () => {
   it('with physics off, there is nothing to draw', async () => {
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith(scene().entities),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

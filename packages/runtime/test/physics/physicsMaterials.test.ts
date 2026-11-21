@@ -22,6 +22,7 @@ import {
   takeTheBrowserBack,
   withBody,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * A collider linked to a physics material asset is built with the asset's
@@ -119,6 +120,7 @@ describe('a collider linked to a physics material', () => {
     // With physics off the line would be about the host, not the scene.
     const registries = builtInRegistries();
     const off = await World.play({
+      time: new StudioTime(),
       document: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

@@ -25,7 +25,7 @@ import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
 import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
-import { studioTime } from '@three-studio/runtime/time/StudioTime';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import {
   NO_SCRIPTS,
@@ -203,6 +203,10 @@ async function boot(): Promise<void> {
     idleBudgetBytes: PLAYER_IDLE_ASSET_BYTES,
   });
 
+  // The page's clock, made before the host so that every world it builds reads
+  // it: the player owns the loop, so it owns the clock — installed below.
+  const time = new StudioTime();
+
   // Hosted rather than a single world: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const host = new SceneHost({
@@ -214,6 +218,7 @@ async function boot(): Promise<void> {
     registries,
     scripts,
     assets,
+    time,
     // Records in the manifest, as a message is, and Maps here: a key read back
     // as an id is checked as one.
     materials: idMapOf(materials, isAssetId),
@@ -246,7 +251,7 @@ async function boot(): Promise<void> {
   // The player owns the loop, so it owns the clock: this is what makes three's
   // `time` node — and therefore every node material in the build — read the
   // same seconds the scripts and the physics do. See `time/StudioTime`.
-  studioTime.install();
+  time.install();
 
   let last = performance.now();
   renderer.setAnimationLoop(() => {
@@ -256,11 +261,11 @@ async function boot(): Promise<void> {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
 
-    studioTime.advance(delta);
+    time.advance(delta);
     // Once per frame, before the world's: what a scene let go of last frame
     // is freed now that the frame that drew it has been submitted.
     assets.beginFrame();
-    host.update(studioTime.delta);
+    host.update(time.delta);
     const world = host.world;
     if (world) void renderer.render(world.scene, world.cameras.active);
   });

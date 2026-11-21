@@ -10,6 +10,7 @@ import { World } from '../../src/world/World';
 import { builtInRegistries, withoutPhysics } from '../registries';
 import { FakeContext } from './fakeContext';
 import { flush, rig } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * The eleven ways audio can go wrong, walked one at a time, under the one rule
@@ -72,6 +73,7 @@ describe('nothing here may bring anything down', () => {
     // behaviour declines to build, so nothing throws once a frame.
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

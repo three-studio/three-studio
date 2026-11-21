@@ -56,6 +56,7 @@ import { describe, expect, it } from 'vitest';
 import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -82,6 +83,7 @@ function mount(scene: SceneDoc): {
   frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
+    time: new StudioTime(),
     cameras: new CameraClaims(),
     sun: new SunService(),
     registries,

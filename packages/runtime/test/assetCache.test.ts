@@ -17,6 +17,7 @@ import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries } from './registries';
 import { CameraClaims } from '../src/world/cameras';
 import { SunService } from '../src/world/sun';
+import { StudioTime } from '../src/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -352,6 +353,7 @@ describe('two worlds on one cache', () => {
   /** A world drawing a scene, as the edit view's binder or Play's would. */
   async function world(cache: AssetCache, scene: SceneDoc): Promise<SceneBinder> {
     const binder = new SceneBinder({
+      time: new StudioTime(),
       cameras: new CameraClaims(),
       sun: new SunService(),
       registries,

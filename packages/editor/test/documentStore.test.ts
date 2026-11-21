@@ -54,6 +54,7 @@ import { Selection } from '../src/state/selection';
 import { useToastStore } from '../src/state/toastStore';
 import { expandedScene } from '../src/state/expansion';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -1128,6 +1129,7 @@ describe('fitting a collider to its mesh', () => {
   /** A binder holding the meshes as the edit view draws them, synced to the document. */
   function drawnBinder(): SceneBinder {
     const binder = new SceneBinder({
+      time: new StudioTime(),
       cameras: new CameraClaims(),
       sun: new SunService(),
       registries: builtInRegistries(),

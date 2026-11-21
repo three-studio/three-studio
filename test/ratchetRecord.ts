@@ -200,7 +200,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/runtime/src/systems/WaterSurface.ts', { as: 4 }],
   ['packages/runtime/src/systems/geometry.ts', { as: 1 }],
   ['packages/runtime/src/systems/waterNormals.ts', { state: 1 }],
-  ['packages/runtime/src/time/StudioTime.ts', { state: 1 }],
   ['packages/runtime/test/audio/behaviour.test.ts', { as: 2 }],
   ['packages/runtime/test/audio/engine.test.ts', { as: 2 }],
   ['packages/runtime/test/audio/fakeContext.ts', { as: 1 }],

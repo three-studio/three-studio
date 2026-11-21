@@ -25,6 +25,7 @@ import { bindScene } from '../src/SceneBinder';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { WaterSurface } from '../src/systems/WaterSurface';
 import { CAMERA_PRIORITY, CameraClaims } from '../src/world/cameras';
+import { StudioTime } from '../src/time/StudioTime';
 import { EntityChannel } from '../src/world/channel';
 import { SunService } from '../src/world/sun';
 import { World, type Phase, type Subsystem, type SubsystemDefinition } from '../src/world/World';
@@ -254,6 +255,7 @@ describe('input, a subsystem', () => {
   it('is absent from a world handed no element, where a player controller drives nothing', async () => {
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([player([0, 1, 0])]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
@@ -306,6 +308,7 @@ describe('the fixed step', () => {
     const ticker = withScript(createEntity('Ticker'), Ticking);
     const registries = builtInRegistries();
     const world = await World.play({
+      time: new StudioTime(),
       document: sceneWith([ticker]),
       registries: withoutPhysics(registries),
       scripts: bundleOf([ticker]),
@@ -492,6 +495,7 @@ describe('the sun', () => {
     }
     const document = sceneWith([lamp, lit, skyLit]);
     const binder = bindScene(new Scene(), document, {
+      time: new StudioTime(),
       registries,
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: { ...createRenderingSettings(), batching: false },
@@ -531,5 +535,29 @@ describe('the sun', () => {
 
     binder.sync(sceneWith([lit, skyLit]));
     expect(sun.of(lamp.entity.id)).toBeNull();
+  });
+});
+
+describe('the window’s clock', () => {
+  it('is handed to every world of the window, which read one elapsed time', async () => {
+    const registries = builtInRegistries();
+    const time = new StudioTime();
+    const worlds = await Promise.all(
+      [0, 1].map(() =>
+        World.play({
+          document: sceneWith([]),
+          registries: withoutPhysics(registries),
+          assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
+          rendering: createRenderingSettings(),
+          time,
+        }),
+      ),
+    );
+    onTestFinished(() => worlds.forEach((world) => world.dispose()));
+
+    time.advance(0.25);
+
+    expect(worlds.map((world) => world.time)).toEqual([time, time]);
+    expect(worlds.map((world) => world.time.elapsed)).toEqual([0.25, 0.25]);
   });
 });

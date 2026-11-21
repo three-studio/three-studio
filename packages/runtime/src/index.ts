@@ -51,7 +51,7 @@ export { createRenderer, rendererCount } from './RendererFactory';
 export type { CreateRendererOptions, RendererBackend, RendererHandle } from './RendererFactory';
 
 /* Time. One clock for the simulation and every node material; see `time/StudioTime`. */
-export { StudioTime, studioTime } from './time/StudioTime';
+export { StudioTime } from './time/StudioTime';
 
 /* Assets: resolving ids to URLs, holding what is loaded, applying import settings. */
 export { NULL_ASSET_RESOLVER } from './assets/AssetResolver';

@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
 import { SelectionOutline } from '../src/viewport/SelectionOutline';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 /*
  * What is drawn around a selection, and what is only measured.
@@ -36,6 +37,7 @@ function outlineFor(templates: Parameters<typeof sceneWith>[0]): {
 } {
   const registries = builtInRegistries();
   const binder = new SceneBinder({
+    time: new StudioTime(),
     cameras: new CameraClaims(),
     sun: new SunService(),
     registries,
