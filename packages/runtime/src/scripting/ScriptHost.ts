@@ -211,7 +211,9 @@ export const scriptBehaviour: BehaviourDefinition = {
       // `null` in a world handed no element to listen on, which only a test
       // builds: there is nothing a script there could hear.
       input: inputOf(world),
-      scenes: world.options.scenes ?? null,
+      // Its own scene's: `current` is where this script is, whichever scene
+      // is active.
+      scenes: world.sceneOf(target.entity.id)?.scenes ?? null,
     });
 
     const behaviour = new ScriptBehaviour(instance, entity, world, `${target.entity.name}/${ScriptType.name}`);

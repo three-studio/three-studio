@@ -109,10 +109,10 @@ describe('the behaviours, a subsystem', () => {
 
     // What one refusing to leave prints is not this test's to show.
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    rig.world.notifySceneUnload();
-    rig.world.dispose();
+    rig.world.unloadScene(assertDefined(rig.world.activeScene, 'the scene'));
 
     expect(log).toEqual(['Stubborn leaves', 'Calm leaves', 'Stubborn goes', 'Calm goes']);
+    rig.world.dispose();
   });
 
   it('tell a script the scene is left, before it is destroyed', async () => {
@@ -128,10 +128,10 @@ describe('the behaviours, a subsystem', () => {
     }
     const rig = await physicsRigOn(builtInRegistries())([withScript(createEntity('Holder'), Leaving)]);
 
-    rig.world.notifySceneUnload();
-    rig.world.dispose();
+    rig.world.unloadScene(assertDefined(rig.world.activeScene, 'the scene'));
 
     expect(calls).toEqual(['unload', 'destroy']);
+    rig.world.dispose();
   });
 
   it('disable a script whose hook throws, say so once, and still let it clean up', async () => {

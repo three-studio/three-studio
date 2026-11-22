@@ -294,9 +294,9 @@ describe('input, a subsystem', () => {
     expect(world.warnings).toContain('No camera and no player controller; using a default view.');
   });
 
-  it('hears nothing until its world starts: the mouse moved over a loading scene does not turn the level', async () => {
-    // A level built behind a loading scene is made while the loading scene
-    // plays on the same canvas, the pointer still locked by the level before.
+  it('hears nothing until its world’s first scene starts: the mouse moved over a building scene does not turn it', async () => {
+    // A world is made, and its first scene built, while the page may still be
+    // moving the mouse over a locked pointer: a level left, a loading screen.
     const { canvas, element } = standInCanvas();
     Object.assign(document, { pointerLockElement: canvas, exitPointerLock: () => {} });
     onTestFinished(() => {
@@ -304,9 +304,8 @@ describe('input, a subsystem', () => {
       Reflect.deleteProperty(document, 'exitPointerLock');
     });
     const registries = builtInRegistries();
-    const world = await World.load({
+    const world = await World.play({
       time: new StudioTime(),
-      document: sceneWith([]),
       registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
@@ -314,11 +313,12 @@ describe('input, a subsystem', () => {
       input: { keys: 'element' },
     });
     onTestFinished(() => world.dispose());
+    const scene = world.loadScene(sceneWith([]), { buildBudgetMs: 0 });
 
     canvas.dispatchEvent(mouseMoved(300, -120));
-    await world.ready;
+    await scene.ready;
     expect(inputOf(world)).toBeNull();
-    world.start();
+    world.startScene(scene);
 
     const input = inputOf(world);
     expect(input).toBeInstanceOf(Input);

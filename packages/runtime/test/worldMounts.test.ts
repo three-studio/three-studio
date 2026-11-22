@@ -24,7 +24,14 @@ import { nest, prefabWith, sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER, type AssetResolver } from '../src/assets/AssetResolver';
 import { StudioTime } from '../src/time/StudioTime';
-import { World, type Phase, type Subsystem, type SubsystemDefinition, type WorldOptions } from '../src/world/World';
+import {
+  World,
+  type EditWorldOptions,
+  type Phase,
+  type Subsystem,
+  type SubsystemDefinition,
+  type WorldOptions,
+} from '../src/world/World';
 import { builtInRegistries } from './registries';
 
 /*
@@ -100,7 +107,7 @@ function optionsFor(
   definitions: readonly SubsystemDefinition[],
   templates: readonly EntityTemplate[],
   resolver: AssetResolver = NULL_ASSET_RESOLVER,
-): WorldOptions {
+): EditWorldOptions {
   const registries = builtInRegistries();
   const subsystems = new Registry<SubsystemId, SubsystemDefinition>('subsystem');
   for (const definition of definitions) subsystems.register(definition);
@@ -237,18 +244,18 @@ describe('a subsystem mounting components', () => {
       createEntity('Crate', [{ ...modelType.create(), assetId: fixedId('asset', 'crate') }]),
       fixedId('entity', 'crate'),
     );
-    // Loaded rather than played: Play's world waits for the model to land, and
-    // this test lands it once the build's pass has mounted the component. The
-    // build's last passes hand it back, before the world is ready.
-    const world = await World.load(
-      optionsFor([recording(A, log, ['model'])], [crate], { url: () => 'file:///crate.glb' }),
-    );
-    onTestFinished(() => world.dispose());
+    // Spawned rather than loaded: a scene is ready once its models have
+    // landed, and starts with them in place. A spawn mounts at its frame's
+    // pass, whatever it still loads.
+    const world = await playing([recording(A, log, ['model'])], [], {}, { url: () => 'file:///crate.glb' });
+    world.spawn(crate);
+    world.frame(STEP);
     expect(handouts(log)).toEqual(['a mount crate:model drawn']);
     log.length = 0;
 
     land();
-    await world.ready;
+    await world.binder.whenLoaded();
+    world.frame(STEP);
 
     expect(handouts(log)).toEqual(['a patch crate:model→itself']);
   });

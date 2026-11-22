@@ -48,9 +48,6 @@ export { ENTITY_ID_KEY } from './systems/identity';
 /** What `namersOf` answers for an entity nothing names. */
 const NO_NAMERS: ReadonlySet<EntityId> = new Set();
 
-/** The entities a sync of the whole scene was told of: none, since it reads them all. */
-const NOTHING: ReadonlySet<EntityId> = new Set();
-
 
 /**
  * Projects a `SceneDoc` onto a three.js scene graph and keeps it in sync.
@@ -138,6 +135,12 @@ export interface SceneBinderOptions {
    * a mesh collider, is built again from what landed.
    */
   landed?: ((entityId: EntityId) => void) | undefined;
+  /**
+   * Where a top-level entity hangs: its scene's root, in a running world that
+   * holds several scenes, each under a root of its own, hidden until it starts.
+   * Absent, or answering nothing, the binder's own root, as in the edit view.
+   */
+  rootOf?: ((entityId: EntityId) => Object3D | undefined) | undefined;
 }
 
 /**
@@ -223,8 +226,6 @@ export class SceneBinder {
    * batched mesh still hangs from.
    */
   private readonly batcher: MeshBatcher;
-  /** See `holdBatches`. */
-  private batchesHeld = false;
 
   /**
    * Read-only, and set once from the settings handed in.
@@ -252,6 +253,7 @@ export class SceneBinder {
   private readonly cameras: CameraClaims;
   private readonly sun: SunService;
   private readonly landed: ((entityId: EntityId) => void) | undefined;
+  private readonly rootOf: ((entityId: EntityId) => Object3D | undefined) | undefined;
 
   /**
    * Everything the binder is configured with, at the one moment it is
@@ -268,6 +270,7 @@ export class SceneBinder {
     this.cameras = options.cameras;
     this.sun = options.sun;
     this.landed = options.landed;
+    this.rootOf = options.rootOf;
     this.registries = options.registries;
     this.reconciler = new Reconciler(options.registries.systems);
     this.batcher = new MeshBatcher(this.root, this.reconciler, this.arena, this.shadowCasters);
@@ -397,7 +400,7 @@ export class SceneBinder {
   sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
     const ids = dirty ?? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()]);
     this.draw(scene, ids);
-    if (!this.batchesHeld) this.batcher.sync(dirty === undefined, ids);
+    this.batcher.sync(dirty === undefined, ids);
   }
 
   /**
@@ -441,22 +444,11 @@ export class SceneBinder {
   }
 
   /**
-   * Leaves the batches as they are at each sync, until `releaseBatches`: for a
-   * document built a few entities a sync, which nobody draws until it is whole
-   * — a world built behind a loading scene. A regroup walks every batchable
-   * mesh the binder holds, and one a sync made two thousand batched boxes take
-   * 1.3 s of frames to build rather than 40 ms.
+   * Says that what the batches could hold changed above every container: a
+   * scene's root was shown, and what it hid joins them at the next sync.
    */
-  holdBatches(): void {
-    this.batchesHeld = true;
-  }
-
-  /** Groups at once what was synced while the batches were held, and every sync from now on. */
-  releaseBatches(): void {
-    if (!this.batchesHeld) return;
-    this.batchesHeld = false;
+  invalidateBatches(): void {
     this.batcher.invalidate();
-    this.batcher.sync(true, NOTHING);
   }
 
   /**
@@ -691,7 +683,9 @@ export class SceneBinder {
     if (!view) return;
 
     let parent: Object3D = this.root;
-    if (entity.parent !== null) {
+    if (entity.parent === null) {
+      parent = this.rootOf?.(entity.id) ?? this.root;
+    } else {
       const bound = this.reconciler.view(entity.parent)?.container;
       if (bound) {
         parent = bound;

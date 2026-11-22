@@ -7,10 +7,10 @@ import {
   scriptType,
   fixedId,
   type AssetId,
+  type ComponentTypeId,
   type EntityTemplate,
   type SceneDoc,
   type ScriptComponent,
-  type SubsystemId,
 } from '@three-studio/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sceneWith } from '../../core/test/fixtures';
@@ -19,7 +19,8 @@ import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import type { SceneApi } from '../src/sceneApi';
 import { SceneHost, type SceneHostOptions } from '../src/SceneHost';
 import { Behaviour } from '../src/scripting/ScriptHost';
-import type { SubsystemDefinition, WorldRegistries } from '../src/world/World';
+import type { SystemDefinition } from '../src/systems/ComponentSystem';
+import type { WorldRegistries } from '../src/world/World';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries, withoutPhysics } from './registries';
 import { StudioTime } from '../src/time/StudioTime';
@@ -281,26 +282,33 @@ describe('a switch behind the loading scene', () => {
   /** Eight lights, which `slowLights` takes 5 ms each to mount: more than one frame's budget. */
   const lights = () => Array.from({ length: 8 }, () => createLightEntity('point'));
 
-  /** Registries whose worlds take 5 ms to mount each light, saying so in `log`. */
+  /** Registries whose worlds take 5 ms to draw each light, saying so in `log`: a scene's build is its drawing. */
   function slowLights(log: string[]): WorldRegistries {
     const base = withoutPhysics(builtInRegistries());
-    const subsystems = new Registry<SubsystemId, SubsystemDefinition>('subsystem');
-    for (const subsystem of base.subsystems.values()) subsystems.register(subsystem);
-    subsystems.register({
-      id: fixedId('subsystem', 'slow'),
-      mounts: ['light'],
-      create: () => ({
-        mount: () => {
-          log.push('light mounted');
-          const until = performance.now() + 5;
-          while (performance.now() < until) {
-            // A heavy mount.
-          }
+    const systems = new Registry<ComponentTypeId, SystemDefinition>('system');
+    for (const definition of base.systems.values()) {
+      if (definition.id !== 'light') {
+        systems.register(definition);
+        continue;
+      }
+      systems.register({
+        id: definition.id,
+        create: () => {
+          const system = definition.create();
+          const mount = system.mount.bind(system);
+          system.mount = (...args: Parameters<typeof mount>) => {
+            log.push('light mounted');
+            const until = performance.now() + 5;
+            while (performance.now() < until) {
+              // A heavy mount.
+            }
+            return mount(...args);
+          };
+          return system;
         },
-        dispose() {},
-      }),
-    });
-    return { ...base, subsystems };
+      });
+    }
+    return { ...base, systems };
   }
 
   function hostWith(log: string[]): SceneHost {

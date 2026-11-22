@@ -1,5 +1,6 @@
 import type { Disposable } from '@three-studio/core';
 import { OrthographicCamera, PerspectiveCamera, type Camera } from 'three/webgpu';
+import { SceneRoot } from './scenes';
 
 /**
  * How strongly each kind of camera claims the view. Something driving the view
@@ -18,6 +19,10 @@ interface Claim {
  * Which camera a world is drawn through: whoever claims the view, the highest
  * priority winning and the first to claim among equals, else a default view.
  *
+ * A claim counts once no scene root above its camera is hidden: a scene's
+ * main camera claims as the scene is built behind the one playing, and takes
+ * the view when its scene starts and is shown (`refresh`).
+ *
  * Claimed by what owns a camera — the camera component as it mounts, a
  * behaviour driving one — so that the world names none of them, and answered
  * by a field: a host asks once per frame.
@@ -27,6 +32,8 @@ export class CameraClaims {
   /** Posed as the world always posed it: looking at the origin from up and back. */
   private readonly fallback = new PerspectiveCamera(60, 16 / 9, 0.1, 5000);
   private current: Camera;
+  /** Whether some claim counts: a scene built and not shown claims nothing that does. */
+  private counted = false;
   /** What the host last said, kept for a camera that claims afterwards; `null` until it says. */
   private aspect: number | null = null;
 
@@ -74,18 +81,33 @@ export class CameraClaims {
     for (const { viewpoint } of this.claims) fit(viewpoint, aspect);
   }
 
-  /** What is wrong with the view, said once the world is built. */
+  /** Chooses again: a scene was shown or taken away, and the claims under it count or go with it. */
+  refresh(): void {
+    this.choose();
+  }
+
+  /** What is wrong with the view, said once a scene has started. */
   diagnose(): readonly string[] {
-    return this.claims.length === 0 ? ['No camera and no player controller; using a default view.'] : [];
+    return this.counted ? [] : ['No camera and no player controller; using a default view.'];
   }
 
   private choose(): void {
     let chosen: Claim | null = null;
     for (const claim of this.claims) {
+      if (underHiddenScene(claim.viewpoint)) continue;
       if (chosen === null || claim.priority > chosen.priority) chosen = claim;
     }
+    this.counted = chosen !== null;
     this.current = chosen?.viewpoint ?? this.fallback;
   }
+}
+
+/** Whether a scene root above `camera` is hidden: its scene is built and not started. */
+function underHiddenScene(camera: Camera): boolean {
+  for (let at = camera.parent; at !== null; at = at.parent) {
+    if (at instanceof SceneRoot && !at.visible) return true;
+  }
+  return false;
 }
 
 function fit(camera: Camera, aspect: number): void {

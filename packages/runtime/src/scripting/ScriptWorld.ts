@@ -214,16 +214,20 @@ export function scriptsSubsystem(registry: Registry<ScriptMembersId, ScriptMembe
     // Messages are delivered before the behaviours' updates, at 0.
     order: { update: -1 },
     async create(world) {
-      const { registries, prefabs, assets } = world.options;
+      const { registries, prefabs, assets, document } = world.options;
       const materials = world.options.materials ?? new Map();
       // What the candidates bring beyond what the scene names itself: the
       // scene's own are held by what draws them, and a hold here would keep a
-      // model the scene stopped drawing for the rest of the game.
-      const named = new Set(prefabs === undefined ? [] : collectSceneAssets(registries, world.document, materials, prefabs));
+      // model the scene stopped drawing for the rest of the game. The scene
+      // `World.play` loads, read before it is: a world's subsystems are made
+      // first.
+      const named = new Set(
+        prefabs === undefined || document === undefined ? [] : collectSceneAssets(registries, document, materials, prefabs),
+      );
       const holds =
-        prefabs === undefined
+        prefabs === undefined || document === undefined
           ? []
-          : collectSceneAssets(registries, world.document, materials, prefabs, new Set(prefabs.keys()))
+          : collectSceneAssets(registries, document, materials, prefabs, new Set(prefabs.keys()))
               .filter((assetId) => !named.has(assetId))
               .map((assetId) => assets.preload(assetId));
       const scripts = new WorldScripts(world, registry.values());

@@ -19,15 +19,16 @@ import { NULL_ASSET_RESOLVER, type AssetResolver } from '../src/assets/AssetReso
 import { physicsOf } from '../src/physics/physicsOf';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import { StudioTime } from '../src/time/StudioTime';
+import type { LoadedScene } from '../src/world/scenes';
 import { World, type SubsystemDefinition, type WorldOptions } from '../src/world/World';
 import { serveModels, stubImages } from './assetFixtures';
 import { builtInRegistries } from './registries';
 
 /*
- * A world built behind a loading scene: its document mounted an entity at a
- * time as frames come, each after its parent, the environment after the last;
- * ready once what it loads has landed and been handed back; and nothing of the
- * game running until it is started.
+ * A scene built into a running world over frames: its entities synced one at
+ * a time as frames come, each after its parent, hidden under its own root;
+ * ready once what it loads has landed; and nothing of it mounted, drawn or
+ * run until it is started.
  */
 
 afterEach(() => {
@@ -37,7 +38,7 @@ afterEach(() => {
 const STEP = 1 / 60;
 const CRATE = fixedId('asset', 'crate');
 
-/** A subsystem mounting `mounts` that logs what it is handed and each phase it is given. */
+/** A subsystem mounting `mounts` that logs what it is handed and when it starts. */
 function recording(log: string[], mounts: readonly ComponentTypeId[]): SubsystemDefinition {
   return {
     id: fixedId('subsystem', 'recording'),
@@ -46,19 +47,14 @@ function recording(log: string[], mounts: readonly ComponentTypeId[]): Subsystem
       mount: (entityId, component) => void log.push(`mount ${entityId}:${component.type}`),
       patch: (entityId, previous, next) =>
         void log.push(`patch ${entityId}:${previous === next ? 'itself' : next.type}`),
-      update: () => void log.push('update'),
-      fixed: () => void log.push('fixed'),
-      lateUpdate: () => void log.push('lateUpdate'),
-      renderPrep: () => void log.push('renderPrep'),
       start: () => void log.push('started'),
       dispose() {},
     }),
   };
 }
 
-/** The options of a world of these entities, run by the kernel's subsystems and then these. */
+/** The options of a world run by the kernel's subsystems and then these. */
 function optionsFor(
-  templates: readonly EntityTemplate[],
   definitions: readonly SubsystemDefinition[],
   assets?: AssetCache,
   resolver: AssetResolver = NULL_ASSET_RESOLVER,
@@ -68,7 +64,6 @@ function optionsFor(
   for (const definition of [...registries.subsystems.values(), ...definitions]) subsystems.register(definition);
   return {
     time: new StudioTime(),
-    document: sceneWith(templates),
     registries: { ...registries, subsystems },
     assets: assets ?? new AssetCache(registries, { resolver, idleBudgetBytes: 0 }),
     // Off, so that a mesh's object is the one a test reads.
@@ -76,18 +71,21 @@ function optionsFor(
   };
 }
 
-/** A world loaded with a budget of nothing: one entity a frame. */
-async function building(options: WorldOptions): Promise<World> {
-  const world = await World.load({ ...options, buildBudgetMs: 0 });
+/** A running world with no scene, and these entities loaded into it with a budget of nothing: one a frame. */
+async function building(
+  options: WorldOptions,
+  templates: readonly EntityTemplate[],
+): Promise<{ world: World; scene: LoadedScene }> {
+  const world = await World.play(options);
   onTestFinished(() => world.dispose());
-  return world;
+  return { world, scene: world.loadScene(sceneWith(templates), { buildBudgetMs: 0 }) };
 }
 
 /** Turns of the event loop, for what a frame started to land. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-describe('a world built over frames', () => {
-  it('mounts one entity a frame with no budget, each under its parent, then puts up the environment', async () => {
+describe('a scene built over frames', () => {
+  it('syncs one entity a frame with no budget, each under its parent, its roots under its hidden root', async () => {
     // 250 roots, each with a chain of three below it.
     const templates: EntityTemplate[] = [];
     for (let root = 0; root < 250; root += 1) {
@@ -99,39 +97,39 @@ describe('a world built over frames', () => {
       templates.push(...chain);
     }
     const log: string[] = [];
-    const world = await building(optionsFor(templates, [recording(log, [])]));
+    const { world, scene } = await building(optionsFor([recording(log, [])]), templates);
 
     const miscounted: number[] = [];
     const misplaced: string[] = [];
-    let environmentEarly = false;
     for (let frame = 1; frame <= templates.length; frame += 1) {
-      if (world.scene.background !== null) environmentEarly = true;
       world.frame(STEP);
       let built = 0;
       for (const { entity } of templates) {
         const object = world.binder.getObject(entity.id);
         if (object === undefined) continue;
         built += 1;
-        const parent = entity.parent === null ? world.binder.root : world.binder.getObject(entity.parent);
+        const parent = entity.parent === null ? scene.root : world.binder.getObject(entity.parent);
         if (object.parent !== parent) misplaced.push(`${entity.name} at frame ${frame}`);
       }
       if (built !== frame) miscounted.push(frame);
     }
+    await scene.ready;
 
     expect(miscounted).toEqual([]);
     expect(misplaced).toEqual([]);
-    expect(environmentEarly).toBe(false);
+    expect(scene.root.visible).toBe(false);
+    expect(world.document.entities.size).toBe(0);
+    // Its environment is put up when it is made active.
     expect(world.scene.background).toBeNull();
-    // The budget went with the last entity: the environment takes the next frame.
-    world.frame(STEP);
+    world.setActiveScene(scene);
     expect(world.scene.background).not.toBeNull();
     expect(log).toEqual([]);
   });
 
-  it('batches nothing while it builds, and everything in one go once it is whole', async () => {
+  it('batches nothing while it builds, and everything in one go once it starts', async () => {
     const boxes = Array.from({ length: 40 }, () => createMeshEntity('box'));
-    const options = optionsFor(boxes, []);
-    const world = await building({ ...options, rendering: { ...options.rendering, batching: true } });
+    const options = optionsFor([]);
+    const { world, scene } = await building({ ...options, rendering: { ...options.rendering, batching: true } }, boxes);
     const batches = () => world.binder.root.children.filter((child) => child instanceof BatchedMesh);
 
     let early = 0;
@@ -139,13 +137,16 @@ describe('a world built over frames', () => {
       world.frame(STEP);
       early += batches().length;
     }
+    await scene.ready;
     world.frame(STEP);
+    early += batches().length;
+    world.startScene(scene);
 
     expect(early).toBe(0);
     expect(batches().map((batch) => batch.name)).toEqual(['Batch(40)']);
   });
 
-  it('runs no phase and makes no behaviour before it is started, and both once it is', async () => {
+  it('mounts nothing and makes no behaviour before it is started, and both once it is', async () => {
     const log: string[] = [];
     class Arrival extends Behaviour {
       override onAwake() {
@@ -162,22 +163,21 @@ describe('a world built over frames', () => {
     }
     const SCRIPT = fixedId('asset', 'script-arrival');
     const holder = createEntity('Holder', [{ ...scriptType.create(), assetId: SCRIPT }]);
-    const options = optionsFor([holder], [recording(log, [])]);
-    const world = await building({ ...options, scripts: new Map([[SCRIPT, Arrival]]) });
+    const options = optionsFor([recording(log, ['script'])]);
+    const { world, scene } = await building({ ...options, scripts: new Map([[SCRIPT, Arrival]]) }, [holder]);
 
     for (let frame = 0; frame < 3; frame += 1) world.frame(STEP);
-    await world.ready;
+    await scene.ready;
     world.frame(STEP);
     expect(log).toEqual([]);
 
-    world.start();
-    expect(log).toEqual(['awake', 'start', 'started']);
+    world.startScene(scene);
+    expect(log).toEqual([`mount ${holder.entity.id}:script`, 'awake', 'start', 'started']);
     world.frame(STEP);
     expect(log).toContain('script update');
-    expect(log).toContain('renderPrep');
   });
 
-  it('is ready once the models have landed and been read again, a landing handed back', async () => {
+  it('is ready once its models have landed, and mounts them at its start as they landed', async () => {
     let land = (): void => {};
     const inFlight = new Promise<Object3D>((resolve) => {
       land = () => resolve(new Group());
@@ -185,27 +185,28 @@ describe('a world built over frames', () => {
     vi.spyOn(AssetCache.prototype, 'holdModel').mockReturnValue({ object: inFlight, dispose: () => {} });
     const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
     const log: string[] = [];
-    const options = optionsFor([crate], [recording(log, ['model'])], undefined, { url: () => 'file:///crate.glb' });
-    const world = await building(options);
+    const options = optionsFor([recording(log, ['model'])], undefined, { url: () => 'file:///crate.glb' });
+    const { world, scene } = await building(options, [crate]);
     let ready = false;
-    void world.ready.then(() => {
+    void scene.ready.then(() => {
       ready = true;
     });
 
-    // The crate, then the environment.
     world.frame(STEP);
     world.frame(STEP);
     await settled();
-    expect(log).toEqual([`mount ${crate.entity.id}:model`]);
     expect(ready).toBe(false);
 
     land();
-    await world.ready;
+    await scene.ready;
+    world.frame(STEP);
+    expect(log).toEqual([]);
 
-    expect(log).toEqual([`mount ${crate.entity.id}:model`, `patch ${crate.entity.id}:itself`]);
+    world.startScene(scene);
+    expect(log).toEqual([`mount ${crate.entity.id}:model`, 'started']);
   });
 
-  it('rejects its ready when disposed before it, and gives back what it held', async () => {
+  it('rejects its ready when its world is disposed before it, and gives back what it held', async () => {
     stubImages();
     const server = await serveModels();
     const registries = builtInRegistries();
@@ -214,15 +215,13 @@ describe('a world built over frames', () => {
       idleBudgetBytes: 0,
     });
     const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
-    const world = await building(optionsFor([crate], [], assets));
+    const { world, scene } = await building(optionsFor([], assets), [crate]);
 
     world.frame(STEP);
-    // The file asked for as the world was made, and the crate's own hold since
-    // the frame drew it: the first is given back once the build is whole.
-    expect(assets.stats.held).toBe(2);
+    expect(assets.stats.held).toBe(1);
     world.dispose();
 
-    await expect(world.ready).rejects.toThrow(/disposed/);
+    await expect(scene.ready).rejects.toThrow(/disposed/);
     expect(assets.stats.held).toBe(0);
   });
 });
@@ -256,7 +255,7 @@ describe('Play’s world, built at once', () => {
     };
     const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
 
-    const playing = World.play(optionsFor([crate], [slow], assets));
+    const playing = World.play({ ...optionsFor([slow], assets), document: sceneWith([crate]) });
     await making;
     let waited = 0;
     while (server.requests('crate.gltf') === 0 && waited < 200) {
@@ -274,8 +273,8 @@ describe('Play’s world, built at once', () => {
   });
 
   it('starts with a mesh Collider built from its model, which landed after the pass that mounted it', async () => {
-    // Physics no longer waits for the models before the build: `ready` does,
-    // and the landing is handed back to it before the world starts. Built from
+    // Physics no longer waits for the models before the build: the scene's
+    // `ready` does, and it starts with the model in place. Built from
     // the empty group a glTF hangs from, an imported level was a box the
     // player fell straight past.
     vi.spyOn(AssetCache.prototype, 'holdModel').mockImplementation(() => ({
@@ -289,7 +288,10 @@ describe('Play’s world, built at once', () => {
       { ...colliderType.create(), shape: { kind: 'mesh', build: 'triangles' } },
     ]);
 
-    const world = await World.play(optionsFor([slab], [], undefined, { url: () => 'file:///slab.glb' }));
+    const world = await World.play({
+      ...optionsFor([], undefined, { url: () => 'file:///slab.glb' }),
+      document: sceneWith([slab]),
+    });
     onTestFinished(() => world.dispose());
 
     const hit = physicsOf(world)?.raycast({ x: 1.5, y: 5, z: 1.5 }, { x: 0, y: -1, z: 0 }, 10);

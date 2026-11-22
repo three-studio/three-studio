@@ -32,10 +32,10 @@ export const physicsSubsystem: SubsystemDefinition = {
     const settings = world.options.physicsSettings ?? createPhysicsSettings();
     const materials = world.options.physicsMaterials ?? new Map<AssetId, PhysicsMaterialDef>();
     // Rapier alone: nothing is built at creation. A collider derived from a
-    // model is built again when the model lands, and the world starts only once
-    // every model has (`World.ready`): built from the empty group a glTF hangs
-    // from before it arrives, an imported level was a box the player fell
-    // straight past.
+    // model is built again when the model lands, and a scene starts only once
+    // every model it draws has (`LoadedScene.ready`): built from the empty group
+    // a glTF hangs from before it arrives, an imported level was a box the
+    // player fell straight past.
     const physics = await PhysicsWorld.create(settings, {
       scene: world.document,
       objects: world.binder,

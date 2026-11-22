@@ -113,6 +113,7 @@ export class AudioSourceBehaviour implements Behaviour {
     private readonly component: AudioSourceComponent,
     private readonly object: Object3D,
     private readonly audio: AudioEngine,
+    private readonly entityId: EntityId,
   ) {
     this.spatial =
       component.spatialBlend > 0 ? spatialRequestFor(component, object, this.position, this.forward) : null;
@@ -148,6 +149,7 @@ export class AudioSourceBehaviour implements Behaviour {
 
   dispose(): void {
     this.stop();
+    forget(this.audio, this.entityId, this);
   }
 
   /**
@@ -192,10 +194,11 @@ export class AudioSourceBehaviour implements Behaviour {
  *
  * A `WeakMap` keyed by the engine and not a module-level table, for the reason
  * `ComponentSystem` states about registries: this has a lifetime, and the
- * lifetime is the engine's. `SceneHost` builds a new engine for every scene, and
- * a table shared between them would hand a script the sources of a scene that
- * has already been torn down. The same shape each world's accessors use, and
- * for the same reason.
+ * lifetime is the engine's, one per world. Each source leaves it as it is
+ * disposed: a world outlives its scenes, and a table that kept them would hand
+ * a script the sources of a scene already unloaded, and hold them until the
+ * game ended. The same shape each world's accessors use, and for the same
+ * reason.
  */
 const sources = new WeakMap<AudioEngine, Map<EntityId, AudioSourceBehaviour[]>>();
 
@@ -211,6 +214,13 @@ function remember(audio: AudioEngine, entityId: EntityId, behaviour: AudioSource
   const byEntity = sources.get(audio) ?? new Map<EntityId, AudioSourceBehaviour[]>();
   sources.set(audio, byEntity);
   byEntity.set(entityId, [...(byEntity.get(entityId) ?? []), behaviour]);
+}
+
+function forget(audio: AudioEngine, entityId: EntityId, behaviour: AudioSourceBehaviour): void {
+  const byEntity = sources.get(audio);
+  const left = byEntity?.get(entityId)?.filter((source) => source !== behaviour) ?? [];
+  if (left.length > 0) byEntity?.set(entityId, left);
+  else byEntity?.delete(entityId);
 }
 
 /**
@@ -290,7 +300,7 @@ class AudioListenerBehaviour implements Behaviour {
  */
 export function audioSourceOn(audio: AudioEngine, target: BehaviourTarget): Behaviour | null {
   if (target.component.type !== 'audioSource') return null;
-  const behaviour = new AudioSourceBehaviour(target.component, target.object, audio);
+  const behaviour = new AudioSourceBehaviour(target.component, target.object, audio, target.entity.id);
   remember(audio, target.entity.id, behaviour);
   return behaviour;
 }

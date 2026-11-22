@@ -12,6 +12,7 @@ import { collisionsOf } from '../physics/physicsOf';
 import type { Touch } from '../physics/PhysicsApi';
 import { CAMERA_PRIORITY } from '../world/cameras';
 import type { EntityChannel } from '../world/channel';
+import type { LoadedScene } from '../world/scenes';
 import type { Subsystem, SubsystemDefinition, World } from '../world/World';
 import type { Behaviour, BehaviourDefinition } from './Behaviour';
 
@@ -65,11 +66,10 @@ class Behaviours implements Subsystem {
   private readonly typeOf = new Map<ComponentTypeId, number>();
   /** What each mounted component made, by entity and component id: taken down at its unmount. */
   private readonly made = new Map<EntityId, Map<ComponentId, Made>>();
-  /** Mounted before the world started, by entity: made at `start`, in the order the scene was always built in. */
+  /** Mounted as their scene starts, by entity: made at `start`, in the order a scene was always built in. */
   private readonly waiting = new Map<EntityId, Set<ComponentId>>();
-  /** Mounted by a pass once started: made when it settles, in mount order. */
+  /** Mounted by a pass in a scene already started — a spawn —: made when it settles, in mount order. */
   private arrived: { readonly entityId: EntityId; readonly component: ComponentDoc }[] = [];
-  private started = false;
   /** How many have wanted to drive the camera: two is a line. */
   private drivers = 0;
   private readonly collisions: EntityChannel<Touch> | null;
@@ -86,7 +86,9 @@ class Behaviours implements Subsystem {
   }
 
   mount(entityId: EntityId, component: ComponentDoc): void {
-    if (this.started) {
+    // An entity of no scene was spawned with none active: nothing will start it.
+    const scene = this.world.sceneOf(entityId);
+    if (scene === null || scene.started) {
       this.arrived.push({ entityId, component });
       return;
     }
@@ -96,9 +98,9 @@ class Behaviours implements Subsystem {
   }
 
   /**
-   * The behaviours of a scene, once all of it is built: each type in registry
-   * order, each entity in its type's table order, every one awake as it is
-   * made, then every one started — a behaviour can find any other from
+   * The behaviours of a scene starting, once all of it is mounted: each type in
+   * registry order, each entity in its type's table order, every one awake as
+   * it is made, then every one started — a behaviour can find any other from
    * `onStart`, whichever was made first.
    *
    * Driven by the registry and then by the tables of the types it names: a
@@ -106,7 +108,7 @@ class Behaviours implements Subsystem {
    * entity, and nothing here names a type.
    */
   start(): void {
-    this.started = true;
+    if (this.waiting.size === 0) return;
     const made: Behaviour[] = [];
     for (const definition of this.registry.values()) {
       for (const [entityId, held] of componentsOfType(this.world.document, definition.id)) {
@@ -130,7 +132,7 @@ class Behaviours implements Subsystem {
    * the rest of its prefab.
    */
   settle(): void {
-    if (!this.started || this.arrived.length === 0) return;
+    if (this.arrived.length === 0) return;
     const arrived = this.arrived;
     this.arrived = [];
     const made: Behaviour[] = [];
@@ -183,16 +185,22 @@ class Behaviours implements Subsystem {
   }
 
   /**
-   * Tells every behaviour the scene is going away, before anything is taken
-   * apart.
+   * Tells every behaviour of `scene` it is going away, before anything of it is
+   * taken apart, in the order a phase runs them.
    *
    * Separate from `dispose` because the two answer different questions: this
    * one is "we are leaving, save what matters" and still has a live scene to
    * read; `dispose` is the teardown itself. Unity splits them the same way
    * with `OnDisable` and `OnDestroy`.
    */
-  sceneUnload(): void {
+  sceneUnload(scene: LoadedScene): void {
+    const leaving = new Set<Behaviour>();
+    for (const [entityId, ofEntity] of this.made) {
+      if (this.world.sceneOf(entityId) !== scene) continue;
+      for (const { behaviour } of ofEntity.values()) leaving.add(behaviour);
+    }
     for (const behaviour of this.all) {
+      if (!leaving.has(behaviour)) continue;
       try {
         behaviour.onSceneUnload?.();
       } catch (cause) {

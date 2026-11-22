@@ -21,7 +21,7 @@ import { MeshSystem } from '../src/components/mesh/MeshSystem';
 import type { SceneBinder } from '../src/SceneBinder';
 import { WaterSurface } from '../src/systems/WaterSurface';
 import { StudioTime } from '../src/time/StudioTime';
-import { World, type SubsystemDefinition, type WorldOptions } from '../src/world/World';
+import { World, type EditWorldOptions, type SubsystemDefinition } from '../src/world/World';
 import { builtInRegistries } from './registries';
 
 /*
@@ -63,7 +63,7 @@ function edited(lamp: EntityTemplate, rotation: Vec3, color: string): EntityTemp
   };
 }
 
-function options(document: SceneDoc, definitions: readonly SubsystemDefinition[] = []): WorldOptions {
+function options(document: SceneDoc, definitions: readonly SubsystemDefinition[] = []): EditWorldOptions {
   const registries = builtInRegistries();
   const subsystems = new Registry<SubsystemId, SubsystemDefinition>('subsystem');
   for (const definition of definitions) subsystems.register(definition);

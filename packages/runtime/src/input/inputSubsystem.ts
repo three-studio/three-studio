@@ -37,7 +37,9 @@ class InputSubsystem implements Subsystem {
     private readonly options: InputOptions | undefined,
   ) {}
 
+  /** At the first scene's start; the world's, and so its scenes', from then on. */
   start(): void {
+    if (this.input !== null) return;
     const input = new Input(this.element, this.options);
     this.input = input;
     this.provided = provideInput(this.world, input);

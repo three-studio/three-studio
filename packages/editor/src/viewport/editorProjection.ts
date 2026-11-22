@@ -1,3 +1,4 @@
+import type { SceneDoc } from '@three-studio/core';
 import { World, type SceneBinder, type WorldOptions } from '@three-studio/runtime';
 import { DirectionalLight, GridHelper, Group, HemisphereLight, type Scene } from 'three/webgpu';
 import type { EditorRegistries } from '../registries';
@@ -34,6 +35,8 @@ export const EDITOR_OVERLAYS = [
  * that differed would be a difference the parity test cannot see.
  */
 export interface EditorProjectionOptions extends WorldOptions {
+  /** The editor's document, which the edit view draws. */
+  document: SceneDoc;
   /** What the world draws with, and what each type draws about itself in the edit view: its marker, its helper. */
   registries: WorldOptions['registries'] & Pick<EditorRegistries, 'overlays'>;
 }

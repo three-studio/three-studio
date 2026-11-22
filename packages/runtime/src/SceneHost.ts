@@ -41,7 +41,7 @@ export interface SceneSource {
 export const LOADING_BUILD_BUDGET_MS = 12;
 
 /** What everything a scene needs, other than the document itself; the build's budget is the host's. */
-export interface SceneHostOptions extends Omit<WorldOptions, 'document' | 'buildBudgetMs'> {
+export interface SceneHostOptions extends Omit<WorldOptions, 'document'> {
   source: SceneSource;
   materials?: ReadonlyMap<AssetId, MaterialDef>;
   /**
@@ -222,8 +222,7 @@ export class SceneHost implements SceneApi {
     // The outgoing scene is told before anything of it is taken apart, so a
     // behaviour can still read its own entities while saving state; and it goes
     // before the next is built, so that two levels are never held at once.
-    this.world?.notifySceneUnload();
-    this.world?.dispose();
+    if (this.world !== null) leave(this.world);
     const world = await World.play(options);
 
     // Checked again, because `World.play` awaits Rapier and every model the
@@ -247,14 +246,16 @@ export class SceneHost implements SceneApi {
    * waits for its activation.
    */
   private async buildBehindLoading(path: string, options: WorldOptions, replaced: () => boolean): Promise<void> {
-    const world = await World.load({ ...options, buildBudgetMs: LOADING_BUILD_BUDGET_MS });
-    if (replaced()) {
+    const { document, scenes, ...made } = options;
+    const world = await World.play(made);
+    if (replaced() || document === undefined) {
       world.dispose();
       return;
     }
+    const scene = world.loadScene(document, { buildBudgetMs: LOADING_BUILD_BUDGET_MS, scenes: scenes ?? null });
     this.building = world;
     try {
-      await world.ready;
+      await scene.ready;
     } catch (cause) {
       // Disposed by a switch that replaced it, or by Stop: nothing to say.
       if (replaced()) return;
@@ -263,9 +264,9 @@ export class SceneHost implements SceneApi {
     }
     if (replaced()) return;
     this.building = null;
-    this.world?.notifySceneUnload();
-    this.world?.dispose();
-    world.start();
+    if (this.world !== null) leave(this.world);
+    world.setActiveScene(scene);
+    world.startScene(scene);
     this.show(path, world);
   }
 
@@ -333,6 +334,16 @@ export class SceneHost implements SceneApi {
     }
     return this.options.assets.preload(assetId);
   }
+}
+
+/**
+ * Takes a scene's world down: the scene unloaded first, so that its behaviours
+ * hear it is left while all of it is still readable, then the world.
+ */
+function leave(world: World): void {
+  const scene = world.activeScene;
+  if (scene !== null) world.unloadScene(scene);
+  world.dispose();
 }
 
 class LoadHandle implements SceneLoad {
