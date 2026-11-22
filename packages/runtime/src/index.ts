@@ -59,6 +59,8 @@ export type { EntityView } from './Reconciler';
 /* Rendering. `createRenderer` picks WebGPU and falls back to WebGL. */
 export { createRenderer, rendererCount } from './RendererFactory';
 export { forgetRenderLists, resizeRenderer, retireFrameBufferTarget } from './render/threeRenderer';
+export { RenderHost, drawLayers } from './render/RenderHost';
+export type { LayerRenderer, RenderHostOptions } from './render/RenderHost';
 export type { CreateRendererOptions, RendererBackend, RendererHandle } from './RendererFactory';
 
 /* Time. One clock for the simulation and every node material; see `time/StudioTime`. */

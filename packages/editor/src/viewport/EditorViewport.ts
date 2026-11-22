@@ -660,7 +660,7 @@ export class EditorViewport {
     const preview = this.preview;
     if (preview && this.view.previewView.visible) {
       preview.onFrame();
-      this.view.draw(preview.scene, preview.camera, this.view.previewView);
+      this.view.draw(this.view.previewView, preview.scene, preview.camera);
     }
 
     // Simulation carries on; only the drawing stops. Pausing the game because
@@ -672,9 +672,10 @@ export class EditorViewport {
     // measured, where drawing the edit view behind it as well made 18 016.
     // While the game starts it is the game too, unseen under the edit image
     // until its first frame is in, which is what brings it on top.
-    if (view.drawn === 'edit') this.view.draw(this.scene, this.camera, this.view.editView);
-    else if (world && this.view.draw(world.scene, world.cameras.active, this.view.gameView, this.overGame(world))) {
-      this.play.gameDrawn();
+    if (view.drawn === 'edit') this.view.draw(this.view.editView, this.scene, this.camera);
+    else if (world) {
+      this.view.gameHost.overlay = this.overGame(world);
+      if (this.view.draw(this.view.gameView, world.scene, world.cameras.active)) this.play.gameDrawn();
     }
     this.view.reportStats(time, this.controls.moveSpeed);
   }
@@ -684,10 +685,10 @@ export class EditorViewport {
    * Physics is on. Read only then, and only while the game is seen, since the
    * world hands new arrays at each tick it is read.
    */
-  private overGame(world: World): Scene | undefined {
-    if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return undefined;
+  private overGame(world: World): Scene | null {
+    if (!useEditorStore.getState().showPhysicsDebug || !this.view.gameView.visible) return null;
     const lines = physicsDebugLines(world);
-    return lines === null ? undefined : this.physicsDebug.show(lines);
+    return lines === null ? null : this.physicsDebug.show(lines);
   }
 
 

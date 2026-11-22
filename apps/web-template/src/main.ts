@@ -26,6 +26,7 @@ import { blockPageZoom } from './pageZoom';
 import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
 import { forgetRenderLists, resizeRenderer } from '@three-studio/runtime/render/threeRenderer';
+import { RenderHost } from '@three-studio/runtime/render/RenderHost';
 import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import {
@@ -254,6 +255,7 @@ async function boot(): Promise<void> {
   // same seconds the scripts and the physics do. See `time/StudioTime`.
   time.install();
 
+  const host = new RenderHost({ renderer });
   let last = performance.now();
   renderer.setAnimationLoop(() => {
     const now = performance.now();
@@ -269,7 +271,7 @@ async function boot(): Promise<void> {
     if (assets.beginFrame() > 0) forgetRenderLists(renderer);
     game.update(time.delta);
     const world = game.world;
-    if (world) void renderer.render(world.scene, world.cameras.active);
+    if (world) host.draw(world.scene, world.cameras.active);
   });
 
   message.textContent = build.title || scene.name;
