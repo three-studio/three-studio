@@ -74,6 +74,13 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   lignes de typings ; `runtime/src/scripting/` ne nomme ni la physique ni l'audio, ce que `test/architecture.test.ts`
   vérifie, et les typings d'un projet sont générés depuis les registres. Ce qu'un script voit change avec
   `SCRIPT_API_VERSION`.
+- **Un jeu tient un seul monde, où ses scènes se chargent.** Play, un device et le player font tourner un `Game` : un
+  `World` pour toute la partie, où une scène se construit à part, cachée et montée par aucun sous-système, puis démarre
+  d'un coup quand on l'active — prête n'est pas montrée. Une scène est active, et `go` la remplace ; les scènes additives
+  restent jusqu'à `unload`, et ce qui doit survivre à un changement de scène vit dans l'une d'elles ou dans
+  `this.scenes.data`. Une scène tient chaque asset qu'elle nomme, prefabs instanciables compris, de sa lecture à son
+  déchargement. Deux scènes d'un monde n'ont jamais un id d'entité en commun : un chargement en conflit est refusé avec
+  un diagnostic.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
