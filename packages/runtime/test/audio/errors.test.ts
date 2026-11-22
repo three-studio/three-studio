@@ -179,7 +179,7 @@ describe('nothing here may bring anything down', () => {
   it('a voice still fading when the engine goes hands its clip back', async () => {
     // The scene is left, sources stop with the fade-out they were authored with,
     // and the engine is disposed before the fade is over. The cache is the
-    // host's — `SceneHost` shares one across scenes — so a reference left behind
+    // game's — a `Game` shares one across scenes — so a reference left behind
     // here is never collected: `evict` only ever drops what nothing holds.
     const { engine, cache } = rig(
       { step: { duration: 30 } },

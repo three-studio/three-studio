@@ -563,6 +563,8 @@ function typesItMayName(path: string): readonly string[] | null {
   // The world runs what is registered — systems, subsystems — and its loop
   // names none of it: a feature it named would be one a module could not add.
   if (path.startsWith('packages/runtime/src/world/')) return [];
+  // The game moves its world between scenes, whatever they hold.
+  if (path.startsWith('packages/runtime/src/game/')) return [];
   if (UNPACK_MODEL.has(path)) return ['model'];
   return null;
 }
@@ -881,9 +883,9 @@ describe('the frameworks that read the types', () => {
     ]);
   });
 
-  it("reports a type named in the world's files, whose loop runs what is registered and names none of it", () => {
-    expect(named('packages/runtime/src/world/World.ts', "if (entitiesWith(document, 'collider').length === 0) warn();")).toEqual([
-      'packages/runtime/src/world/World.ts: names the component type collider, whose rules are its own',
+  it("reports a type named in the game's files, which moves its world between scenes whatever they hold", () => {
+    expect(named('packages/runtime/src/game/Game.ts', "if (entitiesWith(scene, 'model').length > 0) hold();")).toEqual([
+      'packages/runtime/src/game/Game.ts: names the component type model, whose rules are its own',
     ]);
   });
 

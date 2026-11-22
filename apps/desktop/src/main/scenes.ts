@@ -42,9 +42,9 @@ import { ProjectError, discoverScenes, readProject, updateProject } from './proj
  *   scene now, so an id with no file costs nothing.
  * - **`BuildProfile.scenes` follows a deletion** — an id with no file is an
  *   export warning now, and the profile is not this module's business.
- * - **`loadingScene` follows a deletion** — `SceneHost.showLoadingScene`
- *   catches and goes straight to the target: "better than stopping because the
- *   interstitial is missing".
+ * - **`loadingScene` follows a deletion** — a `Game` that cannot show its
+ *   loading scene says so and goes straight to the target: "better than
+ *   stopping because the interstitial is missing".
  *
  * All three had to tolerate an absent id anyway, because a scene deleted in the
  * Finder never comes through here. Once each tolerates it, doing the work

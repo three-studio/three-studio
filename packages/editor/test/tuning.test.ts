@@ -344,14 +344,18 @@ describe('tuning during Play', () => {
 
     Director.to = 'self';
     first.frame(1 / 60);
-    await until(() => session?.playWorld !== first && session?.playWorld != null, 'the restarted world');
-    const restarted = session!.playWorld!;
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'the restarted scene');
+    // One world for the whole game: the scene restarts in it.
+    const restarted = first;
+    expect(session?.playWorld).toBe(first);
     expect(massOf(restarted, box)).toBeCloseTo(5, 5);
 
     const tune = vi.spyOn(World.prototype, 'putComponent');
     Director.to = 'Boss';
     restarted.frame(1 / 60);
-    await until(() => session?.playWorld !== restarted && session?.playWorld != null, 'Boss’s world');
+    const again = restarted.activeScene;
+    await until(() => restarted.activeScene !== null && restarted.activeScene !== again, 'Boss');
     tuneComponentField(registries, box.entity.id, componentOf(box, 'rigidbody').id, ['mass'], 7);
     expect(tune).not.toHaveBeenCalled();
   });

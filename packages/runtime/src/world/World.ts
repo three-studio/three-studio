@@ -141,8 +141,8 @@ type Hook = (value: number) => void;
 export interface WorldOptions {
   /**
    * The edit view's document, the editor's. In Play, the scene `World.play`
-   * loads, starts and makes active, if any: a game loads the rest itself
-   * (`loadScene`).
+   * loads, starts and makes active, if any — a test's scene: a game loads its
+   * own (`loadScene`).
    */
   document?: SceneDoc;
   /**
@@ -215,10 +215,11 @@ export interface WorldOptions {
    */
   audioContext?: AudioContextLike | undefined;
   /**
-   * A decoded-clip cache to share with the worlds that come after this one.
+   * A decoded-clip cache this world shares rather than owns.
    *
-   * `SceneHost` owns it, so a sound the last level used is still in hand when
-   * the next one asks for it.
+   * A `Game` owns it, and holds each scene's sounds in it from the scene's read
+   * to its unload, so a sound the last level used is still in hand when the
+   * next one asks for it.
    */
   audioCache?: AudioClipCache | undefined;
   /**
@@ -242,11 +243,6 @@ export interface WorldOptions {
    * for themselves; `npm run typecheck` names any that tries.
    */
   rendering: RenderingSettings;
-  /**
-   * What the scripts of `document`, the scene `World.play` loads, are given to
-   * move to another scene. A world built on its own has no next scene to go to.
-   */
-  scenes?: SceneApi | null;
   /**
    * The classes of the compiled script bundle this world runs, decoded by
    * `scriptClassesOf`. Left out, none: a scene's scripts say they are not
@@ -504,7 +500,7 @@ export class World {
     try {
       await world.makeSubsystems();
       if (document !== undefined) {
-        const scene = world.loadScene(document, { scenes: options.scenes ?? null });
+        const scene = world.loadScene(document);
         givePreloadsBack();
         await scene.ready;
         world.setActiveScene(scene);

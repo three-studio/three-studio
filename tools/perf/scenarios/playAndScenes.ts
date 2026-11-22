@@ -34,7 +34,7 @@ import { checkExit, heapReading } from './readings';
  * `A` and `B` through the game's own scene API; a switch to `Heavy` behind `Loading`; and
  * ten cycles of a ballast script edited on disk, Play, Stop.
  *
- * In that order: the switches run with no loading scene, which `SceneHost`
+ * In that order: the switches run with no loading scene, which the `Game`
  * would otherwise put up before every one of them, and Play starts on its
  * first scene without one, so the cycles may follow it being set.
  */

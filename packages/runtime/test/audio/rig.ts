@@ -36,7 +36,7 @@ export function rig(
     maxVoices?: number;
     budgetBytes?: number;
     /**
-     * Hands the engine a cache it does not own, as `SceneHost` does.
+     * Hands the engine a cache it does not own, as a `Game` does.
      *
      * The difference matters for anything about teardown: an engine that made
      * its own cache clears it on dispose, which hides whether the voices ever

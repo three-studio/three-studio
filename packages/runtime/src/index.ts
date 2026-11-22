@@ -48,8 +48,8 @@ export type { BehaviourDefinition } from './behaviour/Behaviour';
 /* What a component type's system is written with, in the kernel or in a module. */
 export { ComponentSystem, defineSystem } from './systems/ComponentSystem';
 export type { SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
-export { SceneHost } from './SceneHost';
-export type { SceneHostOptions, SceneLoad, SceneSource } from './SceneHost';
+export { Game } from './game/Game';
+export type { GameOptions, SceneLoad, SceneSource } from './game/Game';
 export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';
 export type { SceneBinderOptions } from './SceneBinder';
 export { MeshBatcher } from './MeshBatcher';

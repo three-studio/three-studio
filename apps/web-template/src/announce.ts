@@ -1,5 +1,5 @@
 import type { RendererBackend } from '@three-studio/runtime/RendererFactory';
-import type { SceneHost } from '@three-studio/runtime/SceneHost';
+import type { Game } from '@three-studio/runtime/game/Game';
 import type { WebGPURenderer } from 'three/webgpu';
 
 /*
@@ -19,7 +19,7 @@ export type PlayerAnnouncement =
       state: 'running';
       backend: RendererBackend;
       renderer: WebGPURenderer;
-      host: SceneHost;
+      game: Game;
       /** Does what the Play button does — once, whoever asks first. */
       start: () => void;
     }

@@ -16,7 +16,7 @@ import {
 } from '@three-studio/core';
 import * as particlesCore from '@three-studio/particles/core';
 import * as particlesRuntime from '@three-studio/particles/runtime';
-import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { Game } from '@three-studio/runtime/game/Game';
 import { audioOf } from '@three-studio/runtime/audio/audioOf';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
@@ -191,7 +191,7 @@ async function boot(): Promise<void> {
     exposure: rendering.exposure,
   });
 
-  // Built before the host so the world can mix into it. A browser will not
+  // Built before the game so its world can mix into it. A browser will not
   // start it here — that takes a user gesture: the Play button below, or the
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
@@ -203,13 +203,13 @@ async function boot(): Promise<void> {
     idleBudgetBytes: PLAYER_IDLE_ASSET_BYTES,
   });
 
-  // The page's clock, made before the host so that every world it builds reads
-  // it: the player owns the loop, so it owns the clock — installed below.
+  // The page's clock, made before the game so that its world reads it: the
+  // player owns the loop, so it owns the clock — installed below.
   const time = new StudioTime();
 
-  // Hosted rather than a single world: a game is a sequence of scenes, and a
+  // A game rather than a world alone: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
-  const host = new SceneHost({
+  const game = new Game({
     source: {
       // By id, or by the name a script held: `sceneOf` finds either, and the
       // manifest says where the file is.
@@ -236,12 +236,12 @@ async function boot(): Promise<void> {
 
   // Expanded exactly as the editor expands it, so a build shows what play mode
   // showed.
-  await host.adopt(entrySceneName(build), scene);
+  await game.start(entrySceneName(build), scene);
 
   // Every camera of the scene, by the rule the editor's Play fits by too.
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
-    host.world?.cameras.setAspect(window.innerWidth / window.innerHeight);
+    game.world?.cameras.setAspect(window.innerWidth / window.innerHeight);
   };
   window.addEventListener('resize', resize);
   resize();
@@ -265,14 +265,14 @@ async function boot(): Promise<void> {
     // Once per frame, before the world's: what a scene let go of last frame
     // is freed now that the frame that drew it has been submitted.
     assets.beginFrame();
-    host.update(time.delta);
-    const world = host.world;
+    game.update(time.delta);
+    const world = game.world;
     if (world) void renderer.render(world.scene, world.cameras.active);
   });
 
   message.textContent = build.title || scene.name;
-  // The running scene's engine: each scene runs in a world of its own.
-  const audio = () => (host.world === null ? null : audioOf(host.world));
+  // The game's engine, in its one world.
+  const audio = () => (game.world === null ? null : audioOf(game.world));
 
   let started = false;
   // What the Play button does, once: a page the editor restarted calls it
@@ -312,23 +312,19 @@ async function boot(): Promise<void> {
   const report = (warnings: readonly string[]) => {
     if (warnings.length > 0) console.warn('[studio]', warnings.join('\n'));
   };
-  // Re-attached on every scene: each one builds its own world, and warnings
-  // from the second level are as worth hearing as the first's.
-  const watch = () => {
-    const world = host.world;
-    if (!world) return;
+  // Heard once for the game's one world: what each scene's start finds is said
+  // as it is found, and those of the second level are as worth hearing as the
+  // first's. The entry's were found before anyone listened.
+  const world = game.world;
+  if (world !== null) {
     world.onWarning = report;
     report(world.warnings);
-  };
-  host.onSceneChanged = () => {
-    watch();
-    resize();
-  };
-  watch();
+  }
+  game.onSceneChanged = resize;
 
   // Last, once the page is whole: whoever hears this may start the game at
   // once. See `announce.ts` for who does.
-  announce({ state: 'running', backend, renderer, host, start });
+  announce({ state: 'running', backend, renderer, game, start });
 }
 
 boot().catch((cause: unknown) => {

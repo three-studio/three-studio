@@ -282,8 +282,8 @@ describe('what a deletion no longer rewrites', () => {
     );
     await deleteScene(root, boss);
 
-    // `SceneHost.showLoadingScene` catches a loading scene it cannot read and
-    // goes straight to the target — "better than stopping because the
+    // A `Game` that cannot read its loading scene says so and goes straight
+    // to the target — "better than stopping because the
     // interstitial is missing". So this line costs nothing, and the project
     // opens with it in place.
     expect((await readProject(root)).settings.loadingScene).toBe(boss);

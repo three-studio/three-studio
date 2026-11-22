@@ -1,5 +1,4 @@
 import {
-  collectSceneAssets,
   createEntity,
   createTransform,
   fixedId,
@@ -200,44 +199,19 @@ export function worldScriptsOf(world: World): WorldScripts | null {
  * Registered before the behaviours, which make the scripts and read this as
  * each is made; and so taken down after them, a script's `onDestroy` running
  * while what it shares is still its world's.
- *
- * It holds, for the world's life, every asset of the prefabs the document's
- * components name as candidates — what a script was given to instantiate —
- * and the world's load waits for them. Drawn by nothing at start, such a
- * prefab's model would otherwise load at the first `instantiate`, be freed a
- * frame after its last instance went, under a build's idle budget of nothing,
- * and load again for the next: a spawner's every crate a fetch.
  */
 export function scriptsSubsystem(registry: Registry<ScriptMembersId, ScriptMembersDefinition>): SubsystemDefinition {
   return {
     id: fixedId('subsystem', 'scripts'),
     // Messages are delivered before the behaviours' updates, at 0.
     order: { update: -1 },
-    async create(world) {
-      const { registries, prefabs, assets, document } = world.options;
-      const materials = world.options.materials ?? new Map();
-      // What the candidates bring beyond what the scene names itself: the
-      // scene's own are held by what draws them, and a hold here would keep a
-      // model the scene stopped drawing for the rest of the game. The scene
-      // `World.play` loads, read before it is: a world's subsystems are made
-      // first.
-      const named = new Set(
-        prefabs === undefined || document === undefined ? [] : collectSceneAssets(registries, document, materials, prefabs),
-      );
-      const holds =
-        prefabs === undefined || document === undefined
-          ? []
-          : collectSceneAssets(registries, document, materials, prefabs, new Set(prefabs.keys()))
-              .filter((assetId) => !named.has(assetId))
-              .map((assetId) => assets.preload(assetId));
+    create(world) {
       const scripts = new WorldScripts(world, registry.values());
       worlds.set(world, scripts);
-      await Promise.all(holds.map(({ ready }) => ready));
       return {
         update: () => scripts.deliver(),
         dispose() {
           worlds.delete(world);
-          for (const hold of holds) hold.dispose();
         },
       };
     },

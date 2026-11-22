@@ -1,4 +1,4 @@
-import type { SceneHost } from '@three-studio/runtime/SceneHost';
+import type { Game } from '@three-studio/runtime/game/Game';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PlayerAnnouncement } from '../src/announce';
@@ -181,7 +181,7 @@ function running(start = vi.fn(), renderer: object = RENDERER): PlayerAnnounceme
     state: 'running',
     backend: 'webgl',
     renderer: renderer as unknown as WebGPURenderer,
-    host: {} as unknown as SceneHost,
+    game: {} as unknown as Game,
     start,
   };
 }

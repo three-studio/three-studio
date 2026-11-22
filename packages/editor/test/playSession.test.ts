@@ -28,7 +28,7 @@ import {
   Behaviour,
   NO_SCRIPTS,
   NULL_ASSET_RESOLVER,
-  SceneHost,
+  Game,
   inputOf,
   type World,
 } from '@three-studio/runtime';
@@ -432,8 +432,8 @@ describe('the game’s part of the viewport’s frame', () => {
     await until(() => session?.playWorld != null, 'the world');
     const playing = assertDefined(session, 'the session');
     const world = assertDefined(playing.playWorld, 'the world');
-    const update = vi.spyOn(SceneHost.prototype, 'update');
-    const reconcile = vi.spyOn(SceneHost.prototype, 'reconcile');
+    const update = vi.spyOn(Game.prototype, 'update');
+    const reconcile = vi.spyOn(Game.prototype, 'reconcile');
 
     playing.advance(0.02);
     expect(update.mock.calls).toEqual([[0.02]]);
@@ -480,8 +480,11 @@ describe('the problems over the game', () => {
 
     // The frame loop's own call, which runs the script's first update.
     first.frame(1 / 60);
-    await until(() => session!.playWorld !== null && session!.playWorld !== first, 'Boss’s world');
-    const boss = session!.playWorld!;
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
+    const boss = first;
 
     expect(reads).toEqual([BOSS.path]);
     expect(boss.warnings.some((warning) => warning.includes('"Crate" has a Rigid Body but no Collider'))).toBe(true);
@@ -528,8 +531,8 @@ describe('the keys the game hears', () => {
   withBoss();
 
   /** A key pressed, as `Input` reads it — cancelable, so what the game keeps from the page shows. */
-  function press(code: string): Event {
-    return Object.assign(new Event('keydown', { cancelable: true }), {
+  function press(code: string, type = 'keydown'): Event {
+    return Object.assign(new Event(type, { cancelable: true }), {
       code,
       altKey: false,
       ctrlKey: false,
@@ -549,6 +552,9 @@ describe('the keys the game hears', () => {
 
     canvas.dispatchEvent(press('KeyW'));
     expect(input?.isDown('KeyW')).toBe(true);
+    // Let go: the game keeps one `Input` across its scenes, and a key held
+    // through a switch is still held in the next one.
+    canvas.dispatchEvent(press('KeyW', 'keyup'));
   }
 
   it('are the ones typed into its canvas, in every scene it plays', async () => {
@@ -562,7 +568,10 @@ describe('the keys the game hears', () => {
 
     // The frame loop's own call, which runs the script's first update.
     first.frame(1 / 60);
-    await until(() => session!.playWorld !== null && session!.playWorld !== first, 'Boss’s world');
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
 
     hearsItsCanvasAlone(session!.playWorld!, host.gameView.canvas);
   });
@@ -629,7 +638,10 @@ describe('the scene the game runs', () => {
 
     // The frame loop's own call, which runs the script's first update: Boss, by its name.
     first.frame(1 / 60);
-    await until(() => session!.playWorld !== null && session!.playWorld !== first, 'Boss’s world');
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
     expect(runningScene()).toBe(BOSS.id);
 
     stop();
@@ -645,7 +657,10 @@ describe('the scene the game runs', () => {
     const first = session!.playWorld!;
 
     first.frame(1 / 60);
-    await until(() => session!.playWorld !== null && session!.playWorld !== first, 'Boss’s world');
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
 
     expect(runningScene()).toBe(BOSS.id);
   });
@@ -1006,9 +1021,11 @@ describe('the window’s loaded files', () => {
 
     play();
     await until(() => played.playWorld !== null, 'the world');
-    // Nothing parsed twice: the game draws the file the edit view holds.
+    // Nothing parsed twice: the game draws the file the edit view holds. Held
+    // three times: the edit view, the game's scene from its read to its
+    // unload, and the object that draws it in the game.
     expect(server.requests('chair.gltf')).toBe(1);
-    expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
+    expect(assets.stats).toEqual({ entries: 1, held: 3, idleBytes: 0 });
 
     stop();
     expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
