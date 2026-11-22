@@ -46,6 +46,7 @@ import type { InputOptions } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
 import type { StudioTime } from '../time/StudioTime';
+import { forgetRenderLists } from './renderLists';
 import { CameraClaims } from './cameras';
 import { SubsystemMounts, type MountHooks } from './mounts';
 import { LoadedScene } from './scenes';
@@ -700,6 +701,9 @@ export class World {
     }
     for (const [entityId, owner] of this.topLevel) if (owner === scene) this.topLevel.delete(entityId);
     scene.root.removeFromParent();
+    // The renderer's lists hold what this scene last drew, and the one `Scene`
+    // of a world kept across switches would keep them: see `forgetRenderLists`.
+    forgetRenderLists(this.options.renderer);
     this.loaded.splice(this.loaded.indexOf(scene), 1);
     if (this.active === scene) this.active = null;
     scene.giveHoldsBack();
