@@ -1,5 +1,6 @@
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
-import { color, pass } from 'three/tsl';
+import { RenderHost } from '@three-studio/runtime';
+import { color } from 'three/tsl';
 import {
   AmbientLight,
   BoxGeometry,
@@ -12,7 +13,6 @@ import {
   MeshBasicNodeMaterial,
   MeshStandardNodeMaterial,
   OrthographicCamera,
-  RenderPipeline,
   Scene,
   Vector3,
   WebGPURenderer,
@@ -99,7 +99,7 @@ export class LauncherScene {
 
   private field: InstancedMesh | null = null;
   private renderer: WebGPURenderer | null = null;
-  private pipeline: RenderPipeline | null = null;
+  private host: RenderHost | null = null;
   private observer: ResizeObserver | null = null;
   private disposed = false;
   private startTime = 0;
@@ -176,9 +176,9 @@ export class LauncherScene {
     // a halo, and that halo stays close to it. A wide radius spreads the same
     // energy into a haze over the whole panel, which is the difference between
     // a light too bright to look at and a blurry photograph.
-    this.pipeline = new RenderPipeline(renderer);
-    const scenePass = pass(this.scene, this.camera);
-    this.pipeline.outputNode = scenePass.add(bloom(scenePass, 0.85, 0.4, 0.66));
+    // The glow is the post stack's first effect: the same nodes over the same
+    // pass as the pipeline the launcher built for itself, so the same image.
+    this.host = new RenderHost({ renderer, effects: [(image, scene) => image.add(bloom(scene, 0.85, 0.4, 0.66))] });
 
     this.observer = new ResizeObserver(() => this.resize());
     this.observer.observe(this.canvas);
@@ -351,11 +351,11 @@ export class LauncherScene {
   }
 
   private tick(): void {
-    if (!this.renderer || !this.pipeline || this.disposed) return;
+    if (!this.host || this.disposed) return;
     const elapsed = (performance.now() - this.startTime) / 1000;
 
     this.writeMatrices(elapsed);
-    this.pipeline.render();
+    this.host.draw(this.scene, this.camera);
   }
 
   dispose(): void {
@@ -363,13 +363,14 @@ export class LauncherScene {
     this.observer?.disconnect();
     this.observer = null;
 
+    this.host?.dispose();
+    this.host = null;
     if (this.renderer) {
       void this.renderer.setAnimationLoop(null);
       this.renderer.dispose();
       this.renderer = null;
     }
 
-    this.pipeline = null;
     this.field?.dispose();
     this.field = null;
     this.geometry.dispose();
