@@ -552,9 +552,10 @@ export function switchScenes(args: {
  * frames were drawn, the shader programs its first frame created, and 1 when
  * the loading scene did run in between.
  *
- * The programs say what a compile ahead left to the start frame: those of the
- * node graphs the world draws, keyed by node id, and those of the batches
- * formed as the scene starts.
+ * The programs say what a compile ahead left to the start frame. Measured on
+ * scenario 6's Heavy: its environment's PMREM, generated as it is first drawn;
+ * the shadow pass's; and its materials again, keyed by an environment that was
+ * the loading scene's when they were compiled.
  *
  * The target's first frame counts: the frame after the store names the target
  * is the one that draws it, and it is the longest of all — its pipelines and
@@ -574,6 +575,11 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
     let longest = 0;
     let frames = 0;
     let sawLoading = 0;
+    const programs = (): number => window.__studioViewport?.renderer.info.memory.programs ?? Number.NaN;
+    // Read at every frame before the store names the target, not at the frame
+    // it does: the store hears of the switch after the frame that first draws
+    // the target, so a reading there already holds that frame's programs.
+    let programsBefore = programs();
     const tick = (): void => {
       const now = performance.now();
       longest = Math.max(longest, now - last);
@@ -582,20 +588,21 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
       const running = stores.viewport.getState().runningScene;
       if (running === args.loadingId) sawLoading = 1;
       if (running === args.target.id) {
-        const programs = (): number => window.__studioViewport?.renderer.info.memory.programs ?? Number.NaN;
-        const atActivation = programs();
         requestAnimationFrame(() => {
           const end = performance.now();
           resolve({
             ms: end - started,
             longestFrameMs: Math.max(longest, end - last),
             frames: frames + 1,
-            startPrograms: programs() - atActivation,
+            startPrograms: programs() - programsBefore,
             sawLoading,
           });
         });
       } else if (now - started > 120_000) reject(new Error(`scene ${args.target.name} never ran`));
-      else requestAnimationFrame(tick);
+      else {
+        programsBefore = programs();
+        requestAnimationFrame(tick);
+      }
     };
     api.go(args.target.name).catch(reject);
     requestAnimationFrame(tick);
