@@ -13,6 +13,7 @@ import {
   type EntityTemplate,
   type SceneDoc,
 } from '@three-studio/core';
+import type { Object3D } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
@@ -300,7 +301,7 @@ describe('a game', () => {
   it('shows its world on its view before the entry wakes, once across switches, and takes it off at dispose', async () => {
     const log: string[] = [];
     const scripts = new Map<AssetId, unknown>();
-    const view = { show: (world: World | null) => log.push(world === null ? 'shown none' : 'shown the world') };
+    const view = { show: (world: World | null) => log.push(world === null ? 'shown none' : 'shown the world'), compile: async () => {} };
     const game = gameOf({ B: logged('B', log, scripts) }, { scripts, view });
     await game.start('A', logged('A', log, scripts));
     await game.go('B');
@@ -521,6 +522,62 @@ describe('a switch behind the loading scene', () => {
     game.dispose();
   });
 
+  it('compiles the target, built and hidden, before it is ready', async () => {
+    const log: string[] = [];
+    const scripts = new Map<AssetId, unknown>();
+    let finish = (): void => {};
+    const compiled: Object3D[] = [];
+    const view = {
+      show: () => {},
+      compile: (root: Object3D) => {
+        compiled.push(root);
+        log.push(`compile (shown ${String(root.visible)})`);
+        return new Promise<void>((resolve) => (finish = resolve));
+      },
+    };
+    const game = gameOf(
+      { [LOADING]: logged('spinner', log, scripts), Level: logged('level', log, scripts), Other: scene('Other') },
+      { loadingScene: LOADING, scripts, view },
+    );
+    await game.start('Menu', scene('Menu'));
+    expect(compiled).toEqual([]);
+
+    const load = game.load('Level');
+    let ready = false;
+    void load.ready.then(() => (ready = true));
+    await framesUntil(game, () => compiled.length === 1);
+    for (let frame = 0; frame < 5; frame += 1) game.update(STEP);
+    await Promise.resolve();
+    expect(ready).toBe(false);
+    expect(compiled[0]).toBe(assertDefined(game.world, 'the world').scenes.find(({ name }) => name === 'level')?.root);
+
+    finish();
+    await framed(game, load.activate());
+    expect(log).toContain('compile (shown false)');
+    expect(game.current).toBe('Level');
+    game.dispose();
+  });
+
+  it('says a compile that fails, and shows the target anyway', async () => {
+    const log: string[] = [];
+    const scripts = new Map<AssetId, unknown>();
+    const view = { show: () => {}, compile: () => Promise.reject(new Error('device lost')) };
+    const game = gameOf({ [LOADING]: logged('spinner', log, scripts), Level: logged('level', log, scripts) }, {
+      loadingScene: LOADING,
+      scripts,
+      view,
+    });
+    await game.start('Menu', scene('Menu'));
+    const world = assertDefined(game.world, 'the world');
+    const said = vi.spyOn(world, 'warn');
+
+    await framed(game, game.go('Level'));
+
+    expect(said).toHaveBeenCalledWith('The scene "level" could not be compiled ahead: device lost');
+    expect(game.current).toBe('Level');
+    game.dispose();
+  });
+
   it('leaves no world when stopped while a scene builds', async () => {
     const log: string[] = [];
     const game = gameWith(log);
@@ -622,6 +679,25 @@ describe('an additive scene', () => {
     expect(world.activeScene?.name).toBe('B');
     expect(log).toContain('level destroy');
     expect(audioOf(world)?.voices.map(({ state }) => state)).toEqual(['playing']);
+    game.dispose();
+  });
+
+  it('is compiled before it is ready; a switch with no loading scene and the entry are not', async () => {
+    const compiled: string[] = [];
+    const view = {
+      show: () => {},
+      compile: async (root: Object3D) => {
+        compiled.push(game.world?.scenes.find((loaded) => loaded.root === root)?.name ?? 'unknown');
+      },
+    };
+    const game = gameOf({ HUD: scene('hud'), B: scene('B') }, { view });
+    await game.start('A', scene('A'));
+    await game.go('B');
+    expect(compiled).toEqual([]);
+
+    const hud = game.load('HUD', { additive: true });
+    await framed(game, hud.ready);
+    expect(compiled).toEqual(['hud']);
     game.dispose();
   });
 

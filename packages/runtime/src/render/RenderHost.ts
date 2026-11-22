@@ -1,7 +1,18 @@
 import type { Disposable } from '@three-studio/core';
 import type { World } from '../world/World';
 import { pass } from 'three/tsl';
-import { RenderPipeline, type Camera, type Node, type Object3D, type PassNode, type Scene, type WebGPURenderer } from 'three/webgpu';
+import {
+  Box3,
+  OrthographicCamera,
+  RenderPipeline,
+  Scene,
+  Sphere,
+  type Camera,
+  type Node,
+  type Object3D,
+  type PassNode,
+  type WebGPURenderer,
+} from 'three/webgpu';
 
 /** What drawing a frame in layers needs of a renderer: `WebGPURenderer` is one, and a test's recorder too. */
 export interface LayerRenderer {
@@ -33,6 +44,51 @@ export function drawLayers(renderer: LayerRenderer, scene: Scene, camera: Camera
     renderer.render(overlay, camera);
   } finally {
     renderer.autoClear = autoClear;
+  }
+}
+
+/** What compiling ahead needs of a renderer: `WebGPURenderer` is one, and a test's recorder too. */
+export interface CompileRenderer {
+  compileAsync(scene: Object3D, camera: Camera, targetScene?: Scene | null): Promise<void>;
+}
+
+/**
+ * Builds ahead what drawing `root` — built, hidden — will take: its geometry
+ * and textures uploaded, and the programs and GPU pipelines for the shader
+ * text it draws with, which is the costly part. A scene built behind the
+ * loading scene used to pay them all in its first frame, ~700 ms for S6's.
+ *
+ * - Against a fresh stage carrying `shown`'s environment and fog and no light:
+ *   the lights are the root's own, projected with it, so their key is the one
+ *   the scene is drawn with once it is up; the environment and fog stand in
+ *   for the target's, and match when they are of the same kind.
+ * - Through a fresh orthographic camera framing the root's bounds: three
+ *   skips what its camera does not see.
+ * - Stage and camera fresh because the compile's render list is keyed by them:
+ *   nothing outlives the scene through it.
+ * - The root is shown for the call alone: three projects it synchronously, as
+ *   the call starts, and a frame drawn while the rest compiles must not draw it.
+ *
+ * Still built in the start frame: the node graphs for the scene the world
+ * draws (three keys them by node id), and the draws of batches formed when the
+ * scene starts.
+ */
+export function compileHidden(renderer: CompileRenderer, root: Object3D, shown: Scene): Promise<void> {
+  const stage = new Scene();
+  stage.environment = shown.environment;
+  stage.fog = shown.fog;
+  const bounds = new Box3().setFromObject(root).getBoundingSphere(new Sphere());
+  const radius = Math.max(bounds.radius, 1);
+  const camera = new OrthographicCamera(-radius, radius, radius, -radius, 0.01, radius * 4);
+  camera.position.copy(bounds.center).setZ(bounds.center.z + radius * 2);
+  camera.lookAt(bounds.center);
+  camera.updateMatrixWorld();
+  const visible = root.visible;
+  root.visible = true;
+  try {
+    return renderer.compileAsync(root, camera, stage);
+  } finally {
+    root.visible = visible;
   }
 }
 
@@ -128,6 +184,11 @@ export class RenderHost implements Disposable {
     this.shown = world;
     if (world !== null) world.screen.onChange = () => this.restackLayers();
     this.restackLayers();
+  }
+
+  /** Builds ahead what drawing a built, hidden scene root takes, against the shown world (`compileHidden`). */
+  async compile(root: Object3D): Promise<void> {
+    if (this.shown !== null) await compileHidden(this.renderer, root, this.shown.scene);
   }
 
   draw(scene: Scene, camera: Camera): void {

@@ -59,8 +59,8 @@ export type { EntityView } from './Reconciler';
 /* Rendering. `createRenderer` picks WebGPU and falls back to WebGL. */
 export { createRenderer, rendererCount } from './RendererFactory';
 export { forgetRenderLists, resizeRenderer, retireFrameBufferTarget } from './render/threeRenderer';
-export { RenderHost, drawLayers } from './render/RenderHost';
-export type { LayerRenderer, PostEffect, RenderHostOptions } from './render/RenderHost';
+export { RenderHost, compileHidden, composeStack, drawLayers } from './render/RenderHost';
+export type { CompileRenderer, LayerRenderer, PostEffect, RenderHostOptions } from './render/RenderHost';
 export { ScreenLayers } from './world/screen';
 export type { ScreenLayer } from './world/screen';
 export type { CreateRendererOptions, RendererBackend, RendererHandle } from './RendererFactory';

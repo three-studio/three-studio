@@ -8,6 +8,7 @@ import {
   type SceneDoc,
   type SceneId,
 } from '@three-studio/core';
+import type { Object3D } from 'three/webgpu';
 import type { PreloadHold } from '../assets/AssetCache';
 import { AudioClipCache } from '../audio/AudioClipCache';
 import type { SceneApi, SceneLoadHandle, SceneLoadOptions } from '../sceneApi';
@@ -56,6 +57,8 @@ const BUILD_BUDGET_MS = 12;
 export interface GameView {
   /** Lays this world's screen layers over the view; `null` takes them off. */
   show(world: World | null): void;
+  /** Builds ahead what drawing a built, hidden scene root takes. */
+  compile(root: Object3D): Promise<void>;
 }
 
 /** Everything a game's scenes need, other than the documents themselves. */
@@ -277,6 +280,7 @@ export class Game implements Disposable {
         });
       }
       await Promise.all([next.scene?.ready, next.whenLanded()]);
+      if (next.scene !== null && !next.cancelled) await this.compile(next.scene);
       if (next.cancelled) return;
       next.settle();
     } catch (cause) {
@@ -314,6 +318,7 @@ export class Game implements Disposable {
         scenes: this.apiFor(next.path),
       });
       await Promise.all([next.scene.ready, next.whenLanded()]);
+      if (!next.cancelled) await this.compile(next.scene);
       if (next.cancelled) return;
       next.settle();
     } catch (cause) {
@@ -422,6 +427,23 @@ export class Game implements Disposable {
     queueMicrotask(() => {
       if (!this.disposed) this.made?.unloadScene(scene);
     });
+  }
+
+  /**
+   * Compiles a scene built within the budget before it is ready, while the
+   * scenes up keep playing: its programs and pipelines were the start frame's
+   * ~700 ms behind the loading scene. A scene built at once is not compiled —
+   * nothing is drawn meanwhile, so nothing is kept moving. A compile that
+   * fails is said, and the scene is ready anyway: its first frame builds it.
+   */
+  private async compile(scene: LoadedScene): Promise<void> {
+    const view = this.options.view;
+    if (view === undefined) return;
+    try {
+      await view.compile(scene.root);
+    } catch (cause) {
+      this.made?.warn(`The scene "${scene.name}" could not be compiled ahead: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
   }
 
   /**
