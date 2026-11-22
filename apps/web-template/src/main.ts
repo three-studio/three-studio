@@ -25,6 +25,7 @@ import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
 import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
+import { forgetRenderLists, resizeRenderer } from '@three-studio/runtime/render/threeRenderer';
 import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import {
@@ -240,7 +241,7 @@ async function boot(): Promise<void> {
 
   // Every camera of the scene, by the rule the editor's Play fits by too.
   const resize = () => {
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    resizeRenderer(renderer, window.innerWidth, window.innerHeight);
     game.world?.cameras.setAspect(window.innerWidth / window.innerHeight);
   };
   window.addEventListener('resize', resize);
@@ -263,8 +264,9 @@ async function boot(): Promise<void> {
 
     time.advance(delta);
     // Once per frame, before the world's: what a scene let go of last frame
-    // is freed now that the frame that drew it has been submitted.
-    assets.beginFrame();
+    // is freed now that the frame that drew it has been submitted, and three
+    // forgets the lists that may still hold it.
+    if (assets.beginFrame() > 0) forgetRenderLists(renderer);
     game.update(time.delta);
     const world = game.world;
     if (world) void renderer.render(world.scene, world.cameras.active);

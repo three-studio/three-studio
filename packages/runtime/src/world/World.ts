@@ -46,7 +46,7 @@ import type { InputOptions } from '../input/Input';
 import type { SceneApi } from '../sceneApi';
 import type { SystemDefinition } from '../systems/ComponentSystem';
 import type { StudioTime } from '../time/StudioTime';
-import { forgetRenderLists } from './renderLists';
+import { forgetRenderLists } from '../render/threeRenderer';
 import { CameraClaims } from './cameras';
 import { SubsystemMounts, type MountHooks } from './mounts';
 import { LoadedScene } from './scenes';

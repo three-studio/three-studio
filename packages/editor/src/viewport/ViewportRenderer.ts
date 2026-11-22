@@ -1,8 +1,7 @@
 import type { RenderingSettings } from '@three-studio/core';
-import { createRenderer, type RendererBackend } from '@three-studio/runtime';
+import { createRenderer, resizeRenderer, type RendererBackend } from '@three-studio/runtime';
 import type { Camera, Scene, WebGPURenderer } from 'three/webgpu';
 import { useViewportStore } from '../state/viewportStore';
-import { retireFrameBufferTarget } from './frameBufferTarget';
 import { Presentation } from './Presentation';
 import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 
@@ -193,8 +192,7 @@ export class ViewportRenderer {
 
     this.lastWidth = width;
     this.lastHeight = height;
-    this.renderer.setSize(width, height, false);
-    retireFrameBufferTarget(this.renderer);
+    resizeRenderer(this.renderer, width, height);
     return editMoved;
   }
 

@@ -10,6 +10,7 @@ import {
 import {
   AssetCache,
   StudioTime,
+  forgetRenderLists,
   physicsDebugLines,
   type World,
   type SceneBinder,
@@ -595,8 +596,9 @@ export class EditorViewport {
     // The window's cache, once, here: Play's world begins a frame of its own,
     // and a second flush within one frame would free what its first half had
     // just let go of, with no render in between. After the edit world's, so
-    // the images its arena gave back go with this boundary.
-    this.assets.beginFrame();
+    // the images its arena gave back go with this boundary. A free forgets
+    // three's render lists, which would otherwise keep what they last drew.
+    if (this.assets.beginFrame() > 0) forgetRenderLists(this.view.renderer);
 
     const { playState } = useEditorStore.getState();
     // What the Viewport shows, and who has its input: read once, for the whole

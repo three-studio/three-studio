@@ -362,11 +362,19 @@ export class AssetCache {
     this.trim();
   }
 
-  /** Frees what was evicted before the frame in flight. Once per frame, by the window's loop. */
-  beginFrame(): void {
-    if (this.evicted.length === 0) return;
+  /**
+   * Frees what was evicted before the frame in flight. Once per frame, by the
+   * window's loop, which forgets three's render lists when this frees anything:
+   * a list not drawn again keeps what it last drew (`forgetRenderLists`).
+   *
+   * @returns How many entries it freed.
+   */
+  beginFrame(): number {
+    const freed = this.evicted.length;
+    if (freed === 0) return 0;
     for (const entry of this.evicted) free(entry);
     this.evicted.length = 0;
+    return freed;
   }
 
   /** For the tests, and for a checkpoint reading the editor through its devtools. */

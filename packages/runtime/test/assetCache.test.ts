@@ -413,14 +413,14 @@ describe('two worlds on one cache', () => {
 
     // Stop: the game's world goes, its copies with it.
     play.dispose();
-    cache.beginFrame();
+    expect(cache.beginFrame()).toBe(0);
     expect(cache.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
     expect(editCopyFreed).toBe(0);
     expect(geometryFreed).toBe(0);
 
     edit.dispose();
     expect(cache.stats.held).toBe(0);
-    cache.beginFrame();
+    expect(cache.beginFrame()).toBe(1);
     expect(editCopyFreed).toBe(1);
     expect(geometryFreed).toBe(1);
   });

@@ -149,7 +149,6 @@ export const RECORD: ReadonlyMap<string, Counts> = new Map([
   ['packages/editor/src/viewport/PlaySession.ts', { state: 1 }],
   ['packages/editor/src/viewport/RotationReadout.ts', { as: 1 }],
   ['packages/editor/src/viewport/SelectionOutline.ts', { as: 1 }],
-  ['packages/editor/src/viewport/frameBufferTarget.ts', { as: 2 }],
   ['packages/editor/src/viewport/renderProbe.ts', { as: 7, state: 12 }],
   ['packages/editor/src/viewport/viewportHost.ts', { state: 2 }],
   ['packages/editor/test/audioPreview.test.ts', { as: 8 }],
