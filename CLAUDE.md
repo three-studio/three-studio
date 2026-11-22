@@ -65,6 +65,15 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   une écriture de ce document. Les behaviours d'une scène naissent quand elle est construite tout entière,
   tous les `onAwake` puis tous les `onStart` ; ceux d'un spawn à la fin de sa passe, avant leur premier
   `onUpdate`.
+- **Un script passe par la façade.** Il tient une entité par un handle (`this.entity`, `this.world.entity(id)`, un par
+  entité et par monde), la déplace par `this.transform` — les vecteurs du dessin, jamais le document —, lit un composant
+  en lecture seule et en écrit un entier, décodé (`setComponent`) ; il crée et détruit par `this.world` et l'entité, et
+  parle à une autre par `send`, entendu à la frame suivante. L'`Object3D` reste accessible (`object3D`), hors contrat : la
+  géométrie et les textures d'un modèle y sont partagées et en lecture seule. Ce qu'un module donne aux scripts
+  (`this.body`, `this.audio`) est une contribution (`RuntimeRegistries.scriptMembers`), avec ses noms réservés et ses
+  lignes de typings ; `runtime/src/scripting/` ne nomme ni la physique ni l'audio, ce que `test/architecture.test.ts`
+  vérifie, et les typings d'un projet sont générés depuis les registres. Ce qu'un script voit change avec
+  `SCRIPT_API_VERSION`.
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
