@@ -49,7 +49,7 @@ export type { BehaviourDefinition } from './behaviour/Behaviour';
 export { ComponentSystem, defineSystem } from './systems/ComponentSystem';
 export type { SystemContext, SystemDefinition, SystemHandle } from './systems/ComponentSystem';
 export { Game } from './game/Game';
-export type { GameOptions, SceneLoad, SceneSource } from './game/Game';
+export type { GameOptions, GameView, SceneLoad, SceneSource } from './game/Game';
 export { ENTITY_ID_KEY, SceneBinder, bindScene, isVisibleInHierarchy } from './SceneBinder';
 export type { SceneBinderOptions } from './SceneBinder';
 export { MeshBatcher } from './MeshBatcher';
@@ -60,7 +60,9 @@ export type { EntityView } from './Reconciler';
 export { createRenderer, rendererCount } from './RendererFactory';
 export { forgetRenderLists, resizeRenderer, retireFrameBufferTarget } from './render/threeRenderer';
 export { RenderHost, drawLayers } from './render/RenderHost';
-export type { LayerRenderer, RenderHostOptions } from './render/RenderHost';
+export type { LayerRenderer, PostEffect, RenderHostOptions } from './render/RenderHost';
+export { ScreenLayers } from './world/screen';
+export type { ScreenLayer } from './world/screen';
 export type { CreateRendererOptions, RendererBackend, RendererHandle } from './RendererFactory';
 
 /* Time. One clock for the simulation and every node material; see `time/StudioTime`. */

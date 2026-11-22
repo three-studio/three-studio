@@ -305,6 +305,8 @@ export class ViewportRenderer {
     this.detach(view);
     view.host = host;
     host.appendChild(view.canvas);
+    // The view's screen layers stack after its canvas, in the same host.
+    this.hostOf(view).setStage(host);
     this.resizeObserver.observe(host);
     this.sizeDirty = true;
   }
@@ -314,6 +316,7 @@ export class ViewportRenderer {
     if (!host) return;
     this.resizeObserver.unobserve(host);
     view.canvas.remove();
+    this.hostOf(view).setStage(null);
     view.host = null;
     // Back to the default, so a panel that is attached again draws its first
     // frame rather than inheriting a verdict about the element it used to be in.

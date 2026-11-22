@@ -48,6 +48,7 @@ import type { SystemDefinition } from '../systems/ComponentSystem';
 import type { StudioTime } from '../time/StudioTime';
 import { forgetRenderLists } from '../render/threeRenderer';
 import { CameraClaims } from './cameras';
+import { ScreenLayers } from './screen';
 import { SubsystemMounts, type MountHooks } from './mounts';
 import { LoadedScene } from './scenes';
 import { SunService } from './sun';
@@ -335,6 +336,8 @@ export class World {
    * one rule (`setAspect`).
    */
   readonly cameras = new CameraClaims();
+  /** What the world lays over the view it is drawn in — the touch sticks, a UI —, placed by the host showing it. */
+  readonly screen = new ScreenLayers();
   /** What a surface that shades itself is lit by: a light, as it mounts, or the scene's sky. */
   readonly sun = new SunService();
   /**

@@ -114,6 +114,7 @@ function stubHost(): StubHost {
     // is skipped without a device.
     renderer: null as unknown as WebGPURenderer,
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
+    gameHost: { show() {} },
     rendering: createRenderingSettings(),
     registries: builtInRegistries(),
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

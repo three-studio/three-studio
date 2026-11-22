@@ -49,6 +49,15 @@ export interface SceneSource {
  */
 const BUILD_BUDGET_MS = 12;
 
+/**
+ * What a game is drawn on: a `RenderHost` is one, structural so a test can
+ * fake it as it fakes a `SceneSource`.
+ */
+export interface GameView {
+  /** Lays this world's screen layers over the view; `null` takes them off. */
+  show(world: World | null): void;
+}
+
 /** Everything a game's scenes need, other than the documents themselves. */
 export interface GameOptions extends Omit<WorldOptions, 'document' | 'audioCache'> {
   readonly source: SceneSource;
@@ -61,6 +70,8 @@ export interface GameOptions extends Omit<WorldOptions, 'document' | 'audioCache
    * not worth showing anything for.
    */
   readonly loadingScene?: SceneId | null;
+  /** Shown the world as soon as it is made, so a layer the entry adds as it starts is in the document already. */
+  readonly view?: GameView;
 }
 
 /** A switch in flight, as a script and a host hold it. */
@@ -148,6 +159,9 @@ export class Game implements Disposable {
       return;
     }
     this.made = world;
+    // Before the entry starts: the touch sticks a player controller summons
+    // as it starts measure their zone, which must be in the document by then.
+    this.options.view?.show(world);
     const entry = world.loadScene(this.expand(scene), { holds, scenes: this.apiFor(asked) });
     await Promise.all([entry.ready, landed(holds)]);
     if (this.disposed) return;
@@ -220,6 +234,7 @@ export class Game implements Disposable {
     for (const load of [...this.additive]) load.cancel();
     this.additive.length = 0;
     this.data.clear();
+    if (this.made !== null) this.options.view?.show(null);
     // Gives back what each of its scenes holds.
     this.made?.dispose();
     this.made = null;

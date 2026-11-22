@@ -25,7 +25,7 @@ import type { ScriptClass } from '../src/scripting/scriptBundle';
 import { Behaviour } from '../src/scripting/ScriptHost';
 import type { SystemDefinition } from '../src/systems/ComponentSystem';
 import { StudioTime } from '../src/time/StudioTime';
-import type { WorldRegistries } from '../src/world/World';
+import type { World, WorldRegistries } from '../src/world/World';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { clipBytes, FakeContext } from './audio/fakeContext';
 import { bundleOf, standInForTheBrowser, takeTheBrowserBack, withScript } from './physics/rig';
@@ -61,7 +61,7 @@ function running(
 
 function gameOf(
   scenes: Readonly<Record<string, SceneDoc>>,
-  extra: Partial<Pick<GameOptions, 'assets' | 'loadingScene' | 'registries' | 'scripts' | 'prefabs'>> = {},
+  extra: Partial<Pick<GameOptions, 'assets' | 'loadingScene' | 'registries' | 'scripts' | 'prefabs' | 'view'>> = {},
 ): Game {
   const registries = builtInRegistries();
   return new Game({
@@ -79,6 +79,7 @@ function gameOf(
     assets: extra.assets ?? new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     loadingScene: extra.loadingScene ?? null,
     prefabs: extra.prefabs,
+    ...(extra.view === undefined ? {} : { view: extra.view }),
     rendering: createRenderingSettings(),
   });
 }
@@ -294,6 +295,23 @@ describe('a game', () => {
     await framesUntil(game, () => game.current === 'B');
     expect(log.slice(log.indexOf('B awake'), log.indexOf('B awake') + 2)).toEqual(['B awake', 'B start']);
     game.dispose();
+  });
+
+  it('shows its world on its view before the entry wakes, once across switches, and takes it off at dispose', async () => {
+    const log: string[] = [];
+    const scripts = new Map<AssetId, unknown>();
+    const view = { show: (world: World | null) => log.push(world === null ? 'shown none' : 'shown the world') };
+    const game = gameOf({ B: logged('B', log, scripts) }, { scripts, view });
+    await game.start('A', logged('A', log, scripts));
+    await game.go('B');
+    game.dispose();
+
+    expect(log.filter((line) => line.startsWith('shown') || line.endsWith('awake'))).toEqual([
+      'shown the world',
+      'A awake',
+      'B awake',
+      'shown none',
+    ]);
   });
 });
 

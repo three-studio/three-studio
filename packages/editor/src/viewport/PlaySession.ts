@@ -17,6 +17,7 @@ import {
   Game,
   audioOf,
   type AssetCache,
+  type GameView,
   type RuntimeRegistries,
   type SceneSource,
   type StudioTime,
@@ -52,6 +53,8 @@ export interface PlayHost {
   readonly assets: AssetCache;
   /** The game's own canvas, on the Viewport's stage; the world's `Input` listens on it. */
   readonly gameView: Presentation;
+  /** What the game's frames are drawn by, which lays its world's screen layers over that canvas. */
+  readonly gameHost: GameView;
   /** The project's rendering settings, as the edit view is already using them. */
   readonly rendering: RenderingSettings;
   /** The window's registries, which the game is built from as the edit view is. */
@@ -391,6 +394,7 @@ export class PlaySession {
         // could be drawn separately, and sharing it is what made pressing Play
         // hand the editor's pointer handling over to the game's.
         element: this.host.gameView.canvas,
+        view: this.host.gameHost,
         // And the keys typed into it alone, while it holds the focus. The
         // editor is the same page: heard window-wide, a space typed in the
         // Console during Play made the player jump, and never reached the

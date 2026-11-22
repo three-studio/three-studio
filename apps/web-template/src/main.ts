@@ -209,6 +209,11 @@ async function boot(): Promise<void> {
   // player owns the loop, so it owns the clock — installed below.
   const time = new StudioTime();
 
+  // The game's frames, and the screen layers its world lays over the canvas:
+  // the touch sticks, stacked in the canvas's parent.
+  const host = new RenderHost({ renderer });
+  host.setStage(canvas.parentElement);
+
   // A game rather than a world alone: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
   const game = new Game({
@@ -233,6 +238,7 @@ async function boot(): Promise<void> {
     physicsSettings: physics,
     renderer,
     element: canvas,
+    view: host,
     audioContext,
   });
 
@@ -255,7 +261,6 @@ async function boot(): Promise<void> {
   // same seconds the scripts and the physics do. See `time/StudioTime`.
   time.install();
 
-  const host = new RenderHost({ renderer });
   let last = performance.now();
   renderer.setAnimationLoop(() => {
     const now = performance.now();

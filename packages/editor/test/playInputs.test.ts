@@ -141,6 +141,7 @@ describe('what a launch sends while the editor plays', () => {
       time: new StudioTime(),
       renderer: {} as WebGPURenderer,
       gameView: { canvas: {}, visible: false, width: 1, height: 1 } as unknown as Presentation,
+      gameHost: { show() {} },
       rendering,
       registries: builtInRegistries(),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),

@@ -11,6 +11,7 @@ import {
   AssetCache,
   StudioTime,
   forgetRenderLists,
+  type RenderHost,
   physicsDebugLines,
   type World,
   type SceneBinder,
@@ -396,6 +397,10 @@ export class EditorViewport {
 
   get renderer(): WebGPURenderer {
     return this.view.renderer;
+  }
+
+  get gameHost(): RenderHost {
+    return this.view.gameHost;
   }
 
   get gameView(): Presentation {

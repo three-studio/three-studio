@@ -1,4 +1,5 @@
 import type { Disposable } from '@three-studio/core';
+import type { World } from '../world/World';
 import { pass } from 'three/tsl';
 import { RenderPipeline, type Camera, type Node, type Object3D, type PassNode, type Scene, type WebGPURenderer } from 'three/webgpu';
 
@@ -68,6 +69,13 @@ export interface RenderHostOptions {
  * second `WebGPURenderer` drawing in the same animation frame destroys and
  * rebuilds the first one's output target every frame.
  *
+ * Back to front: the 3D pass, the overlay scene, then the shown world's screen
+ * layers, stacked over the canvas in one container of the stage. A pointer
+ * goes to the frontmost element under it that takes pointers — a layer's
+ * interactive part — and otherwise to the canvas, where the game's `Input`
+ * listens: the stacking order is the routing order, with no capture and no
+ * `stopPropagation`, since no layer is an ancestor of the canvas.
+ *
  * A host has no size: the app sizes the renderer (`resizeRenderer`) and, in
  * the editor, sets the view's viewport before the draw.
  */
@@ -77,6 +85,10 @@ export class RenderHost implements Disposable {
   private overlayScene: Scene | null = null;
   /** Built at the first draw with an effect, and again when the scene or the camera changes. */
   private stack: Stack | null = null;
+  private stage: HTMLElement | null = null;
+  private shown: World | null = null;
+  /** Holds the shown world's layers, after the canvas in the stage; made when a world is first shown. */
+  private layers: HTMLElement | null = null;
 
   constructor(options: RenderHostOptions) {
     this.renderer = options.renderer;
@@ -102,6 +114,22 @@ export class RenderHost implements Disposable {
     this.overlayScene = scene;
   }
 
+  /** Where screen layers stack: the element holding this view's canvas. */
+  setStage(stage: HTMLElement | null): void {
+    if (stage === this.stage) return;
+    this.stage = stage;
+    this.layers?.remove();
+    if (stage !== null && this.layers !== null) stage.appendChild(this.layers);
+  }
+
+  /** Lays `world`'s screen layers over the canvas, and follows them as they change; `null` takes them off. */
+  show(world: World | null): void {
+    if (this.shown !== null) this.shown.screen.onChange = null;
+    this.shown = world;
+    if (world !== null) world.screen.onChange = () => this.restackLayers();
+    this.restackLayers();
+  }
+
   draw(scene: Scene, camera: Camera): void {
     if (this.effects.length === 0) {
       drawLayers(this.renderer, scene, camera, this.overlayScene);
@@ -114,6 +142,27 @@ export class RenderHost implements Disposable {
   dispose(): void {
     this.overlayScene = null;
     this.dropStack();
+    this.show(null);
+    this.layers?.remove();
+    this.layers = null;
+    this.stage = null;
+  }
+
+  /**
+   * At events only: a world shown or taken off, a layer added or gone. The
+   * container's z-index is the one the sticks had, under the device page's
+   * stats at 20.
+   */
+  private restackLayers(): void {
+    const all = this.shown?.screen.all ?? [];
+    if (this.layers === null) {
+      if (all.length === 0) return;
+      this.layers = document.createElement('div');
+      Object.assign(this.layers.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '10' });
+      this.stage?.appendChild(this.layers);
+    }
+    for (const layer of all) Object.assign(layer.element.style, { position: 'absolute', inset: '0', pointerEvents: 'none' });
+    this.layers.replaceChildren(...all.map((layer) => layer.element));
   }
 
   /**
