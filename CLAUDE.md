@@ -81,6 +81,13 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   `this.scenes.data`. Une scène tient chaque asset qu'elle nomme, prefabs instanciables compris, de sa lecture à son
   déchargement. Deux scènes d'un monde n'ont jamais un id d'entité en commun : un chargement en conflit est refusé avec
   un diagnostic.
+- **Une frame se dessine en couches.** Chaque vue — la vue d'édition, le jeu, l'aperçu d'import, le player, le launcher —
+  dessine par son `RenderHost` : la passe 3D d'une scène par une caméra, par la pile de post-traitement quand elle porte un
+  effet et sinon par `renderer.render` comme avant ; puis la scène posée par-dessus ; puis les couches d'écran du monde montré
+  (`world.screen`), empilées au-dessus du canvas dans leur ordre. Une couche ne prend que les pointeurs qui tombent sur ce
+  qu'elle rend interactif, et le jeu entend le reste sur son canvas : ce qui s'affiche par-dessus le jeu est une couche,
+  jamais un morceau d'`Input`, qui n'expose que des axes et des touches virtuels. Les internes de three que le code touche
+  passent par un seul adaptateur (`render/threeRenderer.ts`).
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
