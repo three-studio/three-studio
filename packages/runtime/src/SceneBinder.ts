@@ -377,10 +377,6 @@ export class SceneBinder {
 
 
   /**
-   * @param dirty Entity ids to re-read. `undefined` forces a full reconcile
-   *   (initial load, undo of a structural change).
-   */
-  /**
    * Frees what the previous frame let go of. Call once per rendered frame.
    *
    * The queue now lives in the arena. This used to hang off `sync`,
@@ -394,13 +390,26 @@ export class SceneBinder {
     this.arena.flush();
   }
 
+  /**
+   * @param dirty Entity ids to re-read. `undefined` forces a full reconcile
+   *   (initial load, undo of a structural change).
+   */
   sync(scene: SceneDoc, dirty?: ReadonlySet<EntityId>): void {
+    const ids = dirty ?? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()]);
+    this.draw(scene, ids);
+    if (!this.batchesHeld) this.batcher.sync(dirty === undefined, ids);
+  }
+
+  /**
+   * `sync` for `ids`, the batches left to the next sync: a running world draws
+   * a spawn at its call, and its frame's pass, which syncs the spawn again,
+   * groups what the frame placed in one go. A regroup walks every batchable
+   * mesh the binder holds, and one at each call made a thousand placements in
+   * a frame take a second rather than 60 ms.
+   */
+  draw(scene: SceneDoc, ids: ReadonlySet<EntityId>): void {
     // Before the entities: a water lit by the sky reads its sun as it mounts.
     this.environment.readSky(scene.environment);
-    const full = dirty === undefined;
-    const ids = full
-      ? new Set([...scene.entities.keys(), ...this.reconciler.all().keys()])
-      : dirty;
 
     for (const id of ids) {
       const entity = scene.entities.get(id);
@@ -429,8 +438,6 @@ export class SceneBinder {
     // After the entities and their parents, so that what is read is where it
     // is now.
     this.rereadNamers(ids);
-
-    if (!this.batchesHeld) this.batcher.sync(full, ids);
   }
 
   /**

@@ -18,7 +18,7 @@ import {
   type EntityTemplate,
   type SubsystemId,
 } from '@three-studio/core';
-import { Group, type Object3D } from 'three/webgpu';
+import { BatchedMesh, Group, type Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { nest, prefabWith, sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
@@ -301,6 +301,31 @@ describe('a running world’s structural calls', () => {
     expect(world.document.entities.size).toBe(0);
     world.frame(STEP);
     for (const entityId of placed) expect(world.binder.getObject(entityId)).toBeUndefined();
+  });
+
+  it('leave the batches to the frame’s pass, which groups what the frame spawned and placed in one go', async () => {
+    // A regroup walks every batchable mesh the world draws: one at each call
+    // made a thousand placements in a frame take a second rather than 60 ms.
+    const crate = fixedId('asset', 'crate');
+    const box = createMeshEntity('box');
+    const options = optionsFor([], Array.from({ length: 4 }, () => createMeshEntity('box')));
+    const world = await World.play({
+      ...options,
+      rendering: { ...options.rendering, batching: true },
+      prefabs: new Map([[crate, { ...prefabWith('Crate', [box], box.entity.id), id: crate }]]),
+    });
+    onTestFinished(() => world.dispose());
+    const batches = () =>
+      world.binder.root.children.filter((child) => child instanceof BatchedMesh).map((batch) => batch.name);
+    expect(batches()).toEqual(['Batch(4)']);
+
+    world.spawn(createMeshEntity('box'));
+    world.spawn(createMeshEntity('box'));
+    world.instantiate(crate);
+    expect(batches()).toEqual(['Batch(4)']);
+
+    world.frame(STEP);
+    expect(batches()).toEqual(['Batch(7)']);
   });
 
   it('are reconciled once a frame, after the late hooks, before the render ones, not when nothing was asked', async () => {

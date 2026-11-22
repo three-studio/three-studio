@@ -757,12 +757,13 @@ export class World {
    * once, and the subsystems mount at the pass from the objects as it left
    * them, so a body is made where the script put its entity. The pass's sync
    * finds them unchanged — the binder writes a transform for a new record only
-   * — so this is the same work as the pass's, done earlier.
+   * — so this is the same work as the pass's, done earlier; all but the
+   * batches, which the pass groups once for everything the frame placed.
    */
   spawn(template: EntityTemplate, parent: EntityId | null = null): EntityId | null {
     this.playing('spawn');
     if (!insertEntity(this.document, template, parent)) return null;
-    this.binder.sync(this.document, new Set([template.entity.id]));
+    this.binder.draw(this.document, new Set([template.entity.id]));
     this.dirty.add(template.entity.id);
     return template.entity.id;
   }
@@ -784,7 +785,7 @@ export class World {
       transform: place.transform ?? createTransform(),
     });
     if (placed === null) return null;
-    this.binder.sync(this.document, new Set(placed.entities));
+    this.binder.draw(this.document, new Set(placed.entities));
     for (const entityId of placed.entities) this.dirty.add(entityId);
     return placed.root;
   }
