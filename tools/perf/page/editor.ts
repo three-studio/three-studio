@@ -549,7 +549,12 @@ export function switchScenes(args: {
 /**
  * Goes to `target` with the project's loading scene up meanwhile, to the
  * target's first frame: how long, the longest frame on the way, how many
- * frames were drawn, and 1 when the loading scene did run in between.
+ * frames were drawn, the shader programs its first frame created, and 1 when
+ * the loading scene did run in between.
+ *
+ * The programs say what a compile ahead left to the start frame: those of the
+ * node graphs the world draws, keyed by node id, and those of the batches
+ * formed as the scene starts.
  *
  * The target's first frame counts: the frame after the store names the target
  * is the one that draws it, and it is the longest of all — its pipelines and
@@ -577,9 +582,17 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
       const running = stores.viewport.getState().runningScene;
       if (running === args.loadingId) sawLoading = 1;
       if (running === args.target.id) {
+        const programs = (): number => window.__studioViewport?.renderer.info.memory.programs ?? Number.NaN;
+        const atActivation = programs();
         requestAnimationFrame(() => {
           const end = performance.now();
-          resolve({ ms: end - started, longestFrameMs: Math.max(longest, end - last), frames: frames + 1, sawLoading });
+          resolve({
+            ms: end - started,
+            longestFrameMs: Math.max(longest, end - last),
+            frames: frames + 1,
+            startPrograms: programs() - atActivation,
+            sawLoading,
+          });
         });
       } else if (now - started > 120_000) reject(new Error(`scene ${args.target.name} never ran`));
       else requestAnimationFrame(tick);

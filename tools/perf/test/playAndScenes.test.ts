@@ -6,7 +6,7 @@ import { buildScripts } from '../../../apps/desktop/src/main/scripts';
 import { readProject } from '../../../apps/desktop/src/main/project';
 import { ballastPaths, writeScriptedProject, type ScriptedRecipe } from '../generate/projects';
 import { builtInRegistries } from '../registries';
-import { editBallast } from '../scenarios/playAndScenes';
+import { METRICS, editBallast, loadingMetrics } from '../scenarios/playAndScenes';
 
 const registries = builtInRegistries();
 
@@ -51,5 +51,14 @@ describe('the scripted project', () => {
     expect(after).not.toBe(before);
     await editBallast(join(project, ballast), 2);
     expect((await buildScripts(registries, project, 'play')).code).not.toBe(after);
+  });
+});
+
+describe("scenario 6's loading switch", () => {
+  it("reads the programs the target's first frame created, as a reported count", () => {
+    const metrics = loadingMetrics({ ms: 900, longestFrameMs: 120, frames: 17, startPrograms: 4, sawLoading: 1 });
+    expect(metrics['loading.startPrograms']).toBe(4);
+    expect(Number.isNaN(loadingMetrics({})['loading.startPrograms'])).toBe(true);
+    expect(METRICS.get('loading.startPrograms')).toEqual({ kind: 'reported', unit: '' });
   });
 });
