@@ -446,7 +446,7 @@ export {
   validateHierarchy,
 } from './scene/graph';
 /* A running world's scene: its own copy, which its game edits through the functions above. */
-export { liveScene } from './scene/live';
+export { liveScene, mergeScene } from './scene/live';
 
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
 export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot, encodeLaunchSnapshot } from './devices/schema';

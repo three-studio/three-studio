@@ -1,9 +1,11 @@
 import {
   assertDefined,
   collectDescendants,
+  createComponentId,
   createEntity,
   createMeshEntity,
   createPrefabInstance,
+  createSceneId,
   deleteComponent,
   expandPrefabs,
   findComponent,
@@ -12,6 +14,7 @@ import {
   instancedId,
   jointType,
   liveScene,
+  mergeScene,
   placePrefab,
   putComponent,
   removeSubtree,
@@ -266,5 +269,80 @@ describe('placing a prefab into a running scene', () => {
     ).toBeNull();
 
     expect(live).toEqual(before);
+  });
+});
+
+describe('merging a scene into a running world', () => {
+  /** A box with a sphere under it, and a component of a type this build lacks on the sphere. */
+  function pair(name: string) {
+    const parent = createMeshEntity('box');
+    parent.entity.name = name;
+    const child = createMeshEntity('sphere');
+    child.entity.parent = parent.entity.id;
+    parent.entity.children = [child.entity.id];
+    const scene = { ...sceneWith([parent, child]), id: createSceneId(), name };
+    scene.unknownComponents.set(fixedId('componentType', 'sparkle'), {
+      version: 1,
+      components: new Map([[child.entity.id, new Map([[createComponentId(), { glow: 2 }]])]]),
+    });
+    return { scene, parent: parent.entity.id, child: child.entity.id };
+  }
+
+  it('moves its records, components and root order in, after what the document holds, and leaves it empty', () => {
+    const level = pair('Level');
+    const hud = pair('Hud');
+    const live = liveScene(level.scene);
+    const loaded = liveScene(hud.scene);
+    const records = [...loaded.entities.values()];
+    const meshes = assertDefined(loaded.components.get('mesh'), "the HUD's meshes");
+    const held = [...meshes.values()];
+    const sparkles = [...(loaded.unknownComponents.get(fixedId('componentType', 'sparkle'))?.components.values() ?? [])];
+
+    mergeScene(live, loaded);
+
+    expect([...live.entities.keys()]).toEqual([level.parent, level.child, hud.parent, hud.child]);
+    expect([live.entities.get(hud.parent), live.entities.get(hud.child)]).toEqual(records);
+    expect(live.entities.get(hud.parent)).toBe(records[0]);
+    expect(live.rootOrder).toEqual([level.parent, hud.parent]);
+    // The same Maps, so the components in them are the same objects; after the document's, in their own order.
+    const table = assertDefined(live.components.get('mesh'), 'the meshes');
+    expect([...table.keys()]).toEqual([level.parent, level.child, hud.parent, hud.child]);
+    expect([table.get(hud.parent), table.get(hud.child)]).toEqual(held);
+    expect(table.get(hud.parent)).toBe(held[0]);
+    const unknown = assertDefined(live.unknownComponents.get(fixedId('componentType', 'sparkle')), 'the sparkles');
+    expect([...unknown.components.keys()]).toEqual([level.child, hud.child]);
+    expect(unknown.components.get(hud.child)).toBe(sparkles[0]);
+    expect(validateHierarchy(live)).toEqual([]);
+
+    expect(loaded.entities.size).toBe(0);
+    expect(loaded.components.size).toBe(0);
+    expect(loaded.unknownComponents.size).toBe(0);
+    expect(loaded.rootOrder).toEqual([]);
+  });
+
+  it("keeps an instance's contents listed under their placement", () => {
+    const tree = treePrefab();
+    const room = roomPrefab();
+    const host = createEntity('Room', [createPrefabInstance(ROOM)]);
+    const expanded = expandPrefabs(registries, sceneWith([host]), libraryOf(tree, room.prefab)).scene;
+    const live = liveScene(sceneWith([createEntity('Stage')]));
+
+    mergeScene(live, liveScene({ ...expanded, id: fixedId('scene', 'room') }));
+
+    expect(live.entities.get(host.entity.id)?.children).toEqual([instancedId(host.entity.id, room.floor)]);
+    expect(validateHierarchy(live)).toEqual([]);
+    expect(removeSubtree(live, host.entity.id)).toHaveLength(6);
+  });
+
+  it('throws on an entity id the document already holds, and moves nothing', () => {
+    const level = pair('Level');
+    const live = liveScene(level.scene);
+    const copy = liveScene({ ...level.scene, id: fixedId('scene', 'copy') });
+    const before = [...live.entities.keys()];
+
+    expect(() => mergeScene(live, copy)).toThrow(level.parent);
+
+    expect([...live.entities.keys()]).toEqual(before);
+    expect(copy.entities.size).toBe(2);
   });
 });
