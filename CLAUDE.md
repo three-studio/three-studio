@@ -119,5 +119,9 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
 - `npm run typecheck && npm test` doit être au vert à chaque commit.
+- **Node se prend dans `.nvmrc`.** La version par défaut de nvm sur cette machine n'est pas celle du dépôt, et sous une
+  autre version `worldAllocations.test.ts` échoue (V8 n'alloue pas pareil), ce qui a déjà été pris pour une machine
+  saturée. Dans Claude Code, le shell repart du profil à chaque commande : un `nvm use` lancé seul ne vaut que pour sa
+  commande. Chaque commande qui lance `node`, `npm` ou `npx` commence donc par `nvm use >/dev/null &&`.
 
 On parle et on échange en français, mais on écrit en anglais.
