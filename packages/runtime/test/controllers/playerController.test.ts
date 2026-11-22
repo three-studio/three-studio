@@ -18,6 +18,7 @@ import { sceneWith } from '../../../core/test/fixtures';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import { PlayerController } from '../../src/controllers/PlayerController';
+import { LOOK_AXIS, MOVE_AXIS, type TouchHold } from '../../src/controllers/touch';
 import { PhysicsWorld } from '../../src/physics/PhysicsWorld';
 import { SceneBinder } from '../../src/SceneBinder';
 import type { Input } from '../../src/input/Input';
@@ -67,24 +68,23 @@ function personCapsule(): ColliderComponent {
  * exactly that — the same narrow-shape trick `KeyEventLike` and
  * `AudioContextLike` use elsewhere in this package.
  *
- * `move` and `look` are what the on-screen sticks would be reporting. They are
- * plain fields a test writes to, because `Input` reads them off `TouchControls`
- * and `TouchControls` cannot exist here: nipplejs touches `window` while it is
- * being imported, which is the reason it is imported dynamically at all.
+ * `move` and `look` are what the on-screen sticks would be setting on its
+ * virtual axes, and `sticksShown` whether they are up. They are plain fields a
+ * test writes to, because `TouchControls` cannot exist here: nipplejs touches
+ * `window` while it is being imported, which is the reason it is imported
+ * dynamically at all.
  */
 interface StubInput {
   down: Set<string>;
   pointerLocked: boolean;
   move: { x: number; y: number };
   look: { x: number; y: number };
-  touchActive: boolean;
+  sticksShown: boolean;
   isDown(code: string): boolean;
   anyDown(codes: readonly string[]): boolean;
   consumeMouseDelta<T extends { x: number; y: number }>(target: T): T;
   consumeWheel(): number;
-  moveAxis(): { x: number; y: number };
-  lookAxis(): { x: number; y: number };
-  enableTouch(): void;
+  axis(name: string): { x: number; y: number };
 }
 
 function stubInput(): StubInput {
@@ -94,7 +94,7 @@ function stubInput(): StubInput {
     pointerLocked: false,
     move: { x: 0, y: 0 },
     look: { x: 0, y: 0 },
-    touchActive: false,
+    sticksShown: false,
     isDown: (code) => down.has(code),
     anyDown: (codes) => codes.some((code) => down.has(code)),
     consumeMouseDelta: (target) => {
@@ -103,11 +103,19 @@ function stubInput(): StubInput {
       return target;
     },
     consumeWheel: () => 0,
-    moveAxis: () => stub.move,
-    lookAxis: () => stub.look,
-    enableTouch: () => {},
+    axis: (name) => (name === MOVE_AXIS ? stub.move : name === LOOK_AXIS ? stub.look : { x: 0, y: 0 }),
   };
   return stub;
+}
+
+/** The sticks' hold, shown as the stub says. */
+function holdOf(stub: StubInput): () => TouchHold {
+  return () => ({
+    get shown() {
+      return stub.sticksShown;
+    },
+    dispose() {},
+  });
 }
 
 /** The stub, as the controller takes it: the one place it stands in for the real thing. */
@@ -191,7 +199,10 @@ async function rigWith(gravity: Vec3, startY: number): Promise<Rig> {
     physics,
     player.entity.id,
     personCapsule(),
+    holdOf(input),
   );
+  // As the world starts its behaviours: the controller holds the sticks from here.
+  controller.start();
 
   return {
     controller,
@@ -313,7 +324,7 @@ describe('PlayerController places the eye above the feet', () => {
     object.position.set(0, groundY, 0);
     const component = { ...playerControllerType.create(), eyeHeight };
     const id = fixedId('entity', 'player');
-    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, collider);
+    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, collider, holdOf(stubInput()));
     controller.postUpdate();
     return controller.camera.position.y;
   }
@@ -350,7 +361,7 @@ describe('PlayerController places the eye above the feet', () => {
     const object = new Object3D();
     const component = { ...playerControllerType.create(), fov: 85 };
     const id = fixedId('entity', 'player');
-    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, undefined);
+    const controller = new PlayerController(component, object, asInput(stubInput()), null, id, undefined, holdOf(stubInput()));
 
     expect(controller.camera.fov).toBe(85);
 
@@ -379,7 +390,7 @@ describe('PlayerController driven by the sticks', () => {
     rig.run(0.5); // Land and settle, so the first frames are not a fall.
 
     const from = { x: rig.object.position.x, z: rig.object.position.z };
-    rig.input.touchActive = true;
+    rig.input.sticksShown = true;
     rig.input.move = stick;
     for (const key of keys) rig.input.down.add(key);
     rig.run(1);
@@ -418,7 +429,7 @@ describe('PlayerController driven by the sticks', () => {
      * over the frame rather than treated as a displacement.
      */
     const rig = await rigWith([0, -9.81, 0], STANDING_Y);
-    rig.input.touchActive = true;
+    rig.input.sticksShown = true;
     rig.input.look = { x: 1, y: 0 };
 
     const before = yawOf(rig.controller);
@@ -429,7 +440,7 @@ describe('PlayerController driven by the sticks', () => {
   });
 
   it('leaves the camera alone when the sticks are not up', async () => {
-    // Without the `touchActive` half of the guard this would turn: the stub
+    // Without the sticks' half of the guard this would turn: the stub
     // reports a deflection whatever the state of the overlay.
     const rig = await rigWith([0, -9.81, 0], STANDING_Y);
     rig.input.look = { x: 1, y: 0 };

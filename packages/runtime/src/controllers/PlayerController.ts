@@ -4,6 +4,7 @@ import {
   type ColliderComponent,
   type EntityId,
   type PlayerControllerComponent,
+  type TouchControlsMode,
 } from '@three-studio/core';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
 import type { Behaviour, BehaviourDefinition } from '../behaviour/Behaviour';
@@ -12,6 +13,7 @@ import { inputOf } from '../input/inputOf';
 import { physicsOf } from '../physics/physicsOf';
 import type { CharacterController, PhysicsApi } from '../physics/PhysicsApi';
 import { applyWorldTransform } from '../physics/PhysicsWorld';
+import { LOOK_AXIS, MOVE_AXIS, holdTouchControls, type TouchHold } from './touch';
 
 const FORWARD = ['KeyW', 'ArrowUp'];
 const BACK = ['KeyS', 'ArrowDown'];
@@ -95,6 +97,8 @@ export class PlayerController implements Behaviour {
   private readonly desired = { x: 0, y: 0, z: 0 };
   private readonly movement = { x: 0, y: 0, z: 0 };
   private readonly mouse = { x: 0, y: 0 };
+  /** The on-screen sticks, held from `start` to `dispose`. */
+  private touch: TouchHold | null = null;
   private orbitDistance: number;
 
   /** `null` in fly mode, and when the entity has no body and collider to walk with. */
@@ -143,6 +147,8 @@ export class PlayerController implements Behaviour {
      * triangle mesh has no answer to anyway.
      */
     colliderDoc: ColliderComponent | undefined,
+    /** Claims the world's on-screen sticks: `holdTouchControls`, in a world. */
+    private readonly holdTouch: (mode: TouchControlsMode) => TouchHold,
   ) {
     this.orbitDistance = component.cameraDistance;
     this.camera = new PerspectiveCamera(component.fov, 16 / 9, 0.1, 5000);
@@ -180,15 +186,20 @@ export class PlayerController implements Behaviour {
   }
 
   /**
-   * Asks for the on-screen controls, once every behaviour exists.
+   * Holds the on-screen controls, once every behaviour exists.
    *
    * Here rather than in `World` because the sticks belong to the thing they
    * drive: a scene carrying no player controller shows none, and nobody had to
-   * write that rule down. `enableTouch` is idempotent, so two players in one
-   * scene still mean one set of joysticks.
+   * write that rule down. A world has one set however many hold it, so two
+   * players in one scene still mean one set of joysticks.
    */
   start(): void {
-    this.input.enableTouch(this.component.touchControls, null);
+    this.touch ??= this.holdTouch(this.component.touchControls);
+  }
+
+  dispose(): void {
+    this.touch?.dispose();
+    this.touch = null;
   }
 
   /** Per display frame: aiming, which must stay as responsive as the screen. */
@@ -217,7 +228,7 @@ export class PlayerController implements Behaviour {
     // The lock is what makes a mouse usable, not what makes aiming possible:
     // there is no pointer lock on a phone, and requiring it here left the
     // camera welded in place with a stick under the thumb doing nothing.
-    if (!input.pointerLocked && !input.touchActive) return;
+    if (!input.pointerLocked && this.touch?.shown !== true) return;
 
     /*
      * Two terms, because the two devices report different quantities.
@@ -232,7 +243,7 @@ export class PlayerController implements Behaviour {
      */
     const mouse = this.mouse;
     input.consumeMouseDelta(mouse);
-    const stick = input.lookAxis();
+    const stick = input.axis(LOOK_AXIS);
     const turn = this.component.touchLookSpeed * delta;
 
     this.yaw -= mouse.x * this.component.mouseSensitivity + stick.x * turn;
@@ -272,7 +283,7 @@ export class PlayerController implements Behaviour {
     // machine can have both, and summing them would let a player walk at 1.7×
     // by holding W with a thumb on the stick — which is the kind of thing that
     // is only ever discovered by someone speedrunning a level.
-    const stick = input.moveAxis();
+    const stick = input.axis(MOVE_AXIS);
     if (stick.x !== 0 || stick.y !== 0) {
       return _move.addScaledVector(_forward, stick.y).addScaledVector(_right, stick.x);
     }
@@ -402,6 +413,7 @@ export const playerControllerBehaviour: BehaviourDefinition = {
       // entity carrying two cannot have the camera measuring from one and the
       // character sweeping the other.
       findComponent(world.document, target.entity.id, 'collider'),
+      (mode) => holdTouchControls(world, mode),
     );
   },
 };

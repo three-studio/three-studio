@@ -565,6 +565,8 @@ function typesItMayName(path: string): readonly string[] | null {
   if (path.startsWith('packages/runtime/src/world/')) return [];
   // The game moves its world between scenes, whatever they hold.
   if (path.startsWith('packages/runtime/src/game/')) return [];
+  // Input hears the keyboard, the mouse and virtual axes and keys, whoever sets them.
+  if (path.startsWith('packages/runtime/src/input/')) return [];
   if (UNPACK_MODEL.has(path)) return ['model'];
   return null;
 }
@@ -950,6 +952,50 @@ describe('scripting', () => {
 
   it('finds none in the tree: physics and audio give scripts their members by contribution', () => {
     expect(scriptingImportProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------- input
+
+/*
+ * `Input` hears the keyboard and the mouse, and keeps virtual axes and keys
+ * for whatever sets them. The touch sticks used to live in it — nipplejs, the
+ * summoning, the player controller's mode —, so the kernel's input carried one
+ * controller's overlay. They are a screen layer of the player controllers now,
+ * on their way to the `player-controller` module, and input names none of it.
+ */
+
+/** The input files that import the controllers or nipplejs, a line each. */
+function inputImportProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (!path.startsWith('packages/runtime/src/input/')) continue;
+    for (const spec of specifiersIn(source)) {
+      const hit = resolveSpecifier(join(repoRoot, path), spec);
+      const controller = hit.kind === 'file' && show(hit.path).startsWith('packages/runtime/src/controllers/');
+      if (controller || spec === 'nipplejs' || spec.startsWith('nipplejs/')) {
+        problems.push(`${path}: imports ${spec}, and input holds no player controller's controls`);
+      }
+    }
+  }
+  return problems;
+}
+
+describe('input', () => {
+  it('reports an input file that imports the controllers or nipplejs', () => {
+    const found = (source: string) => inputImportProblems([['packages/runtime/src/input/Probe.ts', source]]);
+
+    expect(found("import { holdTouchControls } from '../controllers/touch';")).toEqual([
+      "packages/runtime/src/input/Probe.ts: imports ../controllers/touch, and input holds no player controller's controls",
+    ]);
+    expect(found("const nipple = await import('nipplejs');")).toEqual([
+      "packages/runtime/src/input/Probe.ts: imports nipplejs, and input holds no player controller's controls",
+    ]);
+    expect(found("import { PressedKeys } from './PressedKeys';")).toEqual([]);
+  });
+
+  it('finds none in the tree: the sticks are a screen layer of the player controllers', () => {
+    expect(inputImportProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
   });
 });
 

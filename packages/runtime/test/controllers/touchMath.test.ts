@@ -1,6 +1,6 @@
 import type { TouchControlsMode } from '@three-studio/core';
 import { describe, expect, it } from 'vitest';
-import { isSprintForce, shouldShowTouch, stickToMove } from '../../src/input/touchMath';
+import { isSprintForce, shouldShowTouch, stickToMove } from '../../src/controllers/touchMath';
 
 /*
  * The decisions behind the on-screen sticks, which is all of them that can be
