@@ -623,6 +623,45 @@ const SPIN = [
   ``,
 ].join('\n');
 
+/**
+ * What the page's churn does, from a script, while the harness raises
+ * `__perfChurn`: each frame the twenty oldest of a thousand crates destroyed
+ * and as many placed in their slots, in the same grid as the page's. Read
+ * against the page's churn, the difference is the façade's cost per spawn.
+ * The grid's numbers are the scenario's `CRATES`.
+ */
+const SPAWNER = [
+  `import { Behaviour, type Entity, type ScriptPropertyDef } from '@three-studio/runtime';`,
+  ``,
+  `const COUNT = 1000;`,
+  `const COLUMNS = 40;`,
+  `const ROWS = Math.ceil(COUNT / COLUMNS);`,
+  `const SPACING = 1.5;`,
+  `const PER_FRAME = 20;`,
+  ``,
+  `export default class Spawner extends Behaviour {`,
+  `  static properties: Record<string, ScriptPropertyDef> = { crate: { type: 'asset', kind: 'prefab', label: 'Crate' } };`,
+  ``,
+  `  crate = '';`,
+  `  private readonly crates: (Entity | null)[] = [];`,
+  `  private next = 0;`,
+  `  private readonly at = { x: 0, y: 20, z: 0 };`,
+  ``,
+  `  onUpdate(): void {`,
+  `    if (Reflect.get(globalThis, '__perfChurn') !== true) return;`,
+  `    for (let k = 0; k < PER_FRAME; k += 1) {`,
+  `      const slot = this.next % COUNT;`,
+  `      this.next += 1;`,
+  `      this.crates[slot]?.destroy();`,
+  `      this.at.x = ((slot % COLUMNS) - (COLUMNS - 1) / 2) * SPACING;`,
+  `      this.at.z = (Math.floor(slot / COLUMNS) - (ROWS - 1) / 2) * SPACING;`,
+  `      this.crates[slot] = this.world.instantiate(this.crate, { position: this.at });`,
+  `    }`,
+  `  }`,
+  `}`,
+  ``,
+].join('\n');
+
 /** A unit box that falls: its mesh, a dynamic Rigid Body, and the box Collider the mesh measures. */
 function fallingBox(color: string): ComponentDoc[] {
   const mesh = createMeshComponent('box');
@@ -632,17 +671,22 @@ function fallingBox(color: string): ComponentDoc[] {
 
 /**
  * The `dynamics` recipe's scene, in memory: a solid floor, a sun, a main
- * camera, and the boxes resting on the floor, each running `spin`. Resting
- * from the first step, so that they are asleep once Play has run two seconds.
+ * camera, the boxes resting on the floor, each running `spin`, and the
+ * `Spawner`, given `crate` to instantiate. Resting from the first step, so
+ * that they are asleep once Play has run two seconds.
  */
-export function dynamicsScene(recipe: DynamicsRecipe, spin: AssetId): SceneDoc {
+export function dynamicsScene(
+  recipe: DynamicsRecipe,
+  ids: { readonly spin: AssetId; readonly spawner: AssetId; readonly crate: AssetId },
+): SceneDoc {
   const scene = createEmptyScene();
   const half = { x: (recipe.columns * BOX_SPACING) / 2, z: ((recipe.boxes / recipe.columns) * BOX_SPACING) / 2 };
   placeGround(scene, half, true);
   placeSun(scene, half);
   placeCamera(scene, half);
+  place(scene, createEntity('Spawner', [{ ...scriptType.create(), assetId: ids.spawner, props: { crate: ids.crate } }]));
   for (let i = 0; i < recipe.boxes; i += 1) {
-    const box = place(scene, createEntity(`Box ${i}`, [...fallingBox('#3c7fb6'), scriptOn(spin)]));
+    const box = place(scene, createEntity(`Box ${i}`, [...fallingBox('#3c7fb6'), scriptOn(ids.spin)]));
     box.entity.transform.position = [
       (i % recipe.columns) * BOX_SPACING - half.x + BOX_SPACING / 2,
       0.5,
@@ -661,7 +705,7 @@ function cratePrefab(): PrefabDoc {
 
 /**
  * Writes the `dynamics` recipe's project into `parent`: its one scene,
- * `Dynamics`, its script and the `Crate` prefab. Answers its path and the
+ * `Dynamics`, its scripts and the `Crate` prefab. Answers its path and the
  * prefab's id, which the scenario hands the running world.
  */
 export async function writeDynamicsProject(
@@ -670,10 +714,13 @@ export async function writeDynamicsProject(
 ): Promise<{ path: string; crate: AssetId }> {
   const project = await newProject('Dynamics', parent);
   const spinPath = [ASSETS_DIR, directoryOf('script'), 'Spin.ts'].join('/');
+  const spawnerPath = [ASSETS_DIR, directoryOf('script'), 'Spawner.ts'].join('/');
   await writeFile(join(project.path, spinPath), SPIN, 'utf8');
+  await writeFile(join(project.path, spawnerPath), SPAWNER, 'utf8');
   const crate = await createPrefabAsset(registries, project.path, 'Crate', cratePrefab());
-  const spin = assetAt(await scanAssets(registries, project.path), spinPath).id;
-  const scene = serializeScene(registries, dynamicsScene(recipe, spin));
+  const manifest = await scanAssets(registries, project.path);
+  const ids = { spin: assetAt(manifest, spinPath).id, spawner: assetAt(manifest, spawnerPath).id, crate };
+  const scene = serializeScene(registries, dynamicsScene(recipe, ids));
   const start = (await createScene(registries, project.path, 'Dynamics', scene)).scene.id;
   // `Dynamics` starts the game, and the scene `createProject` made is not it.
   await setStartScene(project.path, start);

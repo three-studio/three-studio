@@ -27,5 +27,7 @@ declare global {
     __perfPlayer?: PerfPlayer;
     /** The crates `spawnCrates` placed in the running world, slot by slot: what the next call takes. */
     __perfCrates?: EntityId[];
+    /** Raised while the `dynamics` recipe's `Spawner` script is to churn its crates. */
+    __perfChurn?: boolean;
   }
 }

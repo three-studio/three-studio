@@ -642,6 +642,40 @@ export function destroyCrates(): Record<string, number> {
 }
 
 /**
+ * Raises or lowers the flag the `dynamics` recipe's `Spawner` script churns
+ * under: the page's churn, done by a script through the façade.
+ */
+export function setScriptChurn(on: boolean): Record<string, number> {
+  window.__perfChurn = on;
+  return { on: on ? 1 : 0 };
+}
+
+/**
+ * The time between frames for `ms`, in ms, while the `Spawner` churns, then
+ * its flag lowered: the script does the work, the page only watches.
+ */
+export function churnByScript(ms: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    const deltas: number[] = [];
+    let started = -1;
+    let last = -1;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0) deltas.push(now - last);
+      else started = now;
+      last = now;
+      if (now - started < ms) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      window.__perfChurn = false;
+      resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/**
  * A churn of `ms`: at each frame the `perFrame` oldest crates are destroyed
  * and as many placed in their slots, so that as many stay alive as
  * `spawnCrates` placed. Each slot's crate is the oldest when its turn comes

@@ -5,6 +5,7 @@ import {
   CACHE_DIR,
   componentAssets,
   componentsOf,
+  findComponent,
   decodeScene,
   fixedId,
   isAssetId,
@@ -122,14 +123,18 @@ describe('the full-size recipes, counted without encoding a byte', () => {
     expect(texturesCounts(TEXTURES).images).toBe(24);
   });
 
-  it('dynamics has 1 003 entities: 1 000 boxes, each a mesh, a dynamic Rigid Body, a box Collider and a script', () => {
-    const scene = dynamicsScene(DYNAMICS, fixedId('asset', 'spin'));
-    expect(entityCount(scene)).toBe(1003);
+  it('dynamics has 1 004 entities: 1 000 boxes, each a mesh, a dynamic Rigid Body, a box Collider and a script, and the Spawner given the Crate', () => {
+    const crate = fixedId('asset', 'crate');
+    const scene = dynamicsScene(DYNAMICS, { spin: fixedId('asset', 'spin'), spawner: fixedId('asset', 'spawner'), crate });
+    expect(entityCount(scene)).toBe(1004);
     const boxes = [...scene.entities.values()].filter((entity) => entity.name.startsWith('Box '));
     expect(boxes).toHaveLength(1000);
     expect(new Set(boxes.map((box) => bodyOf(componentsOf(registries, scene, box.id))))).toEqual(
       new Set(['collider box, mesh, rigidbody dynamic, script']),
     );
+    const spawner = [...scene.entities.values()].find((entity) => entity.name === 'Spawner');
+    const script = spawner && findComponent(scene, spawner.id, 'script');
+    expect([script?.assetId, script?.props]).toEqual([fixedId('asset', 'spawner'), { crate }]);
   });
 });
 
@@ -258,9 +263,10 @@ describe('each recipe at a reduced size, opened by the app', () => {
     expect(opened.scenes.map((scene) => scene.name)).toEqual(['Dynamics']);
 
     const scene = await startScene(written.path);
-    // The boxes, a floor, a sun and a camera; each box's Spin found.
-    expect(entityCount(scene)).toBe(23);
-    expect(await references(written.path, [scene])).toEqual({ resolved: 20, unresolved: [] });
+    // The boxes, a floor, a sun, a camera and the Spawner; each box's Spin
+    // found, and the Spawner's script.
+    expect(entityCount(scene)).toBe(24);
+    expect(await references(written.path, [scene])).toEqual({ resolved: 21, unresolved: [] });
     const floor = [...scene.entities.values()].find((entity) => entity.name === 'Ground');
     if (!floor) throw new Error('the scene has no floor');
     expect(bodyOf(componentsOf(registries, scene, floor.id))).toBe('collider box, mesh');

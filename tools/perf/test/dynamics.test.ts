@@ -30,6 +30,9 @@ describe('scenario 4’s metrics', () => {
       'churn.frameMs': 'timing',
       'churn.heapBytes': 'memory',
       'churn.heapGrowthBytes': 'reported',
+      'script.churn.frameMs': 'timing',
+      'script.churn.heapBytes': 'memory',
+      'script.churn.heapGrowthBytes': 'reported',
     });
   });
 
@@ -42,6 +45,9 @@ describe('scenario 4’s metrics', () => {
       churn: [7, 8, 6],
       heapBefore: 400_000_000,
       heapAfter: 401_500_000,
+      scriptChurn: [9, 8, 10],
+      scriptHeapBefore: 402_000_000,
+      scriptHeapAfter: 402_500_000,
     });
 
     expect(metrics).toEqual({
@@ -54,6 +60,9 @@ describe('scenario 4’s metrics', () => {
       'churn.frameMs': 7,
       'churn.heapBytes': 401_500_000,
       'churn.heapGrowthBytes': 1_500_000,
+      'script.churn.frameMs': 9,
+      'script.churn.heapBytes': 402_500_000,
+      'script.churn.heapGrowthBytes': 500_000,
     });
     expect(() => metricsOf(DYNAMICS_METRICS, [metrics])).not.toThrow();
   });
@@ -80,10 +89,10 @@ describe('the dynamics project’s script', () => {
     await rm(parent, { recursive: true, force: true });
   });
 
-  it('builds without an error, as Play builds it', async () => {
+  it('builds without an error, as Play builds it: the boxes’ Spin and the Spawner', async () => {
     const { path } = await writeDynamicsProject(parent, { boxes: 4, columns: 2 });
     const built = await buildScripts(registries, path, 'play');
     expect(built.errors).toEqual([]);
-    expect(built.scriptCount).toBe(1);
+    expect(built.scriptCount).toBe(2);
   });
 });
