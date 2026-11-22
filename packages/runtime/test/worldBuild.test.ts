@@ -1,9 +1,13 @@
 import {
   Registry,
+  assertDefined,
   colliderType,
+  createCameraEntity,
   createEntity,
+  createLightEntity,
   createMeshEntity,
   createRenderingSettings,
+  createSceneId,
   fixedId,
   modelType,
   scriptType,
@@ -22,6 +26,7 @@ import { StudioTime } from '../src/time/StudioTime';
 import type { LoadedScene } from '../src/world/scenes';
 import { World, type SubsystemDefinition, type WorldOptions } from '../src/world/World';
 import { serveModels, stubImages } from './assetFixtures';
+import { bundleOf, withBody, withScript } from './physics/rig';
 import { builtInRegistries } from './registries';
 
 /*
@@ -81,12 +86,18 @@ async function building(
   return { world, scene: world.loadScene(sceneWith(templates), { buildBudgetMs: 0 }) };
 }
 
+function isUnder(object: Object3D, ancestor: Object3D | undefined): boolean {
+  for (let at: Object3D | null = object; at !== null; at = at.parent) if (at === ancestor) return true;
+  return false;
+}
+
 /** Turns of the event loop, for what a frame started to land. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('a scene built over frames', () => {
-  it('syncs one entity a frame with no budget, each under its parent, its roots under its hidden root', async () => {
-    // 250 roots, each with a chain of three below it.
+  it('builds one entity a frame while the running scene plays on, and mounts, draws, claims and runs none of it before its start', async () => {
+    // 250 roots, each with a chain of three below it, and a model, a main
+    // camera, a light and a script among them: 1 004 entities.
     const templates: EntityTemplate[] = [];
     for (let root = 0; root < 250; root += 1) {
       const chain = [0, 1, 2, 3].map((depth) => createEntity(`E${root}.${depth}`, []));
@@ -96,34 +107,90 @@ describe('a scene built over frames', () => {
       });
       templates.push(...chain);
     }
+    let land = (): void => {};
+    const inFlight = new Promise<Object3D>((resolve) => {
+      land = () => resolve(new Group());
+    });
+    vi.spyOn(AssetCache.prototype, 'holdModel').mockReturnValue({ object: inFlight, dispose: () => {} });
+    const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
+    const camera = createCameraEntity();
+    for (const component of camera.components) if (component.type === 'camera') component.isMain = true;
     const log: string[] = [];
-    const { world, scene } = await building(optionsFor([recording(log, [])]), templates);
+    const arrival = withScript(
+      createEntity('Arrival'),
+      class extends Behaviour {
+        override onAwake() {
+          log.push('arrival awake');
+        }
+      },
+    );
+    const light = createLightEntity('point');
+    templates.push(crate, camera, light, arrival);
+    let updates = 0;
+    const runner = withScript(
+      createEntity('Runner'),
+      class extends Behaviour {
+        override onUpdate() {
+          updates += 1;
+        }
+      },
+    );
+    const faller = withBody('box', [0, 100, 0]);
+    const options = optionsFor([recording(log, ['light', 'model'])], undefined, { url: () => 'file:///crate.glb' });
+    const world = await World.play({ ...options, scripts: bundleOf([runner, arrival]) });
+    onTestFinished(() => world.dispose());
+    const running = world.loadScene(sceneWith([runner, faller]));
+    await running.ready;
+    world.setActiveScene(running);
+    world.startScene(running);
+    log.length = 0;
+    const height = () => physicsOf(world)?.body(faller.entity.id)?.position.y ?? Number.NaN;
 
+    // An id of its own: a world loads a scene once.
+    const scene = world.loadScene({ ...sceneWith(templates), id: createSceneId() }, { buildBudgetMs: 0 });
+    let ready = false;
+    void scene.ready.then(() => {
+      ready = true;
+    });
     const miscounted: number[] = [];
     const misplaced: string[] = [];
+    const stalled: number[] = [];
     for (let frame = 1; frame <= templates.length; frame += 1) {
+      const before = height();
       world.frame(STEP);
-      let built = 0;
-      for (const { entity } of templates) {
-        const object = world.binder.getObject(entity.id);
-        if (object === undefined) continue;
-        built += 1;
-        const parent = entity.parent === null ? scene.root : world.binder.getObject(entity.parent);
-        if (object.parent !== parent) misplaced.push(`${entity.name} at frame ${frame}`);
+      if (!(height() < before) || updates !== frame) stalled.push(frame);
+      const { entity } = assertDefined(templates[frame - 1], 'the entity built');
+      const parent = entity.parent === null ? scene.root : world.binder.getObject(entity.parent);
+      if (world.binder.getObject(entity.id)?.parent !== parent) misplaced.push(`${entity.name} at frame ${frame}`);
+      if (templates.filter(({ entity }) => world.binder.getObject(entity.id) !== undefined).length !== frame) {
+        miscounted.push(frame);
       }
-      if (built !== frame) miscounted.push(frame);
     }
-    await scene.ready;
+    world.frame(STEP);
+    await settled();
 
     expect(miscounted).toEqual([]);
     expect(misplaced).toEqual([]);
+    expect(stalled).toEqual([]);
+    // Built, its model still in flight.
+    expect(ready).toBe(false);
     expect(scene.root.visible).toBe(false);
-    expect(world.document.entities.size).toBe(0);
-    // Its environment is put up when it is made active.
-    expect(world.scene.background).toBeNull();
-    world.setActiveScene(scene);
-    expect(world.scene.background).not.toBeNull();
+    expect(world.document.entities.has(camera.entity.id)).toBe(false);
+    expect(isUnder(world.cameras.active, world.binder.getObject(camera.entity.id))).toBe(false);
     expect(log).toEqual([]);
+
+    land();
+    await scene.ready;
+    world.startScene(scene);
+
+    expect(log).toEqual([
+      `mount ${crate.entity.id}:model`,
+      `mount ${light.entity.id}:light`,
+      'arrival awake',
+      'started',
+    ]);
+    expect(scene.root.visible).toBe(true);
+    expect(isUnder(world.cameras.active, world.binder.getObject(camera.entity.id))).toBe(true);
   });
 
   it('batches nothing while it builds, and everything in one go once it starts', async () => {
@@ -204,6 +271,27 @@ describe('a scene built over frames', () => {
 
     world.startScene(scene);
     expect(log).toEqual([`mount ${crate.entity.id}:model`, 'started']);
+  });
+
+  it('rejects its ready when unloaded while it builds, and gives back what it held', async () => {
+    stubImages();
+    const server = await serveModels();
+    const registries = builtInRegistries();
+    const assets = new AssetCache(registries, {
+      resolver: { url: (id) => (id === CRATE ? server.url('crate.gltf') : null) },
+      idleBudgetBytes: 0,
+    });
+    const crate = createEntity('Crate', [{ ...modelType.create(), assetId: CRATE }]);
+    const { world, scene } = await building(optionsFor([], assets), [crate, createMeshEntity('box')]);
+
+    world.frame(STEP);
+    expect(assets.stats.held).toBe(1);
+    world.unloadScene(scene);
+
+    await expect(scene.ready).rejects.toThrow(/unloaded/);
+    expect(world.binder.getObject(crate.entity.id)).toBeUndefined();
+    expect(world.scenes).toEqual([]);
+    expect(assets.stats.held).toBe(0);
   });
 
   it('rejects its ready when its world is disposed before it, and gives back what it held', async () => {
