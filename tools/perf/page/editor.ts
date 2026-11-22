@@ -550,6 +550,11 @@ export function switchScenes(args: {
  * Goes to `target` with the project's loading scene up meanwhile, to the
  * target's first frame: how long, the longest frame on the way, how many
  * frames were drawn, and 1 when the loading scene did run in between.
+ *
+ * The target's first frame counts: the frame after the store names the target
+ * is the one that draws it, and it is the longest of all — its pipelines and
+ * its images uploaded. Left out, the measure ended a frame early, and only
+ * where a host told the store before drawing did that frame fall inside it.
  */
 export function goThroughLoading(args: { target: { name: string; id: string }; loadingId: string }): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
@@ -572,7 +577,10 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
       const running = stores.viewport.getState().runningScene;
       if (running === args.loadingId) sawLoading = 1;
       if (running === args.target.id) {
-        requestAnimationFrame(() => resolve({ ms: performance.now() - started, longestFrameMs: longest, frames, sawLoading }));
+        requestAnimationFrame(() => {
+          const end = performance.now();
+          resolve({ ms: end - started, longestFrameMs: Math.max(longest, end - last), frames: frames + 1, sawLoading });
+        });
       } else if (now - started > 120_000) reject(new Error(`scene ${args.target.name} never ran`));
       else requestAnimationFrame(tick);
     };
