@@ -88,6 +88,20 @@ describe('what a bundle exports', () => {
     expect(code).not.toContain('registerScript');
   });
 
+  it('builds a helper with no default export beside the scripts without a warning', async () => {
+    // Every .ts under assets/scripts is in the entry, helpers included; reading
+    // a helper's missing default made esbuild warn at every build, and the
+    // editor printed each warning to its Console.
+    const { project } = await projectWithScript(scriptLogging("import { clamp } from './lib/mathx';", 'clamp(2)'));
+    await mkdir(join(project, 'assets/scripts/lib'), { recursive: true });
+    await writeFile(join(project, 'assets/scripts/lib/mathx.ts'), 'export function clamp(value: number): number { return Math.min(value, 1); }\n');
+    const { errors, warnings, scriptCount } = await buildScripts(registries, project);
+
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+    expect(scriptCount).toBe(2);
+  });
+
   it('checks for version 5 of the script API, the first with entity handles', async () => {
     const { project } = await projectWithScript(scriptLogging('', "'VERSIONED'"));
     const { code } = await buildScripts(registries, project);

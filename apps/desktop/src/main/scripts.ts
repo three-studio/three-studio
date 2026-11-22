@@ -210,8 +210,11 @@ function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): str
 
   // Exported as data, and nothing called: the host decodes the pairs and hands
   // the classes to the world that runs them. A helper's default export, or
-  // none, is in the list too, and the decoding drops it.
-  const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, module${index}.default]`);
+  // none, is in the list too, and the decoding drops it. Read at run time,
+  // because esbuild resolves `module.default` statically and warns that it
+  // "will always be undefined" for each helper with no default export: at
+  // every build, and the editor printed each warning to its Console.
+  const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, Reflect.get(module${index}, 'default')]`);
   lines.push(`export const scripts = [${pairs.join(', ')}];`);
 
   return `${lines.join('\n')}\n`;
