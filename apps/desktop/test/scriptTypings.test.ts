@@ -119,6 +119,7 @@ declare const audio: AudioApi;
 declare const property: FieldDef;
 declare const bus: AudioBus;
 declare const publishedBus: PublishedBus;
+declare const publishedScenes: PublishedScenes;
 
 export const a: PublicPart<Published> = behaviour;
 export const b: PublishedEntity = entity;
@@ -130,6 +131,9 @@ export const b3: PublishedVector = transform.position;
 export const b4: PublishedEuler = transform.rotation;
 export const b5: PublishedRotation = transform.quaternion;
 export const c: PublishedScenes = scenes;
+// Both ways: what a script is told it may call — an additive load, an unload,
+// the data between scenes — is what the game gives it.
+export const c1: SceneApi = publishedScenes;
 export const d: StudioInput = input;
 export const e: StudioAudio = audio;
 export const f: PublishedProperty = property;

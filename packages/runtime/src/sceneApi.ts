@@ -17,6 +17,12 @@ export interface SceneLoadHandle {
   cancel(): void;
 }
 
+/** How a scene is loaded. */
+export interface SceneLoadOptions {
+  /** Alongside the scenes loaded, rather than in place of the active one. */
+  readonly additive?: boolean;
+}
+
 /** Moving between scenes, from inside a script. */
 export interface SceneApi {
   /**
@@ -27,8 +33,17 @@ export interface SceneApi {
    * should hold the scene's id instead, which `load` and `go` also accept.
    */
   readonly current: string | null;
-  /** Starts fetching, without showing. Poll `progress`, then `activate()`. */
-  load(scene: string): SceneLoadHandle;
+  /**
+   * Starts fetching, without showing. Poll `progress`, then `activate()`.
+   * Additive, it is built beside the scenes loaded and started beside them,
+   * and a switch leaves it until `unload`; a scene is loaded once, and asking
+   * again hands back its handle.
+   */
+  load(scene: string, options?: SceneLoadOptions): SceneLoadHandle;
   /** Fetches and shows, for a transition with nothing to display meanwhile. */
   go(scene: string): Promise<void>;
+  /** An additive scene, once this frame is over. The active one is refused: a switch replaces it. */
+  unload(scene: string): Promise<void>;
+  /** Held by the game across every switch, read and written by every scene's scripts. */
+  readonly data: Map<string, unknown>;
 }

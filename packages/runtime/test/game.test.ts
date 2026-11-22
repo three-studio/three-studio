@@ -1,6 +1,7 @@
 import {
   Registry,
   assertDefined,
+  audioSourceType,
   createEntity,
   createLightEntity,
   createRenderingSettings,
@@ -15,6 +16,7 @@ import {
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
 import { AssetCache } from '../src/assets/AssetCache';
+import { audioOf } from '../src/audio/audioOf';
 import { NULL_ASSET_RESOLVER } from '../src/assets/AssetResolver';
 import { Game, type GameOptions } from '../src/game/Game';
 import type { SceneApi } from '../src/sceneApi';
@@ -25,6 +27,7 @@ import type { SystemDefinition } from '../src/systems/ComponentSystem';
 import { StudioTime } from '../src/time/StudioTime';
 import type { WorldRegistries } from '../src/world/World';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
+import { clipBytes, FakeContext } from './audio/fakeContext';
 import { bundleOf, standInForTheBrowser, takeTheBrowserBack, withScript } from './physics/rig';
 import { builtInRegistries, withoutPhysics } from './registries';
 
@@ -515,5 +518,175 @@ describe('a switch behind the loading scene', () => {
     expect(game.current).toBeNull();
     expect(log).toContain('spinner destroy');
     expect(log).not.toContain('level awake');
+  });
+});
+
+/*
+ * Scenes loaded beside the active one: a HUD, a persistent manager, a level's
+ * streamed part. Built over frames while the level plays, started without
+ * becoming active, and left in place by a switch, which replaces the active
+ * scene alone.
+ */
+describe('an additive scene', () => {
+  const HUM = fixedId('asset', 'hum');
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A script counting its updates into `counted`. */
+  function counting(counted: { updates: number }): ScriptClass {
+    return class extends Behaviour {
+      override onUpdate() {
+        counted.updates += 1;
+      }
+    };
+  }
+
+  /** A cache whose resolver knows the hum, a sound; its clip served by the stubbed `fetch`. */
+  function soundCache(): AssetCache {
+    vi.stubGlobal('fetch', async () => new Response(clipBytes({ duration: 2 })));
+    return new AssetCache(builtInRegistries(), {
+      resolver: {
+        url: (id) => (id === HUM ? `asset://${id}` : null),
+        settings: (id) => (id === HUM ? { kind: 'audio', loadMode: 'decode', gain: 1, forceMono: false } : null),
+      },
+      idleBudgetBytes: 0,
+    });
+  }
+
+  it('builds while the level plays, starts beside it, and outlives a switch, its script and its sound going on', async () => {
+    const log: string[] = [];
+    const counted = { updates: 0 };
+    const scripts = new Map<AssetId, unknown>();
+    const speaker = createEntity('Speaker', [
+      { ...audioSourceType.create(), assetId: HUM, playOnStart: true, loop: true, spatialBlend: 0 },
+    ]);
+    const hud = running('HUD', counting(counted), scripts, speaker);
+    const level = running('Level', logging('level', log), scripts);
+    const context = new FakeContext();
+    const game = new Game({
+      time: new StudioTime(),
+      source: { read: async (name) => structuredClone(name === 'HUD' ? hud : scene('B')) },
+      registries: withoutPhysics(builtInRegistries()),
+      scripts,
+      assets: soundCache(),
+      audioContext: context,
+      rendering: createRenderingSettings(),
+    });
+    await game.start('Level', level);
+    const world = assertDefined(game.world, 'the world');
+    await assertDefined(audioOf(world), 'the audio').unlock();
+
+    const loading = game.load('HUD', { additive: true });
+    await framed(game, loading.ready);
+
+    // Built, and nothing of it running yet: the level played meanwhile.
+    expect(log).toContain('level update');
+    expect(counted.updates).toBe(0);
+    expect(world.scenes.map(({ name, started }) => [name, started])).toEqual([
+      ['Level', true],
+      ['HUD', false],
+    ]);
+
+    await loading.activate();
+    await framesUntil(game, () => counted.updates > 2);
+    expect(world.activeScene?.name).toBe('Level');
+    expect(game.current).toBe('Level');
+    expect(audioOf(world)?.voices.map(({ state }) => state)).toEqual(['playing']);
+
+    await game.go('B');
+    const before = counted.updates;
+    await framesUntil(game, () => counted.updates > before + 2);
+
+    expect(game.world).toBe(world);
+    expect(world.scenes.map(({ name }) => name)).toEqual(['HUD', 'B']);
+    expect(world.activeScene?.name).toBe('B');
+    expect(log).toContain('level destroy');
+    expect(audioOf(world)?.voices.map(({ state }) => state)).toEqual(['playing']);
+    game.dispose();
+  });
+
+  it('is unloaded once the frame is over, its scripts hearing it; the active scene is refused, and a scene not loaded resolves', async () => {
+    const log: string[] = [];
+    const scripts = new Map<AssetId, unknown>();
+    const asked = { unload: '' };
+    class Unloader extends Behaviour {
+      override onUpdate() {
+        if (asked.unload === '') return;
+        void this.scenes?.unload(asked.unload);
+        asked.unload = '';
+      }
+    }
+    const level = running('Level', Unloader, scripts);
+    const game = gameOf({ HUD: logged('hud', log, scripts) }, { scripts });
+    await game.start('Level', level);
+    const world = assertDefined(game.world, 'the world');
+    const hud = game.load('HUD', { additive: true });
+    await framed(game, hud.ready);
+    await hud.activate();
+
+    asked.unload = 'HUD';
+    // A scene that went inside the frame throws there.
+    expect(() => game.update(STEP)).not.toThrow();
+    expect(world.scenes.map(({ name }) => name)).toEqual(['Level', 'hud']);
+    await framesUntil(game, () => world.scenes.length === 1);
+    expect(log.slice(-2)).toEqual(['hud unload', 'hud destroy']);
+
+    await game.unload('Level');
+    await game.unload('Level');
+    expect(world.scenes.map(({ name }) => name)).toEqual(['Level']);
+    expect(world.warnings.filter((warning) => warning.includes('"Level"'))).toEqual([
+      'The active scene "Level" cannot be unloaded: a switch replaces it.',
+    ]);
+    await expect(game.unload('Nowhere')).resolves.toBeUndefined();
+    game.dispose();
+  });
+
+  it('is loaded once, its handle handed back, and refused when it shares an entity id with a scene of the world', async () => {
+    const hud = scene('HUD', createEntity('Score'));
+    const copy = { ...structuredClone(hud), id: createSceneId(), name: 'HUD copy' };
+    const game = gameOf({ HUD: hud, 'HUD copy': copy });
+    await game.start('Level', scene('Level'));
+    const world = assertDefined(game.world, 'the world');
+
+    const first = game.load('HUD', { additive: true });
+    expect(game.load('HUD', { additive: true })).toBe(first);
+    await framed(game, first.ready);
+    await first.activate();
+    expect(game.load('HUD', { additive: true })).toBe(first);
+
+    const refused = game.load('HUD copy', { additive: true });
+    await expect(refused.ready).rejects.toThrow(/its entity "Score"/);
+    expect(world.warnings.some((warning) => warning.includes('Scene "HUD copy" was not loaded'))).toBe(true);
+    expect(world.scenes.map(({ name }) => name)).toEqual(['Level', 'HUD']);
+    game.dispose();
+  });
+});
+
+describe('the data between scenes', () => {
+  it('is set in one scene, read in the next, and goes with the game', async () => {
+    const read: unknown[] = [];
+    const scripts = new Map<AssetId, unknown>();
+    class Writer extends Behaviour {
+      override onStart() {
+        this.scenes?.data.set('score', 3);
+      }
+    }
+    class Reader extends Behaviour {
+      override onStart() {
+        read.push(this.scenes?.data.get('score'));
+      }
+    }
+    const a = running('A', Writer, scripts);
+    const game = gameOf({ B: running('B', Reader, scripts) }, { scripts });
+    await game.start('A', a);
+
+    await game.go('B');
+
+    expect(read).toEqual([3]);
+    expect(game.data.get('score')).toBe(3);
+    game.dispose();
+    expect(game.data.size).toBe(0);
   });
 });

@@ -54,14 +54,24 @@ const KERNEL_TYPES = `  export type ScriptPropertyDef =
     cancel(): void;
   }
 
-  /** Moving between scenes. Both take a scene's name or its id. */
+  /** How a scene is loaded. */
+  export interface SceneLoadOptions {
+    /** Alongside the scenes loaded, rather than in place of the active one. */
+    readonly additive?: boolean;
+  }
+
+  /** Moving between scenes. Each takes a scene's name or its id. */
   export interface SceneApi {
-    /** The running scene's name. Hold its id instead if a rename must not break this. */
+    /** This script's own scene, by its name. Hold its id instead if a rename must not break this. */
     readonly current: string | null;
-    /** Starts fetching, without showing. Poll \`progress\`, then \`activate()\`. */
-    load(scene: string): SceneLoadHandle;
+    /** Starts fetching, without showing. Poll \`progress\`, then \`activate()\`. Additive, a switch leaves it until \`unload\`. */
+    load(scene: string, options?: SceneLoadOptions): SceneLoadHandle;
     /** Fetches and shows, for a transition with nothing to display meanwhile. */
     go(scene: string): Promise<void>;
+    /** An additive scene, once this frame is over. The active one is refused: a switch replaces it. */
+    unload(scene: string): Promise<void>;
+    /** Held across every switch, read and written by every scene's scripts. */
+    readonly data: Map<string, unknown>;
   }
 
   /** A point, a direction or a velocity: metres, metres per second. three's \`Vector3\` is one. */

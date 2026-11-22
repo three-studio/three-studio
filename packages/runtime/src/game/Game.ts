@@ -10,7 +10,7 @@ import {
 } from '@three-studio/core';
 import type { PreloadHold } from '../assets/AssetCache';
 import { AudioClipCache } from '../audio/AudioClipCache';
-import type { SceneApi, SceneLoadHandle } from '../sceneApi';
+import type { SceneApi, SceneLoadHandle, SceneLoadOptions } from '../sceneApi';
 import type { LoadedScene } from '../world/scenes';
 import { World, type WorldOptions } from '../world/World';
 
@@ -31,7 +31,10 @@ import { World, type WorldOptions } from '../world/World';
  *
  * One world rather than one per scene: its subsystems — physics, audio, input,
  * the scripts' façade — outlive every scene, so a switch makes no Rapier world
- * and a scene being built is mounted by nothing until it starts.
+ * and a scene being built is mounted by nothing until it starts. One scene is
+ * active, and a switch replaces it; any number are additive, loaded beside it
+ * and left by a switch until they are unloaded: what must outlive a switch —
+ * a score, a music manager — lives in one of them, or in `data`.
  */
 
 export interface SceneSource {
@@ -74,6 +77,8 @@ const NO_MATERIALS: ReadonlyMap<AssetId, MaterialDef> = new Map();
 export class Game implements Disposable {
   /** Fired each time the active scene changes, the loading scene included, for a host to follow. */
   onSceneChanged: ((asked: string, world: World) => void) | null = null;
+  /** Held across every switch, gone with the game: every scene's scripts read and write the same one. */
+  readonly data = new Map<string, unknown>();
 
   private made: World | null = null;
   private asked: string | null = null;
@@ -82,6 +87,8 @@ export class Game implements Disposable {
   private loadingUp: Promise<void> | null = null;
   /** A switch's target loaded at once and not started yet: a later switch takes it down. */
   private arriving: LoadedScene | null = null;
+  /** The additive scenes, loading or started, each by the name it was asked by. */
+  private readonly additive: Switch[] = [];
   /**
    * Moves with every activation and with `dispose`: an activation that finds it
    * moved after an await was replaced, and goes no further.
@@ -150,10 +157,14 @@ export class Game implements Disposable {
   /**
    * Starts fetching a scene. Returns at once; the work is in the handle.
    *
-   * A second call replaces the first: pressing two level buttons in a row
-   * should land on the second, not race to whichever finished.
+   * A second switch replaces the first: pressing two level buttons in a row
+   * should land on the second, not race to whichever finished. An additive
+   * load replaces nothing, and a scene loaded or loading additively hands back
+   * its handle: a scene is loaded once into a world.
    */
-  load(scene: string): SceneLoad {
+  load(scene: string, options?: SceneLoadOptions): SceneLoad {
+    // Read where a script's value enters: anything but `true` is a switch.
+    if (options?.additive === true) return this.loadAdditive(scene);
     this.pending?.cancel();
     const next = new Switch(scene, (load) => this.activate(load), (load) => this.cancel(load));
     this.pending = next;
@@ -164,6 +175,30 @@ export class Game implements Disposable {
   /** Loads and shows in one step, for a script that has nothing to display meanwhile. */
   async go(scene: string): Promise<void> {
     await this.load(scene).activate();
+  }
+
+  /**
+   * Unloads an additive scene, by the name it was asked by, its id or its
+   * name, once the frame a script asks in is over. The active one is refused
+   * and said: a switch replaces it. A scene not loaded resolves at once.
+   */
+  async unload(scene: string): Promise<void> {
+    await Promise.resolve();
+    const world = this.made;
+    if (world === null) return;
+    const active = world.activeScene;
+    if (active !== null && (scene === this.asked || isScene(active, scene))) {
+      world.warn(`The active scene "${active.name}" cannot be unloaded: a switch replaces it.`);
+      return;
+    }
+    const found = this.additive.find((load) => load.path === scene || (load.scene !== null && isScene(load.scene, scene)));
+    if (found === undefined) return;
+    if (!found.activated) {
+      found.cancel();
+      return;
+    }
+    this.additive.splice(this.additive.indexOf(found), 1);
+    if (found.scene !== null) world.unloadScene(found.scene);
   }
 
   /** One frame of the world: its scenes playing, and those building behind them. */
@@ -182,6 +217,9 @@ export class Game implements Disposable {
     this.switches += 1;
     this.pending?.cancel();
     this.pending = null;
+    for (const load of [...this.additive]) load.cancel();
+    this.additive.length = 0;
+    this.data.clear();
     // Gives back what each of its scenes holds.
     this.made?.dispose();
     this.made = null;
@@ -229,6 +267,69 @@ export class Game implements Disposable {
     } catch (cause) {
       next.fail(cause);
     }
+  }
+
+  /**
+   * An additive load: read, held, and built at the game's budget while the
+   * scenes loaded play; `ready` once held and built, and started at `activate`
+   * beside them, the active scene staying the active one.
+   */
+  private loadAdditive(scene: string): SceneLoad {
+    const loaded = this.additive.find((load) => load.path === scene || (load.scene !== null && isScene(load.scene, scene)));
+    if (loaded !== undefined) return loaded;
+    const next = new Switch(
+      scene,
+      (load) => this.activateAdditive(load),
+      (load) => this.cancelAdditive(load),
+    );
+    this.additive.push(next);
+    void this.prepareAdditive(next);
+    return next;
+  }
+
+  private async prepareAdditive(next: Switch): Promise<void> {
+    try {
+      const read = await this.options.source.read(next.path);
+      const world = this.made;
+      if (next.cancelled || this.disposed || world === null) return;
+      next.take(this.hold(read));
+      next.scene = world.loadScene(this.expand(read), {
+        buildBudgetMs: BUILD_BUDGET_MS,
+        holds: next.handOver(),
+        scenes: this.apiFor(next.path),
+      });
+      await Promise.all([next.scene.ready, next.whenLanded()]);
+      if (next.cancelled) return;
+      next.settle();
+    } catch (cause) {
+      // Refused, or unreadable: a later load may try again.
+      const at = this.additive.indexOf(next);
+      if (at >= 0) this.additive.splice(at, 1);
+      next.fail(cause);
+    }
+  }
+
+  /** Starts an additive scene once it is ready, after an `await`: never inside a frame. */
+  private async activateAdditive(next: Switch): Promise<void> {
+    if (next.activated || next.cancelled) return;
+    await next.decided;
+    const world = this.made;
+    if (next.activated || next.cancelled || this.disposed || world === null || next.scene === null) return;
+    next.activated = true;
+    world.startScene(next.scene);
+  }
+
+  private cancelAdditive(next: Switch): void {
+    if (next.activated || next.cancelled) return;
+    next.cancelled = true;
+    const at = this.additive.indexOf(next);
+    if (at >= 0) this.additive.splice(at, 1);
+    next.release();
+    const scene = next.scene;
+    if (scene === null) return;
+    queueMicrotask(() => {
+      if (!this.disposed) this.made?.unloadScene(scene);
+    });
   }
 
   /**
@@ -339,8 +440,10 @@ export class Game implements Disposable {
   private apiFor(asked: string): SceneApi {
     return {
       current: asked,
-      load: (scene) => this.load(scene),
+      load: (scene, options) => this.load(scene, options),
       go: (scene) => this.go(scene),
+      unload: (scene) => this.unload(scene),
+      data: this.data,
     };
   }
 
@@ -384,6 +487,11 @@ export class Game implements Disposable {
     }
     return this.options.assets.preload(assetId);
   }
+}
+
+/** Whether `scene` is the one a script names, by its id or its name. */
+function isScene(scene: LoadedScene, named: string): boolean {
+  return scene.id === named || scene.name === named;
 }
 
 function release(holds: readonly Disposable[]): void {
