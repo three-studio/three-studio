@@ -27,7 +27,7 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   scène est soignée à la lecture. Un fichier d'une autre version est refusé avec un diagnostic s'il fait
   partie du projet (`project.json`, scènes, prefabs, assets et leurs sidecars). S'il fait partie des
   données de l'application (dispositions des panneaux, raccourcis, disposition du clavier, projets
-  récents, réglages des appareils, certificat), il n'est pas lu : l'éditeur repart des valeurs par défaut
+  récents, réglages des appareils, certificat, dossiers de sortie des builds), il n'est pas lu : l'éditeur repart des valeurs par défaut
   et le dit une fois. Pas de code de migration : n'en ajoutez pas, et celui qui reste est appelé à
   disparaître. Les données d'un type inconnu, comme le composant d'un module absent, restent exactement
   telles qu'elles ont été trouvées. **À partir de la 1.0.0, la règle additive revient :** ajoutez des

@@ -197,7 +197,6 @@ function profile(overrides: Partial<BuildProfile> = {}): BuildProfile {
     name: 'Web',
     target: 'web',
     scenes: [],
-    outputDir: null,
     includeAllAssets: false,
     title: 'Export Test',
     basePath: '',
@@ -214,34 +213,30 @@ describe('choosing the profile an export runs', () => {
   const profiles = () => {
     const settings = createBuildProfiles('Races');
     const id = Object.keys(settings.profiles)[0]!;
-    settings.profiles[id] = {
-      ...assertDefined(settings.profiles[id], 'the first profile'),
-      outputDir: '/builds/Races',
-    };
-    return { settings, id };
+    return { settings, id, folders: { [id]: '/builds/Races' } };
   };
 
   it('takes the active one, which is the whole of the choice', () => {
-    const { settings, id } = profiles();
-    expect(requireBuildProfile(settings).profile).toBe(settings.profiles[id]);
-    expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
+    const { settings, id, folders } = profiles();
+    expect(requireBuildProfile(settings, folders).profile).toBe(settings.profiles[id]);
+    expect(requireBuildProfile(settings, folders).outputDir).toBe('/builds/Races');
   });
 
   it('follows `active` and nothing else, even with another profile to hand', () => {
     // There is no argument for naming a different one, and that is the
     // decision: the Package dialog saves `active` before asking for the export,
     // so a second way to choose would be its copy beating the file's.
-    const { settings, id } = profiles();
+    const { settings, id, folders } = profiles();
     settings.profiles['itch'] = {
       ...assertDefined(settings.profiles[id], 'the first profile'),
       name: 'itch',
-      outputDir: '/builds/itch',
     };
+    const both = { ...folders, itch: '/builds/itch' };
 
-    expect(requireBuildProfile(settings).outputDir).toBe('/builds/Races');
+    expect(requireBuildProfile(settings, both).outputDir).toBe('/builds/Races');
 
     settings.active = 'itch';
-    expect(requireBuildProfile(settings).outputDir).toBe('/builds/itch');
+    expect(requireBuildProfile(settings, both).outputDir).toBe('/builds/itch');
   });
 
   it('refuses an `active` no profile answers to, and says which', () => {
@@ -249,16 +244,16 @@ describe('choosing the profile an export runs', () => {
     // string — the id is the author's — and deleting a profile in another
     // window leaves it pointing at nothing. Naming the id tells those apart
     // from a bug.
-    const { settings } = profiles();
+    const { settings, folders } = profiles();
     settings.active = 'gone';
-    expect(() => requireBuildProfile(settings)).toThrow('No build profile "gone"');
+    expect(() => requireBuildProfile(settings, folders)).toThrow('No build profile "gone"');
   });
 
   it('refuses a profile with no output folder, and says where to choose one', () => {
-    // The ordinary state of a new profile, so the message names the panel
-    // rather than reporting a fault.
+    // The ordinary state of a new profile, and of a project opened on another
+    // computer, so the message names the panel rather than reporting a fault.
     const settings = createBuildProfiles('Races');
-    expect(() => requireBuildProfile(settings)).toThrow('has no output folder. Choose one in Package.');
+    expect(() => requireBuildProfile(settings, {})).toThrow('has no output folder. Choose one in Package.');
   });
 });
 

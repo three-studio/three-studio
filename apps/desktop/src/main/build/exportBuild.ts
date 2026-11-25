@@ -52,10 +52,14 @@ import { writeBuild } from './writeBuild';
  * because a build has to be reproducible from what is on disk. An override
  * would be the dialog's copy of the choice quietly beating the file's.
  *
+ * The folder is this computer's, by profile id (`outputFoldersFile.ts`): a
+ * path on the author's disk does not belong in a project that gets shared.
+ *
  * Both refusals are the ones a person can act on: an `active` no profile
  * answers to is a stale project file or a profile someone deleted in another
  * window, and a profile with no output folder is the ordinary state of a new
- * one — the message names the panel where it is chosen.
+ * one, or of a project just opened on another computer — the message names
+ * the panel where it is chosen.
  *
  * Here rather than in the IPC handler that used to hold it, because the whole
  * of it is a decision about `BuildProfiles` and nothing about Electron. See the
@@ -64,12 +68,13 @@ import { writeBuild } from './writeBuild';
  */
 export function requireBuildProfile(
   settings: BuildProfiles,
+  outputDirs: Readonly<Record<string, string>>,
 ): { profile: BuildProfile; outputDir: string } {
   const id = settings.active;
   const profile = settings.profiles[id];
   if (!profile) throw new Error(`No build profile "${id}".`);
 
-  const outputDir = profile.outputDir;
+  const outputDir = outputDirs[id];
   if (!outputDir) {
     throw new Error(`"${profile.name}" has no output folder. Choose one in Package.`);
   }

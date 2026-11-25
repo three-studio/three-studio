@@ -7,7 +7,7 @@ import {
   type BuildTargetId,
 } from '@three-studio/core';
 import { Copy, FolderOpen, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { commandById, currentContext } from '../commands/registry';
 import { useRegistries } from '../registriesContext';
 import { useProjectStore } from '../state/projectStore';
@@ -61,10 +61,18 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
   const [draft, setDraft] = useState<BuildProfiles | null>(project?.settings.build ?? null);
   const [activeId, setActiveId] = useState(project?.settings.build.active ?? 'web');
   const [busy, setBusy] = useState(false);
+  // This computer's, by profile id, asked of the main process: they are not in
+  // the project, so `draft` does not hold them. See `BuildProfile`.
+  const [outputDirs, setOutputDirs] = useState<Readonly<Record<string, string>>>({});
+
+  useEffect(() => {
+    void window.studio.build.outputDirs().then(setOutputDirs);
+  }, []);
 
   if (!project || !draft) return null;
 
   const profile = draft.profiles[activeId];
+  const outputDir = outputDirs[activeId] ?? null;
   const ids = Object.keys(draft.profiles);
   const sections: readonly ModalSection[] = ids.map((id) => ({
     id,
@@ -189,10 +197,8 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             // No ellipsis and disabled without a folder: the button no longer
             // asks for anything, and a label promising a question it will not
             // ask is worse than a disabled one.
-            disabled={busy || !profile?.outputDir || baseProblem !== null}
-            {...tooltip(
-              baseProblem ?? (profile?.outputDir ? undefined : 'Choose an output folder first'),
-            )}
+            disabled={busy || !outputDir || baseProblem !== null}
+            {...tooltip(baseProblem ?? (outputDir ? undefined : 'Choose an output folder first'))}
             className="rounded-sm bg-accent-dim px-3 py-1 text-2xs text-ink hover:bg-accent/40 disabled:opacity-50"
           >
             Build
@@ -319,19 +325,21 @@ export function PackageDialog({ onClose }: { onClose: () => void }) {
             <div className="flex items-center gap-2">
               <p
                 className={`min-w-0 flex-1 truncate py-1 text-2xs ${
-                  profile.outputDir ? 'text-ink' : 'text-ink-dim'
+                  outputDir ? 'text-ink' : 'text-ink-dim'
                 }`}
-                {...tooltip(profile.outputDir)}
+                {...tooltip(outputDir)}
               >
-                {profile.outputDir ?? 'No folder chosen'}
+                {outputDir ?? 'No folder chosen'}
               </p>
               <button
                 type="button"
                 onClick={() => {
+                  // Remembered by the main process as it is chosen, not saved
+                  // with the profile: Save writes the project, and this is not in it.
                   void window.studio.build
-                    .chooseOutputDir(profile.outputDir)
+                    .chooseOutputDir(activeId)
                     // `null` is a dismissed picker: leave what was there.
-                    .then((chosen) => chosen && patch({ outputDir: chosen }));
+                    .then((chosen) => chosen && setOutputDirs((dirs) => ({ ...dirs, [activeId]: chosen })));
                 }}
                 className="flex shrink-0 items-center gap-1 rounded-sm bg-surface-3 px-2 py-1 text-2xs text-ink hover:bg-surface-4"
               >

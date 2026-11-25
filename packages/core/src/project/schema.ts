@@ -284,6 +284,12 @@ export type BuildTargetId = 'web';
  * A named, saved set of build options — Unity's Build Profiles rather than a
  * dialog filled in from scratch each time. Kept in the project so that what a
  * build contains is reviewable in a diff and identical on another machine.
+ *
+ * Where a build goes is not part of it. The output folder was a field here, and
+ * it was an absolute path on the author's computer — their home folder, so
+ * usually their name — carried by every copy of a shared project, and naming a
+ * folder that is not there, or someone else's, on any other computer. The
+ * editor keeps it in its own data, by project and by profile.
  */
 export interface BuildProfile {
   name: string;
@@ -293,8 +299,6 @@ export interface BuildProfile {
    * In Build. Empty means "the start scene only".
    */
   scenes: SceneId[];
-  /** Last folder exported to, so the next export can offer it again. */
-  outputDir: string | null;
   /**
    * Ship every asset in the project rather than only what the scenes reach.
    * Unreal's "cook everything"; useful when scripts load assets by name.
@@ -334,7 +338,6 @@ export function createBuildProfiles(projectName: string): BuildProfiles {
         name: 'Web',
         target: 'web',
         scenes: [],
-        outputDir: null,
         includeAllAssets: false,
         title: projectName,
         basePath: '',
@@ -484,7 +487,6 @@ function readBuildProfiles(build: RecordReader): BuildProfiles {
       name: profile.read('name', checks.string),
       target: profile.read('target', oneOf(['web'])),
       scenes: profile.read('scenes', listOf(checks.sceneId)),
-      outputDir: profile.read('outputDir', nullable(checks.string)),
       includeAllAssets: profile.read('includeAllAssets', checks.boolean),
       title: profile.read('title', checks.string),
       basePath: profile.read('basePath', checks.string),

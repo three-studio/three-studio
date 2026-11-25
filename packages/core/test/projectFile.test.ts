@@ -79,7 +79,6 @@ describe('a project file', () => {
           name: 'Itch',
           target: 'web',
           scenes: [start, loading],
-          outputDir: '/tmp/out',
           includeAllAssets: true,
           title: 'My Game',
           basePath: '/games/demo/',
@@ -123,7 +122,6 @@ describe('a project file', () => {
     [['settings', 'build', 'active'], 1],
     [['settings', 'build', 'profiles', 'web', 'target'], 'ios'],
     [['settings', 'build', 'profiles', 'web', 'scenes'], ['']],
-    [['settings', 'build', 'profiles', 'web', 'outputDir'], 3],
     [['settings', 'build', 'profiles', 'web'], 'Web'],
   ])('refuses %j holding %j, where it sits', (path, value) => {
     const decoded = decodeProjectFile(edited(path, (record, key) => (record[key] = value)));
@@ -136,6 +134,8 @@ describe('a project file', () => {
     [['scenes'], [{ id: 'a', name: 'main', path: 'scenes/main.scene.json' }]],
     [['settings', 'rendering', 'dither'], true],
     [['settings', 'build', 'profiles', 'web', 'platform'], 'web'],
+    // A profile's output folder, a path on the author's computer: the editor's data holds it now.
+    [['settings', 'build', 'profiles', 'web', 'outputDir'], '/builds/Races'],
   ])('refuses %j, which is no field this build reads', (path, value) => {
     const decoded = decodeProjectFile(edited(path, (record, key) => (record[key] = value)));
 

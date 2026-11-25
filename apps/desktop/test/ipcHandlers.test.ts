@@ -10,6 +10,7 @@ import {
   LAUNCH_SNAPSHOT_VERSION,
   LAYOUT_PREFERENCES_VERSION,
   PHYSICS_MATERIAL_ASSET_VERSION,
+  PROJECT_FILE_NAME,
   assertDefined,
   createAssetId,
   createEmptyScene,
@@ -61,6 +62,8 @@ const stub = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
   /** What `shell.showItemInFolder` was asked to show. */
   shown: [] as string[],
+  /** The folder the next open dialog answers with; empty is a dismissed one. */
+  picked: '',
 }));
 
 vi.mock('electron', () => ({
@@ -73,7 +76,10 @@ vi.mock('electron', () => ({
   },
   BrowserWindow: { fromWebContents: () => null },
   dialog: {
-    showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    showOpenDialog: () =>
+      Promise.resolve(
+        stub.picked === '' ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [stub.picked] },
+      ),
     showSaveDialog: () => Promise.resolve({ canceled: true, filePath: '' }),
     showMessageBox: () => Promise.resolve({ response: 0, checkboxChecked: false }),
   },
@@ -180,6 +186,7 @@ beforeEach(() => {
   windows = [];
   timeline.length = 0;
   sceneOpenElsewhere = false;
+  stub.picked = '';
   releaseProject();
 });
 
@@ -720,6 +727,17 @@ describe('the refusals that exist only at the boundary', () => {
     await expect(invoke(IPC_INVOKE.build.revealOutput, 1, tmpdir())).rejects.toThrow(
       'not produced by this session',
     );
+  });
+
+  it('keeps an output folder on this computer, and out of the project', async () => {
+    // `project.json` is shared with the game, and the folder is a path on the
+    // author's disk: their home folder, so usually their name.
+    const root = await project();
+    stub.picked = join(stub.userData, 'Races for the web');
+
+    expect(await invoke(IPC_INVOKE.build.chooseOutputDir, 1, 'web')).toBe(stub.picked);
+    expect(await invoke(IPC_INVOKE.build.outputDirs, 1)).toEqual({ web: stub.picked });
+    expect(await readFile(join(root, PROJECT_FILE_NAME), 'utf8')).not.toContain('Races for the web');
   });
 });
 

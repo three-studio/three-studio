@@ -158,6 +158,7 @@ export const PREFAB_FORMAT_VERSION = 9;
  * converts it (see `SCENE_FORMAT_VERSION`).
  *
  * 4 — scenes 12 and prefabs 9; and `project.json` itself is decoded, every
- * field of the kind it is declared and no other.
+ * field of the kind it is declared and no other. A build profile holds no
+ * output folder: that is a path on one computer, kept in the editor's data.
  */
 export const PROJECT_FORMAT_VERSION = 4;

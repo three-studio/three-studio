@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   PROJECT_FILE_NAME,
   assetKindInfo,
@@ -84,6 +84,11 @@ import {
   saveShortcutPreferences,
 } from './preferences';
 import { exportBuild, requireBuildProfile } from './build/exportBuild';
+import {
+  OUTPUT_FOLDERS_FILE_NAME,
+  readOutputFolders,
+  rememberOutputFolder,
+} from './build/outputFoldersFile';
 import {
   createProject,
   discoverScenes,
@@ -224,6 +229,11 @@ async function chooseScreenshotPath(
     ? dialog.showSaveDialog(window, options)
     : dialog.showSaveDialog(options));
   return canceled || filePath === '' ? null : filePath;
+}
+
+/** Where each project's output folders are kept: the app's data, never the project. */
+function outputFoldersFile(): string {
+  return join(app.getPath('userData'), OUTPUT_FOLDERS_FILE_NAME);
 }
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -587,7 +597,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       // active profile before asking, and the file is what a build has to be
       // reproducible from.
       const project = await readProject(projectPath);
-      const { profile, outputDir } = requireBuildProfile(project.settings.build);
+      const { profile, outputDir } = requireBuildProfile(
+        project.settings.build,
+        await readOutputFolders(outputFoldersFile(), projectPath),
+      );
 
       // Packaged, the player sits in the app's resources; in development it is
       // the workspace build, found by walking up from the app path.
@@ -607,17 +620,30 @@ export function registerIpcHandlers(deps: IpcDeps): void {
       return result;
     },
 
-    chooseOutputDir: async (_event, startIn?: string | null): Promise<string | null> => {
+    chooseOutputDir: async (_event, profileId: string): Promise<string | null> => {
+      // The id is the one thing the renderer says here, and it only names an
+      // entry: the folder is the picker's answer, never a path the renderer sent.
+      if (typeof profileId !== 'string') throw new Error('A build profile id is a string.');
+      const projectPath = requireProject();
+      const file = outputFoldersFile();
+      const remembered = (await readOutputFolders(file, projectPath))[profileId];
       const picked = await dialog.showOpenDialog({
         title: 'Build output folder',
         properties: ['openDirectory', 'createDirectory'],
         // Left out, not `undefined`, with nowhere to start in: Electron's type
         // takes no `undefined` there, and reads a missing key as it always has.
-        ...(typeof startIn === 'string' ? { defaultPath: startIn } : {}),
+        ...(remembered === undefined ? {} : { defaultPath: remembered }),
         buttonLabel: 'Choose',
       });
-      return picked.canceled ? null : (picked.filePaths[0] ?? null);
+      const chosen = picked.canceled ? null : (picked.filePaths[0] ?? null);
+      if (chosen !== null && chosen !== remembered) {
+        await rememberOutputFolder(file, projectPath, profileId, chosen);
+      }
+      return chosen;
     },
+
+    outputDirs: (): Promise<Record<string, string>> =>
+      readOutputFolders(outputFoldersFile(), requireProject()),
 
     revealOutput: (_event, outputDir: string): void => {
       if (!wasExported(outputDir)) {

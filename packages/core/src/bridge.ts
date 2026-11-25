@@ -180,8 +180,17 @@ export interface BuildApi {
    * two disagree, with the dialog's copy winning over the file's.
    */
   export: () => Promise<ExportResult>;
-  /** Native folder picker. `null` when dismissed. */
-  chooseOutputDir: (startIn?: string | null) => Promise<string | null>;
+  /**
+   * Native folder picker for a profile's output folder, opened where the last
+   * one was. `null` when dismissed.
+   *
+   * The main process remembers the folder chosen, for the open project and this
+   * profile, in the editor's data and never in the project: it is a path on
+   * this computer. See `BuildProfile`.
+   */
+  chooseOutputDir: (profileId: string) => Promise<string | null>;
+  /** The open project's output folders on this computer, by profile id. */
+  outputDirs: () => Promise<Record<string, string>>;
   /** Phase updates while an export runs. Returns an unsubscribe. */
   onProgress: (listener: (progress: ExportProgress) => void) => () => void;
   /**
@@ -591,6 +600,7 @@ export const IPC_INVOKE = {
   build: {
     export: 'build:export',
     chooseOutputDir: 'build:chooseOutputDir',
+    outputDirs: 'build:outputDirs',
     revealOutput: 'build:revealOutput',
   },
   preferences: {

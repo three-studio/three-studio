@@ -146,8 +146,9 @@ const bridge: StudioBridge = {
   },
   build: {
     export: (): Promise<ExportResult> => ipcRenderer.invoke(IPC_INVOKE.build.export),
-    chooseOutputDir: (startIn): Promise<string | null> =>
-      ipcRenderer.invoke(IPC_INVOKE.build.chooseOutputDir, startIn),
+    chooseOutputDir: (profileId): Promise<string | null> =>
+      ipcRenderer.invoke(IPC_INVOKE.build.chooseOutputDir, profileId),
+    outputDirs: (): Promise<Record<string, string>> => ipcRenderer.invoke(IPC_INVOKE.build.outputDirs),
     onProgress: (listener) => {
       const handler = (_event: unknown, progress: ExportProgress) => listener(progress);
       ipcRenderer.on(IPC_EVENTS.buildProgress, handler);
