@@ -23,6 +23,20 @@ export function unitQuat({ x, y, z, w }: Readonly<QuatLike>): QuatLike | null {
   return { x: x / length, y: y / length, z: z / length, w: w / length };
 }
 
+/** `unitQuat` written into `target`; `false`, and `target` untouched, when there is no rotation to give. */
+export function writeUnitQuat(target: QuatLike, { x, y, z, w }: Readonly<QuatLike>): boolean {
+  // Not `Math.hypot`, whose builtin gathers its arguments into an array of its
+  // own on every call, and this runs every tick. An infinity or a NaN in it
+  // still makes the length one.
+  const length = Math.sqrt(x * x + y * y + z * z + w * w);
+  if (!Number.isFinite(length) || length === 0) return false;
+  target.x = x / length;
+  target.y = y / length;
+  target.z = z / length;
+  target.w = w / length;
+  return true;
+}
+
 /** The direction made unit length, or `null` when it has none to give: zero, or not a number. */
 export function unitVec({ x, y, z }: Readonly<Vec3Like>): Vec3Like | null {
   const length = Math.hypot(x, y, z);

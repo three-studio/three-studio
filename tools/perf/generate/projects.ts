@@ -5,6 +5,7 @@ import {
   CACHE_DIR,
   assertDefined,
   assetKindInfo,
+  createComponentForEntity,
   createGeometry,
   createCameraEntity,
   createEmptyScene,
@@ -12,6 +13,8 @@ import {
   createLightEntity,
   createMeshComponent,
   createModelEntity,
+  prefabFromEntities,
+  rigidbodyType,
   scriptType,
   createWaterEntity,
   insertEntity,
@@ -24,9 +27,11 @@ import {
   type EntityId,
   type EntityTemplate,
   type GeometryDef,
+  type PrefabDoc,
   type SceneDoc,
   type SceneId,
 } from '@three-studio/core';
+import { createPrefabAsset } from '../../../apps/desktop/src/main/assetLibraries';
 import { scanAssets, updateAssetSettings } from '../../../apps/desktop/src/main/assetScan';
 import { writeGlb } from '../../../apps/desktop/src/main/glb';
 import { createProject, saveScene } from '../../../apps/desktop/src/main/project';
@@ -166,12 +171,14 @@ function placeCamera(scene: SceneDoc, half: { x: number; z: number }): void {
   camera.entity.transform.rotation = [-Math.atan2(30, half.z + 40), 0, 0];
 }
 
-function placeGround(scene: SceneDoc, half: { x: number; z: number }): void {
+function placeGround(scene: SceneDoc, half: { x: number; z: number }, solid = false): void {
   const mesh = createMeshComponent('box');
   mesh.geometry = { ...createGeometry('box'), width: half.x * 2 + 20, height: 1, depth: half.z * 2 + 20 };
   mesh.material.color = '#55595e';
   mesh.castShadow = false;
-  const ground = place(scene, createEntity('Ground', [mesh]));
+  // Solid where bodies rest on it: the box Collider its mesh measures.
+  const components = solid ? [mesh, createComponentForEntity(registries, 'collider', [mesh])] : [mesh];
+  const ground = place(scene, createEntity('Ground', components));
   ground.entity.transform.position = [0, -0.5, 0];
 }
 
@@ -443,7 +450,7 @@ export interface ScriptedRecipe {
   /**
    * A model of images `Heavy` holds besides its field, so that it has
    * something to load. With nothing to preload a scene is ready at once, and
-   * the loading screen gets no frame: building its engine then blocks the
+   * the loading screen gets no frame: building its world then blocks the
    * thread in one piece.
    */
   readonly heavyImages: TexturesRecipe;
@@ -583,4 +590,140 @@ export async function writeScriptedProject(parent: string, recipe: ScriptedRecip
   await setStartScene(project.path, start);
   await deleteScene(project.path, project.sceneId);
   return project.path;
+}
+
+// ----------------------------------------------------------------- dynamics
+
+export interface DynamicsRecipe {
+  readonly boxes: number;
+  /** Boxes per row. Divides `boxes`. */
+  readonly columns: number;
+}
+
+/** A thousand boxes on a 40 × 25 grid. */
+export const DYNAMICS: DynamicsRecipe = { boxes: 1000, columns: 40 };
+
+const BOX_SPACING = 1.5;
+
+/**
+ * A few lines of arithmetic a frame and no call into the engine: what a
+ * thousand scripts cost to run beside the bodies they ride, and nothing of
+ * what an API call would add.
+ */
+const SPIN = [
+  `import { Behaviour } from '@three-studio/runtime';`,
+  ``,
+  `export default class Spin extends Behaviour {`,
+  `  angle = 0;`,
+  ``,
+  `  onUpdate(delta: number): void {`,
+  `    this.angle = (this.angle + delta * 1.5) % (Math.PI * 2);`,
+  `  }`,
+  `}`,
+  ``,
+].join('\n');
+
+/**
+ * What the page's churn does, from a script, while the harness raises
+ * `__perfChurn`: each frame the twenty oldest of a thousand crates destroyed
+ * and as many placed in their slots, in the same grid as the page's. Read
+ * against the page's churn, the difference is the façade's cost per spawn.
+ * The grid's numbers are the scenario's `CRATES`.
+ */
+const SPAWNER = [
+  `import { Behaviour, type Entity, type ScriptPropertyDef } from '@three-studio/runtime';`,
+  ``,
+  `const COUNT = 1000;`,
+  `const COLUMNS = 40;`,
+  `const ROWS = Math.ceil(COUNT / COLUMNS);`,
+  `const SPACING = 1.5;`,
+  `const PER_FRAME = 20;`,
+  ``,
+  `export default class Spawner extends Behaviour {`,
+  `  static properties: Record<string, ScriptPropertyDef> = { crate: { type: 'asset', kind: 'prefab', label: 'Crate' } };`,
+  ``,
+  `  crate = '';`,
+  `  private readonly crates: (Entity | null)[] = [];`,
+  `  private next = 0;`,
+  `  private readonly at = { x: 0, y: 20, z: 0 };`,
+  ``,
+  `  onUpdate(): void {`,
+  `    if (Reflect.get(globalThis, '__perfChurn') !== true) return;`,
+  `    for (let k = 0; k < PER_FRAME; k += 1) {`,
+  `      const slot = this.next % COUNT;`,
+  `      this.next += 1;`,
+  `      this.crates[slot]?.destroy();`,
+  `      this.at.x = ((slot % COLUMNS) - (COLUMNS - 1) / 2) * SPACING;`,
+  `      this.at.z = (Math.floor(slot / COLUMNS) - (ROWS - 1) / 2) * SPACING;`,
+  `      this.crates[slot] = this.world.instantiate(this.crate, { position: this.at });`,
+  `    }`,
+  `  }`,
+  `}`,
+  ``,
+].join('\n');
+
+/** A unit box that falls: its mesh, a dynamic Rigid Body, and the box Collider the mesh measures. */
+function fallingBox(color: string): ComponentDoc[] {
+  const mesh = createMeshComponent('box');
+  mesh.material.color = color;
+  return [mesh, rigidbodyType.create(), createComponentForEntity(registries, 'collider', [mesh])];
+}
+
+/**
+ * The `dynamics` recipe's scene, in memory: a solid floor, a sun, a main
+ * camera, the boxes resting on the floor, each running `spin`, and the
+ * `Spawner`, given `crate` to instantiate. Resting from the first step, so
+ * that they are asleep once Play has run two seconds.
+ */
+export function dynamicsScene(
+  recipe: DynamicsRecipe,
+  ids: { readonly spin: AssetId; readonly spawner: AssetId; readonly crate: AssetId },
+): SceneDoc {
+  const scene = createEmptyScene();
+  const half = { x: (recipe.columns * BOX_SPACING) / 2, z: ((recipe.boxes / recipe.columns) * BOX_SPACING) / 2 };
+  placeGround(scene, half, true);
+  placeSun(scene, half);
+  placeCamera(scene, half);
+  place(scene, createEntity('Spawner', [{ ...scriptType.create(), assetId: ids.spawner, props: { crate: ids.crate } }]));
+  for (let i = 0; i < recipe.boxes; i += 1) {
+    const box = place(scene, createEntity(`Box ${i}`, [...fallingBox('#3c7fb6'), scriptOn(ids.spin)]));
+    box.entity.transform.position = [
+      (i % recipe.columns) * BOX_SPACING - half.x + BOX_SPACING / 2,
+      0.5,
+      Math.floor(i / recipe.columns) * BOX_SPACING - half.z + BOX_SPACING / 2,
+    ];
+  }
+  return scene;
+}
+
+/** What the scenario instantiates in the running world: a box that falls, with no script. */
+function cratePrefab(): PrefabDoc {
+  const scene = createEmptyScene();
+  const crate = place(scene, createEntity('Crate', fallingBox('#b5813a')));
+  return prefabFromEntities('Crate', scene, crate.entity.id);
+}
+
+/**
+ * Writes the `dynamics` recipe's project into `parent`: its one scene,
+ * `Dynamics`, its scripts and the `Crate` prefab. Answers its path and the
+ * prefab's id, which the scenario hands the running world.
+ */
+export async function writeDynamicsProject(
+  parent: string,
+  recipe: DynamicsRecipe = DYNAMICS,
+): Promise<{ path: string; crate: AssetId }> {
+  const project = await newProject('Dynamics', parent);
+  const spinPath = [ASSETS_DIR, directoryOf('script'), 'Spin.ts'].join('/');
+  const spawnerPath = [ASSETS_DIR, directoryOf('script'), 'Spawner.ts'].join('/');
+  await writeFile(join(project.path, spinPath), SPIN, 'utf8');
+  await writeFile(join(project.path, spawnerPath), SPAWNER, 'utf8');
+  const crate = await createPrefabAsset(registries, project.path, 'Crate', cratePrefab());
+  const manifest = await scanAssets(registries, project.path);
+  const ids = { spin: assetAt(manifest, spinPath).id, spawner: assetAt(manifest, spawnerPath).id, crate };
+  const scene = serializeScene(registries, dynamicsScene(recipe, ids));
+  const start = (await createScene(registries, project.path, 'Dynamics', scene)).scene.id;
+  // `Dynamics` starts the game, and the scene `createProject` made is not it.
+  await setStartScene(project.path, start);
+  await deleteScene(project.path, project.sceneId);
+  return { path: project.path, crate };
 }

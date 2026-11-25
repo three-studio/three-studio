@@ -199,7 +199,7 @@ export interface RenderingSettings {
    * the point of it being here: the editor viewport and the running game have to
    * answer this the same way, so they read one field and cannot hold two
    * answers. They used to hold two defaults instead — the viewport assigning
-   * `true` to the binder, `Engine` defaulting to `true` under a comment reading
+   * `true` to the binder, the game's runtime defaulting to `true` under a comment reading
    * "on for a running game, off in the editor". They agreed by accident, and the
    * comment described a divergence that would have been real the moment anyone
    * believed it.

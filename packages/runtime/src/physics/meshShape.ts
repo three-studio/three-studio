@@ -12,7 +12,7 @@ import { MeshCache } from './MeshCache';
 
 /**
  * What stands where nothing can be built: a box 2 cm across, which a player
- * walks straight past, and which the engine warns about when the entity has no
+ * walks straight past, and which the world warns about when the entity has no
  * geometry at all.
  */
 function tinyBox(): RAPIER.ColliderDesc {

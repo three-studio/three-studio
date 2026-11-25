@@ -142,6 +142,7 @@ const bridge: StudioBridge = {
   scripts: {
     build: (): Promise<ScriptBuildResult> => ipcRenderer.invoke(IPC_INVOKE.scripts.build),
     create: (name): Promise<string> => ipcRenderer.invoke(IPC_INVOKE.scripts.create, name),
+    writeTypings: (text): Promise<void> => ipcRenderer.invoke(IPC_INVOKE.scripts.writeTypings, text),
   },
   build: {
     export: (): Promise<ExportResult> => ipcRenderer.invoke(IPC_INVOKE.build.export),

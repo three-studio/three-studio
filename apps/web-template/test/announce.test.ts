@@ -1,4 +1,4 @@
-import type { SceneHost } from '@three-studio/runtime/SceneHost';
+import type { Game } from '@three-studio/runtime/game/Game';
 import type { WebGPURenderer } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { PLAYER_EVENT, announce, type PlayerAnnouncement } from '../src/announce';
@@ -22,10 +22,10 @@ describe('the player’s announcement', () => {
     const target = new EventTarget();
     const heard = listen(target);
     const renderer = {} as unknown as WebGPURenderer;
-    const host = {} as unknown as SceneHost;
+    const game = {} as unknown as Game;
     const start = (): void => undefined;
 
-    announce({ state: 'running', backend: 'webgl', renderer, host, start }, target);
+    announce({ state: 'running', backend: 'webgl', renderer, game, start }, target);
 
     expect(heard).toHaveLength(1);
     const [detail] = heard;
@@ -33,7 +33,7 @@ describe('the player’s announcement', () => {
     if (detail?.state !== 'running') return;
     expect(detail.backend).toBe('webgl');
     expect(detail.renderer).toBe(renderer);
-    expect(detail.host).toBe(host);
+    expect(detail.game).toBe(game);
     expect(detail.start).toBe(start);
   });
 

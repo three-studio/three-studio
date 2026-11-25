@@ -10,7 +10,7 @@ import type { JointComponent, SceneDoc } from './schema';
  * none above it, it is level geometry: a fixed body of its own entity. A child
  * with a Rigid Body of its own keeps it, and so does whatever rides it.
  *
- * Written once, because three readers must agree: the build, the engine's
+ * Written once, because three readers must agree: the build, the world's
  * warnings and the editor's companions. Apart, the build attached a child's
  * collider to its parent while the warning said of the same body that it had
  * none.
@@ -64,7 +64,7 @@ export type JointEnds =
  * Which bodies a joint on `entityId` holds: the body its entity moves with,
  * and the one its Connected Body moves with, or the world.
  *
- * Here for the reason this module is: the build and the engine's warnings must
+ * Here for the reason this module is: the build and the world's warnings must
  * agree, so that the warnings name exactly the joints the world left out.
  */
 export function jointEnds(scene: SceneDoc, entityId: EntityId, joint: JointComponent): JointEnds {

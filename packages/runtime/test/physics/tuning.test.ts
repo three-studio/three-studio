@@ -7,7 +7,10 @@ import {
   createPhysicsSettings,
   createRenderingSettings,
   fixedId,
+  type AssetId,
   type CollisionLayer,
+  type ComponentDoc,
+  type EntityId,
   type EntityTemplate,
   type JointLimits,
   type JointMotion,
@@ -17,12 +20,13 @@ import {
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { JointHandle } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { builtInRegistries } from '../registries';
+import { physicsDebugLines, physicsOf } from '../../src/physics/physicsOf';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   block,
   colliderOf,
@@ -38,12 +42,14 @@ import {
   withScript,
   type PhysicsRig,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
- * The editor's live tuning: a Rigid Body's, a Collider's or a physics
- * material's values applied to the running world at once, as it would have
- * built them. Each component is read from its template and changed with a
- * spread, as the Inspector hands a tuned one over.
+ * The editor's live tuning: a Rigid Body, a Collider or a Joint put into the
+ * running game's document with new values, or a physics material played with
+ * new ones, and taken at the world's next pass as it would have built them.
+ * Each component is read from its template and changed with a spread, as the
+ * Inspector hands a tuned one over.
  */
 
 beforeAll(standInForTheBrowser);
@@ -125,18 +131,33 @@ function pendulum(): EntityTemplate {
 }
 
 /** The template's joint, as a behaviour reaches it. */
-const jointOf = (rig: PhysicsRig, template: EntityTemplate) => rig.engine.physics?.joint(template.entity.id) ?? null;
+const jointOf = (rig: PhysicsRig, template: EntityTemplate) => physicsOf(rig.world)?.joint(template.entity.id) ?? null;
 
 const GRIP = fixedId('asset', 'grip');
 const grip: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 1, frictionCombine: 'max' };
 const ice: PhysicsMaterialDef = { ...createPhysicsMaterial(), friction: 0, frictionCombine: 'min' };
+
+/**
+ * A component put into the running game's document, as the editor's tuning
+ * puts one, and taken at once, as a paused game takes it.
+ */
+function tune(rig: PhysicsRig, entityId: EntityId, component: ComponentDoc): void {
+  rig.world.putComponent(entityId, component);
+  rig.world.reconcile();
+}
+
+/** An asset played with these values, as the editor's tuning sets them, and taken at once. */
+function tuneAsset(rig: PhysicsRig, assetId: AssetId, values: object): void {
+  rig.world.setAssetValues(assetId, values);
+  rig.world.reconcile();
+}
 
 describe('a body tuned while running', () => {
   it('a mass tuned while running is what the next impulse feels', async () => {
     const ball = withBody('sphere', [0, 2, 0], { mass: 2, gravityScale: 0 });
     const rig = await physicsRig([ball]);
 
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
+    tune(rig, ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
 
     const body = rig.body(ball.entity.id);
     expect(Math.abs(body.mass - 4)).toBeLessThan(1e-6);
@@ -149,7 +170,7 @@ describe('a body tuned while running', () => {
     colliderOf(ball).isSensor = true;
     const rig = await physicsRig([ball]);
 
-    rig.engine.tune(ball.entity.id, { ...colliderOf(ball), isSensor: false });
+    tune(rig, ball.entity.id, { ...colliderOf(ball), isSensor: false });
 
     // Not its colliders' share on top of the mass a sensor alone carried whole.
     expect(Math.abs(rig.body(ball.entity.id).mass - 2)).toBeLessThan(1e-6);
@@ -161,7 +182,7 @@ describe('a body tuned while running', () => {
     rig.run(3);
     const rested = rig.solved(ball.entity.id).position.y;
 
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), gravityScale: -1 });
+    tune(rig, ball.entity.id, { ...componentOf(ball, 'rigidbody'), gravityScale: -1 });
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.y - rested).toBeGreaterThan(4);
@@ -172,9 +193,9 @@ describe('a body tuned while running', () => {
     const ball = withBody('sphere', [0, 10, 0]);
     const rig = await physicsRig([ground(), crate, ball]);
 
-    rig.engine.tune(crate.entity.id, { ...componentOf(crate, 'rigidbody'), bodyType: 'dynamic' });
+    tune(rig, crate.entity.id, { ...componentOf(crate, 'rigidbody'), bodyType: 'dynamic' });
     rig.run(0.5);
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'fixed' });
+    tune(rig, ball.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'fixed' });
     const stopped = rig.solved(ball.entity.id).position;
     rig.run(1);
 
@@ -194,8 +215,8 @@ describe('a body tuned while running', () => {
     ball.entity.transform.scale = [0.2, 0.2, 0.2];
     const rig = await physicsRig([ground(), torus, ball]);
 
-    rig.engine.tune(torus.entity.id, { ...componentOf(torus, 'rigidbody'), bodyType: 'dynamic' });
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), gravityScale: 1 });
+    tune(rig, torus.entity.id, { ...componentOf(torus, 'rigidbody'), bodyType: 'dynamic' });
+    tune(rig, ball.entity.id, { ...componentOf(ball, 'rigidbody'), gravityScale: 1 });
     rig.run(2);
 
     // The hull's top is at 0.3; through the triangles it reached the ground, at 0.1.
@@ -207,7 +228,7 @@ describe('a body tuned while running', () => {
     const rig = await physicsRig([ground(), walker]);
     rig.run(0.5);
 
-    rig.engine.tune(walker.entity.id, { ...componentOf(walker, 'rigidbody'), bodyType: 'dynamic' });
+    tune(rig, walker.entity.id, { ...componentOf(walker, 'rigidbody'), bodyType: 'dynamic' });
     const from = rig.drawn(walker.entity.id).position;
     rig.press('KeyW');
     rig.run(1);
@@ -220,7 +241,7 @@ describe('a body tuned while running', () => {
     const rig = await physicsRig([ball]);
     rig.run(0.5);
 
-    rig.engine.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: { x: false, y: true, z: false } });
+    tune(rig, ball.entity.id, { ...componentOf(ball, 'rigidbody'), lockPosition: { x: false, y: true, z: false } });
     const held = rig.solved(ball.entity.id).position.y;
     rig.run(1);
 
@@ -238,7 +259,7 @@ describe('a collider tuned while running', () => {
     const rested = rig.solved(box.entity.id).position;
 
     const collider = colliderOf(tilted);
-    rig.engine.tune(tilted.entity.id, {
+    tune(rig, tilted.entity.id, {
       ...collider,
       material: { ...collider.material, friction: 0, frictionCombine: 'min' },
     });
@@ -254,7 +275,7 @@ describe('a collider tuned while running', () => {
     const rig = await physicsRig([step, ball]);
     rig.run(2);
 
-    rig.engine.tune(step.entity.id, { ...colliderOf(step), shape: { ...createColliderShape('box'), size: [1, 2, 1] } });
+    tune(rig, step.entity.id, { ...colliderOf(step), shape: { ...createColliderShape('box'), size: [1, 2, 1] } });
     rig.run(1);
 
     expect(Math.abs(rig.solved(ball.entity.id).position.y - 2)).toBeLessThan(0.02);
@@ -267,7 +288,7 @@ describe('a collider tuned while running', () => {
     rig.run(2);
     heard.clear();
 
-    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), isSensor: true });
+    tune(rig, floor.entity.id, { ...colliderOf(floor), isSensor: true });
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.y).toBeLessThan(-1);
@@ -288,7 +309,7 @@ describe('a collider tuned while running', () => {
     const rig = await physicsRig([ground(), ball], { layers });
     rig.run(2);
 
-    rig.engine.tune(ball.entity.id, { ...colliderOf(ball), layer: 'ghost' });
+    tune(rig, ball.entity.id, { ...colliderOf(ball), layer: 'ghost' });
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.y).toBeLessThan(-1);
@@ -301,7 +322,7 @@ describe('a collider tuned while running', () => {
     rig.run(2);
     const rested = boxes.map((box) => rig.solved(box.entity.id).position);
 
-    rig.engine.tuneAsset(GRIP, ice);
+    tuneAsset(rig, GRIP, ice);
     rig.run(1);
 
     boxes.forEach((box, i) => {
@@ -312,11 +333,11 @@ describe('a collider tuned while running', () => {
   it('a tune is in the debug view at once, paused or not', async () => {
     const ball = withBody('sphere', [0, 2, 0]);
     const rig = await physicsRig([ground(), ball]);
-    const before = Array.from(rig.engine.physicsDebug()?.vertices ?? []);
+    const before = Array.from(physicsDebugLines(rig.world)?.vertices ?? []);
 
-    rig.engine.tune(ball.entity.id, { ...colliderOf(ball), shape: { ...createColliderShape('sphere'), radius: 1 } });
+    tune(rig, ball.entity.id, { ...colliderOf(ball), shape: { ...createColliderShape('sphere'), radius: 1 } });
 
-    expect(Array.from(rig.engine.physicsDebug()?.vertices ?? [])).not.toEqual(before);
+    expect(Array.from(physicsDebugLines(rig.world)?.vertices ?? [])).not.toEqual(before);
   });
 });
 
@@ -326,7 +347,7 @@ describe('a joint tuned while running', () => {
     const rig = await physicsRig([bag]);
     rig.run(5);
 
-    rig.engine.tune(bag.entity.id, { ...componentOf(bag, 'joint'), motion: spring(25, 5) });
+    tune(rig, bag.entity.id, { ...componentOf(bag, 'joint'), motion: spring(25, 5) });
     rig.run(5);
 
     // m·g / k: 9.81 / 25.
@@ -340,7 +361,7 @@ describe('a joint tuned while running', () => {
     rig.run(6);
 
     const limited = hinge([0, 0, 1], { enabled: true, min: degrees(-30), max: degrees(30) });
-    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), motion: limited });
+    tune(rig, box.entity.id, { ...componentOf(box, 'joint'), motion: limited });
     rig.run(2);
 
     expect(Math.abs((jointOf(rig, box)?.position ?? 0) - degrees(-30))).toBeLessThan(degrees(0.5));
@@ -352,11 +373,11 @@ describe('a joint tuned while running', () => {
     const joint = componentOf(box, 'joint');
     const limits = { enabled: true, min: degrees(-30), max: degrees(30) };
     rig.run(6);
-    rig.engine.tune(box.entity.id, { ...joint, motion: hinge([0, 0, 1], limits) });
+    tune(rig, box.entity.id, { ...joint, motion: hinge([0, 0, 1], limits) });
     rig.run(2);
 
     // Rapier has no setter to switch a live joint's limits off.
-    rig.engine.tune(box.entity.id, { ...joint, motion: hinge([0, 0, 1], { ...limits, enabled: false }) });
+    tune(rig, box.entity.id, { ...joint, motion: hinge([0, 0, 1], { ...limits, enabled: false }) });
     rig.run(6);
 
     expect(Math.abs((jointOf(rig, box)?.position ?? 0) - degrees(-90))).toBeLessThan(degrees(1));
@@ -367,7 +388,7 @@ describe('a joint tuned while running', () => {
     const rig = await physicsRig([box]);
     rig.run(1);
 
-    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), anchor: [-0.5, 0, 0] });
+    tune(rig, box.entity.id, { ...componentOf(box, 'joint'), anchor: [-0.5, 0, 0] });
     // Pulled there in a tick, and swinging hard from it: still swinging after
     // 6 s, it falls asleep at 10 s a degree short of the bottom.
     rig.run(0.5);
@@ -403,7 +424,7 @@ describe('a joint tuned while running', () => {
     const sled = withScript(withBody('box', [2, 2, 0], { bodyType: 'kinematicPosition' }), Glide);
     const rig = await physicsRig([box, sled]);
 
-    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: sled.entity.id });
+    tune(rig, box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: sled.entity.id });
     rig.run(1);
 
     expect(rig.solved(box.entity.id).position.x).toBeGreaterThan(1.5);
@@ -421,7 +442,7 @@ describe('a joint tuned while running', () => {
     rig.run(0.5);
     expect(rig.solved(box.entity.id).position.y).toBeLessThan(1.5);
 
-    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: hook.entity.id });
+    tune(rig, box.entity.id, { ...componentOf(box, 'joint'), connectedEntity: hook.entity.id });
     expect(jointOf(rig, box)).not.toBeNull();
     rig.run(3);
 
@@ -456,7 +477,7 @@ describe('a joint tuned while running', () => {
     const rig = await physicsRig([door]);
 
     const joint = componentOf(door, 'joint');
-    rig.engine.tune(door.entity.id, {
+    tune(rig, door.entity.id, {
       ...joint,
       motion: { ...motion, limits: { enabled: true, min: 0, max: Math.PI / 4 } },
     });
@@ -479,7 +500,7 @@ describe('a joint tuned while running', () => {
     rig.run(0.5);
     const held = rig.solved(box.entity.id);
 
-    rig.engine.tune(box.entity.id, { ...componentOf(box, 'joint'), motion: slider([1, 1, 0]) });
+    tune(rig, box.entity.id, { ...componentOf(box, 'joint'), motion: slider([1, 1, 0]) });
     rig.run(0.5);
 
     const { position, quaternion } = rig.solved(box.entity.id);
@@ -493,48 +514,49 @@ describe('a joint tuned while running', () => {
 });
 
 describe('a tune the world cannot take', () => {
-  it('what the world did not build changes nothing, and nothing throws', async () => {
+  it('a put on an entity the game does not hold writes nothing, and nothing throws', async () => {
     const floor = ground();
     const ball = withBody('sphere', [0, 1, 0]);
     const rig = await physicsRig([floor, ball]);
     rig.run(1);
     const rested = rig.solved(ball.entity.id).position;
 
-    // A collider whose id the entity does not carry; a Rigid Body on level
-    // geometry, which has none; an entity the scene does not have.
-    rig.engine.tune(floor.entity.id, { ...colliderOf(floor), id: fixedId('component', 'gone'), isSensor: true });
-    rig.engine.tune(floor.entity.id, { ...componentOf(ball, 'rigidbody'), bodyType: 'dynamic' });
-    rig.engine.tune(fixedId('entity', 'nobody'), { ...colliderOf(floor), isSensor: true });
+    expect(rig.world.putComponent(fixedId('entity', 'nobody'), { ...colliderOf(floor), isSensor: true })).toBe(false);
+    rig.world.reconcile();
     rig.run(1);
 
     expect(rig.solved(ball.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);
-    expect(rig.solved(floor.entity.id).position.distanceTo(rig.drawn(floor.entity.id).position)).toBeLessThan(1e-6);
+  });
 
-    const off = await Engine.create({
-      scene: sceneWith([ground(), ball]),
-      registries,
+  it('a world with no physics takes a tune into its document, and builds nothing from it', async () => {
+    const ball = withBody('sphere', [0, 1, 0]);
+    const off = await World.play({
+      time: new StudioTime(),
+      document: sceneWith([ground(), ball]),
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
-      domElement: new EventTarget() as unknown as HTMLElement,
-      enablePhysics: false,
     });
     onTestFinished(() => off.dispose());
-    off.tune(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 });
-    off.tuneAsset(GRIP, ice);
-    expect(off.physicsDebug()).toBeNull();
+
+    expect(off.putComponent(ball.entity.id, { ...componentOf(ball, 'rigidbody'), mass: 4 })).toBe(true);
+    off.setAssetValues(GRIP, ice);
+    off.reconcile();
+
+    expect(physicsDebugLines(off)).toBeNull();
   });
 
   it('a component it builds nothing from, and an asset it was not built with, change nothing and throw nothing', async () => {
-    const floor = ground();
+    const tilted = slope();
     const box = boxOnSlope(0);
     colliderOf(box).materialId = GRIP;
-    const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
+    const rig = await physicsRig([tilted, box], undefined, new Map([[GRIP, grip]]));
     rig.run(2);
     const rested = rig.solved(box.entity.id).position;
 
-    rig.engine.tune(floor.entity.id, createLight('point'));
-    rig.engine.tuneAsset(fixedId('asset', 'stranger'), ice);
+    tune(rig, tilted.entity.id, createLight('point'));
+    tuneAsset(rig, fixedId('asset', 'stranger'), ice);
     rig.run(1);
 
     expect(rig.solved(box.entity.id).position.distanceTo(rested)).toBeLessThan(1e-3);
@@ -547,7 +569,7 @@ describe('a tune the world cannot take', () => {
       colliderOf(box).materialId = GRIP;
       const rig = await physicsRig([slope(), box], undefined, new Map([[GRIP, grip]]));
       rig.run(1);
-      rig.engine.tuneAsset(GRIP, values);
+      tuneAsset(rig, GRIP, values);
       rig.run(1);
       return rig.solved(box.entity.id).position;
     };

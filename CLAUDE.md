@@ -51,6 +51,43 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
   après la dernière prise, au-delà de son budget, à la frame suivante. Ce qu'un monde en cours de jeu
   peut changer d'un asset — les matériaux d'un modèle — est sa copie ; géométrie et images sont
   partagées, en lecture seule.
+- **Une scène tourne dans un monde.** La vue d'édition est un `World` qui ne simule rien ; Play, un device et
+  le player font tourner un `World` en jeu. Ses phases sont fixes (`update`, `fixed`, `lateUpdate`,
+  `renderPrep`) et le noyau tient le pas fixe ; ce qui simule est un sous-système enregistré
+  (`RuntimeRegistries.subsystems`), avec sa place dans chaque phase, ses diagnostics et son accesseur
+  (`physicsOf(world)`), jamais un champ du monde ni un contexte fourre-tout. `runtime/src/world/` ne nomme
+  aucun type de composant, ce que `test/architecture.test.ts` vérifie, et ce que le code du runtime alloue
+  par frame tient dans un budget, ce que `worldAllocations.test.ts` vérifie.
+- **Un monde en jeu tient son propre document.** `spawn`, `instantiate`, `destroy`, `putComponent`,
+  `deleteComponent` et `setAssetValues` le changent et marquent ce qu'ils touchent ; une seule passe par
+  frame, après `lateUpdate`, monte, rapièce et démonte le dessin et chaque sous-système, selon les types
+  qu'il déclare (`mounts`). L'état chaud — poses, vitesses — n'y passe jamais, et un réglage en Play est
+  une écriture de ce document. Les behaviours d'une scène naissent quand elle est construite tout entière,
+  tous les `onAwake` puis tous les `onStart` ; ceux d'un spawn à la fin de sa passe, avant leur premier
+  `onUpdate`.
+- **Un script passe par la façade.** Il tient une entité par un handle (`this.entity`, `this.world.entity(id)`, un par
+  entité et par monde), la déplace par `this.transform` — les vecteurs du dessin, jamais le document —, lit un composant
+  en lecture seule et en écrit un entier, décodé (`setComponent`) ; il crée et détruit par `this.world` et l'entité, et
+  parle à une autre par `send`, entendu à la frame suivante. L'`Object3D` reste accessible (`object3D`), hors contrat : la
+  géométrie et les textures d'un modèle y sont partagées et en lecture seule. Ce qu'un module donne aux scripts
+  (`this.body`, `this.audio`) est une contribution (`RuntimeRegistries.scriptMembers`), avec ses noms réservés et ses
+  lignes de typings ; `runtime/src/scripting/` ne nomme ni la physique ni l'audio, ce que `test/architecture.test.ts`
+  vérifie, et les typings d'un projet sont générés depuis les registres. Ce qu'un script voit change avec
+  `SCRIPT_API_VERSION`.
+- **Un jeu tient un seul monde, où ses scènes se chargent.** Play, un device et le player font tourner un `Game` : un
+  `World` pour toute la partie, où une scène se construit à part, cachée et montée par aucun sous-système, puis démarre
+  d'un coup quand on l'active — prête n'est pas montrée. Une scène est active, et `go` la remplace ; les scènes additives
+  restent jusqu'à `unload`, et ce qui doit survivre à un changement de scène vit dans l'une d'elles ou dans
+  `this.scenes.data`. Une scène tient chaque asset qu'elle nomme, prefabs instanciables compris, de sa lecture à son
+  déchargement. Deux scènes d'un monde n'ont jamais un id d'entité en commun : un chargement en conflit est refusé avec
+  un diagnostic.
+- **Une frame se dessine en couches.** Chaque vue — la vue d'édition, le jeu, l'aperçu d'import, le player, le launcher —
+  dessine par son `RenderHost` : la passe 3D d'une scène par une caméra, par la pile de post-traitement quand elle porte un
+  effet et sinon par `renderer.render` comme avant ; puis la scène posée par-dessus ; puis les couches d'écran du monde montré
+  (`world.screen`), empilées au-dessus du canvas dans leur ordre. Une couche ne prend que les pointeurs qui tombent sur ce
+  qu'elle rend interactif, et le jeu entend le reste sur son canvas : ce qui s'affiche par-dessus le jeu est une couche,
+  jamais un morceau d'`Input`, qui n'expose que des axes et des touches virtuels. Les internes de three que le code touche
+  passent par un seul adaptateur (`render/threeRenderer.ts`).
 - **Aucune assertion de type ni état de module au-delà du ratchet.** `test/ratchet.test.ts` compte,
   fichier par fichier, les `as` (sauf `as const`) et les `<T>x`, les `!`, les `any`, les `@ts-ignore`,
   `@ts-expect-error` et `@ts-nocheck`, et l'état mutable au niveau d'un module : un `let` ou un `var`,
@@ -96,5 +133,9 @@ toute façon là qu'il est le plus utile, juste à côté du code qu'il explique
 - `packages/core` n'importe rien d'autre que `.` et `node:`. `packages/runtime` n'importe jamais
   l'éditeur. Ces deux règles sont vérifiées par des tests.
 - `npm run typecheck && npm test` doit être au vert à chaque commit.
+- **Node se prend dans `.nvmrc`.** La version par défaut de nvm sur cette machine n'est pas celle du dépôt, et sous une
+  autre version `worldAllocations.test.ts` échoue (V8 n'alloue pas pareil), ce qui a déjà été pris pour une machine
+  saturée. Dans Claude Code, le shell repart du profil à chaque commande : un `nvm use` lancé seul ne vaut que pour sa
+  commande. Chaque commande qui lance `node`, `npm` ou `npx` commence donc par `nvm use >/dev/null &&`.
 
 On parle et on échange en français, mais on écrit en anglais.

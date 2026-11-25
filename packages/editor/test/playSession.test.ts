@@ -23,7 +23,15 @@ import {
   type Vec3,
   unwrap,
 } from '@three-studio/core';
-import { AssetCache, Behaviour, NO_SCRIPTS, NULL_ASSET_RESOLVER, type Engine } from '@three-studio/runtime';
+import {
+  AssetCache,
+  Behaviour,
+  NO_SCRIPTS,
+  NULL_ASSET_RESOLVER,
+  Game,
+  inputOf,
+  type World,
+} from '@three-studio/runtime';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { prefabWith, sceneWith } from '../../core/test/fixtures';
@@ -44,6 +52,7 @@ import { useViewportStore } from '../src/state/viewportStore';
 import { PlaySession, playSceneId, type PlayHost } from '../src/viewport/PlaySession';
 import type { Presentation } from '../src/viewport/Presentation';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -99,11 +108,13 @@ interface StubHost extends PlayHost {
 function stubHost(): StubHost {
   const calls: string[] = [];
   return {
+    time: new StudioTime(),
     calls,
-    // `null` is what `EngineOptions.renderer` allows for: a scene's analytic sky
+    // `null` is what `WorldOptions.renderer` allows for: a scene's analytic sky
     // is skipped without a device.
     renderer: null as unknown as WebGPURenderer,
     gameView: { canvas: new EventTarget(), visible: true, width: 16, height: 9 } as unknown as Presentation,
+    gameHost: { show() {}, compile: async () => {} },
     rendering: createRenderingSettings(),
     registries: builtInRegistries(),
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
@@ -303,7 +314,7 @@ describe('a Play that fails', () => {
 describe('what the session tells the viewport', () => {
   it('tells it of the press before anything is awaited, once a press, and of the stop', async () => {
     // From the press the view's pointer is the game's: the fly controls and the
-    // handles go then, not once the engine has arrived — the edit image is
+    // handles go then, not once the world has arrived — the edit image is
     // still on screen for the whole start, to be pressed on.
     const compiles = compilesHeld();
     const host = watching();
@@ -326,7 +337,7 @@ describe('what the session tells the viewport', () => {
 });
 
 /**
- * What a start that runs to a real engine needs of the browser: `Input` listens
+ * What a start that runs to a real world needs of the browser: `Input` listens
  * on `window`, on `document` and on the game's canvas, which event targets stand
  * in for. Physics is on, as in Play: Rapier's `-compat` build loads under Node.
  *
@@ -413,6 +424,35 @@ function directedToBoss(): void {
   useDocumentStore.getState().replaceScene(sceneWith([createEntity('Director', [director])]));
 }
 
+describe('the game’s part of the viewport’s frame', () => {
+  withBoss();
+
+  it('runs a frame while playing, one fixed step at a Step, and only what was asked while paused', async () => {
+    const host = watching();
+    play();
+    await until(() => session?.playWorld != null, 'the world');
+    const playing = assertDefined(session, 'the session');
+    const world = assertDefined(playing.playWorld, 'the world');
+    const update = vi.spyOn(Game.prototype, 'update');
+    const reconcile = vi.spyOn(Game.prototype, 'reconcile');
+
+    playing.advance(0.02);
+    expect(update.mock.calls).toEqual([[0.02]]);
+
+    useEditorStore.getState().togglePause();
+    playing.advance(0.02);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+
+    const elapsed = host.time.elapsed;
+    useEditorStore.getState().requestStep();
+    playing.advance(0.02);
+    expect(update.mock.calls).toEqual([[0.02], [world.fixedStep]]);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(host.time.elapsed - elapsed).toBeCloseTo(world.fixedStep, 9);
+  });
+});
+
 describe('the problems over the game', () => {
   const reads = withBoss();
 
@@ -421,11 +461,11 @@ describe('the problems over the game', () => {
     watching();
 
     play();
-    await until(() => session!.playEngine !== null, 'the engine');
-    const engine = session!.playEngine!;
+    await until(() => session!.playWorld !== null, 'the world');
+    const world = session!.playWorld!;
 
-    expect(engine.warnings.length).toBeGreaterThan(0);
-    expect(useViewportStore.getState().playWarnings).toEqual(engine.warnings);
+    expect(world.warnings.length).toBeGreaterThan(0);
+    expect(useViewportStore.getState().playWarnings).toEqual(world.warnings);
 
     stop();
 
@@ -436,13 +476,16 @@ describe('the problems over the game', () => {
     directedToBoss();
     watching();
     play();
-    await until(() => session!.playEngine !== null, 'the first engine');
-    const first = session!.playEngine!;
+    await until(() => session!.playWorld !== null, 'the first world');
+    const first = session!.playWorld!;
 
     // The frame loop's own call, which runs the script's first update.
-    first.update(1 / 60);
-    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
-    const boss = session!.playEngine!;
+    first.frame(1 / 60);
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
+    const boss = first;
 
     expect(reads).toEqual([BOSS.path]);
     expect(boss.warnings.some((warning) => warning.includes('"Crate" has a Rigid Body but no Collider'))).toBe(true);
@@ -461,20 +504,20 @@ describe('the problems over the game', () => {
     watching();
 
     play();
-    await until(() => session!.playEngine !== null, 'the engine');
+    await until(() => session!.playWorld !== null, 'the world');
 
-    expect(session!.playEngine!.warnings.filter((line) => line.includes('"Cube"'))).toEqual([]);
+    expect(session!.playWorld!.warnings.filter((line) => line.includes('"Cube"'))).toEqual([]);
   });
 
   it('takes a running game down once when the session goes', async () => {
-    // The host owns the engine: taking both down freed its physics world twice,
+    // The host owns the world: taking both down freed its physics world twice,
     // and Rapier throws on the second.
     watching();
     play();
-    await until(() => session!.playEngine !== null, 'the engine');
+    await until(() => session!.playWorld !== null, 'the world');
 
     expect(() => session!.dispose()).not.toThrow();
-    expect(session!.playEngine).toBeNull();
+    expect(session!.playWorld).toBeNull();
     session = null;
   });
 });
@@ -489,8 +532,8 @@ describe('the keys the game hears', () => {
   withBoss();
 
   /** A key pressed, as `Input` reads it — cancelable, so what the game keeps from the page shows. */
-  function press(code: string): Event {
-    return Object.assign(new Event('keydown', { cancelable: true }), {
+  function press(code: string, type = 'keydown'): Event {
+    return Object.assign(new Event(type, { cancelable: true }), {
       code,
       altKey: false,
       ctrlKey: false,
@@ -499,32 +542,39 @@ describe('the keys the game hears', () => {
     });
   }
 
-  function hearsItsCanvasAlone(engine: Engine, canvas: EventTarget): void {
+  function hearsItsCanvasAlone(world: World, canvas: EventTarget): void {
+    const input = inputOf(world);
     const space = press('Space');
     window.dispatchEvent(press('KeyW'));
     window.dispatchEvent(space);
-    expect(engine.input.isDown('KeyW')).toBe(false);
-    expect(engine.input.isDown('Space')).toBe(false);
+    expect(input?.isDown('KeyW')).toBe(false);
+    expect(input?.isDown('Space')).toBe(false);
     expect(space.defaultPrevented).toBe(false);
 
     canvas.dispatchEvent(press('KeyW'));
-    expect(engine.input.isDown('KeyW')).toBe(true);
+    expect(input?.isDown('KeyW')).toBe(true);
+    // Let go: the game keeps one `Input` across its scenes, and a key held
+    // through a switch is still held in the next one.
+    canvas.dispatchEvent(press('KeyW', 'keyup'));
   }
 
   it('are the ones typed into its canvas, in every scene it plays', async () => {
     directedToBoss();
     const host = watching();
     play();
-    await until(() => session!.playEngine !== null, 'the first engine');
-    const first = session!.playEngine!;
+    await until(() => session!.playWorld !== null, 'the first world');
+    const first = session!.playWorld!;
 
     hearsItsCanvasAlone(first, host.gameView.canvas);
 
     // The frame loop's own call, which runs the script's first update.
-    first.update(1 / 60);
-    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+    first.frame(1 / 60);
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
 
-    hearsItsCanvasAlone(session!.playEngine!, host.gameView.canvas);
+    hearsItsCanvasAlone(session!.playWorld!, host.gameView.canvas);
   });
 });
 
@@ -583,13 +633,16 @@ describe('the scene the game runs', () => {
     expect(runningScene()).toBe(SCENE_ID);
 
     await compiles.finish(0, true);
-    await until(() => session!.playEngine !== null, 'the first engine');
-    const first = session!.playEngine!;
+    await until(() => session!.playWorld !== null, 'the first world');
+    const first = session!.playWorld!;
     expect(runningScene()).toBe(SCENE_ID);
 
     // The frame loop's own call, which runs the script's first update: Boss, by its name.
-    first.update(1 / 60);
-    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+    first.frame(1 / 60);
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
     expect(runningScene()).toBe(BOSS.id);
 
     stop();
@@ -601,11 +654,14 @@ describe('the scene the game runs', () => {
     directedToBoss();
     watching();
     play();
-    await until(() => session!.playEngine !== null, 'the first engine');
-    const first = session!.playEngine!;
+    await until(() => session!.playWorld !== null, 'the first world');
+    const first = session!.playWorld!;
 
-    first.update(1 / 60);
-    await until(() => session!.playEngine !== null && session!.playEngine !== first, 'Boss’s engine');
+    first.frame(1 / 60);
+    const entry = first.activeScene;
+    await until(() => first.activeScene !== null && first.activeScene !== entry, 'Boss');
+    // One world for the whole game: Boss loads into it.
+    expect(session!.playWorld).toBe(first);
 
     expect(runningScene()).toBe(BOSS.id);
   });
@@ -639,12 +695,12 @@ describe('what the game has shown', () => {
     play();
     expect(gameShown()).toBe(false);
 
-    // Drawn before there is an engine: the loop had nothing to draw.
+    // Drawn before there is a world: the loop had nothing to draw.
     session!.gameDrawn();
     expect(gameShown()).toBe(false);
 
     await compiles.finish(0, true);
-    await until(() => session!.playEngine !== null, 'the engine');
+    await until(() => session!.playWorld !== null, 'the world');
     expect(gameShown()).toBe(false);
 
     session!.gameDrawn();
@@ -718,24 +774,23 @@ describe('Stop, by the document’s identity', () => {
 
 describe('the scene the game plays', () => {
   /*
-   * A copy, never the document. A script's `this.entity` is the entity the game
-   * was handed, and a property's value is the scene's own — a `vec3` is an
-   * array. Handed the document, a script wrote the editor's scene: silently
-   * while it had not been edited since it was opened, and with a `TypeError`
-   * that disabled the script once immer had frozen it, where the same script
-   * works in the exported player.
+   * A copy, never the document. A property's value is the scene's own — a
+   * `vec3` is an array. Handed the document, a script wrote the editor's scene:
+   * silently while it had not been edited since it was opened, and with a
+   * `TypeError` that disabled the script once immer had frozen it, where the
+   * same script works in the exported player. Its entity it reaches through a
+   * handle, whose name it reads and has no way to write.
    */
   const MOVER = fixedId('asset', 'script-mover');
   /** What the script saw itself do. */
   const record = { started: false, name: '', frames: 0, offset: [] as number[] };
 
-  /** Renames its entity as it starts, and moves its own offset every frame. */
+  /** Reads its entity's name as it starts, and moves its own offset every frame. */
   class Mover extends Behaviour {
     static override properties = { offset: { type: 'vec3' as const, default: [0, 0, 0] as Vec3 } };
     offset: Vec3 = [0, 0, 0];
 
     override onStart() {
-      this.entity.name = 'Renamed by the game';
       record.started = true;
       record.name = this.entity.name;
     }
@@ -770,9 +825,9 @@ describe('the scene the game plays', () => {
   async function playThreeFrames(): Promise<void> {
     watching();
     play();
-    await until(() => session!.playEngine !== null, 'the engine');
-    const engine = session!.playEngine!;
-    for (let frame = 0; frame < 3; frame += 1) engine.update(1 / 60);
+    await until(() => session!.playWorld !== null, 'the world');
+    const world = session!.playWorld!;
+    for (let frame = 0; frame < 3; frame += 1) world.frame(1 / 60);
   }
 
   it('is a copy: what a script writes stays in the game', async () => {
@@ -782,7 +837,7 @@ describe('the scene the game plays', () => {
 
     await playThreeFrames();
 
-    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(record).toMatchObject({ started: true, name: 'Mover' });
     expect(record.frames).toBeGreaterThan(0);
     expect(record.offset[0]).toBe(1 + record.frames);
     expect(doc().scene).toBe(scene);
@@ -804,7 +859,7 @@ describe('the scene the game plays', () => {
 
     await playThreeFrames();
 
-    expect(record).toMatchObject({ started: true, name: 'Renamed by the game' });
+    expect(record).toMatchObject({ started: true, name: 'Mover' });
     expect(useViewportStore.getState().playWarnings.some((warning) => warning.includes('failed in'))).toBe(false);
     expect(doc().scene.entities.get(id)?.name).toBe('Mover');
   });
@@ -966,10 +1021,12 @@ describe('the window’s loaded files', () => {
     played.watch();
 
     play();
-    await until(() => played.playEngine !== null, 'the engine');
-    // Nothing parsed twice: the game draws the file the edit view holds.
+    await until(() => played.playWorld !== null, 'the world');
+    // Nothing parsed twice: the game draws the file the edit view holds. Held
+    // three times: the edit view, the game's scene from its read to its
+    // unload, and the object that draws it in the game.
     expect(server.requests('chair.gltf')).toBe(1);
-    expect(assets.stats).toEqual({ entries: 1, held: 2, idleBytes: 0 });
+    expect(assets.stats).toEqual({ entries: 1, held: 3, idleBytes: 0 });
 
     stop();
     expect(assets.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });

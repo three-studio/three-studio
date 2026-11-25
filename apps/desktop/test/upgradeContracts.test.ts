@@ -7,12 +7,21 @@ import {
   ASSET_META_VERSION,
   CACHE_DIR,
   SCRIPT_API_VERSION,
+  activateCore,
   isAssetId,
   type AssetEntry,
 } from '@three-studio/core';
+import {
+  Behaviour,
+  activateRuntime,
+  createRuntimeRegistries,
+  publishScriptApi,
+  scriptClassesOf,
+  scriptTypings,
+} from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 import { readAssetMeta, scanAssets, updateAssetSettings } from '../src/main/assetScan';
-import { writeScriptTypings } from '../src/main/scripts';
+import { buildScripts, writeScriptTsconfig, writeScriptTypings } from '../src/main/scripts';
 import { builtInRegistries } from './registries';
 
 const registries = builtInRegistries();
@@ -26,7 +35,7 @@ const registries = builtInRegistries();
 describe('script typings and tsconfig', () => {
   it('writes its own config under .studio and a project file that extends it', async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-tsconfig-'));
-    await writeScriptTypings(project);
+    await writeScriptTsconfig(project);
 
     const studio = JSON.parse(
       await readFile(join(project, CACHE_DIR, 'tsconfig.json'), 'utf8'),
@@ -50,24 +59,60 @@ describe('script typings and tsconfig', () => {
     );
     await writeFile(join(project, 'tsconfig.json'), mine, 'utf8');
 
-    // Opening a project regenerates the typings, which is where this used to
+    // Opening a project writes the config again, which is where this used to
     // take the customisation with it.
-    await writeScriptTypings(project);
-    await writeScriptTypings(project);
+    await writeScriptTsconfig(project);
+    await writeScriptTsconfig(project);
 
     expect(await readFile(join(project, 'tsconfig.json'), 'utf8')).toBe(mine);
   });
 
   it('bakes the API version into the shim so a stale bundle says so', async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-shim-'));
-    await writeScriptTypings(project);
+    await mkdir(join(project, ASSETS_DIR, 'scripts'), { recursive: true });
+    await writeFile(
+      join(project, ASSETS_DIR, 'scripts', 'Door.ts'),
+      `import { Behaviour } from '@three-studio/runtime';\nexport default class Door extends Behaviour {}\n`,
+      'utf8',
+    );
+    const { code, errors } = await buildScripts(registries, project);
+    expect(errors).toEqual([]);
+    // A module each: one already imported would be handed back as it was.
+    let imports = 0;
+    const load = (): Promise<unknown> => {
+      imports += 1;
+      const source = `${code}\n// ${imports}\n`;
+      return import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);
+    };
 
-    // The shim is compiled into the bundle at build time; its check is what
-    // turns "a method vanished" into a sentence instead of a TypeError deep in
-    // someone's behaviour.
+    try {
+      // The shim is compiled into the bundle at build time; its check is what
+      // turns "a method vanished" into a sentence instead of a TypeError deep
+      // in someone's behaviour — a project's scripts compiled against version
+      // 4 met a page of version 5 this way.
+      Reflect.set(globalThis, '__STUDIO_SCRIPT_API__', { version: SCRIPT_API_VERSION - 1, Behaviour });
+      await expect(load()).rejects.toThrow(
+        `These scripts were compiled against version ${SCRIPT_API_VERSION} of the studio API, but version ${SCRIPT_API_VERSION - 1} is running. Rebuild the project's scripts.`,
+      );
+
+      publishScriptApi();
+      expect([...scriptClassesOf(await load()).values()].map((type) => type.name)).toEqual(['Door']);
+    } finally {
+      Reflect.deleteProperty(globalThis, '__STUDIO_SCRIPT_API__');
+    }
+  });
+
+  it('writes the typings it is handed whole, beside the config', async () => {
+    const project = await mkdtemp(join(tmpdir(), 'studio-typings-'));
+    const runtime = createRuntimeRegistries();
+    activateCore(runtime);
+    activateRuntime(runtime);
+
+    await writeScriptTypings(project, scriptTypings(runtime));
+
     const typings = await readFile(join(project, CACHE_DIR, 'studio-runtime.d.ts'), 'utf8');
+    expect(typings).toBe(scriptTypings(runtime));
     expect(typings).toContain("declare module '@three-studio/runtime'");
-    expect(SCRIPT_API_VERSION).toBeGreaterThan(0);
   });
 });
 

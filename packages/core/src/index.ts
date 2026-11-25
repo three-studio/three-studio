@@ -21,7 +21,7 @@ export {
   isEntityId,
   isSceneId,
 } from './ids';
-export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId } from './ids';
+export type { AssetId, ComponentId, EntityId, Id, ImporterId, SceneId, ScriptMembersId, SubsystemId } from './ids';
 /* What every table of definitions is, and what each registration hands back. */
 export { Registry } from './Registry';
 export { combineDisposables } from './disposable';
@@ -168,6 +168,7 @@ export type {
 /* A type's fields written once, and what reading a value from outside answers. */
 export { conditionHolds, planFields, variantDefaults, variantFactory } from './fieldSchema';
 export type { FieldPlan, Infer, LinkedObject, Schema, SchemaField, ShownWhen } from './fieldSchema';
+export { schemaTypeText } from './schemaTypes';
 /* What a type written as a schema is typed as, in the kernel or in a module. */
 export type { Component } from './scene/primitives';
 export {
@@ -370,7 +371,7 @@ export { createJointMotion, jointMotionField } from './components/joint/schema';
 export { jointFrame } from './components/joint/frame';
 
 export { decodeScene, sceneJsonOf, serializeScene } from './scene/serialization';
-export { jsonOf, stableJson } from './json';
+export { deepFreeze, jsonOf, stableJson } from './json';
 /* How a console call's arguments read: in the editor's Console, and on a device. */
 export { formatLogArgs } from './logFormat';
 /* One rule for a name that has to become a file. */
@@ -384,6 +385,7 @@ export {
   expandPrefabs,
   instanceOwnerOf,
   instancedId,
+  placePrefab,
   prefabFromEntities,
   prefabInstanceOf,
   prefabToScene,
@@ -443,6 +445,8 @@ export {
   unlinkEntity,
   validateHierarchy,
 } from './scene/graph';
+/* A running world's scene: its own copy, which its game edits through the functions above. */
+export { liveScene, mergeScene } from './scene/live';
 
 /* What a device launch runs: the editor's in-memory state, as Play would run it. */
 export { LAUNCH_SNAPSHOT_VERSION, conformLaunchSnapshot, encodeLaunchSnapshot } from './devices/schema';

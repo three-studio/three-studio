@@ -58,6 +58,7 @@ layout from `createProject`, sidecars and asset ids from `scanAssets`, scenes fr
 | `geometry` | one GLB, 331 MB: 30 groups × 50 meshes, each its own displaced 71 × 71 grid (float positions, normals and uvs, 16-bit indices), 8 untextured materials; about 15 million triangles; loaded as written | 6 s |
 | `textures` | one GLB, 66 MB: 8 quads, each material with a base colour, a normal and a metallic-roughness PNG of 4096²; the default import caps them at 2 048 | 8 s |
 | `scripted` | scenes `A` and `B` (100 props and a `Director` each), `Loading` (a spinning cube), `Heavy` (the `render` field); 50 ballast scripts of 200 lines on entities of `A`; no loading scene set | 0.3 s |
+| `dynamics` | the scene `Dynamics`: 1 000 boxes on a 40 × 25 grid, resting on a solid floor, each a mesh, a dynamic Rigid Body, a box Collider and the script `Spin`; a sun, a main camera; and the prefab `Crate`, a box that falls, which scenario 4 instantiates through the running world | 0.2 s |
 
 Times on an M1 Pro. Two recipes depend on the import pipeline, and say so:
 

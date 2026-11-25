@@ -1,4 +1,5 @@
-import { ZERO, isSprintForce, stickToMove, type Vec2 } from './touchMath';
+import { ZERO, type Vec2 } from '../input/VirtualControls';
+import { isSprintForce, stickToMove } from './touchMath';
 
 /**
  * What `nipplejs.create` hands back.
@@ -16,15 +17,15 @@ type Collection = ReturnType<typeof import('nipplejs').create>;
  * and an exported build have to offer the same controls, or the thing being
  * tested is not the thing being shipped — the same argument that makes
  * `rendering.batching` a project setting rather than a per-view flag. Both
- * hosts hand the engine a canvas and nothing else, so putting this on the host
+ * hosts hand the world a canvas and nothing else, so putting this on the host
  * side would be two implementations, and two implementations of an input scheme
  * are two different feels.
  *
  * **nipplejs is imported dynamically, and it has to be.** It builds a singleton
  * factory while the module is being evaluated, and that constructor binds
  * `resize` and `scroll` on `window` — so a static import throws
- * `ReferenceError: window is not defined` the moment anything pulls `Input`
- * into a Node test. The deferral is not a size optimisation, though it is one
+ * `ReferenceError: window is not defined` the moment anything pulls a player
+ * controller into a Node test. The deferral is not a size optimisation, though it is one
  * as well: the ~10 kB only travels once somebody has actually touched the
  * screen, and a desktop build never asks. That is the distinction
  * `RendererFactory` draws where it *refuses* to defer its light tables — those
@@ -51,15 +52,16 @@ function style(element: HTMLElement, rules: Readonly<Record<string, string>>): v
 
 export interface TouchControlsOptions {
   /**
-   * Where the controls are drawn. Normally the canvas's parent.
-   *
-   * The overlay is `position: absolute; inset: 0`, so it resolves against the
-   * nearest positioned ancestor — the game's host on the Viewport's stage in the
-   * editor, and the viewport in an exported build, whose `<body>` is not
-   * positioned. Both land where they should without this package touching a
-   * host's styles.
+   * Puts the overlay in the document: a screen layer of the world, which the
+   * host showing it stacks over the canvas. Called before the sticks are made,
+   * since nipplejs measures its zone as it is created, and a zone that is not
+   * in the document yet has no box to measure.
    */
-  zone: HTMLElement;
+  place: (root: HTMLElement) => void;
+  /** The move stick, as a vector whose **length is the throttle**. */
+  onMove: (move: Readonly<Vec2>) => void;
+  /** The look stick's deflection, −1..1 per axis. A rate, not a displacement. */
+  onLook: (look: Readonly<Vec2>) => void;
   /** Presses and releases the virtual `Space`. */
   onJump: (down: boolean) => void;
   /** Presses and releases the virtual `ShiftLeft`. */
@@ -67,11 +69,6 @@ export interface TouchControlsOptions {
 }
 
 export class TouchControls {
-  /** Throttle-carrying: its length is the fraction of `moveSpeed` asked for. */
-  move: Vec2 = ZERO;
-  /** Deflection of the look stick, −1..1 per axis. A rate, not a delta. */
-  look: Vec2 = ZERO;
-
   private destroyed = false;
 
   private constructor(
@@ -93,7 +90,8 @@ export class TouchControls {
     const root = document.createElement('div');
     root.dataset['studioTouch'] = '';
     // `pointer-events: none` here and `auto` on what it holds, so the screen
-    // between the sticks still reaches the canvas.
+    // between the sticks still reaches the canvas. Its place and its stacking
+    // are the host's, which lays every screen layer.
     style(root, {
       position: 'absolute',
       inset: '0',
@@ -101,7 +99,6 @@ export class TouchControls {
       'touch-action': 'none',
       'user-select': 'none',
       '-webkit-user-select': 'none',
-      'z-index': '10',
     });
 
     const moveZone = zoneElement({ left: safe('left') });
@@ -109,9 +106,7 @@ export class TouchControls {
     const jump = jumpButton();
     // The button last, so it paints over the look zone it overlaps.
     root.append(moveZone, lookZone, jump);
-    // Before the sticks: nipplejs measures its zone as it is created, and a
-    // zone that is not in the document yet has no box to measure.
-    options.zone.append(root);
+    options.place(root);
 
     /*
      * `static` for movement and `semi` for looking, which is not a matter of
@@ -163,22 +158,20 @@ export class TouchControls {
     const controls = new TouchControls(root, [moveStick, lookStick], onReposition);
 
     moveStick.on('move', (event) => {
-      controls.move = stickToMove(event.data.vector);
+      options.onMove(stickToMove(event.data.vector));
       options.onSprint(isSprintForce(event.data.force));
     });
     moveStick.on('end', () => {
-      controls.move = ZERO;
+      options.onMove(ZERO);
       options.onSprint(false);
     });
 
     lookStick.on('move', (event) => {
       // The same dead zone: a thumb resting on the look stick would otherwise
       // turn the camera for as long as it stayed there.
-      controls.look = stickToMove(event.data.vector);
+      options.onLook(stickToMove(event.data.vector));
     });
-    lookStick.on('end', () => {
-      controls.look = ZERO;
-    });
+    lookStick.on('end', () => options.onLook(ZERO));
 
     // `pointerdown` rather than `click`: a jump has to start when the thumb
     // lands, not when it lifts. `preventDefault` is what stops the browser
@@ -193,12 +186,6 @@ export class TouchControls {
     }
 
     return controls;
-  }
-
-  /** Everything back to rest, for a page that went away mid-gesture. */
-  release(): void {
-    this.move = ZERO;
-    this.look = ZERO;
   }
 
   destroy(): void {

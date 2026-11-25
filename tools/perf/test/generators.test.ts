@@ -5,12 +5,16 @@ import {
   CACHE_DIR,
   componentAssets,
   componentsOf,
+  findComponent,
   decodeScene,
+  fixedId,
   isAssetId,
+  type ComponentDoc,
   type SceneDoc,
   unwrap,
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readPrefabAssets } from '../../../apps/desktop/src/main/assetLibraries';
 import { readAssetMeta, scanAssets } from '../../../apps/desktop/src/main/assetScan';
 import { readGlb } from '../../../apps/desktop/src/main/glb';
 import { openProject, readProject, readSceneFile } from '../../../apps/desktop/src/main/project';
@@ -24,13 +28,16 @@ import {
 } from '../generate/glb';
 import {
   ASSETS,
+  DYNAMICS,
   LARGE,
   RENDER,
   assetTextures,
   ballastPaths,
+  dynamicsScene,
   largeScene,
   renderScene,
   writeAssetsProject,
+  writeDynamicsProject,
   writeGeometryProject,
   writeLargeProject,
   writeRenderProject,
@@ -74,6 +81,21 @@ async function startScene(projectPath: string): Promise<SceneDoc> {
   return unwrap(decodeScene(registries, (await openProject(projectPath)).sceneJson), 'Scene file');
 }
 
+/**
+ * What a body of the `dynamics` recipe is made of, as one line: its components'
+ * types, its Rigid Body's type and its Collider's shape, in alphabetical order.
+ */
+function bodyOf(components: readonly ComponentDoc[]): string {
+  return components
+    .map((component) => {
+      if (component.type === 'rigidbody') return `rigidbody ${component.bodyType}`;
+      if (component.type === 'collider') return `collider ${component.shape.kind}`;
+      return component.type;
+    })
+    .sort()
+    .join(', ');
+}
+
 describe('the full-size recipes, counted without encoding a byte', () => {
   it('render has 3 004 entities', () => {
     expect(entityCount(renderScene(RENDER))).toBe(3004);
@@ -99,6 +121,20 @@ describe('the full-size recipes, counted without encoding a byte', () => {
 
   it('textures has 24 images', () => {
     expect(texturesCounts(TEXTURES).images).toBe(24);
+  });
+
+  it('dynamics has 1 004 entities: 1 000 boxes, each a mesh, a dynamic Rigid Body, a box Collider and a script, and the Spawner given the Crate', () => {
+    const crate = fixedId('asset', 'crate');
+    const scene = dynamicsScene(DYNAMICS, { spin: fixedId('asset', 'spin'), spawner: fixedId('asset', 'spawner'), crate });
+    expect(entityCount(scene)).toBe(1004);
+    const boxes = [...scene.entities.values()].filter((entity) => entity.name.startsWith('Box '));
+    expect(boxes).toHaveLength(1000);
+    expect(new Set(boxes.map((box) => bodyOf(componentsOf(registries, scene, box.id))))).toEqual(
+      new Set(['collider box, mesh, rigidbody dynamic, script']),
+    );
+    const spawner = [...scene.entities.values()].find((entity) => entity.name === 'Spawner');
+    const script = spawner && findComponent(scene, spawner.id, 'script');
+    expect([script?.assetId, script?.props]).toEqual([fixedId('asset', 'spawner'), { crate }]);
   });
 });
 
@@ -219,5 +255,33 @@ describe('each recipe at a reduced size, opened by the app', () => {
     // A Director in A and in B, the ballast in A, the Spinner in Loading, the
     // model in Heavy.
     expect(await references(path, [...scenes.values()])).toEqual({ resolved: 4 + recipe.ballast, unresolved: [] });
+  });
+
+  it('dynamics: one scene, Dynamics, its boxes resting on a solid floor, and the Crate prefab', async () => {
+    const written = await writeDynamicsProject(parent, { boxes: 20, columns: 5 });
+    const opened = await openProject(written.path);
+    expect(opened.scenes.map((scene) => scene.name)).toEqual(['Dynamics']);
+
+    const scene = await startScene(written.path);
+    // The boxes, a floor, a sun, a camera and the Spawner; each box's Spin
+    // found, and the Spawner's script.
+    expect(entityCount(scene)).toBe(24);
+    expect(await references(written.path, [scene])).toEqual({ resolved: 21, unresolved: [] });
+    const floor = [...scene.entities.values()].find((entity) => entity.name === 'Ground');
+    if (!floor) throw new Error('the scene has no floor');
+    expect(bodyOf(componentsOf(registries, scene, floor.id))).toBe('collider box, mesh');
+    // On the floor, whose top is at 0: at rest from the first step.
+    const heights = [...scene.entities.values()]
+      .filter((entity) => entity.name.startsWith('Box '))
+      .map((box) => box.transform.position[1]);
+    expect(new Set(heights)).toEqual(new Set([0.5]));
+
+    const { prefabs, refused } = await readPrefabAssets(registries, written.path);
+    expect(refused.size).toBe(0);
+    const crate = prefabs.get(written.crate);
+    if (!crate) throw new Error('the Crate prefab is not the one the project lists');
+    expect(crate.name).toBe('Crate');
+    expect(crate.entities.size).toBe(1);
+    expect(bodyOf(componentsOf(registries, crate, crate.root))).toBe('collider box, mesh, rigidbody dynamic');
   });
 });

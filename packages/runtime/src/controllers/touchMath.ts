@@ -1,10 +1,11 @@
 import type { TouchControlsMode } from '@three-studio/core';
+import { ZERO, type Vec2 } from '../input/VirtualControls';
 
 /*
  * The decisions the on-screen sticks rest on, with no DOM in them.
  *
- * The same split this folder already makes: `PressedKeys` is a model of the
- * keyboard and is tested, `Input` binds listeners and is not. Everything here
+ * The split `input/` makes too: `PressedKeys` is a model of the keyboard and
+ * is tested, `Input` binds listeners and is not. Everything here
  * is arithmetic over numbers a stick reported, so it runs in a plain Node test
  * — which matters more than usual, because `TouchControls` cannot: nipplejs
  * reads `window` while it is being imported.
@@ -30,13 +31,6 @@ const DEAD_ZONE = 0.12;
  * last pixel is not required.
  */
 const SPRINT_FORCE = 0.95;
-
-export interface Vec2 {
-  x: number;
-  y: number;
-}
-
-export const ZERO: Readonly<Vec2> = { x: 0, y: 0 };
 
 /**
  * Whether the sticks should be on screen, given what has happened so far.

@@ -33,6 +33,18 @@ export type SceneId = Id<'scene'>;
  * themselves with `fixedId('importer', …)`; nothing reads one from outside yet.
  */
 export type ImporterId = Id<'importer'>;
+/**
+ * A world subsystem's: what simulates in Play, a registry entry like a system or
+ * a behaviour. The built-ins name themselves with `fixedId('subsystem', …)`, and
+ * a module's does the same; no file or message carries one, so there is no check.
+ */
+export type SubsystemId = Id<'subsystem'>;
+/**
+ * A contribution's to scripts: what a feature gives every script, `this.body`
+ * physics', `this.audio` audio's. Named with `fixedId('scriptMembers', …)`, as
+ * a subsystem is; no file or message carries one, so there is no check.
+ */
+export type ScriptMembersId = Id<'scriptMembers'>;
 
 /**
  * Short, collision-resistant text. Uses `crypto.getRandomValues`, available in

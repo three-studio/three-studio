@@ -22,7 +22,7 @@ export function listenForPlayer(): void {
     const player = {
       state: detail.state,
       renderer: detail.renderer,
-      host: detail.host,
+      game: detail.game,
       startedAt: performance.now(),
       firstFrameAt: null,
     };

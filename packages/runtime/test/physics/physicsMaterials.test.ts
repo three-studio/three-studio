@@ -10,10 +10,10 @@ import {
 } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
-import { builtInRegistries } from '../registries';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   colliderOf,
   ground,
@@ -22,6 +22,7 @@ import {
   takeTheBrowserBack,
   withBody,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * A collider linked to a physics material asset is built with the asset's
@@ -112,21 +113,20 @@ describe('a collider linked to a physics material', () => {
     rig.run(1);
 
     expect(rig.solved(puck.entity.id).position.distanceTo(landed)).toBeLessThan(0.01);
-    const said = rig.engine.warnings.filter((line) => line.includes('"Puck"'));
+    const said = rig.world.warnings.filter((line) => line.includes('"Puck"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('physics material');
 
     // With physics off the line would be about the host, not the scene.
     const registries = builtInRegistries();
-    const off = await Engine.create({
-      scene: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
-      registries,
+    const off = await World.play({
+      time: new StudioTime(),
+      document: sceneWith([slope(), boxOnSlope('max', 0, GONE)]),
+      registries: withoutPhysics(registries),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
       physicsSettings: createPhysicsSettings(),
       physicsMaterials: LIBRARY,
-      domElement: new EventTarget() as unknown as HTMLElement,
-      enablePhysics: false,
     });
     onTestFinished(() => off.dispose());
     expect(off.warnings.filter((line) => line.includes('physics material'))).toEqual([]);

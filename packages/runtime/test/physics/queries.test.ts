@@ -11,6 +11,7 @@ import {
 import { Quaternion, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PhysicsApi, RaycastHit, Vec3Like } from '../../src/physics/PhysicsApi';
+import { physicsOf } from '../../src/physics/physicsOf';
 import {
   block,
   ground,
@@ -27,7 +28,7 @@ import {
 
 /*
  * A query asks the world what is where, as a behaviour asks it: through
- * `engine.physics`.
+ * `world.physics`.
  */
 
 beforeAll(standInForTheBrowser);
@@ -53,13 +54,13 @@ const identity = { x: 0, y: 0, z: 0, w: 1 };
 const quarter = (x: number, y: number, z: number) =>
   new Quaternion().setFromAxisAngle(new Vector3(x, y, z), Math.PI / 2);
 
-/** These entities in a running engine, and the world as a behaviour asks it. */
+/** These entities in a running world, and the world as a behaviour asks it. */
 async function running(
   entities: readonly EntityTemplate[],
   settings?: Partial<PhysicsSettings>,
 ): Promise<{ rig: PhysicsRig; physics: PhysicsApi }> {
   const rig = await physicsRig(entities, settings);
-  const physics = rig.engine.physics;
+  const physics = physicsOf(rig.world);
   if (!physics) throw new Error('The rig runs with physics on.');
   return { rig, physics };
 }

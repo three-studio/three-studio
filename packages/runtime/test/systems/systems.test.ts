@@ -28,6 +28,8 @@ import { WaterSystem } from '../../src/components/water/WaterSystem';
 import { StudioTime } from '../../src/time/StudioTime';
 import { serveModels, stubImages } from '../assetFixtures';
 import { builtInRegistries } from '../registries';
+import { CameraClaims } from '../../src/world/cameras';
+import { SunService } from '../../src/world/sun';
 
 const registries = builtInRegistries();
 
@@ -72,9 +74,10 @@ function context(
     assets,
     time,
     shadowMapSize: 1024,
-    // No scene here, so nothing to resolve: a water component falls back to the
+    cameras: new CameraClaims(),
+    // Nothing provides a sun here, so a water component falls back to the
     // direction and colour it holds itself, which is what the tests assert on.
-    sunOf: () => null,
+    sun: new SunService(),
     invalidate: () => void (invalidated += 1),
     attach: () => true,
   };
@@ -748,10 +751,12 @@ describe('the water system', () => {
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       time: new StudioTime(),
       shadowMapSize: 1024,
-      sunOf: (light) => (light === null ? sun : null),
+      cameras: new CameraClaims(),
+      sun: new SunService(),
       invalidate: () => undefined,
       attach: () => true,
     };
+    ctx.sun.provide(null, { sun: () => sun });
     const system = new WaterSystem();
 
     const linked = system.mount(LAKE, waterType.create(), ctx);
@@ -825,7 +830,7 @@ describe('every holder', () => {
     const gobo = lights.mount(PROJECTOR, { ...projector, mapId: STONE }, ctx);
     const water = new WaterSystem();
     const lake = water.mount(LAKE, { ...waterType.create(), normalMapId: STONE }, ctx);
-    const environment = new EnvironmentBinder(assets, arena, null);
+    const environment = new EnvironmentBinder(assets, arena, null, new SunService());
     environment.sync(new Scene(), { ...createEnvironment(), backgroundMode: 'texture', backgroundTexture: STONE });
     await models.whenLoaded();
     // Two slots of the private material, two of the asset's — which the model

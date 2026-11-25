@@ -69,21 +69,21 @@ const X = Object.freeze({ x: 1, y: 0, z: 0 });
 const MOTOR_FACTOR = 1e4;
 
 /**
- * A Joint the world was built with, and the handle behaviours and scripts reach
- * it by. It holds two bodies, or nothing — its Connected Body gone, both sides
- * on one body —, and a tune builds it again in place: a handle kept from the
- * start drives the joint that replaced the first.
+ * A Joint the world made, and the handle behaviours and scripts reach it by. It
+ * holds two bodies, or nothing — its Connected Body gone, both sides on one
+ * body, an end not made yet —, and a patch builds it again in place: a handle
+ * kept from the start drives the joint that replaced the first.
  */
 export class Joint implements JointHandle {
   private holding: Holding | null = null;
 
   constructor(
     private readonly world: RAPIER.World,
-    /** Its Joint as last applied, by the build and by each tune since. */
+    /** Its Joint as last applied, when made and by each patch since. */
     public component: JointComponent,
     /**
-     * Its entity's world pose and scale when the world was built, which its
-     * anchor and axis are read against, then and at each tune.
+     * Its entity's world pose and scale when it was made, which its anchor and
+     * axis are read against, then and each time it is built again.
      */
     private readonly placed: EntityPose,
     ends: JointBodies | null,
@@ -96,9 +96,26 @@ export class Joint implements JointHandle {
     return this.holding !== null;
   }
 
+  /** Whether `body` is one of the two it holds. */
+  holdsBody(body: RAPIER.RigidBody): boolean {
+    return this.holding !== null && (this.holding.other === body || this.holding.own === body);
+  }
+
   /**
-   * Built again from `component` between these two bodies, as placed when the
-   * world was built, or holding nothing.
+   * Built again between these two bodies when they are not the two it holds: a
+   * body it needs was made, or one it held was taken away. Holding the same
+   * two, it is left as it is, its motor and its handle with it.
+   */
+  reEnd(ends: JointBodies | null): void {
+    const held = this.holding;
+    if (held === null && ends === null) return;
+    if (held !== null && ends !== null && held.other === ends.other.rapier && held.own === ends.own.rapier) return;
+    this.remake(this.component, ends);
+  }
+
+  /**
+   * Built again from `component` between these two bodies, as placed when each
+   * was made, or holding nothing.
    *
    * Whatever the field. Rapier has setters for a joint's limits, its motor and
    * its contacts, but none to switch limits off and none at all for a spring,
@@ -117,10 +134,12 @@ export class Joint implements JointHandle {
   get position(): number {
     const held = this.holding;
     if (!held?.free) return 0;
-    const turn1 = _turn1.copy(held.other.rotation()).multiply(held.frame1.rotation);
+    held.other.rotation(_turn1);
+    const turn1 = _turn1.multiply(held.frame1.rotation);
     if (held.free.kind === 'hinge') {
       // The own frame's twist about X against the other's, the shorter way round.
-      const turn2 = _turn2.copy(held.own.rotation()).multiply(held.frame2.rotation);
+      held.own.rotation(_turn2);
+      const turn2 = _turn2.multiply(held.frame2.rotation);
       const relative = turn1.invert().multiply(turn2);
       const sign = relative.w < 0 ? -1 : 1;
       return 2 * Math.atan2(sign * relative.x, sign * relative.w);
@@ -182,14 +201,17 @@ export function holdingPose(entity: EntityPose, joint: JointComponent): JointPos
 
 const UNIT_X = new Vector3(1, 0, 0);
 
-/** A point of a body's frame, in the world, from where the body is. */
+/** A point of a body's frame, in the world, from where the body is: its pose read into scratches. */
 function inWorld(point: Vector3, body: RAPIER.RigidBody, target: Vector3): Vector3 {
-  return target.copy(point).applyQuaternion(_bodyTurn.copy(body.rotation())).add(body.translation());
+  body.rotation(_bodyTurn);
+  body.translation(_bodyAt);
+  return target.copy(point).applyQuaternion(_bodyTurn).add(_bodyAt);
 }
 
 const _turn1 = new Quaternion();
 const _turn2 = new Quaternion();
 const _bodyTurn = new Quaternion();
+const _bodyAt = new Vector3();
 const _anchor1 = new Vector3();
 const _anchor2 = new Vector3();
 const _axis = new Vector3();
@@ -274,9 +296,9 @@ function drive(joint: RAPIER.UnitImpulseJoint, motor: JointMotor): void {
 }
 
 /**
- * The pose in a body's own frame, from where the body was built:
- * q⁻¹ · (p − p_body) and q⁻¹ · q_pose. Where it was built and not where it is:
- * a joint rebuilt during Play is held as placed when the world was built.
+ * The pose in a body's own frame, from where the body was made:
+ * q⁻¹ · (p − p_body) and q⁻¹ · q_pose. Where it was made and not where it is:
+ * a joint built again during Play is held as placed when its ends were made.
  */
 function frameOn(body: Placed, pose: JointPose): Frame {
   const unturn = body.built.quaternion.clone().invert();

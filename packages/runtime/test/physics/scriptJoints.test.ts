@@ -2,7 +2,7 @@ import { createEntity, createJointMotion } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { scriptPhysicsFor } from '../../src/scripting/scriptPhysics';
+import { scriptPhysicsFor } from '../../src/physics/scriptMembers';
 import { physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody, withJoint, withScript } from './rig';
 
 /*

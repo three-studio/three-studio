@@ -71,3 +71,21 @@ export function jsonOf(value: unknown, indent?: number): string {
 function mapsAsObjects(_key: string, value: unknown): unknown {
   return value instanceof Map ? Object.fromEntries(value) : value;
 }
+
+/**
+ * Freezes a value and every object and array under it, and hands it back.
+ *
+ * For a value handed to code that is not typechecked against it — a script
+ * reading a component — where `readonly` in a type says nothing: a write into
+ * what the document holds would change the scene behind the frame's pass, which
+ * would never hear of it. A frozen write throws, in a module's strict mode.
+ *
+ * A value already frozen is taken to be frozen all through and is not walked
+ * again, as immer's are: what this froze once costs one check after.
+ */
+export function deepFreeze<T>(value: T): T {
+  if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const inner of Array.isArray(value) ? value : Object.values(value)) deepFreeze(inner);
+  return value;
+}

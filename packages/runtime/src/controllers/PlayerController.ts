@@ -4,17 +4,16 @@ import {
   type ColliderComponent,
   type EntityId,
   type PlayerControllerComponent,
+  type TouchControlsMode,
 } from '@three-studio/core';
 import { Euler, MathUtils, PerspectiveCamera, Quaternion, Vector3, type Object3D } from 'three/webgpu';
-import type {
-  Behaviour,
-  BehaviourContext,
-  BehaviourDefinition,
-  BehaviourTarget,
-} from '../behaviour/Behaviour';
+import type { Behaviour, BehaviourDefinition } from '../behaviour/Behaviour';
 import type { Input } from '../input/Input';
+import { inputOf } from '../input/inputOf';
+import { physicsOf } from '../physics/physicsOf';
 import type { CharacterController, PhysicsApi } from '../physics/PhysicsApi';
 import { applyWorldTransform } from '../physics/PhysicsWorld';
+import { LOOK_AXIS, MOVE_AXIS, holdTouchControls, type TouchHold } from './touch';
 
 const FORWARD = ['KeyW', 'ArrowUp'];
 const BACK = ['KeyS', 'ArrowDown'];
@@ -90,6 +89,16 @@ export class PlayerController implements Behaviour {
   private pitch = 0;
   private verticalVelocity = 0;
   private jumpRequested = false;
+  /**
+   * What a tick asks of the character, what the character allowed, and the
+   * mouse's move: kept, since each is written every tick or every frame, where
+   * a new object each time was garbage at the display's rate.
+   */
+  private readonly desired = { x: 0, y: 0, z: 0 };
+  private readonly movement = { x: 0, y: 0, z: 0 };
+  private readonly mouse = { x: 0, y: 0 };
+  /** The on-screen sticks, held from `start` to `dispose`. */
+  private touch: TouchHold | null = null;
   private orbitDistance: number;
 
   /** `null` in fly mode, and when the entity has no body and collider to walk with. */
@@ -126,6 +135,8 @@ export class PlayerController implements Behaviour {
   constructor(
     private readonly component: PlayerControllerComponent,
     private readonly object: Object3D,
+    /** What drives it: kept, since it is read every frame. */
+    private readonly input: Input,
     physics: PhysicsApi | null,
     entityId: EntityId,
     /**
@@ -136,6 +147,8 @@ export class PlayerController implements Behaviour {
      * triangle mesh has no answer to anyway.
      */
     colliderDoc: ColliderComponent | undefined,
+    /** Claims the world's on-screen sticks: `holdTouchControls`, in a world. */
+    private readonly holdTouch: (mode: TouchControlsMode) => TouchHold,
   ) {
     this.orbitDistance = component.cameraDistance;
     this.camera = new PerspectiveCamera(component.fov, 16 / 9, 0.1, 5000);
@@ -173,33 +186,37 @@ export class PlayerController implements Behaviour {
   }
 
   /**
-   * Asks for the on-screen controls, once every behaviour exists.
+   * Holds the on-screen controls, once every behaviour exists.
    *
-   * Here rather than in the constructor because `Input` arrives with the
-   * context, and here rather than in `Engine` because the sticks belong to the
-   * thing they drive: a scene carrying no player controller shows none, and
-   * nobody had to write that rule down. `enableTouch` is idempotent, so two
+   * Here rather than in `World` because the sticks belong to the thing they
+   * drive: a scene carrying no player controller shows none, and nobody had to
+   * write that rule down. A world has one set however many hold it, so two
    * players in one scene still mean one set of joysticks.
    */
-  start(ctx: BehaviourContext): void {
-    ctx.input.enableTouch(this.component.touchControls, null);
+  start(): void {
+    this.touch ??= this.holdTouch(this.component.touchControls);
+  }
+
+  dispose(): void {
+    this.touch?.dispose();
+    this.touch = null;
   }
 
   /** Per display frame: aiming, which must stay as responsive as the screen. */
-  update(delta: number, ctx: BehaviourContext): void {
-    const input = ctx.input;
+  update(delta: number): void {
+    const input = this.input;
     this.look(delta, input);
 
     // Latched here rather than read in the fixed step: a short tap can fall
     // entirely between two physics ticks and would otherwise be swallowed.
-    if (input.isAnyDown(...JUMP)) this.jumpRequested = true;
+    if (input.anyDown(JUMP)) this.jumpRequested = true;
 
     if (!this.usesPhysics) this.moveFreely(delta, input);
   }
 
   /** Per physics tick: movement, so commands are not overwritten between steps. */
-  fixedUpdate(step: number, ctx: BehaviourContext): void {
-    if (this.usesPhysics) this.moveOnGround(step, ctx.input);
+  fixedUpdate(step: number): void {
+    if (this.usesPhysics) this.moveOnGround(step, this.input);
   }
 
   /** After physics has run, so the camera never trails the body by a frame. */
@@ -211,7 +228,7 @@ export class PlayerController implements Behaviour {
     // The lock is what makes a mouse usable, not what makes aiming possible:
     // there is no pointer lock on a phone, and requiring it here left the
     // camera welded in place with a stick under the thumb doing nothing.
-    if (!input.pointerLocked && !input.touchActive) return;
+    if (!input.pointerLocked && this.touch?.shown !== true) return;
 
     /*
      * Two terms, because the two devices report different quantities.
@@ -224,8 +241,9 @@ export class PlayerController implements Behaviour {
      * and it has to be integrated over the frame or the turn would depend on
      * the frame rate instead of on the time held.
      */
-    const mouse = input.consumeMouseDelta();
-    const stick = input.lookAxis();
+    const mouse = this.mouse;
+    input.consumeMouseDelta(mouse);
+    const stick = input.axis(LOOK_AXIS);
     const turn = this.component.touchLookSpeed * delta;
 
     this.yaw -= mouse.x * this.component.mouseSensitivity + stick.x * turn;
@@ -265,15 +283,15 @@ export class PlayerController implements Behaviour {
     // machine can have both, and summing them would let a player walk at 1.7×
     // by holding W with a thumb on the stick — which is the kind of thing that
     // is only ever discovered by someone speedrunning a level.
-    const stick = input.moveAxis();
+    const stick = input.axis(MOVE_AXIS);
     if (stick.x !== 0 || stick.y !== 0) {
       return _move.addScaledVector(_forward, stick.y).addScaledVector(_right, stick.x);
     }
 
-    if (input.isAnyDown(...FORWARD)) _move.add(_forward);
-    if (input.isAnyDown(...BACK)) _move.sub(_forward);
-    if (input.isAnyDown(...RIGHT)) _move.add(_right);
-    if (input.isAnyDown(...LEFT)) _move.sub(_right);
+    if (input.anyDown(FORWARD)) _move.add(_forward);
+    if (input.anyDown(BACK)) _move.sub(_forward);
+    if (input.anyDown(RIGHT)) _move.add(_right);
+    if (input.anyDown(LEFT)) _move.sub(_right);
 
     // Normalising stops diagonal movement being 1.41× faster than straight.
     if (_move.lengthSq() > 0) _move.normalize();
@@ -281,7 +299,7 @@ export class PlayerController implements Behaviour {
   }
 
   private speed(input: Input): number {
-    const sprinting = input.isAnyDown(...SPRINT);
+    const sprinting = input.anyDown(SPRINT);
     return this.component.moveSpeed * (sprinting ? this.component.sprintMultiplier : 1);
   }
 
@@ -312,11 +330,10 @@ export class PlayerController implements Behaviour {
     }
     this.jumpRequested = false;
 
-    const desired = {
-      x: direction.x * speed * delta,
-      y: this.verticalVelocity * delta,
-      z: direction.z * speed * delta,
-    };
+    const desired = this.desired;
+    desired.x = direction.x * speed * delta;
+    desired.y = this.verticalVelocity * delta;
+    desired.z = direction.z * speed * delta;
 
     // Third person turns the body to face travel; first person turns it with
     // the camera so anything parented to the player points the right way.
@@ -327,7 +344,7 @@ export class PlayerController implements Behaviour {
     _quaternion.setFromEuler(_euler.set(0, facing, 0));
 
     // The world writes the entity once the step has moved the body there.
-    const movement = character.move(desired, _quaternion);
+    const movement = character.move(desired, _quaternion, this.movement);
     this.debug.desiredX = desired.x;
     this.debug.desiredZ = desired.z;
     this.debug.computedX = movement.x;
@@ -342,7 +359,7 @@ export class PlayerController implements Behaviour {
 
     this.object.getWorldPosition(_worldPosition);
     _worldPosition.addScaledVector(direction, speed * delta);
-    if (input.isAnyDown(...JUMP)) _worldPosition.y += speed * delta;
+    if (input.anyDown(JUMP)) _worldPosition.y += speed * delta;
     if (input.isDown('ControlLeft')) _worldPosition.y -= speed * delta;
 
     _quaternion.setFromEuler(_euler.set(0, this.yaw, 0));
@@ -350,12 +367,9 @@ export class PlayerController implements Behaviour {
   }
 
   /** Where the eye sits: `eyeHeight` above the feet, in world space. */
-  private get eyeY(): number {
-    return _worldPosition.y - this.feetOffset + this.component.eyeHeight;
-  }
-
   private placeCamera(): void {
     this.object.getWorldPosition(_worldPosition);
+    const eyeY = _worldPosition.y - this.feetOffset + this.component.eyeHeight;
     // Followed live, unlike the feet: nothing downstream depends on the field
     // of view staying put, and every other number this component carries —
     // speed, jump height, sensitivity — is already read fresh each frame.
@@ -367,7 +381,6 @@ export class PlayerController implements Behaviour {
     if (this.component.mode === 'tps') {
       // Orbit behind the character, using the same yaw and pitch as the look.
       const horizontal = Math.cos(this.pitch) * this.orbitDistance;
-      const eyeY = this.eyeY;
       this.camera.position.set(
         _worldPosition.x + Math.sin(this.yaw) * horizontal,
         eyeY + Math.sin(-this.pitch) * this.orbitDistance,
@@ -377,24 +390,30 @@ export class PlayerController implements Behaviour {
       return;
     }
 
-    this.camera.position.set(_worldPosition.x, this.eyeY, _worldPosition.z);
+    this.camera.position.set(_worldPosition.x, eyeY, _worldPosition.z);
     this.camera.quaternion.setFromEuler(_euler.set(this.pitch, this.yaw, 0));
   }
 }
 
 export const playerControllerBehaviour: BehaviourDefinition = {
   id: 'playerController',
-  create(target: BehaviourTarget, ctx: BehaviourContext) {
+  create(target, world) {
     if (target.component.type !== 'playerController') return null;
+    // A player nobody can drive is no player: a world handed no element to
+    // listen on is a test's, and one that presses nothing.
+    const input = inputOf(world);
+    if (input === null) return null;
     return new PlayerController(
       target.component,
       target.object,
-      ctx.physics,
+      input,
+      physicsOf(world),
       target.entity.id,
       // The entity's first collider, the one its character sweeps — so an
       // entity carrying two cannot have the camera measuring from one and the
       // character sweeping the other.
-      findComponent(ctx.scene, target.entity.id, 'collider'),
+      findComponent(world.document, target.entity.id, 'collider'),
+      (mode) => holdTouchControls(world, mode),
     );
   },
 };

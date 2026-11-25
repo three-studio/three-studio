@@ -10,9 +10,9 @@ export interface ScriptClass {
 /**
  * The classes of one compiled script bundle, by the asset id of each script.
  *
- * A bundle's own, handed to the engine that runs it: two engines given two
+ * A bundle's own, handed to the world that runs it: two worlds given two
  * bundles each run their own, where a table of the page's, filled by whichever
- * bundle was imported last, was every engine's at once.
+ * bundle was imported last, was every world's at once.
  */
 export type ScriptClasses = ReadonlyMap<AssetId, ScriptClass>;
 

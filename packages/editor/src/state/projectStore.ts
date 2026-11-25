@@ -11,6 +11,7 @@ import {
   type SceneEntry,
   type SceneId,
 } from '@three-studio/core';
+import { scriptTypings, type RuntimeRegistries } from '@three-studio/runtime';
 import { create } from 'zustand';
 import { useAssetStore } from './assetStore';
 import { reportBrokenReferences } from './brokenReport';
@@ -40,8 +41,11 @@ interface ProjectState {
   saving: boolean;
   error: string | null;
 
-  /** Given the window's registries, which the scene's components are decoded through. */
-  adopt: (registries: CoreRegistries, opened: OpenProject) => void;
+  /**
+   * Given the window's registries, which the scene's components are decoded
+   * through, and which say what the project's scripts are given.
+   */
+  adopt: (registries: RuntimeRegistries, opened: OpenProject) => void;
   /** Replaces the project file after its settings were written back. */
   adoptProject: (project: ProjectFile) => void;
   /**
@@ -119,6 +123,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     // declared properties from the compiled class, so without this a script
     // component would show no fields until the game had been run once.
     void useScriptStore.getState().build();
+    // The scripts' typings, for an editor of the author's own, written from
+    // these registries: the main process activates core alone, and cannot
+    // know what a module gives scripts. An aid and not the project: one that
+    // cannot be written leaves the project open, as it always did.
+    void window.studio.scripts.writeTypings(scriptTypings(registries)).catch(() => undefined);
     set({
       summary: opened.summary,
       project: opened.project,

@@ -132,7 +132,7 @@ function adoptDecodedParameters(clone: Texture, master: Texture): void {
  * **What is evicted is freed at the next `beginFrame`**, never at the release:
  * the frame in flight may still be drawing it, and freeing a buffer a pass is
  * encoding is a crash, not a dropped frame. The window's loop begins the frame,
- * once — never an engine or a binder, two of which may share one window, and a
+ * once — never a world or a binder, two of which may share one window, and a
  * second flush in one frame would free what its first half had just let go of.
  *
  * DRACO and KTX2 are not wired up: their decoders are binaries that have to be
@@ -362,11 +362,19 @@ export class AssetCache {
     this.trim();
   }
 
-  /** Frees what was evicted before the frame in flight. Once per frame, by the window's loop. */
-  beginFrame(): void {
-    if (this.evicted.length === 0) return;
+  /**
+   * Frees what was evicted before the frame in flight. Once per frame, by the
+   * window's loop, which forgets three's render lists when this frees anything:
+   * a list not drawn again keeps what it last drew (`forgetRenderLists`).
+   *
+   * @returns How many entries it freed.
+   */
+  beginFrame(): number {
+    const freed = this.evicted.length;
+    if (freed === 0) return 0;
     for (const entry of this.evicted) free(entry);
     this.evicted.length = 0;
+    return freed;
   }
 
   /** For the tests, and for a checkpoint reading the editor through its devtools. */

@@ -69,7 +69,13 @@ export class PressedKeys {
   }
 
   anyDown(codes: readonly string[]): boolean {
-    return codes.some((code) => this.held.has(code));
+    // A loop rather than `some`, whose callback was made on every call: this
+    // is asked several times a tick by a player controller.
+    for (let i = 0; i < codes.length; i += 1) {
+      const code = codes[i];
+      if (code !== undefined && this.held.has(code)) return true;
+    }
+    return false;
   }
 
   clear(): void {

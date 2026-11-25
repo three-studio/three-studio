@@ -39,14 +39,14 @@ arrives either. Still unfixed on three's dev branch. The repository carries the 
 
 ## Use
 
-The engine owns the scene graph, physics and behaviours — but neither the renderer nor the frame
-loop. The host calls `update(delta)` and draws `engine.scene` itself, which is what lets the editor
+The world owns the scene graph, physics and behaviours — but neither the renderer nor the frame
+loop. The host calls `update(delta)` and draws `world.scene` itself, which is what lets the editor
 play a scene inside its own viewport while an exported build runs the same code from a bare loop.
 
 ```ts
 import { activateCore, decodeScene, unwrap } from '@three-studio/core';
 import {
-  SceneHost,
+  Game,
   activateRuntime,
   createRenderer,
   createRuntimeRegistries,
@@ -62,17 +62,22 @@ const registries = createRuntimeRegistries();
 activateCore(registries);
 activateRuntime(registries);
 
-const host = new SceneHost({
+const source = {
+  read: async (name: string) => unwrap(decodeScene(registries, await (await fetch(`${name}.json`)).text()), name),
+};
+const game = new Game({
   registries,
-  domElement: canvas,
+  element: canvas,
   renderer,
-  source: { read: async (name) => unwrap(decodeScene(registries, await (await fetch(`${name}.json`)).text()), name) },
+  source,
   // Maps an asset id to a URL. Scenes reference ids, never paths, so this is
   // where a build decides where its files actually live.
   resolver: { url: (assetId) => `assets/${assetId}` },
 });
 
-await host.load('level-1').activate();
+// One world for the whole game: the first scene starts in it, and every
+// `game.go` after loads the next into it.
+await game.start('level-1', await source.read('level-1'));
 
 let last = performance.now();
 renderer.setAnimationLoop(() => {
@@ -82,9 +87,9 @@ renderer.setAnimationLoop(() => {
   const delta = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  host.update(delta);
-  const engine = host.engine;
-  if (engine) void renderer.render(engine.scene, engine.activeCamera);
+  game.update(delta);
+  const world = game.world;
+  if (world) void renderer.render(world.scene, world.cameras.active);
 });
 ```
 
@@ -92,11 +97,11 @@ renderer.setAnimationLoop(() => {
 
 | | |
 | --- | --- |
-| **Engine** | fixed-step loop, system layer, resource arena, mesh batching |
-| **Scenes** | `SceneHost` (load, loading scene, activate, cancel), `SceneBinder` (document → three objects) |
+| **World** | fixed-step loop, system layer, resource arena, mesh batching |
+| **Scenes** | `Game` (one world per game; load, loading scene, activate, cancel), `SceneBinder` (document → three objects) |
 | **Rendering** | `createRenderer` — WebGPU, falling back to WebGL |
 | **Physics** | `PhysicsWorld` — Rapier rigid bodies, colliders, and a character-style `PlayerController` |
-| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the engine that runs them (`scripts`) |
+| **Scripting** | `Behaviour` and the lifecycle hooks (`onAwake` / `onStart` / `onUpdate` / `onFixedUpdate` / `onLateUpdate` / `onDestroy`), declared editable properties, entities reached through handles (`this.entity`, `this.world.entity(id)`) and moved through the transform the world draws, what each feature gives scripts by contribution (`scriptMembers`), `scriptClassesOf` — a compiled bundle's classes, decoded and handed to the world that runs them (`scripts`) |
 | **Audio** | 32-voice mixer with priority stealing, a continuous 2D↔3D `spatialBlend`, buses |
 | **Assets** | model loading for glTF / GLB / FBX / OBJ, import settings applied the same way the editor applies them |
 

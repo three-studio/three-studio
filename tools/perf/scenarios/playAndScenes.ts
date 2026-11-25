@@ -30,11 +30,11 @@ import { checkExit, heapReading } from './readings';
 
 /*
  * S6 — Play and scenes: the scripted project of four scenes. Play's start —
- * compile, import, engine, first frame — five times; thirty switches between
+ * compile, import, world, first frame — five times; thirty switches between
  * `A` and `B` through the game's own scene API; a switch to `Heavy` behind `Loading`; and
  * ten cycles of a ballast script edited on disk, Play, Stop.
  *
- * In that order: the switches run with no loading scene, which `SceneHost`
+ * In that order: the switches run with no loading scene, which the `Game`
  * would otherwise put up before every one of them, and Play starts on its
  * first scene without one, so the cycles may follow it being set.
  */
@@ -47,7 +47,7 @@ const PLAYS = 5;
 const SWITCHES = 30;
 const CYCLES = 10;
 
-const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
+export const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['play.firstFrameMs', { kind: 'timing', unit: 'ms' }],
   ['switch.ms', { kind: 'timing', unit: 'ms' }],
   ['switch.heapBytes', { kind: 'memory', unit: 'B' }],
@@ -57,11 +57,22 @@ const METRICS: ReadonlyMap<string, MetricSpec> = new Map<string, MetricSpec>([
   ['loading.ms', { kind: 'timing', unit: 'ms' }],
   ['loading.longestFrameMs', { kind: 'timing', unit: 'ms' }],
   ['loading.frames', { kind: 'reported', unit: '' }],
+  ['loading.startPrograms', { kind: 'reported', unit: '' }],
   ['cycles.heapBytes', { kind: 'memory', unit: 'B' }],
   ['cycles.gpuBytes', { kind: 'memory', unit: 'B' }],
   ['cycles.heapGrowthPerCycleBytes', { kind: 'reported', unit: 'B' }],
   ['cycles.gpuGrowthPerCycleBytes', { kind: 'reported', unit: 'B' }],
 ]);
+
+/** The loading switch's metrics, out of what `goThroughLoading` read in the page. */
+export function loadingMetrics(reading: Readonly<Record<string, number>>): Record<string, number> {
+  return {
+    'loading.ms': reading['ms'] ?? Number.NaN,
+    'loading.longestFrameMs': reading['longestFrameMs'] ?? Number.NaN,
+    'loading.frames': reading['frames'] ?? Number.NaN,
+    'loading.startPrograms': reading['startPrograms'] ?? Number.NaN,
+  };
+}
 
 /** Bumps a ballast script's revision on disk: a new bundle at the next Play. */
 export async function editBallast(path: string, revision: number): Promise<void> {
@@ -178,9 +189,7 @@ async function measure(
         'switch.gpuBytes': switched.gpu,
         'switch.heapGrowthBytes': switched.heap - before.heap,
         'switch.gpuGrowthBytes': switched.gpu - before.gpu,
-        'loading.ms': loading['ms'] ?? Number.NaN,
-        'loading.longestFrameMs': loading['longestFrameMs'] ?? Number.NaN,
-        'loading.frames': loading['frames'] ?? Number.NaN,
+        ...loadingMetrics(loading),
         'cycles.heapBytes': cycled.heap,
         'cycles.gpuBytes': cycled.gpu,
         'cycles.heapGrowthPerCycleBytes': (cycled.heap - cyclesBefore.heap) / CYCLES,

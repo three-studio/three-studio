@@ -1,6 +1,7 @@
 import { createEntity, rigidbodyType } from '@three-studio/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ground, physicsRig, standInForTheBrowser, takeTheBrowserBack, withBody } from './rig';
+import { physicsOf } from '../../src/physics/physicsOf';
 
 /*
  * A body weighs what its Rigid Body says, whatever its colliders are shaped
@@ -18,7 +19,7 @@ describe('a body’s mass', () => {
     const rig = await physicsRig(bodies);
 
     for (const body of bodies) {
-      expect(rig.engine.physics?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
+      expect(physicsOf(rig.world)?.body(body.entity.id)?.mass).toBeCloseTo(12, 4);
     }
   });
 
@@ -26,7 +27,7 @@ describe('a body’s mass', () => {
     const plane = withBody('plane', [0, 3, 0], { mass: 5 });
     const rig = await physicsRig([ground(), plane]);
 
-    expect(rig.engine.physics?.body(plane.entity.id)?.mass).toBeCloseTo(5, 4);
+    expect(physicsOf(rig.world)?.body(plane.entity.id)?.mass).toBeCloseTo(5, 4);
     rig.run(2);
 
     expect(Math.abs(rig.solved(plane.entity.id).position.y)).toBeLessThan(0.05);

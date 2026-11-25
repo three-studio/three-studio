@@ -35,6 +35,9 @@ import { AssetCache } from '../src/assets/AssetCache';
 import { SceneBinder } from '../src/SceneBinder';
 import type { AssetResolver } from '../src/assets/AssetResolver';
 import { builtInRegistries } from './registries';
+import { CameraClaims } from '../src/world/cameras';
+import { SunService } from '../src/world/sun';
+import { StudioTime } from '../src/time/StudioTime';
 
 /*
  * The binder had no tests at all, which is why five of the twelve bugs found
@@ -63,6 +66,9 @@ function binderWith(
   rendering: RenderingSettings = { ...createRenderingSettings(), batching: false },
 ): SceneBinder {
   const binder = new SceneBinder({
+    time: new StudioTime(),
+    cameras: new CameraClaims(),
+    sun: new SunService(),
     registries,
     assets: new AssetCache(registries, { resolver, idleBudgetBytes: 0 }),
     rendering,
@@ -522,6 +528,25 @@ describe('what a batch has to notice', () => {
     expect(batchOf(binder).material).toBe(meshOf(binder, linked[0]!.entity.id).material);
   });
 
+  it('keeps its instances when the member it took its material from leaves, and draws a member’s', () => {
+    const [first, ...rest] = cubes(6);
+    if (first === undefined) throw new Error('no cubes');
+    const binder = batching();
+    binder.sync(sceneWith([first, ...rest]));
+    const batch = batchOf(binder);
+    // Embedded, so the material is the first member's own.
+    expect(batch.material).toBe(meshOf(binder, first.entity.id).material);
+
+    binder.sync(sceneWith(rest));
+
+    // The same object, its geometry and its matrices kept: a game that spawns
+    // and destroys destroys the oldest first, which is the member a batch takes
+    // its material from, and rebuilding for that rebuilt the batch every frame.
+    expect(batchOf(binder)).toBe(batch);
+    expect(batch.instanceCount).toBe(5);
+    expect(rest.map((cube) => meshOf(binder, cube.entity.id).material)).toContain(batch.material);
+  });
+
   it('does not cull itself against bounds three computed once and cached', () => {
     const binder = batching();
     binder.sync(sceneWith(cubes(4)));
@@ -620,9 +645,6 @@ describe('what a batch has to notice', () => {
     expect(batchFor(binder, false).instanceCount).toBe(4);
     expect(batchFor(binder, true).instanceCount).toBe(5);
 
-    // Not the first of its group: the batch adopted *that* one's material, so
-    // moving it fails the material check and rebuilds — which is the safe path
-    // and hides the one under test. The second has no such privilege.
     const migrant = shadowed[1]!;
     binder.sync(sceneWith([...plain, ...withoutShadows(shadowed, 1)]));
 
@@ -635,24 +657,25 @@ describe('what a batch has to notice', () => {
     expect(slotFor(binder, batchFor(binder, false), migrant.entity.id)).toBeDefined();
   });
 
-  it('hands a member over even when the batch it leaves is torn down', () => {
-    // The same hazard through the other door: the mesh the departing batch had
-    // taken its material from is the one that leaves, so that batch cannot be
-    // refitted and is disposed instead — and disposal hands its members back
-    // exactly as the refit does.
+  it('hands its members over even when the batch they leave is torn down', () => {
+    // The same hazard through the other door: every member of the departing
+    // batch leaves it, so nothing is left to refit and it is disposed instead —
+    // and disposal hands its members back exactly as the refit does, after the
+    // batch that took them, visited first, has hidden them.
     const plain = cubes(4, false);
     const shadowed = cubes(4, true);
     const binder = batching();
     binder.sync(sceneWith([...plain, ...shadowed]));
 
-    const migrant = shadowed[0]!;
-    binder.sync(sceneWith([...plain, ...withoutShadows(shadowed, 0)]));
+    const unshadowed = shadowed.reduce((field, _, index) => withoutShadows(field, index), shadowed);
+    binder.sync(sceneWith([...plain, ...unshadowed]));
 
-    expect(batchFor(binder, false).instanceCount).toBe(5);
-    // Three left behind is under `MIN_BATCH_SIZE`, so nothing replaces it.
+    expect(batchFor(binder, false).instanceCount).toBe(8);
     expect(batchesOf(binder)).toHaveLength(1);
-    expect(meshOf(binder, migrant.entity.id).visible).toBe(false);
-    expect(slotFor(binder, batchFor(binder, false), migrant.entity.id)).toBeDefined();
+    for (const migrant of shadowed) {
+      expect(meshOf(binder, migrant.entity.id).visible).toBe(false);
+      expect(slotFor(binder, batchFor(binder, false), migrant.entity.id)).toBeDefined();
+    }
   });
 
   it('keeps resolving a click after a member left and another took its slot', () => {

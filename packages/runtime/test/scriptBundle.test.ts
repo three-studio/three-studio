@@ -7,8 +7,8 @@ import { physicsRig, standInForTheBrowser, takeTheBrowserBack, withScript } from
 /*
  * A compiled bundle's classes are what its module exports, and a bundle is
  * written by a build of the author's code: nothing checks what it holds before
- * the host reads it, so the host decodes it. The classes then go to the engine
- * that runs them, and to no other: an engine made from another bundle finds
+ * the host reads it, so the host decodes it. The classes then go to the world
+ * that runs them, and to no other: a world made from another bundle finds
  * nothing of the first.
  */
 
@@ -46,7 +46,7 @@ describe("a bundle's classes", () => {
   });
 });
 
-describe('two engines, given a bundle each', () => {
+describe('two worlds, given a bundle each', () => {
   /** Which class woke, in order. */
   const woke: string[] = [];
 
@@ -69,15 +69,15 @@ describe('two engines, given a bundle each', () => {
     expect(woke).toEqual(['first', 'second']);
   });
 
-  it('finds nothing of another engine’s bundle in its own', async () => {
+  it('finds nothing of another world’s bundle in its own', async () => {
     woke.length = 0;
     const door = withScript(createEntity('Door', []), First);
     await physicsRig([door]);
-    // The same script, naming the class the first engine was given, in an
-    // engine whose bundle does not hold it.
-    const { engine } = await physicsRig([createEntity('Door', [assertDefined(door.components[0], 'the script')])]);
+    // The same script, naming the class the first world was given, in an
+    // world whose bundle does not hold it.
+    const { world } = await physicsRig([createEntity('Door', [assertDefined(door.components[0], 'the script')])]);
 
     expect(woke).toEqual(['first']);
-    expect(engine.warnings).toContain('"Door" references a script that is not compiled.');
+    expect(world.warnings).toContain('"Door" references a script that is not compiled.');
   });
 });

@@ -1,6 +1,6 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import type { CharacterController, CharacterSettings, QuatLike, Vec3Like } from './PhysicsApi';
-import { isFiniteVec, unitQuat } from './values';
+import { isFiniteVec, writeUnitQuat } from './values';
 
 /**
  * A kinematic character, moved by Rapier's character controller.
@@ -17,6 +17,17 @@ import { isFiniteVec, unitQuat } from './values';
  */
 export class Character implements CharacterController {
   grounded = false;
+  /**
+   * Read from Rapier and handed to it, every tick: kept, where a new object
+   * each time made garbage at the tick's rate. `collision` is Rapier's own,
+   * kept from its first answer.
+   */
+  private readonly position = { x: 0, y: 0, z: 0 };
+  private readonly target = { x: 0, y: 0, z: 0 };
+  private readonly turn = { x: 0, y: 0, z: 0, w: 1 };
+  private readonly along = { x: 0, y: 0, z: 0 };
+  private readonly rest = { x: 0, y: 0, z: 0 };
+  private collision: RAPIER.CharacterCollision | null = null;
 
   constructor(
     private readonly controller: RAPIER.KinematicCharacterController,
@@ -36,10 +47,16 @@ export class Character implements CharacterController {
     controller.setApplyImpulsesToDynamicBodies(true);
   }
 
-  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like> {
+  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, into?: Vec3Like): Readonly<Vec3Like> {
     // An infinite move handed Rapier's controller a target that is not a
     // number, and the character never moved again.
-    if (!isFiniteVec(translation)) return { x: 0, y: 0, z: 0 };
+    if (!isFiniteVec(translation)) {
+      const none = into ?? { x: 0, y: 0, z: 0 };
+      none.x = 0;
+      none.y = 0;
+      none.z = 0;
+      return none;
+    }
 
     // Snap-to-ground is what stops a character hopping down slopes, but it also
     // drags it straight back to the floor the instant it leaves, which turns a
@@ -60,19 +77,18 @@ export class Character implements CharacterController {
     // still reads true, the descent being under way long before the contact.
     this.grounded = this.controller.computedGrounded() && translation.y <= 0;
 
-    // Rapier hands back a fresh object, which is the copy the API promises.
-    const movement = this.controller.computedMovement();
+    // Into the caller's, or a fresh object, which is the copy the API promises.
+    const movement = this.controller.computedMovement(into);
     this.finishAlongTheFloor(movement);
 
-    const current = this.body.translation();
-    this.body.setNextKinematicTranslation({
-      x: current.x + movement.x,
-      y: current.y + movement.y,
-      z: current.z + movement.z,
-    });
+    const current = this.body.translation(this.position);
+    const target = this.target;
+    target.x = current.x + movement.x;
+    target.y = current.y + movement.y;
+    target.z = current.z + movement.z;
+    this.body.setNextKinematicTranslation(target);
     // A rotation with no direction keeps the turn the body has.
-    const turn = unitQuat(rotation);
-    if (turn) this.body.setNextKinematicRotation(turn);
+    if (writeUnitQuat(this.turn, rotation)) this.body.setNextKinematicRotation(this.turn);
     return movement;
   }
 
@@ -96,7 +112,8 @@ export class Character implements CharacterController {
    */
   private finishAlongTheFloor(movement: Vec3Like): void {
     const count = this.controller.numComputedCollisions();
-    const last = count > 0 ? this.controller.computedCollision(count - 1) : null;
+    const last = count > 0 ? this.controller.computedCollision(count - 1, this.collision ?? undefined) : null;
+    if (last !== null) this.collision = last;
     // Stopped at once by a face it can stand on, not by a wall or a steep slope…
     if (!last || last.toi > 1e-6 || last.normal1.y < Math.cos(this.settings.maxSlope)) return;
     // …and moved along nothing after that stop.
@@ -106,15 +123,19 @@ export class Character implements CharacterController {
     const { x, y, z } = last.translationDeltaRemaining;
     const n = last.normal1;
     const across = x * n.x + y * n.y + z * n.z;
-    const along = { x: x - n.x * across, y: y - n.y * across, z: z - n.z * across };
-    if (Math.hypot(along.x, along.y, along.z) < 1e-5) return;
+    const along = this.along;
+    along.x = x - n.x * across;
+    along.y = y - n.y * across;
+    along.z = z - n.z * across;
+    // Squared, against the square of the bound: `Math.hypot` makes an array of
+    // its arguments on every call, and this runs every tick a character stands.
+    if (along.x * along.x + along.y * along.y + along.z * along.z < 1e-10) return;
 
-    this.sweep({
-      x: along.x + n.x * FLOOR_NUDGE,
-      y: along.y + n.y * FLOOR_NUDGE,
-      z: along.z + n.z * FLOOR_NUDGE,
-    });
-    const rest = this.controller.computedMovement();
+    along.x += n.x * FLOOR_NUDGE;
+    along.y += n.y * FLOOR_NUDGE;
+    along.z += n.z * FLOOR_NUDGE;
+    this.sweep(along);
+    const rest = this.controller.computedMovement(this.rest);
     movement.x += rest.x - n.x * FLOOR_NUDGE;
     movement.y += rest.y - n.y * FLOOR_NUDGE;
     movement.z += rest.z - n.z * FLOOR_NUDGE;

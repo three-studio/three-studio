@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { CACHE_DIR } from '@three-studio/core';
+import { CACHE_DIR, activateCore, assertDefined } from '@three-studio/core';
+import { activateRuntime, createRuntimeRegistries, reservedScriptNames, scriptTypings } from '@three-studio/runtime';
 import { describe, expect, it } from 'vitest';
 import { writeScriptTypings } from '../src/main/scripts';
 
@@ -12,11 +13,14 @@ import { writeScriptTypings } from '../src/main/scripts';
  * The typings the editor writes into a project, compiled against the runtime
  * they claim to describe.
  *
- * They are not the runtime's own declarations: a user's project cannot resolve
- * `three` or `@three-studio/core`, so `Object3D` is published as `any` and an
- * `EntityDoc` as the two fields a script reads off it. That makes them a second
- * statement of the same API — and the only reason the copy is acceptable is
- * this test, which fails the moment the two stop agreeing.
+ * Generated from the registries the editor window runs — the kernel's members,
+ * then each contribution's, physics' and audio's — and written by the main
+ * process. They are not the runtime's own declarations: a user's project
+ * cannot resolve `three` or `@three-studio/core`, so `Object3D` is published
+ * as `any` and three's vectors as the fields and the methods a script writes
+ * them with. That makes them a second statement of the same API — and the only
+ * reason the copy is acceptable is this test, which fails the moment the two
+ * stop agreeing.
  *
  * TypeScript 7 has no JS API (see `packages/core/package.json`), so the check
  * is the compiler itself, run over a probe file. It costs about a quarter of a
@@ -26,6 +30,16 @@ import { writeScriptTypings } from '../src/main/scripts';
 
 const run = promisify(execFile);
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+
+/** The editor window's runtime registries, as its root activates them: the typings are theirs. */
+function runtimeRegistries() {
+  const registries = createRuntimeRegistries();
+  activateCore(registries);
+  activateRuntime(registries);
+  return registries;
+}
+
+const registries = runtimeRegistries();
 
 /** A path a TypeScript import can carry, on a machine whose separator is `\`. */
 const importable = (...parts: string[]): string =>
@@ -42,7 +56,12 @@ const importable = (...parts: string[]): string =>
  */
 const PROBE = `import type {
   Behaviour as Published,
-  EntityHandle as PublishedHandle,
+  Entity as PublishedEntity,
+  EntityTransform as PublishedTransform,
+  ScriptWorld as PublishedWorld,
+  Vec3 as PublishedVector,
+  Euler as PublishedEuler,
+  Quat as PublishedRotation,
   SceneApi as PublishedScenes,
   AudioBus as PublishedBus,
   ScriptPropertyDef as PublishedProperty,
@@ -58,11 +77,16 @@ const PROBE = `import type {
   Collision as PublishedCollision,
   QueryFilter as PublishedFilter,
   RaycastHit as PublishedHit,
+  ComponentTypes as PublishedComponents,
+  PlaceOptions as PublishedPlace,
+  SpawnOptions as PublishedSpawn,
+  Message as PublishedMessage,
 } from '@three-studio/runtime';
-import type { Behaviour, EntityHandle } from ${importable('packages/runtime/src/scripting/ScriptApi')};
-import type { SceneApi } from ${importable('packages/runtime/src/behaviour/Behaviour')};
+import type { Behaviour } from ${importable('packages/runtime/src/scripting/ScriptApi')};
+import type { Entity, EntityTransform, Message, PlaceOptions, ScriptWorld, SpawnOptions } from ${importable('packages/runtime/src/scripting/Entity')};
+import type { SceneApi } from ${importable('packages/runtime/src/sceneApi')};
 import type { Input } from ${importable('packages/runtime/src/input/Input')};
-import type { AudioApi } from ${importable('packages/runtime/src/scripting/audioApi')};
+import type { AudioApi } from ${importable('packages/runtime/src/audio/scriptMembers')};
 import type {
   BodyHandle,
   CharacterController,
@@ -74,29 +98,42 @@ import type {
   RaycastHit,
   Vec3Like,
 } from ${importable('packages/runtime/src/physics/PhysicsApi')};
-import type { ScriptPhysics } from ${importable('packages/runtime/src/scripting/scriptPhysics')};
+import type { ScriptPhysics } from ${importable('packages/runtime/src/physics/scriptMembers')};
 import type { FieldDef } from ${importable('packages/core/src/fields')};
-import type { AudioBus } from ${importable('packages/core/src/index')};
+import type { AudioBus, ComponentTypes } from ${importable('packages/core/src/index')};
 
 // The public half of a type. A class carrying a protected member is assignable
 // from nothing but a subclass, so the two \`Behaviour\`s cannot be compared
 // whole; a mapped type is keyed on \`keyof\`, which leaves the protected
-// helpers out. Those four are covered by name, by the table the body is keyed
-// on in \`scripts.ts\`.
+// helpers out. Those three are covered by name, by the kernel's record of its
+// members in \`typings.ts\`.
 type PublicPart<T> = { [K in keyof T]: T[K] };
 
 declare const behaviour: Behaviour;
-declare const handle: EntityHandle;
+declare const entity: Entity;
+declare const transform: EntityTransform;
+declare const world: ScriptWorld;
 declare const scenes: SceneApi;
 declare const input: Input;
 declare const audio: AudioApi;
 declare const property: FieldDef;
 declare const bus: AudioBus;
 declare const publishedBus: PublishedBus;
+declare const publishedScenes: PublishedScenes;
 
 export const a: PublicPart<Published> = behaviour;
-export const b: PublishedHandle = handle;
+export const b: PublishedEntity = entity;
+export const b1: PublishedTransform = transform;
+export const b2: PublishedWorld = world;
+// three's own, which the transform hands out: what is published of them is a
+// part of each, the fields and what writes them in place.
+export const b3: PublishedVector = transform.position;
+export const b4: PublishedEuler = transform.rotation;
+export const b5: PublishedRotation = transform.quaternion;
 export const c: PublishedScenes = scenes;
+// Both ways: what a script is told it may call — an additive load, an unload,
+// the data between scenes — is what the game gives it.
+export const c1: SceneApi = publishedScenes;
 export const d: StudioInput = input;
 export const e: StudioAudio = audio;
 export const f: PublishedProperty = property;
@@ -146,6 +183,28 @@ export const w: StudioJoint = joint;
 // Both ways: the filter a script builds is the one the runtime reads.
 export const u: PublishedFilter = filter;
 export const v: QueryFilter = publishedFilter;
+
+declare const components: ComponentTypes;
+
+// Every type the build defines is published, and each component as the
+// runtime holds it is one a script may read: keyed on the kernel's own types,
+// so a type left out fails here rather than vanishing from an author's editor.
+export const x: { [K in keyof ComponentTypes]: PublishedComponents[K] } = components;
+
+declare const place: PlaceOptions;
+declare const spawn: SpawnOptions;
+
+// One way, as \`Entity\` is: the published parent is a part of the runtime's
+// handle, whose private fields no published type can have.
+export const y1: PublishedPlace = place;
+export const y2: PublishedSpawn = spawn;
+
+declare const message: Message;
+declare const publishedMessage: PublishedMessage;
+
+// Both ways: what the runtime hands \`onMessage\` is what the script reads.
+export const z1: PublishedMessage = message;
+export const z2: Message = publishedMessage;
 `;
 
 /**
@@ -178,7 +237,7 @@ const TSCONFIG = {
 describe('the generated script typings', () => {
   it('compiles against the runtime they describe', { timeout: 60_000 }, async () => {
     const project = await mkdtemp(join(tmpdir(), 'studio-typings-'));
-    await writeScriptTypings(project);
+    await writeScriptTypings(project, scriptTypings(registries));
 
     const probe = join(project, 'probe');
     await mkdir(probe, { recursive: true });
@@ -205,23 +264,25 @@ describe('the generated script typings', () => {
     // `onSceneUnload`, which existed on `Behaviour` for two releases and were
     // published nowhere.
     const project = await mkdtemp(join(tmpdir(), 'studio-typings-'));
-    await writeScriptTypings(project);
+    await writeScriptTypings(project, scriptTypings(registries));
     const dts = await readFile(join(project, CACHE_DIR, 'studio-runtime.d.ts'), 'utf8');
 
-    const { RESERVED_PROPERTY_NAMES } = await import('@three-studio/runtime');
+    const reserved = reservedScriptNames(registries.scriptMembers.values());
     // The class body alone: the interfaces above it are indented the same, and
     // an `AudioVoice` with a `pause` is not a `Behaviour` with one.
     const body = dts.slice(dts.indexOf('export abstract class Behaviour {'));
     const published = new Set(
-      [...body.matchAll(/^ {4}(?:(?:static|protected|readonly) )*(\w+)[?(:]/gm)].map((hit) => hit[1]!),
+      [...body.matchAll(/^ {4}(?:(?:static|protected|readonly) )*(\w+)[?(:]/gm)].map((hit) =>
+        assertDefined(hit[1], 'the name of a published member'),
+      ),
     );
 
     // `cancelTimers` is the one the host owns: reserved so a property cannot
     // take the name, unpublished so a script cannot cancel its own timers.
-    expect([...RESERVED_PROPERTY_NAMES].filter((name) => !published.has(name))).toEqual([
-      'cancelTimers',
-    ]);
-    expect([...published].filter((name) => name !== 'properties' && !RESERVED_PROPERTY_NAMES.has(name))).toEqual(
+    expect([...reserved].filter((name) => !published.has(name))).toEqual(['cancelTimers']);
+    expect([...published].filter((name) => name !== 'properties' && !reserved.has(name))).toEqual([]);
+    // Physics' and audio's among them, which the host names nowhere.
+    expect(['body', 'physics', 'onCollisionEnter', 'onTriggerExit', 'audio'].filter((name) => !published.has(name))).toEqual(
       [],
     );
   });

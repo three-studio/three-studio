@@ -2,12 +2,12 @@ import { createEntity, createRenderingSettings, type EntityTemplate } from '@thr
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
 import type { BodyHandle, Collision } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { builtInRegistries } from '../registries';
+import { builtInRegistries, withoutPhysics } from '../registries';
 import {
   bundleOf,
   ground,
@@ -21,6 +21,7 @@ import {
   withCollider,
   withScript,
 } from './rig';
+import { StudioTime } from '../../src/time/StudioTime';
 
 /*
  * A script hears what its entity's colliders, and those of children riding its
@@ -160,7 +161,7 @@ describe('a script hearing its colliders', () => {
 
     rig.run(3);
 
-    expect(rig.engine.warnings.filter((line) => line.includes('failed in onTriggerEnter'))).toHaveLength(1);
+    expect(rig.world.warnings.filter((line) => line.includes('failed in onTriggerEnter'))).toHaveLength(1);
     expect(Throws.exited).toBe(false);
   });
 
@@ -170,27 +171,26 @@ describe('a script hearing its colliders', () => {
 
     rig.run(0.1);
 
-    const door = rig.engine.warnings.filter((line) => line.includes('"Door"'));
+    const door = rig.world.warnings.filter((line) => line.includes('"Door"'));
     expect(door).toHaveLength(1);
     expect(door[0]).toContain('Collider');
-    expect(rig.engine.warnings.filter((line) => line.includes('Lamp'))).toEqual([]);
+    expect(rig.world.warnings.filter((line) => line.includes('Lamp'))).toEqual([]);
   });
 
   it('with no physics, a listening script is quiet', async () => {
     // A host with no physics is about the host, not the scene: nothing to fix there.
     const door = withScript(createEntity('Door'), Log);
     const registries = builtInRegistries();
-    const engine = await Engine.create({
-      scene: sceneWith([door]),
-      registries,
+    const world = await World.play({
+      time: new StudioTime(),
+      document: sceneWith([door]),
+      registries: withoutPhysics(registries),
       scripts: bundleOf([door]),
       assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
       rendering: createRenderingSettings(),
-      domElement: new EventTarget() as unknown as HTMLElement,
-      enablePhysics: false,
     });
-    onTestFinished(() => engine.dispose());
+    onTestFinished(() => world.dispose());
 
-    expect(engine.warnings.filter((line) => line.includes('Door'))).toEqual([]);
+    expect(world.warnings.filter((line) => line.includes('Door'))).toEqual([]);
   });
 });

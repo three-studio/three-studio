@@ -178,7 +178,7 @@ describe('a collider off its entity’s centre, turned', () => {
 });
 
 describe('a mesh collider from its triangles', () => {
-  it('is built as its hull on a dynamic body: a ball rests over its hole, and the engine says why', async () => {
+  it('is built as its hull on a dynamic body: a ball rests over its hole, and the world says why', async () => {
     const torus = withBody('torus', [0, 0.15, 0]);
     torus.entity.transform.rotation = [-Math.PI / 2, 0, 0];
     colliderOf(torus).shape = { kind: 'mesh', build: 'triangles' };
@@ -190,7 +190,7 @@ describe('a mesh collider from its triangles', () => {
 
     // The hull's top is at 0.3, so the ball rests about 0.4 up.
     expect(rig.solved(ball.entity.id).position.y).toBeGreaterThan(0.3);
-    const said = rig.engine.warnings.filter((line) => line.includes('"Torus"'));
+    const said = rig.world.warnings.filter((line) => line.includes('"Torus"'));
     expect(said).toHaveLength(1);
     expect(said[0]).toContain('Convex parts');
   });
@@ -206,7 +206,7 @@ describe('a mesh collider from its triangles', () => {
     rig.run(2);
 
     expect(Math.abs(rig.solved(ball.entity.id).position.y - 0.1)).toBeLessThan(0.02);
-    expect(rig.engine.warnings.filter((line) => line.includes('"Torus"'))).toEqual([]);
+    expect(rig.world.warnings.filter((line) => line.includes('"Torus"'))).toEqual([]);
   });
 });
 

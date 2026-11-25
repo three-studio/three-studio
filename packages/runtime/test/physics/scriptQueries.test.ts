@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 import type { RaycastHit } from '../../src/physics/PhysicsApi';
 import { Behaviour } from '../../src/scripting/ScriptHost';
-import { scriptPhysicsFor } from '../../src/scripting/scriptPhysics';
+import { scriptPhysicsFor } from '../../src/physics/scriptMembers';
 import {
   block,
   nest,
@@ -87,7 +87,7 @@ describe("a script's queries", () => {
 
     expect(found.length).toBeGreaterThan(1);
     expect(found.every((result) => Array.isArray(result) && result.length === 0)).toBe(true);
-    const told = rig.engine.warnings.filter((line) => line.includes('"Seeker"'));
+    const told = rig.world.warnings.filter((line) => line.includes('"Seeker"'));
     expect(told).toHaveLength(1);
     expect(told[0]).toContain('this.physics.layers');
   });

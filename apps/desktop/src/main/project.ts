@@ -39,7 +39,7 @@ import { atomicWrite } from './atomicWrite';
 import { MissingFileError, isNotFound, resolveInside } from './paths';
 import { FileIndex, stampOf } from './projectIndex';
 import { remember } from './recentProjects';
-import { writeScriptTypings } from './scripts';
+import { writeScriptTsconfig } from './scripts';
 
 const DEFAULT_SCENE_PATH = `${SCENES_DIR}/main${SCENE_FILE_SUFFIX}`;
 
@@ -409,9 +409,10 @@ async function finalize(
   entry: SceneEntry,
   sceneJson: string,
 ): Promise<OpenProject> {
-  // Refreshed on every open so the declarations track the editor version rather
-  // than whatever shipped when the project was first created.
-  await writeScriptTypings(projectPath).catch(() => undefined);
+  // Refreshed on every open so the config tracks the editor version rather
+  // than whatever shipped when the project was first created. The typings it
+  // includes are the window's to write, from the registries it runs.
+  await writeScriptTsconfig(projectPath).catch(() => undefined);
 
   const summary: ProjectSummary = {
     name: contents.project.name,

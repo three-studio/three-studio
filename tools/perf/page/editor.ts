@@ -4,7 +4,7 @@
  * handles `devtools.ts` declares on `window`.
  */
 
-import type { EntityId, SceneId } from '@three-studio/core';
+import type { AssetId, EntityId, SceneId } from '@three-studio/core';
 
 /** Which of the editor's handles the window has, and whether it believes it has the focus: 1 or 0 each. */
 export function editorHandles(): Record<string, number> {
@@ -549,7 +549,18 @@ export function switchScenes(args: {
 /**
  * Goes to `target` with the project's loading scene up meanwhile, to the
  * target's first frame: how long, the longest frame on the way, how many
- * frames were drawn, and 1 when the loading scene did run in between.
+ * frames were drawn, the shader programs its first frame created, and 1 when
+ * the loading scene did run in between.
+ *
+ * The programs say what a compile ahead left to the start frame. Measured on
+ * scenario 6's Heavy: its environment's PMREM, generated as it is first drawn;
+ * the shadow pass's; and its materials again, keyed by an environment that was
+ * the loading scene's when they were compiled.
+ *
+ * The target's first frame counts: the frame after the store names the target
+ * is the one that draws it, and it is the longest of all — its pipelines and
+ * its images uploaded. Left out, the measure ended a frame early, and only
+ * where a host told the store before drawing did that frame fall inside it.
  */
 export function goThroughLoading(args: { target: { name: string; id: string }; loadingId: string }): Promise<Record<string, number>> {
   return new Promise((resolve, reject) => {
@@ -564,6 +575,11 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
     let longest = 0;
     let frames = 0;
     let sawLoading = 0;
+    const programs = (): number => window.__studioViewport?.renderer.info.memory.programs ?? Number.NaN;
+    // Read at every frame before the store names the target, not at the frame
+    // it does: the store hears of the switch after the frame that first draws
+    // the target, so a reading there already holds that frame's programs.
+    let programsBefore = programs();
     const tick = (): void => {
       const now = performance.now();
       longest = Math.max(longest, now - last);
@@ -572,9 +588,21 @@ export function goThroughLoading(args: { target: { name: string; id: string }; l
       const running = stores.viewport.getState().runningScene;
       if (running === args.loadingId) sawLoading = 1;
       if (running === args.target.id) {
-        requestAnimationFrame(() => resolve({ ms: performance.now() - started, longestFrameMs: longest, frames, sawLoading }));
+        requestAnimationFrame(() => {
+          const end = performance.now();
+          resolve({
+            ms: end - started,
+            longestFrameMs: Math.max(longest, end - last),
+            frames: frames + 1,
+            startPrograms: programs() - programsBefore,
+            sawLoading,
+          });
+        });
       } else if (now - started > 120_000) reject(new Error(`scene ${args.target.name} never ran`));
-      else requestAnimationFrame(tick);
+      else {
+        programsBefore = programs();
+        requestAnimationFrame(tick);
+      }
     };
     api.go(args.target.name).catch(reject);
     requestAnimationFrame(tick);
@@ -586,4 +614,153 @@ export async function setLoadingScene(id: SceneId | null): Promise<Record<string
   const saved = await window.studio.project.updateSettings({ loadingScene: id });
   window.__studioStores?.project.getState().adoptProject(saved);
   return { set: id === null ? 0 : 1 };
+}
+
+/**
+ * Places `count` of a prefab in the running world, one per slot of a grid in
+ * the air, `columns` a row and `spacing` apart at `height`, then runs the
+ * world's pass, all in one task: how long, in ms. Scripts cannot spawn yet, so
+ * the page drives the world. What was placed is kept slot by slot in
+ * `__perfCrates`, for the next call.
+ */
+export function spawnCrates(field: {
+  prefab: AssetId;
+  count: number;
+  columns: number;
+  spacing: number;
+  height: number;
+}): Record<string, number> {
+  const world = window.__studioViewport?.playWorld;
+  if (!world) throw new Error('no running world');
+  const rows = Math.ceil(field.count / field.columns);
+  const crates: EntityId[] = [];
+  const started = performance.now();
+  for (let slot = 0; slot < field.count; slot += 1) {
+    const crate = world.instantiate(field.prefab, {
+      transform: {
+        position: [
+          ((slot % field.columns) - (field.columns - 1) / 2) * field.spacing,
+          field.height,
+          (Math.floor(slot / field.columns) - (rows - 1) / 2) * field.spacing,
+        ],
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+      },
+    });
+    if (crate === null) throw new Error(`the running world has no prefab ${field.prefab}`);
+    crates.push(crate);
+  }
+  world.reconcile();
+  const ms = performance.now() - started;
+  window.__perfCrates = crates;
+  return { ms, crates: crates.length };
+}
+
+/** Destroys what `spawnCrates` placed, then runs the world's pass, in one task: how long, in ms. */
+export function destroyCrates(): Record<string, number> {
+  const world = window.__studioViewport?.playWorld;
+  const crates = window.__perfCrates;
+  if (!world || !crates) throw new Error('no running world, or no crates placed');
+  const started = performance.now();
+  for (const crate of crates) world.destroy(crate);
+  world.reconcile();
+  const ms = performance.now() - started;
+  window.__perfCrates = [];
+  return { ms, crates: crates.length };
+}
+
+/**
+ * Raises or lowers the flag the `dynamics` recipe's `Spawner` script churns
+ * under: the page's churn, done by a script through the façade.
+ */
+export function setScriptChurn(on: boolean): Record<string, number> {
+  window.__perfChurn = on;
+  return { on: on ? 1 : 0 };
+}
+
+/**
+ * The time between frames for `ms`, in ms, while the `Spawner` churns, then
+ * its flag lowered: the script does the work, the page only watches.
+ */
+export function churnByScript(ms: number): Promise<number[]> {
+  return new Promise((resolve) => {
+    const deltas: number[] = [];
+    let started = -1;
+    let last = -1;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0) deltas.push(now - last);
+      else started = now;
+      last = now;
+      if (now - started < ms) {
+        requestAnimationFrame(tick);
+        return;
+      }
+      window.__perfChurn = false;
+      resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
+/**
+ * A churn of `ms`: at each frame the `perFrame` oldest crates are destroyed
+ * and as many placed in their slots, so that as many stay alive as
+ * `spawnCrates` placed. Each slot's crate is the oldest when its turn comes
+ * round, and the one it replaces has fallen from it meanwhile. The time
+ * between frames, in ms.
+ */
+export function churnCrates(args: {
+  prefab: AssetId;
+  count: number;
+  columns: number;
+  spacing: number;
+  height: number;
+  perFrame: number;
+  ms: number;
+}): Promise<number[]> {
+  return new Promise((resolve, reject) => {
+    const world = window.__studioViewport?.playWorld;
+    const crates = window.__perfCrates;
+    if (!world || !crates || crates.length !== args.count) {
+      reject(new Error(`no running world, or not ${args.count} crates placed`));
+      return;
+    }
+    const rows = Math.ceil(args.count / args.columns);
+    const deltas: number[] = [];
+    let next = 0;
+    let started = -1;
+    let last = -1;
+    const tick = (): void => {
+      const now = performance.now();
+      if (last >= 0) deltas.push(now - last);
+      else started = now;
+      last = now;
+      for (let k = 0; k < args.perFrame; k += 1) {
+        const slot = next % args.count;
+        next += 1;
+        const oldest = crates[slot];
+        if (oldest !== undefined) world.destroy(oldest);
+        const crate = world.instantiate(args.prefab, {
+          transform: {
+            position: [
+              ((slot % args.columns) - (args.columns - 1) / 2) * args.spacing,
+              args.height,
+              (Math.floor(slot / args.columns) - (rows - 1) / 2) * args.spacing,
+            ],
+            rotation: [0, 0, 0],
+            scale: [1, 1, 1],
+          },
+        });
+        if (crate === null) {
+          reject(new Error(`the running world has no prefab ${args.prefab}`));
+          return;
+        }
+        crates[slot] = crate;
+      }
+      if (now - started < args.ms) requestAnimationFrame(tick);
+      else resolve(deltas);
+    };
+    requestAnimationFrame(tick);
+  });
 }

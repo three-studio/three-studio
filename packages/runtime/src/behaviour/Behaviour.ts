@@ -1,91 +1,7 @@
-import type { AssetId, ComponentDoc, ComponentType, EntityDoc, SceneDoc } from '@three-studio/core';
+import type { ComponentDoc, ComponentType, EntityDoc } from '@three-studio/core';
 import type { Camera, Object3D } from 'three/webgpu';
-import type { AudioEngine } from '../audio/AudioEngine';
-import type { SceneBinder } from '../SceneBinder';
-import type { Input } from '../input/Input';
-import type { Collision, PhysicsApi } from '../physics/PhysicsApi';
-import type { StudioTime } from '../time/StudioTime';
-
-/**
- * A scene being fetched.
- *
- * Declared here rather than beside `SceneHost` so a behaviour can hold one
- * without the engine depending on the thing that runs it — the host builds
- * engines, and an engine that imported the host would be a cycle.
- */
-export interface SceneLoadHandle {
-  readonly path: string;
-  /** 0 to 1 across the assets the scene needs. */
-  readonly progress: number;
-  /** Settles when it could be shown. */
-  readonly ready: Promise<void>;
-  readonly activated: boolean;
-  /** Shows it, waiting for `ready` first if it has to. */
-  activate(): Promise<void>;
-  cancel(): void;
-}
-
-/** Moving between scenes, from inside a script. */
-export interface SceneApi {
-  /**
-   * The running scene's name, for a script that branches on where it is.
-   *
-   * The name is the indicative half of a scene's identity and can be changed
-   * by whoever is using the editor; a script that must not break when it is
-   * should hold the scene's id instead, which `load` and `go` also accept.
-   */
-  readonly current: string | null;
-  /** Starts fetching, without showing. Poll `progress`, then `activate()`. */
-  load(scene: string): SceneLoadHandle;
-  /** Fetches and shows, for a transition with nothing to display meanwhile. */
-  go(scene: string): Promise<void>;
-}
-
-/** What a behaviour is given access to. Deliberately narrow. */
-export interface BehaviourContext {
-  readonly scene: SceneDoc;
-  readonly binder: SceneBinder;
-  /**
-   * How a behaviour, a plugin's included, reaches physics: through our API,
-   * never Rapier's. `null` when the engine runs without physics.
-   */
-  readonly physics: PhysicsApi | null;
-  readonly input: Input;
-  /**
-   * The one clock, shared with the shaders.
-   *
-   * `time.elapsed` is the same number every node material is reading, so a
-   * script and the surface it animates cannot drift apart. Writing
-   * `time.timescale` is how a script asks for slow motion; it slows the drawing
-   * with the simulation, which is the whole point of there being one clock.
-   */
-  readonly time: StudioTime;
-  /**
-   * `null` when the engine is running on its own — the editor's Play used to,
-   * and a test does. A script that changes scenes has to say what it wants to
-   * happen then, rather than have one silently do nothing.
-   */
-  readonly scenes: SceneApi | null;
-  /**
-   * The mixer everything audible goes through.
-   *
-   * `null` when the host handed over no audio context — a test, or a browser
-   * with no Web Audio. An audio behaviour asked to build itself against `null`
-   * declines, so the component is inert rather than throwing once a frame.
-   */
-  readonly audio: AudioEngine | null;
-  /**
-   * The classes of the script bundle this engine runs, by script asset id: its
-   * own, never another engine's.
-   *
-   * Values of no known type here. Naming the script API would close an import
-   * cycle, since the API names this context, so the `script` behaviour checks
-   * each class as it reads it; the engine's options are where they are typed.
-   */
-  readonly scripts: ReadonlyMap<AssetId, unknown>;
-  /** Surfaces a problem in the editor, laid over the game in the Viewport. */
-  warn: (message: string) => void;
-}
+import type { Collision } from '../physics/PhysicsApi';
+import type { World } from '../world/World';
 
 /**
  * A component's runtime behaviour.
@@ -113,27 +29,27 @@ export interface Behaviour {
    * cannot see one built later. Doing cross-references here instead removes
    * that ordering entirely — the same reason Unity separates Awake from Start.
    */
-  start?: (ctx: BehaviourContext) => void;
-  update?: (delta: number, ctx: BehaviourContext) => void;
-  fixedUpdate?: (step: number, ctx: BehaviourContext) => void;
-  postUpdate?: (ctx: BehaviourContext) => void;
+  start?: () => void;
+  update?: (delta: number) => void;
+  fixedUpdate?: (step: number) => void;
+  postUpdate?: () => void;
   /**
    * One of this entity's colliders, or a collider of a child riding its body,
    * began touching another. Runs after the physics tick it happened in. A
    * collision needs a Dynamic body on one side: a Kinematic body, or a
    * character, meeting a wall is not one.
    */
-  onCollisionEnter?: (collision: Collision, ctx: BehaviourContext) => void;
+  onCollisionEnter?: (collision: Collision) => void;
   /** They stopped touching. `other` names the entity whose Collider it was. */
-  onCollisionExit?: (other: string, ctx: BehaviourContext) => void;
+  onCollisionExit?: (other: string) => void;
   /**
    * A sensor of this entity, or of a child riding its body, was entered — or
    * one of its colliders entered a sensor. A sensor sees anything that moves,
    * never another Fixed collider.
    */
-  onTriggerEnter?: (other: string, ctx: BehaviourContext) => void;
+  onTriggerEnter?: (other: string) => void;
   /** It left. */
-  onTriggerExit?: (other: string, ctx: BehaviourContext) => void;
+  onTriggerExit?: (other: string) => void;
   /** A camera the game should be rendered through, if this behaviour owns one. */
   readonly camera?: Camera;
   /** The scene is being left, while everything is still readable. */
@@ -154,7 +70,7 @@ export interface BehaviourTarget {
  *
  * This is the seam that makes features into blocks: a vehicle controller, an
  * animator, an audio source and a user script are all "a component type plus a
- * factory", and none of them requires the engine loop to know they exist.
+ * factory", and none of them requires the world's loop to know they exist.
  */
 export interface BehaviourDefinition {
   readonly id: ComponentType;
@@ -162,8 +78,11 @@ export interface BehaviourDefinition {
    * The behaviour for one component of the type, or `null` for one that
    * declines — an audio source with no audio engine to play through.
    *
-   * Handed every component the engine finds under `id`, and nothing else, so it
-   * narrows `target.component` by its `type` and owes no cast.
+   * Handed every component the world finds under `id`, and nothing else, so it
+   * narrows `target.component` by its `type` and owes no cast. What it uses of
+   * its world it reaches through that world: the document, `warn`, and each
+   * subsystem's accessor — `physicsOf`, `inputOf`, `audioOf` —, all built
+   * before any behaviour is.
    */
-  create(target: BehaviourTarget, ctx: BehaviourContext): Behaviour | null;
+  create(target: BehaviourTarget, world: World): Behaviour | null;
 }

@@ -8,11 +8,9 @@ import {
   type CoreRegistries,
   type ScriptBuildResult,
 } from '@three-studio/core';
-// Type-only, so nothing of the runtime — three included — reaches the main
-// process. What is needed is the class's key set, and only the compiler reads it.
-import type { BehaviourMember } from '@three-studio/runtime';
 import type { Plugin } from 'esbuild';
 import { scanAssets } from './assetScan';
+import { atomicWrite } from './atomicWrite';
 import { resolveInside } from './paths';
 
 // The shape is defined once, in @three-studio/core, because it crosses the bridge:
@@ -211,369 +209,16 @@ function generateEntry(projectPath: string, scripts: readonly AssetEntry[]): str
   });
 
   // Exported as data, and nothing called: the host decodes the pairs and hands
-  // the classes to the engine that runs them. A helper's default export, or
-  // none, is in the list too, and the decoding drops it.
-  const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, module${index}.default]`);
+  // the classes to the world that runs them. A helper's default export, or
+  // none, is in the list too, and the decoding drops it. Read at run time,
+  // because esbuild resolves `module.default` statically and warns that it
+  // "will always be undefined" for each helper with no default export: at
+  // every build, and the editor printed each warning to its Console.
+  const pairs = scripts.map((script, index) => `[${JSON.stringify(script.id)}, Reflect.get(module${index}, 'default')]`);
   lines.push(`export const scripts = [${pairs.join(', ')}];`);
 
   return `${lines.join('\n')}\n`;
 }
-
-/**
- * The types a script may name, as text.
- *
- * A user's project cannot resolve `three` or `@three-studio/core`, so this is
- * not the runtime's own declarations narrowed by a compiler — it is a
- * deliberately smaller contract: `Object3D` becomes `any`, an `EntityDoc`
- * becomes the two fields a script reads off it. Which is exactly why it has to
- * be checked against the real thing rather than trusted; see
- * `apps/desktop/test/scriptTypings.test.ts`, which compiles what this produces
- * against `ScriptApi` and fails on the first divergence. It found two: the
- * property vocabulary was missing `vec2` altogether, and its `vec3` had lost
- * the `min`/`max`/`step` a slider needs.
- */
-const PUBLISHED_TYPES = `  export type ScriptPropertyDef =
-    | { type: 'number'; default?: number; min?: number; max?: number; step?: number; label?: string }
-    | { type: 'boolean'; default?: boolean; label?: string }
-    | { type: 'string'; default?: string; label?: string }
-    | { type: 'color'; default?: string; label?: string }
-    | { type: 'vec2'; default?: [number, number]; min?: number; max?: number; step?: number; label?: string }
-    | { type: 'vec3'; default?: [number, number, number]; min?: number; max?: number; step?: number; label?: string }
-    | { type: 'enum'; options: readonly (string | { value: string; label: string })[]; default?: string; label?: string }
-    | { type: 'entity'; label?: string }
-    | { type: 'asset'; kind?: string; label?: string };
-
-  export interface EntityHandle {
-    readonly id: string;
-    readonly name: string;
-    readonly object: any;
-  }
-
-  export interface StudioInput {
-    isDown(code: string): boolean;
-    isAnyDown(...codes: string[]): boolean;
-    readonly pointerLocked: boolean;
-    consumeMouseDelta(): { x: number; y: number };
-    consumeWheel(): number;
-  }
-
-  export type AudioBus = 'master' | 'music' | 'sfx' | 'ui' | 'ambience';
-
-  /** A playing sound. Every method is safe to call after it has finished. */
-  export interface AudioVoice {
-    readonly state: 'pending' | 'playing' | 'paused' | 'stopped' | 'failed';
-    /** Seconds advanced through the clip, loops included. */
-    readonly elapsed: number;
-    stop(fadeOut?: number): void;
-    pause(): void;
-    resume(): void;
-    setVolume(volume: number, ramp?: number): void;
-    setPitch(pitch: number, detune?: number): void;
-    /** \`'ended'\` covers every way a sound can finish. Returns an unsubscribe. */
-    on(event: 'started' | 'ended' | 'failed', listener: () => void): () => void;
-  }
-
-  export interface AudioClipOptions {
-    bus?: AudioBus;
-    volume?: number;
-    pitch?: number;
-    detune?: number;
-    loop?: boolean;
-    startOffset?: number;
-    delay?: number;
-    fadeIn?: number;
-    /** 0 is the highest. Decides who is dropped when too many sounds play. */
-    priority?: number;
-  }
-
-  export interface StudioAudio {
-    /**
-     * Plays the Audio Source on an entity, with everything the Inspector says
-     * about it. Leaving \`target\` out means this script's own entity.
-     *
-     * A source that is already playing restarts rather than doubling up.
-     */
-    play(target?: string): AudioVoice | null;
-    stop(target?: string, fadeOut?: number): void;
-    pause(target?: string): void;
-    resume(target?: string): void;
-    restart(target?: string): void;
-    setVolume(target: string | undefined, volume: number, ramp?: number): void;
-    setPitch(target: string | undefined, pitch: number, detune?: number): void;
-
-    /** A one-shot with no component behind it — an explosion, a UI click. */
-    playClip(assetId: string, options?: AudioClipOptions): AudioVoice | null;
-
-    bus(name: AudioBus): { volume: number; mute: boolean; solo: boolean } | undefined;
-    setBusVolume(name: AudioBus, volume: number): void;
-    setBusMute(name: AudioBus, mute: boolean): void;
-    setMasterVolume(volume: number): void;
-    stopAll(fadeOut?: number): void;
-  }
-
-  /** A scene being fetched. */
-  export interface SceneLoadHandle {
-    readonly path: string;
-    /** 0 to 1 across the assets the scene needs. */
-    readonly progress: number;
-    /** Settles when it could be shown. */
-    readonly ready: Promise<void>;
-    readonly activated: boolean;
-    /** Shows it, waiting for \`ready\` first if it has to. */
-    activate(): Promise<void>;
-    cancel(): void;
-  }
-
-  /** Moving between scenes. Both take a scene's name or its id. */
-  export interface SceneApi {
-    /** The running scene's name. Hold its id instead if a rename must not break this. */
-    readonly current: string | null;
-    /** Starts fetching, without showing. Poll \`progress\`, then \`activate()\`. */
-    load(scene: string): SceneLoadHandle;
-    /** Fetches and shows, for a transition with nothing to display meanwhile. */
-    go(scene: string): Promise<void>;
-  }
-
-  /** A point, a direction or a velocity: metres, metres per second. three's \`Vector3\` is one. */
-  export interface Vec3Like { x: number; y: number; z: number }
-  /** A rotation. three's \`Quaternion\` is one. */
-  export interface QuatLike { x: number; y: number; z: number; w: number }
-
-  /**
-   * A body in the physics world, in world space: metres, seconds, kilograms, radians.
-   *
-   * Forces, impulses and velocities move a Dynamic body only: a Kinematic body is moved by
-   * its transform, a Fixed one stays put, and a character's by its controller. A vector or
-   * a rotation holding a NaN or an infinity is ignored, with the rest of the call.
-   */
-  export interface StudioBody {
-    /** Where the solver holds it, as of the last physics tick. */
-    readonly position: Readonly<Vec3Like>;
-    /** How the solver has it turned, as of the last physics tick. */
-    readonly rotation: Readonly<QuatLike>;
-    /** In kilograms: its Rigid Body's Mass. */
-    readonly mass: number;
-    /** \`false\` holds it out of the world: it touches nothing, and nothing touches it, and its joints hold nothing. */
-    enabled: boolean;
-    /** Metres per second. Assign a whole vector: \`body.linearVelocity = { x: 0, y: 5, z: 0 }\`. */
-    linearVelocity: Readonly<Vec3Like>;
-    /** Radians per second, about the world's axes. */
-    angularVelocity: Readonly<Vec3Like>;
-    /** Pushes it through the next physics tick, in newtons; at a world point \`at\` it turns it too. Call it in onFixedUpdate to push steadily. */
-    addForce(force: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
-    /** A kick: changes its velocity at once by impulse / mass, in newton-seconds; at a world point \`at\` it turns it too. */
-    applyImpulse(impulse: Readonly<Vec3Like>, at?: Readonly<Vec3Like>): void;
-    /** Turns it through the next physics tick, in newton-metres. */
-    addTorque(torque: Readonly<Vec3Like>): void;
-    /** Changes its spin at once, in newton-metre-seconds. */
-    applyTorqueImpulse(impulse: Readonly<Vec3Like>): void;
-    /** Puts it, and its entity, there at once, keeping its velocities. Without a rotation it is moved, not turned. A joint holding it pulls it back: teleport what it is joined to as well. */
-    teleport(position: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>): void;
-  }
-
-  /** A joint, as of the last physics tick. */
-  export interface StudioJoint {
-    /** How far it has moved since it was built: a hinge's angle in radians, right-handed about its axis, between -π and π; a slider's offset in metres. 0 for a Fixed or Spring joint. */
-    readonly position: number;
-    /** Whether its motor drives it. A Fixed or Spring joint has none. */
-    motorEnabled: boolean;
-    /** Radians per second for a hinge, metres per second for a slider. */
-    motorSpeed: number;
-    /** The most it pushes with: newton-metres for a hinge, newtons for a slider. */
-    motorMaxForce: number;
-  }
-
-  /** How a character meets the world. Every number is yours: the Player Controller's are 0.02, 0.87 (50°), 0.4, 0.2 and 0.4. */
-  export interface CharacterSettings {
-    /** The gap kept between it and what it touches, in metres. Small, never zero. */
-    readonly offset: number;
-    /** The steepest slope it walks up, in radians. */
-    readonly maxSlope: number;
-    /** The highest step it walks onto, in metres. */
-    readonly stepHeight: number;
-    /** How much free floor a step needs on top, in metres. */
-    readonly stepWidth: number;
-    /** How far below its feet the ground still holds it while it is not rising, in metres. */
-    readonly snapToGround: number;
-  }
-
-  /** A character its script moves. Its body is kinematic from the moment it is made. */
-  export interface CharacterController {
-    /** Moves it by up to \`translation\` this tick, sliding along what it meets, and turns it to \`rotation\`. Once per onFixedUpdate. Returns the part allowed. */
-    move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like>;
-    /** It stood on something after its last move, and was not leaving it. */
-    readonly grounded: boolean;
-  }
-
-  /** The physics world. An entity's id names the body it moves with: its own Rigid Body, or the nearest one above it. */
-  export interface StudioPhysics {
-    /** The project's gravity, in m/s². */
-    readonly gravity: Readonly<Vec3Like>;
-    /** \`null\` when the entity moves with no body. */
-    body(entityId: string): StudioBody | null;
-    /** The Joint on that entity, exactly the one that carries it, or null when it carries none or holds nothing. */
-    joint(entityId: string): StudioJoint | null;
-    /** Takes the body: from then on only \`move\` moves it. \`null\` with no body, no Collider on the body's own entity, or a controller already there — a Player Controller's included. Once, in onStart. */
-    createCharacterController(entityId: string, settings: CharacterSettings): CharacterController | null;
-    /** The project's collision layers, Default first. A query names a layer by its id: find it here by its name. */
-    readonly layers: readonly { readonly id: string; readonly name: string }[];
-    /**
-     * The nearest Collider along a ray, within maxDistance metres, or null. Leaves out this entity's own body, and
-     * passes out of anything it starts inside. Sees the world as the last physics tick left it.
-     */
-    raycast(origin: Readonly<Vec3Like>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
-    /** A ball swept from origin, its centre. As raycast. */
-    sphereCast(origin: Readonly<Vec3Like>, radius: number, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
-    /** A box of full size, turned by rotation, swept from origin, its centre. As raycast. */
-    boxCast(origin: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
-    /** A capsule, its height from end to end along its own y, turned by rotation, swept from its centre. As raycast. */
-    capsuleCast(origin: Readonly<Vec3Like>, radius: number, height: number, rotation: Readonly<QuatLike>, direction: Readonly<Vec3Like>, maxDistance: number, filter?: QueryFilter): RaycastHit | null;
-    /** The entities whose Colliders are in the ball or touch it, each once, but this entity's own body. */
-    overlapSphere(center: Readonly<Vec3Like>, radius: number, filter?: QueryFilter): readonly string[];
-    /** The same, for a box of full size, turned by rotation when one is given. */
-    overlapBox(center: Readonly<Vec3Like>, size: Readonly<Vec3Like>, rotation?: Readonly<QuatLike>, filter?: QueryFilter): readonly string[];
-  }
-
-  /** A collision that has just begun, as one side hears it. */
-  export interface Collision {
-    /** The entity whose Collider touched this one. this.physics.body(other) is the body it moves with. */
-    readonly other: string;
-    /** Where they touch, in world space: the middle of their contact points. */
-    readonly point: Readonly<Vec3Like>;
-    /** Unit, in world space: the way this side was pushed, away from the other. */
-    readonly normal: Readonly<Vec3Like>;
-    /** How hard they met, in newton-seconds: at least m·v for a body of mass m stopped from speed v. */
-    readonly impulse: number;
-  }
-
-  /** What a query sees. Left out, every layer and no sensor. */
-  export interface QueryFilter {
-    /** Ids of the collision layers it sees: find one by its name in this.physics.layers. A Collider is seen by its own layer. */
-    readonly layers?: readonly string[];
-    /** Sensors too. Left out, a ray passes through a trigger zone. */
-    readonly sensors?: boolean;
-  }
-
-  /** What a ray or a cast met first, in world space. */
-  export interface RaycastHit {
-    /** The entity whose Collider it met. this.physics.body(entity) is the body it moves with. */
-    readonly entity: string;
-    /** Where, on that Collider's surface. */
-    readonly point: Readonly<Vec3Like>;
-    /** Unit, out of that surface. */
-    readonly normal: Readonly<Vec3Like>;
-    /** How far it travelled to get there, in metres. */
-    readonly distance: number;
-  }
-`;
-
-/**
- * The body of the published `Behaviour`, one entry per name the class occupies.
- *
- * Keyed on `BehaviourMember`, which is `keyof Behaviour` — so a hook added to
- * the runtime and forgotten here does not compile, and a member published here
- * that the class does not have does not compile either. That is the whole point
- * of the table. It replaces a hundred lines of TypeScript in a template
- * literal that nothing checked, and which had already fallen two members
- * behind: `scenes` and `onSceneUnload` existed on the class, were reserved
- * against, and were not published — so every editor told the author they did
- * not exist.
- *
- * `null` is a member the host owns and a script may not call. The order is the
- * order of the emitted file, because a record keeps the order it was written
- * in, and this is what somebody reads in their editor — which is also why an
- * entry opening on a newline is how the blank lines between the groups survive.
- */
-const BEHAVIOUR_BODY: Record<BehaviourMember | 'properties', string | null> = {
-  properties: `    /** Editable in the Inspector, saved per instance with the scene. */
-    static properties: Record<string, ScriptPropertyDef>;`,
-  entity: `
-    /** The entity this script is attached to. */
-    readonly entity: { id: string; name: string };`,
-  transform: `    /**
-     * Its three.js object. Mutate \`position\`, \`rotation\`, \`scale\` to move it.
-     * A dynamic body, or the player, is put there and keeps its speed; a
-     * kinematic one moves there at the next tick, carrying what rests on it; a
-     * fixed one's collider stays where it is, and so does a collider riding an
-     * ancestor's body: it sits where the world was built.
-     */
-    readonly transform: any;`,
-  body: `
-    /**
-     * The body this entity moves with: its own Rigid Body, or the nearest one above it — a
-     * wheel's is its car's. With no body behind it, it moves nothing, and its first change
-     * raises a warning.
-     */
-    readonly body: StudioBody;`,
-  physics: `    /**
-     * The physics world: gravity, any entity's body, the scene's joints, character controllers,
-     * the project's collision layers, and rays, casts and overlaps that leave out this entity's
-     * own body.
-     */
-    readonly physics: StudioPhysics;`,
-  input: `    readonly input: StudioInput;`,
-  audio: `    /** This entity's sounds, one-shot clips, and the buses. */
-    readonly audio: StudioAudio;`,
-  scenes: `    /** Moving between scenes. \`null\` when nothing is hosting this engine. */
-    readonly scenes: SceneApi | null;`,
-  time: `    /** Seconds since play started. */
-    time: number;`,
-  onAwake: `
-    /** Set this script up alone. Other entities may not exist yet. */
-    onAwake?(): void;`,
-  onStart: `    /** Every script now exists. Cross-references belong here. */
-    onStart?(): void;`,
-  onUpdate: `    /** Once per displayed frame. */
-    onUpdate?(delta: number): void;`,
-  onFixedUpdate: `    /** Once per physics tick. Anything commanding a body belongs here. */
-    onFixedUpdate?(step: number): void;`,
-  onLateUpdate: `    /** After physics. Anything following a subject belongs here. */
-    onLateUpdate?(): void;`,
-  onCollisionEnter: `
-    /**
-     * A Collider of this entity, or of a child riding its body, began touching another, after
-     * the physics tick it happened in. One side needs a Dynamic Rigid Body: a character walking
-     * into a wall hears nothing.
-     */
-    onCollisionEnter?(collision: Collision): void;`,
-  onCollisionExit: `    /** They stopped touching. \`other\` is the entity whose Collider it was. */
-    onCollisionExit?(other: string): void;`,
-  onTriggerEnter: `    /** A sensor of this entity was entered, or this entity entered one. A sensor sees whatever moves. */
-    onTriggerEnter?(other: string): void;`,
-  onTriggerExit: `    /** It left. */
-    onTriggerExit?(other: string): void;`,
-  onSceneUnload: `    /** The scene is being left, and everything is still here to read. */
-    onSceneUnload?(): void;`,
-  onDestroy: `    onDestroy?(): void;`,
-  resolve: `
-    protected resolve(entityId: string | null | undefined): EntityHandle | null;`,
-  log: `    protected log(...args: unknown[]): void;`,
-  wait: `    /** setTimeout tied to this script's lifetime. */
-    protected wait(callback: () => void, ms: number): void;`,
-  repeat: `    /** setInterval tied to this script's lifetime; returns a canceller. */
-    protected repeat(callback: () => void, ms: number): () => void;`,
-  // Called by the host after `onDestroy`. Reserved so a property cannot take
-  // the name, and unpublished so a script cannot cancel its own timers early.
-  cancelTimers: null,
-};
-
-/**
- * Type declarations for `@three-studio/runtime` as scripts see it, written into the
- * project so an external editor gives autocompletion and type errors.
- *
- * Unity generates a .csproj for the same reason: without it a user script is
- * just untyped text, and the editor is the only place any mistake shows up.
- */
-const RUNTIME_DTS = `// Generated by Three Studio. Do not edit.
-declare module '@three-studio/runtime' {
-${PUBLISHED_TYPES}
-  export abstract class Behaviour {
-${Object.values(BEHAVIOUR_BODY)
-  .filter((member): member is string => member !== null)
-  .join('\n')}
-  }
-}
-`;
 
 /**
  * What the editor guarantees, written to `.studio/` on every open so it tracks
@@ -604,11 +249,13 @@ const STUDIO_TSCONFIG = {
  */
 const PROJECT_TSCONFIG = { extends: './.studio/tsconfig.json' };
 
-/** Written on project open so scripts are typed in whatever editor is used. */
-export async function writeScriptTypings(projectPath: string): Promise<void> {
+/**
+ * The project's TypeScript config, written on open so scripts are typed in
+ * whatever editor is used: ours under `.studio/`, and the project's own once.
+ */
+export async function writeScriptTsconfig(projectPath: string): Promise<void> {
   const cacheDir = join(projectPath, CACHE_DIR);
   await mkdir(cacheDir, { recursive: true });
-  await writeFile(join(cacheDir, 'studio-runtime.d.ts'), RUNTIME_DTS, 'utf8');
   // Paths are relative to the file that declares them, so what sits one level
   // down has to reach back up for the sources.
   await writeFile(
@@ -632,6 +279,19 @@ export async function writeScriptTypings(projectPath: string): Promise<void> {
     // Absent: write the one-line file that points at ours.
   }
   await writeFile(projectFile, `${JSON.stringify(PROJECT_TSCONFIG, null, 2)}\n`, 'utf8');
+}
+
+/**
+ * The declaration of `@three-studio/runtime` its scripts see, which the editor
+ * window generates from the registries it runs (`scriptTypings`): what each
+ * module gives scripts is known there, and this process activates core alone.
+ *
+ * Whole or not at all, as each window of a project writes it as it opens.
+ */
+export async function writeScriptTypings(projectPath: string, text: string): Promise<void> {
+  const cacheDir = join(projectPath, CACHE_DIR);
+  await mkdir(cacheDir, { recursive: true });
+  await atomicWrite(join(cacheDir, 'studio-runtime.d.ts'), text);
 }
 
 /** New scripts start from a template so the shape is obvious from the first one. */

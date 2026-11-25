@@ -26,19 +26,28 @@ import type { EntityDoc, SceneDoc } from './schema';
  * return value the caller can notify about, not a failure it has to catch.
  *
  * They take a `SceneDoc` or an immer draft of one indifferently — a draft
- * behaves like the object, so there is one implementation rather than two.
+ * behaves like the object, so there is one implementation rather than two —,
+ * and a running world's own copy of one (`liveScene`).
+ *
+ * What they link, move and remove is refused when the scene does not hold it,
+ * whatever the form of its id. The editor's document never holds an
+ * `owner/local` id, what an expansion produced: the hierarchy shows those rows
+ * and cannot move them, and the check of what the scene holds refuses them. A
+ * running world's scene holds its expansion, and a game destroys what a prefab
+ * placed, and parents under it, as it does anything else.
  */
 
 /**
- * Whether this id can be an edge of the document's own tree.
+ * Whether an entity may be made under this id: not `owner/local`, the form of
+ * one a prefab expansion produced. Asked of a new entity's own id and of what a
+ * copy is made from, never of an edge or a removal.
  *
- * An `owner/local` id names an entity prefab expansion produced. It is not in
- * `scene.entities`, so writing an edge to it produces exactly the defect this module exists for: a `parent`
- * pointing at nothing, and an entity in no children list at all.
+ * In the editor's document such an entity would collide with what the next
+ * expansion produces; in a running world, what a prefab places is placed by
+ * `placePrefab`, and a spawn takes a fresh id.
  *
  * By the separator alone, and not by whether the id splits: an id with an empty
- * half names no entity the expansion produced and is still not one the
- * document's own tree can hold.
+ * half names no entity the expansion produced and is still not one to make.
  */
 function isDocumentId(id: EntityId): boolean {
   return !id.includes(PREFAB_ID_SEPARATOR);
@@ -58,10 +67,10 @@ function siblingsOf(scene: SceneDoc, parentId: EntityId | null): EntityId[] | un
  * then turned out to be illegal.
  */
 function canLink(scene: SceneDoc, id: EntityId, parentId: EntityId | null): boolean {
-  if (!isDocumentId(id) || !scene.entities.has(id)) return false;
+  if (!scene.entities.has(id)) return false;
   if (parentId === null) return true;
   if (parentId === id) return false;
-  if (!isDocumentId(parentId) || !scene.entities.has(parentId)) return false;
+  if (!scene.entities.has(parentId)) return false;
   // Dropping a node onto its own descendant would take the subtree out of the
   // scene with no way back to it.
   return !isAncestorOf(scene, id, parentId);
@@ -124,9 +133,7 @@ export function insertEntity(
 ): boolean {
   const { entity } = template;
   if (!isDocumentId(entity.id) || scene.entities.has(entity.id)) return false;
-  if (parentId !== null && (!isDocumentId(parentId) || !scene.entities.has(parentId))) {
-    return false;
-  }
+  if (parentId !== null && !scene.entities.has(parentId)) return false;
 
   scene.entities.set(entity.id, entity);
   setComponentsOf(scene, entity.id, template.components);
@@ -168,7 +175,7 @@ export function reparentEntity(
  * at an entity that no longer exists.
  */
 export function removeSubtree(scene: SceneDoc, id: EntityId): EntityId[] {
-  if (!isDocumentId(id) || !scene.entities.has(id)) return [];
+  if (!scene.entities.has(id)) return [];
 
   const removed = [id, ...collectDescendants(scene, id)];
   // The root first, so its parent's `children` loses it before the entity goes;

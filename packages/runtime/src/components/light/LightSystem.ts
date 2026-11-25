@@ -1,4 +1,4 @@
-import type { EntityId, LightComponent } from '@three-studio/core';
+import type { Disposable, EntityId, Hex, LightComponent } from '@three-studio/core';
 import {
   AmbientLight,
   Color,
@@ -10,11 +10,13 @@ import {
   ProjectorLight,
   RectAreaLight,
   SpotLight,
+  Vector3,
   type Object3D,
 } from 'three/webgpu';
 import type { TextureHold } from '../../assets/AssetCache';
 import { ComponentSystem, type SystemContext, type SystemHandle } from '../../systems/ComponentSystem';
 import { ENTITY_ID_KEY } from '../../systems/identity';
+import type { Sun, SunSource } from '../../world/sun';
 
 export interface LightHandle extends SystemHandle {
   light: Object3D;
@@ -27,6 +29,10 @@ export interface LightHandle extends SystemHandle {
   cookie: TextureHold | null;
   /** What `cookie` was taken from, so `patch` can tell a swap from a no-op. */
   mapId: string | null;
+  /** The light as a sun, in the colour `patch` keeps current. */
+  readonly sun: LightSun;
+  /** Its place in the sun service, given back at unmount. */
+  readonly provided: Disposable;
   readonly objects: readonly Object3D[];
 }
 
@@ -41,7 +47,11 @@ export interface LightHandle extends SystemHandle {
  * one. Sixty a second, none of them freed.
  */
 export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
+  /** How many lights it drew: none is a scene that renders black. */
+  private lights = 0;
+
   mount(entityId: EntityId, component: LightComponent, ctx: SystemContext): LightHandle {
+    this.lights += 1;
     const light = buildLight(component);
     applyShadow(light, component, ctx.shadowMapSize);
     const cookie = applyCookie(light, component, ctx, null);
@@ -74,7 +84,17 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
      */
     if (component.kind !== 'hemisphere') light.position.set(0, 0, 0);
     light.userData[ENTITY_ID_KEY] = entityId;
-    return { light, kind: component.kind, cookie, mapId: component.mapId, objects: [light] };
+    // What a water linked to this light is lit by.
+    const sun = new LightSun(light, component.color);
+    return {
+      light,
+      kind: component.kind,
+      cookie,
+      mapId: component.mapId,
+      sun,
+      provided: ctx.sun.provide(entityId, sun),
+      objects: [light],
+    };
   }
 
   /**
@@ -111,6 +131,7 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
     if ('castShadow' in light) light.castShadow = next.castShadow;
 
     applyShadow(handle.light, next, ctx.shadowMapSize);
+    handle.sun.color = next.color;
 
     if (handle.mapId === next.mapId) return handle;
     const cookie = applyCookie(handle.light, next, ctx, handle.cookie);
@@ -118,8 +139,26 @@ export class LightSystem extends ComponentSystem<LightComponent, LightHandle> {
   }
 
   unmount(handle: LightHandle, ctx: SystemContext): void {
+    this.lights -= 1;
+    handle.provided.dispose();
     ctx.arena.retire(handle.light as unknown as { dispose(): void });
     if (handle.cookie) ctx.arena.retire(handle.cookie);
+  }
+
+  /**
+   * A scene with no light at all renders black, and nothing else says so.
+   *
+   * Silent at runtime, and worse than silent: while it is edited, the Viewport
+   * lights such a scene with a default pair of its own, so the author has
+   * already seen it lit. What is named here is therefore the difference, not
+   * the absence — the same condition that switches the editor's pair on, said
+   * from the side that does not have it. See `viewport/editorProjection`.
+   */
+  override diagnose(): readonly string[] {
+    if (this.lights > 0) return [];
+    return [
+      'This scene has no lights, so it renders black. While you edit, the Viewport lights it with a default light that Play and a build do not have.',
+    ];
   }
 }
 
@@ -240,4 +279,28 @@ function applyCookie(
 function aimAlongLocalForward(light: DirectionalLight | SpotLight): void {
   light.target.position.set(0, 0, -1);
   light.add(light.target);
+}
+
+/** Scratch for a light's world basis. Module-scope so it allocates once. */
+const _x = new Vector3();
+const _y = new Vector3();
+const _z = new Vector3();
+
+/** A light as a sun: where its entity points it, in its colour, read when it is asked. */
+class LightSun implements SunSource {
+  constructor(
+    private readonly light: Object3D,
+    public color: Hex,
+  ) {}
+
+  sun(): Sun {
+    // +Z, because the light shines along -Z and the sun's direction points
+    // back at it. The light sits on its entity unrotated — its target is a
+    // child — so its world basis is its entity's; normalised, since the matrix
+    // carries the scale too.
+    this.light.updateWorldMatrix(true, false);
+    this.light.matrixWorld.extractBasis(_x, _y, _z);
+    _z.normalize();
+    return { direction: [_z.x, _z.y, _z.z], color: this.color };
+  }
 }

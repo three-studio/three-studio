@@ -224,7 +224,7 @@ export class ProceduralSky {
       // drew a black sky while the water went on reflecting one. The editor
       // camera is parented to nothing, which is why only play mode showed it.
       //
-      // `Engine.writeListenerFromCamera` has the same question and gives the
+      // `World.writeListenerFromCamera` has the same question and gives the
       // same answer; `getWorldPosition` does its `updateWorldMatrix` for us.
       // Writing into `position` is still the world position because the sky is
       // added straight to the `Scene` — see `syncSky`.

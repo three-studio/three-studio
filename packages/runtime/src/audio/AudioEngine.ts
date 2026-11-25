@@ -27,8 +27,8 @@ export interface AudioEngineOptions {
   /**
    * A clip cache to share rather than build.
    *
-   * `SceneHost` passes the same one to every engine it makes, which is what
-   * lets a decoded clip survive a scene change: the next level almost always
+   * A `Game` owns it and hands it to its world, which is what lets a decoded
+   * clip survive a scene change: the next level almost always
    * plays some of the same sounds, and decoding them again is the wrong
    * economy. An engine that was handed a cache does not clear it on dispose —
    * it does not own it.
@@ -42,7 +42,7 @@ export interface AudioEngineOptions {
  *
  * Owns things with a lifetime, so it is a class — the rule `ComponentSystem`
  * states and a behaviour's factory is the exception to. One instance per root
- * : the editor builds one for preview, `Engine` builds one for the game,
+ * : the editor builds one for preview, `World` builds one for the game,
  * and neither can hear the other.
  */
 export class AudioEngine {
@@ -57,6 +57,8 @@ export class AudioEngine {
   private readonly onWarning: (message: string) => void;
   private nextId = 1;
   private disposed = false;
+  /** Where the ear was last placed and how it faced, nine numbers: none yet. */
+  private readonly ear = new Float64Array(9).fill(NaN);
   private suspended = false;
 
   constructor(options: AudioEngineOptions) {
@@ -143,11 +145,37 @@ export class AudioEngine {
    */
   setListener(position: Vec3Tuple, forward: Vec3Tuple, up: Vec3Tuple): void {
     if (this.disposed) return;
+    // Indexed, where destructuring made an iterator of each tuple, every frame.
+    const px = position[0];
+    const py = position[1];
+    const pz = position[2];
+    const fx = forward[0];
+    const fy = forward[1];
+    const fz = forward[2];
+    const ux = up[0];
+    const uy = up[1];
+    const uz = up[2];
+    // Placed every frame, by the listener or the camera, and an ear that stayed
+    // where it was rewrote nine ramps that changed nothing.
+    const ear = this.ear;
+    if (
+      px === ear[0] && py === ear[1] && pz === ear[2] &&
+      fx === ear[3] && fy === ear[4] && fz === ear[5] &&
+      ux === ear[6] && uy === ear[7] && uz === ear[8]
+    ) {
+      return;
+    }
+    ear[0] = px;
+    ear[1] = py;
+    ear[2] = pz;
+    ear[3] = fx;
+    ear[4] = fy;
+    ear[5] = fz;
+    ear[6] = ux;
+    ear[7] = uy;
+    ear[8] = uz;
     const listener = this.context.listener;
     const now = this.context.currentTime;
-    const [px, py, pz] = position;
-    const [fx, fy, fz] = forward;
-    const [ux, uy, uz] = up;
 
     if (listener.positionX && listener.forwardX && listener.upX) {
       rampTo(listener.positionX, px, now);

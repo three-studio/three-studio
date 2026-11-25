@@ -26,6 +26,7 @@ import {
 import { createPrefabInstance } from '../components/prefabInstance/defaults';
 import { createEmptyScene } from './defaults';
 import { createEntity } from './entity';
+import { insertEntity } from './graph';
 import { collectDescendants } from './query';
 import { componentsJsonOf, readHeld, repairHierarchy } from './serialization';
 import type {
@@ -383,6 +384,60 @@ export interface ExpandedScene {
   scene: SceneDoc;
   /** What each instance produced, so the next expansion can reuse it. */
   sources: Map<EntityId, InstanceSource>;
+}
+
+/**
+ * One placement of a prefab into a scene that holds its expansion — a running
+ * world's (`liveScene`) —, under `parent`, at `transform`: the placement as the
+ * editor makes one, named as the prefab, and its contents as `expandPrefabs`
+ * produces them for it — the same ids, components and renamed references, a
+ * prefab it places expanded too —, listed under it.
+ *
+ * Answers the placement and every entity placed with it, the placement first;
+ * `null`, with nothing written, for a prefab the library lacks or a parent the
+ * scene does not hold.
+ */
+export function placePrefab(
+  registries: CoreRegistries,
+  scene: SceneDoc,
+  prefabs: PrefabLibrary,
+  request: { readonly prefab: AssetId; readonly parent: EntityId | null; readonly transform: Transform },
+): { readonly root: EntityId; readonly entities: readonly EntityId[] } | null {
+  const prefab = prefabs.get(request.prefab);
+  if (prefab === undefined) return null;
+
+  const instance = createPrefabInstance(request.prefab);
+  const placement = createEntity(prefab.name, [instance]);
+  // A copy: the record is the scene's from here on, and the caller's vectors stay its own.
+  placement.entity.transform = structuredClone(request.transform);
+  if (!insertEntity(scene, placement, request.parent)) return null;
+
+  const produced = instantiate(registries, placement.entity.id, prefab, instance, prefabs, [prefab.id]);
+  for (const entity of produced.entities) scene.entities.set(entity.id, entity);
+  mergeTables(scene.components, produced.components);
+  listContents(scene.entities, produced.entities);
+  return { root: placement.entity.id, entities: [placement.entity.id, ...produced.entities.map(({ id }) => id)] };
+}
+
+/**
+ * Lists under its parent each of `among` that none of `among` lists: the root
+ * of an instance's contents, which the expansion links to its placement by
+ * `parent` alone, the placement's `children` being the document's, which cannot
+ * name what the document never held. A scene that owns its expansion lists
+ * them, for the graph's functions, which walk `children`, to reach them.
+ *
+ * `among` holds every record that may list one of them: a whole scene's, or
+ * what one instance produced under a placement just made, which lists nothing
+ * yet. A Set of what they list rather than a search of each parent's list, so
+ * that a parent of ten thousand children costs ten thousand lookups and not
+ * fifty million comparisons.
+ */
+export function listContents(entities: ReadonlyMap<EntityId, EntityDoc>, among: readonly EntityDoc[]): void {
+  const listed = new Set<EntityId>();
+  for (const entity of among) for (const child of entity.children) listed.add(child);
+  for (const entity of among) {
+    if (entity.parent !== null && !listed.has(entity.id)) entities.get(entity.parent)?.children.push(entity.id);
+  }
 }
 
 /** One instance's contents: the entities, and the components they carry. */

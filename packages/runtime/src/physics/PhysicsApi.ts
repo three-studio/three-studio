@@ -1,35 +1,24 @@
 /*
  * Physics as a behaviour sees it.
  *
- * Types only, importing nothing: a behaviour, a plugin's included, names
- * physics through this file without reaching Rapier or the world that holds
- * it. Only `physics/` knows the engine underneath, so changing engines one day
- * rewrites that folder and nothing else.
+ * Types only, importing none but the runtime's vectors: a behaviour, a
+ * plugin's included, names physics through this file without reaching Rapier
+ * or the world that holds it. Only `physics/` knows the engine underneath, so
+ * changing engines one day rewrites that folder and nothing else.
  *
  * Plain values cross it, and what comes out is a copy: writing
  * `body.position.x = 3` would move nothing, so the types refuse it.
  */
 
-/** A point or a displacement, in metres. three's `Vector3` is one. */
-export interface Vec3Like {
-  x: number;
-  y: number;
-  z: number;
-}
+import type { QuatLike, Vec3Like } from '../vectors';
 
-/** A rotation. three's `Quaternion` is one. */
-export interface QuatLike {
-  x: number;
-  y: number;
-  z: number;
-  w: number;
-}
+export type { QuatLike, Vec3Like };
 
 /**
- * `BehaviourContext.physics`: the world as a behaviour may touch it.
+ * Physics as a behaviour may touch it, reached by `physicsOf(world)`.
  *
  * No fixed step here: a behaviour is handed the tick as `fixedUpdate`'s
- * argument, and a host reads `Engine.fixedStep`.
+ * argument, and a host reads `World.fixedStep`.
  */
 export interface PhysicsApi {
   /** The project's gravity, in m/s². */
@@ -173,6 +162,16 @@ export interface Collision {
 }
 
 /**
+ * What one side of a pair hears after the tick it happened in, published on
+ * physics' collision channel to the entity of that side's collider, then to
+ * its body's when that is another: a cart hears its wheels. Named after the
+ * hook that hears it.
+ */
+export type Touch =
+  | { readonly kind: 'collisionEnter'; readonly collision: Collision }
+  | { readonly kind: 'collisionExit' | 'triggerEnter' | 'triggerExit'; readonly other: string };
+
+/**
  * A body in the world, in world space: metres, seconds, kilograms, radians.
  *
  * A vector or a rotation holding a NaN or an infinity is ignored, and the rest
@@ -267,9 +266,11 @@ export interface CharacterController {
    * A translation that is not a number moves nothing, and a rotation with no
    * direction keeps the body's turn.
    *
-   * @returns the part of `translation` the world allowed.
+   * @param into Where the part allowed is written, for a caller moving it every
+   *   tick that keeps one; a new object when left out.
+   * @returns the part of `translation` the world allowed: `into` when given.
    */
-  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>): Readonly<Vec3Like>;
+  move(translation: Readonly<Vec3Like>, rotation: Readonly<QuatLike>, into?: Vec3Like): Readonly<Vec3Like>;
   /** Whether the character stood on something after the last move, and was not leaving it. */
   readonly grounded: boolean;
 }

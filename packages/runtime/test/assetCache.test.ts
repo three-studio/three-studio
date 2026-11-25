@@ -15,6 +15,9 @@ import { AssetCache } from '../src/assets/AssetCache';
 import { SceneBinder } from '../src/SceneBinder';
 import { serveModels, stubImages, type ModelServer } from './assetFixtures';
 import { builtInRegistries } from './registries';
+import { CameraClaims } from '../src/world/cameras';
+import { SunService } from '../src/world/sun';
+import { StudioTime } from '../src/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -350,6 +353,9 @@ describe('two worlds on one cache', () => {
   /** A world drawing a scene, as the edit view's binder or Play's would. */
   async function world(cache: AssetCache, scene: SceneDoc): Promise<SceneBinder> {
     const binder = new SceneBinder({
+      time: new StudioTime(),
+      cameras: new CameraClaims(),
+      sun: new SunService(),
       registries,
       assets: cache,
       rendering: { ...createRenderingSettings(), batching: false },
@@ -407,14 +413,14 @@ describe('two worlds on one cache', () => {
 
     // Stop: the game's world goes, its copies with it.
     play.dispose();
-    cache.beginFrame();
+    expect(cache.beginFrame()).toBe(0);
     expect(cache.stats).toEqual({ entries: 1, held: 1, idleBytes: 0 });
     expect(editCopyFreed).toBe(0);
     expect(geometryFreed).toBe(0);
 
     edit.dispose();
     expect(cache.stats.held).toBe(0);
-    cache.beginFrame();
+    expect(cache.beginFrame()).toBe(1);
     expect(editCopyFreed).toBe(1);
     expect(geometryFreed).toBe(1);
   });

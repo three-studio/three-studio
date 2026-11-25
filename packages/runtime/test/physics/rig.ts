@@ -23,7 +23,9 @@ import {
   type PhysicsMaterialDef,
   type PhysicsSettings,
   type PlayerControllerComponent,
+  type PrefabDoc,
   type RigidBodyComponent,
+  type ScriptPropValue,
   type Vec3,
 } from '@three-studio/core';
 import { Quaternion, Vector3 } from 'three/webgpu';
@@ -31,30 +33,34 @@ import { onTestFinished } from 'vitest';
 import { sceneWith } from '../../../core/test/fixtures';
 
 export { nest } from '../../../core/test/fixtures';
-import { Engine } from '../../src/Engine';
+import { World } from '../../src/world/World';
 import { AssetCache } from '../../src/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '../../src/assets/AssetResolver';
+import type { AudioClipCache } from '../../src/audio/AudioClipCache';
+import type { AudioContextLike } from '../../src/audio/AudioContextLike';
 import type { BodyHandle } from '../../src/physics/PhysicsApi';
 import type { RuntimeRegistries } from '../../src/registries';
 import type { ScriptClass, ScriptClasses } from '../../src/scripting/scriptBundle';
+import { physicsOf } from '../../src/physics/physicsOf';
 import { builtInRegistries } from '../registries';
+import { StudioTime } from '../../src/time/StudioTime';
 
 const registries = builtInRegistries();
 
 /**
  * The script each template runs, by the asset id its component names: what
- * `withScript` gave it, which the rig hands its engine as a build's bundle.
+ * `withScript` gave it, which the rig hands its world as a build's bundle.
  */
 const scriptsOf = new WeakMap<EntityTemplate, readonly (readonly [AssetId, ScriptClass])[]>();
 
 /*
- * A scene document running in the real `Engine`, with real Rapier, under Node.
+ * A scene document running in the real `World`, with real Rapier, under Node.
  *
- * The engine rather than a binder and a world beside it: Play, a device and an
- * exported build all run this `Engine`, so a test that drove the world on its
+ * The world rather than a binder and a physics world beside it: Play, a device
+ * and an exported build all run this `World`, so a test that drove physics on its
  * own would test an order of calls no game ever makes. Frames go through
- * `Engine.update`, behaviours are built as the engine builds them, and warnings
- * land in `engine.warnings`.
+ * `World.frame`, behaviours are built as the world builds them, and warnings
+ * land in `world.warnings`.
  */
 
 export interface Pose {
@@ -63,9 +69,9 @@ export interface Pose {
 }
 
 export interface PhysicsRig {
-  readonly engine: Engine;
+  readonly world: World;
   /**
-   * Whole frames through `Engine.update`: of one fixed step each, or of
+   * Whole frames through `World.frame`: of one fixed step each, or of
    * `1 / framesPerSecond`, as a display of that rate draws them.
    */
   run(seconds: number, framesPerSecond?: number): void;
@@ -87,7 +93,7 @@ export interface PhysicsRig {
 }
 
 /**
- * These entities in a running engine, disposed when the test finishes, with the
+ * These entities in a running world, disposed when the test finishes, with the
  * project's physics materials by asset id.
  */
 export type PhysicsRigMaker = (
@@ -96,58 +102,81 @@ export type PhysicsRigMaker = (
   physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
 ) => Promise<PhysicsRig>;
 
-/** A rig whose engine runs on the kernel's systems and behaviours, as a root activates them. */
+/** A rig whose world runs on the kernel's systems and behaviours, as a root activates them. */
 export const physicsRig: PhysicsRigMaker = physicsRigOn(registries);
 
+/** What a rig's world is handed besides its scene. */
+export interface RigOptions {
+  /** For a test of what it plays. */
+  readonly audioContext?: AudioContextLike;
+  /** The clips it plays, decoded by a loader of the test's. */
+  readonly audioCache?: AudioClipCache;
+  /** Batching on, for a test of the batches; off otherwise, see below. */
+  readonly batching?: boolean;
+  /**
+   * Templates a test spawns, or places as a prefab's, once the world runs:
+   * their scripts are in the world's bundle, as a build compiles every script.
+   */
+  readonly spawnable?: readonly EntityTemplate[];
+  /** What the world's `instantiate` places. */
+  readonly prefabs?: ReadonlyMap<AssetId, PrefabDoc>;
+}
+
 /**
- * Rigs whose engines run on these registries: a test file that registers a
- * behaviour of its own builds its own registries, so what it adds reaches no
- * other file.
+ * Rigs whose worlds run on these registries: a test file that registers a
+ * behaviour or a subsystem of its own builds its own registries, so what it adds
+ * reaches no other file.
  */
-export function physicsRigOn(registries: RuntimeRegistries): PhysicsRigMaker {
-  return (entities, settings, physicsMaterials) => runningRig(registries, entities, settings, physicsMaterials);
+export function physicsRigOn(registries: RuntimeRegistries, options: RigOptions = {}): PhysicsRigMaker {
+  return (entities, settings, physicsMaterials) =>
+    runningRig(registries, entities, settings, physicsMaterials, options);
 }
 
 async function runningRig(
   registries: RuntimeRegistries,
   entities: readonly EntityTemplate[],
-  settings?: Partial<PhysicsSettings>,
-  physicsMaterials?: ReadonlyMap<AssetId, PhysicsMaterialDef>,
+  settings: Partial<PhysicsSettings> | undefined,
+  physicsMaterials: ReadonlyMap<AssetId, PhysicsMaterialDef> | undefined,
+  { audioContext, audioCache, batching = false, spawnable = [], prefabs }: RigOptions,
 ): Promise<PhysicsRig> {
   const physicsSettings = { ...createPhysicsSettings(), ...settings };
-  const canvas = new EventTarget();
-  const engine = await Engine.create({
-    scene: sceneWith(entities),
+  const { canvas, element } = standInCanvas();
+  const world = await World.play({
+    time: new StudioTime(),
+    document: sceneWith(entities),
     registries,
-    scripts: bundleOf(entities),
+    scripts: bundleOf([...entities, ...spawnable]),
+    prefabs,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
-    // Batching off: a batched mesh is drawn by the batch, and the object a test
-    // reads would be one the screen never shows.
-    rendering: { ...createRenderingSettings(), batching: false },
+    // Batching off unless asked: a batched mesh is drawn by the batch, and the
+    // object a test reads would be one the screen never shows.
+    rendering: { ...createRenderingSettings(), batching },
     physicsSettings,
     physicsMaterials,
-    domElement: canvas as unknown as HTMLElement,
+    element,
     // Heard on the canvas rather than on the window, which every test file
     // shares: two rigs alive in one test cannot hear each other's keys.
     input: { keys: 'element' },
+    audioContext,
+    audioCache,
   });
-  onTestFinished(() => engine.dispose());
+  onTestFinished(() => world.dispose());
 
   const step = physicsSettings.fixedTimestep;
   const body = (entityId: EntityId): BodyHandle => {
-    const built = engine.physics?.body(entityId);
+    const built = physicsOf(world)?.body(entityId);
     if (!built) throw new Error(`No body was built for "${entityId}".`);
     return built;
   };
 
   return {
-    engine,
+    world,
     run(seconds, framesPerSecond) {
       // The step itself rather than `1 / (1 / step)`, which can come out an ulp
       // short of it: a frame that short runs no tick.
       const delta = framesPerSecond ? 1 / framesPerSecond : step;
       const frames = Math.round(seconds / delta);
-      for (let frame = 0; frame < frames; frame++) engine.update(delta);
+      for (let frame = 0; frame < frames; frame++) world.frame(delta);
     },
     press(code) {
       canvas.dispatchEvent(keyEvent('keydown', code));
@@ -156,7 +185,7 @@ async function runningRig(
       canvas.dispatchEvent(keyEvent('keyup', code));
     },
     drawn(entityId) {
-      const object = engine.binder.getObject(entityId);
+      const object = world.binder.getObject(entityId);
       if (!object) throw new Error(`No object is bound to "${entityId}".`);
       object.updateWorldMatrix(true, false);
       const pose = { position: new Vector3(), quaternion: new Quaternion() };
@@ -188,8 +217,14 @@ function keyEvent(type: 'keydown' | 'keyup', code: string): Event {
   });
 }
 
+/** The game's canvas, as a world is handed it: an event target, all `Input` uses of it. */
+export function standInCanvas(): { readonly canvas: EventTarget; readonly element: HTMLElement } {
+  const canvas = new EventTarget();
+  return { canvas, element: canvas as unknown as HTMLElement };
+}
+
 /**
- * What a running engine needs of the browser: `Input` listens on `window` and
+ * What a running world needs of the browser: `Input` listens on `window` and
  * `document`, which event targets stand in for.
  *
  * `performance` too: Rapier times each step with the window's clock once there
@@ -276,15 +311,19 @@ export function player(
 }
 
 /**
- * The template, running `type` as its script.
+ * The template, running `type` as its script, its stored properties `props`.
  *
- * Under an asset id of its own, which the rig's engine is handed with the class
+ * Under an asset id of its own, which the rig's world is handed with the class
  * in its bundle, as a project's compiled bundle pairs each script with its id.
  */
-export function withScript(template: EntityTemplate, type: ScriptClass): EntityTemplate {
+export function withScript(
+  template: EntityTemplate,
+  type: ScriptClass,
+  props: Record<string, ScriptPropValue> = {},
+): EntityTemplate {
   const assetId = createAssetId();
   scriptsOf.set(template, [...(scriptsOf.get(template) ?? []), [assetId, type]]);
-  template.components.push({ ...scriptType.create(), assetId });
+  template.components.push({ ...scriptType.create(), assetId, props });
   return template;
 }
 

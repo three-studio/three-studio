@@ -16,7 +16,8 @@ import {
 } from '@three-studio/core';
 import * as particlesCore from '@three-studio/particles/core';
 import * as particlesRuntime from '@three-studio/particles/runtime';
-import { SceneHost } from '@three-studio/runtime/SceneHost';
+import { Game } from '@three-studio/runtime/game/Game';
+import { audioOf } from '@three-studio/runtime/audio/audioOf';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { activateRuntime, createRuntimeRegistries } from '@three-studio/runtime/registries';
 import { announce } from './announce';
@@ -24,7 +25,9 @@ import { unlockAudioOnGesture } from './audioGesture';
 import { blockPageZoom } from './pageZoom';
 import { entrySceneName, sceneOf } from './scenes';
 import { createRenderer } from '@three-studio/runtime/RendererFactory';
-import { studioTime } from '@three-studio/runtime/time/StudioTime';
+import { forgetRenderLists, resizeRenderer } from '@three-studio/runtime/render/threeRenderer';
+import { RenderHost } from '@three-studio/runtime/render/RenderHost';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 import type { AssetResolver } from '@three-studio/runtime/assets/AssetResolver';
 import {
   NO_SCRIPTS,
@@ -32,12 +35,11 @@ import {
   scriptClassesOf,
   type ScriptClasses,
 } from '@three-studio/runtime/scripting/scriptBundle';
-import { OrthographicCamera, PerspectiveCamera } from 'three/webgpu';
 
 /**
  * The player an exported build ships.
  *
- * It is deliberately thin: the engine owns the scene graph, physics and
+ * It is deliberately thin: the world owns the scene graph, physics and
  * behaviours, and neither the renderer nor the loop, so what runs here is the
  * same code the editor runs in play mode. Anything this file had to reimplement
  * would be a place the two could drift apart.
@@ -191,7 +193,7 @@ async function boot(): Promise<void> {
     exposure: rendering.exposure,
   });
 
-  // Built before the host so the engine can mix into it. A browser will not
+  // Built before the game so its world can mix into it. A browser will not
   // start it here — that takes a user gesture: the Play button below, or the
   // first touch on a page that started without it.
   const audioContext = typeof AudioContext === 'undefined' ? undefined : new AudioContext();
@@ -203,9 +205,18 @@ async function boot(): Promise<void> {
     idleBudgetBytes: PLAYER_IDLE_ASSET_BYTES,
   });
 
-  // Hosted rather than a single engine: a game is a sequence of scenes, and a
+  // The page's clock, made before the game so that its world reads it: the
+  // player owns the loop, so it owns the clock — installed below.
+  const time = new StudioTime();
+
+  // The game's frames, and the screen layers its world lays over the canvas:
+  // the touch sticks, stacked in the canvas's parent.
+  const host = new RenderHost({ renderer });
+  host.setStage(canvas.parentElement);
+
+  // A game rather than a world alone: a game is a sequence of scenes, and a
   // script that moves to the next one has to reach something that can.
-  const host = new SceneHost({
+  const game = new Game({
     source: {
       // By id, or by the name a script held: `sceneOf` finds either, and the
       // manifest says where the file is.
@@ -214,6 +225,7 @@ async function boot(): Promise<void> {
     registries,
     scripts,
     assets,
+    time,
     // Records in the manifest, as a message is, and Maps here: a key read back
     // as an id is checked as one.
     materials: idMapOf(materials, isAssetId),
@@ -225,29 +237,19 @@ async function boot(): Promise<void> {
     rendering,
     physicsSettings: physics,
     renderer,
-    domElement: canvas,
+    element: canvas,
+    view: host,
     audioContext,
   });
 
   // Expanded exactly as the editor expands it, so a build shows what play mode
   // showed.
-  await host.adopt(entrySceneName(build), scene);
+  await game.start(entrySceneName(build), scene);
 
+  // Every camera of the scene, by the rule the editor's Play fits by too.
   const resize = () => {
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-    const camera = host.engine?.activeCamera;
-    if (!camera) return;
-    const aspect = window.innerWidth / window.innerHeight;
-    if (camera instanceof PerspectiveCamera) {
-      camera.aspect = aspect;
-      camera.updateProjectionMatrix();
-    } else if (camera instanceof OrthographicCamera) {
-      // The document stores a vertical extent; width follows the window.
-      const height = (camera.top - camera.bottom) / 2;
-      camera.left = -height * aspect;
-      camera.right = height * aspect;
-      camera.updateProjectionMatrix();
-    }
+    resizeRenderer(renderer, window.innerWidth, window.innerHeight);
+    game.world?.cameras.setAspect(window.innerWidth / window.innerHeight);
   };
   window.addEventListener('resize', resize);
   resize();
@@ -257,7 +259,7 @@ async function boot(): Promise<void> {
   // The player owns the loop, so it owns the clock: this is what makes three's
   // `time` node — and therefore every node material in the build — read the
   // same seconds the scripts and the physics do. See `time/StudioTime`.
-  studioTime.install();
+  time.install();
 
   let last = performance.now();
   renderer.setAnimationLoop(() => {
@@ -267,16 +269,20 @@ async function boot(): Promise<void> {
     const delta = Math.min((now - last) / 1000, 0.1);
     last = now;
 
-    studioTime.advance(delta);
-    // Once per frame, before the engine's: what a scene let go of last frame
-    // is freed now that the frame that drew it has been submitted.
-    assets.beginFrame();
-    host.update(studioTime.delta);
-    const engine = host.engine;
-    if (engine) void renderer.render(engine.scene, engine.activeCamera);
+    time.advance(delta);
+    // Once per frame, before the world's: what a scene let go of last frame
+    // is freed now that the frame that drew it has been submitted, and three
+    // forgets the lists that may still hold it.
+    if (assets.beginFrame() > 0) forgetRenderLists(renderer);
+    game.update(time.delta);
+    const world = game.world;
+    if (world) host.draw(world.scene, world.cameras.active);
   });
 
   message.textContent = build.title || scene.name;
+  // The game's engine, in its one world.
+  const audio = () => (game.world === null ? null : audioOf(game.world));
+
   let started = false;
   // What the Play button does, once: a page the editor restarted calls it
   // without the button, and a click that lands after it must not do it twice.
@@ -288,7 +294,7 @@ async function boot(): Promise<void> {
     // The gesture the whole page exists to collect, as far as audio is
     // concerned: a context created without one stays suspended, and a build
     // that is silent for that reason says nothing about it anywhere.
-    void host.engine?.audio?.unlock();
+    void audio()?.unlock();
   };
   startButton.hidden = false;
   startButton.addEventListener('click', start);
@@ -298,7 +304,7 @@ async function boot(): Promise<void> {
   if (audioContext !== undefined) {
     unlockAudioOnGesture(
       window,
-      () => void host.engine?.audio?.unlock(),
+      () => void audio()?.unlock(),
       () => audioContext.state === 'running',
     );
   }
@@ -307,7 +313,7 @@ async function boot(): Promise<void> {
   // gain and not `context.suspend()`, so the timeline keeps running and a
   // returning player does not find every loop restarted.
   document.addEventListener('visibilitychange', () => {
-    host.engine?.audio?.setSuspended(document.hidden);
+    audio()?.setSuspended(document.hidden);
   });
 
   // Surfaced rather than swallowed: a build with no camera or no collider is
@@ -315,23 +321,19 @@ async function boot(): Promise<void> {
   const report = (warnings: readonly string[]) => {
     if (warnings.length > 0) console.warn('[studio]', warnings.join('\n'));
   };
-  // Re-attached on every scene: each one builds its own engine, and warnings
-  // from the second level are as worth hearing as the first's.
-  const watch = () => {
-    const engine = host.engine;
-    if (!engine) return;
-    engine.onWarning = report;
-    report(engine.warnings);
-  };
-  host.onSceneChanged = () => {
-    watch();
-    resize();
-  };
-  watch();
+  // Heard once for the game's one world: what each scene's start finds is said
+  // as it is found, and those of the second level are as worth hearing as the
+  // first's. The entry's were found before anyone listened.
+  const world = game.world;
+  if (world !== null) {
+    world.onWarning = report;
+    report(world.warnings);
+  }
+  game.onSceneChanged = resize;
 
   // Last, once the page is whole: whoever hears this may start the game at
   // once. See `announce.ts` for who does.
-  announce({ state: 'running', backend, renderer, host, start });
+  announce({ state: 'running', backend, renderer, game, start });
 }
 
 boot().catch((cause: unknown) => {

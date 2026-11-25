@@ -30,6 +30,8 @@ import {
 } from '@three-studio/core';
 import { AssetCache } from '@three-studio/runtime/assets/AssetCache';
 import { NULL_ASSET_RESOLVER } from '@three-studio/runtime/assets/AssetResolver';
+import { CameraClaims } from '@three-studio/runtime/world/cameras';
+import { SunService } from '@three-studio/runtime/world/sun';
 import { worldPose } from '@three-studio/runtime/physics/PhysicsWorld';
 import { SceneBinder } from '@three-studio/runtime/SceneBinder';
 import { RectAreaLightHelper } from 'three/addons/helpers/RectAreaLightHelper.js';
@@ -54,6 +56,7 @@ import { describe, expect, it } from 'vitest';
 import { nest, sceneWith } from '../../core/test/fixtures';
 import { ViewportOverlay } from '../src/viewport/overlay/ViewportOverlay';
 import { builtInRegistries } from './registries';
+import { StudioTime } from '@three-studio/runtime/time/StudioTime';
 
 const registries = builtInRegistries();
 
@@ -80,6 +83,9 @@ function mount(scene: SceneDoc): {
   frame: (next?: SceneDoc, selection?: readonly EntityId[]) => void;
 } {
   const binder = new SceneBinder({
+    time: new StudioTime(),
+    cameras: new CameraClaims(),
+    sun: new SunService(),
     registries,
     assets: new AssetCache(registries, { resolver: NULL_ASSET_RESOLVER, idleBudgetBytes: 0 }),
     // The viewport's own settings, so these read the binder the editor builds.

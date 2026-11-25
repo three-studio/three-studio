@@ -560,6 +560,13 @@ const KERNEL_OWN_TYPE = 'prefabInstance';
 /** The types a file that reads the types' rules may still name; `null` for a file the rule leaves alone. */
 function typesItMayName(path: string): readonly string[] | null {
   if (path.startsWith('packages/editor/src/inspector/') || TYPE_BLIND.has(path)) return [];
+  // The world runs what is registered — systems, subsystems — and its loop
+  // names none of it: a feature it named would be one a module could not add.
+  if (path.startsWith('packages/runtime/src/world/')) return [];
+  // The game moves its world between scenes, whatever they hold.
+  if (path.startsWith('packages/runtime/src/game/')) return [];
+  // Input hears the keyboard, the mouse and virtual axes and keys, whoever sets them.
+  if (path.startsWith('packages/runtime/src/input/')) return [];
   if (UNPACK_MODEL.has(path)) return ['model'];
   return null;
 }
@@ -774,7 +781,7 @@ describe('the modules', () => {
   });
 
   it('reports a part that reaches above its layer: the kernel\'s, its own, another module\'s', () => {
-    expect(found('modules/sparks/src/core/index.ts', "import { Engine } from '@three-studio/runtime';")).toEqual([
+    expect(found('modules/sparks/src/core/index.ts', "import { World } from '@three-studio/runtime';")).toEqual([
       'modules/sparks/src/core/index.ts: @three-studio/runtime is above its layer',
     ]);
     expect(found('modules/sparks/src/runtime/index.ts', "import { pane } from '@three-studio/sparks/editor';")).toEqual([
@@ -803,8 +810,8 @@ describe('the modules', () => {
   it('reports a file that imports a module and is no root, in the kernel or in an app', () => {
     const importing = "import * as sparksCore from '@three-studio/sparks/core';";
 
-    expect(found('packages/runtime/src/Engine.ts', importing)).toEqual([
-      'packages/runtime/src/Engine.ts: imports the module sparks, and is no composition root',
+    expect(found('packages/runtime/src/world/World.ts', importing)).toEqual([
+      'packages/runtime/src/world/World.ts: imports the module sparks, and is no composition root',
     ]);
     expect(found('apps/player/src/loading.ts', importing)).toEqual([
       'apps/player/src/loading.ts: imports the module sparks, and is no composition root',
@@ -833,7 +840,7 @@ describe('the modules', () => {
       'packages/editor/src/icons.ts: names sparks, which belongs to a module',
     ]);
     // A comment may say it, and a longer word is another word.
-    expect(named('packages/runtime/src/Engine.ts', '// GPU culling, sparks and trails\nconst sparksPerFrame = 3;')).toEqual([]);
+    expect(named('packages/runtime/src/world/World.ts', '// GPU culling, sparks and trails\nconst sparksPerFrame = 3;')).toEqual([]);
     expect(named('modules/sparks/src/core/index.ts', "const id = 'sparkEmitter';")).toEqual([]);
     expect(named('apps/player/src/main.ts', 'sparks.activate(registries);')).toEqual([]);
   });
@@ -872,19 +879,123 @@ describe('the frameworks that read the types', () => {
     expect(named('packages/editor/src/components/collider/pane.ts', "extendPane('collider', {});")).toEqual([]);
   });
 
+  it('reports a type named in the world\'s files, whose loop runs what is registered and names none of it', () => {
+    expect(named('packages/runtime/src/world/World.ts', "if (entitiesWith(document, 'collider').length === 0) warn();")).toEqual([
+      'packages/runtime/src/world/World.ts: names the component type collider, whose rules are its own',
+    ]);
+  });
+
+  it("reports a type named in the game's files, which moves its world between scenes whatever they hold", () => {
+    expect(named('packages/runtime/src/game/Game.ts', "if (entitiesWith(scene, 'model').length > 0) hold();")).toEqual([
+      'packages/runtime/src/game/Game.ts: names the component type model, whose rules are its own',
+    ]);
+  });
+
   it('lets Unpack Model name the model it unpacks, and no other type', () => {
     expect(named('packages/core/src/scene/modelUnpack.ts', "findComponent(scene, id, 'model'); keep('collider');")).toEqual([
       'packages/core/src/scene/modelUnpack.ts: names the component type collider, whose rules are its own',
     ]);
   });
 
-  it('finds none in the tree: the Inspector, the scene commands, the tuning state and the rules read the types', () => {
+  it('finds none in the tree: the Inspector, the scene commands, the tuning state, the rules and the world read the types', () => {
     const registries = createCoreRegistries();
     activateCore(registries);
     const kernelTypes = new Set<string>(registries.components.values().map(({ id }) => id));
     const sources = files.map((file) => [show(file), readFileSync(file, 'utf8')] as const);
 
     expect(typeNameProblems(kernelTypes, sources)).toEqual([]);
+  });
+});
+
+// ------------------------------------------------------------------ scripting
+
+/*
+ * What a script is given by physics and audio — `this.body`, the collision
+ * hooks, `this.audio` — is each one's contribution, registered by it and
+ * installed by the script host, which names neither. The host used to: the
+ * script API grew a member each time a feature did, and its reserved names and
+ * its published typings were written out twice more, in the host and in the
+ * main process, where they fell behind. And a host that named a feature would
+ * need an edit the day that feature moves into a module of its own.
+ */
+
+/** The features scripting may not name: those that give scripts their members. */
+const CONTRIBUTORS = /^packages\/runtime\/src\/(physics|audio)\//;
+
+/** The scripting files that import physics or audio, a line each. */
+function scriptingImportProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (!path.startsWith('packages/runtime/src/scripting/')) continue;
+    for (const spec of specifiersIn(source)) {
+      const hit = resolveSpecifier(join(repoRoot, path), spec);
+      if (hit.kind === 'file' && CONTRIBUTORS.test(show(hit.path))) {
+        problems.push(`${path}: imports ${spec}, and scripting names no feature that gives scripts their members`);
+      }
+    }
+  }
+  return problems;
+}
+
+describe('scripting', () => {
+  it('reports a file of the script host that imports physics or audio', () => {
+    const found = (source: string) => scriptingImportProblems([['packages/runtime/src/scripting/Probe.ts', source]]);
+
+    expect(found("import type { Collision } from '../physics/PhysicsApi';")).toEqual([
+      'packages/runtime/src/scripting/Probe.ts: imports ../physics/PhysicsApi, and scripting names no feature that gives scripts their members',
+    ]);
+    expect(found("import { audioOf } from '@three-studio/runtime/audio/audioOf';")).toEqual([
+      'packages/runtime/src/scripting/Probe.ts: imports @three-studio/runtime/audio/audioOf, and scripting names no feature that gives scripts their members',
+    ]);
+    expect(found("import { inputOf } from '../input/inputOf';")).toEqual([]);
+  });
+
+  it('finds none in the tree: physics and audio give scripts their members by contribution', () => {
+    expect(scriptingImportProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------- input
+
+/*
+ * `Input` hears the keyboard and the mouse, and keeps virtual axes and keys
+ * for whatever sets them. The touch sticks used to live in it — nipplejs, the
+ * summoning, the player controller's mode —, so the kernel's input carried one
+ * controller's overlay. They are a screen layer of the player controllers now,
+ * on their way to the `player-controller` module, and input names none of it.
+ */
+
+/** The input files that import the controllers or nipplejs, a line each. */
+function inputImportProblems(sources: readonly (readonly [path: string, source: string])[]): string[] {
+  const problems: string[] = [];
+  for (const [path, source] of sources) {
+    if (!path.startsWith('packages/runtime/src/input/')) continue;
+    for (const spec of specifiersIn(source)) {
+      const hit = resolveSpecifier(join(repoRoot, path), spec);
+      const controller = hit.kind === 'file' && show(hit.path).startsWith('packages/runtime/src/controllers/');
+      if (controller || spec === 'nipplejs' || spec.startsWith('nipplejs/')) {
+        problems.push(`${path}: imports ${spec}, and input holds no player controller's controls`);
+      }
+    }
+  }
+  return problems;
+}
+
+describe('input', () => {
+  it('reports an input file that imports the controllers or nipplejs', () => {
+    const found = (source: string) => inputImportProblems([['packages/runtime/src/input/Probe.ts', source]]);
+
+    expect(found("import { holdTouchControls } from '../controllers/touch';")).toEqual([
+      "packages/runtime/src/input/Probe.ts: imports ../controllers/touch, and input holds no player controller's controls",
+    ]);
+    expect(found("const nipple = await import('nipplejs');")).toEqual([
+      "packages/runtime/src/input/Probe.ts: imports nipplejs, and input holds no player controller's controls",
+    ]);
+    expect(found("import { PressedKeys } from './PressedKeys';")).toEqual([]);
+  });
+
+  it('finds none in the tree: the sticks are a screen layer of the player controllers', () => {
+    expect(inputImportProblems(files.map((file) => [show(file), readFileSync(file, 'utf8')]))).toEqual([]);
   });
 });
 

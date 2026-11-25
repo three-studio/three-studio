@@ -23,10 +23,11 @@ import { deltaTime, time } from 'three/tsl';
  * already built the publish channel, and a uniform is a better one than any
  * listener list we could add.
  *
- * Consumers receive an instance through `SystemContext` and `BehaviourContext`
- * rather than importing {@link studioTime}. The singleton exists because three's
- * nodes are singletons — there can be exactly one authoritative clock per
- * document — but nothing downstream should have to know that.
+ * Made once per window by what owns its loop — the editor's viewport, the
+ * player's root — and handed to every world drawn there, which hands it to
+ * its systems through `SystemContext`. Once per window because three's nodes
+ * are singletons: two clocks installed in one document would fight over the
+ * one callback, and the loser would be whichever installed first.
  *
  * **Re-checked against three's `dev` branch on 2026-09-06, and both halves still
  * hold.** `Node.onUpdate` is `this.update = callback.bind( this )` — one slot,
@@ -118,12 +119,3 @@ export class StudioTime {
   }
 }
 
-/**
- * The document's clock.
- *
- * A module instance because three's `time` node is one: two of these installed
- * in the same document would fight over the same callback, and the loser would
- * be whichever called `install` first. Reach it here only if you own the render
- * loop; everything else is handed one.
- */
-export const studioTime = new StudioTime();

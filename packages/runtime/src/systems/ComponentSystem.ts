@@ -4,13 +4,13 @@ import type {
   ComponentOfType,
   ComponentType,
   EntityId,
-  Hex,
   MaterialDef,
-  Vec3,
 } from '@three-studio/core';
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three/webgpu';
 import type { AssetCache } from '../assets/AssetCache';
 import type { StudioTime } from '../time/StudioTime';
+import type { CameraClaims } from '../world/cameras';
+import type { SunService } from '../world/sun';
 import type { ResourceArena } from './ResourceArena';
 
 /*
@@ -29,13 +29,6 @@ import type { ResourceArena } from './ResourceArena';
  * place, lights and cameras too, and a mesh had its own rules for reusing a
  * geometry. Now each system has to answer the question out loud.
  */
-
-/** A direction to be lit from, and the colour of what is lighting. */
-export interface Sun {
-  /** Unit vector pointing from the surface at the light. */
-  readonly direction: Vec3;
-  readonly color: Hex;
-}
 
 /** What a system hands back. The only part of it the reconciler reads. */
 export interface SystemHandle {
@@ -85,6 +78,19 @@ export interface SystemContext {
    */
   readonly shadowMapSize: number;
   /**
+   * Who the view is drawn through, which a camera claims as it mounts and gives
+   * back as it goes: the world's, so the world never asks the scene which
+   * camera it holds.
+   */
+  readonly cameras: CameraClaims;
+  /**
+   * Where a component that shades itself takes its light from: a light
+   * entity's, or the scene's sky for `null`, each provided by what knows it —
+   * the light system as a light mounts, the environment as the scene's sky is
+   * read. Answers `null` when nothing provides it, and the caller falls back.
+   */
+  readonly sun: SunService;
+  /**
    * Says that what a batch could hold may have changed.
    *
    * A mount or an unmount changes the membership of a group; a `setTransform`
@@ -92,17 +98,6 @@ export interface SystemContext {
    * walked every binding and every mesh build once per frame of a drag to
    * arrive at the same answer.
    */
-  /**
-   * Where a component that shades itself takes its light from: a light
-   * entity's, or `null` for the scene's analytic sun. Answers `null` when the
-   * scene cannot say — no such light — and the caller falls back.
-   *
-   * Pushed in through the context rather than looked up, for the reason
-   * `materials` is: it needs the document *and* the world matrices, and the
-   * binder is the only thing holding both. A system is handed a component and
-   * could not work it out.
-   */
-  sunOf(light: EntityId | null): Sun | null;
   invalidate(): void;
   /**
    * Adds an object that only exists now, after the mount that asked for it.
@@ -147,11 +142,13 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
   abstract unmount(handle: H, ctx: SystemContext): void;
 
   /*
-   * The three capabilities below, and no fourth "in case".
+   * The four capabilities below, and no fifth "in case".
    *
-   * Each replaces a walk in `Reconciler` that asked `doc.type === 'mesh'` or
-   * `=== 'model'` and then cast the handle it found. The reconciler was the one
-   * file written to know about no type in particular, and it knew about two.
+   * Each replaces a place that named a type. Three were walks in `Reconciler`
+   * that asked `doc.type === 'mesh'` or `=== 'model'` and then cast the handle
+   * they found — the reconciler was the one file written to know about no type
+   * in particular, and it knew about two —, and `diagnose` the world's own
+   * checks, which asked the document for its cameras and its lights.
    *
    * **Optional, and declaring one is what claims it.** A system that does not
    * implement `whenLoaded` does not load, which is what the reconciler waits
@@ -175,6 +172,13 @@ export abstract class ComponentSystem<T extends ComponentDoc, H extends SystemHa
 
   /** Resolves once everything this system has in flight has landed or failed. */
   whenLoaded?(): Promise<void>;
+
+  /**
+   * What is wrong with the scene this system drew, said once when a world in
+   * Play has been built: the camera system's two main cameras, the light
+   * system's scene with no light. Never asked of the edit view.
+   */
+  diagnose?(): readonly string[];
 }
 
 // ------------------------------------------------------------- the definition

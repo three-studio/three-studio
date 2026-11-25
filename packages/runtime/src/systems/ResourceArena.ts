@@ -150,7 +150,8 @@ export class ResourceArena {
 
   /** Frees what the previous frame let go of. Called once per rendered frame. */
   flush(): void {
-    for (const resource of this.retired) resource.dispose();
+    // Indexed: this runs every frame, and an empty queue made an iterator.
+    for (let i = 0; i < this.retired.length; i += 1) this.retired[i]?.dispose();
     this.retired.length = 0;
   }
 

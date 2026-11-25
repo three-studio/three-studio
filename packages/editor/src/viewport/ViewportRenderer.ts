@@ -1,8 +1,7 @@
 import type { RenderingSettings } from '@three-studio/core';
-import { createRenderer, type RendererBackend } from '@three-studio/runtime';
+import { RenderHost, createRenderer, resizeRenderer, type RendererBackend } from '@three-studio/runtime';
 import type { Camera, Scene, WebGPURenderer } from 'three/webgpu';
 import { useViewportStore } from '../state/viewportStore';
-import { retireFrameBufferTarget } from './frameBufferTarget';
 import { Presentation } from './Presentation';
 import { installRenderProbe, probeFrame, probeResize } from './renderProbe';
 
@@ -24,7 +23,7 @@ const STATS_INTERVAL_MS = 500;
  *
  * What it deliberately does **not** own is any camera. `resize` measures the
  * boxes and sizes the surface; whose aspect that changes is a question for the
- * editor camera, the running engine and the preview, and each of them answers
+ * editor camera, the running world and the preview, and each of them answers
  * it where it lives.
  */
 export class ViewportRenderer {
@@ -48,7 +47,7 @@ export class ViewportRenderer {
   readonly editView = new Presentation('edit');
   /**
    * The running game's canvas, stacked with the edit view's on the Viewport's
-   * stage. The engine's `Input` listens on it.
+   * stage. The world's `Input` listens on it.
    */
   readonly gameView = new Presentation('game');
   /**
@@ -58,6 +57,11 @@ export class ViewportRenderer {
    * `attachPreview`'s reason to exist — see there.
    */
   readonly previewView = new Presentation('preview');
+
+  /** Each view's host, on the one renderer. The game's carries what the editor lays over a running game. */
+  readonly editHost: RenderHost;
+  readonly gameHost: RenderHost;
+  private readonly previewHost: RenderHost;
 
   private readonly resizeObserver: ResizeObserver;
   /** Last size handed to `setSize`, so an unchanged one can be skipped. */
@@ -103,6 +107,9 @@ export class ViewportRenderer {
     this.surface = surface;
     this.renderer = renderer;
     this.backend = backend;
+    this.editHost = new RenderHost({ renderer });
+    this.gameHost = new RenderHost({ renderer });
+    this.previewHost = new RenderHost({ renderer });
     this.resizeObserver = new ResizeObserver(() => (this.sizeDirty = true));
   }
 
@@ -193,14 +200,19 @@ export class ViewportRenderer {
 
     this.lastWidth = width;
     this.lastHeight = height;
-    this.renderer.setSize(width, height, false);
-    retireFrameBufferTarget(this.renderer);
+    resizeRenderer(this.renderer, width, height);
     return editMoved;
   }
 
+  /** The host that draws `view`'s frames. */
+  hostOf(view: Presentation): RenderHost {
+    if (view === this.gameView) return this.gameHost;
+    return view === this.previewView ? this.previewHost : this.editHost;
+  }
+
   /**
-   * Renders one view into its corner of the surface, and hands its canvas a
-   * copy.
+   * Renders one view into its corner of the surface, through its host, and
+   * hands its canvas a copy.
    *
    * A view nobody is looking at — on a closed tab, or one behind another — is
    * not drawn at all. A closed one has a zero-sized box; one behind another
@@ -213,64 +225,31 @@ export class ViewportRenderer {
    * have the stage's box, and both are on screen with their tab. That is
    * `viewState`'s to say, and the frame loop asks it before calling this.
    *
-   * **This is where a post-processing pipeline enters on this side**, and it
-   * enters *per view*: a `RenderPipeline` is made from `pass(scene, camera)`, so
-   * the three views want three of them rather than one belonging to the
-   * renderer. Nothing above has to move for that — the renderer and the loop are
-   * already this class's, which is the whole of the seam; see the class comment
-   * on `Engine`.
+   * **The corner rule is this class's, not the host's.** Views drawn into
+   * corners of one surface is how one renderer serves three canvases, and a
+   * host draws into the viewport it is given: with no post effect, nothing it
+   * does depends on size. An effect would. `PassNode` sizes its render target
+   * from `renderer.getDrawingBufferSize()` (`PassNode.js:801`), and a render
+   * *into* a target takes that target's own viewport instead of the one
+   * `setViewport` just wrote (`Renderer.js:1619`), so a pass here would draw the
+   * scene at the size of the whole surface — the largest visible panel — and
+   * squeeze the composite into this view's corner. The first editor effect
+   * chooses: its pass sets its own viewport (`PassNode.setViewport`), or the
+   * surface follows the drawn view. The launcher and the player draw one view
+   * over their whole canvas and never meet it.
    *
-   * What is not free is the size, and it is worth knowing before starting.
-   * `PassNode` sizes its render target from `renderer.getDrawingBufferSize()`
-   * (`PassNode.js:801`), and a render *into* a target takes that target's own
-   * viewport instead of the one `setViewport` just wrote (`Renderer.js:1619`).
-   * So a pass here would draw the scene at the size of the whole surface — the
-   * largest visible panel — and the composite quad would then be squeezed into
-   * this view's corner. A host showing one full-canvas view never meets it,
-   * which is why the launcher's pipeline and an exported build's would both be
-   * straightforward. Whoever writes this one decides what size the pass runs at;
-   * the seam does not decide it for them.
-   *
-   * @param over Drawn onto the image `scene` leaves, through the same camera:
-   *   what the editor lays over the running game. A scene of its own, because
-   *   a running engine's scene carries no overlay — what Play draws is what a
-   *   build draws.
    * @returns Whether it drew. For the game's canvas, the first `true` of a
    *   session is its first frame: the moment it has something of its own to
    *   show, which is when it comes on top.
    */
-  draw(scene: Scene, camera: Camera, view: Presentation, over?: Scene): boolean {
+  draw(view: Presentation, scene: Scene, camera: Camera): boolean {
     if (!view.visible) return false;
 
     // The surface is at least this big — `resize` sized it to the largest
     // visible panel — so the view fits in its corner. `setSize` resets this,
     // which is why it is set per draw rather than per resize.
     this.renderer.setViewport(0, 0, view.width, view.height);
-    /*
-     * `render()` and **not** `renderAsync()`. The two look interchangeable — the
-     * async one is `await this.init(); this.render(...)` and nothing else — but
-     * the await defers the render past the end of the animation frame callback,
-     * and a WebGPU render that submits outside the frame it was started in
-     * submits against textures that frame has already invalidated. It cost
-     * hundreds of `Destroyed texture … used in a submit` per second back when
-     * the import preview had a renderer of its own to make the mistake on; it
-     * would cost the same here, on the only renderer there is.
-     *
-     * `render()` has one precondition, an initialised backend, and
-     * `createRenderer` already awaits `renderer.init()`.
-     */
-    this.renderer.render(scene, camera);
-    if (over) {
-      // Uncleared, so it lands on the image rather than in place of it: three
-      // draws both into its tone-mapping target and copies that out whole.
-      const { autoClear } = this.renderer;
-      this.renderer.autoClear = false;
-      try {
-        this.renderer.render(over, camera);
-      } finally {
-        this.renderer.autoClear = autoClear;
-      }
-    }
+    this.hostOf(view).draw(scene, camera);
     view.show(this.surface, this.renderer.getPixelRatio());
     return true;
   }
@@ -308,6 +287,7 @@ export class ViewportRenderer {
     this.detach(this.editView);
     this.detach(this.gameView);
     this.detach(this.previewView);
+    for (const host of [this.editHost, this.gameHost, this.previewHost]) host.dispose();
     this.renderer.dispose();
   }
 
@@ -325,6 +305,8 @@ export class ViewportRenderer {
     this.detach(view);
     view.host = host;
     host.appendChild(view.canvas);
+    // The view's screen layers stack after its canvas, in the same host.
+    this.hostOf(view).setStage(host);
     this.resizeObserver.observe(host);
     this.sizeDirty = true;
   }
@@ -334,6 +316,7 @@ export class ViewportRenderer {
     if (!host) return;
     this.resizeObserver.unobserve(host);
     view.canvas.remove();
+    this.hostOf(view).setStage(null);
     view.host = null;
     // Back to the default, so a panel that is attached again draws its first
     // frame rather than inheriting a verdict about the element it used to be in.
